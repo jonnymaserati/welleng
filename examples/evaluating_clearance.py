@@ -1,8 +1,14 @@
 import pandas as pd
 
-from import_data import import_iscwsa_collision_data
-from well_data import Survey, interpolate_survey
-from clearance import Clearance
+# import welleng as we
+from welleng.io import import_iscwsa_collision_data
+from welleng.data import Survey
+from welleng.clearance import Clearance
+# from welleng.import_data import import_iscwsa_collision_data
+
+# from import_data import import_iscwsa_collision_data
+# from well_data import Survey, interpolate_survey
+# from clearance import Clearance
 
 # Import some well trajectory data. Here we'll use the ISCWSA trajectories, extracting
 # the data from the Excel file downloaded from their website.

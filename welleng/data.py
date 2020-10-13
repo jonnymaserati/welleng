@@ -1,6 +1,6 @@
 import numpy as np, math
 
-from well_utils import *
+from welleng.utils import *
 
 class Survey:
     def __init__(
