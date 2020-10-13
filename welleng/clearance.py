@@ -4,8 +4,8 @@ from numpy.linalg import norm
 from scipy import optimize
 from scipy.spatial.distance import cdist
 
-from well_data import Survey, interpolate_survey
-from well_utils import NEV_to_HLA, HLA_to_NEV
+from welleng.data import Survey, interpolate_survey
+from welleng.utils import NEV_to_HLA, HLA_to_NEV
 
 class Clearance:
     def __init__(
@@ -81,72 +81,33 @@ class Clearance:
     def _get_cov_HLA(self, survey):
         H, L, A = np.array([survey.sigmaH, survey.sigmaL, survey.sigmaA])
         zeros = np.zeros_like(H)
-        # cov = np.array([
-        #     [H ** 2, H * L, H * A],
-        #     [H * L, L ** 2, L * A],
-        #     [H * A, L * A, L ** 2]
-        # #     # [zeros, zeros, zeros]
-        # ]).T
         cov_hla = np.array([
             [H ** 2, zeros, zeros],
             [zeros, L ** 2, zeros],
             [zeros, zeros, A ** 2]
         ]).T
 
-        cov_nev = HLA_to_NEV(survey.survey_rad, cov_hla.T, cov=True).T
-
         return cov_hla
-        # return cov_nev
 
     def _get_covs(self):
-        self.ref_cov = self._get_cov_HLA(self.ref)
-        self.off_cov = self._get_cov_HLA(self.off)
+        self.ref_cov_hla = self._get_cov_HLA(self.ref)
+        self.ref_cov_nev = HLA_to_NEV(self.ref.survey_rad, self.ref_cov_hla.T, cov=True).T
+        
+        self.off_cov_hla = self._get_cov_HLA(self.off)
+        self.off_cov_nev = HLA_to_NEV(self.off.survey_rad, self.off_cov_hla.T, cov=True).T
 
     def _get_PCRs(self):
-        # temp = np.sqrt(
-        #     np.absolute(
-        #         np.dot(self.ref_delta_hlas, self.ref_cov)
-        #     )
-        # )
-        # temp = np.vstack([
-        #     np.dot(v, c) for c, v in zip(
-        #         self.ref_cov, self.ref_delta_hlas
-        #     )
-        # ])
-        # u = np.arctan2(self.ref_delta_hlas[:,2], self.ref_delta_hlas[:,1])
-        # v = np.arctan2(self.ref_delta_hlas[:,0], self.ref_delta_hlas[:,1])
-        # a = np.sqrt(self.ref_cov[:,1,1])
-        # b = np.sqrt(self.ref_cov[:,0,0])
-        # c = np.sqrt(self.ref_cov[:,2,2])
-        # a = np.sqrt(np.absolute(temp[:,1]))
-        # b = np.sqrt(np.absolute(temp[:,0]))
-        # self.ref_PCR = np.absolute(get_PCR(self.ref_delta_hlas, self.ref_cov))
-
-
-
-        # t = np.arctan2(self.off_delta_hlas[:,0], self.off_delta_hlas[:,1])
-        # a = np.sqrt(self.off_cov[:,1,1])
-        # b = np.sqrt(self.off_cov[:,0,0])
-        # self.off_PCR = get_PCR(a, b, t)
-        # u = np.arctan2(self.off_delta_hlas[:,2], self.off_delta_hlas[:,1])
-        # v = np.arctan2(self.off_delta_hlas[:,0], self.off_delta_hlas[:,1])
-        # a = np.sqrt(self.off_cov[:,1,1])
-        # b = np.sqrt(self.off_cov[:,0,0])
-        # c = np.sqrt(self.off_cov[:,2,2])
-        # a = np.sqrt(np.absolute(temp[:,1]))
-        # b = np.sqrt(np.absolute(temp[:,0]))
-        # self.off_PCR = np.absolute(get_PCR(a, b, c, u, v))
-        # self.off_PCR = np.absolute(get_PCR(self.off_delta_hlas, self.off_cov))
-
         self.ref_PCR = np.hstack([
             np.sqrt(np.dot(np.dot(vec, cov), vec.T))
-            for vec, cov in zip(self.ref_delta_hlas, self.ref_cov)
-            # for vec, cov in zip(self.ref_delta_nevs, self.ref_cov)
+            for vec, cov in zip(self.ref_delta_hlas, self.ref_cov_hla)
+            # np.sqrt(np.dot(np.dot(vec.T, cov), vec))
+            # for vec, cov in zip(self.ref_delta_nevs, self.ref_cov_nev)
         ])
         self.off_PCR = np.hstack([
             np.sqrt(np.dot(np.dot(vec, cov), vec.T))
-            for vec, cov in zip(self.off_delta_hlas, self.off_cov)
-            # for vec, cov in zip(self.off_delta_nevs, self.off_cov)
+            for vec, cov in zip(self.off_delta_hlas, self.off_cov_hla)
+            # np.sqrt(np.dot(np.dot(vec.T, cov), vec))
+            # for vec, cov in zip(self.off_delta_nevs, self.off_cov_nev)
         ])
         
     def _get_delta_hla_vectors(self):
@@ -354,6 +315,9 @@ class Clearance:
                 unit=self.reference.unit
             )
 
+    # def _get_sigma_d(self):
+        
+
 def get_ref_sigma(sigma1, sigma2, sigma3, kop_index):
     sigma = np.array([sigma1, sigma2, sigma3]).T
     sigma_diff = np.diff(sigma, axis=0)
@@ -364,94 +328,6 @@ def get_ref_sigma(sigma1, sigma2, sigma3, kop_index):
     sigma_new = np.vstack((sigma_above, np.array([0,0,0]), sigma_below))
 
     return sigma_new
-
-def get_PCR(vec, cov):
-    r1 = []
-    r2 = []
-    R = []
-    H = []
-    L = []
-    A = []
-    for v, c in zip(vec, cov):
-        a = np.sqrt(c[1,1])
-        b = np.sqrt(c[0,0])
-        c = np.sqrt(c[2,2])
-        a1 = a
-        b1 = c
-        t = np.arctan2(v[2], v[1])
-        # if abs(v[2]) != max(abs(v)):
-        # # if abs(v[2]) < 0.1:
-        #     a1 = a
-        #     b1 = b
-        #     t = np.arctan2(v[0], v[1])
-        # else:
-        #     a1 = a
-        #     b1 = c
-        #     t = np.pi/2 + np.arctan2(v[1], v[2])
-        
-    # u = np.arctan2(self.off_delta_hlas[:,2], self.off_delta_hlas[:,1])
-    # v = np.arctan2(self.off_delta_hlas[:,0], self.off_delta_hlas[:,1])
-    # a = np.sqrt(self.off_cov[:,1,1])
-    # b = np.sqrt(self.off_cov[:,0,0])
-    # c = np.sqrt(self.off_cov[:,2,2])
-
-    # a = np.array(a).reshape(-1)
-    # b = np.array(b).reshape(-1)
-    # c = np.array(c).reshape(-1)
-    # u = np.array(u).reshape(-1) # azimuth
-    # v = np.array(v).reshape(-1)
-
-    # get a, b, c of slice
-    # a_1 = a * np.cos(u) * np.sin(v)
-    # b_1 = b * np.sin(u) * np.sin(v)
-    # c_1 = c * np.cos(v)
-
-    # a1 = a * np.cos(0) * np.cos(u)
-    # b1 = b #* np.cos(np.pi/2) * np.sin(u)
-    # c1 = c * np.sin(0)
-
-        e = a1 * (
-            (b1 ** 2 * np.cos(t))
-            / 
-            (b1 ** 2 * (np.cos(t)) ** 2 + a1 ** 2 * (np.sin(t)) ** 2)
-        )
-
-        f = b1 * (
-            (a1 ** 2 * np.sin(t))
-            /
-            (b1 ** 2 * (np.cos(t)) ** 2 + a1 ** 2 * (np.sin(t)) ** 2)
-        )
-
-        r1.append(np.sqrt(np.nan_to_num(e) ** 2 + np.nan_to_num(f) ** 2))
-        A.append(r1[-1] * np.sin(t))
-        L.append(r1[-1] * np.cos(t))
-
-        a1 = a
-        b1 = b
-        t = np.arctan2(v[0], v[1])
-
-        e = a1 * (
-            (b1 ** 2 * np.cos(t))
-            / 
-            (b1 ** 2 * (np.cos(t)) ** 2 + a1 ** 2 * (np.sin(t)) ** 2)
-        )
-
-        f = b1 * (
-            (a1 ** 2 * np.sin(t))
-            /
-            (b1 ** 2 * (np.cos(t)) ** 2 + a1 ** 2 * (np.sin(t)) ** 2)
-        )
-
-        r2.append(np.sqrt(np.nan_to_num(e) ** 2 + np.nan_to_num(f) ** 2))
-        H.append(r2[-1] * np.sin(t))
-
-    R = (np.sqrt(
-        np.hstack(H) ** 2
-         + np.hstack(L) ** 2
-         + np.hstack(A) ** 2
-    ))
-
-    return R
 
 
 
