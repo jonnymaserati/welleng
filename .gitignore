@@ -1,1 +1,10 @@
-/iframe_figures
+.venv
+.vscode
+
+build/
+dist/
+*.egg-info/
+
+iframe_figures/
+data/output/*
+reference/
