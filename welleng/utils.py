@@ -114,10 +114,11 @@ class MinCurve:
             self.dls *= 100
 
         # cumulate the coordinates and add surface coordinates
-        self.poss = np.cumsum(
+        self.poss = np.vstack(
+            np.cumsum(
                 np.array([self.delta_x, self.delta_y, self.delta_z]).T, axis=0
             ) + self.start_xyz
-
+        )
 
 def get_vec(inc, azi, r=1, deg=True):
     """
@@ -213,7 +214,7 @@ def get_transform(
         [np.cos(inc) * np.cos(azi), -np.sin(azi), np.sin(inc) * np.cos(azi)],
         [np.cos(inc) * np.sin(azi), np.cos(azi), np.sin(inc) * np.sin(azi)],
         [-np.sin(inc), np.zeros_like(inc), np.cos(inc)]
-    ])
+    ]).T
 
     return trans
 
@@ -234,23 +235,23 @@ def NEV_to_HLA(survey, NEV, cov=True):
         Either a transformed (n,3) array of HLA coordinates or an
         (3,3,n) array of HLA covariance matrices. 
     """
-    NEV = NEV.reshape(-1,3)
+    
     trans = get_transform(survey)
 
     if cov:
         HLAs = [
-            np.dot(np.dot(t, NEV.T[i]), t.T) for i, t in enumerate(trans.T)
+            np.dot(np.dot(t, NEV.T[i]), t.T) for i, t in enumerate(trans)
         ]
         
         HLAs = np.vstack(HLAs).reshape(-1,3,3).T
         
     else:
+        NEV = NEV.reshape(-1,3)
         HLAs = [
-            np.dot(NEV[i], t.T) for i, t in enumerate(trans.T)
+            np.dot(NEV[i], t.T) for i, t in enumerate(trans)
         ]
         
     return HLAs
-
 
 def HLA_to_NEV(survey, HLA, cov=True):
     # HLA = HLA.reshape(-1,3,3)
@@ -258,14 +259,14 @@ def HLA_to_NEV(survey, HLA, cov=True):
 
     if cov:
         NEVs = [
-            np.dot(np.dot(mat.T, HLA.T[i]), mat) for i, mat in enumerate(trans.T)
+            np.dot(np.dot(t.T, HLA.T[i]), t) for i, t in enumerate(trans)
         ]
     
         NEVs = np.vstack(NEVs).reshape(-1,3,3).T
     
     else:
         NEVs = [
-            np.dot(hla, mat) for hla, mat in list(zip(HLA, trans.T))
+            np.dot(hla, t) for hla, t in zip(HLA, trans)
         ]
         
     return np.vstack(NEVs).reshape(HLA.shape)
