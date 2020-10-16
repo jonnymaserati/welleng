@@ -1,6 +1,12 @@
-import numpy as np, math
+import numpy as np
+import math
 
-from welleng.utils import *
+from welleng.utils import (
+    MinCurve,
+    get_nev,
+    get_vec,
+    get_angles
+)
 
 class Survey:
     def __init__(
@@ -28,6 +34,18 @@ class Survey:
         deg=True,
         unit="meters"
     ):
+        """
+        Initialize a welleng.Survey object.
+
+        Parameters
+        ----------
+            md: (,n) list or array of floats
+                List or array of well bore measured depths.
+            inc: (,n) list or array of floats
+                List or array of well bore survey inclinations
+            azi: (,n) list or array of floats
+                List or array of well bore survey azimuths
+        """
         self.unit = unit
         self.deg = deg
         self.start_xyz = start_xyz
@@ -45,7 +63,7 @@ class Survey:
         self.x = x
         self.y = y
         self.z = z
-        self.vec=vec
+        self.vec = vec
 
         self._min_curve()
 
@@ -61,7 +79,7 @@ class Survey:
 
     def _min_curve(self):
         """
-        Params
+
         """
         mc = MinCurve(self.md, self.inc_rad, self.azi_rad, self.start_xyz, self.unit)
         self.dogleg = mc.dogleg
@@ -90,7 +108,7 @@ class Survey:
         # ).T
         # self.n, self.e, self.tvd = (np.array([n, e, v]).T + np.array([self.start_nev])).T
 
-    def _make_angles(self, inc, azi, deg):
+    def _make_angles(self, inc, azi, deg=True):
         if deg:
             self.inc_rad = np.radians(inc)
             self.azi_rad = np.radians(azi)
@@ -119,6 +137,8 @@ class Survey:
         if error_HLA and error_NEV:
             return
         elif error_HLA:
+            # looks like there's some HLA error data but no NEV error data
+            # make some error NEV data
             print("Need to add the HLA_to_NEV function")
         else:
             print("Need to add the NEV_to_HLA function")    
@@ -129,8 +149,9 @@ def interpolate_survey(survey, x, index=0):
     Interpolates a point distance x between two survey stations
     using minimum curvature.
 
-    Params:
-        survey: object
+    Parameters
+    ----------
+        survey: welleng.Survey
             A survey object with at least two survey stations.
         x: float
             Length along well path from indexed survey station to
@@ -140,8 +161,9 @@ def interpolate_survey(survey, x, index=0):
             The index of the survey station from which to interpolate
             from.
 
-    Returns:
-        survey: object
+    Returns
+    -------
+        survey: welleng.Survey
             A survey object consisting of the two survey stations
             between which the interpolation has been made (index 0 and
             2), with the interpolated station between them (index 1)
@@ -186,3 +208,40 @@ def interpolate_survey(survey, x, index=0):
     s._min_curve()
 
     return s
+
+def make_cov(a, b, c, diag=False):
+    """
+    Make a covariance matrix from the 1sigma errors.
+
+    Parameters
+    ----------
+        a: (,n) list or array of floats
+            Errors in H or N/y axis.
+        b: (,n) list or array of floats
+            Errors in L or E/x axis.
+        c: (,n) list or array of floats
+            Errors in A or V/TVD axis.
+        diag: boolean (default=False)
+            If true, only the lead diagnoal is calculated
+            with zeros filling the remainder of the matrix.
+
+    Returns
+    -------
+        cov: (n,3,3) np.array
+    """
+
+    if diag:
+        z = np.zeros_like(np.array([a]).reshape(-1))
+        cov = np.array([
+            [a * a, z, z],
+            [z, b * b, z],
+            [z, z, c * c]
+        ]).T
+    else:
+        cov = np.array([
+            [a * a, a * b, a * c],
+            [a * b, b * b, b * c],
+            [a * c, b * c, c * c]
+        ]).T
+
+    return cov

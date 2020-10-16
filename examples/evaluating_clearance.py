@@ -1,9 +1,11 @@
 import pandas as pd
+import trimesh
 
-# import welleng as we
-from welleng.io import import_iscwsa_collision_data
-from welleng.data import Survey
-from welleng.clearance import Clearance
+import welleng as we
+# from welleng.io import import_iscwsa_collision_data
+from welleng.survey import Survey
+import welleng.clearance
+from welleng.mesh import transform_trimesh_scene
 # from welleng.import_data import import_iscwsa_collision_data
 
 # from import_data import import_iscwsa_collision_data
@@ -13,7 +15,7 @@ from welleng.clearance import Clearance
 # Import some well trajectory data. Here we'll use the ISCWSA trajectories, extracting
 # the data from the Excel file downloaded from their website.
 filename = filename=f"reference/standard-set-of-wellpaths-for-evaluating-clearance-scenarios-r4-17-may-2017.xlsm"
-data = import_iscwsa_collision_data(filename)
+data = we.io.import_iscwsa_collision_data(filename)
 
 # Make a dictionary of surveys
 surveys = {}
@@ -50,13 +52,18 @@ for well in surveys:
     if well == "Reference well":
         continue
     else:
-        reference = surveys["Reference well"]
         offset = surveys[well]
         if well == "10 - well":
-            o = Clearance(reference, offset, kop_depth=900)
+            c = we.clearance.Clearance(reference, offset, kop_depth=900)
+            result = we.clearance.ISCWSA(c)
         else:
-            o = Clearance(reference, offset)
-        results[well] = o
+            c = we.clearance.Clearance(reference, offset)
+            result = we.clearance.ISCWSA(c)
+            # scene.add_geometry(c.m_off.mesh, node_name=well, geom_name=well, parent_node_name=None)
+        results[well] = result
+
+# scene = trimesh.scene.scene.Scene()
+# transform_trimesh_scene(scene, origin=([0,0,0]), scale=100, redux=1).export("blender/scene_transform.glb")
 
 # export the data to Excel
 with pd.ExcelWriter(f'data/output/output.xlsx') as writer:
@@ -64,15 +71,15 @@ with pd.ExcelWriter(f'data/output/output.xlsx') as writer:
         if well == "Reference well": continue
         r = results[well]
         data = {
-            "REF_MD (m)": r.ref.md,
-            "REF_TVD (m)": r.ref.tvd,
-            "REF_N (m)": r.ref.n,
-            "REF_E (m)": r.ref.e,
+            "REF_MD (m)": r.c.ref.md,
+            "REF_TVD (m)": r.c.ref.tvd,
+            "REF_N (m)": r.c.ref.n,
+            "REF_E (m)": r.c.ref.e,
             "Offset_MD (m)": r.off.md,
             "Offset_TVD (m)": r.off.tvd,
             "Offset_N (m)": r.off.n,
             "Offset_E (m)": r.off.e,
-            "Hoz_Bearing (deg)": r.hoz_bearing,
+            "Hoz_Bearing (deg)": r.hoz_bearing_deg,
             "C-C Clr Dist (m)": r.dist_CC_Clr,
             "Ref_PCR (m 1sigma)": r.ref_PCR,
             "Offset_PCR (m 1 sigma)": r.off_PCR,
