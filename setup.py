@@ -12,14 +12,14 @@ setup(
     url='https://github.com/jonnymaserati/welleng',
     author='Jonathan Corcutt',
     author_email='jonnycorcutt@gmail.com',
-    license='MIT License',
+    # license='MIT License',
     packages=find_packages(),
     install_requires=['pandas',
                       'numpy',                     
                       ],
 
     classifiers=[
-        'License :: OSI Approved :: MIT License',  
+        # 'License :: OSI Approved :: MIT License',  
         'Operating System :: OS Independent',        
         'Programming Language :: Python :: 3',
     ],
