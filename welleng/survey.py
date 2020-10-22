@@ -28,12 +28,6 @@ class Survey:
         radius=None,
         cov_nev=None,
         cov_hla=None,
-        # sigmaH=None,
-        # sigmaL=None,
-        # sigmaA=None,
-        # sigmaN=None,
-        # sigmaE=None,
-        # sigmaV=None,
         error_model=None,
         well_ref_params=None,
         start_xyz=[0,0,0],
@@ -80,13 +74,6 @@ class Survey:
             assert error_model in error_models, "Unrecognized error model"
         self.error_model = error_model
         self.well_ref_params = well_ref_params
-
-        # self.sigmaH = sigmaH
-        # self.sigmaL = sigmaL
-        # self.sigmaA = sigmaA
-        # self.sigmaN = sigmaN
-        # self.sigmaE = sigmaE
-        # self.sigmaV = sigmaV
 
         self.cov_hla = cov_hla
         self.cov_nev = cov_nev
@@ -140,70 +127,8 @@ class Survey:
                     surface_loc=self.start_xyz,
                     well_ref_params=self.well_ref_params,
                 )
-                # self.error_HLA = True
-                self.cov_hla = self.err.cov_HLAs.T
-                # self.sigmaH, self.sigmaL, self.sigmaA = get_sigmas(self.cov_hla)
-
-                # self.error_NEV = True
-                self.cov_nev = self.err.cov_NEVs.T
-                # self.sigmaN, self.sigmaE, self.sigmaV = get_sigmas(self.cov_nev)
-
-        # else:
-
-        #     if (
-        #         self.sigmaH is not None
-        #         and self.sigmaL is not None
-        #         and self.sigmaA is not None
-        #     ):
-        #         error_HLA = True
-        #     else:
-        #         error_HLA = False
-
-        #     if (
-        #         self.sigmaN is not None
-        #         and self.sigmaE is not None
-        #         and self.sigmaV is not None
-        #     ):
-        #         error_NEV = True
-        #     else:
-        #         error_NEV = False
-            
-        #     # if error_HLA and error_NEV:
-        #     #     return
-        #     if error_HLA:
-        #         # self.error_HLA = make_cov(
-        #         #     np.array(self.sigmaH),
-        #         #     np.array(self.sigmaL),
-        #         #     np.array(self.sigmaA),
-        #         #     diag=True
-        #         # )
-        #         # self.error_NEV = HLA_to_NEV(self.survey_rad, self.error_HLA.T)
-        #         # looks like there's some HLA error data but no NEV error data
-        #         # make some error NEV data
-        #         # print("Need to add the HLA_to_NEV function")
-        #         self.cov_hla = make_cov(
-        #             self.sigmaH,
-        #             self.sigmaL,
-        #             self.sigmaA,
-        #             diag=True
-        #         )
-        #     else:
-        #         self.cov_hla = None
-
-        #     if error_NEV:
-        #         # print("Need to add the NEV_to_HLA function")
-        #         self.cov_nev = make_cov(
-        #             self.sigmaN,
-        #             self.sigmaE,
-        #             self.sigmaV,
-        #             diag=False
-        #         )
-        #     else:
-        #         self.cov_nev = None
-
-            # else:
-            #     pass
-            
+                self.cov_hla = self.err.errors.cov_HLAs.T
+                self.cov_nev = self.err.errors.cov_NEVs.T            
 
 def interpolate_survey(survey, x, index=0):
     """

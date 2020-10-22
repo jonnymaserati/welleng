@@ -1,13 +1,17 @@
 import numpy as np
 from numpy import sin, cos, tan, pi, sqrt
-from welleng.utils import MinCurve, NEV_to_HLA
+from welleng.utils import MinCurve
+from welleng.errors.iscwsa_mwd import iscwsaMwd
 
 class ErrorModel():
     """
+    A class to initiate the field parameters and error magnitudes
+    for subsequent error calculations.
     """
 
     class Error:
         '''
+        Initiate the components of calculating a tool error.
         '''
         def __init__(
             self,
@@ -47,20 +51,20 @@ class ErrorModel():
         VerticalIncLimit = 0.0001,                  # degrees
         FeetToMeters = 0.3048,
         errors_mag = dict(
-            DRFR_mag = 0.35,
-            DSFS_mag = 0.00056,
-            DSTG_mag = 2.5e-7,
-            AB_mag = 0.004,
-            AS_mag = 0.0005,
-            MB_mag = 70,
-            MS_mag = 0.0016,
-            DECG_mag = np.radians(0.36),
-            DECR_mag = np.radians(0.1),
-            DBHG_mag = np.radians(5000),
-            DBHR_mag = np.radians(3000),
-            AMIL_mag = 220,
-            SAG_mag = np.radians(0.2),
-            XYM_mag = np.radians(0.1)
+            DRFR = 0.35,
+            DSFS = 0.00056,
+            DSTG = 2.5e-7,
+            AB = 0.004,
+            AS = 0.0005,
+            MB = 70,
+            MS = 0.0016,
+            DECG = np.radians(0.36),
+            DECR = np.radians(0.1),
+            DBHG = np.radians(5000),
+            DBHR = np.radians(3000),
+            AMIL = 220,
+            SAG = np.radians(0.2),
+            XYM = np.radians(0.1)
         ),
         error_model="ISCWSA_MWD",
     ):
@@ -109,19 +113,14 @@ class ErrorModel():
             start_xyz=self.surface_loc,
             unit=self.DepthUnits
             )
-        # self.pos, self.dls = min_curve(self.survey_drdp, degrees=False)
 
-        # self.TVD = np.around(np.array(self.pos[:,2]), 2)
         self.TVD = self.mc.poss[:,2]
 
         self.drdp = self._drdp(self.survey_drdp)
         self.drdp_sing = self._drdp_sing(self.survey_drdp)
 
-        self.errors = {}
-        self.cov_NEVs = np.zeros((3,3,len(self.survey)))
-
         if self.error_model == "ISCWSA_MWD":
-            self.iscwsa_mwd()
+            self.errors = iscwsaMwd(self)
 
 
     def _e_NEV(self, e_DIA):
@@ -199,397 +198,6 @@ class ErrorModel():
                 return
 
             return ErrorModel.Error(code, propagation, e_DIA, cov_DIA, e_NEV, e_NEV_star, sigma_e_NEV, cov_NEV)
-            # return dict(
-            #     code = code,
-            #     cov_NEV = cov_NEV
-            # )
-    
-    def _DRFR(self, survey, mag=0.35, propagation='random', NEV=True):
-        dpde = np.full((len(survey), 3), [1,0,0])
-        e_DIA = dpde * mag
-        
-        return self._generate_error('DRFR', e_DIA, propagation, NEV)
-
-    def _DSFS(self, survey, mag=0.00056, propagation='systematic', NEV=True):
-        dpde = np.full((len(survey), 3), [1,0,0])
-        dpde = dpde * np.array(survey)
-        e_DIA = dpde * mag
-
-        return self._generate_error('DSFS', e_DIA, propagation, NEV)
-
-    def _DSTG(self, survey, TVD, mag=0.00000025, propagation='systematic', NEV=True):
-        dpde = np.full((len(survey), 3), [1,0,0])
-        dpde[:,0] = TVD
-        dpde = dpde * np.array(survey)
-        e_DIA = dpde * mag
-
-        return self._generate_error('DSTG', e_DIA, propagation, NEV)
-
-    def _ABXY_TI1S(self, survey, AziMag, gfield, dip, mag=0.0040, propagation='systematic', NEV=True):
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,1] = -cos(survey[:,1]) / gfield
-        dpde[:,2] = (cos(survey[:,1]) * tan(dip) * sin(AziMag)) / gfield
-        e_DIA = dpde * mag
-
-        return self._generate_error('ABXY_TI1S', e_DIA, propagation, NEV)
-
-    def _ABXY_TI2S(self, survey, AziMag, gfield, dip, mag=0.004, propagation='systematic', NEV=True):
-        dpde = np.zeros((len(survey), 3))
-        with np.errstate(divide='ignore', invalid='ignore'):
-            dpde[:,2] = np.nan_to_num(((tan(-(survey[:,1]) + (pi/2)) - tan(dip) * cos(AziMag)) / gfield),
-                                posinf = 0.0,
-                                neginf = 0.0
-                                )
-            # dpde[:,2] = ((tan(-(survey[:,1]) + (pi/2)) - tan(dip) * cos(AziMag)) / gfield)
-        # dpde[:,2][np.where(np.array(survey)[:,1] < self.VerticalIncLimit)] = 0
-        e_DIA = dpde * mag
-
-        sing = np.where(self.survey[:,1] < self.VerticalIncLimit)
-        if len(sing[0]) < 1:
-            return self._generate_error('ABXY_TI2S', e_DIA, propagation, NEV)
-        else: 
-            e_NEV = self._e_NEV(e_DIA)
-            N = np.array(0.5 * self.drdp_sing['double_delta_md'] * -sin(self.drdp_sing['azi2']) * mag) / gfield
-            E = np.array(0.5 * self.drdp_sing['double_delta_md'] * cos(self.drdp_sing['azi2']) * mag) / gfield
-            V = np.zeros_like(N)
-            e_NEV_sing = np.vstack((np.zeros((1,3)), np.stack((N, E, V), axis=-1), np.zeros((1,3))))
-            e_NEV[sing] = e_NEV_sing[sing]
-
-            e_NEV_star = self._e_NEV_star(e_DIA)
-            N = np.array(0.5 * self.drdp_sing['delta_md'] * -sin(self.drdp_sing['azi2']) * mag) / gfield
-            E = np.array(0.5 * self.drdp_sing['delta_md'] * cos(self.drdp_sing['azi2']) * mag) / gfield
-            V = np.zeros_like(N)
-            e_NEV_star_sing = np.vstack((np.zeros((1,3)), np.stack((N, E, V), axis=-1), np.zeros((1,3))))
-            e_NEV_star[sing] = e_NEV_star_sing[sing]
-
-            return self._generate_error('ABXY_TI2S', e_DIA, propagation, NEV, e_NEV, e_NEV_star)
-
-    def _ABZ(self, survey, AziMag, gfield, dip, mag=0.004, propagation='systematic', NEV=True):
-        # mag = np.array([mag])
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,1] = -sin(np.array(survey)[:,1]) / gfield
-        dpde[:,2] = (sin(np.array(survey)[:,1]) * tan(dip) * sin(AziMag)) / gfield
-        e_DIA = dpde * mag
-
-        return self._generate_error('ABZ', e_DIA, propagation, NEV)
-
-    def _ASXY_TI1S(self, survey, AziMag, dip, mag=0.0005, propagation='systematic', NEV=True):
-        # mag = np.array([mag])
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,1] = sin(np.array(survey)[:,1]) * cos(np.array(survey)[:,1]) / sqrt(2)
-        dpde[:,2] = (sin(np.array(survey)[:,1]) * -tan(dip) * cos(np.array(survey)[:,1]) * sin(AziMag)) / sqrt(2)
-        e_DIA = dpde * mag
-
-        return self._generate_error('ASXY_TI1S', e_DIA, propagation, NEV)
-
-    def _ASXY_TI2S(self, survey, AziMag, dip, mag=0.0005, propagation='systematic', NEV=True):
-        # mag = np.array([mag])
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,1] = sin(np.array(survey)[:,1]) * cos(np.array(survey)[:,1]) / 2
-        dpde[:,2] = (sin(np.array(survey)[:,1]) * -tan(dip) * cos(np.array(survey)[:,1]) * sin(AziMag)) / 2
-        e_DIA = dpde * mag
-
-        return self._generate_error('ASXY_TI2S', e_DIA, propagation, NEV)
-
-    def _ASXY_TI3S(self, survey, AziMag, dip, mag=0.0005, propagation='systematic', NEV=True):
-        # mag = np.array([mag])
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,2] = (sin(np.array(survey)[:,1]) * tan(dip) * cos(AziMag) - cos(np.array(survey)[:,1])) / 2
-        e_DIA = dpde * mag
-
-        return self._generate_error('ASXY_TI3S', e_DIA, propagation, NEV)
-
-    def _ASZ(self, survey, AziMag, dip, mag=0.0005, propagation='systematic', NEV=True):
-        # mag = np.array([mag])
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,1] = -sin(np.array(survey)[:,1]) * cos(np.array(survey)[:,1])
-        dpde[:,2] = (sin(np.array(survey)[:,1]) * tan(dip) * cos(np.array(survey)[:,1]) * sin(AziMag))
-        e_DIA = dpde * mag
-
-        return self._generate_error('ASZ', e_DIA, propagation, NEV)
-
-    def _MBXY_TI1S(self, survey, AziMag, dip, bfield, mag=70.0, propagation='systematic', NEV=True):
-        # mag = np.array([mag])
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,2] = (-cos(np.array(survey)[:,1]) * sin(AziMag)) / (bfield * cos(dip))
-        e_DIA = dpde * mag
-
-        return self._generate_error('MBXY_TI1S', e_DIA, propagation, NEV)
-
-    def _MBXY_TI2S(self, survey, AziMag, dip, bfield, mag=70.0, propagation='systematic', NEV=True):
-        # mag = np.array([mag])
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,2] = cos(AziMag) / (bfield * cos(dip))
-        e_DIA = dpde * mag
-
-        return self._generate_error('MBXY_TI2S', e_DIA, propagation, NEV)
-
-    def _MBZ(self, survey, AziMag, dip, bfield, mag=70.0, propagation='systematic', NEV=True):
-        # mag = np.array([mag])
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,2] = (-sin(np.array(survey)[:,1]) * sin(AziMag)) / (bfield * cos(dip))
-        e_DIA = dpde * mag
-
-        return self._generate_error('MBZ', e_DIA, propagation, NEV)
-
-    def _MSXY_TI1S(self, survey, AziMag, dip, mag=0.0016, propagation='systematic', NEV=True):
-        # mag = np.array([mag])
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,2] = sin(np.array(survey)[:,1]) * sin(AziMag) * (tan(dip) * cos(np.array(survey)[:,1])
-        + sin(np.array(survey)[:,1]) * cos(AziMag)) / sqrt(2)
-        e_DIA = dpde * mag
-
-        return self._generate_error('MSXY_TI1S', e_DIA, propagation, NEV)
-
-
-    def _MSXY_TI2S(self, survey, AziMag, dip, mag=0.0016, propagation='systematic', NEV=True):
-        # mag = np.array([mag])
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,2] = sin(AziMag) * (tan(dip) * sin(np.array(survey)[:,1]) * cos(np.array(survey)[:,1])
-        - cos(np.array(survey)[:,1]) * cos(np.array(survey)[:,1]) * cos(AziMag) -cos(AziMag)) / 2
-        e_DIA = dpde * mag
-
-        return self._generate_error('MSXY_TI2S', e_DIA, propagation, NEV)
-
-    def _MSXY_TI3S(self, survey, AziMag, dip, mag=0.0016, propagation='systematic', NEV=True):
-        # mag = np.array([mag])
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,2] = (cos(np.array(survey)[:,1]) * cos(AziMag) * cos(AziMag)
-                - cos(np.array(survey)[:,1]) * sin(AziMag) * sin(AziMag) 
-                - tan(dip) * sin(np.array(survey)[:,1]) * cos(AziMag)) / 2
-        e_DIA = dpde * mag
-
-        return self._generate_error('MSXY_TI3S', e_DIA, propagation, NEV)
-
-    def _MSZ(self, survey, AziMag, dip, mag=0.0016, propagation='systematic', NEV=True):
-        # mag = np.array([mag])
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,2] = -(sin(np.array(survey)[:,1]) * cos(AziMag)
-        + tan(dip) * cos(np.array(survey)[:,1])) * sin(np.array(survey)[:,1]) * sin(AziMag)
-        e_DIA = dpde * mag
-
-        return self._generate_error('MSZ', e_DIA, propagation, NEV)
-
-    def _DECG(self, survey, mag=0.00628, propagation='systematic', NEV=True):
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,2] = 1
-        e_DIA = dpde * mag
-
-        return self._generate_error('DECG', e_DIA, propagation, NEV)
-
-    def _DECR(self, survey, mag=0.00175, propagation='random', NEV=True):
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,2] = 1
-        e_DIA = dpde * mag
-
-        return self._generate_error('DECR', e_DIA, propagation, NEV)
-
-    def _DBHG(self, survey, dip, bfield, mag=np.radians(5000), propagation='systematic', NEV=True):
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,2] = 1 / (bfield * cos(dip))
-        e_DIA = dpde * mag
-
-        return self._generate_error('DBHG', e_DIA, propagation, NEV)
-
-    def _DBHR(self, survey, dip, bfield, mag=np.radians(3000), propagation='random', NEV=True):
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,2] = 1 / (bfield * cos(dip))
-        e_DIA = dpde * mag
-
-        return self._generate_error('DBHR', e_DIA, propagation, NEV)
-
-    def _AMIL(self, survey, AziMag, dip, bfield, mag=220.0, propagation='systematic', NEV=True):
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,2] = -sin(np.array(survey)[:,1]) * sin(AziMag) / (bfield * cos(dip))
-        e_DIA = dpde * mag
-
-        return self._generate_error('AMIL', e_DIA, propagation, NEV)
-
-    def _SAG(self, survey, mag=0.00349, propagation='systematic', NEV=True):
-        # mag = np.array([mag])
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,1] = sin(np.array(survey)[:,1])
-        e_DIA = dpde * mag
-
-        return self._generate_error('SAG', e_DIA, propagation, NEV)
-
-    def _XYM1(self, survey, mag=0.00175, propagation='systematic', NEV=True):
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,1] = np.absolute(sin(np.array(survey)[:,1]))
-        e_DIA = dpde * mag
-
-        return self._generate_error('XYM1', e_DIA, propagation, NEV)
-
-    def _XYM2(self, survey, mag=0.00175, propagation='systematic', NEV=True):
-        # mag = np.array([mag])
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,2] = -1
-        e_DIA = dpde * mag
-
-        return self._generate_error('XYM2', e_DIA, propagation, NEV)
-
-    def _XYM3(self, survey, AziTrue, mag=0.00175, propagation='systematic', NEV=True):
-        # mag = np.array([mag])
-        # e_DIA = np.zeros_like(survey)
-        # e_DIA[:,1] = np.absolute(np.cos(survey[:,1])) * np.cos(AziTrue)
-        # with np.errstate(divide='ignore', invalid='ignore'):
-        #     e_DIA[:,2] = np.nan_to_num(
-        #         -(np.absolute(np.cos(survey[:,1])) * np.sin(AziTrue)) / np.sin(survey[:,1]),
-        #         posinf = 0.0,
-        #         neginf = 0.0
-        #     )
-        # e_DIA = e_DIA * mag
-
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,1] = np.absolute(cos(np.array(survey)[:,1])) * cos(AziTrue)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            dpde[:,2] = np.nan_to_num(
-                -(np.absolute(cos(np.array(survey)[:,1])) * sin(AziTrue)) / sin(np.array(survey)[:,1]),
-                posinf = 0.0,
-                neginf = 0.0
-            )
-        e_DIA = dpde * mag
-
-        sing = np.where(self.survey[:,1] < self.VerticalIncLimit)
-        if len(sing[0]) < 1:
-            return self._generate_error('XYM3', e_DIA, propagation, NEV)
-        else: 
-            e_NEV = self._e_NEV(e_DIA)
-            N = np.array(0.5 * self.drdp_sing['double_delta_md'] * mag)
-            E = np.zeros(len(self.drdp_sing['double_delta_md']))
-            V = np.zeros_like(N)
-            e_NEV_sing = np.vstack((np.zeros((1,3)), np.stack((N, E, V), axis=-1), np.zeros((1,3))))
-            e_NEV[sing] = e_NEV_sing[sing]
-
-            e_NEV_star = self._e_NEV_star(e_DIA)
-            N = np.array(0.5 * self.drdp_sing['delta_md'] * mag)
-            E = np.zeros(len(self.drdp_sing['delta_md']))
-            V = np.zeros_like(N)
-            e_NEV_star_sing = np.vstack((np.zeros((1,3)), np.stack((N, E, V), axis=-1), np.zeros((1,3))))
-            e_NEV_star[sing] = e_NEV_star_sing[sing]
-
-            return self._generate_error('XYM3', e_DIA, propagation, NEV, e_NEV, e_NEV_star)
-
-        # return self._generate_error('XYM3', e_DIA, propagation, NEV)
-
-    def _XYM4(self, survey, AziTrue, mag=0.00175, propagation='systematic', NEV=True):
-        # mag = np.array([mag])
-        # if not NEV:
-        #     return e_DIA
-        # else:  
-            
-            # e_DIA = np.zeros_like(survey)
-            # e_DIA[:,1] = np.absolute(np.cos(survey[:,1])) * np.sin(AziTrue)
-            # with np.errstate(divide='ignore', invalid='ignore'):
-            #     e_DIA[:,2] =  np.nan_to_num((np.absolute(np.cos(survey[:,1])) * np.cos(AziTrue)) / np.sin(survey[:,1]),
-            #                             posinf = 0.0,
-            #                             neginf = -0.0
-            #                         )
-
-        dpde = np.zeros((len(survey), 3))
-        dpde[:,1] = np.absolute(cos(np.array(survey)[:,1])) * sin(AziTrue)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            dpde[:,2] = np.nan_to_num((np.absolute(np.cos(np.array(survey)[:,1])) * cos(AziTrue))
-            / sin(np.array(survey)[:,1]),
-                posinf = 0.0,
-                neginf = 0.0
-            )
-        e_DIA = dpde * mag
-
-        sing = np.where(self.survey[:,1] < self.VerticalIncLimit)
-        if len(sing[0]) < 1:
-            return self._generate_error('XYM4', e_DIA, propagation, NEV)
-        else: 
-            e_NEV = self._e_NEV(e_DIA)
-            N = np.zeros(len(self.drdp_sing['double_delta_md']))
-            E = np.array(0.5 * self.drdp_sing['double_delta_md'] * mag)
-            V = np.zeros_like(N)
-            e_NEV_sing = np.vstack((np.zeros((1,3)), np.stack((N, E, V), axis=-1), np.zeros((1,3))))
-            e_NEV[sing] = e_NEV_sing[sing]
-
-            e_NEV_star = self._e_NEV_star(e_DIA)
-            N = np.zeros(len(self.drdp_sing['delta_md']))
-            E = np.array(0.5 * self.drdp_sing['delta_md'] * mag)
-            V = np.zeros_like(N)
-            e_NEV_star_sing = np.vstack((np.zeros((1,3)), np.stack((N, E, V), axis=-1), np.zeros((1,3))))
-            e_NEV_star[sing] = e_NEV_star_sing[sing]
-
-            return self._generate_error('XYM4', e_DIA, propagation, NEV, e_NEV, e_NEV_star)
-
-    def iscwsa_mwd(self):
-        # self.errors.append(
-        #     (
-        #         self._DRFR(self.survey, mag=self.errors_mag['DRFR_mag']),
-        #         self._DSFS(self.survey, mag=self.errors_mag['DSFS_mag']),
-        #         self._DSTG(self.survey, self.TVD, mag=self.errors_mag['DSTG_mag']),
-        #         self._ABXY_TI1S(self.survey, self.AziMag, self.G, self.Dip, mag=self.errors_mag['AB_mag']),
-        #         self._ABXY_TI2S(self.survey, self.AziMag, self.G, self.Dip, mag=self.errors_mag['AB_mag']),
-        #         self._ABZ(self.survey, self.AziMag, self.G, self.Dip, mag=self.errors_mag['AB_mag']),
-        #         self._ASXY_TI1S(self.survey, self.AziMag, self.Dip, mag=self.errors_mag['AS_mag']),
-        #         self._ASXY_TI2S(self.survey, self.AziMag, self.Dip, mag=self.errors_mag['AS_mag']),
-        #         self._ASXY_TI3S(self.survey, self.AziMag, self.Dip, mag=self.errors_mag['AS_mag']),
-        #         self._ASZ(self.survey, self.AziMag, self.Dip, mag=self.errors_mag['AS_mag']),
-        #         self._MBXY_TI1S(self.survey, self.AziMag, self.Dip, self.Btotal, mag=self.errors_mag['MB_mag']),
-        #         self._MBXY_TI2S(self.survey, self.AziMag, self.Dip, self.Btotal, mag=self.errors_mag['MB_mag']),
-        #         self._MBZ(self.survey, self.AziMag, self.Dip, self.Btotal, mag=self.errors_mag['MB_mag']),
-        #         self._MSXY_TI1S(self.survey, self.AziMag, self.Dip, mag=self.errors_mag['MS_mag']),
-        #         self._MSXY_TI2S(self.survey, self.AziMag, self.Dip, mag=self.errors_mag['MS_mag']),
-        #         self._MSXY_TI3S(self.survey, self.AziMag, self.Dip, mag=self.errors_mag['MS_mag']),
-        #         self._MSZ(self.survey, self.AziMag, self.Dip, mag=self.errors_mag['MS_mag']),
-        #         self._DECG(self.survey, mag=self.errors_mag['DECG_mag']),
-        #         self._DECR(self.survey, mag=self.errors_mag['DECR_mag']),
-        #         self._DBHG(self.survey, self.Dip, self.Btotal, mag=self.errors_mag['DBHG_mag']),
-        #         self._DBHR(self.survey, self.Dip, self.Btotal, mag=self.errors_mag['DBHR_mag']),
-        #         self._AMIL(self.survey, self.AziMag, self.Dip, self.Btotal, mag=self.errors_mag['AMIL_mag']),
-        #         self._SAG(self.survey, mag=self.errors_mag['SAG_mag']),
-        #         self._XYM1(self.survey, mag=self.errors_mag['XYM_mag']),
-        #         self._XYM2(self.survey, mag=self.errors_mag['XYM_mag']),
-        #         self._XYM3(self.survey, self.AziTrue, mag=self.errors_mag['XYM_mag']),
-        #         self._XYM4(self.survey, self.AziTrue, mag=self.errors_mag['XYM_mag']),
-        #     )
-            
-        # )
-        self.errors = {
-            "DRFR": self._DRFR(self.survey, mag=self.errors_mag['DRFR_mag']),
-            "DSFS": self._DSFS(self.survey, mag=self.errors_mag['DSFS_mag']),
-            "DSTG": self._DSTG(self.survey, self.TVD, mag=self.errors_mag['DSTG_mag']),
-            "ABXY_TI1S": self._ABXY_TI1S(self.survey, self.AziMag, self.G, self.Dip, mag=self.errors_mag['AB_mag']),
-            "ABXY_TI2S": self._ABXY_TI2S(self.survey, self.AziMag, self.G, self.Dip, mag=self.errors_mag['AB_mag']),
-            "ABZ": self._ABZ(self.survey, self.AziMag, self.G, self.Dip, mag=self.errors_mag['AB_mag']),
-            "ASXY_TI1S": self._ASXY_TI1S(self.survey, self.AziMag, self.Dip, mag=self.errors_mag['AS_mag']),
-            "_ASXY_TI2S": self._ASXY_TI2S(self.survey, self.AziMag, self.Dip, mag=self.errors_mag['AS_mag']),
-            "ASXY_TI3S": self._ASXY_TI3S(self.survey, self.AziMag, self.Dip, mag=self.errors_mag['AS_mag']),
-            "ASZ": self._ASZ(self.survey, self.AziMag, self.Dip, mag=self.errors_mag['AS_mag']),
-            "MBXY_TI1S": self._MBXY_TI1S(self.survey, self.AziMag, self.Dip, self.Btotal, mag=self.errors_mag['MB_mag']),
-            "MBXY_TI2S": self._MBXY_TI2S(self.survey, self.AziMag, self.Dip, self.Btotal, mag=self.errors_mag['MB_mag']),
-            "MBZ": self._MBZ(self.survey, self.AziMag, self.Dip, self.Btotal, mag=self.errors_mag['MB_mag']),
-            "MSXY_TI1S": self._MSXY_TI1S(self.survey, self.AziMag, self.Dip, mag=self.errors_mag['MS_mag']),
-            "MSXY_TI2S": self._MSXY_TI2S(self.survey, self.AziMag, self.Dip, mag=self.errors_mag['MS_mag']),
-            "MSXY_TI3S": self._MSXY_TI3S(self.survey, self.AziMag, self.Dip, mag=self.errors_mag['MS_mag']),
-            "MSZ": self._MSZ(self.survey, self.AziMag, self.Dip, mag=self.errors_mag['MS_mag']),
-            "DECG": self._DECG(self.survey, mag=self.errors_mag['DECG_mag']),
-            "DECR": self._DECR(self.survey, mag=self.errors_mag['DECR_mag']),
-            "DBHG": self._DBHG(self.survey, self.Dip, self.Btotal, mag=self.errors_mag['DBHG_mag']),
-            "DBHR": self._DBHR(self.survey, self.Dip, self.Btotal, mag=self.errors_mag['DBHR_mag']),
-            "AMIL": self._AMIL(self.survey, self.AziMag, self.Dip, self.Btotal, mag=self.errors_mag['AMIL_mag']),
-            "SAG": self._SAG(self.survey, mag=self.errors_mag['SAG_mag']),
-            "XYM1": self._XYM1(self.survey, mag=self.errors_mag['XYM_mag']),
-            "XYM2": self._XYM2(self.survey, mag=self.errors_mag['XYM_mag']),
-            "XYM3": self._XYM3(self.survey, self.AziTrue, mag=self.errors_mag['XYM_mag']),
-            "XYM4": self._XYM4(self.survey, self.AziTrue, mag=self.errors_mag['XYM_mag']),            
-        }
-        
-        # self.errors = self.errors[0]
-        # self.delta_cov_NEVs = np.zeros_like(self.cov_NEVs)
-
-        for key, value in self.errors.items():
-            self.cov_NEVs += value.cov_NEV
-        # for error in self.errors:
-        #     self.cov_NEVs += error.cov_NEV
-        # self.delta_cov_NEVs[:,:,1:] = ((self.cov_NEVs[:,:,1:] - self.cov_NEVs[:,:,:-1]))
-
-        self.cov_HLAs = NEV_to_HLA(self.survey, self.cov_NEVs)
-
 
 
     def drk_dDepth(self, survey):
@@ -599,7 +207,6 @@ class ErrorModel():
         '''
         md1, inc1, azi1 = np.array(survey[:-1]).T
         md2, inc2, azi2 = np.array(survey[1:]).T
-        # delta_md = md2 - md1
         delta_md = 1
 
         dogleg = np.arccos(
@@ -723,58 +330,11 @@ class ErrorModel():
         md3, inc3, azi3 = np.array(survey[2:]).T
         double_delta_md = md3 - md1
         delta_md = md2 - md1
-        
-        # N = np.array(0.5 * delta_md)
-        # E = np.array(0.5 * delta_md)
-        # V = np.zeros_like(N)
-        
-        # return np.vstack((np.zeros((1,3)), np.stack((N, E, V), axis=-1), np.zeros((1,3))))
 
         return dict(
             double_delta_md = double_delta_md,
             delta_md = delta_md,
             azi2 = azi2
         )
-
-    # def _NEV_to_HLA(self, survey, cov_NEV):
-    #     inc = np.array(survey[:,1])
-    #     azi = np.array(survey[:,2])
-
-    #     trans = np.array([
-    #         [cos(inc) * cos(azi), -sin(azi), sin(inc) * cos(azi)],
-    #         [cos(inc) * sin(azi), cos(azi), sin(inc) * sin(azi)],
-    #         [-sin(inc), np.zeros_like(inc), cos(inc)]
-    #     ]).T
-
-    #     cov_HLAs = [
-    #         np.dot(np.dot(mat, cov_NEV.T[i]), mat.T) for i, mat in enumerate(trans)
-    #         ]
-
-    #     # cov_HLAs = []
-
-    #     # for i, mat in enumerate(trans):
-    #     #     cov_HLAs.append(
-    #     #         np.dot(np.dot(mat, cov_NEV.T[i]), mat.T)
-    #     #     )
-
-    #     return np.vstack(cov_HLAs).reshape(-1,3,3).T
-
-    # def _HLA_to_NEV(self, survey, cov_HLA):
-    #     inc = np.array(survey[:,1])
-    #     azi = np.array(survey[:,2])
-
-    #     trans = np.array([
-    #         [cos(inc) * cos(azi), -sin(azi), sin(inc) * cos(azi)],
-    #         [cos(inc) * sin(azi), cos(azi), sin(inc) * sin(azi)],
-    #         [-sin(inc), np.zeros_like(inc), cos(inc)]
-    #     ]).T
-
-    #     cov_NEVs = [
-    #         np.dot(np.dot(mat, cov_NEV.T[i]), mat.T) for i, mat in enumerate(trans)
-    #         ]
-
-        
-
-    #     return np.vstack(cov_HLAs).reshape(-1,3,3).T
 
 
