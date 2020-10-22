@@ -103,7 +103,8 @@ class MinCurve:
         self.delta_z[1:] = temp
 
         # calculate the dog leg severity
-        temp = np.degrees(self.dogleg[1:]) / self.delta_md[1:]
+        with np.errstate(divide='ignore', invalid='ignore'):
+            temp = np.degrees(self.dogleg[1:]) / self.delta_md[1:]
         self.dls = np.zeros(survey_length)
         mask = np.where(temp != np.nan)
         self.dls[1:][mask] = temp[mask]
@@ -181,10 +182,7 @@ def get_angles(vec):
     '''
     # make sure it's a unit vector
     vec = vec / np.linalg.norm(vec, axis=-1)
-
     vec = vec.reshape(-1,3)
-    # if vec.dtype == 'O':
-    #     vec = np.stack(vec, axis=1)
 
     xy = vec[:,0] ** 2 + vec[:,1] ** 2
     inc = np.arctan2(np.sqrt(xy), vec[:,2]) # for elevation angle defined from Z-axis down
@@ -254,7 +252,6 @@ def NEV_to_HLA(survey, NEV, cov=True):
     return HLAs
 
 def HLA_to_NEV(survey, HLA, cov=True):
-    # HLA = HLA.reshape(-1,3,3)
     trans = get_transform(survey)
 
     if cov:

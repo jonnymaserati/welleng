@@ -2,15 +2,9 @@ import pandas as pd
 import trimesh
 
 import welleng as we
-# from welleng.io import import_iscwsa_collision_data
 from welleng.survey import Survey
 import welleng.clearance
 from welleng.mesh import transform_trimesh_scene
-# from welleng.import_data import import_iscwsa_collision_data
-
-# from import_data import import_iscwsa_collision_data
-# from well_data import Survey, interpolate_survey
-# from clearance import Clearance
 
 # Import some well trajectory data. Here we'll use the ISCWSA trajectories, extracting
 # the data from the Excel file downloaded from their website.
@@ -29,10 +23,6 @@ well_ref_params = dict(
 # Make a dictionary of surveys
 surveys = {}
 for well in data["wells"]:
-    # if well == "08 - well":
-    #     well_ref_params["Convergence"] = -0.01
-    # else:
-    #     well_ref_params["Convergence"] = 0.00
     s = Survey(
         md=data["wells"][well]["MD"],
         inc=data["wells"][well]["IncDeg"],
@@ -42,9 +32,6 @@ for well in data["wells"]:
         tvd=data["wells"][well]["TVD"],
         well_ref_params=well_ref_params,
         error_model="ISCWSA_MWD",
-        # sigmaH=data["wells"][well]["sigmaH"],
-        # sigmaL=data["wells"][well]["sigmaL"],
-        # sigmaA=data["wells"][well]["sigmaA"],
         start_xyz=[
             data["wells"][well]["E"][0],
             data["wells"][well]["N"][0],
@@ -82,11 +69,11 @@ for well in surveys:
 
 # output error data
 well = "08 - well"
-errors = [e for e in results[well].c.offset.err.errors.keys()]
+errors = [e for e in results[well].c.offset.err.errors.errors.keys()]
 error_data = []
 for i, md in enumerate(results[well].c.offset.md):
     error_data.append(
-        [md, [{f'{e}': results[well].c.offset.err.errors[e].cov_NEV.T[i]} for e in errors]]
+        [md, [{f'{e}': results[well].c.offset.err.errors.errors[e].cov_NEV.T[i]} for e in errors]]
     )
 
 # export the data to Excel
