@@ -20,7 +20,6 @@ class Clearance:
         Rr=0.4572,
         Ro=0.3048,
         kop_depth=0,
-        # N_verts=12,
     ):
         """
         Initialize a welleng Clearance object.
@@ -79,12 +78,6 @@ class Clearance:
         if self.kop_index == 0:
             self.ref = self.reference
         else:
-            # H, L, A = get_ref_sigma(
-            #     self.reference.sigmaH,
-            #     self.reference.sigmaL,
-            #     self.reference.sigmaA,
-            #     self.kop_index
-            # ).T
             self.ref = Survey(
                 md=self.reference.md[self.kop_index:],
                 inc=self.reference.inc_rad[self.kop_index:],
@@ -96,9 +89,6 @@ class Clearance:
                 radius=self.reference.radius,
                 well_ref_params=self.reference.well_ref_params,
                 error_model=self.reference.error_model,
-                # sigmaH=H[self.kop_index:],
-                # sigmaL=L[self.kop_index:],
-                # sigmaA=A[self.kop_index:],
                 start_xyz=[
                     self.reference.x[self.kop_index],
                     self.reference.y[self.kop_index],
@@ -251,12 +241,6 @@ class ISCWSA:
             error_model=None,
             cov_hla=cov_hla,
             cov_nev=cov_nev,
-            # sigmaH=sigmaH,
-            # sigmaL=sigmaL,
-            # sigmaA=sigmaA,
-            # sigmaN=sigmaN,
-            # sigmaE=sigmaE,
-            # sigmaV=sigmaV,
             start_xyz=[x[0],y[0],z[0]],
             start_nev=[n[0],e[0],tvd[0]],
             deg=False,
@@ -273,32 +257,8 @@ class ISCWSA:
             self.c.offset.cov_nev[i - 1]
             + mult * (self.c.offset.cov_nev[i] - self.c.offset.cov_nev[i-1])
         )
-        # sigmaH_new = (
-        #     self.c.offset.sigmaH[i - 1]
-        #     + mult * (self.c.offset.sigmaH[i] - self.c.offset.sigmaH[i - 1])
-        # )
-        # sigmaL_new = (
-        #     self.c.offset.sigmaL[i - 1]
-        #     + mult * (self.c.offset.sigmaL[i] - self.c.offset.sigmaL[i - 1])
-        # )
-        # sigmaA_new = (
-        #     self.c.offset.sigmaA[i - 1]
-        #     + mult * (self.c.offset.sigmaA[i] - self.c.offset.sigmaA[i - 1])
-        # )
-        # sigmaN_new = (
-        #     self.c.offset.sigmaN[i - 1]
-        #     + mult * (self.c.offset.sigmaN[i] - self.c.offset.sigmaN[i - 1])
-        # )
-        # sigmaE_new = (
-        #     self.c.offset.sigmaE[i - 1]
-        #     + mult * (self.c.offset.sigmaE[i] - self.c.offset.sigmaE[i - 1])
-        # )
-        # sigmaV_new = (
-        #     self.c.offset.sigmaV[i - 1]
-        #     + mult * (self.c.offset.sigmaV[i] - self.c.offset.sigmaV[i - 1])
-        # )
+
         return (cov_hla_new, cov_nev_new)
-        # return (self.c.offset.sigmaH[i], self.c.offset.sigmaL[i], self.c.offset.sigmaA[i])
 
     def _fun(self, x, survey, index, station):
         s = interpolate_survey(survey, x[0], index)
@@ -310,10 +270,20 @@ class ISCWSA:
     def _get_delta_nev_vectors(self):
         temp = self.off_nevs - self.c.ref_nevs
         self.dist_CC_Clr = norm(temp, axis=-1).reshape(-1,1)
-        self.ref_delta_nevs = temp / self.dist_CC_Clr
+        with np.errstate(divide='ignore', invalid='ignore'):
+            self.ref_delta_nevs = np.nan_to_num(
+                temp / self.dist_CC_Clr,
+                posinf=0.0,
+                neginf=0.0
+            )
 
         temp = self.c.ref_nevs - self.off_nevs
-        self.off_delta_nevs = temp / self.dist_CC_Clr
+        with np.errstate(divide='ignore', invalid='ignore'):
+            self.off_delta_nevs = np.nan_to_num(
+                temp / self.dist_CC_Clr,
+                posinf=0.0,
+                neginf=0.0
+            )
 
         self.hoz_bearing = np.arctan2(
             self.ref_delta_nevs[:,1], self.ref_delta_nevs[:,0]
@@ -339,110 +309,23 @@ class ISCWSA:
     def _get_covs(self):
         self.ref_cov_hla = self.c.ref.cov_hla
         self.ref_cov_nev = self.c.ref.cov_nev
-        # self.ref_cov_hla = self._get_cov_HLA(self.c.ref)
-        # self.ref_cov_nev = self.c.ref.error_NEV
-        # self.ref_cov_nev = self._get_cov_NEV(self.c.ref)
         
         self.off_cov_hla = self.off.cov_hla
         self.off_cov_nev = self.off.cov_nev
-        # self.off_cov_hla = self._get_cov_HLA(self.c.offset)
-        # self.off_cov_nev = self.c.offset.error_NEV
-        # self.off_cov_nev = HLA_to_NEV(self.off.survey_rad, self.off_cov_hla.T, cov=True).T
-        # self.off_cov_nev = self._get_cov_NEV(self.c.offset)
 
-    # def _get_cov_HLA(self, survey, diag=True):
-    #     H, L, A = np.array([survey.sigmaH, survey.sigmaL, survey.sigmaA])
-    #     cov_hla = make_cov(H, L, A, diag=diag)
-
-    #     return cov_hla
-
-    # def _get_cov_NEV(self, survey, diag=False):
-    #     N, E, V = np.array([survey.sigmaN, survey.sigmaE, survey.sigmaV])
-    #     cov_nev = make_cov(N, E, V, diag=diag)
-
-    #     return cov_nev
 
     def _get_PCRs(self):
         self.ref_PCR = np.hstack([
             np.sqrt(np.dot(np.dot(vec, cov), vec.T))
             for vec, cov in zip(self.ref_delta_nevs, self.ref_cov_nev)
-            # np.sqrt(np.dot(np.dot(vec.T, cov), vec))
-            # for vec, cov in zip(self.ref_delta_nevs, self.ref_cov_nev)
         ])
         self.off_PCR = np.hstack([
             np.sqrt(np.dot(np.dot(vec, cov), vec.T))
             for vec, cov in zip(self.off_delta_nevs, self.off_cov_nev)
-            # np.sqrt(np.dot(np.dot(vec.T, cov), vec))
-            # for vec, cov in zip(self.off_delta_nevs, self.off_cov_nev)
         ])
 
     def _get_calc_hole(self):
         self.calc_hole = self.c.Rr + self.c.Ro[self.idx]
-
-    # def pc_method(self):
-    #     """
-    #     Different ways to calculate the pedal curve radius for debugging.
-    #     """
-    #     # from the COMPASS manual
-    #     self.ref_sigmaA = np.sqrt(np.absolute(
-    #         self.ref_cov_nev[:,0,0] * np.cos(self.hoz_bearing) ** 2
-    #         + self.ref_cov_nev[:,0,1]
-    #         * np.sin(2 * self.hoz_bearing)
-    #         + self.ref_cov_nev[:,1,1] * np.sin(self.hoz_bearing)
-    #     ))
-    #     self.off_sigmaA = np.sqrt(np.absolute(
-    #         self.off_cov_nev[:,0,0] * np.cos(self.hoz_bearing + np.pi) ** 2
-    #         + self.off_cov_nev[:,0,1]
-    #         * np.sin(2 * (self.hoz_bearing + np.pi))
-    #         + self.off_cov_nev[:,1,1] * np.sin(self.hoz_bearing)
-    #     ))
-    #     # for the NE plane
-    #     p_ref = np.array([self.c.ref.n, self.c.ref.e]).T
-    #     p_off = np.array([self.off.n, self.off.e]).T
-    #     p_delta = p_off - p_ref
-    #     d = norm(p_delta, axis=-1)
-    #     ref_cov_nev = self.ref_cov_nev[:,:2,:2]
-    #     off_cov_nev = self.off_cov_nev[:,:2,:2]
-    #     self.ne_ref_PCR = np.sqrt(np.absolute(np.array([
-    #         np.dot(np.dot(v.T, c), v) for v, c in zip(p_delta, ref_cov_nev)
-    #     ]) / d ** 2))
-    #     self.ne_off_PCR = np.sqrt(np.absolute(np.array([
-    #         np.dot(np.dot(v.T, c), v) for v, c in zip(p_delta, off_cov_nev)
-    #     ]) / d ** 2))
-
-    #     # for the EV plane
-    #     p_ref = np.array([self.c.ref.e, self.c.ref.tvd]).T
-    #     p_off = np.array([self.off.e, self.off.tvd]).T
-    #     p_delta = p_off - p_ref
-    #     d = norm(p_delta, axis=-1)
-    #     ref_cov_nev = self.ref_cov_nev[:,1:,1:]
-    #     off_cov_nev = self.off_cov_nev[:,1:,1:]
-    #     self.ev_ref_PCR = np.sqrt(np.absolute(np.array([
-    #         np.dot(np.dot(v.T, c), v) for v, c in zip(p_delta, ref_cov_nev)
-    #     ]) / d ** 2))
-    #     self.ev_off_PCR = np.sqrt(np.absolute(np.array([
-    #         np.dot(np.dot(v.T, c), v) for v, c in zip(p_delta, off_cov_nev)
-    #     ]) / d ** 2))
-
-    #     # for the NV plane
-    #     p_ref = np.array([self.c.ref.n, self.c.ref.tvd]).T
-    #     p_off = np.array([self.off.n, self.off.tvd]).T
-    #     p_delta = p_off - p_ref
-    #     d = norm(p_delta, axis=-1)
-    #     ref_cov_nev = self.ref_cov_nev[:,[0,0,-1,-1],[0,-1,0,-1]].reshape(-1,2,2)
-    #     off_cov_nev = self.off_cov_nev[:,[0,0,-1,-1],[0,-1,0,-1]].reshape(-1,2,2)
-    #     self.nv_ref_PCR = np.sqrt(np.absolute(np.array([
-    #         np.dot(np.dot(v.T, c), v) for v, c in zip(p_delta, ref_cov_nev)
-    #     ]) / d ** 2))
-    #     self.nv_off_PCR = np.sqrt(np.absolute(np.array([
-    #         np.dot(np.dot(v.T, c), v) for v, c in zip(p_delta, off_cov_nev)
-    #     ]) / d ** 2))
-
-    #     self.mean_ref_PCR = np.sqrt(self.ne_ref_PCR ** 2 + self.ev_ref_PCR ** 2 + self.nv_ref_PCR ** 2)
-    #     self.mean_off_PCR = np.sqrt(self.ne_off_PCR ** 2 + self.ev_off_PCR ** 2 + self.nv_off_PCR ** 2)
-
-    #     self.max_ref_PCR = [max(a, b, c) for a, b, c, in zip(self.ne_ref_PCR, self.ev_ref_PCR, self.nv_ref_PCR)]
-    #     self.max_off_PCR = [max(a, b, c) for a, b, c, in zip(self.ne_off_PCR, self.ev_off_PCR, self.nv_off_PCR)]
 
 class MeshClearance:
     def __init__(
