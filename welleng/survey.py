@@ -5,8 +5,12 @@ from welleng.utils import (
     MinCurve,
     get_nev,
     get_vec,
-    get_angles
+    get_angles,
+    HLA_to_NEV,
+    get_sigmas
 )
+
+from welleng.error import ErrorModel
 
 class Survey:
     def __init__(
@@ -22,13 +26,16 @@ class Survey:
         z=None,
         vec=None,
         radius=None,
-        sigmaH=None,
-        sigmaL=None,
-        sigmaA=None,
-        sigmaN=None,
-        sigmaE=None,
-        sigmaV=None,
+        cov_nev=None,
+        cov_hla=None,
+        # sigmaH=None,
+        # sigmaL=None,
+        # sigmaA=None,
+        # sigmaN=None,
+        # sigmaE=None,
+        # sigmaV=None,
         error_model=None,
+        well_ref_params=None,
         start_xyz=[0,0,0],
         start_nev=[0,0,0],
         deg=True,
@@ -68,13 +75,22 @@ class Survey:
         self._min_curve()
 
         # initialize errors
+        error_models = ["ISCWSA_MWD"]
+        if error_model is not None:
+            assert error_model in error_models, "Unrecognized error model"
         self.error_model = error_model
-        self.sigmaH = sigmaH
-        self.sigmaL = sigmaL
-        self.sigmaA = sigmaA
-        self.sigmaN = sigmaN
-        self.sigmaE = sigmaE
-        self.sigmaV = sigmaV
+        self.well_ref_params = well_ref_params
+
+        # self.sigmaH = sigmaH
+        # self.sigmaL = sigmaL
+        # self.sigmaA = sigmaA
+        # self.sigmaN = sigmaN
+        # self.sigmaE = sigmaE
+        # self.sigmaV = sigmaV
+
+        self.cov_hla = cov_hla
+        self.cov_nev = cov_nev
+
         self._get_errors()
 
     def _min_curve(self):
@@ -103,10 +119,6 @@ class Survey:
             self.start_xyz,
             self.start_nev
         ).T
-        # e, n, v = (
-        #     np.array([self.x, self.y, self.z]).T - np.array([self.start_xyz])
-        # ).T
-        # self.n, self.e, self.tvd = (np.array([n, e, v]).T + np.array([self.start_nev])).T
 
     def _make_angles(self, inc, azi, deg=True):
         if deg:
@@ -122,26 +134,75 @@ class Survey:
 
     def _get_errors(self):
         if self.error_model:
-            print("Need to add the ErrorModel module")
+            if self.error_model == "ISCWSA_MWD":
+                self.err = ErrorModel(
+                    survey=self.survey_deg,
+                    surface_loc=self.start_xyz,
+                    well_ref_params=self.well_ref_params,
+                )
+                # self.error_HLA = True
+                self.cov_hla = self.err.cov_HLAs.T
+                # self.sigmaH, self.sigmaL, self.sigmaA = get_sigmas(self.cov_hla)
 
-        try:
-            error_HLA = self.sigmaH and self.sigmaL and self.sigmaA
-        except:
-            error_HLA = False
+                # self.error_NEV = True
+                self.cov_nev = self.err.cov_NEVs.T
+                # self.sigmaN, self.sigmaE, self.sigmaV = get_sigmas(self.cov_nev)
 
-        try:
-            error_NEV = self.sigmaN and self.sigmaE and self.sigmaV
-        except:
-            error_NEV = False
-        
-        if error_HLA and error_NEV:
-            return
-        elif error_HLA:
-            # looks like there's some HLA error data but no NEV error data
-            # make some error NEV data
-            print("Need to add the HLA_to_NEV function")
-        else:
-            print("Need to add the NEV_to_HLA function")    
+        # else:
+
+        #     if (
+        #         self.sigmaH is not None
+        #         and self.sigmaL is not None
+        #         and self.sigmaA is not None
+        #     ):
+        #         error_HLA = True
+        #     else:
+        #         error_HLA = False
+
+        #     if (
+        #         self.sigmaN is not None
+        #         and self.sigmaE is not None
+        #         and self.sigmaV is not None
+        #     ):
+        #         error_NEV = True
+        #     else:
+        #         error_NEV = False
+            
+        #     # if error_HLA and error_NEV:
+        #     #     return
+        #     if error_HLA:
+        #         # self.error_HLA = make_cov(
+        #         #     np.array(self.sigmaH),
+        #         #     np.array(self.sigmaL),
+        #         #     np.array(self.sigmaA),
+        #         #     diag=True
+        #         # )
+        #         # self.error_NEV = HLA_to_NEV(self.survey_rad, self.error_HLA.T)
+        #         # looks like there's some HLA error data but no NEV error data
+        #         # make some error NEV data
+        #         # print("Need to add the HLA_to_NEV function")
+        #         self.cov_hla = make_cov(
+        #             self.sigmaH,
+        #             self.sigmaL,
+        #             self.sigmaA,
+        #             diag=True
+        #         )
+        #     else:
+        #         self.cov_hla = None
+
+        #     if error_NEV:
+        #         # print("Need to add the NEV_to_HLA function")
+        #         self.cov_nev = make_cov(
+        #             self.sigmaN,
+        #             self.sigmaE,
+        #             self.sigmaV,
+        #             diag=False
+        #         )
+        #     else:
+        #         self.cov_nev = None
+
+            # else:
+            #     pass
             
 
 def interpolate_survey(survey, x, index=0):
