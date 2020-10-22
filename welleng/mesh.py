@@ -14,9 +14,9 @@ class WellMesh:
         # NEVs,
         # cov,
         # cov_HLAs=False,
-        N_verts=12,
+        n_verts=12,
         sigma=3.0,
-        radius=0.15,
+        # radius=0.15,
         Sm=0,
         # degrees=True,
         # poss=True,
@@ -30,7 +30,7 @@ class WellMesh:
         ----------
             survey: welleng.Survey
             clearance: welleng.Clearance
-            N_verts: int
+            n_verts: int
                 The number of vertices along the uncertainty ellipse
                 edge from which to construct the mesh.
             method: str (default="ellipse")
@@ -39,9 +39,9 @@ class WellMesh:
         """
         self.s = survey
         # self.c = clearance
-        self.N_verts = int(N_verts)
+        self.n_verts = int(n_verts)
         self.sigma = sigma
-        self.radius = radius
+        self.radius = self.s
         self.Sm = Sm
 
         assert method in ["mesh_ellipse", "mesh_pedal_curve"], "Invalid method (ellipse or pedal_curve)"
@@ -57,10 +57,10 @@ class WellMesh:
     ### Helper functions ###
 
     def _get_faces(self):
-        step = self.N_verts
+        step = self.n_verts
         faces = []
         total_verts = len(self.vertices.reshape(-1,3))
-        rows = int(total_verts / self.N_verts)
+        rows = int(total_verts / self.n_verts)
         
         # make first end        
         B = np.arange(1, step - 1, 1)
@@ -72,7 +72,7 @@ class WellMesh:
         # make cylinder
         temp = [np.array([step, 0, step - 1, 2 * step - 1, step, step - 1])]
         for row in range(0, rows - 1):
-            verts = row * self.N_verts
+            verts = row * self.n_verts
 
             A_start = verts
             B_start = verts + step
@@ -114,7 +114,7 @@ class WellMesh:
         # a = self.s.sigmaA * self.c.k + self.s.radius + self.c.Sm
 
         if self.method == "mesh_ellipse":
-            lam = np.linspace(0, 2 * pi, self.N_verts, endpoint=False)
+            lam = np.linspace(0, 2 * pi, self.n_verts, endpoint=False)
             # theta = np.zeros_like(lam)
 
             x = h * cos(lam)
@@ -123,7 +123,7 @@ class WellMesh:
             vertices = np.stack((x, y, z), axis=-1)
 
         else:
-            lam = np.linspace(0, 2 * pi, self.N_verts, endpoint=False)
+            lam = np.linspace(0, 2 * pi, self.n_verts, endpoint=False)
             f = h * (
                 (l ** 2 * np.cos(lam))
                 / 
