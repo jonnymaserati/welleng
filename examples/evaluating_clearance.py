@@ -17,9 +17,22 @@ from welleng.mesh import transform_trimesh_scene
 filename = filename=f"reference/standard-set-of-wellpaths-for-evaluating-clearance-scenarios-r4-17-may-2017.xlsm"
 data = we.io.import_iscwsa_collision_data(filename)
 
+well_ref_params = dict(
+    Latitude=60.000000,
+    BTotal=50000.00,
+    Dip=70.00,
+    Declination=0.00,
+    Convergence=0.0,
+    G=9.80665
+)
+
 # Make a dictionary of surveys
 surveys = {}
 for well in data["wells"]:
+    # if well == "08 - well":
+    #     well_ref_params["Convergence"] = -0.01
+    # else:
+    #     well_ref_params["Convergence"] = 0.00
     s = Survey(
         md=data["wells"][well]["MD"],
         inc=data["wells"][well]["IncDeg"],
@@ -27,9 +40,11 @@ for well in data["wells"]:
         n=data["wells"][well]["N"],
         e=data["wells"][well]["E"],
         tvd=data["wells"][well]["TVD"],
-        sigmaH=data["wells"][well]["sigmaH"],
-        sigmaL=data["wells"][well]["sigmaL"],
-        sigmaA=data["wells"][well]["sigmaA"],
+        well_ref_params=well_ref_params,
+        error_model="ISCWSA_MWD",
+        # sigmaH=data["wells"][well]["sigmaH"],
+        # sigmaL=data["wells"][well]["sigmaL"],
+        # sigmaA=data["wells"][well]["sigmaA"],
         start_xyz=[
             data["wells"][well]["E"][0],
             data["wells"][well]["N"][0],
@@ -59,11 +74,20 @@ for well in surveys:
         else:
             c = we.clearance.Clearance(reference, offset)
             result = we.clearance.ISCWSA(c)
-            # scene.add_geometry(c.m_off.mesh, node_name=well, geom_name=well, parent_node_name=None)
+            # scene.adds_geometry(c.m_off.mesh, node_name=well, geom_name=well, parent_node_name=None)
         results[well] = result
 
 # scene = trimesh.scene.scene.Scene()
 # transform_trimesh_scene(scene, origin=([0,0,0]), scale=100, redux=1).export("blender/scene_transform.glb")
+
+# output error data
+well = "08 - well"
+errors = [e for e in results[well].c.offset.err.errors.keys()]
+error_data = []
+for i, md in enumerate(results[well].c.offset.md):
+    error_data.append(
+        [md, [{f'{e}': results[well].c.offset.err.errors[e].cov_NEV.T[i]} for e in errors]]
+    )
 
 # export the data to Excel
 with pd.ExcelWriter(f'data/output/output.xlsx') as writer:
