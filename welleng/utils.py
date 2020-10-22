@@ -271,3 +271,25 @@ def HLA_to_NEV(survey, HLA, cov=True):
         
     return np.vstack(NEVs).reshape(HLA.shape)
 
+def get_sigmas(cov):
+    """
+    Extracts the sigma values of a covariance matrix along the principle axii.
+
+    Parameters
+    ----------
+        cov: (n,3,3) array of floats
+
+    Returns
+    -------
+        arr: (n,3) array of floats
+    """
+
+    assert cov.shape[-2:] == (3,3), "Cov is the wrong shape"
+
+    a, b, c = np.array([
+        np.sqrt(cov[:,0,0]),
+        np.sqrt(cov[:,1,1]),
+        np.sqrt(cov[:,2,2])
+    ])
+
+    return (a, b, c)
