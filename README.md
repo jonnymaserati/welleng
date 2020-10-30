@@ -5,8 +5,8 @@ welleng aspires to be a collection of useful tools for Wells/Drilling Engineers,
   - Generate survey listings and interpolation with minimum curvature
   - Calculate well bore uncertainty data (currently utilizing the ISCWSA MWD Rev4 model)
   - Calculate well bore clearance and Separation Factors (SF)
-  -- standard ISCWSA method
-  -- new mesh based method
+    - standard ISCWSA method
+    - new mesh based method
 
 ## New Features!
 
