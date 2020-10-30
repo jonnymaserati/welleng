@@ -3,6 +3,11 @@ from numpy import sin, cos, tan, pi, sqrt
 from welleng.utils import MinCurve
 from welleng.errors.iscwsa_mwd import iscwsaMwd
 
+# TODO: there's likely an issue with TVD versus TVDSS that
+# needs to be resolved. This model assumes TVD relative to
+# rig floor, but often a TVDSS is provided instead (with a
+# negative value for rig floor elevation).
+
 class ErrorModel():
     """
     A class to initiate the field parameters and error magnitudes
@@ -41,7 +46,7 @@ class ErrorModel():
         well_ref_params=dict(
             Latitude = -40,                             # degrees
             G = 9.80665,                                # m/s2
-            Btotal = 61000,                             # nT
+            BTotal = 61000,                             # nT
             Dip = -70,                                  # degrees
             Declination = 13,                           # degrees  
             Convergence = 0,                            # degrees
@@ -80,7 +85,7 @@ class ErrorModel():
         self.surface_loc = surface_loc
         self.Latitude = np.radians(p["Latitude"])
         self.G = p["G"]
-        self.Btotal = p["BTotal"]
+        self.BTotal = p["BTotal"]
         self.Dip = np.radians(p["Dip"])
         self.Declination = np.radians(p["Declination"])
         self.Convergence = np.radians(p["Convergence"])
