@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name='welleng',
-    version='0.1.2',    
+    version='0.1.3',    
     description='A collection of Well Engineering modules',
     long_description=long_description,
     long_description_content_type="text/markdown",
