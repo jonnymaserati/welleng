@@ -3,7 +3,7 @@ from numpy import radians, sin, cos, sqrt, pi
 
 from scipy.spatial import KDTree
 
-from welleng.utils import HLA_to_NEV
+from welleng.utils import HLA_to_NEV, get_sigmas
 
 class WellMesh:
 
@@ -16,6 +16,7 @@ class WellMesh:
         # cov_HLAs=False,
         n_verts=12,
         sigma=3.0,
+        sigma_pa=0.5,
         # radius=0.15,
         Sm=0,
         # degrees=True,
@@ -41,12 +42,14 @@ class WellMesh:
         # self.c = clearance
         self.n_verts = int(n_verts)
         self.sigma = sigma
-        self.radius = self.s
+        self.radius = self.s.radius
         self.Sm = Sm
+        self.sigma_pa = sigma_pa
 
         assert method in ["mesh_ellipse", "mesh_pedal_curve"], "Invalid method (ellipse or pedal_curve)"
         self.method = method
 
+        self.sigmaH, self.sigmaL, self.sigmaA = get_sigmas(self.s.cov_hla)
         self.nevs = np.array([self.s.n, self.s.e, self.s.tvd]).T
         self._get_vertices()
         self._align_verts()
@@ -109,8 +112,8 @@ class WellMesh:
         self,
         ):
 
-        h = (np.array(self.s.sigmaH) * self.sigma + self.radius + self.Sm).reshape(-1,1)
-        l = (np.array(self.s.sigmaL) * self.sigma + self.radius + self.Sm).reshape(-1,1)
+        h = (np.array(self.sigmaH) * self.sigma + self.radius + self.Sm + self.sigma_pa / 2).reshape(-1,1)
+        l = (np.array(self.sigmaL) * self.sigma + self.radius + self.Sm + self.sigma_pa / 2).reshape(-1,1)
         # a = self.s.sigmaA * self.c.k + self.s.radius + self.c.Sm
 
         if self.method == "mesh_ellipse":
@@ -149,7 +152,9 @@ class WellMesh:
     def _get_vertices_vectors(self, vertices, pos_center):
         vectors = vertices - pos_center
         normals = np.linalg.norm(vectors, axis=-1)
-        unit_vectors = vectors / normals.reshape(-1,1)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            unit_vectors = vectors / normals.reshape(-1,1)
+        unit_vectors[np.where(normals == 0)] = vectors[np.where(normals == 0)]
     
         return (vectors, normals, unit_vectors)
 
