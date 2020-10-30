@@ -10,6 +10,8 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url='https://github.com/jonnymaserati/welleng',
+    download_url='https://github.com/jonnymaserati/welleng/archive/v0.1.3-alpha.tar.gz',
+    keywords=['well', 'trajectory', 'wellpath', 'wellbore', 'drilling', 'error', 'separation', 'minimum curvature'],
     author='Jonathan Corcutt',
     author_email='jonnycorcutt@gmail.com',
     license='LGPL v3',
