@@ -9,7 +9,7 @@ setup(
     description='A collection of Well Engineering modules',
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url='https://github.com/jonnymaserati/welleng/archive/v0.1.2-alpha.tar.gz',
+    url='https://github.com/jonnymaserati/welleng',
     author='Jonathan Corcutt',
     author_email='jonnycorcutt@gmail.com',
     license='LGPL v3',
