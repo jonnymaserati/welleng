@@ -1,11 +1,14 @@
 .venv
 .vscode
 
-build/
-dist/
-*.egg-info/
+build
+dist
+*.egg-info
 
 iframe_figures/
 data/output/*
-reference/
+reference
 blender/
+work
+
+key.asc
