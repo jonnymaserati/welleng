@@ -7,6 +7,7 @@ from welleng.utils import (
     get_vec,
     get_angles,
     HLA_to_NEV,
+    NEV_to_HLA,
     get_sigmas
 )
 
@@ -53,7 +54,7 @@ class Survey:
         self.start_nev = start_nev
         self.md = np.array(md)
         self._make_angles(inc, azi, deg)
-        self.radius = radius
+        self._get_radius(radius)
         
         self.survey_deg = np.array([self.md, self.inc_deg, self.azi_deg]).T
         self.survey_rad = np.array([self.md, self.inc_rad, self.azi_rad]).T
@@ -80,6 +81,15 @@ class Survey:
 
         self._get_errors()
 
+    def _get_radius(self, radius=None):
+        if radius is None:
+            self.radius = np.full_like(self.md.astype(float), 0.3048)
+        elif np.array([radius]).shape[-1] == 1:
+            self.radius = np.full_like(self.md.astype(float), radius)
+        else:
+            assert len(radius) == len(self.md), "Check radius"
+            self.radius = np.array(radius)
+    
     def _min_curve(self):
         """
 
@@ -122,13 +132,26 @@ class Survey:
     def _get_errors(self):
         if self.error_model:
             if self.error_model == "ISCWSA_MWD":
-                self.err = ErrorModel(
-                    survey=self.survey_deg,
-                    surface_loc=self.start_xyz,
-                    well_ref_params=self.well_ref_params,
-                )
+                if self.well_ref_params is None:
+                    self.err = ErrorModel(
+                        survey=self.survey_deg,
+                        surface_loc=self.start_xyz,
+                    )
+                else:
+                    self.err = ErrorModel(
+                        survey=self.survey_deg,
+                        surface_loc=self.start_xyz,
+                        well_ref_params=self.well_ref_params,
+                    )
                 self.cov_hla = self.err.errors.cov_HLAs.T
-                self.cov_nev = self.err.errors.cov_NEVs.T            
+                self.cov_nev = self.err.errors.cov_NEVs.T     
+        else:
+            if self.cov_nev is not None and self.cov_hla is None:
+                self.cov_hla = NEV_to_HLA(self.survey_rad, self.cov_nev.T).T
+            elif self.cov_nev is None and self.cov_hla is not None:
+                self.cov_nev = HLA_to_NEV(self.survey_rad, self.cov_hla.T).T  
+            else:
+                pass
 
 def interpolate_survey(survey, x, index=0):
     """
@@ -195,6 +218,30 @@ def interpolate_survey(survey, x, index=0):
 
     return s
 
+def slice_survey(survey, index):
+        i = index
+        md, inc, azi = survey.survey_rad[i-1:i+1].T
+        nevs = np.array([survey.n, survey.e, survey.tvd]).T[i-1:i+1]
+        n, e, tvd = nevs.T
+        vec = survey.vec[i-1:i+1]
+            
+        s = Survey(
+            md=md,
+            inc=inc,
+            azi=azi,
+            n=n,
+            e=e,
+            tvd=tvd,
+            radius=survey.radius[i-1:i+1],
+            cov_hla=survey.cov_hla[i-1:i+1],
+            cov_nev=survey.cov_nev[i-1:i+1],
+            start_nev=[n[0], e[0], tvd[0]],
+            deg=False,
+            unit=survey.unit,
+        )
+
+        return s
+
 def make_cov(a, b, c, diag=False):
     """
     Make a covariance matrix from the 1sigma errors.
@@ -231,3 +278,5 @@ def make_cov(a, b, c, diag=False):
         ]).T
 
     return cov
+
+    
