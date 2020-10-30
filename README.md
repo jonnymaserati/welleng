@@ -54,7 +54,7 @@ License
 
 LGPL v3
 
-Please note the terms of the license. Although this software endeavors to be accurate, it shouldn't be used as is if for real wells. If you want a production version or wish to develop this software for a particular application, then please get in touch with [jonnycorcutt], but the intent of this library is to assist development.
+Please note the terms of the license. Although this software endeavors to be accurate, it should not be used as is for real wells. If you want a production version or wish to develop this software for a particular application, then please get in touch with [jonnycorcutt], but the intent of this library is to assist development.
 
 **Free Software, Hell Yeah!**
 
