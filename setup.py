@@ -15,7 +15,11 @@ setup(
     license='LGPL v3',
     packages=find_packages(),
     install_requires=['pandas',
-                      'numpy',                     
+                      'numpy',
+                      'scipy',
+                      'trimesh',
+                      'math',
+                      'openpyxl',                 
                       ],
 
     classifiers=[
