@@ -73,4 +73,4 @@ Please note the terms of the license. Although this software endeavors to be acc
    [scipy]: <https://www.scipy.org/>
    [examples]: <https://github.com/jonnymaserati/welleng/tree/main/examples>
    [blender]: <https://www.blender.org/>
-   [volve]" <https://www.equinor.com/en/how-and-why/digitalisation-in-our-dna/volve-field-data-village-download.html>
+   [volve]: <https://www.equinor.com/en/how-and-why/digitalisation-in-our-dna/volve-field-data-village-download.html>
