@@ -10,17 +10,10 @@ class WellMesh:
     def __init__(
         self,
         survey,
-        # clearance,
-        # NEVs,
-        # cov,
-        # cov_HLAs=False,
         n_verts=12,
         sigma=3.0,
         sigma_pa=0.5,
-        # radius=0.15,
         Sm=0,
-        # degrees=True,
-        # poss=True,
         method="mesh_ellipse",
     ):
         """
@@ -209,13 +202,11 @@ def make_trimesh_scene(data):
     into a collision manager.
     """
     scene = trimesh.scene.scene.Scene()
-    for well in data["wells"]:
-        mesh = data["wells"][well]["mesh"].mesh
+    for well in data:
+        mesh = data[well].mesh
         scene.add_geometry(mesh, node_name=well, geom_name=well, parent_node_name=None)
-
-    data["scene"] = scene
     
-    return data
+    return scene
 
 def transform_trimesh_scene(scene, origin=None, scale=100, redux=0.25):
     """
@@ -235,7 +226,6 @@ def transform_trimesh_scene(scene, origin=None, scale=100, redux=0.25):
     """
     i = 0
     if not origin:
-        # probably should do thi and just leave as [0, 0, 0], but this works for Grane
         T = np.array([0, 0, 0])
     else:
         T = np.array(origin)
@@ -245,17 +235,6 @@ def transform_trimesh_scene(scene, origin=None, scale=100, redux=0.25):
         mesh_new = mesh.copy()
 
         mesh_new.simplify_quadratic_decimation(int(len(mesh_new.triangles) * redux))
-
-        # ### reduce the triangle count using open3d algo to reduce the file size ###
-        # mesh_temp = open3d.geometry.TriangleMesh()
-        # mesh_temp.vertices=open3d.utility.Vector3dVector(np.asarray(mesh_new.vertices))
-        # mesh_temp.triangles=open3d.utility.Vector3iVector(np.asarray(mesh_new.faces))
-        # mesh_temp = mesh_temp.simplify_quadric_decimation(int(len(mesh_temp.triangles) * redux))
-
-        # mesh_new.vertices = np.asarray(mesh_temp.vertices)
-        # mesh_new.faces = np.asarray(mesh_temp.triangles)
-        
-        # localize the coorindate system
         mesh_new.vertices -= T
 
         ### change axis convention for visualisation ###
