@@ -85,7 +85,8 @@ for well in surveys:
     )
     scene.add_geometry(m.mesh, node_name=well, geom_name=well, parent_node_name=None)
 
-# save the scene
+# save the scene (make sure the blender directory exists else change the
+# save location)
 scene.export("blender/scene.glb")
 
 # transform the scene so that it imports nicely into Blender
