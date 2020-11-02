@@ -279,4 +279,17 @@ def make_cov(a, b, c, diag=False):
 
     return cov
 
+def make_long_cov(aa, ab, ac, bb, bc, cc):
+    """
+    Make a covariance matrix from the half covariance
+    1sigma data.
+    """
+    cov = np.array([
+        [aa, ab, ac],
+        [ab, bb, bc],
+        [ac, bc, cc]
+    ]).T
+
+    return cov
+
     

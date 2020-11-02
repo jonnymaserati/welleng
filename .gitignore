@@ -3,12 +3,13 @@
 
 build
 dist
-*.egg-info
+*.egg-info/
 
-iframe_figures/
-data/output/*
-reference
-blender/
+iframe_figures
+data
+blender
+utils
 work
 
 key.asc
+.~*
