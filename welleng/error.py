@@ -1,7 +1,7 @@
 import numpy as np
 from numpy import sin, cos, tan, pi, sqrt
-from welleng.utils import MinCurve
-from welleng.errors.iscwsa_mwd import iscwsaMwd
+from .utils import MinCurve
+from .errors.iscwsa_mwd import iscwsaMwd
 
 # TODO: there's likely an issue with TVD versus TVDSS that
 # needs to be resolved. This model assumes TVD relative to
@@ -16,7 +16,7 @@ class ErrorModel():
 
     class Error:
         '''
-        Initiate the components of calculating a tool error.
+        Standard components of a well bore survey error.
         '''
         def __init__(
             self,
@@ -41,20 +41,23 @@ class ErrorModel():
 
     def __init__(
         self,
-        surface_loc = np.array([0.0, 0.0, 0.0]),    # [x, y, z]
-        survey = np.array([0.0, 0.0, 0.0]),         # [md, inc, azi] in radians
+        surface_loc = np.array([0.0, 0.0, 0.0]),    # [x, y, z] not [n,e,v]
+        survey = np.array([0.0, 0.0, 0.0]),         # [md, inc, azi] in degrees
+        # TODO: move these params to a yaml file
         well_ref_params=dict(
-            Latitude = -40,                             # degrees
-            G = 9.80665,                                # m/s2
-            BTotal = 61000,                             # nT
-            Dip = -70,                                  # degrees
-            Declination = 13,                           # degrees  
-            Convergence = 0,                            # degrees
+            Latitude = -40,                         # degrees
+            G = 9.80665,                            # m/s2
+            BTotal = 61000,                         # nT
+            Dip = -70,                              # degrees
+            Declination = 13,                       # degrees  
+            Convergence = 0,                        # degrees
         ),
         AzimuthRef = True,
         DepthUnits = 'meters',
         VerticalIncLimit = 0.0001,                  # degrees
         FeetToMeters = 0.3048,
+        # TODO: move these params to a yaml file in the errors foler since
+        # they're specific to an error model.
         errors_mag = dict(
             DRFR = 0.35,
             DSFS = 0.00056,
@@ -73,6 +76,9 @@ class ErrorModel():
         ),
         error_model="ISCWSA_MWD",
     ):
+        """
+
+        """
 
         error_models = [
             "ISCWSA_MWD"
@@ -95,18 +101,18 @@ class ErrorModel():
         self.FeetToMeters = FeetToMeters
         self.errors_mag = errors_mag
 
-        self.survey = np.array(survey)
-        self.IncRad, self.AziRad = np.radians(self.survey[:,1:]).T
+        self.survey_deg = np.array(survey)
+        self.IncRad, self.AziRad = np.radians(self.survey_deg[:,1:]).T
         self.AziTrue = self.AziRad + np.full(len(self.AziRad), self.Convergence)
         self.AziG = self.AziTrue - np.full(len(self.AziRad), self.Convergence)
         self.AziMag = self.AziTrue - np.full(len(self.AziRad), self.Declination)
 
-        self.survey = np.stack((
-            self.survey[:,0],
+        self.survey_rad = np.stack((
+            self.survey_deg[:,0],
             self.IncRad,
             self.AziTrue
-        ), axis = -1)
-        self.survey_drdp = self.survey
+        ), axis=-1)
+        self.survey_drdp = self.survey_rad
 
         self.POS = [np.array(self.surface_loc)]
         self.DLS = [np.array(0)]
@@ -126,7 +132,6 @@ class ErrorModel():
 
         if self.error_model == "ISCWSA_MWD":
             self.errors = iscwsaMwd(self)
-
 
     def _e_NEV(self, e_DIA):
         D, I, A = e_DIA.T
@@ -170,7 +175,7 @@ class ErrorModel():
 
     def _cov(self, arr):
         '''
-        Returns a covariance matrix from an n * 3 array.
+        Returns a covariance matrix from an (n,3) array.
         '''
         x, y, z = np.array(arr).T
         return np.array([
@@ -180,7 +185,7 @@ class ErrorModel():
         ])
 
     def _sigma_e_NEV_systematic(self, e_NEV, e_NEV_star):
-        return e_NEV_star + np.vstack((np.zeros((1,3)), np.cumsum(e_NEV, axis=0)[:-1]))
+        return e_NEV_star + np.vstack((e_NEV[0], np.cumsum(e_NEV, axis=0)[:-1]))
 
     def _generate_error(self, code, e_DIA, propagation='systematic', NEV=True, e_NEV=None, e_NEV_star=None):
         if not NEV:
@@ -210,6 +215,7 @@ class ErrorModel():
         survey1 is previous survey station (with inc and azi in radians)
         survey2 is current survey station (with inc and azi in radians)
         '''
+        # TODO: This is essentially minimum curvature... use function from utils instead (it's already in self.mc)
         md1, inc1, azi1 = np.array(survey[:-1]).T
         md2, inc2, azi2 = np.array(survey[1:]).T
         delta_md = 1
@@ -234,7 +240,7 @@ class ErrorModel():
         E = np.array(
             delta_md / 2 * (
             np.sin(inc1) * np.sin(azi1)
-            + np.sin(inc2) *np.sin(azi2)
+            + np.sin(inc2) * np.sin(azi2)
             ) * rf
         )
         
@@ -256,7 +262,7 @@ class ErrorModel():
         
         N = np.array(0.5 * ((delta_md) * np.cos(inc2) * np.cos(azi2)))
         E = np.array(0.5 * ((delta_md) * np.cos(inc2) * np.sin(azi2)))
-        V = np.array(0.5 * (-(md2 - md1) * np.sin(inc2)))
+        V = np.array(0.5 * (-delta_md * np.sin(inc2)))
         
         return np.vstack((np.array(np.zeros((1,3))), np.stack((N, E, V), axis=-1)))
 
