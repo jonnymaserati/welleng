@@ -1,7 +1,7 @@
 import numpy as np
 import math
 
-from welleng.utils import (
+from .utils import (
     MinCurve,
     get_nev,
     get_vec,
@@ -33,6 +33,7 @@ class Survey:
         well_ref_params=None,
         start_xyz=[0,0,0],
         start_nev=[0,0,0],
+        start_cov_nev=None,
         deg=True,
         unit="meters"
     ):
@@ -47,12 +48,81 @@ class Survey:
                 List or array of well bore survey inclinations
             azi: (,n) list or array of floats
                 List or array of well bore survey azimuths
+            n: (,n) list or array of floats (default: None)
+                List or array of well bore northings
+            e: (,n) list or array of floats (default: None)
+                List or array of well bore eastings
+            tvd: (,n) list or array of floats (default: None)
+                List or array of local well bore z coordinates, i.e. depth
+                and usually relative to surface or mean sea level.
+            x: (,n) list or array of floats (default: None)
+                List or array of local well bore x coordinates, which is
+                usually aligned to the east direction.
+            y: (,n) list or array of floats (default: None)
+                List or array of local well bore y coordinates, which is
+                usually aligned to the north direction.
+            z: (,n) list or array of floats (default: None)
+                List or array of well bore true vertical depths relative
+                to the well surface datum (usually the drill floor 
+                elevation DFE, so not always identical to tvd).
+            vec: (n,3) list or array of (,3) floats (default: None)
+                List or array of well bore unit vectors that describe the
+                inclination and azimuth of the well relative to (x,y,z)
+                coordinates.
+            radius: float or (,n) list or array of floats (default: None)
+                If a single float is specified, this value will be
+                assigned to the entire well bore. If a list or array of
+                floats is provided, these are the radii of the well bore.
+                If None, a well bore radius of 12" or approximately 0.3 m
+                is applied.
+            cov_nev: (n,3,3) list or array of floats (default: None)
+                List or array of covariance matrices in the (n,e,v)
+                coordinate system.
+            cov_hla: (n,3,3) list or array of floats (default: None)
+                List or array of covariance matrices in the (h,l,a)
+                well bore coordinate system (high side, lateral, along
+                hole).
+            error_model: str (default: None)
+                If specified, this model is used to calculate the
+                covariance matrices if they are not present. Currently,
+                only the "ISCWSA_MWD" model is provided.
+            well_ref_params: dict (default: None)
+                If an error_model is set, these well reference params
+                are provided to the welleng.error.ErrorModel class. The
+                defaults are:
+                    dict(
+                        Latitude = -40,     # degrees
+                        G = 9.80665,        # m/s2
+                        BTotal = 61000,     # nT
+                        Dip = -70,          # degrees
+                        Declination = 13,   # degrees  
+                        Convergence = 0,    # degrees
+                    )
+            start_xyz: (,3) list or array of floats (default: [0,0,0])
+                The start position of the well bore in (x,y,z) coordinates.
+            start_nev: (,3) list or array of floats (default: [0,0,0])
+                The start position of the well bore in (n,e,v) coordinates.
+            start_cov_nev: (,3,3) list or array of floats (default: None)
+                The covariance matrix for the start position of the well
+                bore in (n,e,v) coordinates.
+            deg: boolean (default: True)
+                Indicates whether the provided angles are in degrees
+                (True), else radians (False).
+            unit: str (default: 'meters')
+                Indicates whether the provided lengths and distances are
+                in 'meters' or 'feet', which impacts the calculation of
+                the dls (dog leg severity).
+
+        Returns
+        -------
+        A welleng.survey.Survey object.
         """
         self.unit = unit
         self.deg = deg
         self.start_xyz = start_xyz
         self.start_nev = start_nev
         self.md = np.array(md)
+        self.start_cov_nev = start_cov_nev
         self._make_angles(inc, azi, deg)
         self._get_radius(radius)
         
@@ -70,6 +140,7 @@ class Survey:
         self._min_curve()
 
         # initialize errors
+        # TODO: read this from a yaml file in errors
         error_models = ["ISCWSA_MWD"]
         if error_model is not None:
             assert error_model in error_models, "Unrecognized error model"
@@ -92,7 +163,9 @@ class Survey:
     
     def _min_curve(self):
         """
-
+        Get the (x,y,z), (n,e,v), doglegs, rfs, delta_mds, dlss and
+        vectors for the well bore if they were not provided, using the
+        minimum curvature method.
         """
         mc = MinCurve(self.md, self.inc_rad, self.azi_rad, self.start_xyz, self.unit)
         self.dogleg = mc.dogleg
@@ -100,7 +173,8 @@ class Survey:
         self.delta_md = mc.delta_md
         self.dls = mc.dls
         if self.x is None:
-            self.x, self.y, self.z = mc.poss.T
+            # self.x, self.y, self.z = (mc.poss + self.start_xyz).T
+            self.x, self.y, self.z = (mc.poss).T
         if self.n is None:
             self._get_nev()
         if self.vec is None:
@@ -113,11 +187,15 @@ class Survey:
                 self.y,
                 self.z
             ]).T,
-            self.start_xyz,
-            self.start_nev
+            start_xyz=self.start_xyz,
+            start_nev=self.start_nev
         ).T
 
     def _make_angles(self, inc, azi, deg=True):
+        """
+        Calculate angles in radians if they were provided in degrees or
+        vice versa.
+        """
         if deg:
             self.inc_rad = np.radians(inc)
             self.azi_rad = np.radians(azi)
@@ -130,6 +208,10 @@ class Survey:
             self.azi_deg = np.degrees(azi)
 
     def _get_errors(self):
+        """
+        Initiate a welleng.error.ErrorModel object and calculate the
+        covariance matrices with the specified error model.
+        """
         if self.error_model:
             if self.error_model == "ISCWSA_MWD":
                 if self.well_ref_params is None:
@@ -144,16 +226,24 @@ class Survey:
                         well_ref_params=self.well_ref_params,
                     )
                 self.cov_hla = self.err.errors.cov_HLAs.T
-                self.cov_nev = self.err.errors.cov_NEVs.T     
+                self.cov_nev = self.err.errors.cov_NEVs.T
         else:
             if self.cov_nev is not None and self.cov_hla is None:
                 self.cov_hla = NEV_to_HLA(self.survey_rad, self.cov_nev.T).T
             elif self.cov_nev is None and self.cov_hla is not None:
-                self.cov_nev = HLA_to_NEV(self.survey_rad, self.cov_hla.T).T  
+                self.cov_nev = HLA_to_NEV(self.survey_rad, self.cov_hla.T).T
             else:
                 pass
+        
+        if (
+            self.start_cov_nev is not None
+            and self.cov_nev is not None
+        ):
+            self.cov_nev += self.start_cov_nev
+            self.cov_hla = NEV_to_HLA(self.survey_rad, self.cov_nev.T).T
 
-def interpolate_survey(survey, x, index=0):
+
+def interpolate_survey(survey, x=0, index=0):
     """
     Interpolates a point distance x between two survey stations
     using minimum curvature.
@@ -182,7 +272,7 @@ def interpolate_survey(survey, x, index=0):
 
     assert index < len(survey.md) - 1, "Index is out of range"
 
-    assert x <= survey.delta_md[index + 1], "x is out of range"
+    # assert x <= survey.delta_md[index + 1], "x is out of range"
 
 
     # check if it's just a tangent section
@@ -218,33 +308,51 @@ def interpolate_survey(survey, x, index=0):
 
     return s
 
-def slice_survey(survey, index):
-        i = index
-        md, inc, azi = survey.survey_rad[i-1:i+1].T
-        nevs = np.array([survey.n, survey.e, survey.tvd]).T[i-1:i+1]
-        n, e, tvd = nevs.T
-        vec = survey.vec[i-1:i+1]
-            
-        s = Survey(
-            md=md,
-            inc=inc,
-            azi=azi,
-            n=n,
-            e=e,
-            tvd=tvd,
-            radius=survey.radius[i-1:i+1],
-            cov_hla=survey.cov_hla[i-1:i+1],
-            cov_nev=survey.cov_nev[i-1:i+1],
-            start_nev=[n[0], e[0], tvd[0]],
-            deg=False,
-            unit=survey.unit,
-        )
+def slice_survey(survey, start, stop=None):
+    """
+    Take a slice from a welleng.survey.Survey object.
 
-        return s
+    Parameters
+    ----------
+        survey: welleng.survey.Survey object
+        start: int
+            The start index of the desired slice.
+        stop: int (default: None)
+            The stop index of the desired slice, else the remainder of
+            the well bore TD is the default.
+
+    Returns
+    -------
+        s: welleng.survey.Survey object
+            A survey object of the desired slice is returned.
+    """
+    if stop is None:
+        stop = start + 2
+    md, inc, azi = survey.survey_rad[start:stop].T
+    nevs = np.array([survey.n, survey.e, survey.tvd]).T[start:stop]
+    n, e, tvd = nevs.T
+    vec = survey.vec[start:stop]
+        
+    s = Survey(
+        md=md,
+        inc=inc,
+        azi=azi,
+        n=n,
+        e=e,
+        tvd=tvd,
+        radius=survey.radius[start:stop],
+        cov_hla=survey.cov_hla[start:stop],
+        cov_nev=survey.cov_nev[start:stop],
+        start_nev=[n[0], e[0], tvd[0]],
+        deg=False,
+        unit=survey.unit,
+    )
+
+    return s
 
 def make_cov(a, b, c, diag=False):
     """
-    Make a covariance matrix from the 1sigma errors.
+    Make a covariance matrix from the 1-sigma errors.
 
     Parameters
     ----------
@@ -279,11 +387,11 @@ def make_cov(a, b, c, diag=False):
 
     return cov
 
-def make_long_cov(aa, ab, ac, bb, bc, cc):
+def make_long_cov(arr):
     """
-    Make a covariance matrix from the half covariance
-    1sigma data.
+    Make a covariance matrix from the half covariance 1sigma data.
     """
+    aa, ab, ac, bb, bc, cc = np.array(arr).T
     cov = np.array([
         [aa, ab, ac],
         [ab, bb, bc],
@@ -291,5 +399,3 @@ def make_long_cov(aa, ab, ac, bb, bc, cc):
     ]).T
 
     return cov
-
-    

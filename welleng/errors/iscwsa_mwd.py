@@ -2,7 +2,7 @@ import numpy as np
 from numpy import sin, cos, tan, pi, sqrt
 
 import welleng.error
-from welleng.utils import NEV_to_HLA
+from ..utils import NEV_to_HLA
 
 class iscwsaMwd:
     def __init__(
@@ -10,47 +10,56 @@ class iscwsaMwd:
         error,
     ):
         """
-        Class using the ISCWSA MWD (Rev4) model to determine
-        well bore uncertatinty.
+        Class using the ISCWSA MWD (Rev4) model to determine well bore
+        uncertatinty.
+
+        Parameters
+        ----------
+            error: an intitiated welleng.error.ErrorModel object
+
+        Returns
+        -------
+            errors: welleng.error.ErrorModel object
+                A populated ErrorModel object for the selected error model.
         """
         error.__init__
         self.e = error
 
         self.errors = {
-                "DRFR": self._DRFR(self.e.survey, mag=self.e.errors_mag['DRFR']),
-                "DSFS": self._DSFS(self.e.survey, mag=self.e.errors_mag['DSFS']),
-                "DSTG": self._DSTG(self.e.survey, self.e.TVD, mag=self.e.errors_mag['DSTG']),
-                "ABXY_TI1S": self._ABXY_TI1S(self.e.survey, self.e.AziMag, self.e.G, self.e.Dip, mag=self.e.errors_mag['AB']),
-                "ABXY_TI2S": self._ABXY_TI2S(self.e.survey, self.e.AziMag, self.e.G, self.e.Dip, mag=self.e.errors_mag['AB']),
-                "ABZ": self._ABZ(self.e.survey, self.e.AziMag, self.e.G, self.e.Dip, mag=self.e.errors_mag['AB']),
-                "ASXY_TI1S": self._ASXY_TI1S(self.e.survey, self.e.AziMag, self.e.Dip, mag=self.e.errors_mag['AS']),
-                "_ASXY_TI2S": self._ASXY_TI2S(self.e.survey, self.e.AziMag, self.e.Dip, mag=self.e.errors_mag['AS']),
-                "ASXY_TI3S": self._ASXY_TI3S(self.e.survey, self.e.AziMag, self.e.Dip, mag=self.e.errors_mag['AS']),
-                "ASZ": self._ASZ(self.e.survey, self.e.AziMag, self.e.Dip, mag=self.e.errors_mag['AS']),
-                "MBXY_TI1S": self._MBXY_TI1S(self.e.survey, self.e.AziMag, self.e.Dip, self.e.BTotal, mag=self.e.errors_mag['MB']),
-                "MBXY_TI2S": self._MBXY_TI2S(self.e.survey, self.e.AziMag, self.e.Dip, self.e.BTotal, mag=self.e.errors_mag['MB']),
-                "MBZ": self._MBZ(self.e.survey, self.e.AziMag, self.e.Dip, self.e.BTotal, mag=self.e.errors_mag['MB']),
-                "MSXY_TI1S": self._MSXY_TI1S(self.e.survey, self.e.AziMag, self.e.Dip, mag=self.e.errors_mag['MS']),
-                "MSXY_TI2S": self._MSXY_TI2S(self.e.survey, self.e.AziMag, self.e.Dip, mag=self.e.errors_mag['MS']),
-                "MSXY_TI3S": self._MSXY_TI3S(self.e.survey, self.e.AziMag, self.e.Dip, mag=self.e.errors_mag['MS']),
-                "MSZ": self._MSZ(self.e.survey, self.e.AziMag, self.e.Dip, mag=self.e.errors_mag['MS']),
-                "DECG": self._DECG(self.e.survey, mag=self.e.errors_mag['DECG']),
-                "DECR": self._DECR(self.e.survey, mag=self.e.errors_mag['DECR']),
-                "DBHG": self._DBHG(self.e.survey, self.e.Dip, self.e.BTotal, mag=self.e.errors_mag['DBHG']),
-                "DBHR": self._DBHR(self.e.survey, self.e.Dip, self.e.BTotal, mag=self.e.errors_mag['DBHR']),
-                "AMIL": self._AMIL(self.e.survey, self.e.AziMag, self.e.Dip, self.e.BTotal, mag=self.e.errors_mag['AMIL']),
-                "SAG": self._SAG(self.e.survey, mag=self.e.errors_mag['SAG']),
-                "XYM1": self._XYM1(self.e.survey, mag=self.e.errors_mag['XYM']),
-                "XYM2": self._XYM2(self.e.survey, mag=self.e.errors_mag['XYM']),
-                "XYM3": self._XYM3(self.e.survey, self.e.AziTrue, mag=self.e.errors_mag['XYM']),
-                "XYM4": self._XYM4(self.e.survey, self.e.AziTrue, mag=self.e.errors_mag['XYM']),            
+                "DRFR": self._DRFR(self.e.survey_rad, mag=self.e.errors_mag['DRFR']),
+                "DSFS": self._DSFS(self.e.survey_rad, mag=self.e.errors_mag['DSFS']),
+                "DSTG": self._DSTG(self.e.survey_rad, self.e.TVD, mag=self.e.errors_mag['DSTG']),
+                "ABXY_TI1S": self._ABXY_TI1S(self.e.survey_rad, self.e.AziMag, self.e.G, self.e.Dip, mag=self.e.errors_mag['AB']),
+                "ABXY_TI2S": self._ABXY_TI2S(self.e.survey_rad, self.e.AziMag, self.e.G, self.e.Dip, mag=self.e.errors_mag['AB']),
+                "ABZ": self._ABZ(self.e.survey_rad, self.e.AziMag, self.e.G, self.e.Dip, mag=self.e.errors_mag['AB']),
+                "ASXY_TI1S": self._ASXY_TI1S(self.e.survey_rad, self.e.AziMag, self.e.Dip, mag=self.e.errors_mag['AS']),
+                "ASXY_TI2S": self._ASXY_TI2S(self.e.survey_rad, self.e.AziMag, self.e.Dip, mag=self.e.errors_mag['AS']),
+                "ASXY_TI3S": self._ASXY_TI3S(self.e.survey_rad, self.e.AziMag, self.e.Dip, mag=self.e.errors_mag['AS']),
+                "ASZ": self._ASZ(self.e.survey_rad, self.e.AziMag, self.e.Dip, mag=self.e.errors_mag['AS']),
+                "MBXY_TI1S": self._MBXY_TI1S(self.e.survey_rad, self.e.AziMag, self.e.Dip, self.e.BTotal, mag=self.e.errors_mag['MB']),
+                "MBXY_TI2S": self._MBXY_TI2S(self.e.survey_rad, self.e.AziMag, self.e.Dip, self.e.BTotal, mag=self.e.errors_mag['MB']),
+                "MBZ": self._MBZ(self.e.survey_rad, self.e.AziMag, self.e.Dip, self.e.BTotal, mag=self.e.errors_mag['MB']),
+                "MSXY_TI1S": self._MSXY_TI1S(self.e.survey_rad, self.e.AziMag, self.e.Dip, mag=self.e.errors_mag['MS']),
+                "MSXY_TI2S": self._MSXY_TI2S(self.e.survey_rad, self.e.AziMag, self.e.Dip, mag=self.e.errors_mag['MS']),
+                "MSXY_TI3S": self._MSXY_TI3S(self.e.survey_rad, self.e.AziMag, self.e.Dip, mag=self.e.errors_mag['MS']),
+                "MSZ": self._MSZ(self.e.survey_rad, self.e.AziMag, self.e.Dip, mag=self.e.errors_mag['MS']),
+                "DECG": self._DECG(self.e.survey_rad, mag=self.e.errors_mag['DECG']),
+                "DECR": self._DECR(self.e.survey_rad, mag=self.e.errors_mag['DECR']),
+                "DBHG": self._DBHG(self.e.survey_rad, self.e.Dip, self.e.BTotal, mag=self.e.errors_mag['DBHG']),
+                "DBHR": self._DBHR(self.e.survey_rad, self.e.Dip, self.e.BTotal, mag=self.e.errors_mag['DBHR']),
+                "AMIL": self._AMIL(self.e.survey_rad, self.e.AziMag, self.e.Dip, self.e.BTotal, mag=self.e.errors_mag['AMIL']),
+                "SAG": self._SAG(self.e.survey_rad, mag=self.e.errors_mag['SAG']),
+                "XYM1": self._XYM1(self.e.survey_rad, mag=self.e.errors_mag['XYM']),
+                "XYM2": self._XYM2(self.e.survey_rad, mag=self.e.errors_mag['XYM']),
+                "XYM3": self._XYM3(self.e.survey_rad, self.e.AziTrue, mag=self.e.errors_mag['XYM']),
+                "XYM4": self._XYM4(self.e.survey_rad, self.e.AziTrue, mag=self.e.errors_mag['XYM']),            
             }
 
-        self.cov_NEVs = np.zeros((3,3,len(self.e.survey)))
+        self.cov_NEVs = np.zeros((3,3,len(self.e.survey_rad)))
         for _, value in self.errors.items():
             self.cov_NEVs += value.cov_NEV
 
-        self.cov_HLAs = NEV_to_HLA(self.e.survey, self.cov_NEVs)
+        self.cov_HLAs = NEV_to_HLA(self.e.survey_rad, self.cov_NEVs)
 
     ### error functions ###
     def _DRFR(self, survey, mag=0.35, propagation='random', NEV=True):
