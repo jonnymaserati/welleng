@@ -124,6 +124,7 @@ This results in a quick, interactive visualization of the well meshes that's gre
 For more examples, check out the [examples].
 
 ## Todos
+ - Documentation
  - Generate a scene of offset wells to enable fast screening of collision risks (e.g. hundreds of wells in seconds)
  - Well trajectory planning - construct your own trajectories using a range of methods (and of course, including some novel ones)
  - More error models
