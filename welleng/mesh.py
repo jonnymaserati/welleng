@@ -1,7 +1,6 @@
 import trimesh, numpy as np
 from numpy import radians, sin, cos, sqrt, pi
 from scipy.spatial import KDTree
-from shapely import geometry
 
 from .utils import HLA_to_NEV, get_sigmas
 from .survey import slice_survey
