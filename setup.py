@@ -15,7 +15,7 @@ with open("README.md", "r") as f:
 with open("requirements.txt") as f:
     required = f.read().splitlines()
 
-download_url = f'https://github.com/jonnymaserati/welleng/archive/v{version}.tar.gz'
+download_url = f'https://github.com/jonnymaserati/welleng/archive/v{__version__}.tar.gz'
 
 setup(
     name='welleng',
