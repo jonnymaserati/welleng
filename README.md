@@ -11,24 +11,18 @@
   - Calculate well bore clearance and Separation Factors (SF)
     - standard ISCWSA method
     - new mesh based method using the [Flexible Collision Library]
-
 ## New Features!
-
   - **Fast visualization of well trajectory meshes:** addition of the `visual` module for quick and simple viewing and QAQC of well meshes.
   - **Mesh Based Collision Detection:** the current method for determining the Separation Factor between wells is constrained by the frequency and location of survey stations or necessitates interpolation of survey stations in order to determine if Anti-Collision Rules have been violated. Meshing the well bore inherrently interpolates between survey stations and as such is a more reliable method for identifying potential well bore collisions, especially wth more sparse data sets.
   - More coming soon!
-
 ## Tech
-
 [welleng] uses a number of open source projects to work properly:
 
 * [trimesh] - awesome library for loading and using triangular meshes
 * [numpy] - the fundamental package for scientific computing with Python
 * [scipy] - a Python-based ecosystem of open-source software for mathematics, science, and engineering
 * [vedo] - a python module for scientific visualization, analysis of 3D objects and point clouds based on VTK.
-
 ## Installation
-
 [welleng] requires [trimesh], [numpy] and [scipy] to run. Other libraries are optional depending on usage and to get [python-fcl] running on which [trimesh] is built may require some additional installations. Other than that, it should be an easy pip install to get up and running with welleng and the minimum dependencies.
 
 ```
@@ -41,9 +35,7 @@ cd welleng
 pip install -e .
 ```
 Make sure you include that `.` in the final line (it's not a typo) and this ensures that any changes to your development version are immediately implemented on save.
-
 ## Quick Start
-
 Here's an example using `welleng` to construct a couple of simple well trajectories with `numpy`, creating survey listings for the wells with well bore uncertainty data, using these surveys to create well bore meshes and finally printing the results and plotting the meshes with the closest lines and SF data.
 
 ```
@@ -132,18 +124,19 @@ This results in a quick, interactive visualization of the well meshes that's gre
 For more examples, check out the [examples].
 
 ## Todos
-
  - Generate a scene of offset wells to enable fast screening of collision risks (e.g. hundreds of wells in seconds)
  - Well trajectory planning - construct your own trajectories using a range of methods (and of course, including some novel ones)
  - More error models
  - WebApp for those that just want answers
  - Viewer - a 3D viewer to quickly visualize the data and calculated results - **DONE!**
 
-It's possible to generate data for visualizing well trajectories with [welleng], as can be seen with the rendered scenes below, but it can me made more simple and intuitive.
-ISCWSA Standard Set of Well Paths | Equinor's Volve Wells
----|---
-![image](https://user-images.githubusercontent.com/41046859/97724026-b78c2e00-1acc-11eb-845d-1220219843a5.png) | ![image](https://media-exp1.licdn.com/dms/image/C5612AQEBKagFH_qlqQ/article-inline_image-shrink_1500_2232/0?e=1609977600&v=beta&t=S3C3C_frvUCgKm46Gtat2-Lor7ELGRALcyXbkwZyldM)
----
+It's possible to generate data for visualizing well trajectories with [welleng], as can be seen with the rendered scenes below.
+![image](https://user-images.githubusercontent.com/41046859/97724026-b78c2e00-1acc-11eb-845d-1220219843a5.png)
+ISCWSA Standard Set of Well Paths
+
+![image](https://media-exp1.licdn.com/dms/image/C5612AQEBKagFH_qlqQ/article-inline_image-shrink_1500_2232/0?e=1609977600&v=beta&t=S3C3C_frvUCgKm46Gtat2-Lor7ELGRALcyXbkwZyldM)
+Equinor's Volve Wells
+
 The ISCWSA standard set of well paths for evaluating clearance scenarios and Equinor's [volve] wells rendered in [blender]. See the [examples] for the code used to generate the [volve] scene, extracting the data from the [volve] EDM.xml file.
 
 License
