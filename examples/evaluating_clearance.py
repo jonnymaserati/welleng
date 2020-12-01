@@ -8,7 +8,7 @@ from welleng.mesh import WellMesh, transform_trimesh_scene
 
 # Import some well trajectory data. Here we'll use the ISCWSA trajectories, extracting
 # the data from the Excel file downloaded from their website.
-filename=f"reference/standard-set-of-wellpaths-for-evaluating-clearance-scenarios-r4-17-may-2017.xlsm"
+filename=f"reference/standard-set-of-wellpaths-for-evaluating-clearance-scenarios-r4-17-may-2017.xlsx"
 
 print("Loading data...")
 try:
