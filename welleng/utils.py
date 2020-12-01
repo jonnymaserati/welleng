@@ -66,7 +66,7 @@ class MinCurve:
         self.delta_md = np.zeros(survey_length)
         self.delta_md[1:] = temp
 
-        # calculate change in y direction
+        # calculate change in y direction (north)
         temp = (
             self.delta_md[1:]
             / 2
@@ -79,7 +79,7 @@ class MinCurve:
         self.delta_y = np.zeros(survey_length)
         self.delta_y[1:] = temp
 
-        # calculate change in x direction
+        # calculate change in x direction (east)
         temp = (
             self.delta_md[1:]
             / 2
