@@ -1,4 +1,13 @@
+import os
 from setuptools import setup, find_packages
+
+# load __version__ without importing anything
+version_file = os.path.join(
+    os.path.dirname(__file__),
+    'welleng/version.py')
+with open(version_file, 'r') as f:
+    # use eval to get a clean string of version from file
+    __version__ = eval(f.read().strip().split('=')[-1])
 
 with open("README.md", "r") as f:
     long_description = f.read()
@@ -6,13 +15,11 @@ with open("README.md", "r") as f:
 with open("requirements.txt") as f:
     required = f.read().splitlines()
 
-with open("VERSION") as f:
-    version = f.read()
 download_url = f'https://github.com/jonnymaserati/welleng/archive/v{version}.tar.gz'
 
 setup(
     name='welleng',
-    version=version,    
+    version=__version__,    
     description='A collection of Well Engineering tools',
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -29,5 +36,5 @@ setup(
         'Operating System :: OS Independent',        
         'Programming Language :: Python :: 3',
     ],
-    python_requires='>=3.8',
+    python_requires='>=3.7',
 )

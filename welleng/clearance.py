@@ -6,9 +6,9 @@ from scipy import optimize
 from scipy.spatial import KDTree
 from scipy.spatial.distance import cdist
 
-from welleng.survey import Survey, interpolate_survey, slice_survey, make_cov
-from welleng.utils import NEV_to_HLA, HLA_to_NEV
-from welleng.mesh import WellMesh
+from .survey import Survey, interpolate_survey, slice_survey, make_cov
+from .utils import NEV_to_HLA, HLA_to_NEV
+from .mesh import WellMesh
 
 class Clearance:
     def __init__(
@@ -157,8 +157,8 @@ class ISCWSA:
         # calculate combined hole radii
         self._get_calc_hole()
 
-        # calculate SF
-        self.ISCWSA_ACR = np.around(
+        # calculate SF (renamed from ISCWSA_ACR)
+        self.SF = np.around(
             (self.dist_CC_Clr.T - self.calc_hole - self.c.Sm)
             / (self.c.k * np.sqrt(self.sigmaS ** 2 + self.c.sigma_pa ** 2)),
             decimals=2
@@ -166,6 +166,29 @@ class ISCWSA:
 
         # for debugging
         # self.pc_method()
+
+    def get_lines(self):
+        """
+        Extracts the closest points between wells for each survey section.
+        """
+        points = [
+            [
+                c[0],
+                [
+                    c[1].n[1],
+                    c[1].e[1],
+                    c[1].tvd[1]
+                ]
+            ]
+            for c in self.closest
+        ]
+
+        start_points = []
+        end_points = []
+
+        [(start_points.append(p[0]), end_points.append(p[1])) for p in points]
+
+        return np.array([np.vstack(start_points).tolist(), np.vstack(end_points).tolist()])
 
     def _get_closest_points(self):
         closest = []
@@ -333,8 +356,9 @@ class MeshClearance:
         self,
         clearance,
         n_verts=12,
-        sigma=3,
-        return_data=True
+        sigma=2.445,
+        return_data=True,
+        return_meshes=False,
     ):
         """
         Class to calculate the clearance between two well bores using the
@@ -366,15 +390,36 @@ class MeshClearance:
             self.ref_md = []
             self.off_md = []
 
+        self.return_meshes = return_meshes
+        if self.return_meshes:
+            self.meshes = []
+
         # generate mesh for offset well
         self.off_mesh = self._get_mesh(self.c.offset, offset=True).mesh
 
         # make a CollisionManager object and add the offset well mesh
         self.cm = trimesh.collision.CollisionManager()
+
         self.cm.add_object("offset", self.off_mesh)
 
         self._process_well()
 
+    def get_lines(self):
+        """
+        Extracts the closest points between wells for each survey section.
+        """
+        points = [
+            list(d[2]._points.values())
+            for d in self.distance
+        ]
+
+        start_points = []
+        end_points = []
+
+        [(start_points.append(p[0]), end_points.append(p[1])) for p in points]
+
+        return np.array([np.vstack(start_points).tolist(), np.vstack(end_points).tolist()])
+    
     def _get_mesh(self, survey, offset=False):
         """
         Generates a mesh object from the survey object.
@@ -402,9 +447,8 @@ class MeshClearance:
         ref = self.c.ref
         off = self.c.offset
         off_nevs = self.c.offset_nevs
-        
-        for i, _ in enumerate(ref.md):
-            if i == 0: continue
+
+        for i in range(len(ref.md) - 1):
             
             # slice a well section and create section survey
             s = slice_survey(ref, i)
@@ -430,13 +474,13 @@ class MeshClearance:
                 # on the mesh surface
                 off_index = KDTree(off_nevs).query(closest_point_offset)[1]
                 if off_index < len(off.md) - 1:
-                    s = slice_survey(off, off_index + 1)
+                    s = slice_survey(off, off_index)
                     off_nev_1 = self._get_closest_nev(s, closest_point_offset)
                 else:
                     off_nev_1 = False
 
                 if off_index > 0:
-                    s = slice_survey(off, off_index)
+                    s = slice_survey(off, off_index - 1)
                     off_nev_0 = self._get_closest_nev(s, closest_point_offset)
                 else:
                     off_nev_0 = False
@@ -484,6 +528,9 @@ class MeshClearance:
                 self.calc_hole.append(ref.radius[i] + off.radius[off_index])
                 self.ref_md.append(ref_md)
                 self.off_md.append(off_md)
+
+            if self.return_meshes:
+                self.meshes.append(m)
 
             else:
                 self.collision.append(collision)

@@ -8,8 +8,13 @@ from welleng.mesh import WellMesh, transform_trimesh_scene
 
 # Import some well trajectory data. Here we'll use the ISCWSA trajectories, extracting
 # the data from the Excel file downloaded from their website.
-filename = filename=f"reference/standard-set-of-wellpaths-for-evaluating-clearance-scenarios-r4-17-may-2017.xlsm"
-data = we.io.import_iscwsa_collision_data(filename)
+filename=f"reference/standard-set-of-wellpaths-for-evaluating-clearance-scenarios-r4-17-may-2017.xlsm"
+
+print("Loading data...")
+try:
+    data = we.io.import_iscwsa_collision_data(filename)
+except:
+    print("Make sure you've updated filename to your local copy of ISCWSA's clearance scenarios")
 
 well_ref_params = dict(
     Latitude=60.000000,
@@ -21,6 +26,7 @@ well_ref_params = dict(
 )
 
 # Make a dictionary of surveys
+print("Making surveys...")
 surveys = {}
 for well in data["wells"]:
     if well == "Reference well":
@@ -57,8 +63,12 @@ for well in data["wells"]:
 results = {}
 reference = surveys["Reference well"]
 scene = trimesh.scene.scene.Scene()
+names = []
+colors = []
 for well in surveys:
+    names.append(well)
     if well == "Reference well":
+        colors.append('red')
         pass
     else:
         offset = surveys[well]
@@ -67,10 +77,13 @@ for well in surveys:
         else:
             c = we.clearance.Clearance(reference, offset)
         
+        print(f"Calculating ISCWSA clearance for {well}...")
         result_iscwsa = we.clearance.ISCWSA(c)
 
+        print(f"Calculating mesh clearance for {well}...")
         result_mesh = we.clearance.MeshClearance(c, sigma=2.445)
 
+        colors.append('blue')
 
         results[well] = {
             "iscwsa": result_iscwsa,
@@ -85,23 +98,29 @@ for well in surveys:
     )
     scene.add_geometry(m.mesh, node_name=well, geom_name=well, parent_node_name=None)
 
+we.visual.plot(scene, names=names, colors=colors)
+
+### if you want to export the scene, say to blender, then do something like this ###
 # save the scene (make sure the blender directory exists else change the
 # save location)
-scene.export("blender/scene.glb")
+# scene.export("blender/scene.glb")
 
 # transform the scene so that it imports nicely into Blender
-transform_trimesh_scene(scene, origin=([0,0,0]), scale=100, redux=1).export("blender/scene_transform.glb")
+# transform_trimesh_scene(scene, origin=([0,0,0]), scale=100, redux=1).export("blender/scene_transform.glb")
+### end ###
 
 # output error data
-well = "08 - well"
-errors = [e for e in results[well]["iscwsa"].c.offset.err.errors.errors.keys()]
-error_data = []
-for i, md in enumerate(results[well]["iscwsa"].c.offset.md):
-    error_data.append(
-        [md, [{f'{e}': results[well]["iscwsa"].c.offset.err.errors.errors[e].cov_NEV.T[i]} for e in errors]]
-    )
+# well = "08 - well"
+# errors = [e for e in results[well]["iscwsa"].c.offset.err.errors.errors.keys()]
+# error_data = []
+# for i, md in enumerate(results[well]["iscwsa"].c.offset.md):
+#     error_data.append(
+#         [md, [{f'{e}': results[well]["iscwsa"].c.offset.err.errors.errors[e].cov_NEV.T[i]} for e in errors]]
+#     )
 
 # export the data to Excel
+save_as = f'data/output/output.xlsx'
+print(f"Exporting data to {save_as}...")
 with pd.ExcelWriter(f'data/output/output.xlsx') as writer:
     for well in results.keys():
         if well == "Reference well": continue
@@ -120,7 +139,7 @@ with pd.ExcelWriter(f'data/output/output.xlsx') as writer:
             "Ref_PCR (m 1sigma)": r.ref_PCR,
             "Offset_PCR (m 1 sigma)": r.off_PCR,
             "Calc hole": r.calc_hole,
-            "ISCWSA ACR": r.ISCWSA_ACR
+            "ISCWSA ACR": r.SF
         }
         df = pd.DataFrame(data=data)
         df.to_excel(writer, sheet_name=f'{well} - iscwsa')
@@ -145,3 +164,4 @@ with pd.ExcelWriter(f'data/output/output.xlsx') as writer:
         df = pd.DataFrame(data=data)
         df.to_excel(writer, sheet_name=f'{well} - mesh')
 
+input("Done! Press ENTER to continue...")
