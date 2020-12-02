@@ -7,9 +7,9 @@
 [welleng] aspires to be a collection of useful tools for Wells/Drilling Engineers, kicking off with a range of well trajectory analysis tools.
 
   - Generate survey listings and interpolation with minimum curvature
-  - Calculate well bore uncertainty data (currently utilizing the ISCWSA MWD Rev4 model)
+  - Calculate well bore uncertainty data (currently utilizing the [ISCWSA] MWD Rev4 model)
   - Calculate well bore clearance and Separation Factors (SF)
-    - standard ISCWSA method
+    - standard [ISCWSA] method
     - new mesh based method using the [Flexible Collision Library]
 ## New Features!
   - **Fast visualization of well trajectory meshes:** addition of the `visual` module for quick and simple viewing and QAQC of well meshes.
@@ -28,13 +28,13 @@
 ```
 pip install welleng
 ```
-For developers, the repository can be cloned and locally installed by in your GitHub directory via your preferred Python env.
+For developers, the repository can be cloned and locally installed in your GitHub directory via your preferred Python env.
 ```
 git clone https://github.com/jonnymaserati/welleng.git
 cd welleng
 pip install -e .
 ```
-Make sure you include that `.` in the final line (it's not a typo) and this ensures that any changes to your development version are immediately implemented on save.
+Make sure you include that `.` in the final line (it's not a typo) as this ensures that any changes to your development version are immediately implemented on save.
 ## Quick Start
 Here's an example using `welleng` to construct a couple of simple well trajectories with `numpy`, creating survey listings for the wells with well bore uncertainty data, using these surveys to create well bore meshes and finally printing the results and plotting the meshes with the closest lines and SF data.
 
@@ -138,7 +138,7 @@ ISCWSA Standard Set of Well Paths
 ![image](https://media-exp1.licdn.com/dms/image/C5612AQEBKagFH_qlqQ/article-inline_image-shrink_1500_2232/0?e=1609977600&v=beta&t=S3C3C_frvUCgKm46Gtat2-Lor7ELGRALcyXbkwZyldM)
 Equinor's Volve Wells
 
-The ISCWSA standard set of well paths for evaluating clearance scenarios and Equinor's [volve] wells rendered in [blender]. See the [examples] for the code used to generate the [volve] scene, extracting the data from the [volve] EDM.xml file.
+The ISCWSA standard set of well paths for evaluating clearance scenarios and Equinor's [volve] wells have been rendered in [blender] above. See the [examples] for the code used to generate the [volve] scene, extracting the data from the [volve] EDM.xml file.
 
 License
 ----
@@ -160,3 +160,4 @@ Please note the terms of the license. Although this software endeavors to be acc
    [examples]: <https://github.com/jonnymaserati/welleng/tree/main/examples>
    [blender]: <https://www.blender.org/>
    [volve]: <https://www.equinor.com/en/how-and-why/digitalisation-in-our-dna/volve-field-data-village-download.html>
+   [ISCWSA]: <https://www.iscwsa.net/>
