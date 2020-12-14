@@ -12,8 +12,8 @@ with open(version_file, 'r') as f:
 with open("README.md", "r") as f:
     long_description = f.read()
 
-with open("requirements.txt", "r") as f:
-    required = f.read().splitlines()
+# with open("requirements.txt") as f:
+#     required = f.read().splitlines()
 
 download_url = f'https://github.com/jonnymaserati/welleng/archive/v{__version__}.tar.gz'
 
@@ -48,7 +48,16 @@ setup(
     author_email='jonnycorcutt@gmail.com',
     license='LGPL v3',
     packages=find_packages(exclude=["tests"]),
-    install_requires=required,
+    install_requires=[
+        'python-fcl',
+        'numpy',
+        'scipy',
+        'trimesh',
+        'vedo',
+        'vtk',
+        'networkx',
+        'matplotlib',
+    ],
     classifiers=[
         'License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)',  
         'Operating System :: OS Independent',        
