@@ -12,7 +12,7 @@ with open(version_file, 'r') as f:
 with open("README.md", "r") as f:
     long_description = f.read()
 
-with open("requirements.txt") as f:
+with open("requirements.txt", "r") as f:
     required = f.read().splitlines()
 
 download_url = f'https://github.com/jonnymaserati/welleng/archive/v{__version__}.tar.gz'
