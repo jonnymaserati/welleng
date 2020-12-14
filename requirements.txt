@@ -2,3 +2,4 @@ numpy
 scipy
 trimesh
 vedo
+transforms3d

@@ -138,6 +138,7 @@ class Survey:
         self.vec = vec
 
         self._min_curve()
+        self._get_toolface_and_rates()
 
         # initialize errors
         # TODO: read this from a yaml file in errors
@@ -172,6 +173,8 @@ class Survey:
         self.rf = mc.rf
         self.delta_md = mc.delta_md
         self.dls = mc.dls
+        self.pos = mc.poss
+
         if self.x is None:
             # self.x, self.y, self.z = (mc.poss + self.start_xyz).T
             self.x, self.y, self.z = (mc.poss).T
@@ -242,6 +245,71 @@ class Survey:
             self.cov_nev += self.start_cov_nev
             self.cov_hla = NEV_to_HLA(self.survey_rad, self.cov_nev.T).T
 
+    def _curvature_to_rate(self, curvature):
+        with np.errstate(divide='ignore', invalid='ignore'):
+            radius = 1 / curvature
+        circumference = 2 * np.pi * radius
+        if self.unit == 'meters':
+            x = 30
+        else:
+            x = 100
+        rate = np.absolute(np.degrees(2 * np.pi / circumference) * x)
+
+        return rate
+    
+    def _get_toolface_and_rates(self):
+        """
+        Reference SPE-84246.
+        theta is inc, phi is azi
+        """
+        # split the survey
+        s = SplitSurvey(self)
+
+        if self.unit == 'meters':
+            x = 30
+        else:
+            x = 100
+
+        # this is lazy I know, but I'm using this mostly for flags
+        with np.errstate(divide='ignore', invalid='ignore'):
+            t1 = np.arctan(
+                np.sin(s.inc2) * np.sin(s.delta_azi) /
+                (
+                    np.sin(s.inc2) * np.cos(s.inc1) * np.cos(s.delta_azi)
+                    - np.sin(s.inc1) * np.cos(s.inc2)
+                )
+            )
+            t1 = np.nan_to_num(
+                np.where(t1 < 0, t1 + 2 * np.pi, t1),
+                nan=np.nan
+            )
+            t2 = np.arctan(
+                np.sin(s.inc1) * np.sin(s.delta_azi) /
+                (
+                    np.sin(s.inc2) * np.cos(s.inc1)
+                    - np.sin(s.inc1) * np.cos(s.inc2) * np.cos(s.delta_azi)
+                )
+            )
+            t2 = np.nan_to_num(
+                np.where(t2 < 0, t2 + 2 * np.pi, t2),
+                nan=np.nan
+            )
+            self.curve_radius = (360 / self.dls * x) / (2 * np.pi)
+        
+        curvature_dls = 1 / self.curve_radius
+
+        self.toolface = np.concatenate((t1, np.array([t2[-1]])))
+
+        curvature_turn = curvature_dls * (np.sin(self.toolface) / np.sin(self.inc_rad))
+        self.turn_rate = self._curvature_to_rate(curvature_turn)
+
+        curvature_build = curvature_dls * np.cos(self.toolface)
+        self.build_rate = self._curvature_to_rate(curvature_build)
+
+        # calculate plan normals
+        n12 = np.cross(s.vec1, s.vec2)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            self.normals = n12 / np.linalg.norm(n12, axis=1).reshape(-1,1)
 
 def interpolate_survey(survey, x=0, index=0):
     """
@@ -399,3 +467,157 @@ def make_long_cov(arr):
     ]).T
 
     return cov
+
+class SplitSurvey:
+    def __init__(
+        self,
+        survey,
+    ):
+        self.md1, self.inc1, self.azi1 = survey.survey_rad[:-1].T
+        self.md2, self.inc2, self.azi2 = survey.survey_rad[1:].T
+        self.delta_azi = self.azi2 - self.azi1
+        self.delta_inc = self.inc2 - self.inc1
+
+        self.vec1 = survey.vec[:-1]
+        self.vec2 = survey.vec[1:]
+        self.dogleg = survey.dogleg[1:]   
+
+def get_circle_radius(survey, **targets):
+    # TODO: add target data to sections
+    ss = SplitSurvey(survey)
+
+    x1, y1, z1 = np.cross(ss.vec1, survey.normals).T
+    x2, y2, z2 = np.cross(ss.vec2, survey.normals).T
+
+    b1 = np.array([y1, x1, z1]).T
+    b2 = np.array([y2, x2, z2]).T
+    nev = np.array([survey.n, survey.e, survey.tvd]).T
+
+    cc1 = (
+        nev[:-1] - b1
+        / np.linalg.norm(b1, axis=1).reshape(-1,1)
+        * survey.curve_radius[:-1].reshape(-1,1)
+    )
+    cc2 = (
+        nev[1:] - b2
+        / np.linalg.norm(b2, axis=1).reshape(-1,1)
+        * survey.curve_radius[1:].reshape(-1,1)
+    )
+
+    starts = np.vstack((cc1, cc2))
+    ends = np.vstack((nev[:-1], nev[1:]))
+
+    n = 1
+
+
+    return (starts, ends)
+
+def get_sections(survey, **targets):
+    # TODO: add target data to sections
+    ss = SplitSurvey(survey)
+    
+    continuous = np.all(
+        np.isclose(
+            survey.normals[:-1],
+            survey.normals[1:],
+            rtol=1e-01, atol=1e-02,
+            equal_nan=True
+        ), axis=-1
+    )
+
+    ends = np.concatenate(
+        (np.where(continuous == False)[0] + 1, np.array([len(continuous)-1]))
+    )
+    starts = np.concatenate(([0], ends[:-1]))
+    
+    actions = [
+        "hold" if a else "curve"
+        for a in np.isnan(survey.toolface[starts])
+    ]
+
+    sections = []
+    for s, e, a in zip(starts, ends, actions):
+        md = survey.md[s]
+        inc = survey.inc_deg[s]
+        azi = survey.azi_deg[s]
+        x = survey.e[s]
+        y = survey.n[s]
+        z = -survey.tvd[s]
+
+        target = ""
+        if survey.unit == 'meters':
+            denominator = 30
+        else:
+            denominator = 100
+
+        if a == "hold":
+            dls = 0.0
+            toolface = 0.0
+            build_rate = 0.0
+            turn_rate = 0.0
+            method = ""
+        else:
+            dls = survey.dls[e]
+            toolface = survey.toolface[s]
+            delta_md = survey.md[e] - md
+
+            # TODO: should sum this line by line to avoid issues with long sections
+            build_rate = abs(
+                (survey.inc_deg[e] - survey.inc_deg[s])
+                / delta_md * denominator
+            )
+
+            # TODO: should sum this line by line to avoid issues with long sections
+            # need to be careful with azimuth straddling north
+            delta_azi_1 = abs(survey.azi_deg[e] - survey.azi_deg[s])
+            delta_azi_2 = abs(360 - delta_azi_1)
+            delta_azi = min(delta_azi_1, delta_azi_2)
+            turn_rate = delta_azi / delta_md * denominator
+
+        section = WellSection(
+            md,
+            inc,
+            azi,
+            build_rate,
+            turn_rate,
+            dls,
+            toolface,
+            method=0,
+            target="",
+            x=x,
+            y=y,
+            z=z
+        )
+
+        sections.append(section)
+    
+    return sections
+
+class WellSection:
+    def __init__(
+        self,
+        md,
+        inc,
+        azi,
+        build_rate,
+        turn_rate,
+        dls,
+        toolface,
+        x,
+        y,
+        z,
+        method=0,
+        target=None
+    ):
+        self.md = md
+        self.inc = inc
+        self.azi = azi
+        self.build_rate = build_rate
+        self.turn_rate = turn_rate
+        self.dls = dls
+        self.toolface = toolface
+        self.method = method
+        self.target = target
+        self.x = np.around(x, decimals=2)
+        self.y = np.around(y, decimals=2)
+        self.z = np.around(z, decimals=2)

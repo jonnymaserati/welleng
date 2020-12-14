@@ -14,7 +14,7 @@ class WellMesh:
         sigma=3.0,
         sigma_pa=0.5,
         Sm=0,
-        method="mesh_ellipse",
+        method="ellipse",
     ):
         """
         Create a WellMesh object from a welleng Survey object and a
@@ -50,11 +50,12 @@ class WellMesh:
         self.Sm = Sm
         self.sigma_pa = sigma_pa
 
-        assert method in ["mesh_ellipse", "mesh_pedal_curve"], \
+        assert method in ["ellipse", "pedal_curve", "circle"], \
             "Invalid method (ellipse or pedal_curve)"
         self.method = method
 
-        self.sigmaH, self.sigmaL, self.sigmaA = get_sigmas(self.s.cov_hla)
+        if self.method != 'circle':
+            self.sigmaH, self.sigmaL, self.sigmaA = get_sigmas(self.s.cov_hla)
         self.nevs = np.array([self.s.n, self.s.e, self.s.tvd]).T
         self._get_vertices()
         self._align_verts()
@@ -135,22 +136,26 @@ class WellMesh:
         Determine the positions of the vertices on the desired uncertainty
         circumference.
         '''
+        if self.method == "circle":
+            h = self.s.radius.reshape(-1,1)
+            l = h
 
-        h = (
-            np.array(self.sigmaH) * self.sigma
-            + self.radius + self.Sm
-            + self.sigma_pa / 2
-        ).reshape(-1,1)
+        else:
+            h = (
+                np.array(self.sigmaH) * self.sigma
+                + self.radius + self.Sm
+                + self.sigma_pa / 2
+            ).reshape(-1,1)
 
-        l = (
-            np.array(self.sigmaL) * self.sigma
-            + self.radius
-            + self.Sm
-            + self.sigma_pa / 2
-        ).reshape(-1,1)
-        # a = self.s.sigmaA * self.c.k + self.s.radius + self.c.Sm
+            l = (
+                np.array(self.sigmaL) * self.sigma
+                + self.radius
+                + self.Sm
+                + self.sigma_pa / 2
+            ).reshape(-1,1)
+            # a = self.s.sigmaA * self.c.k + self.s.radius + self.c.Sm
 
-        if self.method == "mesh_ellipse":
+        if self.method in ["ellipse", "circle"]:
             lam = np.linspace(0, 2 * pi, self.n_verts, endpoint=False)
             # theta = np.zeros_like(lam)
 

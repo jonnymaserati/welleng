@@ -7,3 +7,6 @@ import welleng.mesh
 import welleng.visual
 import welleng.version
 import welleng.errors.iscwsa_mwd
+import welleng.exchange.wbp
+import welleng.target
+import welleng.connector
