@@ -4,29 +4,37 @@ from tabulate import tabulate
 
 # construct simple well paths
 print("Constructing wells...")
-md = np.linspace(0,3000,100) # 30 meter intervals to 3000 mTD
-inc = np.concatenate((
-    np.zeros(30), # vertical section
-    np.linspace(0,90,60), # build section to 60 degrees
-    np.full(10,90) # hold section at 60 degrees
-))
-azi1 = np.full(100,60) # constant azimuth at 60 degrees
-azi2 = np.full(100,225) # constant azimuth at 225 degrees
+connector_reference = we.connector.Connector(
+    pos1=[0,0,0],
+    inc1=0,
+    azi1=0,
+    pos2=[-100,0,2000.],
+    inc2=90,
+    azi2=60,
+).survey(step=50)
 
-# make a survey object and calculate the uncertainty covariances
+connector_offset = we.connector.Connector(
+    pos1=[0,0,0],
+    inc1=0,
+    azi1=225,
+    pos2=[-280,-600,2000],
+    inc2=90,
+    azi2=270,
+).survey(step=50)
+
+# make a survey objects and calculate the uncertainty covariances
 print("Making surveys...")
 survey_reference = we.survey.Survey(
-    md,
-    inc,
-    azi1,
+    md=connector_reference.md,
+    inc=connector_reference.inc_deg,
+    azi=connector_reference.azi_deg,
     error_model='ISCWSA_MWD'
 )
 
-# make another survey with offset surface location and along another azimuth
 survey_offset = we.survey.Survey(
-    md,
-    inc,
-    azi2,
+    md=connector_offset.md,
+    inc=connector_offset.inc_deg,
+    azi=connector_offset.azi_deg,
     start_nev=[100,200,0],
     error_model='ISCWSA_MWD'
 )
