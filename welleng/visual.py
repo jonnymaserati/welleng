@@ -1,5 +1,5 @@
 import trimesh
-from vedo import show, Box, Axes, trimesh2vedo, Lines, colorMap
+from vedo import show, Box, Axes, trimesh2vedo, Lines, colorMap, Arrows, Text
 import numpy as np
 
 from .version import __version__ as VERSION
@@ -23,7 +23,15 @@ class World:
             height
         ).wireframe()
 
-def plot(data, names=None, colors=None, lines=None):
+def plot(
+    data,
+    names=None,
+    colors=None,
+    lines=None,
+    targets=None,
+    arrows=None,
+    text=None
+):
     """
     A vedo wrapper for quicly visualizing well trajectories for QAQC purposes.
 
@@ -54,6 +62,7 @@ def plot(data, names=None, colors=None, lines=None):
                 "Colors must be length of meshes list, 1 else None"
 
     meshes_vedo = []
+    # TODO: if inly a single mesh is provided then drop the need for a list
     for i, mesh in enumerate(meshes):
         if i == 0:
             vertices = np.array(mesh.vertices)
@@ -89,6 +98,8 @@ def plot(data, names=None, colors=None, lines=None):
         meshes_vedo,
         w.world,
         lines,
+        targets,
+        arrows,
         axes,
         bg='lightgrey',
         bg2='lavender',

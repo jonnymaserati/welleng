@@ -121,7 +121,7 @@ class MinCurve:
             ) + self.start_xyz
         )
 
-def get_vec(inc, azi, r=1, deg=True):
+def get_vec(inc, azi, nev=False, r=1, deg=True):
     """
     Convert inc and azi into a vector.
 
@@ -144,8 +144,13 @@ def get_vec(inc, azi, r=1, deg=True):
     y = r * np.sin(inc_rad) * np.cos(azi_rad)
     x = r * np.sin(inc_rad) * np.sin(azi_rad)
     z = r * np.cos(inc_rad)
-    
-    return np.array([x,y,z]).T
+
+    if nev:
+        vec = np.array([y, x, z]).T
+    else:    
+        vec = np.array([x,y,z]).T
+
+    return vec / np.linalg.norm(vec)
 
 def get_nev(poss, start_xyz=[0,0,0], start_nev=[0,0,0]):
     """
@@ -168,21 +173,28 @@ def get_nev(poss, start_xyz=[0,0,0], start_nev=[0,0,0]):
     
     return (np.array([n, e, v]).T + np.array([start_nev]))
 
-def get_angles(vec):
+def get_angles(vec, nev=False):
     '''
     Determines the inclination and azimuth from a vector.
 
     Params:
         vec: (n,3) array of floats
+        nev: boolean (default: False)
+            Indicates if the vector is in (x,y,z) or (n,e,v) coordinates.
 
     Returns:
-        [inc, azi]: (2,n) array of floats
+        [inc, azi]: (n,2) array of floats
             A numpy array of incs and azis in radians
 
     '''
     # make sure it's a unit vector
-    vec = vec / np.linalg.norm(vec, axis=-1)
+    vec = vec / np.linalg.norm(vec, axis=-1).reshape(-1,1)
     vec = vec.reshape(-1,3)
+
+    # if it's nev then need to do the shuffle
+    if nev:
+        y, x, z = vec.T
+        vec = np.array([x, y, z]).T
 
     xy = vec[:,0] ** 2 + vec[:,1] ** 2
     inc = np.arctan2(np.sqrt(xy), vec[:,2]) # for elevation angle defined from Z-axis down
