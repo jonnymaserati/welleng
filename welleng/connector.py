@@ -338,7 +338,9 @@ class Connector:
             self.vec23 = [np.array([0,0,0])]
             self._target_pos_and_vec_defined(self.pos_target)
         else:
-            self.distances = get_distances(self.pos1, self.vec1, self.pos_target)
+            self.distances = self._get_distances(
+                self.pos1, self.vec1, self.pos_target
+            )
             if self.radius_design <= get_radius_critical(
                 self.radius_design, self.distances, self.min_error
             ):
@@ -480,8 +482,8 @@ class Connector:
         )
 
     def _target_pos_and_vec_defined(self, pos3, vec_old=[0,0,0]):
-        self.distances1 = get_distances(self.pos1, self.vec1, pos3)
         self.pos3 = pos3
+        self.distances1 = self._get_distances(self.pos1, self.vec1, self.pos3)
 
         radius_temp1 = get_radius_critical(
             self.radius_design,
@@ -522,7 +524,7 @@ class Connector:
             )
         )
 
-        self.distances2 = get_distances(
+        self.distances2 = self._get_distances(
             self.pos_target,
             self.vec_target * -1,
             self.pos2
@@ -673,7 +675,45 @@ class Connector:
         else:
             tangent_temp = max(tangent_length, self.min_tangent)
 
-        return tangent_temp 
+        return tangent_temp
+
+    def _mod_pos(self, pos):
+        pos_rand = np.random.random(3) * self.delta_radius
+        pos += pos_rand
+
+    def _get_distances(self, pos1, vec1, pos_target):
+        # When initializing a `curve_hold_curve` and pos_target is directly
+        # ahead it can cause issues (it's a hold and not a curve). So this code
+        # checks for that condition and if it's the case, will move the
+        # target_pos a sufficient amount to prevent issues.
+        vec_temp = np.array(pos_target - pos1)
+        vec_temp = vec_temp / np.linalg.norm(vec_temp)
+        if np.array_equal(vec1, vec_temp):
+            self._mod_pos(pos_target)
+        if np.allclose(pos1, pos_target):
+            return (0, 0, 0)
+        
+        else:
+            dist_to_target = (
+                np.linalg.norm((pos_target - pos1))
+            )
+
+            dist_perp_to_target = (
+                np.dot((pos_target - pos1), vec1)
+            )
+
+            dist_norm_to_target = (
+                (
+                    dist_to_target ** 2
+                    - dist_perp_to_target ** 2
+                ) ** 0.5
+            )
+
+            return (
+                dist_to_target,
+                dist_perp_to_target,
+                dist_norm_to_target
+            )
 
 
 def check_dogleg(dogleg):
@@ -759,32 +799,6 @@ def shape_factor(dogleg):
             The dogleg angle in radians of a curve section.
     """
     return np.tan(dogleg / 2) / (dogleg / 2)
-
-def get_distances(pos1, vec1, pos_target):
-    if np.allclose(pos1, pos_target):
-        return (0, 0, 0)
-    
-    else:
-        dist_to_target = (
-            np.linalg.norm((pos_target - pos1))
-        )
-
-        dist_perp_to_target = (
-            np.dot((pos_target - pos1), vec1)
-        )
-
-        dist_norm_to_target = (
-            (
-                dist_to_target ** 2
-                - dist_perp_to_target ** 2
-            ) ** 0.5
-        )
-
-        return (
-            dist_to_target,
-            dist_perp_to_target,
-            dist_norm_to_target
-        )
 
 def min_dist_to_target(radius, distances):
     """

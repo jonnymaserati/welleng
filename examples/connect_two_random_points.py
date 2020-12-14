@@ -3,8 +3,9 @@ import numpy as np
 from vedo import Arrows, Lines
 import random
 
-# Generate some random pairs of points
+# Some code for testing the connector module.
 
+# Generate some random pairs of points
 pos1 = [0,0,0]
 md1 = 0
 
