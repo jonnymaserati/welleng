@@ -296,15 +296,15 @@ class Survey:
             )
             self.curve_radius = (360 / self.dls * x) / (2 * np.pi)
         
-        curvature_dls = 1 / self.curve_radius
+            curvature_dls = 1 / self.curve_radius
 
-        self.toolface = np.concatenate((t1, np.array([t2[-1]])))
+            self.toolface = np.concatenate((t1, np.array([t2[-1]])))
 
-        curvature_turn = curvature_dls * (np.sin(self.toolface) / np.sin(self.inc_rad))
-        self.turn_rate = self._curvature_to_rate(curvature_turn)
+            curvature_turn = curvature_dls * (np.sin(self.toolface) / np.sin(self.inc_rad))
+            self.turn_rate = self._curvature_to_rate(curvature_turn)
 
-        curvature_build = curvature_dls * np.cos(self.toolface)
-        self.build_rate = self._curvature_to_rate(curvature_build)
+            curvature_build = curvature_dls * np.cos(self.toolface)
+            self.build_rate = self._curvature_to_rate(curvature_build)
 
         # calculate plan normals
         n12 = np.cross(s.vec1, s.vec2)
