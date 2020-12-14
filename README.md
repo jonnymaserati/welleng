@@ -37,7 +37,7 @@ pip install -e .
 ```
 Make sure you include that `.` in the final line (it's not a typo) as this ensures that any changes to your development version are immediately implemented on save.
 ## Quick Start
-Here's an example using `welleng` to construct a couple of simple well trajectories with `numpy`, creating survey listings for the wells with well bore uncertainty data, using these surveys to create well bore meshes and finally printing the results and plotting the meshes with the closest lines and SF data.
+Here's an example using `welleng` to construct a couple of simple well trajectories with the `connector` module, creating survey listings for the wells with well bore uncertainty data, using these surveys to create well bore meshes and finally printing the results and plotting the meshes with the closest lines and SF data.
 
 ```
 import welleng as we
@@ -46,29 +46,37 @@ from tabulate import tabulate
 
 # construct simple well paths
 print("Constructing wells...")
-md = np.linspace(0,3000,100) # 30 meter intervals to 3000 mTD
-inc = np.concatenate((
-    np.zeros(30), # vertical section
-    np.linspace(0,90,60), # build section to 60 degrees
-    np.full(10,90) # hold section at 60 degrees
-))
-azi1 = np.full(100,60) # constant azimuth at 60 degrees
-azi2 = np.full(100,225) # constant azimuth at 225 degrees
+connector_reference = we.connector.Connector(
+    pos1=[0,0,0],
+    inc1=0,
+    azi1=0,
+    pos2=[-100,0,2000.],
+    inc2=90,
+    azi2=60,
+).survey(step=50)
 
-# make a survey object and calculate the uncertainty covariances
+connector_offset = we.connector.Connector(
+    pos1=[0,0,0],
+    inc1=0,
+    azi1=225,
+    pos2=[-280,-600,2000],
+    inc2=90,
+    azi2=270,
+).survey(step=50)
+
+# make a survey objects and calculate the uncertainty covariances
 print("Making surveys...")
 survey_reference = we.survey.Survey(
-    md,
-    inc,
-    azi1,
+    md=connector_reference.md,
+    inc=connector_reference.inc_deg,
+    azi=connector_reference.azi_deg,
     error_model='ISCWSA_MWD'
 )
 
-# make another survey with offset surface location and along another azimuth
 survey_offset = we.survey.Survey(
-    md,
-    inc,
-    azi2,
+    md=connector_offset.md,
+    inc=connector_offset.inc_deg,
+    azi=connector_offset.azi_deg,
     start_nev=[100,200,0],
     error_model='ISCWSA_MWD'
 )
@@ -118,21 +126,21 @@ we.visual.plot(
 
 print("Done!")
 ```
-This results in a quick, interactive visualization of the well meshes that's great for QAQC.
+This results in a quick, interactive visualization of the well meshes that's great for QAQC. What's interesting about these results is that the ISCWSA method does not explicitly detect a collision in this scenario wheras the mesh method does.
 
-![image](https://user-images.githubusercontent.com/41046859/100718537-c3b12700-33bb-11eb-856e-cf1bd77d3cbf.png)
+![image](https://user-images.githubusercontent.com/41046859/102106351-c0dd1a00-3e30-11eb-82f0-a0454dfce1c6.png)
 
 For more examples, check out the [examples].
 
 ## Todos
- - Add a Target class to see what you're aiming for!
- - Export to Landmark's .wbp format so survey listings can be modified in COMPASS
+ - Add a Target class to see what you're aiming for - **in progress**
+ - Export to Landmark's .wbp format so survey listings can be modified in COMPASS - **in progress**
  - Documentation
  - Generate a scene of offset wells to enable fast screening of collision risks (e.g. hundreds of wells in seconds)
- - Well trajectory planning - construct your own trajectories using a range of methods (and of course, including some novel ones)
+ - Well trajectory planning - construct your own trajectories using a range of methods (and of course, including some novel ones) **- DONE!**
  - More error models
  - WebApp for those that just want answers
- - Viewer - a 3D viewer to quickly visualize the data and calculated results - **DONE!**
+ - Viewer - a 3D viewer to quickly visualize the data and calculated results **- DONE!**
 
 It's possible to generate data for visualizing well trajectories with [welleng], as can be seen with the rendered scenes below.
 ![image](https://user-images.githubusercontent.com/41046859/97724026-b78c2e00-1acc-11eb-845d-1220219843a5.png)
