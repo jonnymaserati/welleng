@@ -33,7 +33,7 @@ s2 = Connector(
     azi2=azi3
 )
 
-# the subsurface target has coordinates [-1000, 1000, 1800]
+# the subsurface target has coordinates [-800, 300, 1800]
 # we want to be near vertical when we hit this point so that we can
 # drill the reservoir horizontal (let's say 88 deg) and the reseroir
 # orientation is southeast-northwest and we have good directional control
