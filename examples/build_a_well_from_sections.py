@@ -34,7 +34,7 @@ s2 = Connector(
 )
 
 # the subsurface target has coordinates [-800, 300, 1800]
-# we want to be near vertical when we hit this point so that we can
+# we want to be near horizontal when we hit this point so that we can
 # drill the reservoir horizontal (let's say 88 deg) and the reseroir
 # orientation is southeast-northwest and we have good directional control
 pos4 = [-800,300,1800]
