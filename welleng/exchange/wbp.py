@@ -1,7 +1,7 @@
-import os, yaml
+import os, yaml, welleng
 import numpy as np
-from ..survey import get_sections
 
+# TODO: need to relocate the class Target to target.py
 class Target:
     def __init__(
         self,
@@ -95,23 +95,20 @@ class SurveyPoint:
 class WellPlan:
     def __init__(
         self,
-        data,
-        depth_unit=None,
-        surface_unit=None,
+        depth_unit='meters',
+        surface_unit='meters',
+        survey=None,
+        plan_name=None,
+        parent_name=None,
+        location_type=None,
+        plan_method='curve_only',
+        dirty_flag=None,
+        sidetrack_id=None,
+        dls=0,
+        extension=0,
+        wbp_data=None,
         targets=[],
         line=None,
-        # survey,
-        # location_type,
-        # plan_method,
-        # plan_name,
-        # parent_name,
-        # depth_unit="meters",
-        # surface_unit="meters",
-        # dirty_flag=3,
-        # sidetrack_id=0,
-        # extension="0.00000",
-        # filename=None,
-        # **targets
     ):
         # Import the wbp.yaml file as a dictionary
         wbp_dict_file = os.path.join(
@@ -128,73 +125,35 @@ class WellPlan:
         self.depth_unit = depth_unit
         self.surface_unit = surface_unit
         self.targets = targets
-        self.steps = []
-        self.tie_on_point_flag = False
         if line is None:
             self.lines = 0
         else:
             self.lines = line
 
-        self.wbp_data = data
+        self.wbp_data = wbp_data
+        if self.wbp_data is not None:
+            assert self.survey is None, "Either wbp_data or survey"
+            self.steps = []
+            self.tie_on_point_flag = False
+            self._process_wbp_data()
+        else:
+            assert isinstance(
+                survey, welleng.survey.Survey
+            ), "Not a welleng Survey"
+            assert self.wbp_data is None, "Either wbp_data or survey"
+            assert plan_name is not None, "Must provide plan_name"
+            assert location_type is not None, "Must provide a location type"
 
-        # if filename is not None:
-            # self.load(filename)
-        self._process_wbp_data()
+            self.plan_name = plan_name
+            self.parent_name = parent_name
+            self.location_type = str(location_type)
+            self.plan_method = plan_method
+            self.dirty_flag = str(dirty_flag)
+            self.sidetrack_id = "" if sidetrack_id is None else sidetrack_id
+            self.dls = dls
+            self.extension = extension
 
-
-
-        # LOCATIONS = [
-        #     "unknown",
-        #     "surface",
-        #     "ow_sidetrack",
-        #     "wp_sidetrack",
-        #     "lookahead",
-        #     "ow_well",
-        #     "complex_extension",
-        #     "site",
-        #     "site_based_plan",
-        #     "compass_well"
-        # ]
-
-        # METHODS = [
-        #     "curve_only",
-        #     "curve_hold",
-        #     "opt_align"
-        # ]
-
-        # UNITS = [
-        #     "feet",
-        #     "meters"
-        # ]
-
-        # assert location_type in LOCATIONS, "location_type not in LOCATIONS"
-        # assert plan_method in METHODS, "plan_method not in METHODS"
-        # assert len(plan_name) < 21, "plan_name too long (max length 20)"
-        # assert len(parent_name) < 21, "parent_name too long (max length 20)"
-        # assert surface_unit in UNITS, "surface_units must be feet or meters"
-        # assert depth_unit in UNITS, "depth_units must be feet or meters"
-
-        # self.survey = survey
-        # self.location = str(LOCATIONS.index(location_type))
-        # self.surface_unit = surface_unit
-        # self.depth_unit = depth_unit
-        # self.method = str(METHODS.index(plan_method))
-        # self.flag = str(dirty_flag)
-        # self.st_id = str(sidetrack_id).rjust(8)
-        # self.plan_name = str(plan_name).ljust(21)
-        # self.parent_name = str(parent_name).ljust(20)
-        # self.dls = f"{str(np.around(self.survey.dls[1]))[:5]}".rjust(5)
-        # self.kickoff_dls = f"{survey.dls[1]:.2f}".rjust(7)
-        # self.extension = str(extension).rjust(8)
-        # self.targets = targets
-
-        # self._get_unit()
-
-        # self.doc = []
-
-        # self._make_header()
-        # # self._make_tie_on(target=0)
-        # self._make_wellplan()
+            self.steps = welleng.survey.get_sections(survey)
 
     def _process_wbp_data(self):
         # TODO: finish coding the rest of the target inputs
@@ -226,13 +185,10 @@ class WellPlan:
                 elif m[0] == "G":
                     self._add_target_geometry(line)
                 # need to add the rest of the target inputs
-            else: # self.flag == 'wellplans':
+            else:
                 if m[0] == "W":
                     if self.flag == 'done':
-                        break    
-                    # if self.flag == 'wellplans':
-                    #     self.flag = 'done'
-                    #     break
+                        break
                     else:
                         self.flag = 'done'
                         self.tie_on_point_flag = True
@@ -248,8 +204,6 @@ class WellPlan:
                     self._add_survey_data(l[1:])
                 else:
                     pass
-            # else:
-            #     pass
             self.lines += 1
 
     def _initiate_target(self, name):
@@ -334,100 +288,6 @@ class WellPlan:
     def _get_units(self, key):
         self.depth_unit = self.wbp_dict['DEPTH'][key]['depth']
         self.surface_unit = self.wbp_dict['DEPTH'][key]['surface']
-    
-    def _get_unit(self):
-        if self.depth_unit == "meters":
-            if self.surface_unit == "meters":
-                self.unit = 2
-            else:
-                self.unit = 3
-        elif self.depth_unit == "feet":
-            if self.surface_unit == "feet":
-                self.unit = 1
-            else:
-                self.unit = 4
-
-    def _add_plan(
-        self,
-        section
-    ):
-        self.doc.append(
-            f"P:"
-            f"{str(section.md)[:8].rjust(8)}"
-            f" {str(section.azi)[:7].rjust(7)}"
-            f" {str(section.inc)[:7].rjust(7)}"
-            f" {str(section.build_rate)[:7].rjust(7)}"
-            f" {str(section.turn_rate)[:7].rjust(7)}"
-            f" {str(np.around(section.dls, decimals=1))[:7].rjust(7)}"
-            f" {str(np.degrees(section.toolface))[:7].rjust(7)}"
-            f" {str(section.method).rjust(4)}"
-            f" {str(section.target).rjust(10)}"
-        )
-        self.doc.append(
-            f"L:"
-            f"{str(section.x)[:13].rjust(13)}"
-            f"{str(section.y)[:13].rjust(13)}"
-            f"{str(section.z)[:11].rjust(11)}"
-        )
-
-
-    def _make_wellplan(
-        self,
-    ):
-        sections = get_sections(self.survey)
-
-        for s in sections:
-            self._add_plan(s)
-    
-    def _make_header(self):
-        self.doc.append(
-            f"DEPTH {self.unit}"
-        )
-
-        if self.targets:
-            self.doc.append(
-                "TARGETS:"
-            )
-            # TODO: add function to retrieve and list target data and implement
-            # a Target class.
-
-        self.doc.append(
-            "WELLPLANS:",
-        )
-        self.doc.append(
-            (
-                f"W:{self.location}{self.unit}{self.method}{self.flag}   0   0"
-                f"{self.st_id} {self.plan_name} {self.parent_name} {self.dls}"
-                f"{self.extension}{self.kickoff_dls}"
-            )
-        )
-
-    # I think this is redundent as it's the same line as the first section
-    def _make_tie_on(self, target):
-        if self.location == "unknown":
-            self.doc.append(
-                f"P:0.000000 0.00000 0.00000 0.00000 0.00000 0.00000 0.00000    0"
-            )
-        else:
-            self.doc.append((
-                f"P:"
-                f"{str(self.survey.md[0])[:8].rjust(8)}"
-                f" {str(self.survey.azi_deg[0])[:7].rjust(7)}"
-                f" {str(self.survey.inc_deg[0])[:7].rjust(7)}"
-                f" {str(0.00000).rjust(7)}" # build rate
-                f" {str(0.00000).rjust(7)}" # turn rate
-                f" {str(0.00000).rjust(7)}" # DLS
-                f" {str(np.degrees(self.survey.toolface[0]))[:7].rjust(7)}"
-                f" {self.method.rjust(4)}"
-                f" {str(target).rjust(10)}"
-            ))
-
-            self.doc.append(
-                f"L:"
-                f"{str(self.survey.x)[:13].rjust(13)}"
-                f"{str(self.survey.y)[:13].rjust(13)}"
-                f"{str(self.survey.z)[:11].rjust(11)}"
-            )
 
 def string_strip(string, is_float=False):
     s = string.strip()
@@ -468,6 +328,152 @@ def load(filename):
         if line == total_lines:
             return well_plans
         else:
+            # keep passing these on to each well sequentially
             depth_unit = w.depth_unit
             surface_unit = w.surface_unit
             targets = w.targets
+
+def add_targets(doc, targets):
+    for t in targets:
+        doc.append(f"T:{t.name}")
+        doc = add_location(doc, t.location)
+        doc.append((
+            f"C:"
+            f"{str(t.geometry['color']['color']).rjust(3)}"
+        ))
+    return doc
+        
+
+def add_location(doc, location):
+    x, y, z = location
+    doc.append((
+            f"L:"
+            f"{x:>13.2f}"
+            f"{y:>13.2f}"
+            f"{z:>11.2f}"
+        ))
+    return doc
+
+def add_header(doc, data):
+    d = data.wbp_dict['LOCATION']
+    ignored_integer_1 = f"   0"
+    ignored_integer_2 = f" 123"
+    plan_name = "" if data.plan_name is None else data.plan_name
+    parent_name = "" if data.parent_name is None else data.parent_name
+    doc.append((
+        f"W:"
+        f"{get_key(d['type'], data.location_type)}"
+        f"{get_unit_key(data)}"
+        f"{get_key(d['plan_method'], data.plan_method)}"
+        f"{get_key(d['dirty_flag'], data.dirty_flag)}"
+        f"{ignored_integer_1}"
+        f"{ignored_integer_2}"
+        f" {data.sidetrack_id:>7}"
+        f" {plan_name:<60}"
+        f" {parent_name:<60}"
+        f" {data.dls:>6.2f}"
+        f" {data.extension:>7.5f}"
+    ))
+    # the documentation says there should be a kickoff dls at the end,
+    # but I've never seen it and what does the other dls refer to?
+    return doc
+
+def add_step(doc, step):
+    if isinstance(step, welleng.exchange.wbp.TurnPoint):
+        doc = add_turn_point(doc, step)
+    else:
+        doc = add_survey_point(doc, step)
+    return doc
+
+def add_turn_point(doc, step):
+    if step.tie_on:
+        method = ""
+    else:
+        method = "0" if step.method is None else step.method
+    target = "" if step.target is None else step.target
+    # if the toolface is > -99 then need to chop off a decimal
+    # this might also be the case with other variables... add similar logic
+    # if that needs changing
+    toolface = step.toolface
+    toolface = f'{step.toolface:>7.2f}' if toolface < -99 else f'{toolface:>7.3f}'
+    doc.append((
+        f"P:"
+        f" {step.md:>7.2f}"
+        f" {step.azi:>7.3f}"
+        f" {step.inc:>7.3f}"
+        f" {step.build_rate:>7.3f}"
+        f" {step.turn_rate:>7.3f}"
+        f" {step.dls:>7.3f}"
+        f" {toolface}"
+        f" {method:>4}"
+        f" {target:>10}"
+    ))
+    doc = add_location(doc, step.location)
+    return doc
+
+def add_survey_point(doc, step):
+    doc.append((
+        f"X:"
+        f" {step.cov_xx:>8.1f}"
+        f" {step.cov_xy:>8.1f}"
+        f" {step.cov_xz:>8.1f}"
+        f" {step.cov_yy:>8.1f}"
+        f" {step.cov_yz:>8.1f}"
+        f" {step.cov_zz:>8.1f}"
+        f" {step.x_bias:>7.2f}"
+        f" {step.y_bias:>7.2f}"
+        f" {step.z_bias:>7.2f}"
+        f" {step.tool:<38}"
+    ))
+    doc.append((
+        f"S:"
+        f" {step.md:>7.2f}"
+        f" {step.azi:>7.3f}"
+        f" {step.inc:>7.3f}"
+    ))
+    doc = add_location(doc, step.location)
+    return doc
+
+def get_unit_key(data):
+    key = [
+        key for key in data.wbp_dict['DEPTH'] if (
+            data.wbp_dict['DEPTH'][key]['depth'] == data.depth_unit
+            and data.wbp_dict['DEPTH'][key]['surface'] == data.surface_unit
+        )
+    ]
+    return key[0]
+
+def get_key(d, value):
+    key = [
+        key for key in d if (
+            d[key] == value
+        )
+    ]
+    return key[0]
+    
+def export(data, filename=None):
+    doc = []
+    if not isinstance(data, list):
+        data = [data]
+    for i, w in enumerate(data):
+        assert isinstance(
+            w, welleng.exchange.wbp.WellPlan
+        ), "Not a WellPlan object"
+        if i == 0:
+            doc.append(f"DEPTH {get_unit_key(w)}")
+            doc.append(f"TARGETS:")
+            doc = add_targets(doc, w.targets)
+            doc.append(f"WELLPLANS:")
+        doc = add_header(doc, w)
+        for s in w.steps:
+            doc = add_step(doc, s)
+
+    if filename is None:
+        return doc
+    else:
+        save_to_file(doc, filename)
+
+def save_to_file(doc, filename):
+    with open(f"{filename}", 'w') as f:
+        f.writelines(f'{l}\n' for l in doc)
+
