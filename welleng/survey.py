@@ -12,6 +12,7 @@ from .utils import (
 )
 
 from welleng.error import ErrorModel
+from welleng.exchange.wbp import TurnPoint
 
 class Survey:
     def __init__(
@@ -512,7 +513,33 @@ def get_circle_radius(survey, **targets):
 
     return (starts, ends)
 
-def get_sections(survey, **targets):
+def get_sections(survey, rtol=1e-1, atol=1e-2, **targets):
+    """
+    Tries to discretize a survey file into hold or curve sections. These
+    sections can then be used to generate a WellPlan object to generate a
+    .wbp format file for import into Landmark COMPASS, thus converting a
+    survey file to an editable well trajectory.
+
+    Note that this is in development and only tested on output from planning
+    software. In its current form it likely won't be too successful on
+    "as drilled" surveys (but optimizing the tolerances may help).
+
+    Parameters
+    ----------
+        survey: welleng.survey.Survey object
+        rtol: float (default: 1e-1)
+            The relative tolerance when comparing the normals using the
+            numpy.isclose() function.
+        atol: float (default: 1e-2)
+            The absolute tolerance when comparing the normals using the
+            numpy.isclose() function.
+        **targets: list of Target objects
+            Not supported yet...
+
+    Returns:
+        sections: list of welleng.exchange.wbp.TurnPoint objects
+    """
+
     # TODO: add target data to sections
     ss = SplitSurvey(survey)
     
@@ -520,7 +547,7 @@ def get_sections(survey, **targets):
         np.isclose(
             survey.normals[:-1],
             survey.normals[1:],
-            rtol=1e-01, atol=1e-02,
+            rtol=rtol, atol=atol,
             equal_nan=True
         ), axis=-1
     )
@@ -536,6 +563,7 @@ def get_sections(survey, **targets):
     ]
 
     sections = []
+    tie_on = True
     for s, e, a in zip(starts, ends, actions):
         md = survey.md[s]
         inc = survey.inc_deg[s]
@@ -543,6 +571,7 @@ def get_sections(survey, **targets):
         x = survey.e[s]
         y = survey.n[s]
         z = -survey.tvd[s]
+        location = [x, y, z]
 
         target = ""
         if survey.unit == 'meters':
@@ -557,8 +586,11 @@ def get_sections(survey, **targets):
             turn_rate = 0.0
             method = ""
         else:
+            method = "0"
             dls = survey.dls[e]
-            toolface = survey.toolface[s]
+            toolface = np.degrees(survey.toolface[s])
+            # looks like the toolface is in range -180 to 180 in the .wbp file
+            toolface = toolface - 360 if toolface > 180 else toolface
             delta_md = survey.md[e] - md
 
             # TODO: should sum this line by line to avoid issues with long sections
@@ -574,50 +606,27 @@ def get_sections(survey, **targets):
             delta_azi = min(delta_azi_1, delta_azi_2)
             turn_rate = delta_azi / delta_md * denominator
 
-        section = WellSection(
-            md,
-            inc,
-            azi,
-            build_rate,
-            turn_rate,
-            dls,
-            toolface,
-            method=0,
-            target="",
-            x=x,
-            y=y,
-            z=z
+        section = TurnPoint(
+            md=md,
+            inc=inc,
+            azi=azi,
+            build_rate=build_rate,
+            turn_rate=turn_rate,
+            dls=dls,
+            toolface=toolface,
+            method=method,
+            target=None,
+            tie_on=tie_on,
+            location=location
         )
 
         sections.append(section)
+
+        # Repeat the first section so that creating .wbp works
+        if tie_on:
+            sections.append(section)
+            sections[-1].tie_on = False
+
+        tie_on = False
     
     return sections
-
-class WellSection:
-    def __init__(
-        self,
-        md,
-        inc,
-        azi,
-        build_rate,
-        turn_rate,
-        dls,
-        toolface,
-        x,
-        y,
-        z,
-        method=0,
-        target=None
-    ):
-        self.md = md
-        self.inc = inc
-        self.azi = azi
-        self.build_rate = build_rate
-        self.turn_rate = turn_rate
-        self.dls = dls
-        self.toolface = toolface
-        self.method = method
-        self.target = target
-        self.x = np.around(x, decimals=2)
-        self.y = np.around(y, decimals=2)
-        self.z = np.around(z, decimals=2)

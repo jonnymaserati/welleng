@@ -1,0 +1,42 @@
+DEPTH:
+  '1':
+    surface: feet
+    depth: feet
+  '2':
+    surface: meters
+    depth: meters
+  '3':
+    surface: feet
+    depth: meters
+  '4':
+    surface: meters
+    depth: feet
+
+TARGETS:
+  type:
+    '1': circle
+    '2': ellipse
+    '3': rectangle
+
+LOCATION:
+  type:
+    '0': unknown
+    '1': surface
+    '2': ow_sidetrack
+    '3': wp_sidetrack
+    '4': look_ahead
+    '5': ow_well
+    '6': complex_extension
+    '7': site
+    '8': site_based_plan
+    '9': compass_well
+
+  plan_method:
+    '0': curve_only
+    '1': curve_hold
+    '2': opt_align
+    '9': something_special
+
+  dirty_flag:
+    '0': None
+    '4': locked_plan

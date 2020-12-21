@@ -22,7 +22,7 @@ class Connector:
         degrees=True,
         unit='meters',
         min_error=1e-5,
-        delta_radius=10,
+        delta_radius=20,
         min_tangent=10,
         max_iterations=1000,
     ):
@@ -80,7 +80,7 @@ class Connector:
                 iteration stops when the desired error tolerance is met. Value
                 must be less than 1. Use with caution as the code may
                 become unstable if this value is changed.
-            delta_radius: float (default: 10)
+            delta_radius: float (default: 20)
                 The delta radius (first curve and second curve sections) used
                 as an iteration stop when balancing radii. If the resulting
                 delta radius yielded from `dls_design` and `dls_design2` is
@@ -145,7 +145,10 @@ class Connector:
         if md2:
             assert not pos2, "Either md2 or pos2"
 
-        assert dls_design > 0, "dls_design must be greater than zero"
+        if dls_design is None:
+            dls_design = 3.0
+        else:
+            assert dls_design > 0, "dls_design must be greater than zero"
         assert min_error < 1, "min_error must be less than 1.0"
 
         # figure out what method is required to connect the points
@@ -369,6 +372,7 @@ class Connector:
     
     def _get_initial_methods(self):
         # TODO: probably better to load this in from a yaml file
+        # [md2, inc2, azi2, pos2, vec2] forms the booleans
         self.initial_methods = {
             '00000': 'no_input',
             '00001': 'min_curve_or_hold',
@@ -398,7 +402,7 @@ class Connector:
             '11001': 'vec_and_inc_azi',
             '11010': 'md_and_pos',
             '11011': 'md_and_pos',
-            '11100': 'min_curve',
+            '11100': 'min_curve_or_hold',
             '11101': 'vec_and_inc_azi',
             '11110': 'md_and_pos',
             '11111': 'md_and_pos'
@@ -569,7 +573,11 @@ class Connector:
             )
         )
 
-        self.vec23.append((self.pos3 - self.pos2) / np.linalg.norm(self.pos3 - self.pos2))
+        vec23_denom = np.linalg.norm(self.pos3 - self.pos2)
+        if vec23_denom == 0:
+            self.vec23.append(np.array([0,0,0]))
+        else:
+            self.vec23.append((self.pos3 - self.pos2) / vec23_denom)
 
         self.error = np.allclose(
             self.vec23[-1],
@@ -761,6 +769,9 @@ def get_vec_target(
     dist_curve,
     func_dogleg
 ):
+    if dist_curve == 0:
+        return vec1
+
     vec_target = (
         (
             pos_target - pos1 - (
@@ -798,7 +809,10 @@ def shape_factor(dogleg):
         dogleg: float
             The dogleg angle in radians of a curve section.
     """
-    return np.tan(dogleg / 2) / (dogleg / 2)
+    if dogleg == 0:
+        return 0
+    else:
+        return np.tan(dogleg / 2) / (dogleg / 2)
 
 def min_dist_to_target(radius, distances):
     """
@@ -866,6 +880,11 @@ def get_radius_critical(radius, distances, min_error):
         dist_perp_to_target,
         dist_norm_to_target
     ) = distances
+
+    ### NEW ###
+    if dist_norm_to_target == 0:
+        return 0
+    ### END ###
 
     radius_critical = (
         dist_to_target ** 2 / (
@@ -973,10 +992,13 @@ def get_survey(section_data, start_nev=[0,0,0], radius=10):
     return survey
 
 def interpolate_curve(md1, pos1, vec1, vec2, dist_curve, dogleg, func_dogleg, step, endpoint=False):
-    start_md = step - (md1 % step)
     end_md = abs(dist_curve)
-    md = np.arange(start_md, end_md, step)
-    md = np.concatenate(([0.], md))
+    if step is None:
+        md = np.array([0])
+    else: 
+        start_md = step - (md1 % step)
+        md = np.arange(start_md, end_md, step)
+        md = np.concatenate(([0.], md))
     if endpoint:
         md = np.concatenate((md, [end_md]))
     dogleg_interp = (dogleg / dist_curve * md).reshape(-1,1)
@@ -1006,10 +1028,13 @@ def interpolate_curve(md1, pos1, vec1, vec2, dist_curve, dogleg, func_dogleg, st
     return data
 
 def interpolate_hold(md1, pos1, vec1, md2, step, endpoint=False):
-    start_md = step - (md1 % step)
     end_md = md2 - md1
-    md = np.arange(start_md, end_md, step)
-    md = np.concatenate(([0.], md)) 
+    if step is None:
+        md = np.array([0])
+    else:
+        start_md = step - (md1 % step)
+        md = np.arange(start_md, end_md, step)
+        md = np.concatenate(([0.], md)) 
     if endpoint:
         md = np.concatenate((md, [end_md]))
     vec = np.full((len(md),3), vec1)

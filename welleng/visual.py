@@ -37,7 +37,8 @@ def plot(
 
     Parameters
     ----------
-        data: list of trimesh.Trimesh objects or a trmiesh.scene object
+        data: a trimesh.Trimesh object or a list of trimesh.Trimesh 
+        objects or a trmiesh.scene object
         names: list of strings (default: None)
             A list of names, index aligned to the list of well meshes.
         colors: list of strings (default: None)
@@ -49,6 +50,11 @@ def plot(
         meshes = [v for k, v in data.geometry.items()]
         if names == None:
             names = list(data.geometry.keys())
+
+    # handle a single mesh being passed
+    elif isinstance(data, trimesh.Trimesh):
+        meshes = [data]
+        
     else:
         meshes = data
         if names is not None:
@@ -62,7 +68,6 @@ def plot(
                 "Colors must be length of meshes list, 1 else None"
 
     meshes_vedo = []
-    # TODO: if inly a single mesh is provided then drop the need for a list
     for i, mesh in enumerate(meshes):
         if i == 0:
             vertices = np.array(mesh.vertices)
