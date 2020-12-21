@@ -1,5 +1,7 @@
 import os, yaml, welleng
 import numpy as np
+from datetime import datetime
+from welleng.version import __version__ as VERSION
 
 # TODO: need to relocate the class Target to target.py
 class Target:
@@ -110,6 +112,55 @@ class WellPlan:
         targets=[],
         line=None,
     ):
+        """
+        An object for storing data extracted from or for writing to a .wbp
+        file. As such, the following parameters are driven by those
+        required by Landmark's .wbp format.
+
+        Parameters
+        ----------
+            depth_unit: string (default: 'meters')
+                The units used for expressing depth (z axis or tvd) in either
+                'meters' or 'feet'.
+            surface_unit: string (default: 'meters')
+                The units used for expressing lateral distances (x, y, N, E)
+                in either 'meters' or 'feet'.
+            survey: welleng.survey.Survey object (default: None)
+            plan_name: string (default: None)
+                The name of the well bore plan.
+            parent_name: string (default: None)
+                The name of the parent well bore plan (in the event that
+                the planned well is a sidetrack or lateral).
+            location_type: string (default: None)
+                Best to review the wbp.yaml file for options.
+            plan_method: string (default: 'curve_only')
+                The method used for joining the plan points in the .wbp file.
+                Options can be reviewed in the wbp.yaml file but won't
+                currently effect how the code runs, so just leave default.
+            dirt_flag: string (default: None)
+                Again, review the wbp.yaml file for options, but this is
+                not currently used in this code.
+            sidetrack_id: string (default: None)
+                Leave default, not used.
+            dls: float (default: 0)
+                Suggests that this sets the design dls for planning, but
+                doesn't appear to matter so leave as default.
+            extension: float (default: 0)
+                Not really sure what this does.
+            wbp_data: list of strings (default: None)
+                A list of strings with each string representing a line from
+                of text loaded from a .wbp file. Used for importing .wbp
+                data.
+            targets: list of welleng.exchange.wbp.Target objects (default: [])
+                A list of target objects, but more of a future function.
+            line: int (default: None)
+                Used for processing .wbp files that contain multiple well
+                bores.
+
+        Returns
+        -------
+            A welleng.exchange.wbp.WellPlan object representing a well bore.
+        """
         # Import the wbp.yaml file as a dictionary
         wbp_dict_file = os.path.join(
             os.path.dirname(__file__),
@@ -131,6 +182,7 @@ class WellPlan:
             self.lines = line
 
         self.wbp_data = wbp_data
+        self.survey = survey
         if self.wbp_data is not None:
             assert self.survey is None, "Either wbp_data or survey"
             self.steps = []
@@ -156,6 +208,10 @@ class WellPlan:
             self.steps = welleng.survey.get_sections(survey)
 
     def _process_wbp_data(self):
+        """
+        Steps through imported .wbp data and interprets line by line to
+        populate a WellPlan object.
+        """
         # TODO: finish coding the rest of the target inputs
         self.flag = None
         for i, line in enumerate(self.wbp_data):
@@ -300,6 +356,19 @@ def string_strip(string, is_float=False):
         return None
 
 def load(filename):
+    """
+    Loads data line by line from a .wbp file, initiates a WellPlan object
+    and populates it with data.
+
+    Parameters
+    ----------
+        filename: string
+            The location and filename of the .wbp file to load.
+
+    Returns
+    -------
+        A welleng.exchange.wbp.WellPlan object
+    """
     assert filename[-4:] == '.wbp', 'Wrong format'
     with open(filename) as f:
         wbp_data = [line.rstrip() for line in f]
@@ -316,7 +385,7 @@ def load(filename):
     while True:
         well_plans.append(
             WellPlan(
-                data=wbp_data,
+                wbp_data=wbp_data,
                 depth_unit=depth_unit,
                 surface_unit=surface_unit,
                 targets=[],
@@ -451,7 +520,25 @@ def get_key(d, value):
     ]
     return key[0]
     
-def export(data, filename=None):
+def export(data, filename=None, comments=None):
+    """
+    Export a WellPlan object to .wbp format.
+
+    Parameters
+    ----------
+        data: welleng.exchange.wbp.WellPlan object or a list of objects
+        filename: string (default: None)
+            The filename to save the .wbp file to. If None then the 
+            output is returned as data.
+        comments: list of strings (default: None)
+            A list of comments to be printed in the header of the .wbp
+            file.
+
+    Returns
+    -------
+        doc: list of strings
+
+    """
     doc = []
     if not isinstance(data, list):
         data = [data]
@@ -461,6 +548,7 @@ def export(data, filename=None):
         ), "Not a WellPlan object"
         if i == 0:
             doc.append(f"DEPTH {get_unit_key(w)}")
+            doc = add_comments(doc, comments)
             doc.append(f"TARGETS:")
             doc = add_targets(doc, w.targets)
             doc.append(f"WELLPLANS:")
@@ -473,7 +561,146 @@ def export(data, filename=None):
     else:
         save_to_file(doc, filename)
 
+def add_comments(doc, comments):
+    doc.append(f"! {datetime.now():%Y-%m-%d %H:%M:%S%z}")
+    if comments is None:
+        doc.append(f"! welleng v{VERSION}")
+        doc.append(f"! Written by Jonny Corcutt")
+    else:
+        for c in comments:
+            doc.append(f"! {c}")
+    return doc
+
 def save_to_file(doc, filename):
     with open(f"{filename}", 'w') as f:
         f.writelines(f'{l}\n' for l in doc)
+
+def wbp_to_survey(data, step=None, radius=10):
+    """
+    Converts a WellPlan object created from a .wbp file into a Survey object.
+
+    Parameters
+    ----------
+        data: wellend.exchange.wbp.WellPlan object
+        step: float
+            The desired step interval used to create the Survey object.
+            e.g. step=30 would create a survey station every 30 meters.
+        radius: float (default: 10)
+            The radius of the well bore generated in the survey. The
+            default is used assuming that the well will be rendered with
+            welleng.visual.plot.
+
+    Returns
+    -------
+        survey: welleng.survey.Survey object
+    """
+    connections = []
+    for i, s in enumerate(data.steps):
+        if i == 0:
+            if isinstance(s, welleng.exchange.wbp.TurnPoint):
+                dls = [s.dls]
+            else:
+                dls = [0.]
+            # e, n, v = s.location
+            # start_nev = [n, e, v*-1]
+            continue
+        e, n, v = s.location
+        p = np.array([n, e, v*-1]) #- np.array(start_nev)
+        if i == 1:
+            md = [s.md]
+            inc = [s.inc]
+            azi = [s.azi]
+            pos = [p]
+            plan = [isinstance(s, welleng.exchange.wbp.TurnPoint)]
+            continue
+
+        # need to set dls_design relatively small to trigger adaption to
+        # the dls used in the imported design, or to set it to the actual
+        # dls used in the design.
+        if isinstance(s, welleng.exchange.wbp.TurnPoint):
+            dls_design = s.dls if s.dls > 0 else 0.1
+        else:
+            dls_design = data.dls if data.dls > 0 else None
+
+        c = welleng.connector.Connector(
+            pos1=pos[-1],
+            md1=md[-1],
+            inc1=inc[-1],
+            azi1=azi[-1],
+            md2=s.md,
+            inc2=s.inc,
+            azi2=s.azi,
+            dls_design=dls_design,
+        )
+        if isinstance(s, welleng.exchange.wbp.TurnPoint):
+            dls.append(s.dls)
+        else:
+            dls.append(0)
+        connections.append(c)
+        plan.append(isinstance(s, welleng.exchange.wbp.TurnPoint))
+        pos.append(c.pos_target)
+        inc.append(np.degrees(c.inc_target))
+        azi.append(np.degrees(c.azi_target))
+        md.append(c.md_target)
+
+    start_nev = np.array(pos[0])
+
+    survey_data = welleng.connector.interpolate_well(
+        connections,
+        step=step
+    )
+
+    survey = welleng.connector.get_survey(
+        survey_data,
+        start_nev=start_nev,
+        radius=radius
+    )
+
+    # Because of the way the imported file is processed, there will likely
+    # be duplicate survey stations in the survey. This function strips out
+    # these duplicates and rebuilds the survey.
+    survey = strip_duplicates(survey)
+
+    return survey
+
+def strip_duplicates(survey):
+    """
+    Function to strip out identical successive survey stations from a Survey
+    object.
+
+    Parameters
+    ----------
+        survey: welleng.survey.Survey object
+
+    Returns
+    -------
+        survey_stripped: welleng.survey.Survey object
+            A survey object with repeating survey stations removed.
+    """
+    temp = []
+    for i, s in enumerate(zip(
+        survey.md, survey.inc_rad, survey.azi_rad, survey.radius
+    )):
+        if i == 0:
+            temp.append(s)
+            continue
+        if s == temp[-1]:
+            continue
+        else:
+            temp.append(s)
+
+    md, inc, azi, radius = np.array(temp).reshape(-1,4).T
+
+    survey_stripped = welleng.survey.Survey(
+        md=md,
+        inc=inc,
+        azi=azi,
+        deg=False,
+        start_nev=survey.start_nev,
+        radius=radius
+    )
+
+    return survey_stripped
+
+
 
