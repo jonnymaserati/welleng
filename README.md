@@ -12,6 +12,23 @@
     - standard [ISCWSA] method
     - new mesh based method using the [Flexible Collision Library]
 ## New Features!
+  - **Import from Landmark .wbp files:** using the `exchange.wbp` module it's now possible to import .wbp files exported from Landmark's COMPASS or DecisionSpace software.
+  ```
+import welleng as we
+
+wp = we.exchange.wbp.load(demo.wbp) # import file
+survey = we.exchange.wbp.wbp_to_survey(wp, step=30) # convert to survey
+mesh = we.mesh.WellMesh(survey, method='circle') # convert to mesh
+we.visual.plot(m.mesh) # plot the mesh
+  ```
+  - **Export to .wbp files *(experiemental)*:** using the `exchange.wbp` module, it's possible to convert a planned survey file into a list of turn points that can be exported to a .wbp file.
+  ```
+import welleng as we
+
+wp = we.exchange.wbp.WellPlan(survey) # convert Survey to WellPlan object
+doc = we.exchange.wbp.export(wp) # create a .wbp document
+we.exchange.wbp.save_to_file(doc, f"demo.wbp") # save the document to file
+  ```
   - **Well Path Creation:** the addition of the `connector` module enables drilling well paths to be created simply by providing start and end locations (with some vector data like inclination and azimuth). No need to indicate *how* to connect the points, the module will figure that out itself.
   - **Fast visualization of well trajectory meshes:** addition of the `visual` module for quick and simple viewing and QAQC of well meshes.
   - **Mesh Based Collision Detection:** the current method for determining the Separation Factor between wells is constrained by the frequency and location of survey stations or necessitates interpolation of survey stations in order to determine if Anti-Collision Rules have been violated. Meshing the well bore interpolates between survey stations and as such is a more reliable method for identifying potential well bore collisions, especially wth more sparse data sets.

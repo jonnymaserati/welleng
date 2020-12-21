@@ -86,7 +86,8 @@ section = we.connector.Connector(
     vec2=vec2,
     inc2=inc2,
     azi2=azi2,
-    degrees=True
+    degrees=True,
+    min_tangent=0,
 )
 
 # Print some pertinent calculation data
