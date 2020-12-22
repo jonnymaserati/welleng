@@ -26,6 +26,7 @@ jobs:
     - name: Install APT On Linux
       run: |
         sudo apt-get update -qq -y
+        sudo apt-get install build-essential
         sudo apt-get install -qq -y libspatialindex-dev
     - name: Install dependencies
       run: |
