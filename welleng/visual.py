@@ -1,5 +1,5 @@
 import trimesh
-from vedo import show, Box, Axes, trimesh2vedo, Lines, colorMap
+from vedo import show, Box, Axes, trimesh2vedo, Lines, colorMap, Arrows, Text
 import numpy as np
 
 from .version import __version__ as VERSION
@@ -23,13 +23,22 @@ class World:
             height
         ).wireframe()
 
-def plot(data, names=None, colors=None, lines=None):
+def plot(
+    data,
+    names=None,
+    colors=None,
+    lines=None,
+    targets=None,
+    arrows=None,
+    text=None
+):
     """
     A vedo wrapper for quicly visualizing well trajectories for QAQC purposes.
 
     Parameters
     ----------
-        data: list of trimesh.Trimesh objects or a trmiesh.scene object
+        data: a trimesh.Trimesh object or a list of trimesh.Trimesh 
+        objects or a trmiesh.scene object
         names: list of strings (default: None)
             A list of names, index aligned to the list of well meshes.
         colors: list of strings (default: None)
@@ -41,6 +50,11 @@ def plot(data, names=None, colors=None, lines=None):
         meshes = [v for k, v in data.geometry.items()]
         if names == None:
             names = list(data.geometry.keys())
+
+    # handle a single mesh being passed
+    elif isinstance(data, trimesh.Trimesh):
+        meshes = [data]
+        
     else:
         meshes = data
         if names is not None:
@@ -89,6 +103,8 @@ def plot(data, names=None, colors=None, lines=None):
         meshes_vedo,
         w.world,
         lines,
+        targets,
+        arrows,
         axes,
         bg='lightgrey',
         bg2='lavender',
