@@ -59,7 +59,7 @@ setup(
         'matplotlib',
     ],
     classifiers=[
-        'License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)',  
+        'License :: OSI Approved :: Apache Software License',  
         'Operating System :: OS Independent',        
         'Programming Language :: Python :: 3',
     ],
