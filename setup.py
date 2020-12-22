@@ -46,7 +46,7 @@ setup(
     ],
     author='Jonathan Corcutt',
     author_email='jonnycorcutt@gmail.com',
-    license='LGPL v3',
+    license='Apache 2.0',
     packages=find_packages(exclude=["tests"]),
     install_requires=[
         'python-fcl',
