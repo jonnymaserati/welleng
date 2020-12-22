@@ -18,3 +18,4 @@ tabulate==0.8.7
 trimesh==3.8.18
 vedo==2020.4.2
 vtk==9.0.1
+PyYAML==5.3.1

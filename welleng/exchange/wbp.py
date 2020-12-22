@@ -617,10 +617,14 @@ def wbp_to_survey(data, step=None, radius=10):
         # need to set dls_design relatively small to trigger adaption to
         # the dls used in the imported design, or to set it to the actual
         # dls used in the design.
+        # TODO: update the connector code so that None can be passed for
+        # dls_design, which will set np.inf for radius_design and force
+        # the dls to be set by radius_critical.
         if isinstance(s, welleng.exchange.wbp.TurnPoint):
-            dls_design = s.dls if s.dls > 0 else 0.1
+            dls_design = s.dls if s.dls > 0 else 1e-5
         else:
-            dls_design = data.dls if data.dls > 0 else None
+            # dls_design = data.dls if data.dls > 0 else None
+            dls_design = 1e-5
 
         c = welleng.connector.Connector(
             pos1=pos[-1],
