@@ -456,7 +456,7 @@ class Connector:
                 self.pos_target = self.pos2 + (
                     self.vec2 * (self.md_target - self.md2)
                 )
-            else:    
+            else:
                 self.dist_curve, self.func_dogleg = get_curve_hold_data(
                         self.radius_critical, self.dogleg
                     )
