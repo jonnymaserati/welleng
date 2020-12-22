@@ -6,9 +6,10 @@ from scipy import optimize
 from scipy.spatial import KDTree
 from scipy.spatial.distance import cdist
 
-from .survey import Survey, interpolate_survey, slice_survey, make_cov
-from .utils import NEV_to_HLA, HLA_to_NEV
+from .survey import Survey, interpolate_survey, slice_survey
+from .utils import NEV_to_HLA
 from .mesh import WellMesh
+
 
 class Clearance:
     def __init__(
@@ -41,7 +42,7 @@ class Clearance:
         self.sigma_pa = sigma_pa
         self.Sm = Sm
         # self.N_verts = N_verts
-        
+
         self._get_kop_index(kop_depth)
         self._get_ref()
         self._get_radii(Rr, Ro)
@@ -51,7 +52,9 @@ class Clearance:
 
     def _get_kop_index(self, kop_depth):
         self.kop_depth = kop_depth
-        self.kop_index = np.searchsorted(self.reference.md, self.kop_depth, side="left")
+        self.kop_index = np.searchsorted(
+            self.reference.md, self.kop_depth, side="left"
+        )
 
     def _get_nevs(self, survey):
         return np.array([
@@ -104,6 +107,7 @@ class Clearance:
                 unit=self.reference.unit
             )
 
+
 def get_ref_sigma(sigma1, sigma2, sigma3, kop_index):
     sigma = np.array([sigma1, sigma2, sigma3]).T
     sigma_diff = np.diff(sigma, axis=0)
@@ -111,9 +115,10 @@ def get_ref_sigma(sigma1, sigma2, sigma3, kop_index):
     sigma_above = np.cumsum(sigma_diff[:kop_index][::-1], axis=0)[::-1]
     sigma_below = np.cumsum(sigma_diff[kop_index:], axis=0)
 
-    sigma_new = np.vstack((sigma_above, np.array([0,0,0]), sigma_below))
+    sigma_new = np.vstack((sigma_above, np.array([0, 0, 0]), sigma_below))
 
     return sigma_new
+
 
 class ISCWSA:
     def __init__(
@@ -126,7 +131,7 @@ class ISCWSA:
         """
         Clearance.__init__
         self.c = clearance
-        # get closest survey station in offset well for each survey 
+        # get closest survey station in offset well for each survey
         # station in the reference well
         self.idx = np.argmin(
             cdist(
@@ -188,11 +193,15 @@ class ISCWSA:
 
         [(start_points.append(p[0]), end_points.append(p[1])) for p in points]
 
-        return np.array([np.vstack(start_points).tolist(), np.vstack(end_points).tolist()])
+        return np.array([
+            np.vstack(start_points).tolist(), np.vstack(end_points).tolist()
+        ])
 
     def _get_closest_points(self):
         closest = []
-        for j, (i, station) in enumerate(zip(self.idx, self.c.ref_nevs.tolist())):
+        for j, (i, station) in enumerate(zip(
+            self.idx, self.c.ref_nevs.tolist()
+        )):
             if i > 0:
                 bnds = [(0, self.c.offset.md[i] - self.c.offset.md[i - 1])]
                 res_1 = optimize.minimize(
@@ -204,7 +213,8 @@ class ISCWSA:
                     )
                 mult = res_1.x[0] / (bnds[0][1] - bnds[0][0])
                 sigma_new_1 = self._interpolate_covs(i, mult)
-            else: res_1 = False
+            else:
+                res_1 = False
 
             if i < len(self.c.offset_nevs) - 1:
                 bnds = [(0, self.c.offset.md[i + 1] - self.c.offset.md[i])]
@@ -217,12 +227,22 @@ class ISCWSA:
                     )
                 mult = res_2.x[0] / (bnds[0][1] - bnds[0][0])
                 sigma_new_2 = self._interpolate_covs(i + 1, mult)
-            else: res_2 = False
+            else:
+                res_2 = False
 
             if res_1 and res_2 and res_1.fun < res_2.fun or not res_2:
-                closest.append((station, interpolate_survey(self.c.offset, res_1.x[0], i - 1), res_1, sigma_new_1))
+                closest.append((
+                    station,
+                    interpolate_survey(self.c.offset, res_1.x[0], i - 1),
+                    res_1, sigma_new_1
+                ))
             else:
-                closest.append((station, interpolate_survey(self.c.offset, res_2.x[0], i), res_2, sigma_new_2))
+                closest.append((
+                    station,
+                    interpolate_survey(self.c.offset, res_2.x[0], i),
+                    res_2,
+                    sigma_new_2
+                ))
 
         self.closest = closest
         md, inc, azi, n, e, tvd, x, y, z,  = np.array([
@@ -265,8 +285,8 @@ class ISCWSA:
             error_model=None,
             cov_hla=cov_hla,
             cov_nev=cov_nev,
-            start_xyz=[x[0],y[0],z[0]],
-            start_nev=[n[0],e[0],tvd[0]],
+            start_xyz=[x[0], y[0], z[0]],
+            start_nev=[n[0], e[0], tvd[0]],
             deg=False,
             unit=self.c.offset.unit
         )
@@ -293,7 +313,7 @@ class ISCWSA:
 
     def _get_delta_nev_vectors(self):
         temp = self.off_nevs - self.c.ref_nevs
-        self.dist_CC_Clr = norm(temp, axis=-1).reshape(-1,1)
+        self.dist_CC_Clr = norm(temp, axis=-1).reshape(-1, 1)
         with np.errstate(divide='ignore', invalid='ignore'):
             self.ref_delta_nevs = np.nan_to_num(
                 temp / self.dist_CC_Clr,
@@ -310,7 +330,7 @@ class ISCWSA:
             )
 
         self.hoz_bearing = np.arctan2(
-            self.ref_delta_nevs[:,1], self.ref_delta_nevs[:,0]
+            self.ref_delta_nevs[:, 1], self.ref_delta_nevs[:, 0]
         )
         self.hoz_bearing_deg = (np.degrees(self.hoz_bearing) + 360) % 360
 
@@ -333,10 +353,8 @@ class ISCWSA:
     def _get_covs(self):
         self.ref_cov_hla = self.c.ref.cov_hla
         self.ref_cov_nev = self.c.ref.cov_nev
-        
         self.off_cov_hla = self.off.cov_hla
         self.off_cov_nev = self.off.cov_nev
-
 
     def _get_PCRs(self):
         self.ref_PCR = np.hstack([
@@ -350,6 +368,7 @@ class ISCWSA:
 
     def _get_calc_hole(self):
         self.calc_hole = self.c.Rr + self.c.Ro[self.idx]
+
 
 class MeshClearance:
     def __init__(
@@ -418,8 +437,11 @@ class MeshClearance:
 
         [(start_points.append(p[0]), end_points.append(p[1])) for p in points]
 
-        return np.array([np.vstack(start_points).tolist(), np.vstack(end_points).tolist()])
-    
+        return np.array([
+            np.vstack(start_points).tolist(),
+            np.vstack(end_points).tolist()
+        ])
+
     def _get_mesh(self, survey, offset=False):
         """
         Generates a mesh object from the survey object.
@@ -449,7 +471,6 @@ class MeshClearance:
         off_nevs = self.c.offset_nevs
 
         for i in range(len(ref.md) - 1):
-            
             # slice a well section and create section survey
             s = slice_survey(ref, i)
 
@@ -462,7 +483,9 @@ class MeshClearance:
             )
 
             if self.return_data:
-                distance = self.cm.min_distance_single(m, return_name=True, return_data=True)
+                distance = self.cm.min_distance_single(
+                    m, return_name=True, return_data=True
+                )
                 closest_point_reference = distance[2].point("__external")
                 name_offset_absolute = distance[1]
                 closest_point_offset = distance[2].point(name_offset_absolute)
@@ -470,8 +493,8 @@ class MeshClearance:
                 ref_nev = self._get_closest_nev(s, closest_point_reference)
                 ref_md = ref.md[i-1] + ref_nev[1].x[0]
 
-                # find the closest point on the well trajectory to the closest points
-                # on the mesh surface
+                # find the closest point on the well trajectory to the closest
+                # points on the mesh surface
                 off_index = KDTree(off_nevs).query(closest_point_offset)[1]
                 if off_index < len(off.md) - 1:
                     s = slice_survey(off, off_index)
@@ -501,7 +524,9 @@ class MeshClearance:
 
                 vec = off_nev[0] - ref_nev[0]
                 distance_CC = norm(vec)
-                hoz_bearing_deg = (np.degrees(np.arctan2(vec[1], vec[0])) + 360) % 360
+                hoz_bearing_deg = (
+                    np.degrees(np.arctan2(vec[1], vec[0])) + 360
+                ) % 360
 
                 if collision[0] is True:
                     depth = norm(
@@ -523,8 +548,16 @@ class MeshClearance:
                 self.SF.append(round(SF, 2))
                 self.nev.append((ref_nev, off_nev))
                 self.hoz_bearing_deg.append(hoz_bearing_deg)
-                self.ref_PCR.append((ref_nev[1].fun - self.c.sigma_pa / 2 - self.Rr[i]) / self.sigma)
-                self.off_PCR.append((off_nev[1].fun - self.c.sigma_pa / 2 - self.Ro[off_index] - self.c.Sm) / self.sigma)
+                self.ref_PCR.append(
+                    (ref_nev[1].fun - self.c.sigma_pa / 2 - self.Rr[i])
+                    / self.sigma
+                )
+                self.off_PCR.append(
+                    (
+                        off_nev[1].fun - self.c.sigma_pa / 2
+                        - self.Ro[off_index] - self.c.Sm
+                    ) / self.sigma
+                )
                 self.calc_hole.append(ref.radius[i] + off.radius[off_index])
                 self.ref_md.append(ref_md)
                 self.off_md.append(off_md)
@@ -546,7 +579,7 @@ class MeshClearance:
         dist = norm(new_pos - pos, axis=-1)
 
         return dist
-    
+
     def _get_closest_nev(self, survey, pos):
         """
         Using an optimization function to determine the closest
@@ -566,13 +599,3 @@ class MeshClearance:
         nev = np.array([s.n, s.e, s.tvd]).T[-1]
 
         return (nev, res)
-
-    
-
-
-
-
-
-
-
-        

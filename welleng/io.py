@@ -1,6 +1,9 @@
 import numbers
+import numpy as np
+from .survey import Survey
 
 from openpyxl import load_workbook
+
 
 def get_standard_data(filename):
     # import data from Excel
@@ -26,17 +29,18 @@ def get_standard_data(filename):
 
     return data
 
+
 def get_data(well, sheet, data):
     temp = dict(
-        MD = [],
-        IncDeg = [],
-        AziDeg = [],
-        TVD = [],
-        N = [],
-        E = [],
-        sigmaH = [],
-        sigmaL = [],
-        sigmaA = [],
+        MD=[],
+        IncDeg=[],
+        AziDeg=[],
+        TVD=[],
+        N=[],
+        E=[],
+        sigmaH=[],
+        sigmaL=[],
+        sigmaA=[],
     )
 
     for row in sheet.iter_rows(
@@ -60,6 +64,7 @@ def get_data(well, sheet, data):
 
     return data
 
+
 def acr_setup(sheet, data):
     data["acr"]["Sm"] = sheet["I4"].value
     data["acr"]["sigmapa"] = sheet["I5"].value
@@ -69,8 +74,9 @@ def acr_setup(sheet, data):
 
     return data
 
+
 def make_survey(data, well):
-    start_nev = data["wells"][offset]["mesh"].NEVs[0]
+    start_nev = data["wells"]["offset"]["mesh"].NEVs[0]
     y, x, z = start_nev
     start_xyz = np.array([x, y, z])
     return Survey(
@@ -81,11 +87,13 @@ def make_survey(data, well):
         start_xyz=start_xyz
     )
 
+
 def import_iscwsa_collision_data(filename):
     data = get_standard_data(filename)
 
     return data
 
+
 if __name__ == "__main__":
-    filename = filename=f"reference/standard-set-of-wellpaths-for-evaluating-clearance-scenarios-r4-17-may-2017.xlsm"
+    filename = "reference/standard-set-of-wellpaths-for-evaluating-clearance-scenarios-r4-17-may-2017.xlsm"
     data = import_iscwsa_collision_data(filename)
