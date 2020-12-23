@@ -5,8 +5,8 @@ from welleng.error import ErrorModel
 from welleng.utils import get_sigmas
 
 # Read validation data from file:
-wd = json.load(open("test/data/error_mwdrev4_iscwsa_well_data.json"))
-vd = json.load(open("test/data/error_mwdrev4_iscwsa_validation.json"))
+wd = json.load(open("test/test_data/error_mwdrev4_iscwsa_well_data.json"))
+vd = json.load(open("test/test_data/error_mwdrev4_iscwsa_validation.json"))
 
 df = pd.DataFrame(vd)
 
@@ -78,4 +78,4 @@ def test_error_model_mwdrev4_iwcf(df=df, err=err):
 
     # if you wanted to view the results, this would save then to an Excel
     # file.
-    # df_r.to_excel("test/data/error_mwdrev4_iscwsa_validation_results.xlsx")
+    # df_r.to_excel("test/test_data/error_mwdrev4_iscwsa_validation_results.xlsx")
