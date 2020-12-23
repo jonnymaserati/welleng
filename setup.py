@@ -49,14 +49,15 @@ setup(
     license='Apache 2.0',
     packages=find_packages(exclude=["tests"]),
     install_requires=[
+        'matplotlib',
+        'networkx',
+        'pandas',
         'python-fcl',
         'numpy',
         'scipy',
         'trimesh',
         'vedo',
         'vtk',
-        'networkx',
-        'matplotlib',
     ],
     classifiers=[
         'License :: OSI Approved :: Apache Software License',  
