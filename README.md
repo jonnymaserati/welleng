@@ -95,7 +95,7 @@ connector_offset = we.connector.Connector(
     azi2=270,
 ).survey(step=50)
 
-# make a survey objects and calculate the uncertainty covariances
+# make a survey object and calculate the uncertainty covariances
 print("Making surveys...")
 survey_reference = we.survey.Survey(
     md=connector_reference.md,
