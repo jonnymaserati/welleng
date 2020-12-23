@@ -30,7 +30,8 @@ def plot(
     lines=None,
     targets=None,
     arrows=None,
-    text=None
+    text=None,
+    boxes=None,
 ):
     """
     A vedo wrapper for quicly visualizing well trajectories for QAQC purposes.
@@ -105,6 +106,7 @@ def plot(
         lines,
         targets,
         arrows,
+        boxes,
         axes,
         bg='lightgrey',
         bg2='lavender',
