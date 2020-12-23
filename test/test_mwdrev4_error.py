@@ -74,8 +74,12 @@ def test_error_model_mwdrev4_iwcf(df=df, err=err):
             ) * 100
         )
 
-    assert np.all(error < 0.5)
+    assert np.all(error < 0.001)
 
     # if you wanted to view the results, this would save then to an Excel
     # file.
     # df_r.to_excel("test/test_data/error_mwdrev4_iscwsa_validation_results.xlsx")
+
+
+if __name__ == '__main__':
+    test_error_model_mwdrev4_iwcf(df=df, err=err)
