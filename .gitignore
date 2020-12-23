@@ -12,6 +12,7 @@ data
 blender
 utils
 work
+*.vtu
 
 key.asc
 .~*
