@@ -8,7 +8,7 @@
 [welleng] aspires to be a collection of useful tools for Wells/Drilling Engineers, kicking off with a range of well trajectory analysis tools.
 
   - Generate survey listings and interpolation with minimum curvature
-  - Calculate well bore uncertainty data (currently utilizing the [ISCWSA] MWD Rev4 model)
+  - Calculate well bore uncertainty data (currently utilizing the [ISCWSA] MWD Rev4 model) - the coded error model is within 0.001% accuracy of the ISCWSA test data.
   - Calculate well bore clearance and Separation Factors (SF)
     - standard [ISCWSA] method
     - new mesh based method using the [Flexible Collision Library]
