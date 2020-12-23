@@ -218,35 +218,54 @@ class ErrorModel():
         # TODO: This is essentially minimum curvature... use function from utils instead (it's already in self.mc)
         md1, inc1, azi1 = np.array(survey[:-1]).T
         md2, inc2, azi2 = np.array(survey[1:]).T
-        delta_md = 1
+        # delta_md = 1
 
-        dogleg = np.arccos(
-            np.cos(inc2 - inc1)
-            - (np.sin(inc1) * np.sin(inc2)) * (1 - np.cos(azi2 - azi1))
-        )
+        # dogleg = np.arccos(
+        #     np.cos(inc2 - inc1)
+        #     - (np.sin(inc1) * np.sin(inc2)) * (1 - np.cos(azi2 - azi1))
+        # )
         
-        # manage discontinuity
-        with np.errstate(divide='ignore', invalid='ignore'):
-            rf = np.ones_like(dogleg)
-            rf = np.where(dogleg == 0, rf, 2 / dogleg * np.tan(dogleg / 2))
+        # # manage discontinuity
+        # with np.errstate(divide='ignore', invalid='ignore'):
+        #     rf = np.ones_like(dogleg)
+        #     rf = np.where(dogleg == 0, rf, 2 / dogleg * np.tan(dogleg / 2))
         
+        # N = np.array(
+        #     delta_md / 2 * (
+        #     np.sin(inc1) * np.cos(azi1)
+        #     + np.sin(inc2) * np.cos(azi2)
+        #     ) * rf
+        # )
+                    
+        # E = np.array(
+        #     delta_md / 2 * (
+        #     np.sin(inc1) * np.sin(azi1)
+        #     + np.sin(inc2) * np.sin(azi2)
+        #     ) * rf
+        # )
+
+        # V = np.array(
+        #     delta_md / 2 * (
+        #     np.cos(inc1) + np.cos(inc2)) * rf
+        # )
+
         N = np.array(
-            delta_md / 2 * (
+            0.5 * (
             np.sin(inc1) * np.cos(azi1)
             + np.sin(inc2) * np.cos(azi2)
-            ) * rf
+            )
         )
-                    
+
         E = np.array(
-            delta_md / 2 * (
+            0.5 * (
             np.sin(inc1) * np.sin(azi1)
             + np.sin(inc2) * np.sin(azi2)
-            ) * rf
+            )
         )
         
         V = np.array(
-            delta_md / 2 * (
-            np.cos(inc1) + np.cos(inc2)) * rf
+            0.5 * (
+            np.cos(inc1) + np.cos(inc2))
         )
 
         return np.vstack((np.array(np.zeros((1,3))), np.stack((N, E, V), axis=-1)))
