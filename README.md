@@ -19,10 +19,10 @@
   ```python
 import welleng as we
 
-wp = we.exchange.wbp.load(demo.wbp) # import file
+wp = we.exchange.wbp.load("demo.wbp") # import file
 survey = we.exchange.wbp.wbp_to_survey(wp, step=30) # convert to survey
 mesh = we.mesh.WellMesh(survey, method='circle') # convert to mesh
-we.visual.plot(m.mesh) # plot the mesh
+we.visual.plot(mesh.mesh) # plot the mesh
   ```
   
   - **Export to .wbp files *(experiemental)*:** using the `exchange.wbp` module, it's possible to convert a planned survey file into a list of turn points that can be exported to a .wbp file.
@@ -31,7 +31,7 @@ import welleng as we
 
 wp = we.exchange.wbp.WellPlan(survey) # convert Survey to WellPlan object
 doc = we.exchange.wbp.export(wp) # create a .wbp document
-we.exchange.wbp.save_to_file(doc, f"demo.wbp") # save the document to file
+we.exchange.wbp.save_to_file(doc, "demo.wbp") # save the document to file
   ```
   
   - **Well Path Creation:** the addition of the `connector` module enables drilling well paths to be created simply by providing start and end locations (with some vector data like inclination and azimuth). No need to indicate *how* to connect the points, the module will figure that out itself.
@@ -95,7 +95,7 @@ connector_offset = we.connector.Connector(
     azi2=270,
 ).survey(step=50)
 
-# make a survey objects and calculate the uncertainty covariances
+# make a survey object and calculate the uncertainty covariances
 print("Making surveys...")
 survey_reference = we.survey.Survey(
     md=connector_reference.md,
