@@ -21,16 +21,17 @@ def get_standard_data(filename):
 
     for i, well in enumerate(wells):
         sheet = workbook[well]
-        
+        data = get_well_data(well, sheet, data)
         if well == "Reference well":
             data = acr_setup(sheet, data)
-        
-        data = get_data(well, sheet, data)
+        else:
+            sheet = workbook[f"{well[:5]}clearance"]
+            data = get_clearance_data(well, sheet, data)
 
     return data
 
 
-def get_data(well, sheet, data):
+def get_well_data(well, sheet, data):
     temp = dict(
         MD=[],
         IncDeg=[],
@@ -88,6 +89,21 @@ def make_survey(data, well):
     )
 
 
+def get_clearance_data(well, sheet, data):
+    sf = []
+    for row in sheet.iter_rows(
+        min_row=5,
+        max_row=(),
+        min_col=15,
+        max_col=16,
+    ):
+        sf.append(row[0].value)
+
+    data["wells"][f"{well}"]['SF'] = sf
+
+    return data
+
+
 def import_iscwsa_collision_data(filename):
     data = get_standard_data(filename)
 
@@ -95,5 +111,8 @@ def import_iscwsa_collision_data(filename):
 
 
 if __name__ == "__main__":
-    filename = "reference/standard-set-of-wellpaths-for-evaluating-clearance-scenarios-r4-17-may-2017.xlsm"
+    filename = (
+        "reference/standard-set-of-wellpaths"
+        "-for-evaluating-clearance-scenarios-r4-17-may-2017.xlsm"
+    )
     data = import_iscwsa_collision_data(filename)

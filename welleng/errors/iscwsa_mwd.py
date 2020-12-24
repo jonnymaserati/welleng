@@ -65,7 +65,7 @@ class iscwsaMwd:
     def _DRFR(self, survey, mag=0.35, propagation='random', NEV=True):
         dpde = np.full((len(survey), 3), [1,0,0])
         e_DIA = dpde * mag
-        
+
         return self.e._generate_error('DRFR', e_DIA, propagation, NEV)
 
     def _DSFS(self, survey, mag=0.00056, propagation='systematic', NEV=True):
@@ -76,8 +76,8 @@ class iscwsaMwd:
         return self.e._generate_error('DSFS', e_DIA, propagation, NEV)
 
     def _DSTG(self, survey, TVD, mag=0.00000025, propagation='systematic', NEV=True):
-        dpde = np.full((len(survey), 3), [1,0,0])
-        dpde[:,0] = TVD
+        dpde = np.full((len(survey), 3), [1., 0., 0.])
+        dpde[:, 0] = TVD
         dpde = dpde * np.array(survey)
         e_DIA = dpde * mag
 
