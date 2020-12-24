@@ -4,14 +4,15 @@
 [![PyPI version](https://badge.fury.io/py/welleng.svg)](https://badge.fury.io/py/welleng)
 [![Downloads](https://static.pepy.tech/personalized-badge/welleng?period=total&units=international_system&left_color=grey&right_color=orange&left_text=Downloads)](https://pepy.tech/project/welleng)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![welleng-tests Actions Status](https://github.com/jonnymaserati/welleng/workflows/welleng-tests/badge.svg)](https://github.com/jonnymaserati/welleng/actions)
 
 [welleng] aspires to be a collection of useful tools for Wells/Drilling Engineers, kicking off with a range of well trajectory analysis tools.
 
   - Generate survey listings and interpolation with minimum curvature
   - Calculate well bore uncertainty data (currently utilizing the [ISCWSA] MWD Rev4 model) - the coded error model is within 0.001% accuracy of the ISCWSA test data.
   - Calculate well bore clearance and Separation Factors (SF)
-    - standard [ISCWSA] method
-    - new mesh based method using the [Flexible Collision Library]
+    - standard [ISCWSA] method within 0.5% accuracy of the ISCWSA test data.
+    - new mesh based method using the [Flexible Collision Library].
 
 ## New Features!
 
@@ -19,10 +20,10 @@
   ```python
 import welleng as we
 
-wp = we.exchange.wbp.load(demo.wbp) # import file
+wp = we.exchange.wbp.load("demo.wbp") # import file
 survey = we.exchange.wbp.wbp_to_survey(wp, step=30) # convert to survey
 mesh = we.mesh.WellMesh(survey, method='circle') # convert to mesh
-we.visual.plot(m.mesh) # plot the mesh
+we.visual.plot(mesh.mesh) # plot the mesh
   ```
   
   - **Export to .wbp files *(experiemental)*:** using the `exchange.wbp` module, it's possible to convert a planned survey file into a list of turn points that can be exported to a .wbp file.
@@ -31,7 +32,7 @@ import welleng as we
 
 wp = we.exchange.wbp.WellPlan(survey) # convert Survey to WellPlan object
 doc = we.exchange.wbp.export(wp) # create a .wbp document
-we.exchange.wbp.save_to_file(doc, f"demo.wbp") # save the document to file
+we.exchange.wbp.save_to_file(doc, "demo.wbp") # save the document to file
   ```
   
   - **Well Path Creation:** the addition of the `connector` module enables drilling well paths to be created simply by providing start and end locations (with some vector data like inclination and azimuth). No need to indicate *how* to connect the points, the module will figure that out itself.
@@ -95,7 +96,7 @@ connector_offset = we.connector.Connector(
     azi2=270,
 ).survey(step=50)
 
-# make a survey objects and calculate the uncertainty covariances
+# make a survey object and calculate the uncertainty covariances
 print("Making surveys...")
 survey_reference = we.survey.Survey(
     md=connector_reference.md,
