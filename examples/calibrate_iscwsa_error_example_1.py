@@ -3,19 +3,22 @@ import pandas as pd
 
 import welleng as we
 
-from io import BytesIO
 from openpyxl import load_workbook
 from dataclasses import dataclass
 
 # import the ISCWSA standard Excel data
 print("Importing data...")
 try:
-    workbook = load_workbook(filename=f"examples/data/error-model-example-mwdrev4-iscwsa-1.xlsx", data_only=True)
+    workbook = load_workbook(
+        filename="examples/data/error-model-example-mwdrev4-iscwsa-1.xlsx",
+         data_only=True
+    )
 except:
     print("Make sure you have a local copy of ISCWSA's Excel file and have updated the location in the code.")
 sheets = workbook.sheetnames
 model = workbook['Model']
 wellpath = workbook['Wellpath']
+
 
 @dataclass
 class WellHeader:
@@ -31,7 +34,7 @@ class WellHeader:
     FeetToMeters: float
 
 wh = WellHeader(
-    Latitude = wellpath['B2'].value,
+    Latitude=wellpath['B2'].value,
     G = wellpath['B3'].value,
     BTotal = wellpath['B4'].value,
     Dip = wellpath['B5'].value,
