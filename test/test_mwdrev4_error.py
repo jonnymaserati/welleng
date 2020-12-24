@@ -4,6 +4,15 @@ import pandas as pd
 from welleng.error import ErrorModel
 from welleng.utils import get_sigmas
 
+"""
+Test that the ISCWSA MWD Rev4 error model is working within a defined
+tolerance (the default has been set to 0.001%), testing against the
+MWD Rev 4 error model example provided by ISCWSA.
+"""
+
+# Set test tolerance as percentage
+TOLERANCE = 0.001
+
 # Read validation data from file:
 wd = json.load(open("test/test_data/error_mwdrev4_iscwsa_well_data.json"))
 vd = json.load(open("test/test_data/error_mwdrev4_iscwsa_validation.json"))
@@ -25,7 +34,7 @@ err = ErrorModel(
 
 
 # initiate lists
-def test_error_model_mwdrev4_iwcf(df=df, err=err):
+def test_error_model_mwdrev4_iscwsa(df=df, err=err):
     nn_c, ee_c, vv_c, ne_c, nv_c, ev_c = [], [], [], [], [], []
     data = [
         nn_c, ee_c, vv_c, ne_c, nv_c, ev_c
@@ -41,7 +50,7 @@ def test_error_model_mwdrev4_iwcf(df=df, err=err):
             source_cov = err.errors.errors[s].cov_NEV.T[i]
         v = get_sigmas(source_cov, long=True)
         for j, d in enumerate(v):
-            data[j].append(d)
+            data[j].append(d[0])
 
     # convert to dictionary
     ed = {}
@@ -74,12 +83,13 @@ def test_error_model_mwdrev4_iwcf(df=df, err=err):
             ) * 100
         )
 
-    assert np.all(error < 0.001)
+    assert np.all(error < TOLERANCE)
 
     # if you wanted to view the results, this would save then to an Excel
     # file.
     # df_r.to_excel("test/test_data/error_mwdrev4_iscwsa_validation_results.xlsx")
 
 
+# make above test runnanble separately
 if __name__ == '__main__':
-    test_error_model_mwdrev4_iwcf(df=df, err=err)
+    test_error_model_mwdrev4_iscwsa(df=df, err=err)

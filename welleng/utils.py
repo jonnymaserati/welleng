@@ -296,9 +296,11 @@ def get_sigmas(cov, long=False):
 
     assert cov.shape[-2:] == (3,3), "Cov is the wrong shape"
 
-    aa, ab, ac = cov[:, 0]
-    ab, bb, bc = cov[:, 1]
-    ac, bc, cc = cov[:, 2]
+    cov = cov.reshape(-1, 3, 3)
+
+    aa, ab, ac = cov[:, :, 0].T
+    ab, bb, bc = cov[:, :, 1].T
+    ac, bc, cc = cov[:, :, 2].T
 
     if long:
         return (aa, bb, cc, ab, ac, bc)
