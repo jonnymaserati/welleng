@@ -163,10 +163,9 @@ class ISCWSA:
         self._get_calc_hole()
 
         # calculate SF (renamed from ISCWSA_ACR)
-        self.SF = np.around(
+        self.SF = np.array(
             (self.dist_CC_Clr.T - self.calc_hole - self.c.Sm)
             / (self.c.k * np.sqrt(self.sigmaS ** 2 + self.c.sigma_pa ** 2)),
-            decimals=2
             ).reshape(-1)
 
         # for debugging
