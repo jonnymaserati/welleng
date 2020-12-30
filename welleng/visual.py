@@ -1,8 +1,9 @@
 import trimesh
-from vedo import show, Box, Axes, trimesh2vedo, Lines, colorMap, Arrows, Text
+from vedo import show, Box, Axes, trimesh2vedo, Lines
 import numpy as np
 
 from .version import __version__ as VERSION
+
 
 class World:
     def __init__(
@@ -40,7 +41,7 @@ def plot(
 
     Parameters
     ----------
-        data: a trimesh.Trimesh object or a list of trimesh.Trimesh 
+        data: a trimesh.Trimesh object or a list of trimesh.Trimesh
         objects or a trmiesh.scene object
         names: list of strings (default: None)
             A list of names, index aligned to the list of well meshes.
@@ -51,17 +52,17 @@ def plot(
     """
     if isinstance(data, trimesh.scene.scene.Scene):
         meshes = [v for k, v in data.geometry.items()]
-        if names == None:
+        if names is None:
             names = list(data.geometry.keys())
 
     # handle a single mesh being passed
     elif isinstance(data, trimesh.Trimesh):
         meshes = [data]
-        
+
     else:
         meshes = data
         if names is not None:
-            assert len(names) ==  len(data), \
+            assert len(names) == len(data), \
                 "Names must be length of meshes list else None"
     if colors is not None:
         if len(colors) == 1:
@@ -76,9 +77,15 @@ def plot(
             vertices = np.array(mesh.vertices)
             start_locations = np.array([mesh.vertices[0]])
         else:
-            vertices = np.concatenate((vertices, np.array(mesh.vertices)), axis=0)
-            start_locations = np.concatenate((start_locations, np.array([mesh.vertices[0]])), axis=0)
-    
+            vertices = np.concatenate(
+                (vertices, np.array(mesh.vertices)),
+                axis=0
+            )
+            start_locations = np.concatenate(
+                (start_locations, np.array([mesh.vertices[0]])),
+                axis=0
+            )
+
         # convert to vedo mesh
         m_vedo = trimesh2vedo(mesh)
         if colors is not None:
@@ -97,9 +104,9 @@ def plot(
     vec2 = np.array([vec1[1], vec1[0], 0])
     pos_new = [pos[0], pos[1], -4000] + vec2 * 3
     camera_opts = dict(
-        pos = pos_new,
-        focalPoint = pos,
-        viewup = [0, 0, -1]
+        pos=pos_new,
+        focalPoint=pos,
+        viewup=[0., 0., -1.]
     )
 
     show(
@@ -122,11 +129,12 @@ def plot(
 
 
 def get_start_location(start_locations):
-        start_location = np.average(start_locations, axis=0)
-        start_location[2] = np.amin(start_locations[:,2], axis=0)
-        return start_location
+    start_location = np.average(start_locations, axis=0)
+    start_location[2] = np.amin(start_locations[:, 2], axis=0)
+    return start_location
 
-def get_bb(vertices, min_size=[1000,1000,0]):
+
+def get_bb(vertices, min_size=[1000., 1000., 0.]):
     bb_max = np.amax(vertices, axis=0)
     bb_min = np.amin(vertices, axis=0)
 
@@ -147,7 +155,7 @@ def get_bb(vertices, min_size=[1000,1000,0]):
 def get_axes(world):
     axes = Axes(
         world,
-        xtitle='y: North (m)', # swap axis to plot correctly
+        xtitle='y: North (m)',  # swap axis to plot correctly
         ytitle='x: East (m)',
         ztitle='z: TVD (m)',
         xTitleJustify='bottom-right',
@@ -191,17 +199,3 @@ def get_lines(clearance):
     lines.addScalarBar(title='SF')
 
     return lines
-
-def get_arrows(vec, scalar=150):
-    arrows = Arrows(
-        startPoints=np.array([
-            section.pos1,
-            section.pos_target
-        ]),
-        endPoints=np.array([
-            section.pos1 + scalar * section.vec1,
-            section.pos_target + scalar * section.vec_target
-        ]),
-        s=0.5,
-        res=24
-)
