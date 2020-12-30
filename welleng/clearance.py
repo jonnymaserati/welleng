@@ -91,7 +91,7 @@ class Clearance:
                 tvd=self.reference.tvd[self.kop_index:],
                 vec=self.reference.vec[self.kop_index:],
                 radius=self.reference.radius[self.kop_index:],
-                well_ref_params=self.reference.well_ref_params,
+                header=self.reference.header,
                 error_model=self.reference.error_model,
                 start_xyz=[
                     self.reference.x[self.kop_index],
@@ -280,7 +280,7 @@ class ISCWSA:
             n=n,
             e=e,
             tvd=tvd,
-            well_ref_params=self.c.offset.well_ref_params,
+            header=self.c.offset.header,
             error_model=None,
             cov_hla=cov_hla,
             cov_nev=cov_nev,
