@@ -1,8 +1,8 @@
 import json
 import numpy as np
 import pandas as pd
-from welleng.error import ErrorModel
 from welleng.utils import get_sigmas
+from welleng.survey import Survey, SurveyHeader
 
 """
 Test that the ISCWSA MWD Rev4 error model is working within a defined
@@ -21,16 +21,25 @@ df = pd.DataFrame(vd)
 
 
 def get_md_index(error_data, md):
-    i = np.where(error_data.survey_deg == md)[0][0]
+    i = np.where(error_data.survey.md == md)[0][0]
     return i
 
 
-# generate error model
-err = ErrorModel(
-    survey=wd['survey'],
-    well_ref_params=wd['well_ref_params'],
-    AzimuthRef=wd['well_ref_params']['AzimuthRef']
+sh = SurveyHeader()
+
+for k, v in wd['header'].items():
+    setattr(sh, k, v)
+
+
+survey = Survey(
+    md=wd['survey']['md'],
+    inc=wd['survey']['inc'],
+    azi=wd['survey']['azi'],
+    header=sh,
+    error_model="iscwsa_mwd_rev4"
 )
+
+err = survey.err
 
 
 # initiate lists
@@ -43,7 +52,7 @@ def test_error_model_mwdrev4_iscwsa(df=df, err=err):
     # generate error data
     for index, row in df.iterrows():
         i = get_md_index(err, row['md'])
-        s = row['source'].replace('-', '_')
+        s = row['source']
         if s == "Totals":
             source_cov = err.errors.cov_NEVs.T[i]
         else:
@@ -87,7 +96,9 @@ def test_error_model_mwdrev4_iscwsa(df=df, err=err):
 
     # if you wanted to view the results, this would save then to an Excel
     # file.
-    # df_r.to_excel("test/test_data/error_mwdrev4_iscwsa_validation_results.xlsx")
+    # df_r.to_excel(
+    #     "test/test_data/error_mwdrev4_iscwsa_validation_results.xlsx"
+    # )
 
 
 # make above test runnanble separately

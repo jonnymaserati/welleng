@@ -1,4 +1,5 @@
 from welleng.io import import_iscwsa_collision_data
+from welleng.survey import SurveyHeader
 import json
 
 # Short script to extract and serialize the well data from the
@@ -12,16 +13,17 @@ filename = (
 )
 well_data = import_iscwsa_collision_data(filename)
 
-well_ref_params = dict(
-    Latitude=60.000000,
-    BTotal=50000.00,
-    Dip=70.00,
-    Declination=0.00,
-    Convergence=0.0,
-    G=9.80665
-)
-
-well_data['well_ref_params'] = well_ref_params
+for w in well_data['wells']:
+    sh = SurveyHeader(
+        name=w,
+        latitude=60.,
+        b_total=50000.,
+        dip=70.,
+        declination=0.,
+        convergence=0.,
+        azi_reference="grid"
+    )
+    well_data['wells'][w]['header'] = vars(sh)
 
 # serialize data into file:
 json.dump(
