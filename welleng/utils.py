@@ -6,7 +6,7 @@ class MinCurve:
         md,
         inc,
         azi,
-        start_xyz=[0,0,0],
+        start_xyz=[0., 0., 0.],
         unit="meters"
     ):
         """
@@ -16,16 +16,19 @@ class MinCurve:
             md: list or 1d array of floats
                 Measured depth along well path from a datum.
             inc: list or 1d array of floats
-                Well path inclincation (relative to z/tvd axis where 0 indicates down),
-                in radians.
+                Well path inclincation (relative to z/tvd axis where 0
+                indicates down), in radians.
             azi: list or 1d array of floats
                 Well path azimuth (relative to y/North axis),
                 in radians.
             unit: str
-                Either "meters" or "feet" to determine the unit of the dogleg severity.
+                Either "meters" or "feet" to determine the unit of the dogleg
+                severity.
 
         """
-        assert unit == "meters" or unit == "feet", 'Unknown unit, please select "meters" of "feet"'
+        assert unit == "meters" or unit == "feet", (
+            'Unknown unit, please select "meters" of "feet"'
+        )
 
         self.md = md
         survey_length = len(self.md)
@@ -36,9 +39,10 @@ class MinCurve:
         self.start_xyz = start_xyz
         self.unit = unit
 
-        # make two slices with a difference or 1 index to enable array calculations
+        # make two slices with a difference or 1 index to enable array
+        # calculations
         md_1 = md[:-1]
-        md_2 = md[1:] 
+        md_2 = md[1:]
 
         inc_1 = inc[:-1]
         inc_2 = inc[1:]

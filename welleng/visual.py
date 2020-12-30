@@ -23,6 +23,7 @@ class World:
             height
         ).wireframe()
 
+
 def plot(
     data,
     names=None,
@@ -32,6 +33,7 @@ def plot(
     arrows=None,
     text=None,
     boxes=None,
+    interactive=True,
 ):
     """
     A vedo wrapper for quicly visualizing well trajectories for QAQC purposes.
@@ -140,6 +142,7 @@ def get_bb(vertices, min_size=[1000,1000,0]):
 
     return world
 
+
 # make a dictionary of axes options
 def get_axes(world):
     axes = Axes(
@@ -159,10 +162,13 @@ def get_axes(world):
         zLabelRotation=1,
     )
 
-    for a in axes.unpack(): # unpack the Assembly to access its elements
-        if 'title' in a.name or 'NumericLabel' in a.name: a.mirror('y')
-        if 'yNumericLabel' in a.name: a.scale(0.8)
+    for a in axes.unpack():  # unpack the Assembly to access its elements
+        if 'title' in a.name or 'NumericLabel' in a.name:
+            a.mirror('y')
+        if 'yNumericLabel' in a.name:
+            a.scale(0.8)
     return axes
+
 
 def get_lines(clearance):
     """
@@ -185,3 +191,17 @@ def get_lines(clearance):
     lines.addScalarBar(title='SF')
 
     return lines
+
+def get_arrows(vec, scalar=150):
+    arrows = Arrows(
+        startPoints=np.array([
+            section.pos1,
+            section.pos_target
+        ]),
+        endPoints=np.array([
+            section.pos1 + scalar * section.vec1,
+            section.pos_target + scalar * section.vec_target
+        ]),
+        s=0.5,
+        res=24
+)

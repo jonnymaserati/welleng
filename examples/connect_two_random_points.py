@@ -6,7 +6,7 @@ import random
 # Some code for testing the connector module.
 
 # Generate some random pairs of points
-pos1 = [0,0,0]
+pos1 = [0., 0., 0.]
 md1 = 0
 
 pos2 = np.random.random(3) * 1000
@@ -79,7 +79,7 @@ print(
 
 # Initialize a connector object and connect the inputs
 section = we.connector.Connector(
-    pos1=[0.,0.,0],
+    pos1=[0., 0., 0],
     vec1=vec1,
     md2=md2,
     pos2=pos2,
@@ -112,7 +112,9 @@ if section.pos2 is not None:
     end_points = np.concatenate(([section.pos2], [section.pos_target]))
 if section.pos3 is not None:
     start_points = np.concatenate((start_points, [section.pos3]))
-    end_points = np.concatenate(([section.pos2], [section.pos3], [section.pos_target]))
+    end_points = np.concatenate(
+        ([section.pos2], [section.pos3], [section.pos_target])
+    )
 lines = Lines(
     startPoints=start_points,
     endPoints=end_points,
@@ -121,7 +123,7 @@ lines = Lines(
 )
 
 # Add some arrows to represent the vectors at the start and end positions
-scalar=150
+scalar = 150
 arrows = Arrows(
     startPoints=np.array([
         section.pos1,

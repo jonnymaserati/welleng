@@ -7,7 +7,7 @@ from tqdm import tqdm
 # for ease I accessed the data file locally and gave it a
 # shorter name. You'll need to change this to reflect the
 # local location of the data file.
-filename = f'data/Volve.xml'
+filename = 'data/Volve.xml'
 
 # read the WITSML data
 print("Importing the data...")
@@ -33,6 +33,10 @@ data = {}
 print("Processing wells...")
 # this is a bit slow... multithread this if you want to do it faster
 for well in tqdm(wells):
+    sh = we.survey.SurveyHeader(
+        name=well,
+        azi_reference="grid"
+    )
     w = df.loc[
         df['def_survey_header_id'] == well
     ].sort_values(by=['md'])
@@ -57,7 +61,8 @@ for well in tqdm(wells):
         azi=np.array(w['azimuth']).astype(float),
         n=np.array(w['offset_north']).astype(float),
         e=np.array(w['offset_east']).astype(float),
-        tvd=np.array(w['tvd']).astype(float) / 3.281, # appears that TVD data is in feet?
+        tvd=np.array(w['tvd']).astype(float) / 3.281,  # appears that TVD data is in feet?
+        header=sh,
         cov_nev=cov_nev,
         radius=radius
     )

@@ -1,13 +1,13 @@
 import numpy as np
-import math as m
+from copy import deepcopy
 from .utils import get_vec, get_angles
-from .survey import Survey
+from .survey import Survey, SurveyHeader
 
 
 class Connector:
     def __init__(
         self,
-        pos1=[0,0,0],
+        pos1=[0., 0., 0.],
         vec1=None,
         inc1=None,
         azi1=None,
@@ -26,11 +26,11 @@ class Connector:
         min_tangent=10,
         max_iterations=1000,
     ):
-        
+
         """
-        A class to provide a fast, efficient method for determining well bore 
-        section geometry using the appropriate method based upon the provided
-        parameters, with the intent of assisting machine learning fitness
+        A class to provide a fast, efficient method for determining well
+        bore section geometry using the appropriate method based upon the
+        provided parameters, with the intent of assisting machine learning
         fitness functions. Interpolation between the returned control points
         can be performed postumously - attempts are made to keep processing to
         a minimum in the event that the Connector is being used for machine
@@ -96,7 +96,7 @@ class Connector:
                 depth of recursion, but if you're hitting the default stop
                 then consider changing `delta_radius` and `min_tangent` as
                 your expectations may be unrealistic (this is open source
-                software after all!)     
+                software after all!)
 
         Results
         -------
@@ -115,18 +115,22 @@ class Connector:
 
         # METHODS = [
         #     'hold',
-        #     'curve_hold', # 
+        #     'curve_hold',
         #     'min_dist_to_target',
         #     'min_curve_to_target',
         #     'curve_hold_curve',
         #     'min_curve'
         # ]
 
-        # quick check that inputs are workable and if not some steer to 
+        # quick check that inputs are workable and if not some steer to
         # the user.
-        assert vec1 is not None or (inc1 is not None and azi1 is not None), "Require either vec1 or (inc1 and azi1)"
+        assert vec1 is not None or (inc1 is not None and azi1 is not None), (
+            "Require either vec1 or (inc1 and azi1)"
+        )
         if vec1 is not None:
-            assert inc1 is None and azi1 is None, "Either vec1 or (inc1 and azi1)"
+            assert inc1 is None and azi1 is None, (
+                "Either vec1 or (inc1 and azi1)"
+            )
         if (inc1 is not None or azi1 is not None):
             assert vec1 is None, "Either vec1 or (inc1 and azi1)"
 
@@ -152,9 +156,11 @@ class Connector:
         assert min_error < 1, "min_error must be less than 1.0"
 
         # figure out what method is required to connect the points
-        target_input = convert_target_input_to_booleans(md2, inc2, azi2, pos2, vec2)
+        target_input = convert_target_input_to_booleans(
+            md2, inc2, azi2, pos2, vec2
+        )
         self.initial_method = self.initial_methods[target_input]
-        
+
         # do some more initialization stuff
         self.min_error = min_error
         self.min_tangent = min_tangent
@@ -177,7 +183,9 @@ class Connector:
             else:
                 self.inc1 = inc1
                 self.azi1 = azi1
-            self.vec1 = np.array(get_vec(self.inc1, self.azi1, nev=True, deg=False))
+            self.vec1 = np.array(get_vec(
+                self.inc1, self.azi1, nev=True, deg=False
+            ))
         else:
             self.vec1 = np.array(vec1)
             self.inc1, self.azi1 = get_angles(self.vec1, nev=True).reshape(2)
@@ -212,14 +220,18 @@ class Connector:
                 self.azi_target = np.radians(azi2)
             else:
                 self.azi_target = azi2
-            self.vec_target = get_vec(self.inc_target, self.azi_target, nev=True, deg=False)
+            self.vec_target = get_vec(
+                self.inc_target, self.azi_target, nev=True, deg=False
+            )
         elif azi2 is None:
             self.azi_target = self.azi1
             if degrees:
                 self.inc_target = np.radians(inc2)
             else:
                 self.inc_target = inc2
-            self.vec_target = get_vec(self.inc_target, self.azi_target, nev=True, deg=False)
+            self.vec_target = get_vec(
+                self.inc_target, self.azi_target, nev=True, deg=False
+            )
         else:
             self.vec_target = vec2
             self.inc_target = inc2
@@ -261,7 +273,7 @@ class Connector:
         self.radius_critical, self.radius_critical2 = np.inf, np.inf
 
         # Things fall apart if the start and end vectors exactly equal
-        # one another, so need to check for this and if this is the 
+        # one another, so need to check for this and if this is the
         # case, modify the end vector slightly. This is a lazy way of
         # doing this, but it's fast. Probably a more precise way would
         # be to split the dogelg in two, but that's more hassle than
@@ -281,7 +293,7 @@ class Connector:
 
         # and finally, actually do something...
         self._use_method()
-    
+
     def _min_dist_to_target(self):
         (
             self.tangent_length,
@@ -330,16 +342,16 @@ class Connector:
         )
         self._get_angles_target()
         self._get_md_target()
-    
+
     def _use_method(self):
         if self.method == 'hold':
             self._hold()
         elif self.method == 'min_curve':
             self._min_curve()
         elif self.method == 'curve_hold_curve':
-            self.pos2_list, self.pos3_list = [], [self.pos_target]
-            self.vec23 = [np.array([0,0,0])]
-            self._target_pos_and_vec_defined(self.pos_target)
+            self.pos2_list, self.pos3_list = [], [deepcopy(self.pos_target)]
+            self.vec23 = [np.array([0., 0., 0.])]
+            self._target_pos_and_vec_defined(deepcopy(self.pos_target))
         else:
             self.distances = self._get_distances(
                 self.pos1, self.vec1, self.pos_target
@@ -353,7 +365,6 @@ class Connector:
                 self.method = 'min_curve_to_target'
                 self._min_curve_to_target()
 
-    
     def _get_method(self):
         assert self.initial_method not in [
             'no_input',
@@ -364,12 +375,21 @@ class Connector:
             self.method = 'hold'
         elif self.initial_method[-8:] == '_or_hold':
             if np.array_equal(self.vec_target, self.vec1):
-                self.method = 'hold'
+                if self.pos_target is None:
+                    self.method = 'hold'
+                elif np.array_equal(
+                        self.vec_target,
+                        (self.pos_target - self.pos1)
+                        / np.linalg.norm(self.pos_target - self.pos1)
+                ):
+                    self.method = 'hold'
+                else:
+                    self.method = self.initial_method[:-8]
             else:
                 self.method = self.initial_method[:-8]
         else:
             self.method = self.initial_method
-    
+
     def _get_initial_methods(self):
         # TODO: probably better to load this in from a yaml file
         # [md2, inc2, azi2, pos2, vec2] forms the booleans
@@ -377,7 +397,7 @@ class Connector:
             '00000': 'no_input',
             '00001': 'min_curve_or_hold',
             '00010': 'curve_hold',
-            '00011': 'curve_hold_curve',
+            '00011': 'curve_hold_curve_or_hold',
             '00100': 'min_curve_or_hold',
             '00101': 'vec_and_inc_azi',
             '00110': 'curve_hold',
@@ -388,7 +408,7 @@ class Connector:
             '01011': 'vec_and_inc_azi',
             '01100': 'min_curve_or_hold',
             '01101': 'vec_and_inc_azi',
-            '01110': 'curve_hold_curve',
+            '01110': 'curve_hold_curve_or_hold',
             '01111': 'vec_and_inc_azi',
             '10000': 'hold',
             '10001': 'min_curve_or_hold',
@@ -407,7 +427,7 @@ class Connector:
             '11110': 'md_and_pos',
             '11111': 'md_and_pos'
         }
-    
+
     def _min_curve(self):
         self.dogleg = get_dogleg(
             self.inc1, self.azi1, self.inc_target, self.azi_target
@@ -427,7 +447,9 @@ class Connector:
                     self.func_dogleg
                 ).reshape(3)
         else:
-            self.radius_critical = abs((self.md_target - self.md1) / self.dogleg)
+            self.radius_critical = abs(
+                (self.md_target - self.md1) / self.dogleg
+            )
             if (
                 self.radius_critical > self.radius_design
                 or (
@@ -437,7 +459,8 @@ class Connector:
             ):
                 self.md2 = (
                     self.md1
-                    + min(self.radius_design, self.radius_critical) * self.dogleg
+                    + min(self.radius_design, self.radius_critical)
+                    * self.dogleg
                 )
                 (
                     self.inc2, self.azi2, self.vec2
@@ -468,14 +491,22 @@ class Connector:
                     self.dist_curve,
                     self.func_dogleg
                 ).reshape(3)
-    
-    def _hold(self):        
-        self.pos_target = (
-            self.pos1 + self.vec1 * (self.md_target - self.md1)
-        )
+
+    def _hold(self):
+        if self.pos_target is None:
+            self.pos_target = (
+                self.pos1 + self.vec1 * (self.md_target - self.md1)
+            )
+        if self.md_target is None:
+            self.md_target = (
+                np.linalg.norm(self.pos_target - self.pos1)
+                + self.md1
+            )
 
     def _get_angles_target(self):
-        self.inc_target, self.azi_target = get_angles(self.vec_target, nev=True).reshape(2)
+        self.inc_target, self.azi_target = get_angles(
+            self.vec_target, nev=True
+        ).reshape(2)
 
     def _get_md_target(self):
         self.md_target = (
@@ -485,7 +516,7 @@ class Connector:
             + self.md1
         )
 
-    def _target_pos_and_vec_defined(self, pos3, vec_old=[0,0,0]):
+    def _target_pos_and_vec_defined(self, pos3, vec_old=[0., 0., 0.]):
         self.pos3 = pos3
         self.distances1 = self._get_distances(self.pos1, self.vec1, self.pos3)
 
@@ -575,7 +606,7 @@ class Connector:
 
         vec23_denom = np.linalg.norm(self.pos3 - self.pos2)
         if vec23_denom == 0:
-            self.vec23.append(np.array([0,0,0]))
+            self.vec23.append(np.array([0., 0., 0.]))
         else:
             self.vec23.append((self.pos3 - self.pos2) / vec23_denom)
 
@@ -602,13 +633,15 @@ class Connector:
                     or self.radius_critical < self.radius_design
                 )
                 and
-                abs(self.radius_critical - self.radius_critical2) > self.delta_radius
+                abs(self.radius_critical - self.radius_critical2)
+                > self.delta_radius
             )
         ):
             # A solution will typically be found within a few iterations,
             # however it will likely be unbalanced in terms of dls between the
             # two curve sections. The code below will re-initiate iterations
-            # to balance the curvatures until the delta_radius parameter is met.
+            # to balance the curvatures until the delta_radius parameter is
+            # met.
             if self.error:
                 self.radius_critical = self.md_target / (
                     abs(self.dogleg) + abs(self.dogleg2)
@@ -616,7 +649,9 @@ class Connector:
                 self.radius_critical2 = self.radius_critical
             self.iterations += 1
             # prevent a loop ad infinitum
-            assert self.iterations < self.max_iterations, "Out of iteration ammo"
+            assert self.iterations < self.max_iterations, (
+                "Out of iteration ammo"
+            )
             self._target_pos_and_vec_defined(self.pos3, self.vec23[-1])
         else:
             # get pos1 to pos2 curve data
@@ -666,7 +701,7 @@ class Connector:
             self.md3 = self.md2 + tangent_length
 
             self.md_target = self.md3 + abs(self.dist_curve2)
-    
+
     def interpolate(self, step=30):
         return interpolate_well([self], step)
 
@@ -700,7 +735,7 @@ class Connector:
             self._mod_pos(pos_target)
         if np.allclose(pos1, pos_target):
             return (0, 0, 0)
-        
+
         else:
             dist_to_target = (
                 np.linalg.norm((pos_target - pos1))
@@ -732,6 +767,7 @@ def check_dogleg(dogleg):
     else:
         return dogleg
 
+
 def mod_vec(vec, error=1e-5):
     # if it's not working then twat it with a hammer
     vec_mod = vec * np.array([1, 1, 1 - error])
@@ -739,6 +775,7 @@ def mod_vec(vec, error=1e-5):
     inc_mod, azi_mod = get_angles(vec_mod, nev=True).T
 
     return vec_mod, inc_mod, azi_mod
+
 
 def get_pos(pos1, vec1, vec2, dist_curve, func_dogleg):
     # this function is redundent, but I'd like to reinstate it one day
@@ -760,6 +797,7 @@ def get_pos(pos1, vec1, vec2, dist_curve, func_dogleg):
     )
 
     return pos2
+
 
 def get_vec_target(
     pos1,
@@ -786,10 +824,11 @@ def get_vec_target(
             ) + tangent_length
         )
     )
-    
+
     vec_target /= np.linalg.norm(vec_target)
 
     return vec_target
+
 
 def get_curve_hold_data(radius, dogleg):
     dist_curve = radius * dogleg
@@ -799,6 +838,7 @@ def get_curve_hold_data(radius, dogleg):
         dist_curve,
         func_dogleg
     )
+
 
 def shape_factor(dogleg):
     """
@@ -813,6 +853,7 @@ def shape_factor(dogleg):
         return 0
     else:
         return np.tan(dogleg / 2) / (dogleg / 2)
+
 
 def min_dist_to_target(radius, distances):
     """
@@ -832,8 +873,7 @@ def min_dist_to_target(radius, distances):
 
     # determine the dogleg angle of the curve section
     dogleg = 2 * np.arctan2(
-        (dist_perp_to_target - tangent_length)
-        ,
+        (dist_perp_to_target - tangent_length),
         (
             2 * radius - dist_norm_to_target
         )
@@ -841,9 +881,10 @@ def min_dist_to_target(radius, distances):
 
     return tangent_length, dogleg
 
+
 def min_curve_to_target(distances):
     """
-    Calculates the control points for a curve section from the start 
+    Calculates the control points for a curve section from the start
     position and vector to the target position which is not achievable with
     the provided dls_design.
     """
@@ -874,6 +915,7 @@ def min_curve_to_target(distances):
         dogleg
     )
 
+
 def get_radius_critical(radius, distances, min_error):
     (
         dist_to_target,
@@ -881,10 +923,8 @@ def get_radius_critical(radius, distances, min_error):
         dist_norm_to_target
     ) = distances
 
-    ### NEW ###
     if dist_norm_to_target == 0:
         return 0
-    ### END ###
 
     radius_critical = (
         dist_to_target ** 2 / (
@@ -893,6 +933,7 @@ def get_radius_critical(radius, distances, min_error):
     ) * (1 - min_error)
 
     return radius_critical
+
 
 def angle(vec1, vec2, acute=True):
     angle = np.arccos(
@@ -909,6 +950,7 @@ def angle(vec1, vec2, acute=True):
     else:
         return 2 * np.pi - angle
 
+
 def get_dogleg(inc1, azi1, inc2, azi2):
     dogleg = (
         2 * np.arcsin(
@@ -921,6 +963,7 @@ def get_dogleg(inc1, azi1, inc2, azi2):
     )
 
     return dogleg
+
 
 def interpolate_well(sections, step=30):
     """
@@ -944,14 +987,15 @@ def interpolate_well(sections, step=30):
         'curve_hold_curve': get_interpololate_curve_hold_curve,
         'min_curve': get_min_curve
     }
-    
+
     data = []
     for s in sections:
         data.extend(method[s.method](s, step))
 
     return data
 
-def get_survey(section_data, start_nev=[0,0,0], radius=10):
+
+def get_survey(section_data, start_nev=[0., 0., 0.], radius=10):
     """
     Constructs a well survey from a list of sections of control points.
 
@@ -980,6 +1024,10 @@ def get_survey(section_data, start_nev=[0,0,0], radius=10):
         for s in section_data
     ]).T
 
+    sh = SurveyHeader(
+        azi_reference="grid"
+    )
+
     survey = Survey(
         md=md,
         inc=inc,
@@ -987,21 +1035,33 @@ def get_survey(section_data, start_nev=[0,0,0], radius=10):
         start_nev=start_nev,
         deg=False,
         radius=radius,
+        header=sh,
     )
 
     return survey
 
-def interpolate_curve(md1, pos1, vec1, vec2, dist_curve, dogleg, func_dogleg, step, endpoint=False):
+
+def interpolate_curve(
+    md1,
+    pos1,
+    vec1,
+    vec2,
+    dist_curve,
+    dogleg,
+    func_dogleg,
+    step,
+    endpoint=False
+):
     end_md = abs(dist_curve)
     if step is None:
         md = np.array([0])
-    else: 
+    else:
         start_md = step - (md1 % step)
         md = np.arange(start_md, end_md, step)
         md = np.concatenate(([0.], md))
     if endpoint:
         md = np.concatenate((md, [end_md]))
-    dogleg_interp = (dogleg / dist_curve * md).reshape(-1,1)
+    dogleg_interp = (dogleg / dist_curve * md).reshape(-1, 1)
 
     vec = (
         (
@@ -1012,20 +1072,21 @@ def interpolate_curve(md1, pos1, vec1, vec2, dist_curve, dogleg, func_dogleg, st
             np.sin(dogleg_interp) / np.sin(dogleg) * vec2
         )
     )
-    vec = vec / np.linalg.norm(vec, axis=1).reshape(-1,1)
+    vec = vec / np.linalg.norm(vec, axis=1).reshape(-1, 1)
     inc, azi = get_angles(vec, nev=True).T
 
     data = dict(
-        md = md + md1,
-        vec = vec,
-        inc = inc,
-        azi = azi,
-        dogleg = np.concatenate((
+        md=md + md1,
+        vec=vec,
+        inc=inc,
+        azi=azi,
+        dogleg=np.concatenate((
             np.array([0.]), np.diff(dogleg_interp.reshape(-1))
         )),
     )
 
     return data
+
 
 def interpolate_hold(md1, pos1, vec1, md2, step, endpoint=False):
     end_md = md2 - md1
@@ -1034,22 +1095,23 @@ def interpolate_hold(md1, pos1, vec1, md2, step, endpoint=False):
     else:
         start_md = step - (md1 % step)
         md = np.arange(start_md, end_md, step)
-        md = np.concatenate(([0.], md)) 
+        md = np.concatenate(([0.], md))
     if endpoint:
         md = np.concatenate((md, [end_md]))
-    vec = np.full((len(md),3), vec1)
+    vec = np.full((len(md), 3), vec1)
     inc, azi = get_angles(vec, nev=True).T
     dogleg = np.full_like(md, 0.)
 
     data = dict(
-        md = md + md1,
-        vec = vec,
-        inc = inc,
-        azi = azi,
-        dogleg = dogleg,
+        md=md + md1,
+        vec=vec,
+        inc=inc,
+        azi=azi,
+        dogleg=dogleg,
     )
 
     return data
+
 
 def get_min_curve(section, step=30, data=None):
     if section.md2 is None:
@@ -1066,6 +1128,7 @@ def get_min_curve(section, step=30, data=None):
         )
     return result
 
+
 def get_interpolate_hold(section, step=30, data=None):
     if data is None:
         data = []
@@ -1080,6 +1143,7 @@ def get_interpolate_hold(section, step=30, data=None):
     ))
 
     return data
+
 
 def get_interpolate_min_curve_to_target(section, step=30, data=None):
     if data is None:
@@ -1097,7 +1161,8 @@ def get_interpolate_min_curve_to_target(section, step=30, data=None):
         endpoint=True
     ))
 
-    return data  
+    return data
+
 
 def get_interpolate_min_dist_to_target(section, step=30, data=None):
     if data is None:
@@ -1125,7 +1190,8 @@ def get_interpolate_min_dist_to_target(section, step=30, data=None):
         endpoint=True
     ))
 
-    return data    
+    return data
+
 
 def get_interpololate_curve_hold_curve(section, step=30, data=None):
     if data is None:
@@ -1166,6 +1232,7 @@ def get_interpololate_curve_hold_curve(section, step=30, data=None):
     ))
 
     return data
+
 
 def convert_target_input_to_booleans(*inputs):
     input = [

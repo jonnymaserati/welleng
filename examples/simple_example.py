@@ -1,42 +1,50 @@
 import welleng as we
-import numpy as np
 from tabulate import tabulate
 
 # construct simple well paths
 print("Constructing wells...")
 connector_reference = we.connector.Connector(
-    pos1=[0,0,0],
-    inc1=0,
-    azi1=0,
-    pos2=[-100,0,2000.],
+    pos1=[0., 0., 0.],
+    inc1=0.,
+    azi1=0.,
+    pos2=[-100., 0., 2000.],
     inc2=90,
     azi2=60,
 ).survey(step=50)
 
 connector_offset = we.connector.Connector(
-    pos1=[0,0,0],
-    inc1=0,
-    azi1=225,
-    pos2=[-280,-600,2000],
-    inc2=90,
-    azi2=270,
+    pos1=[0., 0., 0.],
+    inc1=0.,
+    azi1=225.,
+    pos2=[-280., -600., 2000.],
+    inc2=90.,
+    azi2=270.,
 ).survey(step=50)
 
-# make a survey objects and calculate the uncertainty covariances
+# make survey objects and calculate the uncertainty covariances
 print("Making surveys...")
+sh_reference = we.survey.SurveyHeader(
+    name="reference",
+    azi_reference="grid"
+)
 survey_reference = we.survey.Survey(
     md=connector_reference.md,
     inc=connector_reference.inc_deg,
     azi=connector_reference.azi_deg,
-    error_model='ISCWSA_MWD'
+    header=sh_reference,
+    error_model='iscwsa_mwd_rev4'
 )
-
+sh_offset = we.survey.SurveyHeader(
+    name="offset",
+    azi_reference="grid"
+)
 survey_offset = we.survey.Survey(
     md=connector_offset.md,
     inc=connector_offset.inc_deg,
     azi=connector_offset.azi_deg,
-    start_nev=[100,200,0],
-    error_model='ISCWSA_MWD'
+    start_nev=[100., 200., 0.],
+    header=sh_offset,
+    error_model='iscwsa_mwd_rev4'
 )
 
 # generate mesh objects of the well paths
@@ -76,9 +84,9 @@ lines = we.visual.get_lines(clearance_mesh)
 
 # plot the result
 we.visual.plot(
-    [mesh_reference.mesh, mesh_offset.mesh], # list of meshes
-    names=['reference', 'offset'], # list of names
-    colors=['red', 'blue'], # list of colors
+    [mesh_reference.mesh, mesh_offset.mesh],  # list of meshes
+    names=['reference', 'offset'],  # list of names
+    colors=['red', 'blue'],  # list of colors
     lines=lines
 )
 
