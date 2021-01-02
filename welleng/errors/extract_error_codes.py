@@ -77,6 +77,8 @@ def extract_codes(workbook):
         values_only=True
     ):
         code = row[1]
+        if code == "XCLL":
+            code = "XCLA"
         function = row[3]
         magnitude = row[6]
         unit = row[7]
