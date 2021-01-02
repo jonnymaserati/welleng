@@ -54,13 +54,13 @@ we.exchange.wbp.save_to_file(doc, "demo.wbp") # save the document to file
 
 [welleng] requires [trimesh], [numpy] and [scipy] to run. Other libraries are optional depending on usage and to get [python-fcl] running on which [trimesh] is built may require some additional installations. Other than that, it should be an easy pip install to get up and running with welleng and the minimum dependencies.
 
-Here's how to get the trickier dependencies manually installed on Ubunut (further instructions can be found [here](https://github.com/flexible-collision-library/fcl/blob/master/INSTALL)):
+Here's how to get the trickier dependencies manually installed on Ubuntu (further instructions can be found [here](https://github.com/flexible-collision-library/fcl/blob/master/INSTALL)):
 
 ```python
 sudo apt-get update
 sudo apt-get install libeigen3-dev libccd-dev octomap-tools
 ```
-On a Mac you should be able to install the above with brew and on a Windows maching you'll probably have to build these libraries following the instruction in the link, but it's not too tricky. Once the above are installed, then it should be a simple:
+On a Mac you should be able to install the above with brew and on a Windows machine you'll probably have to build these libraries following the instruction in the link, but it's not too tricky. Once the above are installed, then it should be a simple:
 
 ```python
 pip install welleng
