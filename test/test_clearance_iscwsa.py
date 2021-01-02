@@ -1,4 +1,4 @@
-from welleng.survey import Survey
+from welleng.survey import Survey, make_survey_header
 from welleng.clearance import Clearance, ISCWSA
 import numpy as np
 import json
@@ -25,6 +25,8 @@ def generate_surveys(data):
     surveys = {}
 
     for well in data['wells']:
+        sh = make_survey_header(data["wells"][well]["header"])
+
         if well == "Reference well":
             radius = 0.4572
         else:
@@ -38,8 +40,8 @@ def generate_surveys(data):
             e=data["wells"][well]["E"],
             tvd=data["wells"][well]["TVD"],
             radius=radius,
-            well_ref_params=data["well_ref_params"],
-            error_model="ISCWSA_MWD",
+            header=sh,
+            error_model="iscwsa_mwd_rev4",
             start_xyz=[
                 data["wells"][well]["E"][0],
                 data["wells"][well]["N"][0],
