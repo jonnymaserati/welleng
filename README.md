@@ -54,7 +54,7 @@ we.exchange.wbp.save_to_file(doc, "demo.wbp") # save the document to file
 
 [welleng] requires [trimesh], [numpy] and [scipy] to run. Other libraries are optional depending on usage and to get [python-fcl] running on which [trimesh] is built may require some additional installations. Other than that, it should be an easy pip install to get up and running with welleng and the minimum dependencies.
 
-Here's how to get the trickier dependencies manually installed on Ubunut (further instructions can be found [here](https://github.com/flexible-collision-library/fcl/blob/master/INSTALL)):
+Here's how to get the trickier dependencies manually installed on Ubuntu (further instructions can be found [here](https://github.com/flexible-collision-library/fcl/blob/master/INSTALL)):
 
 ```python
 sudo apt-get update
