@@ -69,10 +69,10 @@ class ErrorModel():
         self.drdp = self._drdp(self.survey_drdp)
         self.drdp_sing = self._drdp_sing(self.survey_drdp)
 
-        if self.error_model == "iscwsa_mwd_rev4":
+        if self.error_model.split("_")[0] == "iscwsa":
             self.errors = iscwsaMwd(
                 error=self,
-                model="iscwsa_mwd_rev4"
+                model=self.error_model
             )
 
     def _e_NEV(self, e_DIA):
@@ -226,6 +226,9 @@ class ErrorModel():
         N = np.array(0.5 * ((delta_md) * np.cos(inc2) * np.cos(azi2)))
         E = np.array(0.5 * ((delta_md) * np.cos(inc2) * np.sin(azi2)))
         V = np.array(0.5 * (-delta_md * np.sin(inc2)))
+
+        if self.error_model.split('_')[-1] == 'rev5':
+            N[0] *= 2
 
         return np.vstack(
             (

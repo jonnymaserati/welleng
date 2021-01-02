@@ -458,13 +458,13 @@ class Survey:
         covariance matrices with the specified error model.
         """
         if self.error_model:
-            if self.error_model == "iscwsa_mwd_rev4":
-                self.err = ErrorModel(
-                    self,
-                    error_model=self.error_model
-                )
-                self.cov_hla = self.err.errors.cov_HLAs.T
-                self.cov_nev = self.err.errors.cov_NEVs.T
+            # if self.error_model == "iscwsa_mwd_rev4":
+            self.err = ErrorModel(
+                self,
+                error_model=self.error_model
+            )
+            self.cov_hla = self.err.errors.cov_HLAs.T
+            self.cov_nev = self.err.errors.cov_NEVs.T
         else:
             if self.cov_nev is not None and self.cov_hla is None:
                 self.cov_hla = NEV_to_HLA(self.survey_rad, self.cov_nev.T).T

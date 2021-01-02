@@ -305,12 +305,12 @@ iscwsa_mwd_rev5:
       magnitude: 0.003490658503988659
       propagation: systematic
       unit: rad
-    XCLH:
+    XCLA:
       function: XCL
       magnitude: 0.167
       propagation: random
       unit: '-'
-    XCLL:
+    XCLH:
       function: XCL
       magnitude: 0.167
       propagation: random
