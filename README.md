@@ -16,7 +16,7 @@
 
 ## New Features!
 
-  - **ISCWSA MWD Rev5 error model:** add the latest ISCWSA error model that includes tortuousity effects on location uncertainty.
+  - **ISCWSA MWD Rev5 error model:** added the latest ISCWSA error model that includes tortuousity effects on location uncertainty.
   - **Import from Landmark .wbp files:** using the `exchange.wbp` module it's now possible to import .wbp files exported from Landmark's COMPASS or DecisionSpace software.
   ```python
 import welleng as we
