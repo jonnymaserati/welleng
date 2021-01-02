@@ -2,9 +2,9 @@ import pandas as pd
 import trimesh
 
 import welleng as we
-from welleng.survey import Survey
+from welleng.survey import Survey, SurveyHeader
 import welleng.clearance
-from welleng.mesh import WellMesh, transform_trimesh_scene
+from welleng.mesh import WellMesh
 
 
 filename = (
@@ -12,8 +12,8 @@ filename = (
     "-for-evaluating-clearance-scenarios-r4-17-may-2017.xlsx"
 )
 
-# Import some well trajectory data. Here we'll use the ISCWSA trajectories, extracting
-# the data from the Excel file downloaded from their website.
+# Import some well trajectory data. Here we'll use the ISCWSA trajectories,
+# extracting the data from the Excel file downloaded from their website.
 # filename = (
 #     "../reference/standard-set-of-wellpaths"
 #     "-for-evaluating-clearance-scenarios-r4-17-may-2017.xlsx"
@@ -23,21 +23,34 @@ print("Loading data...")
 try:
     data = we.io.import_iscwsa_collision_data(filename)
 except:
-    print("Make sure you've updated filename to your local copy of ISCWSA's clearance scenarios")
+    print(
+        "Make sure you've updated filename to your local copy of ISCWSA's"
+        " clearance scenarios"
+    )
 
-well_ref_params = dict(
-    Latitude=60.000000,
-    BTotal=50000.00,
-    Dip=70.00,
-    Declination=0.00,
-    Convergence=0.0,
-    G=9.80665
-)
+# well_ref_params = dict(
+#     Latitude=60.000000,
+#     BTotal=50000.00,
+#     Dip=70.00,
+#     Declination=0.00,
+#     Convergence=0.0,
+#     G=9.80665
+# )
 
 # Make a dictionary of surveys
 print("Making surveys...")
 surveys = {}
 for well in data["wells"]:
+    sh = SurveyHeader(
+        name=well,
+        latitude=60.,
+        b_total=50000.,
+        dip=70.,
+        declination=.0,
+        convergence=0.,
+        G=9.80665,
+        azi_reference='grid'
+    )
     if well == "Reference well":
         radius = 0.4572
     else:
@@ -51,8 +64,8 @@ for well in data["wells"]:
         e=data["wells"][well]["E"],
         tvd=data["wells"][well]["TVD"],
         radius=radius,
-        well_ref_params=well_ref_params,
-        error_model="ISCWSA_MWD",
+        header=sh,
+        error_model="iscwsa_mwd_rev4",
         start_xyz=[
             data["wells"][well]["E"][0],
             data["wells"][well]["N"][0],
@@ -74,6 +87,7 @@ reference = surveys["Reference well"]
 scene = trimesh.scene.scene.Scene()
 names = []
 colors = []
+# TODO: make this multi-processing
 for well in surveys:
     names.append(well)
     if well == "Reference well":
@@ -85,7 +99,7 @@ for well in surveys:
             c = we.clearance.Clearance(reference, offset, kop_depth=900)
         else:
             c = we.clearance.Clearance(reference, offset)
-        
+
         print(f"Calculating ISCWSA clearance for {well}...")
         result_iscwsa = we.clearance.ISCWSA(c)
 
@@ -105,26 +119,41 @@ for well in surveys:
         n_verts=12,
         sigma=2.445,
     )
-    scene.add_geometry(m.mesh, node_name=well, geom_name=well, parent_node_name=None)
+    scene.add_geometry(
+        m.mesh, node_name=well, geom_name=well, parent_node_name=None
+    )
 
 we.visual.plot(scene, names=names, colors=colors)
 
-### if you want to export the scene, say to blender, then do something like this ###
+# if you want to export the scene, say to blender, then do something like this
 # save the scene (make sure the blender directory exists else change the
 # save location)
 # scene.export("blender/scene.glb")
 
 # transform the scene so that it imports nicely into Blender
-# transform_trimesh_scene(scene, origin=([0,0,0]), scale=100, redux=1).export("blender/scene_transform.glb")
-### end ###
+# transform_trimesh_scene(
+#   scene, origin=([0,0,0]), scale=100, redux=1
+# ).export(
+#       "blender/scene_transform.glb"
+# )
 
 # output error data
 # well = "08 - well"
-# errors = [e for e in results[well]["iscwsa"].c.offset.err.errors.errors.keys()]
+# errors = [
+#   e for e in results[well]["iscwsa"].c.offset.err.errors.errors.keys()
+# ]
 # error_data = []
 # for i, md in enumerate(results[well]["iscwsa"].c.offset.md):
 #     error_data.append(
-#         [md, [{f'{e}': results[well]["iscwsa"].c.offset.err.errors.errors[e].cov_NEV.T[i]} for e in errors]]
+#         [
+#             md,
+#             [
+#                 {f'{e}': (
+#                     results[well]["iscwsa"].c.offset.err.errors.errors[e].cov_NEV.T[i]}
+#                 )
+#                 for e in errors
+#             ]
+#         ]
 #     )
 
 # export the data to Excel

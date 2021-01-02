@@ -1,3 +1,5 @@
+import inspect
+import sys
 from welleng.connector import Connector
 from welleng.survey import Survey
 import numpy as np
@@ -119,3 +121,25 @@ def test_radius_critical_with_min_curve():
         azi2=0,
     )
     assert c.radius_critical < c.radius_design
+
+
+def one_function_to_run_them_all():
+    """
+    Function to gather the test functions so that they can be tested by
+    running this module.
+
+    https://stackoverflow.com/questions/18907712/python-get-list-of-all-
+    functions-in-current-module-inspecting-current-module
+    """
+    test_functions = [
+        obj for name, obj in inspect.getmembers(sys.modules[__name__])
+        if (inspect.isfunction(obj)
+            and name.startswith('test')
+            and name != 'all')
+    ]
+
+    (f() for f in test_functions)
+
+
+if __name__ == '__main__':
+    one_function_to_run_them_all()
