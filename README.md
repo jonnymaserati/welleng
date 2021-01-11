@@ -2,21 +2,22 @@
 
 [![Open Source Love svg2](https://badges.frapsoft.com/os/v2/open-source.svg?v=103)](https://github.com/pro-well-plan/pwptemp/blob/master/LICENSE.md)
 [![PyPI version](https://badge.fury.io/py/welleng.svg)](https://badge.fury.io/py/welleng)
-[![Downloads](https://static.pepy.tech/personalized-badge/welleng?period=total&units=international_system&left_color=grey&right_color=orange&left_text=Downloads)](https://pepy.tech/project/welleng)
+[![Downloads](https://static.pepy.tech/personalized-badge/welleng?period=total&units=international_system&left_color=grey&right_color=orange&left_text=Downloads&kill_cache=1)](https://pepy.tech/project/welleng)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![welleng-tests Actions Status](https://github.com/jonnymaserati/welleng/workflows/welleng-tests/badge.svg)](https://github.com/jonnymaserati/welleng/actions)
 
 [welleng] aspires to be a collection of useful tools for Wells/Drilling Engineers, kicking off with a range of well trajectory tools.
 
   - Generate survey listings and interpolation with minimum curvature
-  - Calculate well bore uncertainty data (currently utilizing the [ISCWSA] MWD Rev4 model) - the coded error model is within 0.001% accuracy of the ISCWSA test data.
+  - Calculate well bore uncertainty data (utilizing either the [ISCWSA] MWD Rev4 or Rev5 models) - the coded error models are within 0.001% accuracy of the ISCWSA test data.
   - Calculate well bore clearance and Separation Factors (SF)
     - standard [ISCWSA] method within 0.5% accuracy of the ISCWSA test data.
     - new mesh based method using the [Flexible Collision Library].
 
 ## New Features!
 
-  - **ISCWSA MWD Rev5 error model:** add the latest ISCWSA error model that includes tortuousity effects on location uncertainty.
+  - **World Magnetic Model Calculator:** calculates magnetic field data from the [World Magnetic Model](http://www.geomag.bgs.ac.uk/research/modelling/WorldMagneticModel.html) if magnetic field strength is not provided with the survey data.
+  - **ISCWSA MWD Rev5 error model:** added the latest ISCWSA error model that includes tortuousity effects on location uncertainty.
   - **Import from Landmark .wbp files:** using the `exchange.wbp` module it's now possible to import .wbp files exported from Landmark's COMPASS or DecisionSpace software.
   ```python
 import welleng as we
@@ -49,18 +50,19 @@ we.exchange.wbp.save_to_file(doc, "demo.wbp") # save the document to file
 * [numpy] - the fundamental package for scientific computing with Python
 * [scipy] - a Python-based ecosystem of open-source software for mathematics, science, and engineering
 * [vedo] - a python module for scientific visualization, analysis of 3D objects and point clouds based on VTK.
+* [magnetic-field-calculator] - a Python API for the British Geological Survey magnetic field calculator.
 
 ## Installation
 
 [welleng] requires [trimesh], [numpy] and [scipy] to run. Other libraries are optional depending on usage and to get [python-fcl] running on which [trimesh] is built may require some additional installations. Other than that, it should be an easy pip install to get up and running with welleng and the minimum dependencies.
 
-Here's how to get the trickier dependencies manually installed on Ubunut (further instructions can be found [here](https://github.com/flexible-collision-library/fcl/blob/master/INSTALL)):
+Here's how to get the trickier dependencies manually installed on Ubuntu (further instructions can be found [here](https://github.com/flexible-collision-library/fcl/blob/master/INSTALL)):
 
 ```python
 sudo apt-get update
 sudo apt-get install libeigen3-dev libccd-dev octomap-tools
 ```
-On a Mac you should be able to install the above with brew and on a Windows maching you'll probably have to build these libraries following the instruction in the link, but it's not too tricky. Once the above are installed, then it should be a simple:
+On a Mac you should be able to install the above with brew and on a Windows machine you'll probably have to build these libraries following the instruction in the link, but it's not too tricky. Once the above are installed, then it should be a simple:
 
 ```python
 pip install welleng
@@ -225,3 +227,4 @@ Please note the terms of the license. Although this software endeavors to be acc
    [volve]: <https://www.equinor.com/en/how-and-why/digitalisation-in-our-dna/volve-field-data-village-download.html>
    [ISCWSA]: <https://www.iscwsa.net/>
    [build_a_well_from_sections.py]: <https://github.com/jonnymaserati/welleng/tree/main/examples/build_a_well_from_sections.py>
+   [magnetic-field-calculator]: <https://pypi.org/project/magnetic-field-calculator/>

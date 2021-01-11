@@ -68,12 +68,6 @@ def test_iscwsa_error_models(input_files=input_files):
             if s in ["Totals", "TOTAL"]:
                 source_cov = err.errors.cov_NEVs.T[i]
             else:
-                # if s == 'XCLH':
-                #     s_ = 'XCLH'
-                # elif s == 'XCLA':
-                #     s_ = 'XCLL'
-                # else:
-                #     s_ = s
                 source_cov = err.errors.errors[s].cov_NEV.T[i]
             v = get_sigmas(source_cov, long=True)
             for j, d in enumerate(v):
