@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class MinCurve:
     def __init__(
         self,
@@ -125,6 +126,7 @@ class MinCurve:
             ) + self.start_xyz
         )
 
+
 def get_vec(inc, azi, nev=False, r=1, deg=True):
     """
     Convert inc and azi into a vector.
@@ -151,17 +153,18 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
 
     if nev:
         vec = np.array([y, x, z]).T
-    else:    
-        vec = np.array([x,y,z]).T
+    else:
+        vec = np.array([x, y, z]).T
 
-    return vec / np.linalg.norm(vec)
+    return vec / np.linalg.norm(vec, axis=-1).reshape(-1, 1)
 
-def get_nev(poss, start_xyz=[0,0,0], start_nev=[0,0,0]):
+
+def get_nev(pos, start_xyz=[0.,0., 0.], start_nev=[0., 0., 0.]):
     """
     Convert [x, y, z] coordinates to [n, e, tvd] coordinates.
 
     Params:
-        poss: (n,3) array of floats
+        pos: (n,3) array of floats
             Array of [x, y, z] coordinates
         start_xyz: (,3) array of floats
             The datum of the [x, y, z] cooardinates
@@ -172,10 +175,19 @@ def get_nev(poss, start_xyz=[0,0,0], start_nev=[0,0,0]):
         An (n,3) array of [n, e, tvd] coordinates.
     """
     e, n, v = (
-        np.array([poss]).reshape(-1,3) - np.array([start_xyz])
+        np.array([pos]).reshape(-1,3) - np.array([start_xyz])
     ).T
-    
+
     return (np.array([n, e, v]).T + np.array([start_nev]))
+
+
+def get_xyz(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
+    y, x, z = (
+        np.array([pos]).reshape(-1,3) - np.array([start_nev])
+    ).T
+
+    return (np.array([x, y, z]).T + np.array([start_xyz]))
+
 
 def get_angles(vec, nev=False):
     '''
@@ -192,19 +204,20 @@ def get_angles(vec, nev=False):
 
     '''
     # make sure it's a unit vector
-    vec = vec / np.linalg.norm(vec, axis=-1).reshape(-1,1)
-    vec = vec.reshape(-1,3)
+    vec = vec / np.linalg.norm(vec, axis=-1).reshape(-1, 1)
+    vec = vec.reshape(-1, 3)
 
     # if it's nev then need to do the shuffle
     if nev:
         y, x, z = vec.T
         vec = np.array([x, y, z]).T
 
-    xy = vec[:,0] ** 2 + vec[:,1] ** 2
-    inc = np.arctan2(np.sqrt(xy), vec[:,2]) # for elevation angle defined from Z-axis down
-    azi = (np.arctan2(vec[:,0], vec[:,1]) + (2 * np.pi)) % (2 * np.pi)
+    xy = vec[:, 0] ** 2 + vec[:, 1] ** 2
+    inc = np.arctan2(np.sqrt(xy), vec[:, 2])  # for elevation angle defined from Z-axis down
+    azi = (np.arctan2(vec[:, 0], vec[:, 1]) + (2 * np.pi)) % (2 * np.pi)
 
     return np.stack((inc, azi), axis=1)
+
 
 def get_transform(
     survey
@@ -298,7 +311,7 @@ def get_sigmas(cov, long=False):
         arr: (n,3) array of floats
     """
 
-    assert cov.shape[-2:] == (3,3), "Cov is the wrong shape"
+    assert cov.shape[-2:] == (3, 3), "Cov is the wrong shape"
 
     cov = cov.reshape(-1, 3, 3)
 
@@ -318,3 +331,21 @@ def get_sigmas(cov, long=False):
     # ])
 
     # return (a, b, c)
+
+
+def get_unit_vec(vec):
+    vec = vec / np.linalg.norm(vec)
+
+    return vec
+
+
+def linear_convert(data, factor):
+    flag = False
+    if type(data) != list:
+        flag = True
+        data = [data]
+    converted = [d * factor if d is not None else None for d in data]
+    if flag:
+        return converted[0]
+    else:
+        return converted

@@ -138,7 +138,7 @@ def one_function_to_run_them_all():
             and name != 'all')
     ]
 
-    (f() for f in test_functions)
+    [f() for f in test_functions]
 
 
 if __name__ == '__main__':
