@@ -6,6 +6,12 @@ from welleng.survey import Survey, SurveyHeader
 import welleng.clearance
 from welleng.mesh import WellMesh
 
+try:
+    import ray
+    multiprocessing = True
+except ModuleNotFoundError:
+    multiprocessing = False
+
 
 filename = (
     "reference/standard-set-of-wellpaths"
@@ -87,41 +93,102 @@ reference = surveys["Reference well"]
 scene = trimesh.scene.scene.Scene()
 names = []
 colors = []
-# TODO: make this multi-processing
-for well in surveys:
-    names.append(well)
-    if well == "Reference well":
-        colors.append('red')
-        pass
-    else:
-        offset = surveys[well]
-        if well == "10 - well":
-            c = we.clearance.Clearance(reference, offset, kop_depth=900)
+
+if multiprocessing:
+    @ray.remote
+    def worker(well, reference, surveys):
+        if well == "Reference well":
+            color = 'red'
+            result_iscwsa, R = None, None
         else:
-            c = we.clearance.Clearance(reference, offset)
+            offset = surveys[well]
+            if well == "10 - well":
+                c = we.clearance.Clearance(reference, offset, kop_depth=900)
+            else:
+                c = we.clearance.Clearance(reference, offset)
 
-        print(f"Calculating ISCWSA clearance for {well}...")
-        result_iscwsa = we.clearance.ISCWSA(c)
+            print(f"Calculating ISCWSA clearance for {well}...")
+            result_iscwsa = we.clearance.ISCWSA(c)
 
-        print(f"Calculating mesh clearance for {well}...")
-        result_mesh = we.clearance.MeshClearance(c, sigma=2.445)
+            print(f"Calculating mesh clearance for {well}...")
+            rm = we.clearance.MeshClearance(c, sigma=2.445)
 
-        colors.append('blue')
+            color = 'blue'
 
+            class R:
+                pass
+
+            R = R()
+            R.ref_md = rm.ref_md
+            R.nev = rm.nev
+            R.off_md = rm.off_md
+            R.hoz_bearing_deg = rm.hoz_bearing_deg
+            R.distance_CC = rm.distance_CC
+            R.ref_PCR = rm.ref_PCR
+            R.off_PCR = rm.off_PCR
+            R.calc_hole = rm.calc_hole
+            R.SF = rm.SF
+
+        m = WellMesh(
+            survey=surveys[well],
+            n_verts=12,
+            sigma=2.445,
+        )
+
+        return (result_iscwsa, R, m, well, color)
+
+    ray.init()
+    s = ray.put(surveys)
+
+    data = ray.get([
+        worker.remote(well, reference, s)
+        for well in surveys
+    ])
+
+    for i, well in enumerate(surveys):
         results[well] = {
-            "iscwsa": result_iscwsa,
-            "mesh": result_mesh
-        }
+                "iscwsa": data[i][0],
+                "mesh": data[i][1]
+            }
+        scene.add_geometry(
+            data[i][2].mesh, node_name=well, geom_name=well, parent_node_name=None
+        )
+        colors.append(data[i][4])
+        names.append(data[i][3])
 
-    # make a well mesh and add it to the scene for visualizing the wells
-    m = WellMesh(
-        survey=surveys[well],
-        n_verts=12,
-        sigma=2.445,
-    )
-    scene.add_geometry(
-        m.mesh, node_name=well, geom_name=well, parent_node_name=None
-    )
+
+else:
+    for well in surveys:
+        names.append(well)
+        if well == "Reference well":
+            colors.append('red')
+            pass
+        else:
+            offset = surveys[well]
+            if well == "10 - well":
+                c = we.clearance.Clearance(reference, offset, kop_depth=900)
+            else:
+                c = we.clearance.Clearance(reference, offset)
+
+            print(f"Calculating ISCWSA clearance for {well}...")
+            result_iscwsa = we.clearance.ISCWSA(c)
+
+            print(f"Calculating mesh clearance for {well}...")
+            result_mesh = we.clearance.MeshClearance(c, sigma=2.445)
+
+            colors.append('blue')
+
+            results[well] = {
+                "iscwsa": result_iscwsa,
+                "mesh": result_mesh
+            }
+
+        # make a well mesh and add it to the scene for visualizing the wells
+        m = WellMesh(
+            survey=surveys[well],
+            n_verts=12,
+            sigma=2.445,
+        )
 
 we.visual.plot(scene, names=names, colors=colors)
 
