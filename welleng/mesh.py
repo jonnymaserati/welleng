@@ -1,9 +1,11 @@
-import trimesh, numpy as np
-from numpy import radians, sin, cos, sqrt, pi
+import trimesh
+import numpy as np
+from numpy import sin, cos, pi
 from scipy.spatial import KDTree
 
 from .utils import HLA_to_NEV, get_sigmas
 from .survey import slice_survey
+
 
 class WellMesh:
 
@@ -32,9 +34,9 @@ class WellMesh:
                 The desired standard deviation sigma value of the well bore
                 uncertainty.
             sigma_pa: float (default: 0.5)
-                The desired "project ahead" value. A remnant of the ISCWSA method
-                but may be used in the future to accomodate for well bore
-                curvature that is not captured by the mesh.
+                The desired "project ahead" value. A remnant of the ISCWSA
+                method but may be used in the future to accomodate for well
+                bore curvature that is not captured by the mesh.
             Sm: float
                 From the ISCWSA method, this is an additional factor applied to
                 the well bore radius of the offset well to oversize the hole.
@@ -61,10 +63,9 @@ class WellMesh:
         self._align_verts()
 
         self._get_faces()
-        self._make_trimesh()       
+        self._make_trimesh()
 
-    ### Helper functions ###
-
+    # Helper functions #
     def _get_faces(self):
         '''
         Construct a mesh of triangular faces (n,3) on the well bore
@@ -72,16 +73,16 @@ class WellMesh:
         '''
         step = self.n_verts
         faces = []
-        total_verts = len(self.vertices.reshape(-1,3))
+        total_verts = len(self.vertices.reshape(-1, 3))
         rows = int(total_verts / self.n_verts)
-        
+
         # make first end
         B = np.arange(1, step - 1, 1)
         C = np.arange(2, step, 1)
         A = np.zeros_like(B)
         temp = np.array([A, B, C]).T
         faces.extend(temp.tolist())
-            
+
         # make cylinder
         temp = ([np.array([
             step, 0, step - 1, 2 * step - 1, step, step - 1
@@ -94,7 +95,7 @@ class WellMesh:
             B_start = verts + step
             C_start = verts + step + 1
             D_start = verts + 1
-            
+
             A_stop = verts + step - 1
             B_stop = verts + step + step - 1
             C_stop = verts + step + step
@@ -113,14 +114,14 @@ class WellMesh:
                 D_stop - 1,
                 C_stop - 1,
                 B_start,
-                D_stop -1
+                D_stop - 1
             ])
 
             temp.extend([last])
-        
-        faces.extend(np.stack(temp, axis=0).reshape(-1,3).tolist())
-            
-        # make final end     
+
+        faces.extend(np.stack(temp, axis=0).reshape(-1, 3).tolist())
+
+        # make final end
         B = np.arange(total_verts - step + 1, (total_verts - 1), 1)
         C = np.arange(total_verts - step + 2, (total_verts), 1)
         A = np.full_like(B, total_verts - step)
@@ -131,13 +132,13 @@ class WellMesh:
 
     def _get_vertices(
         self,
-        ):
+    ):
         '''
         Determine the positions of the vertices on the desired uncertainty
         circumference.
         '''
         if self.method == "circle":
-            h = self.s.radius.reshape(-1,1)
+            h = self.s.radius.reshape(-1, 1)
             l = h
 
         else:
@@ -145,14 +146,14 @@ class WellMesh:
                 np.array(self.sigmaH) * self.sigma
                 + self.radius + self.Sm
                 + self.sigma_pa / 2
-            ).reshape(-1,1)
+            ).reshape(-1, 1)
 
             l = (
                 np.array(self.sigmaL) * self.sigma
                 + self.radius
                 + self.Sm
                 + self.sigma_pa / 2
-            ).reshape(-1,1)
+            ).reshape(-1, 1)
             # a = self.s.sigmaA * self.c.k + self.s.radius + self.c.Sm
 
         if self.method in ["ellipse", "circle"]:
@@ -165,10 +166,23 @@ class WellMesh:
             vertices = np.stack((x, y, z), axis=-1)
 
         else:
-            lam = np.linspace(0, 2 * pi, self.n_verts, endpoint=False)
+            # make the vertices evenly spaced around the circumference
+            lam = np.concatenate((
+                np.arccos(
+                    np.linspace(
+                        1., -1., int(self.n_verts / 2),
+                        endpoint=False
+                    )
+                ),
+                np.arccos(
+                    np.linspace(
+                        1., -1., int(self.n_verts / 2),
+                        endpoint=False)) + np.pi
+                )
+            )
             f = h * (
                 (l ** 2 * np.cos(lam))
-                / 
+                /
                 (l ** 2 * (np.cos(lam)) ** 2 + h ** 2 * (np.sin(lam)) ** 2)
             )
 
@@ -179,38 +193,39 @@ class WellMesh:
             )
             z = np.zeros_like(f)
             vertices = np.stack((f, g, z), axis=-1)
-            
-        
+
         vertices = HLA_to_NEV(self.s.survey_rad, vertices, cov=False)
-        
+
         self.vertices = (
             vertices
             + self.nevs.reshape(tuple(
-                (self.nevs.shape[0],
-                1,
-                self.nevs.shape[1]))
-            )
+                (
+                    self.nevs.shape[0],
+                    1,
+                    self.nevs.shape[1]
+                )
+            ))
         )
-
 
     def _get_vertices_vectors(self, vertices, pos_center):
         '''
-        Determine the vectors of the vertices relative the the well path position.
+        Determine the vectors of the vertices relative the the well path
+        position.
         '''
         vectors = vertices - pos_center
         normals = np.linalg.norm(vectors, axis=-1)
         with np.errstate(divide='ignore', invalid='ignore'):
-            unit_vectors = vectors / normals.reshape(-1,1)
+            unit_vectors = vectors / normals.reshape(-1, 1)
         unit_vectors[np.where(normals == 0)] = vectors[np.where(normals == 0)]
-    
-        return (vectors, normals, unit_vectors)
 
+        return (vectors, normals, unit_vectors)
 
     def _align_verts(self):
         """
-        The meshing gets unstable when the inclination is close to vertical (since 
-        high side can quickly shift azimuth). This code cycles through the ellipses
-        and makes sure that they're all lined up relative to each other.
+        The meshing gets unstable when the inclination is close to vertical
+        (since high side can quickly shift azimuth). This code cycles through
+        the ellipses and makes sure that they're all lined up relative to each
+        other.
         """
         verts_new_list = []
         for i, verts in enumerate(self.vertices):
@@ -245,7 +260,7 @@ class WellMesh:
                     verts_new = verts_new[::-1]
 
                 verts_new_list.append([verts_new])
-            
+
         self.vertices = np.vstack(
             verts_new_list
         ).reshape(self.vertices.shape)
@@ -254,7 +269,7 @@ class WellMesh:
         '''
         Consturct a trimesh.Trimesh object from the well vertices and faces.
         '''
-        vertices = self.vertices.reshape(-1,3)
+        vertices = self.vertices.reshape(-1, 3)
         mesh = trimesh.Trimesh(
             vertices=vertices,
             faces=self.faces,
@@ -268,8 +283,8 @@ class WellMesh:
 
 def make_trimesh_scene(data):
     """
-    Construct a trimesh scene. A collision manager can't be saved, but a scene can
-    and a scene can be imported into a collision manager.
+    Construct a trimesh scene. A collision manager can't be saved, but a scene
+    can and a scene can be imported into a collision manager.
 
     Parameters
     ----------
@@ -282,9 +297,12 @@ def make_trimesh_scene(data):
     scene = trimesh.scene.scene.Scene()
     for well in data:
         mesh = data[well].mesh
-        scene.add_geometry(mesh, node_name=well, geom_name=well, parent_node_name=None)
-    
+        scene.add_geometry(
+            mesh, node_name=well, geom_name=well, parent_node_name=None
+        )
+
     return scene
+
 
 def transform_trimesh_scene(scene, origin=None, scale=100, redux=0.25):
     """
@@ -296,11 +314,13 @@ def transform_trimesh_scene(scene, origin=None, scale=100, redux=0.25):
         scene: trimesh.scene.scene.Scene object
             A trimesh scene of well meshes
         origin: 3d array [x, y, z]
-            The origin of the scene from which the new scene will reset to [0, 0, 0]
+            The origin of the scene from which the new scene will reset to
+            [0, 0, 0].
         scale: float
             A scalar reduction will be performed using this float
         redux: float
-            The desired reduction ratio for the number of triangles in each mesh
+            The desired reduction ratio for the number of triangles in each
+            mesh.
 
     Returns
     -------
@@ -317,15 +337,20 @@ def transform_trimesh_scene(scene, origin=None, scale=100, redux=0.25):
         name, mesh = well
         mesh_new = mesh.copy()
 
-        mesh_new.simplify_quadratic_decimation(int(len(mesh_new.triangles) * redux))
+        mesh_new.simplify_quadratic_decimation(
+            int(len(mesh_new.triangles) * redux)
+        )
         mesh_new.vertices -= T
 
-        ### change axis convention for visualisation ###
+        # change axis convention for visualisation #
         x, y, z = mesh_new.vertices.T
         mesh_new.vertices = (np.array([x, z * -1, y]) / scale).T
-        scene_transformed.add_geometry(mesh_new, node_name=name, geom_name=name)
+        scene_transformed.add_geometry(
+            mesh_new, node_name=name, geom_name=name
+        )
 
     return scene_transformed
+
 
 def sliced_mesh(
     survey,
@@ -405,6 +430,7 @@ def sliced_mesh(
 
     return meshes
 
+
 def fix_mesh(mesh):
     '''
     For whatever reason, the first pass meshing often results in a mesh
@@ -417,17 +443,22 @@ def fix_mesh(mesh):
 
     Returns
     -------
-        good_mesh: trimesh object 
+        good_mesh: trimesh object
     '''
-    unique_indices = trimesh.grouping.unique_rows(mesh.faces)[0]  # it makes two outputs (unique_idx, inverse)
+    # it makes two outputs (unique_idx, inverse)
+    unique_indices = trimesh.grouping.unique_rows(mesh.faces)[0]
     unique_faces = mesh.faces[unique_indices]
 
-    flat_faces = ((unique_faces[:, 0] == unique_faces[:, 1]) 
-    | (unique_faces[:, 0] == unique_faces[:, 2]) 
-    | (unique_faces[:, 1] == unique_faces[:, 2]))
+    flat_faces = (
+        (unique_faces[:, 0] == unique_faces[:, 1])
+        | (unique_faces[:, 0] == unique_faces[:, 2])
+        | (unique_faces[:, 1] == unique_faces[:, 2])
+    )
 
     good_faces = unique_faces[~flat_faces]
-    good_mesh = trimesh.Trimesh(vertices=mesh.vertices, faces=good_faces, process=False)
+    good_mesh = trimesh.Trimesh(
+        vertices=mesh.vertices, faces=good_faces, process=False
+    )
 
     trimesh.repair.fix_winding(good_mesh)
     trimesh.repair.fix_normals(good_mesh)
