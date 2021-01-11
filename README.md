@@ -16,6 +16,7 @@
 
 ## New Features!
 
+  - **World Magnetic Model Calculator:** calculates magnetic field data from the [World Magnetic Model](http://www.geomag.bgs.ac.uk/research/modelling/WorldMagneticModel.html) if magnetic field strength is not provided with the survey data.
   - **ISCWSA MWD Rev5 error model:** added the latest ISCWSA error model that includes tortuousity effects on location uncertainty.
   - **Import from Landmark .wbp files:** using the `exchange.wbp` module it's now possible to import .wbp files exported from Landmark's COMPASS or DecisionSpace software.
   ```python
@@ -49,6 +50,7 @@ we.exchange.wbp.save_to_file(doc, "demo.wbp") # save the document to file
 * [numpy] - the fundamental package for scientific computing with Python
 * [scipy] - a Python-based ecosystem of open-source software for mathematics, science, and engineering
 * [vedo] - a python module for scientific visualization, analysis of 3D objects and point clouds based on VTK.
+* [magnetic-field-calculator] - a Python API for the British Geological Survey magnetic field calculator.
 
 ## Installation
 
@@ -225,3 +227,4 @@ Please note the terms of the license. Although this software endeavors to be acc
    [volve]: <https://www.equinor.com/en/how-and-why/digitalisation-in-our-dna/volve-field-data-village-download.html>
    [ISCWSA]: <https://www.iscwsa.net/>
    [build_a_well_from_sections.py]: <https://github.com/jonnymaserati/welleng/tree/main/examples/build_a_well_from_sections.py>
+   [magnetic-field-calculator]: <https://pypi.org/project/magnetic-field-calculator/>
