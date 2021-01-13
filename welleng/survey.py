@@ -10,6 +10,8 @@ from .utils import (
     get_angles,
     HLA_to_NEV,
     NEV_to_HLA,
+    get_unit_vec,
+    get_xyz
 )
 
 from welleng.error import ErrorModel, ERROR_MODELS
@@ -188,6 +190,7 @@ class Survey:
         y=None,
         z=None,
         vec=None,
+        nev=True,
         header=None,
         radius=None,
         cov_nev=None,
@@ -292,8 +295,12 @@ class Survey:
 
         self._get_radius(radius)
 
-        self.survey_deg = np.array([self.md, self.inc_deg, self.azi_deg]).T
-        self.survey_rad = np.array([self.md, self.inc_rad, self.azi_rad]).T
+        self.survey_deg = np.array(
+            [self.md, self.inc_deg, self.azi_grid_deg]
+        ).T
+        self.survey_rad = np.array(
+            [self.md, self.inc_rad, self.azi_grid_rad]
+        ).T
 
         self.n = n
         self.e = e
@@ -301,9 +308,17 @@ class Survey:
         self.x = x
         self.y = y
         self.z = z
-        self.vec = vec
+        if vec is not None:
+            if nev:
+                self.vec_nev = vec
+                self.vec_xyz = get_xyz(vec)
+            else:
+                self.vec_xyz = vec
+                self.vec_nev = get_nev(vec)
+        else:
+            self.vec_nev, self.vec_xyz = vec, vec
 
-        self._min_curve()
+        self._min_curve(vec)
         self._get_toolface_and_rates()
 
         # initialize errors
@@ -322,7 +337,7 @@ class Survey:
         if self.header.azi_reference == 'grid':
             self._make_angles(inc, azi, deg)
             self.azi_true_deg = (
-                self.azi_deg + math.degrees(self.header.convergence)
+                self.azi_grid_deg + math.degrees(self.header.convergence)
             )
             self.azi_mag_deg = (
                 self.azi_true_deg - math.degrees(self.header.declination)
@@ -394,14 +409,14 @@ class Survey:
             assert len(radius) == len(self.md), "Check radius"
             self.radius = np.array(radius)
 
-    def _min_curve(self):
+    def _min_curve(self, vec):
         """
         Get the (x,y,z), (n,e,v), doglegs, rfs, delta_mds, dlss and
         vectors for the well bore if they were not provided, using the
         minimum curvature method.
         """
         mc = MinCurve(
-            self.md, self.inc_rad, self.azi_rad, self.start_xyz, self.unit
+            self.md, self.inc_rad, self.azi_grid_rad, self.start_xyz, self.unit
         )
         self.dogleg = mc.dogleg
         self.rf = mc.rf
@@ -414,8 +429,11 @@ class Survey:
             self.x, self.y, self.z = (mc.poss).T
         if self.n is None:
             self._get_nev()
-        if self.vec is None:
-            self.vec = get_vec(self.inc_rad, self.azi_rad, deg=False)
+        if vec is None:
+            self.vec_xyz = get_vec(self.inc_rad, self.azi_grid_rad, deg=False)
+            self.vec_nev = get_vec(
+                self.inc_rad, self.azi_grid_rad, deg=False, nev=True
+            )
 
     def _get_nev(self):
         self.n, self.e, self.tvd = get_nev(
@@ -435,14 +453,14 @@ class Survey:
         """
         if deg:
             self.inc_rad = np.radians(inc)
-            self.azi_rad = np.radians(azi)
+            self.azi_grid_rad = np.radians(azi)
             self.inc_deg = np.array(inc)
-            self.azi_deg = np.array(azi)
+            self.azi_grid_deg = np.array(azi)
         else:
             self.inc_rad = np.array(inc)
-            self.azi_rad = np.array(azi)
+            self.azi_grid_rad = np.array(azi)
             self.inc_deg = np.degrees(inc)
-            self.azi_deg = np.degrees(azi)
+            self.azi_grid_deg = np.degrees(azi)
 
     def get_error(self, error_model):
         assert error_model in ERROR_MODELS, "Undefined error model"
@@ -544,7 +562,7 @@ class Survey:
             self.build_rate = self._curvature_to_rate(curvature_build)
 
         # calculate plan normals
-        n12 = np.cross(s.vec1, s.vec2)
+        n12 = np.cross(s.vec1_nev, s.vec2_nev)
         with np.errstate(divide='ignore', invalid='ignore'):
             self.normals = n12 / np.linalg.norm(n12, axis=1).reshape(-1, 1)
 
@@ -580,17 +598,17 @@ def interpolate_survey(survey, x=0, index=0):
 
     # check if it's just a tangent section
     if survey.dogleg[index + 1] == 0:
-        azi = survey.azi_rad[index]
+        azi = survey.azi_grid_rad[index]
         inc = survey.inc_rad[index]
 
     else:
         # get the vector
-        t1 = survey.vec[index]
-        t2 = survey.vec[index + 1]
+        t1 = survey.vec_xyz[index]
+        t2 = survey.vec_xyz[index + 1]
 
         total_dogleg = survey.dogleg[index + 1]
 
-        dogleg = x * (survey.dogleg[index + 1] / survey.delta_md[index + 1])
+        dogleg = x * (total_dogleg / survey.delta_md[index + 1])
 
         t = (
             (math.sin(total_dogleg - dogleg) / math.sin(total_dogleg)) * t1
@@ -602,15 +620,80 @@ def interpolate_survey(survey, x=0, index=0):
     s = Survey(
         md=np.array([survey.md[index], survey.md[index] + x]),
         inc=np.array([survey.inc_rad[index], inc]),
-        azi=np.array([survey.azi_rad[index], azi]),
+        azi=np.array([survey.azi_grid_rad[index], azi]),
         start_xyz=np.array([survey.x, survey.y, survey.z]).T[index],
         start_nev=np.array([survey.n, survey.e, survey.tvd]).T[index],
         header=survey.header,
-        deg=False
+        deg=False,
     )
-    s._min_curve()
+    # s._min_curve(vec=None)
 
     return s
+
+
+def interpolate_tvd(survey, tvd):
+    # find closest point assuming tvd is sorted list
+    idx = np.searchsorted(survey.tvd, tvd, side="right") - 1
+    pos1, pos2 = np.array([survey.n, survey.e, survey.tvd]).T[idx:idx + 2]
+    vec1, vec2 = survey.vec_nev[idx:idx + 2]
+    dogleg = survey.dogleg[idx + 1]
+    delta_md = survey.delta_md[idx + 1]
+
+    if np.isnan(dogleg):
+        return interpolate_survey(survey, x=0, index=idx)
+
+    if dogleg == 0:
+        x = (
+            (
+                tvd - survey.tvd[idx]
+            )
+            / (survey.tvd[idx + 1] - survey.tvd[idx])
+        ) * (survey.md[idx + 1] - survey.md[idx])
+    else:
+        m = np.array([0., 0., 1.])
+        a = np.dot(m, vec1) * np.sin(dogleg)
+        b = np.dot(m, vec1) * np.cos(dogleg) - np.dot(m, vec2)
+        # p = get_unit_vec(np.array([0., 0., tvd]) - pos1)
+        p = np.array([0., 0., tvd]) - pos1
+        c = (
+            np.dot(m, p)
+            * dogleg
+            * np.sin(dogleg)
+            / delta_md
+        ) + b
+
+        d1 = 2 * np.arctan2(
+            (
+                a + (a ** 2 + b ** 2 - c ** 2) ** 0.5
+            ),
+            (
+                b + c
+            )
+        )
+        d2 = 2 * np.arctan2(
+            (
+                a - (a ** 2 + b ** 2 - c ** 2) ** 0.5
+            ),
+            (
+                b + c
+            )
+        )
+
+        assert d1 >= 0 or d2 >= 0
+        if d1 < 0:
+            d = d2
+        elif d2 < 0:
+            d = d1
+        else:
+            d = min(d1, d2)
+
+        x = d / dogleg * delta_md
+
+    interpolated_survey = interpolate_survey(survey, x=x, index=idx)
+
+    return interpolated_survey
+
+
 
 
 def slice_survey(survey, start, stop=None):
@@ -719,8 +802,10 @@ class SplitSurvey:
         self.delta_azi = self.azi2 - self.azi1
         self.delta_inc = self.inc2 - self.inc1
 
-        self.vec1 = survey.vec[:-1]
-        self.vec2 = survey.vec[1:]
+        self.vec1_xyz = survey.vec_xyz[:-1]
+        self.vec1_nev = get_nev(self.vec1_xyz)
+        self.vec2_xyz = survey.vec_xyz[1:]
+        self.vec2_nev = get_nev(self.vec2_xyz)
         self.dogleg = survey.dogleg[1:]
 
 
