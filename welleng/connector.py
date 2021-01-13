@@ -239,9 +239,9 @@ class Connector:
 
         if vec2 is not None:
             assert not (inc2 or azi2), "Either vec2 or (inc2 and azi2)"
-        if (inc2 or azi2):
+        if (inc2 is not None or azi2 is not None):
             assert vec2 is None, "Either vec2 or (inc2 and azi2)"
-        if md2:
+        if md2 is not None:
             assert pos2 is None, "Either md2 or pos2"
             assert md2 >= md1, "md2 must be larger than md1"
 
@@ -506,7 +506,7 @@ class Connector:
         self.initial_methods = {
             '00000': 'no_input',
             '00001': 'min_curve_or_hold',
-            '00010': 'curve_hold',
+            '00010': 'curve_hold_or_hold',
             '00011': 'curve_hold_curve_or_hold',
             '00100': 'min_curve_or_hold',
             '00101': 'vec_and_inc_azi',
@@ -1017,6 +1017,13 @@ def min_curve_to_target(distances):
     position and vector to the target position which is not achievable with
     the provided dls_design.
     """
+    if distances == (0., 0., 0,):
+        return (
+            0.,
+            np.inf,
+            0.
+        )
+
     (
         dist_to_target,
         dist_perp_to_target,
@@ -1383,3 +1390,50 @@ def convert_target_input_to_booleans(*inputs):
     ]
 
     return ''.join(input)
+
+
+def connect_points(
+    cartesians, vec_start=[0., 0., 1.], dls_design=3.0, nev=True, step=30,
+    md_start=0.
+):
+    if nev:
+        pos_nev = np.array(cartesians).reshape(-1, 3)
+        vec_nev = np.zeros_like(pos_nev)
+        vec_nev[0] = np.array(vec_start).reshape(-1, 3)
+    else:
+        e, n, tvd = np.array(cartesians).reshape(-1, 3)
+        pos_nev = np.array([n, e, tvd]).T
+        vec_nev = np.zeros_like(pos_nev)
+        e, n, tvd = np.array(vec_nev).reshape(-1, 3)
+        vec_nev[0] = np.array([n, e, tvd]).T
+
+    if type(dls_design) is float:
+        dls = np.full(len(pos_nev), dls_design)
+    else:
+        dls = np.array(dls_design).reshape(-1, 1)
+
+    connections = []
+    for i, (p, v, d) in enumerate(zip(pos_nev, vec_nev, dls)):
+        if i == 0:
+            node_1 = Node(
+                pos=p,
+                vec=v,
+                md=md_start
+            )
+            continue
+        if i > 1:
+            node_1 = connections[-1].node_end
+        node_2 = Node(
+            pos=p
+        )
+        c = Connector(
+            node1=node_1,
+            node2=node_2,
+            dls_design=d
+        )
+        connections.append(c)
+
+    data = interpolate_well(connections, step)
+    survey = get_survey(data)
+
+    return survey
