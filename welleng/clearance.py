@@ -85,11 +85,11 @@ class Clearance:
             self.ref = Survey(
                 md=self.reference.md[self.kop_index:],
                 inc=self.reference.inc_rad[self.kop_index:],
-                azi=self.reference.azi_rad[self.kop_index:],
+                azi=self.reference.azi_grid_rad[self.kop_index:],
                 n=self.reference.n[self.kop_index:],
                 e=self.reference.e[self.kop_index:],
                 tvd=self.reference.tvd[self.kop_index:],
-                vec=self.reference.vec[self.kop_index:],
+                vec=self.reference.vec_nev[self.kop_index:],
                 radius=self.reference.radius[self.kop_index:],
                 header=self.reference.header,
                 error_model=self.reference.error_model,
@@ -104,7 +104,8 @@ class Clearance:
                     self.reference.tvd[self.kop_index],
                     ],
                 deg=self.reference.deg,
-                unit=self.reference.unit
+                unit=self.reference.unit,
+                nev=True
             )
 
 
@@ -248,7 +249,7 @@ class ISCWSA:
             [
                 r[1].md[1],
                 r[1].inc_rad[1],
-                r[1].azi_rad[1],
+                r[1].azi_grid_rad[1],
                 r[1].n[1],
                 r[1].e[1],
                 r[1].tvd[1],

@@ -1,12 +1,100 @@
 import numpy as np
 from copy import deepcopy
-from .utils import get_vec, get_angles
+from .utils import get_vec, get_angles, get_nev, get_xyz, get_unit_vec
 from .survey import Survey, SurveyHeader
+
+
+class Node:
+    def __init__(
+        self,
+        pos=None,
+        vec=None,
+        md=None,
+        inc=None,
+        azi=None,
+        unit='meters',
+        degrees=True,
+        nev=True,
+    ):
+        self.check_angle_inputs(inc, azi, vec, nev, degrees)
+        self.get_pos(pos, nev)
+        self.md = md
+        self.unit = unit
+
+    def check_angle_inputs(self, inc, azi, vec, nev, degrees):
+        if all(v is None for v in [inc, azi, vec]):
+            self.vec_xyz = None
+            self.vec_nev = None
+            self.inc_rad = None
+            self.inc_deg = None
+            self.azi_rad = None
+            self.azi_rad = None
+            return
+        elif vec is None:
+            assert inc is not None and azi is not None, (
+                "vec or (inc, azi) must not be None"
+            )
+            self.vec_xyz = get_vec(inc, azi, deg=degrees).reshape(3)
+            self.vec_nev = get_nev(self.vec_xyz).reshape(3)
+        else:
+            if nev:
+                self.vec_nev = get_unit_vec(vec).reshape(3)
+                self.vec_xyz = get_xyz(self.vec_nev).reshape(3)
+            else:
+                self.vec_xyz = get_unit_vec(vec).reshape(3)
+                self.vec_nev = get_nev(self.vec_xyz).reshape(3)
+        self.inc_rad, self.azi_rad = (
+            get_angles(self.vec_xyz).T
+        ).reshape(2)
+        self.inc_deg, self.azi_deg = (
+            np.degrees(np.array([self.inc_rad, self.azi_rad]))
+        ).reshape(2)
+
+    def get_pos(self, pos, nev):
+        if pos is None:
+            self.pos_xyz = None
+            self.pos_nev = None
+            return
+        if nev:
+            self.pos_nev = np.array(pos).reshape(3)
+            self.pos_xyz = get_xyz(pos).reshape(3)
+        else:
+            self.pos_xyz = np.array(pos).reshape(3)
+            self.pos_nev = get_nev(pos).reshape(3)
+
+    def get_unit_vec(vec):
+        vec = vec / np.linalg.norm(vec)
+
+        return vec
+
+    def get_angles(self, inc, azi, degrees):
+        if degrees:
+            self.inc_deg = inc
+            self.azi_deg = azi
+            self.inc_rad, self.azi_rad = (
+                np.radians(np.array([inc, azi]))
+            )
+        else:
+            self.inc_rad = inc
+            self.azi_rad = azi
+            self.inc_deg, self.azi_deg = (
+                np.radians(np.array([inc, azi]))
+            )
+
+
+def get_node_params(node):
+    pos = node.pos_nev
+    vec = node.vec_nev
+    md = node.md
+
+    return pos, vec, md
 
 
 class Connector:
     def __init__(
         self,
+        node1=None,
+        node2=None,
         pos1=[0., 0., 0.],
         vec1=None,
         inc1=None,
@@ -102,7 +190,14 @@ class Connector:
         -------
             connector: welleng.connector.Connector object
         """
-
+        if node1 is not None:
+            pos1, vec1, md1 = get_node_params(
+                node1
+            )
+        if node2 is not None:
+            pos2, vec2, md2 = get_node_params(
+                node2
+            )
         # TODO: remove self.step
 
         # Set up a lookup dictionary to use with the logic to determine
@@ -145,9 +240,10 @@ class Connector:
         if vec2 is not None:
             assert not (inc2 or azi2), "Either vec2 or (inc2 and azi2)"
         if (inc2 or azi2):
-            assert not vec2, "Either vec2 or (inc2 and azi2)"
+            assert vec2 is None, "Either vec2 or (inc2 and azi2)"
         if md2:
-            assert not pos2, "Either md2 or pos2"
+            assert pos2 is None, "Either md2 or pos2"
+            assert md2 >= md1, "md2 must be larger than md1"
 
         if dls_design is None:
             dls_design = 3.0
@@ -185,7 +281,7 @@ class Connector:
                 self.azi1 = azi1
             self.vec1 = np.array(get_vec(
                 self.inc1, self.azi1, nev=True, deg=False
-            ))
+            )).reshape(3)
         else:
             self.vec1 = np.array(vec1)
             self.inc1, self.azi1 = get_angles(self.vec1, nev=True).reshape(2)
@@ -293,6 +389,20 @@ class Connector:
 
         # and finally, actually do something...
         self._use_method()
+
+        self._get_nodes()
+
+    def _get_nodes(self):
+        self.node_start = Node(
+            pos=self.pos1.reshape(3),
+            vec=self.vec1.reshape(3),
+            md=self.md1
+        )
+        self.node_end = Node(
+            pos=self.pos_target.reshape(3),
+            vec=self.vec_target.reshape(3),
+            md=self.md_target
+        )
 
     def _min_dist_to_target(self):
         (
@@ -432,6 +542,17 @@ class Connector:
         self.dogleg = get_dogleg(
             self.inc1, self.azi1, self.inc_target, self.azi_target
         )
+        # TODO: handle when self.dogleg == 0
+        # if self.dogleg == 0:
+        #     self.dist_curve, self.func_dogleg = 0., 1.
+        #     self.md2, self.inc2, self.azi2, self.pos2, self.vec2 = (
+        #         None, None, None, None, None
+        #     )
+        #     self.pos_target = self.pos1 + (
+        #             self.vec1 * self.md_target
+        #         )
+        #     return
+
         self.dogleg = check_dogleg(self.dogleg)
         if self.md_target is None:
             self.md2 = None
@@ -635,6 +756,10 @@ class Connector:
                 and
                 abs(self.radius_critical - self.radius_critical2)
                 > self.delta_radius
+                and not np.allclose(
+                    self.pos1,
+                    self.pos2
+                )
             )
         ):
             # A solution will typically be found within a few iterations,
@@ -744,6 +869,10 @@ class Connector:
             dist_perp_to_target = (
                 np.dot((pos_target - pos1), vec1)
             )
+            if dist_perp_to_target > dist_to_target:
+                # since a tolerance is being used, occasionally things can go
+                # wrong and need to be caught.
+                dist_perp_to_target = dist_to_target
 
             dist_norm_to_target = (
                 (
@@ -1052,6 +1181,20 @@ def interpolate_curve(
     step,
     endpoint=False
 ):
+    # sometimes the curve section has no length
+    # this if statement handles this event
+    if dist_curve == 0:
+        inc, azi = get_angles(vec1, nev=True).T
+        data = dict(
+            md=np.array([md1]),
+            vec=np.array([vec1]),
+            inc=inc,
+            azi=azi,
+            dogleg=np.array([dogleg])
+        )
+
+        return data
+
     end_md = abs(dist_curve)
     if step is None:
         md = np.array([0])
