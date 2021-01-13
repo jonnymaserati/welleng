@@ -1396,6 +1396,31 @@ def connect_points(
     cartesians, vec_start=[0., 0., 1.], dls_design=3.0, nev=True, step=30,
     md_start=0.
 ):
+    """
+    Function for connecting a list or array of only Cartesian points.
+
+    Parameters
+    ----------
+        cartesians: (n, 3) list or array of floats
+            Either [n, e, tvd] (default) or [x, y, z]
+        vec_start: (3) list or array of floats (default: [0., 0., 1.])
+            Unit start vector (default is pointing down) in the nev or xyz
+            coordinate system.
+        dls_design: float or (n, 1) list or array of floats (default: 3.0)
+            The minimum Dog Leg Severity used when attempting to connect the
+            points (a high DLS will be used if necessary).
+        nev: bool (default: True)
+            Indicates whether the cartesians are referencing the [nev]
+            (default) or [xyz] coordinate system.
+        step: float (default: 30)
+            The desired step interval for the returned Survey object.
+        md_start: float (default: 0)
+            The md at the first cartesian point (in the event of a tie-on).
+
+    Returns
+    -------
+        survey: welleng.survey.Survey object
+    """
     if nev:
         pos_nev = np.array(cartesians).reshape(-1, 3)
         vec_nev = np.zeros_like(pos_nev)
