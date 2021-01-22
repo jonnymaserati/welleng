@@ -487,7 +487,7 @@ class Connector:
             if np.array_equal(self.vec_target, self.vec1):
                 if self.pos_target is None:
                     self.method = 'hold'
-                elif np.array_equal(
+                elif np.allclose(
                         self.vec_target,
                         (self.pos_target - self.pos1)
                         / np.linalg.norm(self.pos_target - self.pos1)
