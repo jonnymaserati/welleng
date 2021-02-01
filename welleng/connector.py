@@ -832,8 +832,11 @@ class Connector:
 
     def survey(self, radius=10, step=30):
         interpolation = self.interpolate(step)
+        sh = SurveyHeader()
 
-        survey = get_survey(interpolation, start_nev=self.pos1, radius=10)
+        survey = get_survey(
+            interpolation, survey_header=sh, start_nev=self.pos1, radius=10
+        )
 
         return survey
 
