@@ -832,8 +832,11 @@ class Connector:
 
     def survey(self, radius=10, step=30):
         interpolation = self.interpolate(step)
+        sh = SurveyHeader()
 
-        survey = get_survey(interpolation, start_nev=self.pos1, radius=10)
+        survey = get_survey(
+            interpolation, survey_header=sh, start_nev=self.pos1, radius=10
+        )
 
         return survey
 
@@ -855,7 +858,8 @@ class Connector:
         # checks for that condition and if it's the case, will move the
         # target_pos a sufficient amount to prevent issues.
         vec_temp = np.array(pos_target - pos1)
-        vec_temp = vec_temp / np.linalg.norm(vec_temp)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            vec_temp = vec_temp / np.linalg.norm(vec_temp)
         if np.array_equal(vec1, vec_temp):
             self._mod_pos(pos_target)
         if np.allclose(pos1, pos_target):
@@ -1131,7 +1135,9 @@ def interpolate_well(sections, step=30):
     return data
 
 
-def get_survey(section_data, start_nev=[0., 0., 0.], radius=10):
+def get_survey(
+    section_data, survey_header, start_nev=[0., 0., 0.], radius=10, deg=False,
+):
     """
     Constructs a well survey from a list of sections of control points.
 
@@ -1160,18 +1166,14 @@ def get_survey(section_data, start_nev=[0., 0., 0.], radius=10):
         for s in section_data
     ]).T
 
-    sh = SurveyHeader(
-        azi_reference="grid"
-    )
-
     survey = Survey(
         md=md,
         inc=inc,
         azi=azi,
         start_nev=start_nev,
-        deg=False,
+        deg=deg,
         radius=radius,
-        header=sh,
+        header=survey_header,
     )
 
     return survey
@@ -1426,10 +1428,10 @@ def connect_points(
         vec_nev = np.zeros_like(pos_nev)
         vec_nev[0] = np.array(vec_start).reshape(-1, 3)
     else:
-        e, n, tvd = np.array(cartesians).reshape(-1, 3)
+        e, n, tvd = np.array(cartesians).reshape(-1, 3).T
         pos_nev = np.array([n, e, tvd]).T
         vec_nev = np.zeros_like(pos_nev)
-        e, n, tvd = np.array(vec_nev).reshape(-1, 3)
+        e, n, tvd = np.array(vec_start).reshape(-1, 3).T
         vec_nev[0] = np.array([n, e, tvd]).T
 
     if type(dls_design) is float:
@@ -1458,7 +1460,9 @@ def connect_points(
         )
         connections.append(c)
 
+    sh = SurveyHeader()
+
     data = interpolate_well(connections, step)
-    survey = get_survey(data)
+    survey = get_survey(data, sh, start_nev=connections[0].pos1)
 
     return survey

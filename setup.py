@@ -59,6 +59,7 @@ setup(
         'scipy',
         'tabulate',
         'trimesh',
+        'utm',
         'vedo',
         'vtk',
     ],
@@ -67,5 +68,5 @@ setup(
         'Operating System :: OS Independent',
         'Programming Language :: Python :: 3',
     ],
-    python_requires='>=3.7',
+    python_requires='==3.7',
 )

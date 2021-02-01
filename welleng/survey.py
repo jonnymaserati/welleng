@@ -10,7 +10,6 @@ from .utils import (
     get_angles,
     HLA_to_NEV,
     NEV_to_HLA,
-    get_unit_vec,
     get_xyz
 )
 
@@ -382,7 +381,7 @@ class Survey:
                 self.header.convergence
             )
         else:
-            azi_temp = self.azi_true_deg - self.header.convergence
+            azi_temp = self.azi_true_rad - self.header.convergence
 
         return azi_temp
 
@@ -525,19 +524,20 @@ class Survey:
 
         # this is lazy I know, but I'm using this mostly for flags
         with np.errstate(divide='ignore', invalid='ignore'):
-            t1 = np.arctan(
-                np.sin(s.inc2) * np.sin(s.delta_azi) /
+            t1 = np.arctan2(
+                np.sin(s.inc2) * np.sin(s.delta_azi),
                 (
                     np.sin(s.inc2) * np.cos(s.inc1) * np.cos(s.delta_azi)
                     - np.sin(s.inc1) * np.cos(s.inc2)
                 )
             )
             t1 = np.nan_to_num(
-                np.where(t1 < 0, t1 + 2 * np.pi, t1),
+                t1,
+                # np.where(t1 < 0, t1 + 2 * np.pi, t1),
                 nan=np.nan
             )
-            t2 = np.arctan(
-                np.sin(s.inc1) * np.sin(s.delta_azi) /
+            t2 = np.arctan2(
+                np.sin(s.inc1) * np.sin(s.delta_azi),
                 (
                     np.sin(s.inc2) * np.cos(s.inc1)
                     - np.sin(s.inc1) * np.cos(s.inc2) * np.cos(s.delta_azi)
@@ -552,6 +552,12 @@ class Survey:
             curvature_dls = 1 / self.curve_radius
 
             self.toolface = np.concatenate((t1, np.array([t2[-1]])))
+            # these toolfaces are not signed. To determine the sign need to
+            # reference the change in azimuth
+
+            # t1 = np.absolute(t1) * (s.delta_azi / np.absolute(s.delta_azi))
+
+            # self.toolface = np.concatenate((np.array([0.]), t1))
 
             curvature_turn = curvature_dls * (
                 np.sin(self.toolface) / np.sin(self.inc_rad)
@@ -565,6 +571,21 @@ class Survey:
         n12 = np.cross(s.vec1_nev, s.vec2_nev)
         with np.errstate(divide='ignore', invalid='ignore'):
             self.normals = n12 / np.linalg.norm(n12, axis=1).reshape(-1, 1)
+
+
+def interpolate_md(survey, md):
+    """
+    Interpolates a survey at a given measured depth.
+    """
+    # get the closest survey stations
+    idx = np.searchsorted(survey.md, md, side="left") - 1
+
+    assert idx < len(survey.md), "The md is beyond the survey"
+
+    x = md - survey.md[idx]
+    assert x >= 0
+
+    return interpolate_survey(survey, x=x, index=idx)
 
 
 def interpolate_survey(survey, x=0, index=0):
@@ -615,7 +636,12 @@ def interpolate_survey(survey, x=0, index=0):
             + (math.sin(dogleg) / math.sin(total_dogleg)) * t2
         )
 
+        t /= np.linalg.norm(t)
+
         inc, azi = get_angles(t)[0]
+    
+    sh = survey.header
+    sh.azi_reference = 'grid'
 
     s = Survey(
         md=np.array([survey.md[index], survey.md[index] + x]),
@@ -623,7 +649,7 @@ def interpolate_survey(survey, x=0, index=0):
         azi=np.array([survey.azi_grid_rad[index], azi]),
         start_xyz=np.array([survey.x, survey.y, survey.z]).T[index],
         start_nev=np.array([survey.n, survey.e, survey.tvd]).T[index],
-        header=survey.header,
+        header=sh,
         deg=False,
     )
     # s._min_curve(vec=None)
@@ -808,13 +834,21 @@ class SplitSurvey:
         self.vec2_nev = get_nev(self.vec2_xyz)
         self.dogleg = survey.dogleg[1:]
 
+        # for i, a in enumerate(self.delta_azi):
+        #     if a < -np.pi:
+        #         self.delta_azi[i] = np.pi + a
+        #     elif a > np.pi:
+        #         self.delta_azi[i] = np.pi - a
+        #     else:
+        #         continue
+
 
 def get_circle_radius(survey, **targets):
     # TODO: add target data to sections
     ss = SplitSurvey(survey)
 
-    x1, y1, z1 = np.cross(ss.vec1, survey.normals).T
-    x2, y2, z2 = np.cross(ss.vec2, survey.normals).T
+    y1, x1, z1 = np.cross(ss.vec1_nev, survey.normals).T
+    y2, x2, z2 = np.cross(ss.vec2_nev, survey.normals).T
 
     b1 = np.array([y1, x1, z1]).T
     b2 = np.array([y2, x2, z2]).T
@@ -839,7 +873,7 @@ def get_circle_radius(survey, **targets):
     return (starts, ends)
 
 
-def get_sections(survey, rtol=1e-1, atol=1e-2, **targets):
+def get_sections(survey, rtol=1e-1, atol=1e-1, **targets):
     """
     Tries to discretize a survey file into hold or curve sections. These
     sections can then be used to generate a WellPlan object to generate a
@@ -865,6 +899,11 @@ def get_sections(survey, rtol=1e-1, atol=1e-2, **targets):
     Returns:
         sections: list of welleng.exchange.wbp.TurnPoint objects
     """
+    # it turns out that since the well is being split into "holds" and "turns"
+    # that the method can always be "920", since even a hold can be expressed
+    # as an [md, inc, azi]. This simplifies things greatly!
+
+    METHOD = "920"  # the COMPASS method for minimum curvature
 
     # TODO: add target data to sections
     # ss = SplitSurvey(survey)
@@ -878,25 +917,29 @@ def get_sections(survey, rtol=1e-1, atol=1e-2, **targets):
         ), axis=-1
     )
 
-    # ends = np.concatenate(
-    #     (np.where(continuous == False)[0] + 1, np.array([len(continuous)-1]))
-    # )
-    ends = np.concatenate(
-        (np.where(not continuous)[0] + 1, np.array([len(continuous)-1]))
+    starts = np.concatenate(
+        (np.array([0]), np.where(continuous == False)[0] + 1)
     )
-    starts = np.concatenate(([0], ends[:-1]))
 
-    actions = [
-        "hold" if a else "curve"
-        for a in np.isnan(survey.toolface[starts])
-    ]
+    ends = np.concatenate(
+        (
+            starts[1:],
+            np.array([len(continuous) - 1])
+        )
+    )
+
+    actions = ["hold"]
+    actions.extend([
+        "hold" if d == 0.0 else "curve"
+        for d in survey.dogleg[starts[:-1] + 1]
+    ])
 
     sections = []
     tie_on = True
-    for s, e, a in zip(starts, ends, actions):
+    for i, (s, e, a) in enumerate(zip(starts, ends, actions)):
         md = survey.md[s]
         inc = survey.inc_deg[s]
-        azi = survey.azi_deg[s]
+        azi = survey.azi_grid_deg[s]
         x = survey.e[s]
         y = survey.n[s]
         z = -survey.tvd[s]
@@ -908,32 +951,55 @@ def get_sections(survey, rtol=1e-1, atol=1e-2, **targets):
         else:
             denominator = 100
 
-        if a == "hold":
+        if a == "hold" or tie_on or i == 0:
             dls = 0.0
             toolface = 0.0
             build_rate = 0.0
             turn_rate = 0.0
-            method = ""
+            method = METHOD
         else:
-            method = "0"
-            dls = survey.dls[e]
-            toolface = np.degrees(survey.toolface[s])
+            # COMPASS appears to look back, i.e. at a design point in the
+            # well plan it looks back to what the dls and toolface was
+            # required to get to that point, so need to give it the data from
+            # the previous start point.
+            lb = starts[i - 1]
+            method = METHOD
+            dls = survey.dls[s]
+            toolface = abs(np.degrees(survey.toolface[starts[i - 1]]))
+
+            azi_p = sections[-1].azi
+            if azi - azi_p < -180:
+                coeff = 1
+            elif azi - azi_p > 180:
+                coeff = -1
+            else:
+                coeff = (azi - azi_p) / abs(azi - azi_p)
+
+            toolface *= coeff
+
             # looks like the toolface is in range -180 to 180 in the .wbp file
-            toolface = toolface - 360 if toolface > 180 else toolface
-            delta_md = survey.md[e] - md
+            # toolface = toolface - 360 if toolface > 180 else toolface
+            delta_md = md - survey.md[lb]
 
             # TODO: should sum this line by line to avoid issues with long
             # sections
             build_rate = abs(
-                (survey.inc_deg[e] - survey.inc_deg[s])
+                (survey.inc_deg[s] - survey.inc_deg[lb])
                 / delta_md * denominator
             )
 
             # TODO: should sum this line by line to avoid issues with long
             # sections need to be careful with azimuth straddling north
-            delta_azi_1 = abs(survey.azi_deg[e] - survey.azi_deg[s])
-            delta_azi_2 = abs(360 - delta_azi_1)
+            delta_azi_1 = survey.azi_grid_deg[s] - survey.azi_grid_deg[lb]
+            if delta_azi_1 < -180:
+                delta_azi_1 += 360
+            if delta_azi_1 > 180:
+                delta_azi_1 -= 360
+
+            delta_azi_2 = 360 - delta_azi_1
             delta_azi = min(delta_azi_1, delta_azi_2)
+
+            delta_azi = delta_azi_1
             turn_rate = delta_azi / delta_md * denominator
 
         section = TurnPoint(
@@ -954,6 +1020,7 @@ def get_sections(survey, rtol=1e-1, atol=1e-2, **targets):
 
         # Repeat the first section so that creating .wbp works
         if tie_on:
+            section.method = '2'
             sections.append(section)
             sections[-1].tie_on = False
 

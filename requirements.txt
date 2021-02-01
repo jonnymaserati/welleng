@@ -19,5 +19,6 @@ scipy==1.5.4
 six==1.15.0
 tabulate==0.8.7
 trimesh==3.8.18
+utm==0.7.0
 vedo==2020.4.2
 vtk==9.0.1
