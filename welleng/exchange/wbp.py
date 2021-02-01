@@ -1,9 +1,14 @@
-import os, yaml, welleng
+import os
+import yaml
+import welleng
+import utm
 import numpy as np
 from datetime import datetime
 from welleng.version import __version__ as VERSION
 
 # TODO: need to relocate the class Target to target.py
+
+
 class Target:
     def __init__(
         self,
@@ -34,6 +39,7 @@ class Target:
         self.location = location
         self.geometry = geometry
 
+
 class TurnPoint:
     def __init__(
         self,
@@ -60,6 +66,7 @@ class TurnPoint:
         self.target = target
         self.tie_on = tie_on
         self.location = location
+
 
 class SurveyPoint:
     def __init__(
@@ -94,6 +101,7 @@ class SurveyPoint:
         self.tool = tool
         self.location = location
 
+
 class WellPlan:
     def __init__(
         self,
@@ -106,11 +114,12 @@ class WellPlan:
         plan_method='curve_only',
         dirty_flag=None,
         sidetrack_id=None,
-        dls=0,
+        dls=3.0,
         extension=0,
         wbp_data=None,
         targets=[],
         line=None,
+        parent_wbp_file=None,
     ):
         """
         An object for storing data extracted from or for writing to a .wbp
@@ -169,6 +178,8 @@ class WellPlan:
         with open(wbp_dict_file) as f:
             self.wbp_dict = yaml.load(f, Loader=yaml.FullLoader)
 
+        self.parent_data = get_parent_survey(parent_wbp_file)
+
         self.action = {
             'depth': self._get_units,
         }
@@ -206,6 +217,30 @@ class WellPlan:
             self.extension = extension
 
             self.steps = welleng.survey.get_sections(survey)
+
+            self._get_surface_location()
+            self._get_local_coordinates()
+
+    def _get_local_coordinates(self):
+        sd = np.zeros(3)
+        sd[:2] = self.surface_datum[:2]
+        self.env_local = np.vstack([
+            s.location - sd for s in self.steps
+        ])
+
+    def _get_surface_location(self):
+        if self.parent_data is not None:
+            for line in self.parent_data:
+                if "L:" in line:
+                    code, e, n, v = line.split()
+                    self.surface_datum = np.array([e, n, v]).astype(np.float)
+                    break
+        else:
+            self.surface_datum = np.array([
+                self.survey.n,
+                self.survey.e,
+                self.survey.tvd
+            ]).T[0]
 
     def _process_wbp_data(self):
         """
@@ -274,7 +309,7 @@ class WellPlan:
         tg.type = self.wbp_dict['TARGETS']['type'][data[2]]
         tg.locked = data[3]
         tg.offset = [float(data[4:13], float(data[13:23]))]
-        
+
     def _add_target_color(self, data):
         tgc = self.targets[-1].geometry['color']
         if len(data) > 5:
@@ -345,6 +380,7 @@ class WellPlan:
         self.depth_unit = self.wbp_dict['DEPTH'][key]['depth']
         self.surface_unit = self.wbp_dict['DEPTH'][key]['surface']
 
+
 def string_strip(string, is_float=False):
     s = string.strip()
     if len(s) > 0:
@@ -354,6 +390,28 @@ def string_strip(string, is_float=False):
             return s
     else:
         return None
+
+
+def get_parent_survey(filename):
+    if filename is None:
+        return None
+
+    assert filename[-4:] == '.wbp', 'Wrong format'
+    with open(filename) as f:
+        wbp_data = [line.rstrip() for line in f]
+
+    flag = True
+    data = []
+    for line in wbp_data:
+        if "WELLPLANS" in line:
+            flag = False
+            continue
+        if flag:
+            continue
+        data.append(line)
+
+    return data
+
 
 def load(filename):
     """
@@ -402,6 +460,7 @@ def load(filename):
             surface_unit = w.surface_unit
             targets = w.targets
 
+
 def add_targets(doc, targets):
     for t in targets:
         doc.append(f"T:{t.name}")
@@ -411,7 +470,7 @@ def add_targets(doc, targets):
             f"{str(t.geometry['color']['color']).rjust(3)}"
         ))
     return doc
-        
+
 
 def add_location(doc, location):
     x, y, z = location
@@ -423,10 +482,11 @@ def add_location(doc, location):
         ))
     return doc
 
+
 def add_header(doc, data):
     d = data.wbp_dict['LOCATION']
-    ignored_integer_1 = f"   0"
-    ignored_integer_2 = f" 123"
+    ignored_integer_1 = "   0"
+    ignored_integer_2 = " 123"
     plan_name = "" if data.plan_name is None else data.plan_name
     parent_name = "" if data.parent_name is None else data.parent_name
     doc.append((
@@ -447,12 +507,14 @@ def add_header(doc, data):
     # but I've never seen it and what does the other dls refer to?
     return doc
 
+
 def add_step(doc, step):
     if isinstance(step, welleng.exchange.wbp.TurnPoint):
         doc = add_turn_point(doc, step)
     else:
         doc = add_survey_point(doc, step)
     return doc
+
 
 def add_turn_point(doc, step):
     if step.tie_on:
@@ -480,6 +542,7 @@ def add_turn_point(doc, step):
     doc = add_location(doc, step.location)
     return doc
 
+
 def add_survey_point(doc, step):
     doc.append((
         f"X:"
@@ -503,6 +566,7 @@ def add_survey_point(doc, step):
     doc = add_location(doc, step.location)
     return doc
 
+
 def get_unit_key(data):
     key = [
         key for key in data.wbp_dict['DEPTH'] if (
@@ -512,6 +576,7 @@ def get_unit_key(data):
     ]
     return key[0]
 
+
 def get_key(d, value):
     key = [
         key for key in d if (
@@ -519,7 +584,8 @@ def get_key(d, value):
         )
     ]
     return key[0]
-    
+
+
 def export(data, filename=None, comments=None):
     """
     Export a WellPlan object to .wbp format.
@@ -528,7 +594,7 @@ def export(data, filename=None, comments=None):
     ----------
         data: welleng.exchange.wbp.WellPlan object or a list of objects
         filename: string (default: None)
-            The filename to save the .wbp file to. If None then the 
+            The filename to save the .wbp file to. If None then the
             output is returned as data.
         comments: list of strings (default: None)
             A list of comments to be printed in the header of the .wbp
@@ -549,9 +615,12 @@ def export(data, filename=None, comments=None):
         if i == 0:
             doc.append(f"DEPTH {get_unit_key(w)}")
             doc = add_comments(doc, comments)
-            doc.append(f"TARGETS:")
+            doc.append("TARGETS:")
             doc = add_targets(doc, w.targets)
-            doc.append(f"WELLPLANS:")
+            doc.append("WELLPLANS:")
+            if w.parent_data is not None:
+                for line in w.parent_data:
+                    doc.append(line)
         doc = add_header(doc, w)
         for s in w.steps:
             doc = add_step(doc, s)
@@ -561,21 +630,27 @@ def export(data, filename=None, comments=None):
     else:
         save_to_file(doc, filename)
 
+
 def add_comments(doc, comments):
     doc.append(f"! {datetime.now():%Y-%m-%d %H:%M:%S%z}")
     if comments is None:
         doc.append(f"! welleng v{VERSION}")
-        doc.append(f"! Written by Jonny Corcutt")
+        doc.append("! Written by Jonny Corcutt")
     else:
         for c in comments:
             doc.append(f"! {c}")
     return doc
 
+
 def save_to_file(doc, filename):
     with open(f"{filename}", 'w') as f:
         f.writelines(f'{l}\n' for l in doc)
 
-def wbp_to_survey(data, step=None, radius=10):
+
+def wbp_to_survey(
+    data, step=None, radius=10, azi_reference='true', convergence=0.0,
+    utm_zone=31, utm_north=True
+):
     """
     Converts a WellPlan object created from a .wbp file into a Survey object.
 
@@ -601,11 +676,11 @@ def wbp_to_survey(data, step=None, radius=10):
                 dls = [s.dls]
             else:
                 dls = [0.]
-            # e, n, v = s.location
-            # start_nev = [n, e, v*-1]
+            e, n, v = s.location
+            start_nev = [n, e, v * -1]
             continue
         e, n, v = s.location
-        p = np.array([n, e, v*-1]) #- np.array(start_nev)
+        p = np.array([n, e, v * -1])  # - np.array(start_nev)
         if i == 1:
             md = [s.md]
             inc = [s.inc]
@@ -654,10 +729,27 @@ def wbp_to_survey(data, step=None, radius=10):
         step=step
     )
 
+    lat, lon = utm.to_latlon(
+        start_nev[1],
+        start_nev[0],
+        utm_zone,
+        northern=utm_north,
+    )
+
+    sh = welleng.survey.SurveyHeader(
+        latitude=lat,
+        longitude=lon,
+        altitude=start_nev[-1] * -1,
+        azi_reference=azi_reference,
+        convergence=convergence,
+    )
+
     survey = welleng.connector.get_survey(
         survey_data,
+        survey_header=sh,
         start_nev=start_nev,
-        radius=radius
+        radius=radius,
+        deg=False
     )
 
     # Because of the way the imported file is processed, there will likely
@@ -666,6 +758,7 @@ def wbp_to_survey(data, step=None, radius=10):
     survey = strip_duplicates(survey)
 
     return survey
+
 
 def strip_duplicates(survey):
     """
@@ -683,7 +776,7 @@ def strip_duplicates(survey):
     """
     temp = []
     for i, s in enumerate(zip(
-        survey.md, survey.inc_rad, survey.azi_rad, survey.radius
+        survey.md, survey.inc_rad, survey.azi_grid_rad, survey.radius
     )):
         if i == 0:
             temp.append(s)
@@ -693,7 +786,10 @@ def strip_duplicates(survey):
         else:
             temp.append(s)
 
-    md, inc, azi, radius = np.array(temp).reshape(-1,4).T
+    sh = survey.header
+    sh.azi_reference = 'grid'
+
+    md, inc, azi, radius = np.array(temp).reshape(-1, 4).T
 
     survey_stripped = welleng.survey.Survey(
         md=md,
@@ -701,10 +797,8 @@ def strip_duplicates(survey):
         azi=azi,
         deg=False,
         start_nev=survey.start_nev,
-        radius=radius
+        radius=radius,
+        header=sh,
     )
 
     return survey_stripped
-
-
-
