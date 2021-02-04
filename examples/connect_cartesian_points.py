@@ -1,4 +1,7 @@
 import welleng as we
+import os
+
+os.environ['DISPLAY'] = ':1'
 
 # Make up a list of Cartesian points
 carts = [
