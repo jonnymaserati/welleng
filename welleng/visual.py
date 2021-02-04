@@ -1,5 +1,5 @@
 import trimesh
-from vedo import show, Box, Axes, trimesh2vedo, Lines
+from vedo import show, Box, Axes, trimesh2vedo, Lines, Sphere
 import numpy as np
 
 from .version import __version__ as VERSION
@@ -34,6 +34,7 @@ def plot(
     arrows=None,
     text=None,
     boxes=None,
+    points=None,
     interactive=True,
 ):
     """
@@ -70,6 +71,12 @@ def plot(
         else:
             assert len(colors) == len(names), \
                 "Colors must be length of meshes list, 1 else None"
+
+    if points is not None:
+        points = [
+            Sphere(p, r=30, c='grey')
+            for p in points
+        ]
 
     meshes_vedo = []
     for i, mesh in enumerate(meshes):
@@ -117,6 +124,7 @@ def plot(
         arrows,
         boxes,
         axes,
+        points,
         bg='lightgrey',
         bg2='lavender',
         camera=camera_opts,

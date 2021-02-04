@@ -3,6 +3,9 @@ import numpy as np
 import pandas as pd
 import xml.etree.ElementTree as ET
 from tqdm import tqdm
+import os
+
+os.environ['DISPLAY'] = ':1'
 
 # for ease I accessed the data file locally and gave it a
 # shorter name. You'll need to change this to reflect the
