@@ -283,15 +283,15 @@ class Connector:
                 self.inc1, self.azi1, nev=True, deg=False
             )).reshape(3)
         else:
-            self.vec1 = np.array(vec1)
+            self.vec1 = np.array(vec1).reshape(3)
             self.inc1, self.azi1 = get_angles(self.vec1, nev=True).reshape(2)
 
         self.md1 = md1
-        self.pos_target = None if pos2 is None else np.array(pos2)
+        self.pos_target = None if pos2 is None else np.array(pos2).reshape(3)
         self.md_target = md2
 
         if vec2 is not None:
-            self.vec_target = np.array(vec2)
+            self.vec_target = np.array(vec2).reshape(3)
             self.inc_target, self.azi_target = get_angles(
                 self.vec_target,
                 nev=True
@@ -318,7 +318,7 @@ class Connector:
                 self.azi_target = azi2
             self.vec_target = get_vec(
                 self.inc_target, self.azi_target, nev=True, deg=False
-            )
+            ).reshape(3)
         elif azi2 is None:
             self.azi_target = self.azi1
             if degrees:
@@ -327,7 +327,7 @@ class Connector:
                 self.inc_target = inc2
             self.vec_target = get_vec(
                 self.inc_target, self.azi_target, nev=True, deg=False
-            )
+            ).reshape(3)
         else:
             self.vec_target = vec2
             self.inc_target = inc2
@@ -1136,7 +1136,7 @@ def interpolate_well(sections, step=30):
 
 
 def get_survey(
-    section_data, survey_header, start_nev=[0., 0., 0.], radius=10, deg=False,
+    section_data, survey_header=None, start_nev=[0., 0., 0.], radius=10, deg=False,
 ):
     """
     Constructs a well survey from a list of sections of control points.
@@ -1165,6 +1165,9 @@ def get_survey(
         )))
         for s in section_data
     ]).T
+    
+    if survey_header is None:
+        survey_header = SurveyHeader()
 
     survey = Survey(
         md=md,

@@ -1,5 +1,8 @@
 import welleng as we
 from tabulate import tabulate
+import os
+
+os.environ['DISPLAY'] = ':1'
 
 # construct simple well paths
 print("Constructing wells...")
@@ -30,7 +33,7 @@ sh_reference = we.survey.SurveyHeader(
 survey_reference = we.survey.Survey(
     md=connector_reference.md,
     inc=connector_reference.inc_deg,
-    azi=connector_reference.azi_deg,
+    azi=connector_reference.azi_grid_deg,
     header=sh_reference,
     error_model='iscwsa_mwd_rev4'
 )
@@ -41,7 +44,7 @@ sh_offset = we.survey.SurveyHeader(
 survey_offset = we.survey.Survey(
     md=connector_offset.md,
     inc=connector_offset.inc_deg,
-    azi=connector_offset.azi_deg,
+    azi=connector_offset.azi_grid_deg,
     start_nev=[100., 200., 0.],
     header=sh_offset,
     error_model='iscwsa_mwd_rev4'

@@ -5,6 +5,9 @@ import welleng as we
 from welleng.survey import Survey, SurveyHeader
 import welleng.clearance
 from welleng.mesh import WellMesh
+import os
+
+os.environ['DISPLAY'] = ':1'
 
 try:
     import ray
