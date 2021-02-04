@@ -2,6 +2,9 @@ import welleng as we
 import numpy as np
 from vedo import Arrows, Lines
 import random
+import os
+
+os.environ['DISPLAY'] = ':1'
 
 # Some code for testing the connector module.
 

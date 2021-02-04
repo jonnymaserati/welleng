@@ -183,7 +183,7 @@ def get_nev(pos, start_xyz=[0.,0., 0.], start_nev=[0., 0., 0.]):
 
 def get_xyz(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
     y, x, z = (
-        np.array([pos]).reshape(-1,3) - np.array([start_nev])
+        np.array([pos]).reshape(-1, 3) - np.array([start_nev])
     ).T
 
     return (np.array([x, y, z]).T + np.array([start_xyz]))

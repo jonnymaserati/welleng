@@ -2,6 +2,9 @@
 from welleng.connector import Connector, interpolate_well, get_survey
 from welleng.mesh import WellMesh
 from welleng.visual import plot
+import os
+
+os.environ['DISPLAY'] = ':1'
 
 # define start position and vector
 pos1 = [0., 0., 0.]
