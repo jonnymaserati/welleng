@@ -2,7 +2,7 @@ import welleng as we
 from tabulate import tabulate
 import os
 
-os.environ['DISPLAY'] = ':1'
+# os.environ['DISPLAY'] = ':1'
 
 # construct simple well paths
 print("Constructing wells...")
