@@ -201,10 +201,7 @@ It's possible to generate data for visualizing well trajectories with [welleng],
 ![image](https://user-images.githubusercontent.com/41046859/97724026-b78c2e00-1acc-11eb-845d-1220219843a5.png)
 ISCWSA Standard Set of Well Paths
 
-![image](https://media-exp1.licdn.com/dms/image/C5612AQEBKagFH_qlqQ/article-inline_image-shrink_1500_2232/0?e=1609977600&v=beta&t=S3C3C_frvUCgKm46Gtat2-Lor7ELGRALcyXbkwZyldM)
-Equinor's Volve Wells
-
-The ISCWSA standard set of well paths for evaluating clearance scenarios and Equinor's [volve] wells have been rendered in [blender] above. See the [examples] for the code used to generate the [volve] scene, extracting the data from the [volve] EDM.xml file.
+The ISCWSA standard set of well paths for evaluating clearance scenarios have been rendered in [blender] above. See the [examples] for the code used to generate a [volve] scene, extracting the data from the [volve] EDM.xml file.
 
 ## License
 

@@ -62,6 +62,7 @@ class Node:
             self.pos_xyz = np.array(pos).reshape(3)
             self.pos_nev = get_nev(pos).reshape(3)
 
+    @staticmethod
     def get_unit_vec(vec):
         vec = vec / np.linalg.norm(vec)
 
@@ -111,8 +112,9 @@ class Connector:
         unit='meters',
         min_error=1e-5,
         delta_radius=20,
-        min_tangent=10,
-        max_iterations=1000,
+        min_tangent=0,
+        max_iterations=200,
+        force_min_curve=False
     ):
 
         """
@@ -255,7 +257,12 @@ class Connector:
         target_input = convert_target_input_to_booleans(
             md2, inc2, azi2, pos2, vec2
         )
-        self.initial_method = self.initial_methods[target_input]
+
+        self.force_min_curve = force_min_curve
+        if self.force_min_curve:
+            self.initial_method = 'min_curve_or_hold'
+        else:
+            self.initial_method = self.initial_methods[target_input]
 
         # do some more initialization stuff
         self.min_error = min_error
@@ -758,9 +765,13 @@ class Connector:
                 > self.delta_radius
                 and not np.allclose(
                     self.pos1,
-                    self.pos2
+                    self.pos2,
+                    rtol=self.min_error * 10,
+                    atol=self.min_error * 0.1
                 )
             )
+            # and
+            # self.iterations < self.max_iterations  # the give up clause
         ):
             # A solution will typically be found within a few iterations,
             # however it will likely be unbalanced in terms of dls between the
@@ -768,9 +779,12 @@ class Connector:
             # to balance the curvatures until the delta_radius parameter is
             # met.
             if self.error:
-                self.radius_critical = self.md_target / (
+                self.radius_critical = (self.md_target - self.md1) / (
                     abs(self.dogleg) + abs(self.dogleg2)
                 )
+                # self.radius_critical += np.random.rand() * (
+                #     self.radius_critical - self.radius_critical2
+                # )
                 self.radius_critical2 = self.radius_critical
             self.iterations += 1
             # prevent a loop ad infinitum
@@ -830,9 +844,12 @@ class Connector:
     def interpolate(self, step=30):
         return interpolate_well([self], step)
 
-    def survey(self, radius=10, step=30):
+    def survey(self, radius=10, step=30, survey_header=None):
         interpolation = self.interpolate(step)
-        sh = SurveyHeader()
+        if survey_header is None:
+            sh = SurveyHeader()
+        else:
+            sh = survey_header
 
         survey = get_survey(
             interpolation, survey_header=sh, start_nev=self.pos1, radius=10
@@ -1034,11 +1051,14 @@ def min_curve_to_target(distances):
         dist_norm_to_target
     ) = distances
 
-    radius_critical = (
-        dist_to_target ** 2 / (
-            2 * dist_norm_to_target
+    if dist_norm_to_target == 0.:
+        radius_critical = np.inf
+    else:
+        radius_critical = (
+            dist_to_target ** 2 / (
+                2 * dist_norm_to_target
+            )
         )
-    )
 
     dogleg = (
         2 * np.arctan2(
@@ -1136,7 +1156,8 @@ def interpolate_well(sections, step=30):
 
 
 def get_survey(
-    section_data, survey_header=None, start_nev=[0., 0., 0.], radius=10, deg=False,
+    section_data, survey_header=None, start_nev=[0., 0., 0.], radius=10, 
+    deg=False, error_model=None, depth_unit='meters', surface_unit='meters'
 ):
     """
     Constructs a well survey from a list of sections of control points.
@@ -1165,9 +1186,12 @@ def get_survey(
         )))
         for s in section_data
     ]).T
-    
+
     if survey_header is None:
-        survey_header = SurveyHeader()
+        survey_header = SurveyHeader(
+            depth_unit=depth_unit,
+            surface_unit=surface_unit
+        )
 
     survey = Survey(
         md=md,
@@ -1177,6 +1201,8 @@ def get_survey(
         deg=deg,
         radius=radius,
         header=survey_header,
+        error_model=error_model,
+        unit=depth_unit
     )
 
     return survey
@@ -1461,6 +1487,7 @@ def connect_points(
             node2=node_2,
             dls_design=d
         )
+        assert np.allclose(c.pos_target, p)
         connections.append(c)
 
     sh = SurveyHeader()
