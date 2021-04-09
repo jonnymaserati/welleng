@@ -233,9 +233,9 @@ def get_transform(
     Returns:
         transform: (n,3,3) array of floats
     """
-    survey = survey.reshape(-1,3)
-    inc = np.array(survey[:,1])
-    azi = np.array(survey[:,2])
+    survey = survey.reshape(-1, 3)
+    inc = np.array(survey[:, 1])
+    azi = np.array(survey[:, 2])
     
     trans = np.array([
         [np.cos(inc) * np.cos(azi), -np.sin(azi), np.sin(inc) * np.cos(azi)],
@@ -262,39 +262,40 @@ def NEV_to_HLA(survey, NEV, cov=True):
         Either a transformed (n,3) array of HLA coordinates or an
         (3,3,n) array of HLA covariance matrices. 
     """
-    
+
     trans = get_transform(survey)
 
     if cov:
         HLAs = [
             np.dot(np.dot(t, NEV.T[i]), t.T) for i, t in enumerate(trans)
         ]
-        
+
         HLAs = np.vstack(HLAs).reshape(-1,3,3).T
-        
+
     else:
         NEV = NEV.reshape(-1,3)
         HLAs = [
             np.dot(NEV[i], t.T) for i, t in enumerate(trans)
         ]
-        
+
     return HLAs
 
-def HLA_to_NEV(survey, HLA, cov=True):
-    trans = get_transform(survey)
+def HLA_to_NEV(survey, HLA, cov=True, trans=None):
+    if trans is None:
+        trans = get_transform(survey)
 
     if cov:
         NEVs = [
             np.dot(np.dot(t.T, HLA.T[i]), t) for i, t in enumerate(trans)
         ]
-    
+
         NEVs = np.vstack(NEVs).reshape(-1,3,3).T
-    
+
     else:
         NEVs = [
             np.dot(hla, t) for hla, t in zip(HLA, trans)
         ]
-        
+
     return np.vstack(NEVs).reshape(HLA.shape)
 
 
@@ -349,3 +350,22 @@ def linear_convert(data, factor):
         return converted[0]
     else:
         return converted
+
+
+def make_cov(a, b, c, long=False):
+    # a, b, c = np.sqrt(np.array([a, b, c]))
+    if long:
+        cov = np.array([
+            [a * a, a * b, a * c],
+            [a * b, b * b, b * c],
+            [a * c, b * c, c * c]
+        ])
+
+    else:
+        cov = np.array([
+            [a * a, np.zeros_like(a), np.zeros_like(a)],
+            [np.zeros_like(a), b * b, np.zeros_like(a)],
+            [np.zeros_like(a), np.zeros_like(a), c * c]
+        ])
+
+    return cov.T
