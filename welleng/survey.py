@@ -123,7 +123,7 @@ class SurveyHeader:
 
     def _get_mag_data(self, deg):
         """
-        Initiates b_total if provided, else caclulates a value.
+        Initiates b_total if provided, else calculates a value.
         """
         calculator = MagneticFieldCalculator()
         try:
@@ -917,16 +917,23 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, **targets):
         ), axis=-1
     )
 
-    starts = np.concatenate(
-        (np.array([0]), np.where(continuous == False)[0] + 1)
-    )
+    starts = np.concatenate((
+        np.array([0]),
+        np.where(continuous == False)[0] + 1,
+        np.array([len(continuous) - 1]),
+        np.array([len(survey.md) - 1])
+    ))
 
-    ends = np.concatenate(
-        (
-            starts[1:],
-            np.array([len(continuous) - 1])
-        )
-    )
+    # ends = np.concatenate(
+    #     (
+    #         starts[1:],
+    #         np.array([len(continuous) - 1])
+    #     )
+    # )
+
+    # starts = np.concatenate((
+    #     starts, np.array([len(continuous) - 1])
+    # ))
 
     actions = ["hold"]
     actions.extend([
@@ -936,7 +943,8 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, **targets):
 
     sections = []
     tie_on = True
-    for i, (s, e, a) in enumerate(zip(starts, ends, actions)):
+    # for i, (s, e, a) in enumerate(zip(starts, ends, actions)):
+    for i, (s, a) in enumerate(zip(starts, actions)):
         md = survey.md[s]
         inc = survey.inc_deg[s]
         azi = survey.azi_grid_deg[s]

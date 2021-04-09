@@ -57,7 +57,9 @@ class WellMesh:
         self.method = method
 
         if self.method != 'circle':
-            self.sigmaH, self.sigmaL, self.sigmaA = get_sigmas(self.s.cov_hla)
+            self.sigmaH, self.sigmaL, self.sigmaA = get_sigmas(
+                self.s.cov_hla
+            )
         self.nevs = np.array([self.s.n, self.s.e, self.s.tvd]).T
         self._get_vertices()
         self._align_verts()
