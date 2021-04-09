@@ -64,9 +64,12 @@ setup(
         'vtk',
     ],
     classifiers=[
+        'Development Status :: 4 - Beta',
         'License :: OSI Approved :: Apache Software License',
-        'Operating System :: OS Independent',
-        'Programming Language :: Python :: 3',
+        # 'Operating System :: OS Independent',
+        'Programming Language :: Python :: 3.7',
+        'Natural Language :: English',
+        'Topic :: Scientific/Engineering',
     ],
     python_requires='==3.7',
 )

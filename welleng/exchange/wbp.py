@@ -413,6 +413,7 @@ def get_parent_survey(filename):
     return data
 
 
+# TODO: update so that filename can also be data
 def load(filename):
     """
     Loads data line by line from a .wbp file, initiates a WellPlan object
