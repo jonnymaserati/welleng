@@ -1,5 +1,5 @@
 import numpy as np
-from copy import deepcopy
+from copy import copy, deepcopy
 from .utils import get_vec, get_angles, get_nev, get_xyz, get_unit_vec
 from .survey import Survey, SurveyHeader
 
@@ -114,7 +114,8 @@ class Connector:
         delta_radius=20,
         min_tangent=0,
         max_iterations=200,
-        force_min_curve=False
+        force_min_curve=False,
+        closest_approach=False
     ):
 
         """
@@ -374,12 +375,13 @@ class Connector:
             None, None, None, None, None
         )
         self.radius_critical, self.radius_critical2 = np.inf, np.inf
+        self.closest_approach = closest_approach
 
         # Things fall apart if the start and end vectors exactly equal
         # one another, so need to check for this and if this is the
         # case, modify the end vector slightly. This is a lazy way of
         # doing this, but it's fast. Probably a more precise way would
-        # be to split the dogelg in two, but that's more hassle than
+        # be to split the dogleg in two, but that's more hassle than
         # it's worth.
         if (
             self.vec_target is not None
@@ -479,8 +481,12 @@ class Connector:
                 self.method = 'min_dist_to_target'
                 self._min_dist_to_target()
             else:
-                self.method = 'min_curve_to_target'
-                self._min_curve_to_target()
+                if self.closest_approach:
+                    self.method = 'min_curve_to_target'
+                    self._closest_approach()
+                else:
+                    self.method = 'min_curve_to_target'
+                    self._min_curve_to_target()
 
     def _get_method(self):
         assert self.initial_method not in [
@@ -544,6 +550,34 @@ class Connector:
             '11110': 'md_and_pos',
             '11111': 'md_and_pos'
         }
+
+    def _closest_approach(self):
+        vec_pos1_pos_target = self.pos_target - self.pos1
+        vec_pos1_pos_target /= np.linalg.norm(vec_pos1_pos_target)
+
+        cross_product = np.cross(vec_pos1_pos_target, self.vec1)
+        cross_product /= np.linalg.norm(cross_product)
+
+        factor = cross_product / vec_pos1_pos_target
+        factor /= abs(factor)
+
+        cc = (
+            self.pos1 + cross_product * factor * self.radius_design
+        )
+
+        cc_pos_target = self.pos_target - cc
+        cc_pos_target /= np.linalg.norm(cc_pos_target)
+
+        self.pos_target_original = copy(self.pos_target)
+
+        self.pos_target = cc + cc_pos_target * self.radius_design
+
+        # recalculate self.distances with new self.pos_target
+        self.distances = self._get_distances(
+                self.pos1, self.vec1, self.pos_target
+            )
+
+        self._min_curve_to_target()
 
     def _min_curve(self):
         self.dogleg = get_dogleg(
