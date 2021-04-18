@@ -38,7 +38,7 @@ def plot(
     interactive=True,
 ):
     """
-    A vedo wrapper for quicly visualizing well trajectories for QAQC purposes.
+    A vedo wrapper for quickly visualizing well trajectories for QAQC purposes.
 
     Parameters
     ----------
