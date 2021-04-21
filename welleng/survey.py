@@ -15,6 +15,7 @@ from .utils import (
 
 from welleng.error import ErrorModel, ERROR_MODELS
 from welleng.exchange.wbp import TurnPoint
+from .exchange.csv import export_csv
 
 AZI_REF = ["true", "magnetic", "grid"]
 
@@ -572,6 +573,23 @@ class Survey:
         with np.errstate(divide='ignore', invalid='ignore'):
             self.normals = n12 / np.linalg.norm(n12, axis=1).reshape(-1, 1)
 
+    def _get_sections(self, rtol=0.1, atol=0.1):
+        sections = get_sections(self, rtol, atol)
+
+        return sections
+
+    def save(self, filename):
+        """
+        Saves a minimal (control points) survey listing as a .csv file,
+        including the survey header information.
+
+        Parameters
+        ----------
+        filename: str
+            The path and filename for saving the text file.
+        """
+        export_csv(self, filename)
+
 
 def interpolate_md(survey, md):
     """
@@ -981,7 +999,10 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, **targets):
             elif azi - azi_p > 180:
                 coeff = -1
             else:
-                coeff = (azi - azi_p) / abs(azi - azi_p)
+                with np.errstate(all='ignore'):
+                    coeff = (azi - azi_p) / abs(azi - azi_p)
+            if np.isnan(coeff):
+                coeff = 1
 
             toolface *= coeff
 
@@ -1057,3 +1078,10 @@ def make_survey_header(data):
         setattr(sh, k, v)
 
     return sh
+
+
+def save(survey, filename):
+    """
+    Saves the survey header and survey to a text file.
+    """
+    export_csv(survey, filename)
