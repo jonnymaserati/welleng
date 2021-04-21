@@ -1,5 +1,6 @@
 import math
 from scipy.optimize import minimize
+from scipy import interpolate
 from numba import njit
 import numpy as np
 
@@ -16,6 +17,39 @@ WEIGHTING_MATERIAL_DENSITY = {
     'spe_11118': 24.
 }
 
+
+class DensityDiesel:
+    def __init__(self):
+        """
+        An interpolation wrapper of the pressure, temperature and density diesel
+        data provided in the SPE 11118 paper.
+        """
+        psia = np.array([15., 3_000., 7_000., 10_000., 12_500.])
+        temp = np.array([100., 200., 300., 350.])
+
+        psia_psia, temp_temp = np.meshgrid(psia, temp)
+
+        rho = np.array([
+            [6.9597, 7.0597, 7.1621, 7.2254, 7.2721],
+            [6.6598, 6.7690, 6.8789, 6.9464, 6.9930],
+            [6.3575, 6.4782, 6.5965, 6.6673, 6.7198],
+            [6.2083, 6.3350, 6.4624, 6.5366, 6.5874]
+        ])
+
+        self.density_diesel = interpolate.interp2d(
+            psia_psia, temp_temp, rho, kind='cubic'
+        )
+
+    def get_density(self, pressure, temperature):
+        """
+        Interpolate diesel density for given pressure and temperature using
+        the lookup data provided in SPE 11118 paper.
+        """
+        density = self.density_diesel(
+            pressure, temperature
+        )
+
+        return density
 
 class Fluid:
     def __init__(
@@ -42,6 +76,9 @@ class Fluid:
             The reference temperature in Fahrenheit
         reference_pressure: float (default 0.0)
             The reference pressure in psig.
+        weighting_material: str
+            The material being used to weight the drilling fluid (see the
+            WEIGHTING_MATERIAL_DENSITY dictionary).
         """
 
         assert weighting_material.lower() in WEIGHTING_MATERIAL_DENSITY.keys()
@@ -98,7 +135,7 @@ class Fluid:
 
     @staticmethod
     @njit
-    def _get_constants(
+    def _get_coefficients(
         density_average, pressure_applied, temperature_top,
         fluid_thermal_gradient, A0, A1, A2, B0, B1, B2
     ):
@@ -151,7 +188,7 @@ class Fluid:
         fluid_thermal_gradient
     ):
         density_average = density_average[0]
-        alpha_1, alpha_2, beta_1, beta_2 = self._get_constants(
+        alpha_1, alpha_2, beta_1, beta_2 = self._get_coefficients(
             density_average, pressure_applied, temperature_top,
             fluid_thermal_gradient, A[0], A[1], A[2], B[0], B[1], B[2]
         )
@@ -219,6 +256,8 @@ class Fluid:
 
 
 def main():
+    diesel_density_func = DensityDiesel()
+    diesel_density = diesel_density_func.get_density(15, 120)
     """
     An example of initiating a Fluid class and generating a density profile
     for the fluid for a range of depths and temperatures.
@@ -234,9 +273,9 @@ def main():
     # Override calculated volumes - I can't get the same values as the SPE
     # paper if I build the fluid. However, the fluid properties can be
     # overwritten if desired as indicated below:
-    # fluid.volume_water_reference_relative = 0.09
-    # fluid.volume_oil_reference_relative = 0.78
-    # fluid.volume_weighting_material_relative = 0.11
+    fluid.volume_water_reference_relative = 0.09
+    fluid.volume_oil_reference_relative = 0.78
+    fluid.volume_weighting_material_relative = 0.11
 
     depth = np.linspace(0, 10_000, 1001)
     temperature = np.linspace(120, 250, 1001)
