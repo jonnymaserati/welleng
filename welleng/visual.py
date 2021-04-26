@@ -68,9 +68,9 @@ def plot(
 
     if colors is not None:
         if len(colors) == 1:
-            colors = colors * len(names)
+            colors = colors * len(meshes)
         else:
-            assert len(colors) == len(names), \
+            assert len(colors) == len(meshes), \
                 "Colors must be length of meshes list, 1 else None"
 
     if points is not None:

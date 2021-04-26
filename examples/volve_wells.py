@@ -59,7 +59,7 @@ for well in tqdm(wells):
     radius *= 0.0254
 
     s = we.survey.Survey(
-        md=np.array(w['md']).astype(float),
+        md=np.array(w['md']).astype(float) / 3.281,
         inc=np.array(w['inclination']).astype(float),
         azi=np.array(w['azimuth']).astype(float),
         n=np.array(w['offset_north']).astype(float),
