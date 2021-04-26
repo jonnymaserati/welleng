@@ -23,3 +23,6 @@ def test_fluid_density_profile():
     )
 
     assert round(density_profile[-1], 2) == 9.85
+
+if __name__ == '__main__':
+    test_fluid_density_profile()

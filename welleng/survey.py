@@ -13,9 +13,10 @@ from .utils import (
     get_xyz
 )
 
-from welleng.error import ErrorModel, ERROR_MODELS
-from welleng.exchange.wbp import TurnPoint
+from .error import ErrorModel, ERROR_MODELS
+from .exchange.wbp import TurnPoint
 from .exchange.csv import export_csv
+
 
 AZI_REF = ["true", "magnetic", "grid"]
 
@@ -577,6 +578,13 @@ class Survey:
         sections = get_sections(self, rtol, atol)
 
         return sections
+
+    def get_nev_arr(self):
+        return np.array([
+            self.n,
+            self.e,
+            self.tvd
+        ]).T.reshape(-1, 3)
 
     def save(self, filename):
         """
