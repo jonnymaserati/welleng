@@ -1,4 +1,5 @@
 import numpy as np
+from numba import njit
 
 
 class MinCurve:
@@ -159,7 +160,7 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
     return vec / np.linalg.norm(vec, axis=-1).reshape(-1, 1)
 
 
-def get_nev(pos, start_xyz=[0.,0., 0.], start_nev=[0., 0., 0.]):
+def get_nev(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
     """
     Convert [x, y, z] coordinates to [n, e, tvd] coordinates.
 
@@ -189,6 +190,15 @@ def get_xyz(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
     return (np.array([x, y, z]).T + np.array([start_xyz]))
 
 
+@njit
+def _get_angles(vec):
+    xy = vec[:, 0] ** 2 + vec[:, 1] ** 2
+    inc = np.arctan2(np.sqrt(xy), vec[:, 2])  # for elevation angle defined from Z-axis down
+    azi = (np.arctan2(vec[:, 0], vec[:, 1]) + (2 * np.pi)) % (2 * np.pi)
+
+    return np.stack((inc, azi), axis=1)
+
+
 def get_angles(vec, nev=False):
     '''
     Determines the inclination and azimuth from a vector.
@@ -212,11 +222,24 @@ def get_angles(vec, nev=False):
         y, x, z = vec.T
         vec = np.array([x, y, z]).T
 
-    xy = vec[:, 0] ** 2 + vec[:, 1] ** 2
-    inc = np.arctan2(np.sqrt(xy), vec[:, 2])  # for elevation angle defined from Z-axis down
-    azi = (np.arctan2(vec[:, 0], vec[:, 1]) + (2 * np.pi)) % (2 * np.pi)
+    return _get_angles(vec)
 
-    return np.stack((inc, azi), axis=1)
+    # xy = vec[:, 0] ** 2 + vec[:, 1] ** 2
+    # inc = np.arctan2(np.sqrt(xy), vec[:, 2])  # for elevation angle defined from Z-axis down
+    # azi = (np.arctan2(vec[:, 0], vec[:, 1]) + (2 * np.pi)) % (2 * np.pi)
+
+    # return np.stack((inc, azi), axis=1)
+
+
+# @njit
+def _get_transform(inc, azi):
+    trans = np.array([
+        [np.cos(inc) * np.cos(azi), -np.sin(azi), np.sin(inc) * np.cos(azi)],
+        [np.cos(inc) * np.sin(azi), np.cos(azi), np.sin(inc) * np.sin(azi)],
+        [-np.sin(inc), np.zeros_like(inc), np.cos(inc)]
+    ]).T
+
+    return trans
 
 
 def get_transform(
@@ -236,14 +259,16 @@ def get_transform(
     survey = survey.reshape(-1, 3)
     inc = np.array(survey[:, 1])
     azi = np.array(survey[:, 2])
-    
-    trans = np.array([
-        [np.cos(inc) * np.cos(azi), -np.sin(azi), np.sin(inc) * np.cos(azi)],
-        [np.cos(inc) * np.sin(azi), np.cos(azi), np.sin(inc) * np.sin(azi)],
-        [-np.sin(inc), np.zeros_like(inc), np.cos(inc)]
-    ]).T
 
-    return trans
+    return _get_transform(inc, azi)
+
+    # trans = np.array([
+    #     [np.cos(inc) * np.cos(azi), -np.sin(azi), np.sin(inc) * np.cos(azi)],
+    #     [np.cos(inc) * np.sin(azi), np.cos(azi), np.sin(inc) * np.sin(azi)],
+    #     [-np.sin(inc), np.zeros_like(inc), np.cos(inc)]
+    # ]).T
+
+    # return trans
 
 def NEV_to_HLA(survey, NEV, cov=True):
     """

@@ -1,5 +1,6 @@
 import numpy as np
 from copy import copy, deepcopy
+from scipy.spatial import distance
 from .utils import get_vec, get_angles, get_nev, get_xyz, get_unit_vec
 from .survey import Survey, SurveyHeader
 
@@ -470,6 +471,7 @@ class Connector:
         elif self.method == 'curve_hold_curve':
             self.pos2_list, self.pos3_list = [], [deepcopy(self.pos_target)]
             self.vec23 = [np.array([0., 0., 0.])]
+            self.delta_radius_list = []
             self._target_pos_and_vec_defined(deepcopy(self.pos_target))
         else:
             self.distances = self._get_distances(
@@ -689,6 +691,7 @@ class Connector:
         )
         if radius_temp1 < self.radius_critical:
             self.radius_critical = radius_temp1
+            assert self.radius_critical > 0
 
         (
             self.tangent_length,
@@ -734,6 +737,7 @@ class Connector:
         )
         if radius_temp2 < self.radius_critical2:
             self.radius_critical2 = radius_temp2
+            assert self.radius_critical2 > 0
 
         (
             self.tangent_length2,
@@ -783,30 +787,38 @@ class Connector:
         self.errors.append(self.error)
         self.pos3_list.append(self.pos3)
         self.pos2_list.append(self.pos2)
-        self.md_target = self.dist_curve + tangent_temp2 + self.dist_curve2
+        self.md_target = (
+            self.md1 + self.dist_curve + tangent_temp2 + self.dist_curve2
+        )
+        self.delta_radius_list.append(
+            abs(self.radius_critical - self.radius_critical2)
+        )
 
         # a bit of recursive magic - proceed with caution
-        if (
-            not self.error
-            or
+        if all((
+            self.iterations < self.max_iterations - 1,
             (
+                not self.error
+                or
                 (
-                    self.radius_critical2 < self.radius_design2
-                    or self.radius_critical < self.radius_design
-                )
-                and
-                abs(self.radius_critical - self.radius_critical2)
-                > self.delta_radius
-                and not np.allclose(
-                    self.pos1,
-                    self.pos2,
-                    rtol=self.min_error * 10,
-                    atol=self.min_error * 0.1
+                    (
+                        self.radius_critical2 < self.radius_design2
+                        or self.radius_critical < self.radius_design
+                    )
+                    and
+                    abs(self.radius_critical - self.radius_critical2)
+                    > self.delta_radius
+                    and not np.allclose(
+                        self.pos1,
+                        self.pos2,
+                        rtol=self.min_error * 10,
+                        atol=self.min_error * 0.1
+                    )
                 )
             )
             # and
             # self.iterations < self.max_iterations  # the give up clause
-        ):
+        )):
             # A solution will typically be found within a few iterations,
             # however it will likely be unbalanced in terms of dls between the
             # two curve sections. The code below will re-initiate iterations
@@ -816,6 +828,7 @@ class Connector:
                 self.radius_critical = (self.md_target - self.md1) / (
                     abs(self.dogleg) + abs(self.dogleg2)
                 )
+                assert self.radius_critical > 0
                 # self.radius_critical += np.random.rand() * (
                 #     self.radius_critical - self.radius_critical2
                 # )
@@ -886,7 +899,8 @@ class Connector:
             sh = survey_header
 
         survey = get_survey(
-            interpolation, survey_header=sh, start_nev=self.pos1, radius=10
+            interpolation, survey_header=sh, radius=10,
+            start_nev=self.pos1, start_xyz=get_xyz(self.pos1)
         )
 
         return survey
@@ -1093,6 +1107,7 @@ def min_curve_to_target(distances):
                 2 * dist_norm_to_target
             )
         )
+    assert radius_critical > 0
 
     dogleg = (
         2 * np.arctan2(
@@ -1125,6 +1140,8 @@ def get_radius_critical(radius, distances, min_error):
             2 * dist_norm_to_target
         )
     ) * (1 - min_error)
+
+    assert radius_critical > 0
 
     return radius_critical
 
@@ -1189,9 +1206,23 @@ def interpolate_well(sections, step=30):
     return data
 
 
+def _remove_duplicates(md, inc, azi):
+    arr = np.array([md, inc, azi]).T
+    upper = arr[:-1]
+    lower = arr[1:]
+
+    temp = np.vstack((
+        upper[0],
+        lower[np.invert((upper == lower).all(axis=1))]
+    ))
+
+    return temp.T
+
+
 def get_survey(
-    section_data, survey_header=None, start_nev=[0., 0., 0.], radius=10, 
-    deg=False, error_model=None, depth_unit='meters', surface_unit='meters'
+    section_data, survey_header=None, start_nev=[0., 0., 0.],
+    start_xyz=[0., 0., 0.], radius=10, deg=False, error_model=None,
+    depth_unit='meters', surface_unit='meters'
 ):
     """
     Constructs a well survey from a list of sections of control points.
@@ -1221,6 +1252,9 @@ def get_survey(
         for s in section_data
     ]).T
 
+    # remove duplicates
+    md, inc, azi = _remove_duplicates(md, inc, azi)
+
     if survey_header is None:
         survey_header = SurveyHeader(
             depth_unit=depth_unit,
@@ -1232,6 +1266,7 @@ def get_survey(
         inc=inc,
         azi=azi,
         start_nev=start_nev,
+        start_xyz=start_xyz,
         deg=deg,
         radius=radius,
         header=survey_header,
@@ -1530,3 +1565,120 @@ def connect_points(
     survey = get_survey(data, sh, start_nev=connections[0].pos1)
 
     return survey
+
+
+def survey_to_plan(survey, tolerance=0.2, dls_design=1., step=30.):
+    """
+    Prototype function for extracting a plan from a drilled well survey - a
+    minimal number of control points (begining/end points of either hold or
+    build/turn sections) required to express the well given the provided input
+    parameters.
+
+    Parameters
+    ----------
+    survey: welleng.survey.Survey object
+    tolerance: float (default=0.2)
+        Defines how tight to fit the planned well to the survey - a higher
+        number will results in less control points but likely poorer fit.
+    dls_design: float (default=1.0)
+        The minimum DLS used to fit the planned trajectory.
+    step: float (default=30)
+        The desired md step in the plan survey.
+    
+    Returns
+    -------
+    (survey_new, sections)
+    survey_new: welleng.survey.Survey object
+    sections: list of welleng.connector.Connection objects
+    """
+    assert dls_design > 0., "dls_design must be greater than 0"
+
+    idx = [0]
+    end = len(survey.md) - 1
+    md = survey.md[0]
+    node = None
+    sections = []
+
+    while True:
+        section, i = _get_section(
+            survey=survey,
+            start=idx[-1],
+            md=md,
+            node=node,
+            tolerance=tolerance,
+            dls_design=dls_design
+        )
+        sections.append(section)
+        idx.append(i)
+        if idx[-1] >= end:
+            break
+        node = section.node_end
+
+    data = interpolate_well(sections, step=30)
+    survey_new = get_survey(data)
+
+    return (survey_new, sections)
+
+
+def _get_section(
+    survey, start, tolerance, dls_design=1., md=0., node=None
+):
+    idx = start + 2
+    nev = survey.get_nev_arr()
+
+    if idx > len(nev):
+        idx = len(nev) - 1
+
+    if node is None:
+        node_1 = Node(
+            pos=nev[start],
+            vec=survey.vec_nev[start],
+            md=md
+        )
+    else:
+        node_1 = node
+
+    scores = [0.]
+    delta_scores = []
+    c_old = None
+
+    for i, (p, v) in enumerate(zip(nev[idx:], survey.vec_nev[idx:])):
+        node_2 = Node(
+            pos=p,
+            vec=v,
+        )
+        c = Connector(
+            node1=node_1,
+            node2=node_2,
+            dls_design=dls_design
+        )
+        s = c.survey(step=1.)
+        if c_old is None:
+            c_old = deepcopy(c)
+        nev_new = s.get_nev_arr()
+
+        distances = distance.cdist(
+            nev[start: idx + i],
+            nev_new
+        )
+
+        score = np.sum(np.amin(distances, axis=1)) / (s.md[-1] - s.md[0])
+
+        delta_scores.append(score - scores[-1])
+        scores.append(score)
+
+        if all((
+            abs(delta_scores[-1]) >= tolerance,
+            idx + i < len(nev) - 2
+        )):
+            break
+        elif idx + i == len(nev) - 1:
+            c_old = deepcopy(c)
+            break
+        else:
+            c_old = deepcopy(c)
+
+    return (
+        c_old,
+        idx + i - 1 if idx + i != len(nev) - 1 else idx + i
+    )

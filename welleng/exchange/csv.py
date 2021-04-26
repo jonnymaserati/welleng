@@ -1,5 +1,4 @@
 import numpy as np
-# from welleng.survey import get_sections
 from welleng.version import __version__
 
 
@@ -44,6 +43,18 @@ def export_csv(survey, filename):
         'BUILD RATE',
         'TURN RATE'
     ])
+
+    if filename is None:
+        try:
+            import pandas as pd
+
+            df = pd.DataFrame(
+                data,
+                columns=headers.split(',')
+            )
+            return df
+        except ImportError:
+            print("Missing pandas dependency")
 
     comments = [
         f"welleng, version: {__version__}\n"
