@@ -1070,7 +1070,7 @@ def get_unit(unit):
     if unit in ['m', 'meters']:
         return 'meters'
     elif unit in ['ft', 'feet']:
-        return 'feet',
+        return 'feet'
     else:
         return None
 
