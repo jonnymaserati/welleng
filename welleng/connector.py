@@ -1584,7 +1584,7 @@ def survey_to_plan(survey, tolerance=0.2, dls_design=1., step=30.):
         The minimum DLS used to fit the planned trajectory.
     step: float (default=30)
         The desired md step in the plan survey.
-    
+
     Returns
     -------
     (survey_new, sections)
@@ -1682,3 +1682,90 @@ def _get_section(
         c_old,
         idx + i - 1 if idx + i != len(nev) - 1 else idx + i
     )
+
+
+def interpolate_survey(survey, step=30, dls=0.01):
+    '''
+    Interpolate a sparse survey with the desired md step.
+
+    Parameters
+    ----------
+    survey: welleng.survey.Survey object
+    step: float (default=30)
+        The desired delta md between stations.
+    dls: float (default=0.01)
+        The design DLS used to calculate the minimum curvature. This will be
+        the minimum DLS used to fit a curve between stations so should be set
+        to a small value to ensure a continuous curve is fit without any
+        tangent sections.
+
+    Returns
+    -------
+    survey_interpolated: welleng.survey.Survey object
+        Note that a `interpolated` property is added indicating if the survey
+        stations is interpolated (True) or not (False).
+    '''
+    if survey.header.azi_reference == 'true':
+        azi = survey.azi_true_rad
+    elif survey.header.azi_reference == 'grid':
+        azi = survey.azi_grid_rad
+    else:
+        azi = survey.azi_mag_rad
+
+    s = np.array([survey.md, survey.inc_rad, azi]).T
+
+    s_upper = s[:-1]
+    s_lower = s[1:]
+    well = []
+
+    for i, (u, l) in enumerate(zip(s_upper, s_lower)):
+        if i == 0:
+            node1 = Node(
+                pos=survey.start_nev,
+                md=u[0],
+                inc=u[1],
+                azi=u[2],
+                degrees=False,
+                unit=survey.unit
+            )
+        else:
+            node1 = well[-1].node_end
+        node2 = Node(
+            md=l[0],
+            inc=l[1],
+            azi=l[2],
+            degrees=False,
+            unit=survey.unit
+        )
+        c = Connector(
+            node1=node1,
+            node2=node2,
+            dls_design=dls,
+            degrees=False,
+            force_min_curve=True,
+            unit=survey.unit
+        )
+        well.append(c)
+
+    data = interpolate_well(well, step=step)
+
+    survey_interpolated = get_survey(
+        data,
+        survey_header=survey.header,
+        error_model=survey.error_model,
+    )
+
+    survey_interpolated.interpolated = [
+        False if md in survey.md else True
+        for md in survey_interpolated.md
+    ]
+
+    i = -1
+    radii = []
+    for bool in survey_interpolated.interpolated:
+        if not bool:
+            i += 1
+        radii.append(survey.radius[i])
+    survey_interpolated.radius = radii
+
+    return survey_interpolated
