@@ -1,11 +1,14 @@
 import numpy as np
 from numpy import sin, cos, tan, pi, sqrt
 import yaml
+import os
 
 # import welleng.error
 from ..utils import NEV_to_HLA
 
-FILENAME = 'welleng/errors/error_codes.yaml'
+PATH = os.path.dirname(__file__)
+
+FILENAME = PATH + '/error_codes.yaml'
 
 
 class iscwsaMwd:
