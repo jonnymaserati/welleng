@@ -11,3 +11,4 @@ import welleng.exchange.wbp
 import welleng.exchange.csv
 import welleng.target
 import welleng.connector
+import welleng.fluid

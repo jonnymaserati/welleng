@@ -15,7 +15,8 @@ Pillow>=8.1.1
 pyparsing==2.4.7
 PyYAML>=5.4
 python-dateutil==2.8.1
-python-fcl==0.0.12
+python-fcl==0.0.12; platform_system != "Windows"
+python-fcl-win32==0.0.12; platform_system == "Windows"
 scipy==1.5.4
 six==1.15.0
 tabulate==0.8.7

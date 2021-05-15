@@ -99,7 +99,8 @@ def plot(
         if colors is not None:
             m_vedo.c(colors[i])
         if names is not None:
-            m_vedo.flag(names[i])
+            m_vedo.name = names[i]
+            m_vedo.flag()
         meshes_vedo.append(m_vedo)
 
     w = get_bb(vertices)
@@ -132,7 +133,7 @@ def plot(
         interactorStyle=10,
         resetcam=True,
         interactive=True,
-        verbose=True,
+        # verbose=True,
         title=f'welleng {VERSION}'
     )
 
