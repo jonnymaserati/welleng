@@ -78,6 +78,8 @@ pip install -e .
 
 Make sure you include that `.` in the final line (it's not a typo) as this ensures that any changes to your development version are immediately implemented on save.
 
+Detailed instructions for installing [welleng] in a Windows OS can be found in this [post](https://jonnymaserati.github.io/2021/05/11/install-welleng-windows.html).
+
 ## Quick Start
 
 Here's an example using `welleng` to construct a couple of simple well trajectories with the `connector` module, creating survey listings for the wells with well bore uncertainty data, using these surveys to create well bore meshes and finally printing the results and plotting the meshes with the closest lines and SF data.
