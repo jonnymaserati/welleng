@@ -1,5 +1,5 @@
 import os
-import sys
+# import sys
 from setuptools import setup, find_packages
 
 # load __version__ without importing anything
@@ -26,6 +26,7 @@ requirements_all = [
     'numpy',
     'openpyxl',
     'pandas',
+    'python-fcl',
     'PyYAML',
     'scipy',
     'tabulate',
@@ -35,10 +36,10 @@ requirements_all = [
     'vtk',
 ]
 
-if sys.platform == 'win32':
-    requirements_all.append('python-fcl-win32')
-else:
-    requirements_all.append('python-fcl')
+# if sys.platform == 'win32':
+#     requirements_all.append('python-fcl-win32')
+# else:
+#     requirements_all.append('python-fcl')
 
 setup(
     name='welleng',
