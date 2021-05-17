@@ -112,8 +112,8 @@ class Connector:
         degrees=True,
         unit='meters',
         min_error=1e-5,
-        delta_radius=20,
-        min_tangent=0,
+        delta_radius=20.,
+        min_tangent=0.,
         max_iterations=200,
         force_min_curve=False,
         closest_approach=False

@@ -4,7 +4,7 @@ from vedo import Arrows, Lines
 import random
 import os
 
-os.environ['DISPLAY'] = ':1'
+# os.environ['DISPLAY'] = ':1'
 
 # Some code for testing the connector module.
 
@@ -29,6 +29,7 @@ md2 = 100 + random.random() * 1000
 
 number = 7
 rand = random.random()
+rand = 7
 
 # 1: test only md2 (hold)
 if rand < 1 * 1 / number:
@@ -90,7 +91,8 @@ section = we.connector.Connector(
     inc2=inc2,
     azi2=azi2,
     degrees=True,
-    min_tangent=0,
+    min_tangent=0.,
+    delta_radius=10.,
 )
 
 # Print some pertinent calculation data
