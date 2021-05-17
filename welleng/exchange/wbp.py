@@ -782,7 +782,8 @@ def strip_duplicates(survey):
         if i == 0:
             temp.append(s)
             continue
-        if s == temp[-1]:
+        # if s == temp[-1]:
+        if s[1] == temp[-1][1]:
             continue
         else:
             temp.append(s)
