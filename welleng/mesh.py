@@ -60,7 +60,7 @@ class WellMesh:
             self.sigmaH, self.sigmaL, self.sigmaA = get_sigmas(
                 self.s.cov_hla
             )
-        self.nevs = np.array([self.s.n, self.s.e, self.s.tvd]).T
+        self.nevs = np.array([self.s.n, self.s.e, self.s.tvd]).T.reshape(-1, 3)
         self._get_vertices()
         self._align_verts()
 
