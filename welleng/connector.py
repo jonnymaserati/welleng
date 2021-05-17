@@ -1213,7 +1213,8 @@ def _remove_duplicates(md, inc, azi):
 
     temp = np.vstack((
         upper[0],
-        lower[np.invert((upper == lower).all(axis=1))]
+        # lower[np.invert((upper == lower).all(axis=1))]
+        lower[lower[:, 0] != upper[:, 0]]
     ))
 
     return temp.T
