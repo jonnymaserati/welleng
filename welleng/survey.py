@@ -665,7 +665,7 @@ def interpolate_survey(survey, x=0, index=0):
         t /= np.linalg.norm(t)
 
         inc, azi = get_angles(t)[0]
-    
+
     sh = survey.header
     sh.azi_reference = 'grid'
 
@@ -744,8 +744,6 @@ def interpolate_tvd(survey, tvd):
     interpolated_survey = interpolate_survey(survey, x=x, index=idx)
 
     return interpolated_survey
-
-
 
 
 def slice_survey(survey, start, stop=None):

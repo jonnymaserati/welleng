@@ -7,14 +7,13 @@ import welleng.clearance
 from welleng.mesh import WellMesh
 import os
 
-os.environ['DISPLAY'] = ':1'
+# os.environ['DISPLAY'] = ':1'
 
 try:
     import ray
     multiprocessing = True
 except ModuleNotFoundError:
     multiprocessing = False
-
 
 filename = (
     "reference/standard-set-of-wellpaths"
@@ -74,7 +73,7 @@ for well in data["wells"]:
         tvd=data["wells"][well]["TVD"],
         radius=radius,
         header=sh,
-        error_model="iscwsa_mwd_rev4",
+        error_model="iscwsa_mwd_rev5",
         start_xyz=[
             data["wells"][well]["E"][0],
             data["wells"][well]["N"][0],
@@ -88,7 +87,9 @@ for well in data["wells"]:
         deg=True,
         unit="meters"
     )
-    surveys[well] = s
+    s_inter = we.connector.interpolate_survey(s, step=10.)
+    # surveys[well] = s
+    surveys[well] = s_inter
 
 # Add clearance data to dictionary
 results = {}
