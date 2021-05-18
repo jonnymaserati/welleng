@@ -671,7 +671,7 @@ def XCLA(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
             ) % (2 * pi)) - pi)
         )
         temp[np.where(
-            error.survey.inc_rad[1:] < error.survey.header.vertical_inc_limit
+            error.survey.inc_rad[:-1] < error.survey.header.vertical_inc_limit
         )] = 0
         return temp
 
