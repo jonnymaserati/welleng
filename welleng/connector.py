@@ -1,7 +1,9 @@
 import numpy as np
 from copy import copy, deepcopy
 from scipy.spatial import distance
-from .utils import get_vec, get_angles, get_nev, get_xyz, get_unit_vec
+from .utils import (
+    get_vec, get_angles, get_nev, get_xyz, get_unit_vec, NEV_to_HLA
+)
 from .survey import Survey, SurveyHeader
 
 
@@ -1752,8 +1754,11 @@ def interpolate_survey(survey, step=30, dls=0.01):
 
     survey_interpolated = get_survey(
         data,
+        start_nev=survey.start_nev,
+        start_xyz=survey.start_xyz,
         survey_header=survey.header,
-        error_model=survey.error_model,
+        # error_model=survey.error_model,
+        error_model=None
     )
 
     survey_interpolated.interpolated = [
@@ -1763,10 +1768,37 @@ def interpolate_survey(survey, step=30, dls=0.01):
 
     i = -1
     radii = []
-    for bool in survey_interpolated.interpolated:
-        if not bool:
+    cov_nev = []
+    for (md, boolean) in zip(
+        survey_interpolated.md,
+        survey_interpolated.interpolated
+    ):
+        if not boolean:
             i += 1
+            if survey.error_model is not None:
+                # interpolate covariance error between survey stations
+                j = 1 if i < len(survey.md) - 1 else 0
+                delta_md = survey.md[i + j] - survey.md[i]
+                delta_cov_nev = (
+                    survey.cov_nev[i + j] - survey.cov_nev[i]
+                )
+                unit_cov_nev = (
+                    delta_cov_nev / delta_md
+                    if j == 1
+                    else 0
+                )
         radii.append(survey.radius[i])
-    survey_interpolated.radius = radii
+        if survey.error_model is not None:
+            cov_nev.append(
+                survey.cov_nev[i]
+                + (
+                    (md - survey.md[i]) * unit_cov_nev
+                )
+            )
+    survey_interpolated.radius = np.array(radii)
+    survey_interpolated.cov_nev = np.array(cov_nev)
+    survey_interpolated.cov_hla = NEV_to_HLA(
+        survey_interpolated.survey_rad, survey_interpolated.cov_nev.T
+    ).T
 
     return survey_interpolated
