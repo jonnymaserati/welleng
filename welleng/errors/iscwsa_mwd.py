@@ -39,7 +39,7 @@ class iscwsaMwd:
         self.errors = {}
 
         with open(FILENAME, 'r') as file:
-            iscwsa_error_models = yaml.full_load(file)
+            iscwsa_error_models = yaml.safe_load(file)
         self.em = iscwsa_error_models[model]
         if 'Default Tortusity (rad/m)' in self.em['header']:
             self.tortuosity = self.em['header']['Default Tortusity (rad/m)']
