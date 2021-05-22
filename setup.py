@@ -72,6 +72,11 @@ setup(
     author_email='jonnycorcutt@gmail.com',
     license='Apache 2.0',
     packages=find_packages(exclude=["tests"]),
+    package_data={
+        'welleng': [
+            'errors/tool_codes/*.yaml'
+        ]
+    }
     install_requires=requirements_all,
     classifiers=[
         'Development Status :: 4 - Beta',
