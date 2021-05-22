@@ -56,6 +56,7 @@ we.exchange.wbp.save_to_file(doc, "demo.wbp") # save the document to file
 
 [welleng] requires [trimesh], [numpy] and [scipy] to run. Other libraries are optional depending on usage and to get [python-fcl] running on which [trimesh] is built may require some additional installations. Other than that, it should be an easy pip install to get up and running with welleng and the minimum dependencies.
 
+### Ubuntu
 Here's how to get the trickier dependencies manually installed on Ubuntu (further instructions can be found [here](https://github.com/flexible-collision-library/fcl/blob/master/INSTALL)):
 
 ```python
@@ -78,7 +79,66 @@ pip install -e .
 
 Make sure you include that `.` in the final line (it's not a typo) as this ensures that any changes to your development version are immediately implemented on save.
 
+### Windows
 Detailed instructions for installing [welleng] in a Windows OS can be found in this [post](https://jonnymaserati.github.io/2021/05/11/install-welleng-windows.html).
+
+### Colaboratory
+Perhaps the simplest way of getting up and running with [welleng] is to with a [colab notebook](https://colab.research.google.com/notebooks/intro.ipynb). The required dependencies can be installed with the following cell:
+
+```terminal
+!apt-get install -y xvfb x11-utils libeigen3-dev libccd-dev octomap-tools
+!pip install welleng plotly jupyter-dash
+!pip install -U git+https://github.com/Kitware/ipyvtk-simple.git
+```
+Unfortunately the visualization doesn't work with colab (or rather I've not been able to embed a VTK object) so some further work is needed to view the results. However, the [welleng] engine can be used to generate data in the notebook. Test is out with the following code:
+
+```python
+import welleng as we
+import plotly.graph_objects as go
+from jupyter_dash import JupyterDash
+)
+
+# create a survey
+s = we.survey.Survey(
+    md=[0., 500., 2000., 5000.],
+    inc=[0., 0., 30., 90],
+    azi=[0., 0., 30., 90.,],
+    error_model='iscwsa_mwd_rev4'
+)
+
+# interpolate survey - generate points every 30 meters
+s_interp = we.connector.interpolate_survey(s, step=30)
+
+# plot the results
+fig = go.Figure()
+fig.add_trace(
+    go.Scatter3d(
+        x=s_interp.x,
+        y=s_interp.y,
+        z=s_interp.z,
+        mode='lines',
+        line=dict(
+            color='blue'
+        ),
+        name='survey_interpolated'
+    ),
+)
+
+fig.add_trace(
+    go.Scatter3d(
+        x=s.x,
+        y=s.y,
+        z=s.z,
+        mode='markers',
+        marker=dict(
+            color='red'
+        ),
+        name='survey'
+    )
+)
+fig.update_scenes(zaxis_autorange="reversed")
+fig.show()
+```
 
 ## Quick Start
 
