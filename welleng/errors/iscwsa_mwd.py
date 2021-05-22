@@ -7,12 +7,11 @@ import os
 # import welleng.error
 from ..utils import NEV_to_HLA
 
+# since this is running on different OS flavors
 PATH = os.path.dirname(__file__)
-FILENAME = os.path.join(PATH, 'tool_codes/error_codes.yaml')
-
-# PATH = imp.find_module('welleng')[1]
-
-# FILENAME = PATH + '/errors/error_codes.yaml'
+FILENAME = os.path.join(
+    '', *[PATH, 'tool_codes', 'error_codes.yaml']
+)
 
 
 class iscwsaMwd:
