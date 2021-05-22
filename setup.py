@@ -76,7 +76,7 @@ setup(
         'welleng': [
             'errors/tool_codes/*.yaml'
         ]
-    }
+    },
     install_requires=requirements_all,
     classifiers=[
         'Development Status :: 4 - Beta',
