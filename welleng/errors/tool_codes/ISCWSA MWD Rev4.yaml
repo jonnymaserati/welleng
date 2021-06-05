@@ -1,0 +1,159 @@
+codes:
+  ABXY-TI1S:
+    function: ABXY_TI1
+    magnitude: 0.004
+    propagation: systematic
+    unit: m/s2
+  ABXY-TI2S:
+    function: ABXY_TI2
+    magnitude: 0.004
+    propagation: systematic
+    unit: m/s2
+  ABZ:
+    function: ABZ
+    magnitude: 0.004
+    propagation: systematic
+    unit: m/s2
+  AMIL:
+    function: AMIL
+    magnitude: 220
+    propagation: systematic
+    unit: nT
+  ASXY-TI1S:
+    function: ASXY_TI1
+    magnitude: 0.0005
+    propagation: systematic
+    unit: '-'
+  ASXY-TI2S:
+    function: ASXY_TI2
+    magnitude: 0.0005
+    propagation: systematic
+    unit: '-'
+  ASXY-TI3S:
+    function: ASXY_TI3
+    magnitude: 0.0005
+    propagation: systematic
+    unit: '-'
+  ASZ:
+    function: ASZ
+    magnitude: 0.0005
+    propagation: systematic
+    unit: '-'
+  DBHG:
+    function: DBH
+    magnitude: 87.26646259971648
+    propagation: systematic
+    unit: rad.nT
+  DBHR:
+    function: DBH
+    magnitude: 52.35987755982988
+    propagation: random
+    unit: rad.nT
+  DECG:
+    function: AZ
+    magnitude: 0.006283185307179586
+    propagation: systematic
+    unit: rad
+  DECR:
+    function: AZ
+    magnitude: 0.0017453292519943296
+    propagation: random
+    unit: rad
+  DRFR:
+    function: DREF
+    magnitude: 0.35
+    propagation: random
+    unit: m
+  DSFS:
+    function: DSF
+    magnitude: 0.00056
+    propagation: systematic
+    unit: '-'
+  DSTG:
+    function: DST
+    magnitude: 2.5e-07
+    propagation: systematic
+    unit: 1/m
+  MBXY-TI1S:
+    function: MBXY_TI1
+    magnitude: 70
+    propagation: systematic
+    unit: nT
+  MBXY-TI2S:
+    function: MBXY_TI2
+    magnitude: 70
+    propagation: systematic
+    unit: nT
+  MBZ:
+    function: MBZ
+    magnitude: 70
+    propagation: systematic
+    unit: nT
+  MSXY-TI1S:
+    function: MSXY_TI1
+    magnitude: 0.0016
+    propagation: systematic
+    unit: '-'
+  MSXY-TI2S:
+    function: MSXY_TI2
+    magnitude: 0.0016
+    propagation: systematic
+    unit: '-'
+  MSXY-TI3S:
+    function: MSXY_TI3
+    magnitude: 0.0016
+    propagation: systematic
+    unit: '-'
+  MSZ:
+    function: MSZ
+    magnitude: 0.0016
+    propagation: systematic
+    unit: '-'
+  SAG:
+    function: SAG
+    magnitude: 0.003490658503988659
+    propagation: systematic
+    unit: rad
+  XYM1:
+    function: XYM1
+    magnitude: 0.0017453292519943296
+    propagation: systematic
+    unit: rad
+  XYM2:
+    function: XYM2
+    magnitude: 0.0017453292519943296
+    propagation: systematic
+    unit: rad
+  XYM3:
+    function: XYM3
+    magnitude: 0.0017453292519943296
+    propagation: systematic
+    unit: rad
+  XYM4:
+    function: XYM4
+    magnitude: 0.0017453292519943296
+    propagation: systematic
+    unit: rad
+header:
+  Application: None
+  Approved: null
+  Checked: null
+  Hor East/West Exclusion: 0 deg
+  Inclination Range Max: 180 deg
+  Inclination Range Min: 0 deg
+  Long Name: ISCWSA MWD (Fixed Rig) Rev4
+  Misalignment Alt: 3
+  Notes: Same as OWSG MWD Rev.2
+  OWSG Prefix: None
+  Range Comment: None
+  Replaces / Replaced By: ISCWSA MWD Rev 3 / OWSG_A001Mb_MWD
+  Revision Comment: DECR and DBHR terms added. AMIL reduced from 300 to 220 nT. XYM1,
+    XYM2, XYM3, XYM4 increased from 0.06 to 0.1 deg. Same as OWSG MWD Rev.2
+  Revision Date: 2015-03-20 00:00:00
+  Revision History: None
+  Revision No: 4
+  Short Name: ISCWSA MWD Rev4
+  Source: OWSG
+  Status: Agreed
+  Tool Parameters: null
+  Tool Type: MWD

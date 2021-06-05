@@ -289,7 +289,7 @@ class Survey:
         self.deg = deg
         self.start_xyz = start_xyz
         self.start_nev = start_nev
-        self.md = np.array(md)
+        self.md = np.array(md).astype('float64')
         self.start_cov_nev = start_cov_nev
 
         self._process_azi_ref(inc, azi, deg)
@@ -346,14 +346,14 @@ class Survey:
             self._get_azi_mag_and_true_rad()
         elif self.header.azi_reference == 'true':
             if deg:
-                self.azi_true_deg = np.array(azi)
+                self.azi_true_deg = np.array(azi).astype('float64')
                 self.azi_mag_deg = (
                     self.azi_true_deg - math.degrees(self.header.declination)
                 )
                 self._get_azi_mag_and_true_rad()
                 azi_temp = self._get_azi_temp(deg)
             else:
-                self.azi_true_rad = np.array(azi)
+                self.azi_true_rad = np.array(azi).astype('float64')
                 self.azi_mag_rad = (
                     self.azi_true_rad - self.header.declination
                 )
@@ -362,14 +362,14 @@ class Survey:
             self._make_angles(inc, azi_temp, deg)
         else:  # azi_reference is "magnetic"
             if deg:
-                self.azi_mag_deg = np.array(azi)
+                self.azi_mag_deg = np.array(azi).astype('float64')
                 self.azi_true_deg = (
                     self.azi_mag_deg + math.degrees(self.header.declination)
                 )
                 self._get_azi_mag_and_true_rad()
                 azi_temp = self._get_azi_temp(deg)
             else:
-                self.azi_mag_rad = np.array(azi)
+                self.azi_mag_rad = np.array(azi).astype('float64')
                 self.azi_true_rad = (
                     self.azi_mag_rad + self.header.declination
                 )
