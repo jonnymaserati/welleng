@@ -2,7 +2,7 @@ import numpy as np
 from welleng.version import __version__
 
 
-def export_csv(survey, filename):
+def export_csv(survey, filename, rtol=0.1, atol=0.1):
     """
     Function to export a minimalist (only the control points - i.e. the begining
     and end points of hold and/or turn sections) survey to input into third
@@ -14,7 +14,7 @@ def export_csv(survey, filename):
     filename: str
         The path and filename for saving the text file.
     """
-    sections = survey._get_sections()
+    sections = survey._get_sections(rtol=rtol, atol=atol)
 
     data = [[
         tp.md,
