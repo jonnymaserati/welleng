@@ -574,8 +574,8 @@ class Survey:
         with np.errstate(divide='ignore', invalid='ignore'):
             self.normals = n12 / np.linalg.norm(n12, axis=1).reshape(-1, 1)
 
-    def _get_sections(self, rtol=0.1, atol=0.1):
-        sections = get_sections(self, rtol, atol)
+    def _get_sections(self, rtol=0.1, atol=0.1, dls_cont=True):
+        sections = get_sections(self, rtol, atol, dls_cont)
 
         return sections
 
@@ -897,7 +897,7 @@ def get_circle_radius(survey, **targets):
     return (starts, ends)
 
 
-def get_sections(survey, rtol=1e-1, atol=1e-1, **targets):
+def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
     """
     Tries to discretize a survey file into hold or curve sections. These
     sections can then be used to generate a WellPlan object to generate a
@@ -917,6 +917,10 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, **targets):
         atol: float (default: 1e-2)
             The absolute tolerance when comparing the normals using the
             numpy.isclose() function.
+        dls_cont: bool
+            Whether to explicitly check for dls continuity. May results in a
+            larger number of control points but a trajectory that is a closer
+            fit to the survey.
         **targets: list of Target objects
             Not supported yet...
 
@@ -932,14 +936,28 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, **targets):
     # TODO: add target data to sections
     # ss = SplitSurvey(survey)
 
-    continuous = np.all(
-        np.isclose(
-            survey.normals[:-1],
-            survey.normals[1:],
-            rtol=rtol, atol=atol,
-            equal_nan=True
-        ), axis=-1
-    )
+    # check for DLS continuity
+    if not dls_cont:
+        dls_cont = [True] * (len(survey.dls) - 2)
+    else:
+        upper = np.around(survey.dls[1:-1], decimals=2)
+        lower = np.around(survey.dls[2:], decimals=2)
+        dls_cont = [
+            True if u == l else False
+            for u, l in zip(upper, lower)
+        ]
+
+    continuous = np.all((
+        np.all(
+            np.isclose(
+                survey.normals[:-1],
+                survey.normals[1:],
+                rtol=rtol, atol=atol,
+                equal_nan=True
+            ), axis=-1
+        ),
+        dls_cont
+    ), axis=0)
 
     starts = np.concatenate((
         np.array([0]),
