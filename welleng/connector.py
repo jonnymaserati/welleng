@@ -827,9 +827,9 @@ class Connector:
             # to balance the curvatures until the delta_radius parameter is
             # met.
             if self.error:
-                self.radius_critical = (self.md_target - self.md1) / (
+                self.radius_critical = ((self.md_target - self.md1) / (
                     abs(self.dogleg) + abs(self.dogleg2)
-                )
+                )) / 2
                 assert self.radius_critical > 0
                 # self.radius_critical += np.random.rand() * (
                 #     self.radius_critical - self.radius_critical2
