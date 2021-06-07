@@ -14,6 +14,11 @@
     - standard [ISCWSA] method within 0.5% accuracy of the ISCWSA test data.
     - new mesh based method using the [Flexible Collision Library].
 
+## Support welleng
+welleng is fuelled by copious amounts of coffee, so if you wish to supercharge development please donate generously: 
+
+<a href="https://www.buymeacoffee.com/jonnymaserati" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/arial-yellow.png" alt="Buy Me A Coffee" width="217px" ></a>
+
 ## New Features!
 
   - **World Magnetic Model Calculator:** calculates magnetic field data from the [World Magnetic Model](http://www.geomag.bgs.ac.uk/research/modelling/WorldMagneticModel.html) if magnetic field strength is not provided with the survey data.
