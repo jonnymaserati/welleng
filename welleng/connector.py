@@ -829,7 +829,7 @@ class Connector:
             if self.error:
                 self.radius_critical = (
 #                     (self.md_target - self.md1)
-                    (self.dist_curve + self.dist_curve2)
+                    (self.dist_curve + self.dist_curve2 + self.tangent_length / 2)
                     / (
                         abs(self.dogleg) + abs(self.dogleg2)
                     )
