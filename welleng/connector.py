@@ -828,10 +828,10 @@ class Connector:
             # met.
             if self.error:
                 self.radius_critical = (
-                    (self.md_target - self.md1)
+#                     (self.md_target - self.md1)
+                    (self.dist_curve + self.dist_curve2)
                     / (
-#                         abs(self.dogleg) + abs(self.dogleg2)
-                        self.dist_curve + self.dist_curve2
+                        abs(self.dogleg) + abs(self.dogleg2)
                     )
                 )
                 assert self.radius_critical > 0
