@@ -204,7 +204,7 @@ class Connector:
 
         Results
         -------
-            connector: welleng.connector.Connector object
+        connector: welleng.connector.Connector object
         """
         if node1 is not None:
             pos1, vec1, md1 = get_node_params(
@@ -849,19 +849,10 @@ class Connector:
             # to balance the curvatures until the delta_radius parameter is
             # met.
             if self.error:
-<<<<<<< HEAD
-                self.radius_critical = ((self.md_target - self.md1) / (
-                    abs(self.dogleg) + abs(self.dogleg2)
-                ))
-=======
                 self.radius_critical = (
-#                     (self.md_target - self.md1)
-                    (self.dist_curve + self.dist_curve2 + self.tangent_length / 2)
-                    / (
-                        abs(self.dogleg) + abs(self.dogleg2)
-                    )
+                    (self.md_target - self.md1)
+                    / (abs(self.dogleg) + abs(self.dogleg2))
                 )
->>>>>>> b41d6e9bd11ba577074a369ef6d8fda04dffa9c0
                 assert self.radius_critical > 0
                 # self.radius_critical += np.random.rand() * (
                 #     self.radius_critical - self.radius_critical2
