@@ -1097,30 +1097,19 @@ def XYM4E(code, error, mag=0.00524, propagation='random', NEV=True, **kwargs):
     if len(sing[0]) < 1:
         return error._generate_error(code, e_DIA, propagation, NEV)
     else:
-        e_NEV = error._e_NEV(e_DIA)
-        n = np.zeros(len(error.drdp_sing['double_delta_md']))
-        e = np.array(error.drdp_sing['double_delta_md'] * mag)
-        v = np.zeros_like(n)
-        e_NEV_sing = np.vstack(
-            (
-                np.zeros((1, 3)),
-                np.stack((n, e, v), axis=-1),
-                np.zeros((1, 3))
-            )
+        # this is a bit of a cop out way of handling these exceptions, but it's
+        # simple and it works...
+        xym3e = XYM3E(
+            code, error, mag=mag, propagation=propagation, NEV=NEV
         )
+        e_NEV = error._e_NEV(e_DIA)
+        e_NEV_sing = np.zeros_like(e_NEV)
+        e_NEV_sing[:, 1] = xym3e.e_NEV[:, 0]
         e_NEV[sing] = e_NEV_sing[sing]
 
         e_NEV_star = error._e_NEV_star(e_DIA)
-        n = np.zeros(len(error.drdp_sing['delta_md']))
-        e = np.array(error.drdp_sing['delta_md'] * mag)
-        v = np.zeros_like(n)
-        e_NEV_star_sing = np.vstack(
-            (
-                np.zeros((1, 3)),
-                np.stack((n, e, v), axis=-1),
-                np.zeros((1, 3))
-            )
-        )
+        e_NEV_star_sing = np.zeros_like(e_NEV_star)
+        e_NEV_star_sing[:, 1] = xym3e.e_NEV_star[:, 0]
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(
