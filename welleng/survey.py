@@ -31,6 +31,8 @@ class SurveyHeader:
         survey_date=None,
         G=9.80665,
         b_total=None,
+        earth_rate=0.26249751949994715,
+        noise_reduction_factor=1.0,
         dip=None,
         declination=None,
         convergence=0,
@@ -45,58 +47,62 @@ class SurveyHeader:
 
         Parameters
         ----------
-            name: string (default: None)
-                The assigned name of the well bore.
-            longitude: float (default: None)
-                The longitude of the surface location of the well. If left
-                default (None) then it will be assigned to Grenwich, the
-                undisputed center of the universe.
-            latitude: float (default: None)
-                The latitude of the surface location of the well. If left
-                default (None) then it will be assigned to Grenwich, the
-                undisputed center of the universe.
-            altitude: float (default: None)
-                The altitude of the surface location. If left defaults (None)
-                then it will be assigned to 0.
-            survey_date: YYYY-mm-dd (default: None)
-                The date on which the survey data was recorded. If left
-                default then the current date is assigned.
-            G: float (default: 9.80665)
-                The gravitational field strength in m/s^2.
-            b_total: float (default: None)
-                The gravitation field strength in nT. If left default, then
-                the value is calculated from the longitude, latitude, altitude
-                and survey_data properties using the magnetic_field_calculator.
-            dip: float (default: None)
-                The dip (inclination) of the magnetic field relative to the
-                earth's horizontal. If left default, then the value is
-                calculated using the magnetic_field_calculator. The unit (deg
-                of rad) is determined by the deg property.
-            declination: float (default: None)
-                The angle between true north and magnetic north at the well
-                location. If left default, then the value is calculated
-                using the magnetic_field_calculator.
-            convergence: float (default: 0)
-                The angle of convergence between the projection meridian and
-                the line from true north through the location of the well.
-            azi_reference: string (default: 'true')
-                The reference system for the azimuth angles in the survey data,
-                either "true", "magnetic" or "grid". Note that survey
-                calculations are performed in the "grid" reference and
-                converted to and from the other systems.
-            vertical_inc_limit: float (default 0.0001)
-                For survey inclination angles less than the vertical_inc_limit
-                (in degrees), calculations are approximated to avoid
-                singularities and errors.
-            deg: bool (default: True)
-                Indicates whether the survey angles are measured in degrees
-                (True) or radians (False).
-            depth_unit: string (default: "meters")
-                The unit of depth for the survey data, either "meters" or
-                "feet".
-            surface_unit: string (default: "feet")
-                The unit of distance for the survey data, either "meters" or
-                "feet".
+        name: string (default: None)
+            The assigned name of the well bore.
+        longitude: float (default: None)
+            The longitude of the surface location of the well. If left
+            default (None) then it will be assigned to Grenwich, the
+            undisputed center of the universe.
+        latitude: float (default: None)
+            The latitude of the surface location of the well. If left
+            default (None) then it will be assigned to Grenwich, the
+            undisputed center of the universe.
+        altitude: float (default: None)
+            The altitude of the surface location. If left defaults (None)
+            then it will be assigned to 0.
+        survey_date: YYYY-mm-dd (default: None)
+            The date on which the survey data was recorded. If left
+            default then the current date is assigned.
+        G: float (default: 9.80665)
+            The gravitational field strength in m/s^2.
+        b_total: float (default: None)
+            The gravitation field strength in nT. If left default, then
+            the value is calculated from the longitude, latitude, altitude
+            and survey_data properties using the magnetic_field_calculator.
+        earth_rate: float (default: 0.26249751949994715)
+            The rate of rotation of the earth in radians per hour.
+        noise_reduction_factor: float (default: 1.0)
+            A fiddle factor for random gyro noise.
+        dip: float (default: None)
+            The dip (inclination) of the magnetic field relative to the
+            earth's horizontal. If left default, then the value is
+            calculated using the magnetic_field_calculator. The unit (deg
+            of rad) is determined by the deg property.
+        declination: float (default: None)
+            The angle between true north and magnetic north at the well
+            location. If left default, then the value is calculated
+            using the magnetic_field_calculator.
+        convergence: float (default: 0)
+            The angle of convergence between the projection meridian and
+            the line from true north through the location of the well.
+        azi_reference: string (default: 'true')
+            The reference system for the azimuth angles in the survey data,
+            either "true", "magnetic" or "grid". Note that survey
+            calculations are performed in the "grid" reference and
+            converted to and from the other systems.
+        vertical_inc_limit: float (default 0.0001)
+            For survey inclination angles less than the vertical_inc_limit
+            (in degrees), calculations are approximated to avoid
+            singularities and errors.
+        deg: bool (default: True)
+            Indicates whether the survey angles are measured in degrees
+            (True) or radians (False).
+        depth_unit: string (default: "meters")
+            The unit of depth for the survey data, either "meters" or
+            "feet".
+        surface_unit: string (default: "feet")
+            The unit of distance for the survey data, either "meters" or
+            "feet".
         """
         if latitude is not None:
             assert 90 >= latitude >= -90, "latitude out of bounds"
@@ -111,6 +117,8 @@ class SurveyHeader:
         self.altitude = altitude if altitude is not None else 0.
         self._get_date(survey_date)
         self.b_total = b_total
+        self.earth_rate = earth_rate
+        self.noise_reduction_factor = noise_reduction_factor
         self.dip = dip
         self.convergence = convergence
         self.declination = declination
