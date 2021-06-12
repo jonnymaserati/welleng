@@ -156,6 +156,14 @@ class ToolError:
             'MBIXY_TI1': MBIXY_TI1,  # Needs QAQC
             'MBIXY_TI2': MBIXY_TI2,  # Needs QAQC
             'MDI': MDI,  # Needs QAQC
+            'AXYZ_MIS': AXYZ_MIS,  # Needs QAQC
+            'AXYZ_SF': AXYZ_SF,  # Needs QAQC
+            'AXYZ_ZB': AXYZ_ZB,  # Needs QAQC
+            'GXY_B1': GXY_B1,  # Needs QAQC
+            'GXY_B2': GXY_B2,  # Needs QAQC
+            'GXY_G1': GXY_G1,  # Needs QAQC
+            'GXY_G4': GXY_G4,  # Needs QAQC
+            'GXY_RN': GXY_RN,  # Needs QAQC
         }
 
 
@@ -168,7 +176,7 @@ def _funky_denominator(error):
             # nan=1e-6,
             # posinf=1.0,
             # neginf=-1.0
-    )
+        )
     # ACCURACY = 1e-6
     # with np.errstate(divide='ignore', invalid='ignore'):
     #     coeff = np.nan_to_num(
@@ -625,6 +633,138 @@ def ASIZ(
     e_DIA = dpde * mag
 
     return error._generate_error(code, e_DIA, propagation, NEV)
+
+
+def AXYZ_MIS(
+    code, error, mag=0.0001658062789394613, propagation='systematic', NEV=True,
+    **kwargs
+):
+    dpde = np.full((len(error.survey_rad), 3), [0., 1., 0.])
+    dpde = dpde * np.array(error.survey_rad)
+    e_DIA = dpde * mag
+
+    return error._generate_error(code, e_DIA, propagation, NEV)
+
+
+def AXYZ_SF(
+    code, error, mag=0.000111, propagation='systematic', NEV=True,
+    **kwargs
+):
+    dpde = np.full((len(error.survey_rad), 3), [0., 1., 0.])
+    dpde[:, 1] = (
+        1.3 * sin(error.survey.inc_rad) * cos(error.survey.inc_rad)
+    )
+    e_DIA = dpde * mag
+
+    return error._generate_error(code, e_DIA, propagation, NEV)
+
+
+def AXYZ_ZB(
+    code, error, mag=0.0017, propagation='systematic', NEV=True,
+    **kwargs
+):
+    dpde = np.full((len(error.survey_rad), 3), [0., 1., 0.])
+    dpde[:, 1] = (
+        sin(error.survey.inc_rad) * error.survey.header.G
+    )
+    e_DIA = dpde * mag
+
+    return error._generate_error(code, e_DIA, propagation, NEV)
+
+
+def GXY_B1(
+    code, error, mag=0.002617993877991494, propagation='random',
+    NEV=True, **kwargs
+):
+    dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
+    dpde[:, 2] = (
+        sin(error.survey.azi_true_rad)
+        / (
+            error.survey.header.earth_rate
+            * cos(np.radians(error.survey.header.latitude))
+            * cos(error.survey.inc_rad)
+        )
+    )
+    e_DIA = dpde * mag
+
+    return error._generate_error(code, e_DIA, propagation, NEV)
+
+
+def GXY_B2(
+    code, error, mag=0.002617993877991494, propagation='random',
+    NEV=True, **kwargs
+):
+    dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
+    dpde[:, 2] = (
+        cos(error.survey.azi_true_rad)
+        / (
+            error.survey.header.earth_rate
+            * cos(np.radians(error.survey.header.latitude))
+        )
+    )
+    e_DIA = dpde * mag
+
+    return error._generate_error(code, e_DIA, propagation, NEV)
+
+
+def GXY_G1(
+    code, error, mag=0.006981317007977318, propagation='systematic',
+    NEV=True, **kwargs
+):
+    dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
+    dpde[:, 2] = (
+        cos(error.survey.azi_true_rad) * sin(error.survey.inc_rad)
+        / (
+            error.survey.header.earth_rate
+            * cos(np.radians(error.survey.header.latitude))
+        )
+    )
+    e_DIA = dpde * mag
+
+    return error._generate_error(code, e_DIA, propagation, NEV)
+
+
+def GXY_G4(
+    code, error, mag=0.017453292519943295, propagation='systematic',
+    NEV=True, **kwargs
+):
+    dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
+    dpde[:, 2] = (
+        sin(error.survey.azi_true_rad) * tan(error.survey.inc_rad)
+        / (
+            error.survey.header.earth_rate
+            * cos(np.radians(error.survey.header.latitude))
+        )
+    )
+    e_DIA = dpde * mag
+
+    return error._generate_error(code, e_DIA, propagation, NEV)
+
+
+def GXY_RN(
+    code, error, mag=0.010471975511965976, propagation='random',
+    NEV=True, **kwargs
+):
+    dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
+    dpde[:, 2] = (
+        error.survey.header.noise_reduction_factor
+        * (
+            np.sqrt(
+                1 - cos(error.survey.azi_true_rad) ** 2
+                * sin(error.survey.inc_rad) ** 2
+            )
+            / (
+                error.survey.header.earth_rate
+                * cos(np.radians(error.survey.header.latitude))
+                * cos(error.survey.inc_rad)
+            )
+        )
+    )
+    e_DIA = dpde * mag
+
+    result = error._generate_error(code, e_DIA, propagation, NEV)
+
+    return result
 
 
 def MBXY_TI1(
