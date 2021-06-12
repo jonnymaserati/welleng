@@ -2,10 +2,10 @@ import numpy as np
 from welleng.version import __version__
 
 
-def export_csv(survey, filename):
+def export_csv(survey, filename, rtol=0.1, atol=0.1, dls_cont=False):
     """
-    Function to export a minimalist (only the control points - i.e. the begining
-    and end points of hold and/or turn sections) survey to input into third
+    Function to export a minimalist (only the control points - i.e. the
+    begining and end points of hold and/or turn sections) survey to input into third
     party trajectory planning software.
 
     Parameters
@@ -13,8 +13,16 @@ def export_csv(survey, filename):
     survey: welleng.survey.Survey object
     filename: str
         The path and filename for saving the text file.
+    rtol: float
+        The relative tolerance used when comparing normal vectors
+    atol: float
+        The absolute tolerance used when comparing normal vectors
+    dls_cont: bool
+        Whether to explicitly check for dls continuity. May results in a
+        larger number of control points but a trajectory that is a closer
+        fit to the survey.
     """
-    sections = survey._get_sections()
+    sections = survey._get_sections(rtol=rtol, atol=atol, dls_cont=dls_cont)
 
     data = [[
         tp.md,

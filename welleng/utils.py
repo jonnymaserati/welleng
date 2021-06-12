@@ -394,3 +394,10 @@ def make_cov(a, b, c, long=False):
         ])
 
     return cov.T
+
+
+def dls_from_radius(radius):
+    circumference = 2 * np.pi * radius
+    dls = 360 / circumference * 30
+
+    return dls
