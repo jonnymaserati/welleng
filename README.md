@@ -14,6 +14,11 @@
     - standard [ISCWSA] method within 0.5% accuracy of the ISCWSA test data.
     - new mesh based method using the [Flexible Collision Library].
 
+## Support welleng
+welleng is fuelled by copious amounts of coffee, so if you wish to supercharge development please donate generously: 
+
+<a href="https://www.buymeacoffee.com/jonnymaserati" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/arial-yellow.png" alt="Buy Me A Coffee" width="217px" ></a>
+
 ## New Features!
 
   - **World Magnetic Model Calculator:** calculates magnetic field data from the [World Magnetic Model](http://www.geomag.bgs.ac.uk/research/modelling/WorldMagneticModel.html) if magnetic field strength is not provided with the survey data.
@@ -90,7 +95,7 @@ Perhaps the simplest way of getting up and running with [welleng] is to with a [
 !pip install welleng plotly jupyter-dash
 !pip install -U git+https://github.com/Kitware/ipyvtk-simple.git
 ```
-Unfortunately the visualization doesn't work with colab (or rather I've not been able to embed a VTK object) so some further work is needed to view the results. However, the [welleng] engine can be used to generate data in the notebook. Test is out with the following code:
+Unfortunately the visualization doesn't work with colab (or rather I've not been able to embed a VTK object) so some further work is needed to view the results. However, the [welleng] engine can be used to generate data in the notebook. Test it out with the following code:
 
 ```python
 import welleng as we

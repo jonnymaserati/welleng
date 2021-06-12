@@ -1,8 +1,10 @@
 import numpy as np
 from copy import copy, deepcopy
 from scipy.spatial import distance
+
 from .utils import (
-    get_vec, get_angles, get_nev, get_xyz, get_unit_vec, NEV_to_HLA
+    get_vec, get_angles, get_nev, get_xyz, get_unit_vec, NEV_to_HLA,
+    dls_from_radius
 )
 from .survey import Survey, SurveyHeader
 
@@ -114,7 +116,8 @@ class Connector:
         degrees=True,
         unit='meters',
         min_error=1e-5,
-        delta_radius=20.,
+        # delta_radius=20.,
+        delta_dls=0.1,
         min_tangent=0.,
         max_iterations=200,
         force_min_curve=False,
@@ -137,64 +140,71 @@ class Connector:
 
         Parameters
         ----------
-            pos1: (3) list or array of floats (default: [0,0,0])
-                Start position in NEV coordinates.
-            vec1: (3) list or array of floats or None (default: None)
-                Start position unit vector in NEV coordinates.
-            inc1: float or None (default: None)
-                Start position inclination.
-            azi2: float or None (default: None)
-                Start position azimuth.
-            md1: float or None (default: None)
-                Start position measured depth.
-            dls_design: float (default: 3.0)
-                The desired Dog Leg Severity (DLS) for the (first) curved
-                section in degrees per 30 meters or 100 feet.
-            dls_design2: float or None (default: None)
-                The desired DLS for the second curve section in degrees per
-                30 meters or 100 feet. If set to None then `dls_design` will
-                be the default value.
-            md2: float or None (default: None)
-                The measured depth of the target position.
-            pos2: (3) list or array of floats or None (default: None)
-                The position of the target in NEV coordinates.
-            vec2: (3) list or array of floats or None (default: None)
-                The target unit vector in NEV coordinates.
-            inc1: float or None (default: None)
-                The inclination at the target position.
-            azi2: float or None (default: None)
-                The azimuth at the target position.
-            degrees: boolean (default: True)
-                Indicates whether the input angles (inc, azi) are in degrees
-                (True) or radians (False).
-            unit: string (default: 'meters')
-                Indicates the distance unit, either 'meters' or 'feet'.
-            min_error: float (default: 1e-5):
-                Infers the error tolerance of the results and is used to set
-                iteration stops when the desired error tolerance is met. Value
-                must be less than 1. Use with caution as the code may
-                become unstable if this value is changed.
-            delta_radius: float (default: 20)
-                The delta radius (first curve and second curve sections) used
-                as an iteration stop when balancing radii. If the resulting
-                delta radius yielded from `dls_design` and `dls_design2` is
-                larger than `delta_radius`, then `delta_radius` defaults to
-                the former.
-            min_tangent: float (default: 10)
-                The minimum tangent length in the `curve_hold_curve` method
-                used to mitigate instability during iterations (where the
-                tangent section approaches or equals 0).
-            max_iterations: int (default: 1000)
-                The maximum number of iterations before giving up trying to
-                fit a `curve_hold_curve`. This number is limited by Python's
-                depth of recursion, but if you're hitting the default stop
-                then consider changing `delta_radius` and `min_tangent` as
-                your expectations may be unrealistic (this is open source
-                software after all!)
+        pos1: (3) list or array of floats (default: [0,0,0])
+            Start position in NEV coordinates.
+        vec1: (3) list or array of floats or None (default: None)
+            Start position unit vector in NEV coordinates.
+        inc1: float or None (default: None)
+            Start position inclination.
+        azi2: float or None (default: None)
+            Start position azimuth.
+        md1: float or None (default: None)
+            Start position measured depth.
+        dls_design: float (default: 3.0)
+            The desired Dog Leg Severity (DLS) for the (first) curved
+            section in degrees per 30 meters or 100 feet.
+        dls_design2: float or None (default: None)
+            The desired DLS for the second curve section in degrees per
+            30 meters or 100 feet. If set to None then `dls_design` will
+            be the default value.
+        md2: float or None (default: None)
+            The measured depth of the target position.
+        pos2: (3) list or array of floats or None (default: None)
+            The position of the target in NEV coordinates.
+        vec2: (3) list or array of floats or None (default: None)
+            The target unit vector in NEV coordinates.
+        inc1: float or None (default: None)
+            The inclination at the target position.
+        azi2: float or None (default: None)
+            The azimuth at the target position.
+        degrees: boolean (default: True)
+            Indicates whether the input angles (inc, azi) are in degrees
+            (True) or radians (False).
+        unit: string (default: 'meters')
+            Indicates the distance unit, either 'meters' or 'feet'.
+        min_error: float (default: 1e-5):
+            Infers the error tolerance of the results and is used to set
+            iteration stops when the desired error tolerance is met. Value
+            must be less than 1. Use with caution as the code may
+            become unstable if this value is changed.
+        delta_radius: float (default: 20)
+            The delta radius (first curve and second curve sections) used
+            as an iteration stop when balancing radii. If the resulting
+            delta radius yielded from `dls_design` and `dls_design2` is
+            larger than `delta_radius`, then `delta_radius` defaults to
+            the former.
+        delta_dls: float (default: 0.1)
+            The delta dls (first curve and second curve sections) used as an
+            iteration stop when balancing radii, i.e. if the dls of the second
+            section is within 0.1 deg/30m of the first curve section then the
+            section is considered balanced and no further iterations are
+            performed. Setting this value too low will likely result in hitting
+            the recursion limit.
+        min_tangent: float (default: 10)
+            The minimum tangent length in the `curve_hold_curve` method
+            used to mitigate instability during iterations (where the
+            tangent section approaches or equals 0).
+        max_iterations: int (default: 1000)
+            The maximum number of iterations before giving up trying to
+            fit a `curve_hold_curve`. This number is limited by Python's
+            depth of recursion, but if you're hitting the default stop
+            then consider changing `delta_radius` and `min_tangent` as
+            your expectations may be unrealistic (this is open source
+            software after all!)
 
         Results
         -------
-            connector: welleng.connector.Connector object
+        connector: welleng.connector.Connector object
         """
         if node1 is not None:
             pos1, vec1, md1 = get_node_params(
@@ -274,6 +284,7 @@ class Connector:
         self.iterations = 0
         self.max_iterations = max_iterations
         self.errors = []
+        self.radii = []
         self.dogleg_old, self.dogleg2_old = 0, 0
         self.dist_curve2 = 0
         self.pos1 = np.array(pos1)
@@ -365,10 +376,11 @@ class Connector:
         self.radius_design2 = self.denom / self.dls_design2
 
         # check that the `delta_radius` actually makes sense
-        self.delta_radius = max(
-            delta_radius,
-            abs(self.radius_design - self.radius_design2)
-        )
+        # self.delta_radius = max(
+        #     delta_radius,
+        #     abs(self.radius_design - self.radius_design2)
+        # )
+        self.delta_dls = abs(self.dls_design - self.dls_design2) + delta_dls
 
         # some more initialization stuff
         self.tangent_length = None
@@ -795,6 +807,14 @@ class Connector:
         self.delta_radius_list.append(
             abs(self.radius_critical - self.radius_critical2)
         )
+        dls = max(
+            dls_from_radius(self.radius_design),
+            dls_from_radius(self.radius_critical)
+        )
+        dls2 = max(
+            dls_from_radius(self.radius_design2),
+            dls_from_radius(self.radius_critical2)
+        )
 
         # a bit of recursive magic - proceed with caution
         if all((
@@ -807,9 +827,10 @@ class Connector:
                         self.radius_critical2 < self.radius_design2
                         or self.radius_critical < self.radius_design
                     )
-                    and
-                    abs(self.radius_critical - self.radius_critical2)
-                    > self.delta_radius
+                    # and
+                    # abs(self.radius_critical - self.radius_critical2)
+                    # > self.delta_radius
+                    and abs(dls - dls2) > self.delta_dls
                     and not np.allclose(
                         self.pos1,
                         self.pos2,
@@ -827,8 +848,9 @@ class Connector:
             # to balance the curvatures until the delta_radius parameter is
             # met.
             if self.error:
-                self.radius_critical = (self.md_target - self.md1) / (
-                    abs(self.dogleg) + abs(self.dogleg2)
+                self.radius_critical = (
+                    (self.md_target - self.md1)
+                    / (abs(self.dogleg) + abs(self.dogleg2))
                 )
                 assert self.radius_critical > 0
                 # self.radius_critical += np.random.rand() * (
