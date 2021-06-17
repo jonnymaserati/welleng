@@ -2,7 +2,9 @@ import numpy as np
 from welleng.version import __version__
 
 
-def export_csv(survey, filename, rtol=0.1, atol=0.1, dls_cont=False):
+def export_csv(
+    survey, filename, rtol=0.1, atol=0.1, dls_cont=False, decimals=3
+):
     """
     Function to export a minimalist (only the control points - i.e. the
     begining and end points of hold and/or turn sections) survey to input into third
@@ -21,6 +23,8 @@ def export_csv(survey, filename, rtol=0.1, atol=0.1, dls_cont=False):
         Whether to explicitly check for dls continuity. May results in a
         larger number of control points but a trajectory that is a closer
         fit to the survey.
+    decimals: int (default: 3)
+        Number of decimal places provided in the output file listing
     """
     sections = survey._get_sections(rtol=rtol, atol=atol, dls_cont=dls_cont)
 
@@ -78,7 +82,7 @@ def export_csv(survey, filename, rtol=0.1, atol=0.1, dls_cont=False):
         filename,
         data,
         delimiter=',',
-        fmt='%.3f',
+        fmt=f"%.{decimals}f",
         header=headers,
         comments=comments
     )
