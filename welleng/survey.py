@@ -962,7 +962,7 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
     starts = np.concatenate((
         np.array([0]),
         np.where(continuous == False)[0] + 1,
-        np.array([len(continuous) - 1]),
+        # np.array([len(continuous) - 1]),
         np.array([len(survey.md) - 1])
     ))
 
