@@ -69,7 +69,7 @@ class ErrorModel():
     def __init__(
         self,
         survey,
-        error_model="iscwsa_mwd_rev4",
+        error_model="iscwsa_mwd_rev5",
     ):
         """
 
@@ -380,3 +380,26 @@ class ErrorModel():
             delta_md=delta_md,
             azi2=azi2
         )
+
+
+def get_errors(error):
+    nn, ne, nv = error[0]
+    _, ee, ev = error[1]
+    _, __, vv = error[2]
+
+    return [nn, ee, vv, ne, nv, ev]
+
+
+def make_diagnostic_data(survey):
+    diagnostic = {}
+    dia = np.stack((survey.md, survey.inc_deg, survey.azi_grid_deg), axis=1)
+    for i, d in enumerate(survey.md):
+        diagnostic[d] = {}
+        total = []
+        for k, v in survey.err.errors.errors.items():
+            diagnostic[d][k] = get_errors(v.cov_NEV.T[i])
+            total.extend(diagnostic[d][k])
+        diagnostic[d]['TOTAL'] = np.sum((np.array(
+            total
+        ).reshape(-1, len(diagnostic[d][k]))), axis=0)
+    return diagnostic
