@@ -911,22 +911,23 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
 
     Parameters
     ----------
-        survey: welleng.survey.Survey object
-        rtol: float (default: 1e-1)
-            The relative tolerance when comparing the normals using the
-            numpy.isclose() function.
-        atol: float (default: 1e-2)
-            The absolute tolerance when comparing the normals using the
-            numpy.isclose() function.
-        dls_cont: bool
-            Whether to explicitly check for dls continuity. May results in a
-            larger number of control points but a trajectory that is a closer
-            fit to the survey.
-        **targets: list of Target objects
-            Not supported yet...
+    survey: welleng.survey.Survey object
+    rtol: float (default: 1e-1)
+        The relative tolerance when comparing the normals using the
+        numpy.isclose() function.
+    atol: float (default: 1e-2)
+        The absolute tolerance when comparing the normals using the
+        numpy.isclose() function.
+    dls_cont: bool
+        Whether to explicitly check for dls continuity. May results in a
+        larger number of control points but a trajectory that is a closer
+        fit to the survey.
+    **targets: list of Target objects
+        Not supported yet...
 
     Returns:
-        sections: list of welleng.exchange.wbp.TurnPoint objects
+    --------
+    sections: list of welleng.exchange.wbp.TurnPoint objects
     """
     # it turns out that since the well is being split into "holds" and "turns"
     # that the method can always be "920", since even a hold can be expressed
