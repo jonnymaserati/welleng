@@ -830,8 +830,7 @@ class Connector:
                     # and
                     # abs(self.radius_critical - self.radius_critical2)
                     # > self.delta_radius
-                    and
-                    abs(dls - dls2) > self.delta_dls
+                    and abs(dls - dls2) > self.delta_dls
                     and not np.allclose(
                         self.pos1,
                         self.pos2,

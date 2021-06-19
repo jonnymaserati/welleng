@@ -2,7 +2,9 @@ import numpy as np
 import math
 from magnetic_field_calculator import MagneticFieldCalculator
 from datetime import datetime
+from scipy.optimize import minimize
 
+from .version import __version__
 from .utils import (
     MinCurve,
     get_nev,
@@ -12,10 +14,9 @@ from .utils import (
     NEV_to_HLA,
     get_xyz
 )
-
 from .error import ErrorModel, ERROR_MODELS
 from .exchange.wbp import TurnPoint
-from .exchange.csv import export_csv
+# from .exchange.csv import export_csv
 
 
 AZI_REF = ["true", "magnetic", "grid"]
@@ -910,22 +911,23 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
 
     Parameters
     ----------
-        survey: welleng.survey.Survey object
-        rtol: float (default: 1e-1)
-            The relative tolerance when comparing the normals using the
-            numpy.isclose() function.
-        atol: float (default: 1e-2)
-            The absolute tolerance when comparing the normals using the
-            numpy.isclose() function.
-        dls_cont: bool
-            Whether to explicitly check for dls continuity. May results in a
-            larger number of control points but a trajectory that is a closer
-            fit to the survey.
-        **targets: list of Target objects
-            Not supported yet...
+    survey: welleng.survey.Survey object
+    rtol: float (default: 1e-1)
+        The relative tolerance when comparing the normals using the
+        numpy.isclose() function.
+    atol: float (default: 1e-2)
+        The absolute tolerance when comparing the normals using the
+        numpy.isclose() function.
+    dls_cont: bool
+        Whether to explicitly check for dls continuity. May results in a
+        larger number of control points but a trajectory that is a closer
+        fit to the survey.
+    **targets: list of Target objects
+        Not supported yet...
 
     Returns:
-        sections: list of welleng.exchange.wbp.TurnPoint objects
+    --------
+    sections: list of welleng.exchange.wbp.TurnPoint objects
     """
     # it turns out that since the well is being split into "holds" and "turns"
     # that the method can always be "920", since even a hold can be expressed
@@ -962,7 +964,7 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
     starts = np.concatenate((
         np.array([0]),
         np.where(continuous == False)[0] + 1,
-        np.array([len(continuous) - 1]),
+        # np.array([len(continuous) - 1]),
         np.array([len(survey.md) - 1])
     ))
 
@@ -1079,6 +1081,24 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
 
         tie_on = False
 
+    # For some reason, there's sometimes additional rows in straight
+    # sections - this removes them BUT it makes the survey less accurate
+    # upper = sections[1:-1]
+    # lower = sections[2:]
+
+    # tags = []
+
+    # for i, (u, l) in enumerate(zip(upper, lower)):
+    #     if all((
+    #         math.isclose(u.inc, l.inc),
+    #         math.isclose(u.azi, l.azi),
+    #         math.isclose(u.dls, l.dls)
+    #     )):
+    #         tags.append(i + 1)
+
+    # for i in tags:
+    #     del sections[i]
+
     return sections
 
 
@@ -1104,8 +1124,136 @@ def make_survey_header(data):
     return sh
 
 
-def save(survey, filename):
+# def save(survey, filename):
+#     """
+#     Saves the survey header and survey to a text file.
+#     """
+#     export_csv(survey, filename)
+
+
+def export_csv(
+    survey, filename, tolerance=0.1, dls_cont=False, decimals=3
+):
     """
-    Saves the survey header and survey to a text file.
+    Function to export a minimalist (only the control points - i.e. the
+    begining and end points of hold and/or turn sections) survey to input into third
+    party trajectory planning software.
+
+    Parameters
+    ----------
+    survey: welleng.survey.Survey object
+    filename: str
+        The path and filename for saving the text file.
+    tolerance: float (default: 0.1)
+        How close the the final N, E, TVD position of the minimalist survey
+        should be to the original survey point (e.g. within 1 meter)
+    dls_cont: bool
+        Whether to explicitly check for dls continuity. May result in a
+        larger number of control points but a trajectory that is a closer
+        fit to the survey.
+    decimals: int (default: 3)
+        Number of decimal places provided in the output file listing
     """
-    export_csv(survey, filename)
+
+    start_tol = 0
+
+    res = minimize(
+        func, start_tol, args=(survey, dls_cont, tolerance), method='SLSQP',
+        bounds=[[0, 1.0]], options={'eps': 0.001}
+    )
+
+    data = get_data(
+        res.x[0], survey, dls_cont
+    )
+
+    headers = ','.join([
+        'MD',
+        'INC (deg)',
+        'AZI (deg)',
+        'NORTHING (m)',
+        'EASTING (m)',
+        'TVDSS (m)',
+        'DLS',
+        'TOOLFACE',
+        'BUILD RATE',
+        'TURN RATE'
+    ])
+
+    if filename is None:
+        try:
+            import pandas as pd
+
+            df = pd.DataFrame(
+                data,
+                columns=headers.split(',')
+            )
+            return df
+        except ImportError:
+            print("Missing pandas dependency")
+
+    comments = [
+        f"welleng, version: {__version__}\n"
+        f"author, Jonny Corcutt\n"
+    ]
+    comments.extend([
+        f"{k}, {v}\n" for k, v in vars(survey.header).items()
+    ])
+    comments += f"\n"
+    comments = ''.join(comments)
+
+    np.savetxt(
+        filename,
+        data,
+        delimiter=',',
+        fmt=f"%.{decimals}f",
+        header=headers,
+        comments=comments
+    )
+
+
+def get_data(tol, survey, dls_cont):
+
+    rtol = atol = tol
+
+    sections = survey._get_sections(rtol=rtol, atol=atol, dls_cont=dls_cont)
+
+    data = [[
+        tp.md,
+        tp.inc,
+        tp.azi,
+        tp.location[1],
+        tp.location[0],
+        tp.location[2],
+        tp.dls,
+        tp.toolface,
+        tp.build_rate,
+        tp.turn_rate,
+    ] for tp in sections]
+
+    data = np.vstack(data[1:])
+
+    return data
+
+
+def func(x0, survey, dls_cont, tolerance):
+
+    data = get_data(x0, survey, dls_cont)
+
+    md, inc, azi, n, e, tvd, dls, tf, br, tr = data.T
+    nev = np.array([survey.n, survey.e, survey.tvd]).T
+
+    s = Survey(
+        md=md,
+        inc=inc,
+        azi=azi,
+        start_nev=nev[0],
+        header=survey.header
+    )
+
+    s_nev = np.array([s.n, s.e, s.tvd]).T
+
+    diff = abs(
+        tolerance - np.amax(np.absolute(s_nev[-1] - nev[-1]))
+    )
+
+    return diff
