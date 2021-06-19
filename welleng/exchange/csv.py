@@ -1,11 +1,17 @@
 import numpy as np
-from welleng.version import __version__
+from scipy.optimize import minimize
+from ..version import __version__
+from ..survey import export_csv as x_csv
 
 
-def export_csv(survey, filename, rtol=0.1, atol=0.1, dls_cont=False):
+def export_csv(
+    survey, filename, tolerance=0.1, dls_cont=False, decimals=3
+):
     """
-    Function to export a minimalist (only the control points - i.e. the begining
-    and end points of hold and/or turn sections) survey to input into third
+    Wrapper for survey.export_csv
+
+    Function to export a minimalist (only the control points - i.e. the
+    begining and end points of hold and/or turn sections) survey to input into third
     party trajectory planning software.
 
     Parameters
@@ -13,72 +19,18 @@ def export_csv(survey, filename, rtol=0.1, atol=0.1, dls_cont=False):
     survey: welleng.survey.Survey object
     filename: str
         The path and filename for saving the text file.
-    rtol: float
-        The relative tolerance used when comparing normal vectors
-    atol: float
-        The absolute tolerance used when comparing normal vectors
+    tolerance: float (default: 0.1)
+        How close the the final N, E, TVD position of the minimalist survey
+        should be to the original survey point (e.g. within 1 meter)
     dls_cont: bool
-        Whether to explicitly check for dls continuity. May results in a
+        Whether to explicitly check for dls continuity. May result in a
         larger number of control points but a trajectory that is a closer
         fit to the survey.
+    decimals: int (default: 3)
+        Number of decimal places provided in the output file listing
     """
-    sections = survey._get_sections(rtol=rtol, atol=atol, dls_cont=dls_cont)
 
-    data = [[
-        tp.md,
-        tp.inc,
-        tp.azi,
-        tp.location[1],
-        tp.location[0],
-        tp.location[2],
-        tp.dls,
-        tp.toolface,
-        tp.build_rate,
-        tp.turn_rate,
-    ] for tp in sections]
-
-    data = np.vstack(data[1:])
-
-    headers = ','.join([
-        'MD',
-        'INC (deg)',
-        'AZI (deg)',
-        'NORTHING (m)',
-        'EASTING (m)',
-        'TVDSS (m)',
-        'DLS',
-        'TOOLFACE',
-        'BUILD RATE',
-        'TURN RATE'
-    ])
-
-    if filename is None:
-        try:
-            import pandas as pd
-
-            df = pd.DataFrame(
-                data,
-                columns=headers.split(',')
-            )
-            return df
-        except ImportError:
-            print("Missing pandas dependency")
-
-    comments = [
-        f"welleng, version: {__version__}\n"
-        f"author, Jonny Corcutt\n"
-    ]
-    comments.extend([
-        f"{k}, {v}\n" for k, v in vars(survey.header).items()
-    ])
-    comments += f"\n"
-    comments = ''.join(comments)
-
-    np.savetxt(
-        filename,
-        data,
-        delimiter=',',
-        fmt='%.3f',
-        header=headers,
-        comments=comments
+    return x_csv(
+        survey, filename, tolerance=tolerance, dls_cont=dls_cont,
+        decimals=decimals
     )
