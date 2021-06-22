@@ -62,9 +62,17 @@ class ToolError:
 
         # if model == "iscwsa_mwd_rev5":
         # if model == "ISCWSA MWD Rev5":
-        assert self.tortuosity is not None, (
-            "No default tortuosity defined in model header"
-        )
+        # assert self.tortuosity is not None, (
+        #     "No default tortuosity defined in model header"
+        # )
+
+        if "Inclination Range Max" in self.em['header'].keys():
+            value = np.radians(float(
+                self.em['header']['Inclination Range Max'].split(" ")[0]
+            ))
+            assert np.amax(self.e.survey.inc_rad) < value, (
+                "Model not suitable for this well path inclination"
+            )
 
         self._initiate_func_dict()
 
@@ -81,6 +89,7 @@ class ToolError:
                     mag=mag,
                     propagation=propagation,
                     tortuosity=self.tortuosity,
+                    header=self.em['header']
                 )
             )
 
@@ -164,6 +173,8 @@ class ToolError:
             'GXY_G1': GXY_G1,  # Needs QAQC
             'GXY_G4': GXY_G4,  # Needs QAQC
             'GXY_RN': GXY_RN,  # Needs QAQC
+            'GXY_GD': GXY_GD,  # Needs QAQC
+            'GXY_GRW': GXY_GRW,  # Needs QAQC
         }
 
 
@@ -665,7 +676,7 @@ def AXYZ_ZB(
 ):
     dpde = np.full((len(error.survey_rad), 3), [0., 1., 0.])
     dpde[:, 1] = (
-        sin(error.survey.inc_rad) * error.survey.header.G
+        sin(error.survey.inc_rad) / error.survey.header.G
     )
     e_DIA = dpde * mag
 
@@ -677,17 +688,21 @@ def GXY_B1(
     NEV=True, **kwargs
 ):
     dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
-    dpde[:, 2] = (
+    dpde[:, 2] = np.where(
+        error.survey.inc_rad < kwargs['header']['XY Static Gyro']['End Inc'],
         sin(error.survey.azi_true_rad)
         / (
             error.survey.header.earth_rate
             * cos(np.radians(error.survey.header.latitude))
             * cos(error.survey.inc_rad)
-        )
+        ),
+        np.zeros_like(error.survey.md)
     )
     e_DIA = dpde * mag
 
-    return error._generate_error(code, e_DIA, propagation, NEV)
+    result = error._generate_error(code, e_DIA, propagation, NEV)
+
+    return result
 
 
 def GXY_B2(
@@ -695,16 +710,20 @@ def GXY_B2(
     NEV=True, **kwargs
 ):
     dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
-    dpde[:, 2] = (
+    dpde[:, 2] = np.where(
+        error.survey.inc_rad < kwargs['header']['XY Static Gyro']['End Inc'],
         cos(error.survey.azi_true_rad)
         / (
             error.survey.header.earth_rate
             * cos(np.radians(error.survey.header.latitude))
-        )
+        ),
+        np.zeros_like(error.survey.md)
     )
     e_DIA = dpde * mag
 
-    return error._generate_error(code, e_DIA, propagation, NEV)
+    result = error._generate_error(code, e_DIA, propagation, NEV)
+
+    return result
 
 
 def GXY_G1(
@@ -712,42 +731,68 @@ def GXY_G1(
     NEV=True, **kwargs
 ):
     dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
-    dpde[:, 2] = (
+    dpde[:, 2] = np.where(
+        error.survey.inc_rad < kwargs['header']['XY Static Gyro']['End Inc'],
         cos(error.survey.azi_true_rad) * sin(error.survey.inc_rad)
         / (
             error.survey.header.earth_rate
             * cos(np.radians(error.survey.header.latitude))
-        )
+        ),
+        np.zeros_like(error.survey.md)
     )
     e_DIA = dpde * mag
 
-    return error._generate_error(code, e_DIA, propagation, NEV)
+    result = error._generate_error(code, e_DIA, propagation, NEV)
+
+    return result
 
 
 def GXY_G4(
-    code, error, mag=0.017453292519943295, propagation='systematic',
+    code, error, mag=0.010471975511965976, propagation='systematic',
     NEV=True, **kwargs
 ):
     dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
-    dpde[:, 2] = (
+    dpde[:, 2] = np.where(
+        error.survey.inc_rad < kwargs['header']['XY Static Gyro']['End Inc'],
         sin(error.survey.azi_true_rad) * tan(error.survey.inc_rad)
         / (
             error.survey.header.earth_rate
             * cos(np.radians(error.survey.header.latitude))
-        )
+        ),
+        np.zeros_like(error.survey.md)
     )
     e_DIA = dpde * mag
 
-    return error._generate_error(code, e_DIA, propagation, NEV)
+    result = error._generate_error(code, e_DIA, propagation, NEV)
+
+    return result
 
 
 def GXY_RN(
-    code, error, mag=0.010471975511965976, propagation='random',
+    code, error, mag=0.006981317007977318, propagation='random',
     NEV=True, **kwargs
 ):
     dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
-    dpde[:, 2] = (
-        error.survey.header.noise_reduction_factor
+    # nrf = np.where(
+    #     error.survey.inc_rad < kwargs['header']['XY Static Gyro']['End Inc'],
+    #     1.0,
+    #     kwargs['header']['Noise Reduction Factor']
+    # )
+    # dpde[:, 2] = (
+    #     np.sqrt(
+    #         1 - cos(error.survey.azi_true_rad) ** 2
+    #         * sin(error.survey.inc_rad) ** 2
+    #     )
+    #     / (
+    #         error.survey.header.earth_rate
+    #         * cos(np.radians(error.survey.header.latitude))
+    #         * cos(error.survey.inc_rad)
+    #     )
+    # ) * nrf
+    dpde[:, 2] = np.where(
+        error.survey.inc_rad < kwargs['header']['XY Static Gyro']['End Inc'],
+        # kwargs['header']['Noise Reduction Factor']
+        1.0
         * (
             np.sqrt(
                 1 - cos(error.survey.azi_true_rad) ** 2
@@ -758,9 +803,109 @@ def GXY_RN(
                 * cos(np.radians(error.survey.header.latitude))
                 * cos(error.survey.inc_rad)
             )
-        )
+        ),
+        np.zeros_like(error.survey.md)
     )
     e_DIA = dpde * mag
+
+    result = error._generate_error(code, e_DIA, propagation, NEV)
+
+    return result
+
+
+def _get_init_errors(error, kwargs):
+    upper = error.survey.inc_rad[1:]
+    lower = error.survey.inc_rad[:-1]
+    e = 0.0
+    init_error = [0.0]
+
+    for i, (u, l) in enumerate(zip(upper, lower)):
+        if all((
+            u > kwargs['header']['XY Static Gyro']['End Inc'],
+            l <= kwargs['header']['XY Static Gyro']['End Inc']
+        )):
+            e = (
+                kwargs['header']['Noise Reduction Factor']
+                * (
+                    np.sqrt(
+                        1 - cos(error.survey.azi_true_rad[i - 1]) ** 2
+                        * sin(l) ** 2
+                    )
+                    / (
+                        error.survey.header.earth_rate
+                        * cos(np.radians(error.survey.header.latitude))
+                        * cos(l)
+                    )
+                )
+            ) * 0.006981317007977318
+        # if u < kwargs['header']['XY Static Gyro']['End Inc']:
+        else:
+            e = 0.0
+
+        init_error.append(e)
+
+    return init_error
+
+
+def GXY_GD(
+    code, error, mag=0.008726646259971648, propagation='systematic',
+    NEV=True, **kwargs
+):
+    dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
+    with np.errstate(divide='ignore', invalid='ignore'):
+        dpde[:, 2] = np.where(
+            error.survey.inc_rad > kwargs['header']['XY Static Gyro']['End Inc'],
+            np.append(np.array([0]), mag + (
+                (error.survey.md[1:] - error.survey.md[:-1])
+                / (
+                    float(
+                        kwargs['header']['XY Continuous Gyro']['Running Speed'].split()[0]
+                    )
+                    * sin(
+                        (error.survey.inc_rad[1:] + error.survey.inc_rad[:-1])
+                        / 2
+                    )
+                )
+            )),
+            np.zeros_like(error.survey.md)
+        )
+    init_errors = _get_init_errors(error, kwargs)
+    e_DIA = dpde
+    e_DIA[:, 2] += init_errors
+    # e_DIA = dpde
+
+    result = error._generate_error(code, e_DIA, propagation, NEV)
+
+    return result
+
+
+def GXY_GRW(
+    code, error, mag=0.004363323129985824, propagation='systematic',
+    NEV=True, **kwargs
+):
+    dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
+    with np.errstate(divide='ignore', invalid='ignore'):
+        dpde[:, 2] = np.where(
+            error.survey.inc_rad > kwargs['header']['XY Static Gyro']['End Inc'],
+            np.append(np.array([0]), np.sqrt(
+                mag ** 2
+                + (error.survey.md[1:] - error.survey.md[:-1])
+                / (
+                    float(
+                        kwargs['header']['XY Continuous Gyro']['Running Speed'].split()[0]
+                    )
+                    * sin(
+                        (error.survey.inc_rad[1:] + error.survey.inc_rad[:-1])
+                        / 2
+                    ) ** 2
+                )
+            )),
+            np.zeros_like(error.survey.md)
+        )
+    init_errors = _get_init_errors(error, kwargs)
+    e_DIA = dpde
+    e_DIA[:, 2] += init_errors
+    # e_DIA = dpde
 
     result = error._generate_error(code, e_DIA, propagation, NEV)
 
@@ -996,7 +1141,7 @@ def SAGE(
     code, error, mag=0.00175, propagation='systematic', NEV=True, **kwargs
 ):
     dpde = np.zeros((len(error.survey_rad), 3))
-    dpde[:, 1] = sin(np.array(error.survey_rad)[:, 1]) ** 0.25
+    dpde[:, 1] = sin(np.array(error.survey.inc_rad)) ** 0.25
     e_DIA = dpde * mag
 
     return error._generate_error(code, e_DIA, propagation, NEV)
@@ -1006,7 +1151,7 @@ def XYM1(
     code, error, mag=0.00175, propagation='systematic', NEV=True, **kwargs
 ):
     dpde = np.zeros((len(error.survey_rad), 3))
-    dpde[:, 1] = np.absolute(sin(np.array(error.survey_rad)[:, 1]))
+    dpde[:, 1] = np.absolute(sin(np.array(error.survey.inc_rad)))
     e_DIA = dpde * mag
 
     return error._generate_error(code, e_DIA, propagation, NEV)

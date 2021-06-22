@@ -65,10 +65,6 @@ codes:
     propagation: systematic
     unit: rad
 header:
-  '   End Inc': 150 deg
-  '   Initialisation Inc': -1 [Initialised at Surface]
-  '   Running Speed': 3600 m/hr
-  '   Start Inc': 0 deg
   A023Gb: CB_Film_GSS_Fl
   Application: Conventional free gyro e.g. Level Rotor Gyro (LRG) on a Floating Rig
   Approved: null
@@ -98,4 +94,8 @@ header:
   Tool Parameters: null
   Tool Type: Gyro
   XCL Tortuosity: 1 deg / 100 ft
-  Z Continuous Gyro: true
+  Z Continuous Gyro:
+    End Inc: 2.6179938779914944
+    Initialisation Inc: -1 [Initialised at Surface]
+    Running Speed: 3600 m/hr
+    Start Inc: 0.0
