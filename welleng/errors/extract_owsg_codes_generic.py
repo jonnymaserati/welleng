@@ -54,6 +54,8 @@ def extract_data(file, sheet_name='Model'):
 def extract_header(worksheet):
     m = worksheet
     d = []
+    tag = False
+    temp = {}
 
     for row in m.iter_rows(
         min_row=0,
@@ -62,14 +64,30 @@ def extract_header(worksheet):
         max_col=2,
         values_only=True
     ):
+        if tag:
+            if row[0][0] == " ":
+                if 'deg' in row[1]:
+                    value = radians(float(row[1].split(" ")[0]))
+                else:
+                    value = row[1]
+                temp[tag][row[0].lstrip().replace(":", "")] = value
+                continue
+            else:
+                tag = False
         if row[0] is None:
             continue
+        if "gyro" in row[0].lower():
+            tag = row[0].replace(":", "")
+            temp[tag] = {}
         else:
             d.append([
                 row[0], row[1]
             ])
 
     h = make_header_dict(d)
+
+    if bool(temp):
+        h.update(temp)
 
     return h
 
@@ -241,21 +259,24 @@ if __name__ == '__main__':
         with open(filename, 'w') as f:
             yaml.dump(ec[k], f)
 
-    wb = open_workbook(
-        'reference/toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-22-oct-2020.xlsx'
-    )
+    # wb = open_workbook(
+    #     'reference/toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-22-oct-2020.xlsx'
+    # )
 
 
 
-    ec['iscwsa_mwd_rev4'] = extract_data(
-        "toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-22-oct-2020.xlsx"
-    )
+    # ec['iscwsa_mwd_rev4'] = extract_data(
+    #     "toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-22-oct-2020.xlsx"
+    # )
 
-    ec['iscwsa_mwd_rev5'] = extract_data(
-        "reference/error-model-example-mwdrev5-iscwsa-1.xlsx"
-    )
+    # ec['iscwsa_mwd_rev5'] = extract_data(
+    #     "reference/error-model-example-mwdrev5-iscwsa-1.xlsx"
+    # )
 
-    with open(FILENAME, 'w') as f:
-        documents = yaml.dump(ec, f)
+    # with open(
+    #     os.path.join("", *[PATH, "tool_codes", "ISCWSA MWD Rev5.yaml"]),
+    #     'w'
+    # ) as f:
+    #     documents = yaml.dump(ec, f)
 
     print("Done")

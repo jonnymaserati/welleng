@@ -108,9 +108,9 @@ def test_iscwsa_error_models(input_files=input_files):
                 ) * 100
             )
 
-        # assert np.all(error < TOLERANCE), (
-        #     f"failing error {d}"
-        # )
+        assert np.all(error < TOLERANCE), (
+            f"failing error {d}"
+        )
 
         # if you wanted to view the results, this would save then to an Excel
         # file.

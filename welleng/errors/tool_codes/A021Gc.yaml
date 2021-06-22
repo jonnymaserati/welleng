@@ -95,10 +95,6 @@ codes:
     propagation: random
     unit: rad
 header:
-  '   End Inc': 150 deg
-  '   Initialisation Inc': 15 deg
-  '   Running Speed': 2743.2 m/hr
-  '   Start Inc': 15 deg
   A021Gc: GYRO-NS-CT
   Application: Generic Hybrid Static Gyrocompass and Continuous Survey
   Approved: null
@@ -126,6 +122,13 @@ header:
   Tool Parameters: null
   Tool Type: Gyro
   XCL Tortuosity: 1 deg / 100 ft
-  XY Continuous Gyro: true
-  XY Static Gyro: true
+  XY Continuous Gyro:
+    End Inc: 2.6179938779914944
+    Initialisation Inc: 0.2617993877991494
+    Running Speed: 2743.2 m/hr
+    Start Inc: 0.2617993877991494
+  XY Static Gyro:
+    End Inc: 0.2617993877991494
+    Initialisation Inc: 0.2617993877991494
+    Start Inc: 0.0
   XYZ Accelerometer: true

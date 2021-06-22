@@ -90,9 +90,6 @@ codes:
     propagation: random
     unit: rad
 header:
-  '   End Inc': 180 deg
-  '   Initialisation Inc': 0 deg
-  '   Start Inc': 0 deg
   A020Gb: GYRO-NS
   Application: Generic North Seeking Gyrocompass Gyro
   Approved: null
@@ -118,5 +115,8 @@ header:
   Tool Parameters: null
   Tool Type: Gyro
   XCL Tortuosity: 1 deg / 100 ft
-  XY Static Gyro: true
+  XY Static Gyro:
+    End Inc: 3.141592653589793
+    Initialisation Inc: 0.0
+    Start Inc: 0.0
   XYZ Accelerometer: true

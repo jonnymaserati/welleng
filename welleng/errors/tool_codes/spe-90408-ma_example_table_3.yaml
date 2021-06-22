@@ -16,107 +16,89 @@ codes:
     unit: m/s2
   DRFR:
     function: DREF
-    magnitude: 0.35
+    magnitude: 0.5
     propagation: random
     unit: m
   DSFS:
     function: DSF
-    magnitude: 0.00056
+    magnitude: 0.001
     propagation: systematic
     unit: '-'
   DSTG:
     function: DST
-    magnitude: 2.5e-07
+    magnitude: 5.0e-07
     propagation: systematic
     unit: 1/m
   GXY-B1R:
     function: GXY_B1
-    magnitude: 0.002617993877991494
+    magnitude: 0.0017453292519943296
     propagation: random
     unit: rad/hr
   GXY-B2R:
     function: GXY_B2
-    magnitude: 0.002617993877991494
+    magnitude: 0.0017453292519943296
     propagation: random
     unit: rad/hr
   GXY-G1:
     function: GXY_G1
-    magnitude: 0.006981317007977318
+    magnitude: 0.008726646259971648
     propagation: systematic
     unit: rad/hr
   GXY-G4:
     function: GXY_G4
-    magnitude: 0.017453292519943295
+    magnitude: 0.008726646259971648
     propagation: systematic
     unit: rad/hr
   GXY-RN:
     function: GXY_RN
-    magnitude: 0.010471975511965976
+    magnitude: 0.0017453292519943296
     propagation: random
     unit: rad/hr
-  SAGE:
-    function: SAGE
-    magnitude: 0.003490658503988659
+  GXY-GD:
+    function: GXY_GD
+    magnitude: 0.008726646259971648
     propagation: systematic
-    unit: rad
-  XCLA:
-    function: XCLA
-    magnitude: 0.167
-    propagation: random
-    unit: '-'
-  XCLH:
-    function: XCLH
-    magnitude: 0.167
-    propagation: random
-    unit: '-'
-  XYM1:
-    function: XYM1
-    magnitude: 0.0017453292519943296
+    unit: rad/hr
+  GXY-GRW:
+    function: GXY_GRW
+    magnitude: 0.008726646259971648
     propagation: systematic
-    unit: rad
-  XYM2:
-    function: XYM2
-    magnitude: 0.0017453292519943296
-    propagation: systematic
-    unit: rad
-  XYM3E:
-    function: XYM3E
-    magnitude: 0.005235987755982988
-    propagation: random
-    unit: rad
-  XYM4E:
-    function: XYM4E
-    magnitude: 0.005235987755982988
-    propagation: random
-    unit: rad
+    unit: rad/sqr(hr)
 header:
-  '   End Inc': 180 deg
-  '   Initialisation Inc': 0 deg
-  '   Start Inc': 0 deg
-  A019Gb: GYRO-MWD
-  Application: Generic Gyro MWD
+  spe-90408-ma_example_table_3: spe-90408-ma_example_table_3
+  Application: Generic Hybrid Static Gyrocompass and Continuous Survey
   Approved: null
   Checked: Steve Grindrod 21-Oct-2020
   Hor East/West Exclusion: 0 deg
-  Inclination Range Max: 89 deg
+  Inclination Range Max: 150 deg
   Inclination Range Min: 0 deg
-  Long Name: OWSG Gyro MWD
+  Long Name: OWSG XYZ Accel with XY Static and Continuous Gyro
+  Min Dist Between Inits: 99999 m
   Misalignment Alt: 3
   Misalignment Min Course Length: 10 m
-  Notes: 3-Axis Accelerometer and 2-Axis Gyro Stationary Tool
-  OWSG Prefix: A019Gb
-  Range Comment: Tool model fails at 90 deg inclination.
-  Replaces / Replaced By: 'OWSG_A019Ga_GYRO-MWD / '
+  Noise Reduction Factor: 0.5
+  Notes: Based on ISCWSA Gyro#3
+  OWSG Prefix: spe-90408-ma_example_table_3
+  Range Comment: None
+  Replaces / Replaced By: 'OWSG_A021Gb_GYRO-NS-CT / '
   Revision Comment: 'Rev No changed to match ISCWSA Models (Rev.5). XCLA & XCLH terms
-    added. XYM3 replaced by XYM3E. XYM4 replaced by XYM4E. SAG replaced by SAGE. '
+    added. XYM3 replaced by XYM3E. XYM4 replaced by XYM4E. VSAG replaced by SAGE. '
   Revision Date: 2020-10-08 00:00:00
   Revision History: Rev 0.1 05-Jun-2013 Draft Release for Comment.
   Revision No: 5
-  Short Name: GYRO-MWD
+  Short Name: spe-90408-ma_example_table_3
   Source: OWSG - Gyrodata/SDI
   Status: Agreed
   Tool Parameters: null
   Tool Type: Gyro
   XCL Tortuosity: 1 deg / 100 ft
-  XY Static Gyro: true
+  XY Continuous Gyro:
+    End Inc: 2.6179938779914944
+    Initialisation Inc: 0.29670597283903605
+    Running Speed: 2160 m/hr
+    Start Inc: 0.29670597283903605
+  XY Static Gyro:
+    End Inc: 0.29670597283903605
+    Initialisation Inc: 0.29670597283903605
+    Start Inc: 0.0
   XYZ Accelerometer: true

@@ -95,9 +95,6 @@ codes:
     propagation: random
     unit: rad
 header:
-  '   End Inc': 180 deg
-  '   Initialisation Inc': 0 deg
-  '   Start Inc': 0 deg
   A019Gb: GYRO-MWD_Fl
   Application: Generic Gyro MWD on a Floating Rig
   Approved: null
@@ -123,5 +120,8 @@ header:
   Tool Parameters: null
   Tool Type: Gyro
   XCL Tortuosity: 1 deg / 100 ft
-  XY Static Gyro: true
+  XY Static Gyro:
+    End Inc: 3.141592653589793
+    Initialisation Inc: 0.0
+    Start Inc: 0.0
   XYZ Accelerometer: true
