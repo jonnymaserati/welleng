@@ -5,7 +5,7 @@ from ..survey import export_csv as x_csv
 
 
 def export_csv(
-    survey, filename, tolerance=0.1, dls_cont=False, decimals=3
+    survey, filename, tolerance=0.1, dls_cont=False, decimals=3, **kwargs
 ):
     """
     Wrapper for survey.export_csv
@@ -32,5 +32,5 @@ def export_csv(
 
     return x_csv(
         survey, filename, tolerance=tolerance, dls_cont=dls_cont,
-        decimals=decimals
+        decimals=decimals, **kwargs
     )
