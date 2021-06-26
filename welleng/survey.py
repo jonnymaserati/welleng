@@ -33,7 +33,6 @@ class SurveyHeader:
         G=9.80665,
         b_total=None,
         earth_rate=0.26249751949994715,
-        noise_reduction_factor=1.0,
         dip=None,
         declination=None,
         convergence=0,
@@ -119,7 +118,6 @@ class SurveyHeader:
         self._get_date(survey_date)
         self.b_total = b_total
         self.earth_rate = earth_rate
-        self.noise_reduction_factor = noise_reduction_factor
         self.dip = dip
         self.convergence = convergence
         self.declination = declination
