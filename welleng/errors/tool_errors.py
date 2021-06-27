@@ -515,12 +515,14 @@ def ASXY_TI1(
     code, error, mag=0.0005, propagation='systematic', NEV=True, **kwargs
 ):
     dpde = np.zeros((len(error.survey_rad), 3))
-    dpde[:, 1] = sin(
-        np.array(error.survey_rad)[:, 1]
-    ) * cos(np.array(error.survey_rad)[:, 1]) / sqrt(2)
+    dpde[:, 1] = (
+        sin(error.survey.inc_rad)
+        * cos(error.survey.inc_rad)
+    ) / sqrt(2)
     dpde[:, 2] = (
-        sin(np.array(error.survey_rad)[:, 1])
-        * -tan(error.survey.header.dip) * cos(np.array(error.survey_rad)[:, 1])
+        sin(error.survey.inc_rad)
+        * -tan(error.survey.header.dip)
+        * cos(error.survey.inc_rad)
         * sin(error.survey.azi_mag_rad)
     ) / sqrt(2)
     e_DIA = dpde * mag
@@ -1510,27 +1512,48 @@ def XYM3E(code, error, mag=0.00524, propagation='random', NEV=True, **kwargs):
     ), axis=-1), axis=-1)
 
     dpde = np.zeros((len(error.survey.md), 3))
-    dpde[1:, 1] = (
+    dpde[1:, 1] = np.absolute(
         cos(error.survey.inc_rad[1:])
         * cos(error.survey.azi_true_rad[1:])
         * coeff[1:]
     )
 
     with np.errstate(divide='ignore', invalid='ignore'):
-        dpde[1:, 2] = np.nan_to_num(
+        dpde[1:, 2] = (
             (
-                (
-                    cos(error.survey.inc_rad[1:])
-                    * sin(error.survey.azi_true_rad[1:])
-                    / sin(error.survey.inc_rad[1:])
-                )
-                * coeff[1:]
-            ),
-            posinf=1,
-            neginf=1
+                -np.absolute(cos(error.survey.inc_rad[1:]))
+                * sin(error.survey.azi_true_rad[1:])
+                / sin(error.survey.inc_rad[1:])
+            )
+            * coeff[1:]
         )
+    dpde[1:, 2] = np.where(
+        error.survey.inc_rad[1:] < error.survey.header.vertical_inc_limit,
+        coeff[1:],
+        dpde[1:, 2]
+    )
 
     e_DIA = dpde * mag
+
+    sing = np.where(
+        error.survey.inc_rad < error.survey.header.vertical_inc_limit
+    )
+    if len(sing[0]) < 1:
+        return error._generate_error(code, e_DIA, propagation, NEV)
+    else:
+        e_NEV = error._e_NEV(e_DIA)
+        e_NEV_sing = np.zeros_like(e_NEV)
+        e_NEV_sing[:, 0] = e_NEV[:, 0]
+        e_NEV[sing] = e_NEV_sing[sing]
+
+        e_NEV_star = error._e_NEV_star(e_DIA)
+        e_NEV_star_sing = np.zeros_like(e_NEV_star)
+        e_NEV_star_sing[:, 0] = e_NEV_star[:, 0]
+        e_NEV_star[sing] = e_NEV_star_sing[sing]
+
+        return error._generate_error(
+            code, e_DIA, propagation, NEV, e_NEV, e_NEV_star
+        )
 
     return error._generate_error(code, e_DIA, propagation, NEV)
 
@@ -1630,7 +1653,7 @@ def XYM4E(code, error, mag=0.00524, propagation='random', NEV=True, **kwargs):
     e_DIA = dpde * mag
 
     sing = np.where(
-        error.survey_rad[:, 1] < error.survey.header.vertical_inc_limit
+        error.survey.inc_rad < error.survey.header.vertical_inc_limit
     )
     if len(sing[0]) < 1:
         return error._generate_error(code, e_DIA, propagation, NEV)
