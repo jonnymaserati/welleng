@@ -17,7 +17,7 @@ error module.
 
 PATH = os.path.dirname(__file__)
 
-# FILENAME = 'welleng/errors/error_codes.yaml'
+FILENAME = 'welleng/errors/error_codes.yaml'
 CHARACTERS = [":", "[", "]"]
 
 try:
