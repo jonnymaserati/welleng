@@ -1,4 +1,5 @@
 import numpy as np
+from numba import njit
 
 
 class MinCurve:
@@ -159,7 +160,7 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
     return vec / np.linalg.norm(vec, axis=-1).reshape(-1, 1)
 
 
-def get_nev(pos, start_xyz=[0.,0., 0.], start_nev=[0., 0., 0.]):
+def get_nev(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
     """
     Convert [x, y, z] coordinates to [n, e, tvd] coordinates.
 
@@ -189,6 +190,15 @@ def get_xyz(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
     return (np.array([x, y, z]).T + np.array([start_xyz]))
 
 
+@njit
+def _get_angles(vec):
+    xy = vec[:, 0] ** 2 + vec[:, 1] ** 2
+    inc = np.arctan2(np.sqrt(xy), vec[:, 2])  # for elevation angle defined from Z-axis down
+    azi = (np.arctan2(vec[:, 0], vec[:, 1]) + (2 * np.pi)) % (2 * np.pi)
+
+    return np.stack((inc, azi), axis=1)
+
+
 def get_angles(vec, nev=False):
     '''
     Determines the inclination and azimuth from a vector.
@@ -212,11 +222,24 @@ def get_angles(vec, nev=False):
         y, x, z = vec.T
         vec = np.array([x, y, z]).T
 
-    xy = vec[:, 0] ** 2 + vec[:, 1] ** 2
-    inc = np.arctan2(np.sqrt(xy), vec[:, 2])  # for elevation angle defined from Z-axis down
-    azi = (np.arctan2(vec[:, 0], vec[:, 1]) + (2 * np.pi)) % (2 * np.pi)
+    return _get_angles(vec)
 
-    return np.stack((inc, azi), axis=1)
+    # xy = vec[:, 0] ** 2 + vec[:, 1] ** 2
+    # inc = np.arctan2(np.sqrt(xy), vec[:, 2])  # for elevation angle defined from Z-axis down
+    # azi = (np.arctan2(vec[:, 0], vec[:, 1]) + (2 * np.pi)) % (2 * np.pi)
+
+    # return np.stack((inc, azi), axis=1)
+
+
+# @njit
+def _get_transform(inc, azi):
+    trans = np.array([
+        [np.cos(inc) * np.cos(azi), -np.sin(azi), np.sin(inc) * np.cos(azi)],
+        [np.cos(inc) * np.sin(azi), np.cos(azi), np.sin(inc) * np.sin(azi)],
+        [-np.sin(inc), np.zeros_like(inc), np.cos(inc)]
+    ]).T
+
+    return trans
 
 
 def get_transform(
@@ -233,17 +256,19 @@ def get_transform(
     Returns:
         transform: (n,3,3) array of floats
     """
-    survey = survey.reshape(-1,3)
-    inc = np.array(survey[:,1])
-    azi = np.array(survey[:,2])
-    
-    trans = np.array([
-        [np.cos(inc) * np.cos(azi), -np.sin(azi), np.sin(inc) * np.cos(azi)],
-        [np.cos(inc) * np.sin(azi), np.cos(azi), np.sin(inc) * np.sin(azi)],
-        [-np.sin(inc), np.zeros_like(inc), np.cos(inc)]
-    ]).T
+    survey = survey.reshape(-1, 3)
+    inc = np.array(survey[:, 1])
+    azi = np.array(survey[:, 2])
 
-    return trans
+    return _get_transform(inc, azi)
+
+    # trans = np.array([
+    #     [np.cos(inc) * np.cos(azi), -np.sin(azi), np.sin(inc) * np.cos(azi)],
+    #     [np.cos(inc) * np.sin(azi), np.cos(azi), np.sin(inc) * np.sin(azi)],
+    #     [-np.sin(inc), np.zeros_like(inc), np.cos(inc)]
+    # ]).T
+
+    # return trans
 
 def NEV_to_HLA(survey, NEV, cov=True):
     """
@@ -262,39 +287,40 @@ def NEV_to_HLA(survey, NEV, cov=True):
         Either a transformed (n,3) array of HLA coordinates or an
         (3,3,n) array of HLA covariance matrices. 
     """
-    
+
     trans = get_transform(survey)
 
     if cov:
         HLAs = [
             np.dot(np.dot(t, NEV.T[i]), t.T) for i, t in enumerate(trans)
         ]
-        
+
         HLAs = np.vstack(HLAs).reshape(-1,3,3).T
-        
+
     else:
         NEV = NEV.reshape(-1,3)
         HLAs = [
             np.dot(NEV[i], t.T) for i, t in enumerate(trans)
         ]
-        
+
     return HLAs
 
-def HLA_to_NEV(survey, HLA, cov=True):
-    trans = get_transform(survey)
+def HLA_to_NEV(survey, HLA, cov=True, trans=None):
+    if trans is None:
+        trans = get_transform(survey)
 
     if cov:
         NEVs = [
             np.dot(np.dot(t.T, HLA.T[i]), t) for i, t in enumerate(trans)
         ]
-    
+
         NEVs = np.vstack(NEVs).reshape(-1,3,3).T
-    
+
     else:
         NEVs = [
             np.dot(hla, t) for hla, t in zip(HLA, trans)
         ]
-        
+
     return np.vstack(NEVs).reshape(HLA.shape)
 
 
@@ -349,3 +375,29 @@ def linear_convert(data, factor):
         return converted[0]
     else:
         return converted
+
+
+def make_cov(a, b, c, long=False):
+    # a, b, c = np.sqrt(np.array([a, b, c]))
+    if long:
+        cov = np.array([
+            [a * a, a * b, a * c],
+            [a * b, b * b, b * c],
+            [a * c, b * c, c * c]
+        ])
+
+    else:
+        cov = np.array([
+            [a * a, np.zeros_like(a), np.zeros_like(a)],
+            [np.zeros_like(a), b * b, np.zeros_like(a)],
+            [np.zeros_like(a), np.zeros_like(a), c * c]
+        ])
+
+    return cov.T
+
+
+def dls_from_radius(radius):
+    circumference = 2 * np.pi * radius
+    dls = 360 / circumference * 30
+
+    return dls

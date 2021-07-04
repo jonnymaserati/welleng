@@ -413,6 +413,7 @@ def get_parent_survey(filename):
     return data
 
 
+# TODO: update so that filename can also be data
 def load(filename):
     """
     Loads data line by line from a .wbp file, initiates a WellPlan object
@@ -781,7 +782,8 @@ def strip_duplicates(survey):
         if i == 0:
             temp.append(s)
             continue
-        if s == temp[-1]:
+        # if s == temp[-1]:
+        if s[1] == temp[-1][1]:
             continue
         else:
             temp.append(s)

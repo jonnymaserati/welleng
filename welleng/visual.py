@@ -38,7 +38,7 @@ def plot(
     interactive=True,
 ):
     """
-    A vedo wrapper for quicly visualizing well trajectories for QAQC purposes.
+    A vedo wrapper for quickly visualizing well trajectories for QAQC purposes.
 
     Parameters
     ----------
@@ -65,11 +65,12 @@ def plot(
         if names is not None:
             assert len(names) == len(data), \
                 "Names must be length of meshes list else None"
+
     if colors is not None:
         if len(colors) == 1:
-            colors = colors * len(names)
+            colors = colors * len(meshes)
         else:
-            assert len(colors) == len(names), \
+            assert len(colors) == len(meshes), \
                 "Colors must be length of meshes list, 1 else None"
 
     if points is not None:
@@ -98,7 +99,8 @@ def plot(
         if colors is not None:
             m_vedo.c(colors[i])
         if names is not None:
-            m_vedo.flag(names[i])
+            m_vedo.name = names[i]
+            m_vedo.flag()
         meshes_vedo.append(m_vedo)
 
     w = get_bb(vertices)
@@ -131,7 +133,7 @@ def plot(
         interactorStyle=10,
         resetcam=True,
         interactive=True,
-        verbose=True,
+        # verbose=True,
         title=f'welleng {VERSION}'
     )
 
