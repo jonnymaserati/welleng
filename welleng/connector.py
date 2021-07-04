@@ -1818,9 +1818,15 @@ def interpolate_survey(survey, step=30, dls=0.01):
                 )
             )
     survey_interpolated.radius = np.array(radii)
-    survey_interpolated.cov_nev = np.array(cov_nev)
-    survey_interpolated.cov_hla = NEV_to_HLA(
-        survey_interpolated.survey_rad, survey_interpolated.cov_nev.T
-    ).T
+
+    # can only interpolate the co_nev if it exists!
+    if cov_nev != []:
+        survey_interpolated.cov_nev = np.array(cov_nev)
+        survey_interpolated.cov_hla = NEV_to_HLA(
+            survey_interpolated.survey_rad, survey_interpolated.cov_nev.T
+        ).T
+    else:
+        survey_interpolated.cov_nev = None
+        survey_interpolated.cov_hla = None
 
     return survey_interpolated

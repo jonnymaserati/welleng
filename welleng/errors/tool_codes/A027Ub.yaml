@@ -1,0 +1,71 @@
+codes:
+  DRFR:
+    function: DREF
+    magnitude: 0.35
+    propagation: random
+    unit: m
+  DSFS:
+    function: DSF
+    magnitude: 0.00056
+    propagation: systematic
+    unit: '-'
+  DSTG:
+    function: DST
+    magnitude: 2.5e-07
+    propagation: systematic
+    unit: 1/m
+  XCLA:
+    function: XCLA
+    magnitude: 0.167
+    propagation: random
+    unit: '-'
+  XCLH:
+    function: XCLH
+    magnitude: 0.167
+    propagation: random
+    unit: '-'
+  XYM1:
+    function: XYM1
+    magnitude: 0.3490658503988659
+    propagation: systematic
+    unit: rad
+  XYM2:
+    function: XYM2
+    magnitude: 0.3490658503988659
+    propagation: systematic
+    unit: rad
+  XYM3:
+    function: XYM3
+    magnitude: 0.008726646259971648
+    propagation: systematic
+    unit: rad
+  XYM4:
+    function: XYM4
+    magnitude: 0.008726646259971648
+    propagation: systematic
+    unit: rad
+header:
+  A027Ub: INC-ONLY
+  Application: Inclination only surveys for vertical wells with inclinations less
+    than 5 deg (e.g. Totco Teledrift and Anderdrift)
+  Approved: null
+  Checked: Steve Grindrod 21-Oct-2020
+  Hor East/West Exclusion: 0 deg
+  Inclination Range Max: 30 deg
+  Inclination Range Min: 0 deg
+  Long Name: OWSG Inclination Only Surveys
+  Misalignment Alt: 3
+  Notes: For vertical wells with inclinations less than 5 deg.
+  OWSG Prefix: A027Ub
+  Range Comment: Valid range of model.
+  Replaces / Replaced By: 'OWSG_A027Ua_INC-ONLY / '
+  Revision Comment: 'Rev No changed to match ISCWSA Models (Rev.5). XCLA & XCLH terms
+    added. '
+  Revision Date: 2020-10-08 00:00:00
+  Revision History: Rev 0.1 05-Jun-2013 Draft Release for Comment.
+  Revision No: 5
+  Short Name: INC-ONLY
+  Source: OWSG - ISCWSA
+  Status: Agreed
+  Tool Parameters: null
+  Tool Type: Utility
