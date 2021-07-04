@@ -1,0 +1,226 @@
+codes:
+  ABIXY-TI1S:
+    function: ABIXY_TI1
+    magnitude: 0.004
+    propagation: systematic
+    unit: m/s2
+  ABIXY-TI2S:
+    function: ABIXY_TI2
+    magnitude: 0.004
+    propagation: systematic
+    unit: m/s2
+  ABIZ:
+    function: ABIZ
+    magnitude: 0.004
+    propagation: systematic
+    unit: m/s2
+  ASIXY-TI1S:
+    function: ASIXY_TI1
+    magnitude: 0.0005
+    propagation: systematic
+    unit: '-'
+  ASIXY-TI2S:
+    function: ASIXY_TI2
+    magnitude: 0.0005
+    propagation: systematic
+    unit: '-'
+  ASIXY-TI3S:
+    function: ASIXY_TI3
+    magnitude: 0.0005
+    propagation: systematic
+    unit: '-'
+  ASIZ:
+    function: ASIZ
+    magnitude: 0.0005
+    propagation: systematic
+    unit: '-'
+  DBH-CI:
+    function: DBH
+    magnitude: 12.426744274199626
+    propagation: systematic
+    unit: rad.nT
+  DBH-OI:
+    function: DBH
+    magnitude: 6.213372137099813
+    propagation: systematic
+    unit: rad.nT
+  DBH-U:
+    function: DBH
+    magnitude: 22.183134792847927
+    propagation: systematic
+    unit: rad.nT
+  DBHR:
+    function: DBH
+    magnitude: 52.35987755982988
+    propagation: random
+    unit: rad.nT
+  DEC-CI:
+    function: AZ
+    magnitude: 0.0015707963267948964
+    propagation: systematic
+    unit: rad
+  DEC-OI:
+    function: AZ
+    magnitude: 0.0008726646259971648
+    propagation: systematic
+    unit: rad
+  DEC-U:
+    function: AZ
+    magnitude: 0.0019198621771937625
+    propagation: systematic
+    unit: rad
+  DECR:
+    function: AZ
+    magnitude: 0.0017453292519943296
+    propagation: random
+    unit: rad
+  DRFR:
+    function: DREF
+    magnitude: 2.2
+    propagation: random
+    unit: m
+  DRFS:
+    function: DREF
+    magnitude: 1
+    propagation: systematic
+    unit: m
+  DSFS:
+    function: DSF
+    magnitude: 0.00056
+    propagation: systematic
+    unit: '-'
+  DSTG:
+    function: DST
+    magnitude: 2.5e-07
+    propagation: systematic
+    unit: 1/m
+  MBIXY-TI1S:
+    function: MBIXY_TI1
+    magnitude: 70
+    propagation: systematic
+    unit: nT
+  MBIXY-TI2S:
+    function: MBIXY_TI2
+    magnitude: 70
+    propagation: systematic
+    unit: nT
+  MDI-CI:
+    function: MDI
+    magnitude: 0.0010471975511965976
+    propagation: systematic
+    unit: rad
+  MDI-OI:
+    function: MDI
+    magnitude: 0.0005235987755982988
+    propagation: systematic
+    unit: rad
+  MDI-U:
+    function: MDI
+    magnitude: 0.0012217304763960308
+    propagation: systematic
+    unit: rad
+  MDIR:
+    function: MDI
+    magnitude: 0.0013962634015954637
+    propagation: random
+    unit: rad
+  MFI-CI:
+    function: MFI
+    magnitude: 27
+    propagation: systematic
+    unit: nT
+  MFI-OI:
+    function: MFI
+    magnitude: 13
+    propagation: systematic
+    unit: nT
+  MFI-U:
+    function: MFI
+    magnitude: 40
+    propagation: systematic
+    unit: nT
+  MFIR:
+    function: MFI
+    magnitude: 60
+    propagation: random
+    unit: nT
+  MSIXY-TI1S:
+    function: MSIXY_TI1
+    magnitude: 0.0016
+    propagation: systematic
+    unit: '-'
+  MSIXY-TI2S:
+    function: MSIXY_TI2
+    magnitude: 0.0016
+    propagation: systematic
+    unit: '-'
+  MSIXY-TI3S:
+    function: MSIXY_TI3
+    magnitude: 0.0016
+    propagation: systematic
+    unit: '-'
+  SAGE:
+    function: SAGE
+    magnitude: 0.003490658503988659
+    propagation: systematic
+    unit: rad
+  XCLA:
+    function: XCLA
+    magnitude: 0.167
+    propagation: random
+    unit: '-'
+  XCLH:
+    function: XCLH
+    magnitude: 0.167
+    propagation: random
+    unit: '-'
+  XYM1:
+    function: XYM1
+    magnitude: 0.0017453292519943296
+    propagation: systematic
+    unit: rad
+  XYM2:
+    function: XYM2
+    magnitude: 0.0017453292519943296
+    propagation: systematic
+    unit: rad
+  XYM3E:
+    function: XYM3E
+    magnitude: 0.005235987755982988
+    propagation: random
+    unit: rad
+  XYM4E:
+    function: XYM4E
+    magnitude: 0.005235987755982988
+    propagation: random
+    unit: rad
+header:
+  A006Mc: MWD+IFR1+AX_Fl
+  Application: MWD with IFR1 (IFR or Crustal Anomaly Correction) and Axial Correction
+    on a Floating Rig
+  Approved: null
+  Checked: Steve Grindrod 21-Oct-2020
+  Hor East/West Exclusion: 15 deg
+  Inclination Range Max: 180 deg
+  Inclination Range Min: 0 deg
+  Long Name: OWSG MWD + IFR1 + Axial Corr [Floating Rig]
+  Misalignment Alt: 3
+  Misalignment Min Course Length: 10 m
+  Notes: Based on ISCWSA MWD Rev 3 + Axial Corr. Sliding TF Ind
+  OWSG Prefix: A006Mc
+  Range Comment: Azimuth correction does not work close to horizontal magnetic East
+    or West.
+  Replaces / Replaced By: 'OWSG_A006Mb_MWD+IFR1+AX_Fl / '
+  Revision Comment: Rev No changed to match ISCWSA Models (Rev.5). XCLA & XCLH terms
+    added. XYM3 replaced by XYM3E. XYM4 replaced by XYM4E. SAG replaced by SAGE. DECG
+    replaced by DEC-U DEC-CI DEC-OI. DBHG replaced by DBH-U DBH-CI DBH-OI. MFIG replaced
+    by MFI-U MFI-CI MFI-OI. MDIG replaced by MDI-U MDI-CI MDI-OI.
+  Revision Date: 2020-10-08 00:00:00
+  Revision History: Rev 0.1 05-Jun-2013 Draft Release for Comment.
+  Revision No: 5.1
+  Short Name: MWD+IFR1+AX_Fl
+  Source: OWSG - SPE 67616 and 63275
+  Status: Agreed
+  Tool Parameters: null
+  Tool Type: Magnetic
+  XCL Tortuosity: 1 deg / 100 ft

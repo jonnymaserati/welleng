@@ -1,0 +1,95 @@
+codes:
+  DRFS:
+    function: DREF
+    magnitude: 0.2
+    propagation: systematic
+    unit: m
+  DSFW:
+    function: DSF
+    magnitude: 0.0006
+    propagation: systematic
+    unit: '-'
+  DSTG:
+    function: DST
+    magnitude: 2.0e-07
+    propagation: systematic
+    unit: 1/m
+  EXT-REF:
+    function: EXT_REF
+    magnitude: 0.010471975511965976
+    propagation: systematic
+    unit: rad
+  GZ-GD:
+    function: GZ_GD
+    magnitude: 0.09599310885968812
+    propagation: systematic
+    unit: rad/hr
+  SAG:
+    function: SAG
+    magnitude: 0.004363323129985824
+    propagation: systematic
+    unit: rad
+  XCLA:
+    function: XCLA
+    magnitude: 0.167
+    propagation: random
+    unit: '-'
+  XCLH:
+    function: XCLH
+    magnitude: 0.167
+    propagation: random
+    unit: '-'
+  XYM1:
+    function: XYM1
+    magnitude: 0.004363323129985824
+    propagation: systematic
+    unit: rad
+  XYM2:
+    function: XYM2
+    magnitude: 0.004363323129985824
+    propagation: systematic
+    unit: rad
+  XYM3:
+    function: XYM3
+    magnitude: 0.004363323129985824
+    propagation: systematic
+    unit: rad
+  XYM4:
+    function: XYM4
+    magnitude: 0.004363323129985824
+    propagation: systematic
+    unit: rad
+header:
+  A022Gb: CB_Film_GMS
+  Application: Conventional free gyro e.g. Level Rotor Gyro (LRG)
+  Approved: null
+  Checked: Steve Grindrod 21-Oct-2020
+  External Ref: true
+  Hor East/West Exclusion: 0 deg
+  Inclination Range Max: 89 deg
+  Inclination Range Min: 0 deg
+  Long Name: OWSG Camera Based Film Gyro Multi-Shot
+  Min Dist Between Inits: 99999 m
+  Misalignment Alt: 3
+  Misalignment Min Course Length: 10 m
+  Noise Reduction Factor: 1
+  Notes: Assumes wireline depths
+  OWSG Prefix: A022Gb
+  Range Comment: Tool model fails at 90 deg inclination.
+  Replaces / Replaced By: 'OWSG_A022Ga_CB_Film_GMS / '
+  Revision Comment: Rev No changed to match ISCWSA Models (Rev.5). XCLA & XCLH terms
+    added.
+  Revision Date: 2020-10-08 00:00:00
+  Revision History: Rev 0.1 05-Jun-2013 Draft Release for Comment.
+  Revision No: 5
+  Short Name: CB_Film_GMS
+  Source: OWSG - Copsegrove Developments Ltd
+  Status: Agreed
+  Tool Parameters: null
+  Tool Type: Gyro
+  XCL Tortuosity: 1 deg / 100 ft
+  Z Continuous Gyro:
+    End Inc: 2.6179938779914944
+    Initialisation Inc: -1 [Initialised at Surface]
+    Running Speed: 3600 m/hr
+    Start Inc: 0.0

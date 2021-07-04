@@ -1,0 +1,140 @@
+codes:
+  AXYZ-MIS:
+    function: AXYZ_MIS
+    magnitude: 0.0001658062789394613
+    propagation: systematic
+    unit: rad
+  AXYZ-SF:
+    function: AXYZ_SF
+    magnitude: 0.000111
+    propagation: systematic
+    unit: '-'
+  AXYZ-ZB:
+    function: AXYZ_ZB
+    magnitude: 0.0017
+    propagation: systematic
+    unit: m/s2
+  DRFR:
+    function: DREF
+    magnitude: 2.2
+    propagation: random
+    unit: m
+  DRFS:
+    function: DREF
+    magnitude: 1
+    propagation: systematic
+    unit: m
+  DSFS:
+    function: DSF
+    magnitude: 0.00056
+    propagation: systematic
+    unit: '-'
+  DSTG:
+    function: DST
+    magnitude: 2.5e-07
+    propagation: systematic
+    unit: 1/m
+  GXY-B1S:
+    function: GXY_B1
+    magnitude: 0.002617993877991494
+    propagation: systematic
+    unit: rad/hr
+  GXY-B2S:
+    function: GXY_B2
+    magnitude: 0.002617993877991494
+    propagation: systematic
+    unit: rad/hr
+  GXY-G4:
+    function: GXY_G4
+    magnitude: 0.010471975511965976
+    propagation: systematic
+    unit: rad/hr
+  GXY-GD:
+    function: GXY_GD
+    magnitude: 0.008726646259971648
+    propagation: systematic
+    unit: rad/hr
+  GXY-GRW:
+    function: GXY_GRW
+    magnitude: 0.004363323129985824
+    propagation: systematic
+    unit: rad/sqr(hr)
+  GXY-RN:
+    function: GXY_RN
+    magnitude: 0.006981317007977318
+    propagation: random
+    unit: rad/hr
+  SAGE:
+    function: SAGE
+    magnitude: 0.0013962634015954637
+    propagation: systematic
+    unit: rad
+  XCLA:
+    function: XCLA
+    magnitude: 0.167
+    propagation: random
+    unit: '-'
+  XCLH:
+    function: XCLH
+    magnitude: 0.167
+    propagation: random
+    unit: '-'
+  XYM1:
+    function: XYM1
+    magnitude: 0.0017453292519943296
+    propagation: systematic
+    unit: rad
+  XYM2:
+    function: XYM2
+    magnitude: 0.0017453292519943296
+    propagation: systematic
+    unit: rad
+  XYM3E:
+    function: XYM3E
+    magnitude: 0.005235987755982988
+    propagation: random
+    unit: rad
+  XYM4E:
+    function: XYM4E
+    magnitude: 0.005235987755982988
+    propagation: random
+    unit: rad
+header:
+  A021Gc: GYRO-NS-CT_Fl
+  Application: Generic Hybrid Static Gyrocompass and Continuous Survey on a Floating
+    Rig
+  Approved: null
+  Checked: Steve Grindrod 21-Oct-2020
+  Hor East/West Exclusion: 0 deg
+  Inclination Range Max: 150 deg
+  Inclination Range Min: 0 deg
+  Long Name: OWSG XYZ Accel with XY Static and Continuous Gyro [Floating Rig]
+  Min Dist Between Inits: 99999 m
+  Misalignment Alt: 3
+  Misalignment Min Course Length: 10 m
+  Noise Reduction Factor: 0.4082
+  Notes: Based on ISCWSA Gyro#3
+  OWSG Prefix: A021Gc
+  Range Comment: None
+  Replaces / Replaced By: 'OWSG_A021Gb_GYRO-NS-CT_Fl / '
+  Revision Comment: 'Rev No changed to match ISCWSA Models (Rev.5). XCLA & XCLH terms
+    added. XYM3 replaced by XYM3E. XYM4 replaced by XYM4E. VSAG replaced by SAGE. '
+  Revision Date: 2020-10-08 00:00:00
+  Revision History: Rev 0.1 05-Jun-2013 Draft Release for Comment.
+  Revision No: 5
+  Short Name: GYRO-NS-CT_Fl
+  Source: OWSG - Gyrodata/SDI
+  Status: Agreed
+  Tool Parameters: null
+  Tool Type: Gyro
+  XCL Tortuosity: 1 deg / 100 ft
+  XY Continuous Gyro:
+    End Inc: 2.6179938779914944
+    Initialisation Inc: 0.2617993877991494
+    Running Speed: 2743.2 m/hr
+    Start Inc: 0.2617993877991494
+  XY Static Gyro:
+    End Inc: 0.2617993877991494
+    Initialisation Inc: 0.2617993877991494
+    Start Inc: 0.0
+  XYZ Accelerometer: true
