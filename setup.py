@@ -74,7 +74,8 @@ setup(
     packages=find_packages(exclude=["tests"]),
     package_data={
         'welleng': [
-            'errors/tool_codes/*.yaml'
+            'errors/tool_codes/*.yaml',
+            'exchange/*.yaml'
         ]
     },
     install_requires=requirements_all,
