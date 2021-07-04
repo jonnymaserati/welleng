@@ -1138,7 +1138,7 @@ def make_survey_header(data):
 
 
 def export_csv(
-    survey, filename, tolerance=0.1, dls_cont=False, decimals=3
+    survey, filename, tolerance=0.1, dls_cont=False, decimals=3, **kwargs
 ):
     """
     Function to export a minimalist (only the control points - i.e. the
@@ -1197,9 +1197,10 @@ def export_csv(
         except ImportError:
             print("Missing pandas dependency")
 
+    author = kwargs.get('author', 'Jonny Corcutt')
     comments = [
         f"welleng, version: {__version__}\n"
-        f"author, Jonny Corcutt\n"
+        f"author, {author}\n"
     ]
     comments.extend([
         f"{k}, {v}\n" for k, v in vars(survey.header).items()
