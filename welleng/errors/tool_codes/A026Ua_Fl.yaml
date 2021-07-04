@@ -1,0 +1,67 @@
+codes:
+  AZMS:
+    function: AZ
+    magnitude: 0.10471975511965978
+    propagation: systematic
+    unit: rad
+  AZRF:
+    function: AZ
+    magnitude: 0.7853981633974483
+    propagation: systematic
+    unit: rad
+  CNA:
+    function: CNA
+    magnitude: 0.35
+    propagation: systematic
+    unit: '-'
+  CNI:
+    function: CNI
+    magnitude: 0.35
+    propagation: systematic
+    unit: '-'
+  DRFR:
+    function: DREF
+    magnitude: 2.2
+    propagation: random
+    unit: m
+  DRFS:
+    function: DREF
+    magnitude: 1
+    propagation: systematic
+    unit: m
+  DSFS:
+    function: DSF
+    magnitude: 0.00056
+    propagation: systematic
+    unit: '-'
+  DSTG:
+    function: DST
+    magnitude: 2.5e-07
+    propagation: systematic
+    unit: 1/m
+header:
+  A026Ua: BLIND_Fl
+  Application: Where no survey information was recorded or where the information no
+    longer exists and there is no other supporting information to justify the use
+    of another error model. On a Floating Rig
+  Approved: null
+  Checked: Steve Grindrod 21-Oct-2020
+  Hor East/West Exclusion: 0 deg
+  Inclination Range Max: 180 deg
+  Inclination Range Min: 0 deg
+  Long Name: OWSG BLIND [Floating Rig]
+  Misalignment Alt: 3
+  Notes: A cone-based uncertainty which would be practically impossible to have drilled
+    out of. This model should only be used with a Dispensation.
+  OWSG Prefix: A026Ua
+  Range Comment: None
+  Replaces / Replaced By: 'None / '
+  Revision Comment: Initial Release
+  Revision Date: 2013-11-01 00:00:00
+  Revision History: Rev 0.1 05-Jun-2013 Draft Release for Comment.
+  Revision No: 1
+  Short Name: BLIND_Fl
+  Source: OWSG - Copsegrove Developments Ltd
+  Status: Agreed
+  Tool Parameters: null
+  Tool Type: Utility

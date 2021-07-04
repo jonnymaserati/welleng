@@ -21,19 +21,21 @@ welleng is fuelled by copious amounts of coffee, so if you wish to supercharge d
 
 ## New Features!
 
+  - **OWSG Tool Error Models:** the ISCWSA curated Rev 5 tool models have been coded up and the ISCWSA Rev 4 models are no longer supported (hence the major version bump from 0.2 to 0.3). The ISCWSA Rev 5 model continues to honor the ISCWSA diagnostic data but the OWSG tool errors are  ***experimental*** with the following status:
+    - **Working**: MWD, SRGM, _Fl, SAG, IFR1, IFR2, EMS
+    - **Not Currently Working Correctly**: AX, GYRO
   - **World Magnetic Model Calculator:** calculates magnetic field data from the [World Magnetic Model](http://www.geomag.bgs.ac.uk/research/modelling/WorldMagneticModel.html) if magnetic field strength is not provided with the survey data.
-  - **ISCWSA MWD Rev5 error model:** added the latest ISCWSA error model that includes tortuousity effects on location uncertainty.
   - **Import from Landmark .wbp files:** using the `exchange.wbp` module it's now possible to import .wbp files exported from Landmark's COMPASS or DecisionSpace software.
-  ```python
+```python
 import welleng as we
 
 wp = we.exchange.wbp.load("demo.wbp") # import file
 survey = we.exchange.wbp.wbp_to_survey(wp, step=30) # convert to survey
 mesh = we.mesh.WellMesh(survey, method='circle') # convert to mesh
 we.visual.plot(mesh.mesh) # plot the mesh
-  ```
+```
   
-  - **Export to .wbp files *(experiemental)*:** using the `exchange.wbp` module, it's possible to convert a planned survey file into a list of turn points that can be exported to a .wbp file.
+  - **Export to .wbp files *(experimental)*:** using the `exchange.wbp` module, it's possible to convert a planned survey file into a list of turn points that can be exported to a .wbp file.
   ```python
 import welleng as we
 
