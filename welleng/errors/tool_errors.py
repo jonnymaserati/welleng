@@ -1,5 +1,6 @@
 import numpy as np
 from numpy import sin, cos, tan, pi, sqrt
+from numpy.core.defchararray import index
 import yaml
 import os
 from collections import OrderedDict
@@ -261,10 +262,13 @@ def ABIZ(
     dpde[:, 1] = -sin(error.survey.inc_rad) / error.survey.header.G
     dpde[:, 2] = (
         sin(error.survey.inc_rad)
-        * cos(error.survey.inc_rad) ** 2
+        * cos(error.survey.inc_rad)
         * sin(error.survey.azi_mag_rad)
-        * tan(error.survey.header.dip)
-        + sin(error.survey.inc_rad) * cos(error.survey.azi_mag_rad)
+        * (
+            tan(error.survey.header.dip)
+            * cos(error.survey.inc_rad)
+            + sin(error.survey.inc_rad) * cos(error.survey.azi_mag_rad)
+        )
     ) / denom
 
     e_DIA = dpde * mag
@@ -278,10 +282,13 @@ def ABIXY_TI1(
     dpde = np.zeros((len(error.survey_rad), 3))
     dpde[:, 1] = -cos(error.survey.inc_rad) / error.survey.header.G
     dpde[:, 2] = (
-        cos(error.survey.inc_rad) ** 3
-        * tan(error.survey.header.dip)
+        cos(error.survey.inc_rad) ** 2
         * sin(error.survey.azi_mag_rad)
-        + sin(error.survey.inc_rad) * cos(error.survey.azi_mag_rad)
+        * (
+            tan(error.survey.header.dip)
+            * cos(error.survey.inc_rad)
+            + sin(error.survey.inc_rad) * cos(error.survey.azi_mag_rad)
+        )
     ) / (
         error.survey.header.G * (
             _funky_denominator(error)
@@ -314,10 +321,12 @@ def ABIXY_TI2(
     with np.errstate(divide='ignore', invalid='ignore'):
         dpde[:, 2] = np.nan_to_num(
             (
-                (
-                    tan(-(error.survey.inc_rad) + (pi/2))
-                    - tan(error.survey.header.dip)
+                -(
+                    tan(error.survey.header.dip)
                     * cos(error.survey.azi_mag_rad)
+                    - tan(
+                        pi/2 - error.survey.inc_rad
+                    )
                 ) / (
                     error.survey.header.G
                     * (
@@ -534,16 +543,20 @@ def ASIXY_TI1(
     code, error, mag=0.0005, propagation='systematic', NEV=True, **kwargs
 ):
     dpde = np.zeros((len(error.survey_rad), 3))
-    dpde[:, 1] = sin(
-        np.array(error.survey.inc_rad)
-    ) * cos(np.array(error.survey.inc_rad)) / sqrt(2)
-    dpde[:, 2] = (
-        -sin(np.array(error.survey.inc_rad))
-        * cos(np.array(error.survey.inc_rad)) ** 2
-        * sin(np.array(error.survey.azi_mag_rad))
+    dpde[:, 1] = (
+        sin(error.survey.inc_rad)
+        * cos(error.survey.inc_rad)
+        / sqrt(2)
+    )
+    dpde[:, 2] = -(
+        sin(error.survey.inc_rad)
+        * cos(error.survey.inc_rad) ** 2
+        * sin(error.survey.azi_mag_rad)
         * (
-            tan(error.survey.header.dip) * cos(np.array(error.survey.inc_rad))
-            + sin(error.survey.inc_rad) * cos(error.survey.azi_mag_rad)
+            tan(error.survey.header.dip)
+            * cos(error.survey.inc_rad)
+            + sin(error.survey.inc_rad)
+            * cos(error.survey.azi_mag_rad)
         )
     ) / (
         sqrt(2) * _funky_denominator(error)
@@ -574,15 +587,18 @@ def ASIXY_TI2(
     code, error, mag=0.0005, propagation='systematic', NEV=True, **kwargs
 ):
     dpde = np.zeros((len(error.survey_rad), 3))
-    dpde[:, 1] = sin(
-        np.array(error.survey.inc_rad)
-    ) * cos(np.array(error.survey_rad)[:, 1]) / 2
-    dpde[:, 2] = (
-        -sin(np.array(error.survey.inc_rad))
-        * cos(np.array(error.survey.inc_rad)) ** 2
-        * sin(np.array(error.survey.azi_mag_rad))
+    dpde[:, 1] = (
+        sin(error.survey.inc_rad)
+        * cos(error.survey.inc_rad)
+        / 2
+    )
+    dpde[:, 2] = -(
+        sin(error.survey.inc_rad)
+        * cos(error.survey.inc_rad) ** 2
+        * sin(error.survey.azi_mag_rad)
         * (
-            tan(error.survey.header.dip) * cos(np.array(error.survey.inc_rad))
+            tan(error.survey.header.dip)
+            * cos(error.survey.inc_rad)
             + sin(error.survey.inc_rad) * cos(error.survey.azi_mag_rad)
         )
     ) / (
@@ -611,9 +627,10 @@ def ASIXY_TI3(
 ):
     dpde = np.zeros((len(error.survey_rad), 3))
     dpde[:, 2] = (
-        sin(np.array(error.survey.inc_rad))
-        * tan(error.survey.header.dip) * cos(error.survey.azi_mag_rad)
-        - cos(np.array(error.survey.inc_rad))
+        tan(error.survey.header.dip)
+        * sin(error.survey.inc_rad)
+        *  cos(error.survey.azi_mag_rad)
+        - cos(error.survey.inc_rad)
     ) / (
         2 * _funky_denominator(error)
     )
@@ -643,17 +660,19 @@ def ASIZ(
     code, error, mag=0.0005, propagation='systematic', NEV=True, **kwargs
 ):
     dpde = np.zeros((len(error.survey_rad), 3))
-    dpde[:, 1] = -sin(
-        np.array(error.survey.inc_rad)
-    ) * cos(np.array(error.survey.inc_rad))
+    dpde[:, 1] = (
+        -sin(error.survey.inc_rad)
+        * cos(error.survey.inc_rad)
+    )
     dpde[:, 2] = (
-        sin(np.array(error.survey.inc_rad))
-        * cos(np.array(error.survey.inc_rad)) ** 2
-        * sin(np.array(error.survey.azi_mag_rad))
+        sin(error.survey.inc_rad)
+        * cos(error.survey.inc_rad) ** 2
+        * sin(error.survey.azi_mag_rad)
         * (
             tan(error.survey.header.dip)
-            * cos(np.array(error.survey.inc_rad))
-            + sin(error.survey.inc_rad) * cos(error.survey.azi_mag_rad)
+            * cos(error.survey.inc_rad)
+            + sin(error.survey.inc_rad)
+            * cos(error.survey.azi_mag_rad)
         )
     ) / (
         _funky_denominator(error)
@@ -953,14 +972,40 @@ def GXY_RN(
         np.zeros_like(error.survey.md)
     )
     dpde = _get_ref_init_error(dpde, error, **kwargs)
-    dpde[:, 2] = np.where(
-        error.survey.inc_rad > kwargs['header']['XY Static Gyro']['End Inc'],
-        dpde[:, 2],
-        dpde[:, 2] * kwargs['header']['Noise Reduction Factor'],
+    dpde_systematic = np.zeros_like(dpde)
+    index_systematic = np.where(
+        error.survey.inc_rad > kwargs['header']['XY Static Gyro']['End Inc']
     )
+    np.put(
+        dpde_systematic[:, 2],
+        index_systematic,
+        (
+            dpde[index_systematic][:, 2]
+            * kwargs['header']['Noise Reduction Factor']
+        )
+    )
+    e_DIA_systematic = dpde_systematic * mag
+
+    result_systematic = error._generate_error(
+        code, e_DIA_systematic, 'systematic', NEV
+    )
+
+    np.put(
+        dpde[:, 2],
+        index_systematic,
+        np.zeros(len(index_systematic))
+    )
+
+    # dpde[:, 2] = np.where(
+    #     error.survey.inc_rad > kwargs['header']['XY Static Gyro']['End Inc'],
+    #     dpde[:, 2],
+    #     dpde[:, 2] * kwargs['header']['Noise Reduction Factor'],
+    # )
     e_DIA = dpde * mag
 
     result = error._generate_error(code, e_DIA, propagation, NEV)
+
+    result.cov_NEV += result_systematic.cov_NEV
 
     return result
 
@@ -1097,10 +1142,11 @@ def MBIXY_TI1(
 ):
     dpde = np.zeros((len(error.survey_rad), 3))
     dpde[:, 2] = (
-        -cos(np.array(error.survey.inc_rad))
+        -cos(error.survey.inc_rad)
         * sin(error.survey.azi_mag_rad)
     ) / (
-        error.survey.header.b_total * cos(error.survey.header.dip)
+        error.survey.header.b_total
+        * cos(error.survey.header.dip)
         * (
             _funky_denominator(error)
         )
@@ -1169,9 +1215,9 @@ def MFI(
             + sin(error.survey.inc_rad)
             * cos(error.survey.azi_mag_rad)
         ) / (
-            1 - sin(error.survey.inc_rad) ** 2
-            * sin(error.survey.azi_mag_rad) ** 2
-        ) / error.survey.header.b_total
+            _funky_denominator(error)
+        )
+        / error.survey.header.b_total
     )
 
     e_DIA = dpde * mag
@@ -1251,8 +1297,7 @@ def MSIXY_TI1(
         ) / (
             sqrt(2)
             * (
-                1 - sin(error.survey.inc_rad) ** 2
-                * sin(error.survey.azi_mag_rad) ** 2
+                _funky_denominator(error)
             )
         )
     )
@@ -1270,16 +1315,16 @@ def MSIXY_TI2(
     dpde = np.zeros((len(error.survey_rad), 3))
     dpde[:, 2] = (
         sin(error.survey.azi_mag_rad)
-        * tan(error.survey.header.dip)
-        * sin(error.survey.inc_rad)
-        * cos(error.survey.inc_rad)
-        - cos(error.survey.inc_rad) ** 2
-        * cos(error.survey.azi_mag_rad)
-    ) / (
-        (
+        * (
+            tan(error.survey.header.dip)
+            * sin(error.survey.inc_rad)
+            * cos(error.survey.inc_rad)
+            - cos(error.survey.inc_rad) ** 2
+            * cos(error.survey.azi_mag_rad)
+            - cos(error.survey.azi_mag_rad)
+        ) / (
             2 * (
-                1 - cos(error.survey.inc_rad) ** 2
-                * sin(error.survey.azi_mag_rad) ** 2
+                _funky_denominator(error)
             )
         )
     )
@@ -1306,10 +1351,7 @@ def MSIXY_TI3(
             * cos(error.survey.azi_mag_rad)
         ) / (
             2 * (
-                (
-                    1 - sin(error.survey.inc_rad) ** 2
-                    * sin(error.survey.azi_mag_rad) ** 2
-                )
+                _funky_denominator(error)
             )
         )
     )
@@ -1362,10 +1404,13 @@ def MDI(
 ):
     dpde = np.zeros((len(error.survey_rad), 3))
     dpde[:, 2] = (
-        -sin(error.survey.inc_rad) * sin(error.survey.azi_mag_rad)
+        -sin(error.survey.inc_rad)
+        * sin(error.survey.azi_mag_rad)
         * (
-            cos(error.survey.inc_rad) - tan(error.survey.header.dip)
-            * sin(error.survey.inc_rad) * cos(error.survey.azi_mag_rad)
+            cos(error.survey.inc_rad)
+            - tan(error.survey.header.dip)
+            * sin(error.survey.inc_rad)
+            * cos(error.survey.azi_mag_rad)
         )
     ) / (
         _funky_denominator(error)
