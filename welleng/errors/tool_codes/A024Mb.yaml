@@ -1,0 +1,108 @@
+codes:
+  AMIC:
+    function: AZ
+    magnitude: 0.008726646259971648
+    propagation: systematic
+    unit: rad
+  AMID:
+    function: AMID
+    magnitude: 0.026179938779914945
+    propagation: systematic
+    unit: rad
+  AZMR:
+    function: AZ
+    magnitude: 0.008726646259971648
+    propagation: random
+    unit: rad
+  AZMS:
+    function: AZ
+    magnitude: 0.019198621771937627
+    propagation: systematic
+    unit: rad
+  DBHG:
+    function: DBH
+    magnitude: 87.26646259971648
+    propagation: systematic
+    unit: rad.nT
+  DECG:
+    function: AZ
+    magnitude: 0.006283185307179586
+    propagation: systematic
+    unit: rad
+  DRFR:
+    function: DREF
+    magnitude: 0.35
+    propagation: random
+    unit: m
+  DSFS:
+    function: DSF
+    magnitude: 0.00056
+    propagation: systematic
+    unit: '-'
+  DSTG:
+    function: DST
+    magnitude: 2.5e-07
+    propagation: systematic
+    unit: 1/m
+  SAG:
+    function: SAG
+    magnitude: 0.003490658503988659
+    propagation: systematic
+    unit: rad
+  XCLA:
+    function: XCLA
+    magnitude: 0.167
+    propagation: random
+    unit: '-'
+  XCLH:
+    function: XCLH
+    magnitude: 0.167
+    propagation: random
+    unit: '-'
+  XYM1:
+    function: XYM1
+    magnitude: 0.005585053606381855
+    propagation: systematic
+    unit: rad
+  XYM2:
+    function: XYM2
+    magnitude: 0.005585053606381855
+    propagation: systematic
+    unit: rad
+  XYM3:
+    function: XYM3
+    magnitude: 0.005585053606381855
+    propagation: systematic
+    unit: rad
+  XYM4:
+    function: XYM4
+    magnitude: 0.005585053606381855
+    propagation: systematic
+    unit: rad
+header:
+  A024Mb: CB_Film_MMS
+  Application: Camera Based Film Magnetic Multi-Shot with adequate length and spacing
+    in NMDC.
+  Approved: null
+  Checked: Steve Grindrod 21-Oct-2020
+  Hor East/West Exclusion: 0 deg
+  Inclination Range Max: 180 deg
+  Inclination Range Min: 0 deg
+  Long Name: OWSG Camera Based Film Magnetic Multi-Shot
+  Misalignment Alt: 3
+  Misalignment Min Course Length: 10 m
+  Notes: Assumes full length of NMDC
+  OWSG Prefix: A024Mb
+  Range Comment: None
+  Replaces / Replaced By: 'OWSG_A024Ma_CB_Film_MMS OWSG_E017Ma_CB_Film_MMS+XCL / '
+  Revision Comment: Rev No changed to match ISCWSA Models (Rev.5). XCLA & XCLH terms
+    added.
+  Revision Date: 2020-10-08 00:00:00
+  Revision History: Rev 0.1 05-Jun-2013 Draft Release for Comment.
+  Revision No: 5
+  Short Name: CB_Film_MMS
+  Source: OWSG - Copsegrove Developments Ltd
+  Status: Agreed
+  Tool Parameters: null
+  Tool Type: Magnetic
+  XCL Tortuosity: 1 deg / 100 ft

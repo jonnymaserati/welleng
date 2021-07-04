@@ -1,0 +1,24 @@
+codes: {}
+header:
+  A030Ua: ZERO-ERROR
+  Application: To give zero position uncertainty down to a particular depth.
+  Approved: null
+  Checked: Steve Grindrod 21-Oct-2020
+  Hor East/West Exclusion: 0 deg
+  Inclination Range Max: 180 deg
+  Inclination Range Min: 0 deg
+  Long Name: OWSG Zero Error
+  Misalignment Alt: 3
+  Notes: To give zero position uncertainty down to a particular depth.
+  OWSG Prefix: A030Ua
+  Range Comment: None
+  Replaces / Replaced By: 'None / '
+  Revision Comment: Initial Release
+  Revision Date: 2013-11-01 00:00:00
+  Revision History: Rev 0.1 05-Jun-2013 Draft Release for Comment.
+  Revision No: 1
+  Short Name: ZERO-ERROR
+  Source: OWSG - Copsegrove Developments Ltd
+  Status: Agreed
+  Tool Parameters: null
+  Tool Type: Utility
