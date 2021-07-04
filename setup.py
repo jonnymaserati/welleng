@@ -1,4 +1,5 @@
 import os
+# import sys
 from setuptools import setup, find_packages
 
 # load __version__ without importing anything
@@ -16,6 +17,29 @@ with open("README.md", "r") as f:
 #     required = f.read().splitlines()
 
 download_url = f'https://github.com/jonnymaserati/welleng/archive/v{__version__}.tar.gz'
+
+requirements_all = [
+    'magnetic_field_calculator',
+    'matplotlib',
+    'networkx',
+    'numba',
+    'numpy',
+    'openpyxl',
+    'pandas',
+    'python-fcl',
+    'PyYAML',
+    'scipy',
+    'tabulate',
+    'trimesh',
+    'utm',
+    'vedo',
+    'vtk',
+]
+
+# if sys.platform == 'win32':
+#     requirements_all.append('python-fcl-win32')
+# else:
+#     requirements_all.append('python-fcl')
 
 setup(
     name='welleng',
@@ -48,25 +72,20 @@ setup(
     author_email='jonnycorcutt@gmail.com',
     license='Apache 2.0',
     packages=find_packages(exclude=["tests"]),
-    install_requires=[
-        'magnetic_field_calculator',
-        'matplotlib',
-        'networkx',
-        'numpy',
-        'openpyxl',
-        'pandas',
-        'python-fcl',
-        'scipy',
-        'tabulate',
-        'trimesh',
-        'utm',
-        'vedo',
-        'vtk',
-    ],
+    package_data={
+        'welleng': [
+            'errors/tool_codes/*.yaml',
+            'exchange/*.yaml'
+        ]
+    },
+    install_requires=requirements_all,
     classifiers=[
+        'Development Status :: 4 - Beta',
         'License :: OSI Approved :: Apache Software License',
-        'Operating System :: OS Independent',
-        'Programming Language :: Python :: 3',
+        # 'Operating System :: OS Independent',
+        'Programming Language :: Python :: 3.7',
+        'Natural Language :: English',
+        'Topic :: Scientific/Engineering',
     ],
-    python_requires='==3.7',
+    python_requires='==3.7.*',
 )

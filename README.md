@@ -14,6 +14,11 @@
     - standard [ISCWSA] method within 0.5% accuracy of the ISCWSA test data.
     - new mesh based method using the [Flexible Collision Library].
 
+## Support welleng
+welleng is fuelled by copious amounts of coffee, so if you wish to supercharge development please donate generously: 
+
+<a href="https://www.buymeacoffee.com/jonnymaserati" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/arial-yellow.png" alt="Buy Me A Coffee" width="217px" ></a>
+
 ## New Features!
 
   - **World Magnetic Model Calculator:** calculates magnetic field data from the [World Magnetic Model](http://www.geomag.bgs.ac.uk/research/modelling/WorldMagneticModel.html) if magnetic field strength is not provided with the survey data.
@@ -56,6 +61,7 @@ we.exchange.wbp.save_to_file(doc, "demo.wbp") # save the document to file
 
 [welleng] requires [trimesh], [numpy] and [scipy] to run. Other libraries are optional depending on usage and to get [python-fcl] running on which [trimesh] is built may require some additional installations. Other than that, it should be an easy pip install to get up and running with welleng and the minimum dependencies.
 
+### Ubuntu
 Here's how to get the trickier dependencies manually installed on Ubuntu (further instructions can be found [here](https://github.com/flexible-collision-library/fcl/blob/master/INSTALL)):
 
 ```python
@@ -77,6 +83,67 @@ pip install -e .
 ```
 
 Make sure you include that `.` in the final line (it's not a typo) as this ensures that any changes to your development version are immediately implemented on save.
+
+### Windows
+Detailed instructions for installing [welleng] in a Windows OS can be found in this [post](https://jonnymaserati.github.io/2021/05/11/install-welleng-windows.html).
+
+### Colaboratory
+Perhaps the simplest way of getting up and running with [welleng] is to with a [colab notebook](https://colab.research.google.com/notebooks/intro.ipynb). The required dependencies can be installed with the following cell:
+
+```terminal
+!apt-get install -y xvfb x11-utils libeigen3-dev libccd-dev octomap-tools
+!pip install welleng plotly jupyter-dash
+!pip install -U git+https://github.com/Kitware/ipyvtk-simple.git
+```
+Unfortunately the visualization doesn't work with colab (or rather I've not been able to embed a VTK object) so some further work is needed to view the results. However, the [welleng] engine can be used to generate data in the notebook. Test it out with the following code:
+
+```python
+import welleng as we
+import plotly.graph_objects as go
+from jupyter_dash import JupyterDash
+)
+
+# create a survey
+s = we.survey.Survey(
+    md=[0., 500., 2000., 5000.],
+    inc=[0., 0., 30., 90],
+    azi=[0., 0., 30., 90.,],
+    error_model='iscwsa_mwd_rev4'
+)
+
+# interpolate survey - generate points every 30 meters
+s_interp = we.connector.interpolate_survey(s, step=30)
+
+# plot the results
+fig = go.Figure()
+fig.add_trace(
+    go.Scatter3d(
+        x=s_interp.x,
+        y=s_interp.y,
+        z=s_interp.z,
+        mode='lines',
+        line=dict(
+            color='blue'
+        ),
+        name='survey_interpolated'
+    ),
+)
+
+fig.add_trace(
+    go.Scatter3d(
+        x=s.x,
+        y=s.y,
+        z=s.z,
+        mode='markers',
+        marker=dict(
+            color='red'
+        ),
+        name='survey'
+    )
+)
+fig.update_scenes(zaxis_autorange="reversed")
+fig.show()
+```
 
 ## Quick Start
 
@@ -115,7 +182,7 @@ sh_reference = we.survey.SurveyHeader(
 survey_reference = we.survey.Survey(
     md=connector_reference.md,
     inc=connector_reference.inc_deg,
-    azi=connector_reference.azi_deg,
+    azi=connector_reference.azi_grid_deg,
     header=sh_reference,
     error_model='iscwsa_mwd_rev4'
 )
@@ -126,7 +193,7 @@ sh_offset = we.survey.SurveyHeader(
 survey_offset = we.survey.Survey(
     md=connector_offset.md,
     inc=connector_offset.inc_deg,
-    azi=connector_offset.azi_deg,
+    azi=connector_offset.azi_grid_deg,
     start_nev=[100., 200., 0.],
     header=sh_offset,
     error_model='iscwsa_mwd_rev4'
@@ -201,10 +268,7 @@ It's possible to generate data for visualizing well trajectories with [welleng],
 ![image](https://user-images.githubusercontent.com/41046859/97724026-b78c2e00-1acc-11eb-845d-1220219843a5.png)
 ISCWSA Standard Set of Well Paths
 
-![image](https://media-exp1.licdn.com/dms/image/C5612AQEBKagFH_qlqQ/article-inline_image-shrink_1500_2232/0?e=1609977600&v=beta&t=S3C3C_frvUCgKm46Gtat2-Lor7ELGRALcyXbkwZyldM)
-Equinor's Volve Wells
-
-The ISCWSA standard set of well paths for evaluating clearance scenarios and Equinor's [volve] wells have been rendered in [blender] above. See the [examples] for the code used to generate the [volve] scene, extracting the data from the [volve] EDM.xml file.
+The ISCWSA standard set of well paths for evaluating clearance scenarios have been rendered in [blender] above. See the [examples] for the code used to generate a [volve] scene, extracting the data from the [volve] EDM.xml file.
 
 ## License
 

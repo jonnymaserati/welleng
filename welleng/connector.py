@@ -1,6 +1,11 @@
 import numpy as np
-from copy import deepcopy
-from .utils import get_vec, get_angles, get_nev, get_xyz, get_unit_vec
+from copy import copy, deepcopy
+from scipy.spatial import distance
+
+from .utils import (
+    get_vec, get_angles, get_nev, get_xyz, get_unit_vec, NEV_to_HLA,
+    dls_from_radius
+)
 from .survey import Survey, SurveyHeader
 
 
@@ -62,6 +67,7 @@ class Node:
             self.pos_xyz = np.array(pos).reshape(3)
             self.pos_nev = get_nev(pos).reshape(3)
 
+    @staticmethod
     def get_unit_vec(vec):
         vec = vec / np.linalg.norm(vec)
 
@@ -110,9 +116,12 @@ class Connector:
         degrees=True,
         unit='meters',
         min_error=1e-5,
-        delta_radius=20,
-        min_tangent=10,
-        max_iterations=1000,
+        # delta_radius=20.,
+        delta_dls=0.1,
+        min_tangent=0.,
+        max_iterations=200,
+        force_min_curve=False,
+        closest_approach=False
     ):
 
         """
@@ -131,64 +140,71 @@ class Connector:
 
         Parameters
         ----------
-            pos1: (3) list or array of floats (default: [0,0,0])
-                Start position in NEV coordinates.
-            vec1: (3) list or array of floats or None (default: None)
-                Start position unit vector in NEV coordinates.
-            inc1: float or None (default: None)
-                Start position inclination.
-            azi2: float or None (default: None)
-                Start position azimuth.
-            md1: float or None (default: None)
-                Start position measured depth.
-            dls_design: float (default: 3.0)
-                The desired Dog Leg Severity (DLS) for the (first) curved
-                section in degrees per 30 meters or 100 feet.
-            dls_design2: float or None (default: None)
-                The desired DLS for the second curve section in degrees per
-                30 meters or 100 feet. If set to None then `dls_design` will
-                be the default value.
-            md2: float or None (default: None)
-                The measured depth of the target position.
-            pos2: (3) list or array of floats or None (default: None)
-                The position of the target in NEV coordinates.
-            vec2: (3) list or array of floats or None (default: None)
-                The target unit vector in NEV coordinates.
-            inc1: float or None (default: None)
-                The inclination at the target position.
-            azi2: float or None (default: None)
-                The azimuth at the target position.
-            degrees: boolean (default: True)
-                Indicates whether the input angles (inc, azi) are in degrees
-                (True) or radians (False).
-            unit: string (default: 'meters')
-                Indicates the distance unit, either 'meters' or 'feet'.
-            min_error: float (default: 1e-5):
-                Infers the error tolerance of the results and is used to set
-                iteration stops when the desired error tolerance is met. Value
-                must be less than 1. Use with caution as the code may
-                become unstable if this value is changed.
-            delta_radius: float (default: 20)
-                The delta radius (first curve and second curve sections) used
-                as an iteration stop when balancing radii. If the resulting
-                delta radius yielded from `dls_design` and `dls_design2` is
-                larger than `delta_radius`, then `delta_radius` defaults to
-                the former.
-            min_tangent: float (default: 10)
-                The minimum tangent length in the `curve_hold_curve` method
-                used to mitigate instability during iterations (where the
-                tangent section approaches or equals 0).
-            max_iterations: int (default: 1000)
-                The maximum number of iterations before giving up trying to
-                fit a `curve_hold_curve`. This number is limited by Python's
-                depth of recursion, but if you're hitting the default stop
-                then consider changing `delta_radius` and `min_tangent` as
-                your expectations may be unrealistic (this is open source
-                software after all!)
+        pos1: (3) list or array of floats (default: [0,0,0])
+            Start position in NEV coordinates.
+        vec1: (3) list or array of floats or None (default: None)
+            Start position unit vector in NEV coordinates.
+        inc1: float or None (default: None)
+            Start position inclination.
+        azi2: float or None (default: None)
+            Start position azimuth.
+        md1: float or None (default: None)
+            Start position measured depth.
+        dls_design: float (default: 3.0)
+            The desired Dog Leg Severity (DLS) for the (first) curved
+            section in degrees per 30 meters or 100 feet.
+        dls_design2: float or None (default: None)
+            The desired DLS for the second curve section in degrees per
+            30 meters or 100 feet. If set to None then `dls_design` will
+            be the default value.
+        md2: float or None (default: None)
+            The measured depth of the target position.
+        pos2: (3) list or array of floats or None (default: None)
+            The position of the target in NEV coordinates.
+        vec2: (3) list or array of floats or None (default: None)
+            The target unit vector in NEV coordinates.
+        inc1: float or None (default: None)
+            The inclination at the target position.
+        azi2: float or None (default: None)
+            The azimuth at the target position.
+        degrees: boolean (default: True)
+            Indicates whether the input angles (inc, azi) are in degrees
+            (True) or radians (False).
+        unit: string (default: 'meters')
+            Indicates the distance unit, either 'meters' or 'feet'.
+        min_error: float (default: 1e-5):
+            Infers the error tolerance of the results and is used to set
+            iteration stops when the desired error tolerance is met. Value
+            must be less than 1. Use with caution as the code may
+            become unstable if this value is changed.
+        delta_radius: float (default: 20)
+            The delta radius (first curve and second curve sections) used
+            as an iteration stop when balancing radii. If the resulting
+            delta radius yielded from `dls_design` and `dls_design2` is
+            larger than `delta_radius`, then `delta_radius` defaults to
+            the former.
+        delta_dls: float (default: 0.1)
+            The delta dls (first curve and second curve sections) used as an
+            iteration stop when balancing radii, i.e. if the dls of the second
+            section is within 0.1 deg/30m of the first curve section then the
+            section is considered balanced and no further iterations are
+            performed. Setting this value too low will likely result in hitting
+            the recursion limit.
+        min_tangent: float (default: 10)
+            The minimum tangent length in the `curve_hold_curve` method
+            used to mitigate instability during iterations (where the
+            tangent section approaches or equals 0).
+        max_iterations: int (default: 1000)
+            The maximum number of iterations before giving up trying to
+            fit a `curve_hold_curve`. This number is limited by Python's
+            depth of recursion, but if you're hitting the default stop
+            then consider changing `delta_radius` and `min_tangent` as
+            your expectations may be unrealistic (this is open source
+            software after all!)
 
         Results
         -------
-            connector: welleng.connector.Connector object
+        connector: welleng.connector.Connector object
         """
         if node1 is not None:
             pos1, vec1, md1 = get_node_params(
@@ -255,7 +271,12 @@ class Connector:
         target_input = convert_target_input_to_booleans(
             md2, inc2, azi2, pos2, vec2
         )
-        self.initial_method = self.initial_methods[target_input]
+
+        self.force_min_curve = force_min_curve
+        if self.force_min_curve:
+            self.initial_method = 'min_curve_or_hold'
+        else:
+            self.initial_method = self.initial_methods[target_input]
 
         # do some more initialization stuff
         self.min_error = min_error
@@ -263,6 +284,7 @@ class Connector:
         self.iterations = 0
         self.max_iterations = max_iterations
         self.errors = []
+        self.radii = []
         self.dogleg_old, self.dogleg2_old = 0, 0
         self.dist_curve2 = 0
         self.pos1 = np.array(pos1)
@@ -354,10 +376,11 @@ class Connector:
         self.radius_design2 = self.denom / self.dls_design2
 
         # check that the `delta_radius` actually makes sense
-        self.delta_radius = max(
-            delta_radius,
-            abs(self.radius_design - self.radius_design2)
-        )
+        # self.delta_radius = max(
+        #     delta_radius,
+        #     abs(self.radius_design - self.radius_design2)
+        # )
+        self.delta_dls = abs(self.dls_design - self.dls_design2) + delta_dls
 
         # some more initialization stuff
         self.tangent_length = None
@@ -367,12 +390,13 @@ class Connector:
             None, None, None, None, None
         )
         self.radius_critical, self.radius_critical2 = np.inf, np.inf
+        self.closest_approach = closest_approach
 
         # Things fall apart if the start and end vectors exactly equal
         # one another, so need to check for this and if this is the
         # case, modify the end vector slightly. This is a lazy way of
         # doing this, but it's fast. Probably a more precise way would
-        # be to split the dogelg in two, but that's more hassle than
+        # be to split the dogleg in two, but that's more hassle than
         # it's worth.
         if (
             self.vec_target is not None
@@ -461,6 +485,7 @@ class Connector:
         elif self.method == 'curve_hold_curve':
             self.pos2_list, self.pos3_list = [], [deepcopy(self.pos_target)]
             self.vec23 = [np.array([0., 0., 0.])]
+            self.delta_radius_list = []
             self._target_pos_and_vec_defined(deepcopy(self.pos_target))
         else:
             self.distances = self._get_distances(
@@ -472,8 +497,12 @@ class Connector:
                 self.method = 'min_dist_to_target'
                 self._min_dist_to_target()
             else:
-                self.method = 'min_curve_to_target'
-                self._min_curve_to_target()
+                if self.closest_approach:
+                    self.method = 'min_curve_to_target'
+                    self._closest_approach()
+                else:
+                    self.method = 'min_curve_to_target'
+                    self._min_curve_to_target()
 
     def _get_method(self):
         assert self.initial_method not in [
@@ -537,6 +566,34 @@ class Connector:
             '11110': 'md_and_pos',
             '11111': 'md_and_pos'
         }
+
+    def _closest_approach(self):
+        vec_pos1_pos_target = self.pos_target - self.pos1
+        vec_pos1_pos_target /= np.linalg.norm(vec_pos1_pos_target)
+
+        cross_product = np.cross(vec_pos1_pos_target, self.vec1)
+        cross_product /= np.linalg.norm(cross_product)
+
+        factor = cross_product / vec_pos1_pos_target
+        factor /= abs(factor)
+
+        cc = (
+            self.pos1 + cross_product * factor * self.radius_design
+        )
+
+        cc_pos_target = self.pos_target - cc
+        cc_pos_target /= np.linalg.norm(cc_pos_target)
+
+        self.pos_target_original = copy(self.pos_target)
+
+        self.pos_target = cc + cc_pos_target * self.radius_design
+
+        # recalculate self.distances with new self.pos_target
+        self.distances = self._get_distances(
+                self.pos1, self.vec1, self.pos_target
+            )
+
+        self._min_curve_to_target()
 
     def _min_curve(self):
         self.dogleg = get_dogleg(
@@ -648,6 +705,7 @@ class Connector:
         )
         if radius_temp1 < self.radius_critical:
             self.radius_critical = radius_temp1
+            assert self.radius_critical > 0
 
         (
             self.tangent_length,
@@ -693,6 +751,7 @@ class Connector:
         )
         if radius_temp2 < self.radius_critical2:
             self.radius_critical2 = radius_temp2
+            assert self.radius_critical2 > 0
 
         (
             self.tangent_length2,
@@ -742,35 +801,61 @@ class Connector:
         self.errors.append(self.error)
         self.pos3_list.append(self.pos3)
         self.pos2_list.append(self.pos2)
-        self.md_target = self.dist_curve + tangent_temp2 + self.dist_curve2
+        self.md_target = (
+            self.md1 + self.dist_curve + tangent_temp2 + self.dist_curve2
+        )
+        self.delta_radius_list.append(
+            abs(self.radius_critical - self.radius_critical2)
+        )
+        dls = max(
+            dls_from_radius(self.radius_design),
+            dls_from_radius(self.radius_critical)
+        )
+        dls2 = max(
+            dls_from_radius(self.radius_design2),
+            dls_from_radius(self.radius_critical2)
+        )
 
         # a bit of recursive magic - proceed with caution
-        if (
-            not self.error
-            or
+        if all((
+            self.iterations < self.max_iterations - 1,
             (
+                not self.error
+                or
                 (
-                    self.radius_critical2 < self.radius_design2
-                    or self.radius_critical < self.radius_design
-                )
-                and
-                abs(self.radius_critical - self.radius_critical2)
-                > self.delta_radius
-                and not np.allclose(
-                    self.pos1,
-                    self.pos2
+                    (
+                        self.radius_critical2 < self.radius_design2
+                        or self.radius_critical < self.radius_design
+                    )
+                    # and
+                    # abs(self.radius_critical - self.radius_critical2)
+                    # > self.delta_radius
+                    and abs(dls - dls2) > self.delta_dls
+                    and not np.allclose(
+                        self.pos1,
+                        self.pos2,
+                        rtol=self.min_error * 10,
+                        atol=self.min_error * 0.1
+                    )
                 )
             )
-        ):
+            # and
+            # self.iterations < self.max_iterations  # the give up clause
+        )):
             # A solution will typically be found within a few iterations,
             # however it will likely be unbalanced in terms of dls between the
             # two curve sections. The code below will re-initiate iterations
             # to balance the curvatures until the delta_radius parameter is
             # met.
             if self.error:
-                self.radius_critical = self.md_target / (
-                    abs(self.dogleg) + abs(self.dogleg2)
+                self.radius_critical = (
+                    (self.md_target - self.md1)
+                    / (abs(self.dogleg) + abs(self.dogleg2))
                 )
+                assert self.radius_critical > 0
+                # self.radius_critical += np.random.rand() * (
+                #     self.radius_critical - self.radius_critical2
+                # )
                 self.radius_critical2 = self.radius_critical
             self.iterations += 1
             # prevent a loop ad infinitum
@@ -830,12 +915,16 @@ class Connector:
     def interpolate(self, step=30):
         return interpolate_well([self], step)
 
-    def survey(self, radius=10, step=30):
+    def survey(self, radius=10, step=30, survey_header=None):
         interpolation = self.interpolate(step)
-        sh = SurveyHeader()
+        if survey_header is None:
+            sh = SurveyHeader()
+        else:
+            sh = survey_header
 
         survey = get_survey(
-            interpolation, survey_header=sh, start_nev=self.pos1, radius=10
+            interpolation, survey_header=sh, radius=10,
+            start_nev=self.pos1, start_xyz=get_xyz(self.pos1)
         )
 
         return survey
@@ -1034,11 +1123,15 @@ def min_curve_to_target(distances):
         dist_norm_to_target
     ) = distances
 
-    radius_critical = (
-        dist_to_target ** 2 / (
-            2 * dist_norm_to_target
+    if dist_norm_to_target == 0.:
+        radius_critical = np.inf
+    else:
+        radius_critical = (
+            dist_to_target ** 2 / (
+                2 * dist_norm_to_target
+            )
         )
-    )
+    assert radius_critical > 0
 
     dogleg = (
         2 * np.arctan2(
@@ -1071,6 +1164,8 @@ def get_radius_critical(radius, distances, min_error):
             2 * dist_norm_to_target
         )
     ) * (1 - min_error)
+
+    assert radius_critical > 0
 
     return radius_critical
 
@@ -1135,8 +1230,24 @@ def interpolate_well(sections, step=30):
     return data
 
 
+def _remove_duplicates(md, inc, azi):
+    arr = np.array([md, inc, azi]).T
+    upper = arr[:-1]
+    lower = arr[1:]
+
+    temp = np.vstack((
+        upper[0],
+        # lower[np.invert((upper == lower).all(axis=1))]
+        lower[lower[:, 0] != upper[:, 0]]
+    ))
+
+    return temp.T
+
+
 def get_survey(
-    section_data, survey_header=None, start_nev=[0., 0., 0.], radius=10, deg=False,
+    section_data, survey_header=None, start_nev=[0., 0., 0.],
+    start_xyz=[0., 0., 0.], radius=10, deg=False, error_model=None,
+    depth_unit='meters', surface_unit='meters'
 ):
     """
     Constructs a well survey from a list of sections of control points.
@@ -1165,18 +1276,27 @@ def get_survey(
         )))
         for s in section_data
     ]).T
-    
+
+    # remove duplicates
+    md, inc, azi = _remove_duplicates(md, inc, azi)
+
     if survey_header is None:
-        survey_header = SurveyHeader()
+        survey_header = SurveyHeader(
+            depth_unit=depth_unit,
+            surface_unit=surface_unit
+        )
 
     survey = Survey(
         md=md,
         inc=inc,
         azi=azi,
         start_nev=start_nev,
+        start_xyz=start_xyz,
         deg=deg,
         radius=radius,
         header=survey_header,
+        error_model=error_model,
+        unit=depth_unit
     )
 
     return survey
@@ -1461,6 +1581,7 @@ def connect_points(
             node2=node_2,
             dls_design=d
         )
+        assert np.allclose(c.pos_target, p)
         connections.append(c)
 
     sh = SurveyHeader()
@@ -1469,3 +1590,237 @@ def connect_points(
     survey = get_survey(data, sh, start_nev=connections[0].pos1)
 
     return survey
+
+
+def survey_to_plan(survey, tolerance=0.2, dls_design=1., step=30.):
+    """
+    Prototype function for extracting a plan from a drilled well survey - a
+    minimal number of control points (begining/end points of either hold or
+    build/turn sections) required to express the well given the provided input
+    parameters.
+
+    Parameters
+    ----------
+    survey: welleng.survey.Survey object
+    tolerance: float (default=0.2)
+        Defines how tight to fit the planned well to the survey - a higher
+        number will results in less control points but likely poorer fit.
+    dls_design: float (default=1.0)
+        The minimum DLS used to fit the planned trajectory.
+    step: float (default=30)
+        The desired md step in the plan survey.
+
+    Returns
+    -------
+    (survey_new, sections)
+    survey_new: welleng.survey.Survey object
+    sections: list of welleng.connector.Connection objects
+    """
+    assert dls_design > 0., "dls_design must be greater than 0"
+
+    idx = [0]
+    end = len(survey.md) - 1
+    md = survey.md[0]
+    node = None
+    sections = []
+
+    while True:
+        section, i = _get_section(
+            survey=survey,
+            start=idx[-1],
+            md=md,
+            node=node,
+            tolerance=tolerance,
+            dls_design=dls_design
+        )
+        sections.append(section)
+        idx.append(i)
+        if idx[-1] >= end:
+            break
+        node = section.node_end
+
+    data = interpolate_well(sections, step=30)
+    survey_new = get_survey(data)
+
+    return (survey_new, sections)
+
+
+def _get_section(
+    survey, start, tolerance, dls_design=1., md=0., node=None
+):
+    idx = start + 2
+    nev = survey.get_nev_arr()
+
+    if idx > len(nev):
+        idx = len(nev) - 1
+
+    if node is None:
+        node_1 = Node(
+            pos=nev[start],
+            vec=survey.vec_nev[start],
+            md=md
+        )
+    else:
+        node_1 = node
+
+    scores = [0.]
+    delta_scores = []
+    c_old = None
+
+    for i, (p, v) in enumerate(zip(nev[idx:], survey.vec_nev[idx:])):
+        node_2 = Node(
+            pos=p,
+            vec=v,
+        )
+        c = Connector(
+            node1=node_1,
+            node2=node_2,
+            dls_design=dls_design
+        )
+        s = c.survey(step=1.)
+        if c_old is None:
+            c_old = deepcopy(c)
+        nev_new = s.get_nev_arr()
+
+        distances = distance.cdist(
+            nev[start: idx + i],
+            nev_new
+        )
+
+        score = np.sum(np.amin(distances, axis=1)) / (s.md[-1] - s.md[0])
+
+        delta_scores.append(score - scores[-1])
+        scores.append(score)
+
+        if all((
+            abs(delta_scores[-1]) >= tolerance,
+            idx + i < len(nev) - 2
+        )):
+            break
+        elif idx + i == len(nev) - 1:
+            c_old = deepcopy(c)
+            break
+        else:
+            c_old = deepcopy(c)
+
+    return (
+        c_old,
+        idx + i - 1 if idx + i != len(nev) - 1 else idx + i
+    )
+
+
+def interpolate_survey(survey, step=30, dls=0.01):
+    '''
+    Interpolate a sparse survey with the desired md step.
+
+    Parameters
+    ----------
+    survey: welleng.survey.Survey object
+    step: float (default=30)
+        The desired delta md between stations.
+    dls: float (default=0.01)
+        The design DLS used to calculate the minimum curvature. This will be
+        the minimum DLS used to fit a curve between stations so should be set
+        to a small value to ensure a continuous curve is fit without any
+        tangent sections.
+
+    Returns
+    -------
+    survey_interpolated: welleng.survey.Survey object
+        Note that a `interpolated` property is added indicating if the survey
+        stations is interpolated (True) or not (False).
+    '''
+    if survey.header.azi_reference == 'true':
+        azi = survey.azi_true_rad
+    elif survey.header.azi_reference == 'grid':
+        azi = survey.azi_grid_rad
+    else:
+        azi = survey.azi_mag_rad
+
+    s = np.array([survey.md, survey.inc_rad, azi]).T
+
+    s_upper = s[:-1]
+    s_lower = s[1:]
+    well = []
+
+    for i, (u, l) in enumerate(zip(s_upper, s_lower)):
+        if i == 0:
+            node1 = Node(
+                pos=survey.start_nev,
+                md=u[0],
+                inc=u[1],
+                azi=u[2],
+                degrees=False,
+                unit=survey.unit
+            )
+        else:
+            node1 = well[-1].node_end
+        node2 = Node(
+            md=l[0],
+            inc=l[1],
+            azi=l[2],
+            degrees=False,
+            unit=survey.unit
+        )
+        c = Connector(
+            node1=node1,
+            node2=node2,
+            dls_design=dls,
+            degrees=False,
+            force_min_curve=True,
+            unit=survey.unit
+        )
+        well.append(c)
+
+    data = interpolate_well(well, step=step)
+
+    survey_interpolated = get_survey(
+        data,
+        start_nev=survey.start_nev,
+        start_xyz=survey.start_xyz,
+        survey_header=survey.header,
+        # error_model=survey.error_model,
+        error_model=None
+    )
+
+    survey_interpolated.interpolated = [
+        False if md in survey.md else True
+        for md in survey_interpolated.md
+    ]
+
+    i = -1
+    radii = []
+    cov_nev = []
+    for (md, boolean) in zip(
+        survey_interpolated.md,
+        survey_interpolated.interpolated
+    ):
+        if not boolean:
+            i += 1
+            if survey.error_model is not None:
+                # interpolate covariance error between survey stations
+                j = 1 if i < len(survey.md) - 1 else 0
+                delta_md = survey.md[i + j] - survey.md[i]
+                delta_cov_nev = (
+                    survey.cov_nev[i + j] - survey.cov_nev[i]
+                )
+                unit_cov_nev = (
+                    delta_cov_nev / delta_md
+                    if j == 1
+                    else 0
+                )
+        radii.append(survey.radius[i])
+        if survey.error_model is not None:
+            cov_nev.append(
+                survey.cov_nev[i]
+                + (
+                    (md - survey.md[i]) * unit_cov_nev
+                )
+            )
+    survey_interpolated.radius = np.array(radii)
+    survey_interpolated.cov_nev = np.array(cov_nev)
+    survey_interpolated.cov_hla = NEV_to_HLA(
+        survey_interpolated.survey_rad, survey_interpolated.cov_nev.T
+    ).T
+
+    return survey_interpolated

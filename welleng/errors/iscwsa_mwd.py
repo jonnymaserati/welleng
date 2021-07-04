@@ -1,11 +1,17 @@
 import numpy as np
 from numpy import sin, cos, tan, pi, sqrt
 import yaml
+import os
+# import imp
 
 # import welleng.error
 from ..utils import NEV_to_HLA
 
-FILENAME = 'welleng/errors/error_codes.yaml'
+# since this is running on different OS flavors
+PATH = os.path.dirname(__file__)
+FILENAME = os.path.join(
+    '', *[PATH, 'tool_codes', 'error_codes.yaml']
+)
 
 
 class iscwsaMwd:
@@ -33,7 +39,7 @@ class iscwsaMwd:
         self.errors = {}
 
         with open(FILENAME, 'r') as file:
-            iscwsa_error_models = yaml.full_load(file)
+            iscwsa_error_models = yaml.safe_load(file)
         self.em = iscwsa_error_models[model]
         if 'Default Tortusity (rad/m)' in self.em['header']:
             self.tortuosity = self.em['header']['Default Tortusity (rad/m)']
@@ -668,7 +674,7 @@ def XCLA(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
             ) % (2 * pi)) - pi)
         )
         temp[np.where(
-            error.survey.inc_rad < error.survey.header.vertical_inc_limit
+            error.survey.inc_rad[:-1] < error.survey.header.vertical_inc_limit
         )] = 0
         return temp
 

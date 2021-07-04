@@ -82,6 +82,11 @@ class Clearance:
         if self.kop_index == 0:
             self.ref = self.reference
         else:
+            try:
+                cov_nev = self.reference.cov_nev[self.kop_index:]
+                cov_hla = self.reference.cov_hla[self.kop_index:]
+            except IndexError:
+                cov_nev, cov_hla = (None, None)
             self.ref = Survey(
                 md=self.reference.md[self.kop_index:],
                 inc=self.reference.inc_rad[self.kop_index:],
@@ -92,6 +97,8 @@ class Clearance:
                 vec=self.reference.vec_nev[self.kop_index:],
                 radius=self.reference.radius[self.kop_index:],
                 header=self.reference.header,
+                cov_nev=cov_nev,
+                cov_hla=cov_hla,
                 error_model=self.reference.error_model,
                 start_xyz=[
                     self.reference.x[self.kop_index],
