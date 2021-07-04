@@ -3,6 +3,10 @@ import numpy as np
 
 
 def get_errors(error):
+    """
+    A helper function to extract the unique values from an error covariance
+    matrix - since they're symetrical along the diagonal.
+    """
     nn, ne, nv = error[0]
     _, ee, ev = error[1]
     _, __, vv = error[2]
@@ -11,6 +15,18 @@ def get_errors(error):
 
 
 def make_diagnostic_data(survey):
+    """
+    Function to extract the diagnostic data from the survey error covariances.
+
+    Parameters
+    ----------
+    survey: welleng.survey.Survey object
+
+    Returns
+    -------
+    A dictionary of covariance coeffs for each tool error for each survey
+    station measured depth.
+    """
     diagnostic = {}
     dia = np.stack((survey.md, survey.inc_deg, survey.azi_grid_deg), axis=1)
     for i, d in enumerate(survey.md):
@@ -57,7 +73,7 @@ def main():
     meshes = []
 
     # we'll compare the results of a 'regular' versus a more accurate survey
-    for e in ['MWD+SRGM', 'MWD+IFR2+SAG+MS_Fl']:
+    for e in ['MWD+SRGM', 'MWD+IFR2+SAG+MS']:
         # here's the method to (re)allocate the error model associated to 
         # the survey instance and the internal function to recalculate the
         # survey errors
