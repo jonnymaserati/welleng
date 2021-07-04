@@ -32,7 +32,7 @@ class SurveyHeader:
         survey_date=None,
         G=9.80665,
         b_total=None,
-        earth_rate=0.26249751949994715,
+        earth_rate=0.26251614,
         dip=None,
         declination=None,
         convergence=0,
