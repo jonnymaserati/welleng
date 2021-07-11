@@ -1258,3 +1258,87 @@ def func(x0, survey, dls_cont, tolerance):
     )
 
     return diff
+
+
+def _get_tortuosity_index(survey, mode):
+    param = {
+        'inc': 'inc_rad',
+        'azi': 'azi_true_rad'
+    }
+    assert mode in param.keys(), "Unrecognized mode"
+
+    inflections = np.hstack((
+        np.array([0]),
+        np.where(
+            np.diff(np.sign(np.diff(getattr(survey, param[mode]))))
+        )[0] + 1,
+        np.array([len(survey.md) - 1])
+    ))
+    temp = np.arange(0, len(inflections))
+    n = np.zeros_like(survey.md)
+    n[inflections] = temp
+    n = np.maximum.accumulate(n).astype(int)
+
+    upper = np.zeros_like(survey.md)
+    upper[inflections[1:]] = inflections[1:]
+    upper = upper.astype(int)
+
+    lower = np.zeros_like(survey.md)
+    lower[inflections[1:]] = inflections[:-1]
+    lower = lower.astype(int)
+
+    l_csi = survey.md[upper] - survey.md[lower]
+    coords = np.array([
+        survey.n,
+        survey.e,
+        survey.tvd                
+    ]).T
+
+    l_xsi = np.linalg.norm(
+        coords[upper] - coords[lower],
+        axis=1
+    )
+    l_c = np.zeros_like(survey.md)
+    l_c[inflections] = survey.md[inflections]
+    l_c = np.maximum.accumulate(l_c)
+
+    with np.errstate(divide='ignore', invalid='ignore'):
+        coeff = np.cumsum(np.nan_to_num(
+            (
+                l_csi / l_xsi
+            ) - 1,
+        ))
+        tortuosity = np.nan_to_num(
+            (n / (n + 1))
+            * (1 / l_c)
+        )
+
+    ti = coeff * tortuosity
+
+    return ti
+
+
+def get_tortuosity_index(survey):
+    """
+    Taken from an IADD presentation on "Measuring Wellbore Tortuosity" by
+    Pradeep Ashok - https://www.iadd-intl.org/media/files/files/47d68cb4/
+    iadd-luncheon-february-22-2018-v2.pdf with reference to the original
+    paper "A Novel Method for the Automatic Grading of Retinal Vessel
+    Tortuosity" by Enrico Grisan et al.
+
+    Parameters
+    ----------
+    survey: welleng.survey.Survey object
+
+    Returns
+    -------
+    
+    """
+    inflections_inc = _get_tortuosity_index(survey, 'inc')
+    inflections_azi = _get_tortuosity_index(survey, 'azi')
+
+    ti_3d = np.sqrt(
+        inflections_inc ** 2 + inflections_azi ** 2
+    )
+
+    return ti_3d
