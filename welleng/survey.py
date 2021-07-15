@@ -1326,6 +1326,9 @@ def get_tortuosity_index(survey):
     paper "A Novel Method for the Automatic Grading of Retinal Vessel
     Tortuosity" by Enrico Grisan et al.
 
+    In SPE/IADC-194099-MS there's mention that a factor of 1e7 is applied to
+    the TI result since the results are otherwise very small numbers.
+
     Parameters
     ----------
     survey: welleng.survey.Survey object
@@ -1339,6 +1342,6 @@ def get_tortuosity_index(survey):
 
     ti_3d = np.sqrt(
         inflections_inc ** 2 + inflections_azi ** 2
-    )
+    ) * 1e7
 
     return ti_3d
