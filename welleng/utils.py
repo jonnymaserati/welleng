@@ -157,7 +157,12 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
     else:
         vec = np.array([x, y, z]).T
 
-    return vec / np.linalg.norm(vec, axis=-1).reshape(-1, 1)
+    if r == 1:
+        denominator = np.linalg.norm(vec, axis=-1).reshape(-1, 1)
+    else:
+        denominator = 1
+
+    return vec / denominator
 
 
 def get_nev(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
@@ -401,3 +406,28 @@ def dls_from_radius(radius):
     dls = 360 / circumference * 30
 
     return dls
+
+
+def toolface_vec(toolface, r, deg=True):
+    if deg:
+        t = np.radians(toolface)
+    else:
+        t = toolface
+    y = r * np.cos(t)
+    x = r * np.sin(t)
+
+    return np.array([x, y])
+
+
+def toolface_from_vec(vec):
+    x, y = vec
+    r = np.sqrt(x ** 2 + y ** 2)
+    toolface = (np.arctan2(x, y) + 2 * np.pi) % (2 * np.pi)
+
+    return (np.degrees(toolface), r)
+
+
+def real_radius_from_toolface_radius(r):
+    radius = (360 / r * 30) / (np.pi * 2)
+
+    return radius
