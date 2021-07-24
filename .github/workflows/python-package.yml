@@ -49,4 +49,4 @@ jobs:
         pip install .[all]
     - name: Test with pytest
       run: |
-        pytest test
+        pytest tests
