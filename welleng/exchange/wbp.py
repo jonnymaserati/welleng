@@ -1,10 +1,15 @@
 import os
 import yaml
 from ..survey import (
-    Survey, SurveyHeader, get_sections
+    TurnPoint,
+    Survey,
+    SurveyHeader,
+    get_sections
 )
 from ..connector import (
-    Connector, interpolate_well, get_survey
+    Connector,
+    interpolate_well,
+    get_survey
 )
 
 try:
@@ -49,34 +54,6 @@ class Target:
         self.name = name
         self.location = location
         self.geometry = geometry
-
-
-class TurnPoint:
-    def __init__(
-        self,
-        md=None,
-        inc=None,
-        azi=None,
-        build_rate=None,
-        turn_rate=None,
-        dls=None,
-        toolface=None,
-        method=None,
-        target=None,
-        tie_on=False,
-        location=None
-    ):
-        self.md = md
-        self.inc = inc
-        self.azi = azi
-        self.build_rate = build_rate
-        self.turn_rate = turn_rate
-        self.dls = dls
-        self.toolface = toolface
-        self.method = method
-        self.target = target
-        self.tie_on = tie_on
-        self.location = location
 
 
 class SurveyPoint:
