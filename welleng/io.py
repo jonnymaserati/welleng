@@ -2,7 +2,10 @@ import numbers
 import numpy as np
 from .survey import Survey
 
-from openpyxl import load_workbook
+try:
+    from openpyxl import load_workbook
+except ImportError:
+    print("ImportError: try pip install welleng[easy]")
 
 
 def get_standard_data(filename):

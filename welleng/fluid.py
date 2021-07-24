@@ -1,7 +1,10 @@
 import math
 from scipy.optimize import minimize
 from scipy import interpolate
-from numba import njit
+try:
+    from numba import njit
+except ImportError:
+    print("ImportError: try pip install welleng[easy]")
 import numpy as np
 
 # Define constants

@@ -1,5 +1,8 @@
-import trimesh
-from vedo import show, Box, Axes, trimesh2vedo, Lines, Sphere
+try:
+    import trimesh
+    from vedo import show, Box, Axes, trimesh2vedo, Lines, Sphere
+except ImportError:
+    print("ImportError: try pip install welleng[easy]")
 import numpy as np
 
 from .version import __version__ as VERSION

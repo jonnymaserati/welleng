@@ -1,4 +1,7 @@
-import trimesh
+try:
+    import trimesh
+except ImportError:
+    print("ImportError: try pip install welleng[easy]")
 import numpy as np
 from numpy import sin, cos, pi
 from scipy.spatial import KDTree

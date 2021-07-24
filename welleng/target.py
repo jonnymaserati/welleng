@@ -1,5 +1,8 @@
 import numpy as np
-from vedo import Circle
+try:
+    from vedo import Circle
+except ImportError:
+    print("ImportError: try pip install welleng[easy]")
 
 class Target:
     def __init__(
@@ -66,5 +69,3 @@ class Target:
             g.rotate(self.orientation, point=pos, axis=(1,0,0))
 
         return g
-
-
