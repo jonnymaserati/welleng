@@ -13,8 +13,8 @@ MWD Rev 4 error model example provided by ISCWSA.
 # Set test tolerance as percentage
 TOLERANCE = 0.001
 input_files = {
-    "iscwsa_mwd_rev4": "test/test_data/error_mwdrev4_1_iscwsa_data.json",
-    "iscwsa_mwd_rev5": "test/test_data/error_mwdrev5_1_iscwsa_data.json"
+    "iscwsa_mwd_rev4": "tests/test_data/error_mwdrev4_1_iscwsa_data.json",
+    "iscwsa_mwd_rev5": "tests/test_data/error_mwdrev5_1_iscwsa_data.json"
 }
 
 
@@ -111,7 +111,7 @@ def test_iscwsa_error_models(input_files=input_files):
         # if you wanted to view the results, this would save then to an Excel
         # file.
         # df_r.to_excel(
-        #     "test/test_data/error_mwdrev5_iscwsa_validation_results.xlsx"
+        #     "tests/test_data/error_mwdrev5_iscwsa_validation_results.xlsx"
         # )
 
 
