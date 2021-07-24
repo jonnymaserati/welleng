@@ -1,6 +1,10 @@
 import numpy as np
 import math
-from magnetic_field_calculator import MagneticFieldCalculator
+try:
+    from magnetic_field_calculator import MagneticFieldCalculator
+    MAG_CALC = True
+except ImportError:
+    MAG_CALC = False
 from datetime import datetime
 from scipy.optimize import minimize
 
@@ -39,7 +43,12 @@ class SurveyHeader:
         vertical_inc_limit=0.0001,
         deg=True,
         depth_unit='meters',
-        surface_unit='meters'
+        surface_unit='meters',
+        mag_defaults = {
+            'b_total': 50_000.,
+            'dip': 70.,
+            'declination': 0.,
+        }
     ):
         """
         A class for storing header information about a well.
@@ -122,27 +131,43 @@ class SurveyHeader:
         self.G = G
         self.azi_reference = azi_reference
 
+        self.mag_defaults = mag_defaults
         self._get_mag_data(deg)
 
     def _get_mag_data(self, deg):
         """
         Initiates b_total if provided, else calculates a value.
         """
-        calculator = MagneticFieldCalculator()
-        try:
-            result = calculator.calculate(
-                latitude=self.latitude,
-                longitude=self.longitude,
-                altitude=self.altitude,
-                date=self.survey_date
-            )
-        except:
-            result = calculator.calculate(
-                latitude=self.latitude,
-                longitude=self.longitude,
-                altitude=self.altitude,
-                date=self._get_date(date=None)
-            )
+        if MAG_CALC:
+            calculator = MagneticFieldCalculator()
+            try:
+                result = calculator.calculate(
+                    latitude=self.latitude,
+                    longitude=self.longitude,
+                    altitude=self.altitude,
+                    date=self.survey_date
+                )
+            except:
+                result = calculator.calculate(
+                    latitude=self.latitude,
+                    longitude=self.longitude,
+                    altitude=self.altitude,
+                    date=self._get_date(date=None)
+                )
+        else:
+            result = {
+                'field-value': {
+                    'total-intensity': {
+                        'value': self.mag_defaults.get('b_total')
+                    },
+                    'inclination': {
+                        'value': self.mag_defaults.get('dip')
+                    },
+                    'declination': {
+                        'value': self.mag_defaults.get('declination')
+                    }
+                }
+            }
 
         if self.b_total is None:
             self.b_total = result['field-value']['total-intensity']['value']
