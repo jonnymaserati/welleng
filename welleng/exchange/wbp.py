@@ -4,8 +4,9 @@ import welleng
 
 try:
     import utm
+    UTM = True
 except ImportError:
-    print("ImportError: try pip install welleng[easy]")
+    UTM = False
 
 import numpy as np
 from datetime import datetime
@@ -675,6 +676,7 @@ def wbp_to_survey(
     -------
         survey: welleng.survey.Survey object
     """
+    assert UTM, "Missing utm library, try pip install welleng[easy]"
     connections = []
     for i, s in enumerate(data.steps):
         if i == 0:
