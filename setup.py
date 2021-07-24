@@ -116,7 +116,7 @@ setup(
             'exchange/*.yaml'
         ]
     },
-    install_requires=requirements_default,
+    install_requires=list(requirements_default),
     extras_require={
         'easy': list(requirements_easy),
         'all': list(requirements_all)
