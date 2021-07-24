@@ -658,7 +658,7 @@ def wbp_to_survey(
     -------
         survey: welleng.survey.Survey object
     """
-    assert UTM, "Missing utm library, try pip install welleng[e"
+    assert UTM, "Missing utm library, try pip install welleng[easy]"
     connections = []
     for i, s in enumerate(data.steps):
         if i == 0:

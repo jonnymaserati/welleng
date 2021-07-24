@@ -4,12 +4,14 @@ from .survey import Survey
 
 try:
     from openpyxl import load_workbook
+    OPENPYXL = True
 except ImportError:
-    print("ImportError: try pip install welleng[easy]")
+    OPENPYXL = False
 
 
 def get_standard_data(filename):
     # import data from Excel
+    assert OPENPYXL, "ImportError: try pip install welleng[easy]"
     workbook = load_workbook(filename, data_only=True)
     sheets = workbook.sheetnames
 

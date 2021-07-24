@@ -1,8 +1,9 @@
 import numpy as np
 try:
     from vedo import Circle
+    VEDO = True
 except ImportError:
-    print("ImportError: try pip install welleng[easy]")
+    VEDO = False
 
 class Target:
     def __init__(
@@ -24,6 +25,7 @@ class Target:
         ----------
             geometry: 
         """
+        assert VEDO, "ImportError: try pip install welleng[easy]"
 
         SHAPES = [
             'circle',
