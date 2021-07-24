@@ -1,6 +1,4 @@
 import numpy as np
-# from numpy import sin, cos, tan, pi, sqrt
-# from .utils import MinCurve
 from .errors.iscwsa_mwd import iscwsaMwd
 
 # TODO: there's likely an issue with TVD versus TVDSS that

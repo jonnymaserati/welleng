@@ -1,6 +1,10 @@
 import numpy as np
 from numpy.linalg import norm
-import trimesh
+try:
+    import trimesh
+    MESH_MODE = True
+except ImportError:
+    MESH_MODE = False
 
 from scipy import optimize
 from scipy.spatial import KDTree
@@ -390,6 +394,7 @@ class MeshClearance:
         Class to calculate the clearance between two well bores using the
         standard method documented by ISCWSA.
         """
+        assert MESH_MODE, "ImportError: try pip install welleng[all]"
         Clearance.__init__
         self.c = clearance
         self.n_verts = n_verts

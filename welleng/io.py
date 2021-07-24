@@ -2,11 +2,16 @@ import numbers
 import numpy as np
 from .survey import Survey
 
-from openpyxl import load_workbook
+try:
+    from openpyxl import load_workbook
+    OPENPYXL = True
+except ImportError:
+    OPENPYXL = False
 
 
 def get_standard_data(filename):
     # import data from Excel
+    assert OPENPYXL, "ImportError: try pip install welleng[easy]"
     workbook = load_workbook(filename, data_only=True)
     sheets = workbook.sheetnames
 

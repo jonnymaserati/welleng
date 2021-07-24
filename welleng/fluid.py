@@ -1,7 +1,11 @@
 import math
 from scipy.optimize import minimize
 from scipy import interpolate
-from numba import njit
+try:
+    from numba import njit
+    NJIT = True
+except ImportError:
+    NJIT = False
 import numpy as np
 
 # Define constants
@@ -91,6 +95,13 @@ class Fluid:
         self.base_fluid_water_ratio = base_fluid_water_ratio
         self.pressure_reference = reference_pressure
 
+        if NJIT:
+            self._get_coefficients = njit()(self._get_coefficients)
+            self._func = njit()(self._func)
+        else:
+            self._get_coefficients = self._get_coefficients
+            self._func = self._func
+
         self._get_density_base_fluids()
         self._get_volumes_reference()
 
@@ -133,8 +144,8 @@ class Fluid:
             volume_weighting_material / volume_total
         )
 
+
     @staticmethod
-    @njit
     def _get_coefficients(
         density_average, pressure_applied, temperature_top,
         fluid_thermal_gradient, A0, A1, A2, B0, B1, B2
@@ -154,8 +165,8 @@ class Fluid:
 
         return (alpha_1, alpha_2, beta_1, beta_2)
 
+
     @staticmethod
-    @njit
     def _func(
         density_average, density_top, volume_water_relative,
         volume_oil_relative, depth, alpha_1, alpha_2, beta_1, beta_2

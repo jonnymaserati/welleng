@@ -1,5 +1,4 @@
 import numpy as np
-from numba import njit
 
 
 class MinCurve:
@@ -190,7 +189,6 @@ def get_xyz(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
     return (np.array([x, y, z]).T + np.array([start_xyz]))
 
 
-@njit
 def _get_angles(vec):
     xy = vec[:, 0] ** 2 + vec[:, 1] ** 2
     inc = np.arctan2(np.sqrt(xy), vec[:, 2])  # for elevation angle defined from Z-axis down

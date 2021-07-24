@@ -15,7 +15,7 @@ TOLERANCE = 0.5
 
 # Read well and validation data
 filename = (
-    "test/test_data/clearance_iscwsa_well_data.json"
+    "tests/test_data/clearance_iscwsa_well_data.json"
 )
 data = json.load(open(filename))
 
