@@ -7,7 +7,10 @@ from welleng.utils import (
     get_vec, toolface_vec, toolface_from_vec, get_angles,
     real_radius_from_toolface_radius
 )
-from welleng.connector import Node, Connector
+from welleng.connector import Node, Connector, interpolate_survey
+from welleng.survey import Survey
+
+import welleng as we
 
 
 def get_toolface_apparent(toolface_design_vec, toolface_walk_vec):
@@ -21,12 +24,12 @@ def bit_walk(
     pos, vec, dls_design, toolface_design,
     dls_walk, toolface_walk,
     # step=30.,
-    nev=True, deg=True
+    # nev=True, deg=True
 ):
     # pos_nev, pos_xyz = utils.process_coords(pos, nev)
     # vec_nev, vec_xyz = utils.process_coords(vec, nev)
 
-    coeff = 30
+    # coeff = 30
 
     toolface_design_vec = toolface_vec(toolface_design, dls_design)
     toolface_walk_vec = toolface_vec(toolface_walk, dls_walk)
@@ -92,9 +95,9 @@ def _get_toolface_and_radius(connector):
             )
 
         # toolface = np.degrees(np.concatenate((t1, np.array([t2[-1]]))))
-        toolface = np.degrees(t1)
+        # toolface = np.degrees(t1)
 
-    return (toolface, radius)
+    return (t1, t2, radius)
 
 
 def bit_walk_survey(survey, toolface_walk, dls_walk, dls_design=3.0):
@@ -104,6 +107,7 @@ def bit_walk_survey(survey, toolface_walk, dls_walk, dls_design=3.0):
         survey.n, survey.e, survey.tvd
     ]).T
 
+    delta_mds=[survey.md[0]]
     vecs = [survey.vec_nev[0]]
     nodes = [
         Node(
@@ -123,7 +127,7 @@ def bit_walk_survey(survey, toolface_walk, dls_walk, dls_design=3.0):
             node2=node
         )
 
-        toolface_initial, radius_initial = (
+        toolface_initial_start, toolface_initial_end, radius_initial = (
             _get_toolface_and_radius(connector)
         )
         if np.isinf(radius_initial):
@@ -135,14 +139,15 @@ def bit_walk_survey(survey, toolface_walk, dls_walk, dls_design=3.0):
                 * 30
             )
         toolface_initial_apparent, radius_initial_apparent = bit_walk(
-            coords[i], vecs[-1], dls_survey, toolface_initial,
+            coords[i], vecs[-1], dls_survey,
+            np.degrees(toolface_initial_start),
             dls_walk, toolface_walk,
             # step=30.,
             nev=True, deg=True
         )
         toolface_anti, radius_anti = toolface_from_vec(
             toolface_vec(toolface_initial_apparent - 180, d)
-            + toolface_vec(toolface_walk, dls_walk)
+            # + toolface_vec(toolface_walk, dls_walk)
         )
 
         radius_anti_real = real_radius_from_toolface_radius(radius_anti)
@@ -181,6 +186,31 @@ def bit_walk_survey(survey, toolface_walk, dls_walk, dls_design=3.0):
             *args,
             result=True
         )
+        delta_mds.extend([result.delta_md1, result.delta_md2])
+        vecs.extend([result.vec1, result.vec2])
+
+        incs, azis = get_angles(np.array(vecs).reshape(-1, 3)).T
+
+
+        s = interpolate_survey(
+                Survey(
+                md=np.cumsum(delta_mds),
+                inc=incs,
+                azi=azis,
+                deg=False,
+                radius=1
+            ),
+            step=30
+        )
+        s_ref = interpolate_survey(
+            survey,
+            step=30
+        )
+        m = we.mesh.WellMesh(s, method='circle')
+
+        m_ref = we.mesh.WellMesh(s_ref, method='circle')
+
+        we.visual.plot([m_ref.mesh, m.mesh])
 
         continue
 
@@ -194,9 +224,19 @@ def function(
     pos1, vec1, delta_md1 = get_arc(
         x0[0], radius_anti, np.radians(toolface_anti), pos, vec
     )
+    connector = Connector(
+        md1=0,
+        pos1=pos,
+        vec1=vec,
+        md2=delta_md1,
+        vec2=vec1,
+        dls_design=0.1,
+    )
+    t1, t2, r = _get_toolface_and_radius(connector)
+    toolface = (t2 + np.pi) % (2 * np.pi)
     pos2, vec2, delta_md2 = get_arc(
         x0[1], radius,
-        np.radians(toolface),
+        toolface,
         pos1, vec1
     )
     distance = np.linalg.norm(pos2 - pos_end)
