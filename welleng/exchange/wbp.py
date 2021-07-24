@@ -1,10 +1,15 @@
 import os
 import yaml
 import welleng
-import utm
+
+try:
+    import utm
+except ImportError:
+    print("ImportError: try pip install welleng[easy]")
+
 import numpy as np
 from datetime import datetime
-from welleng.version import __version__ as VERSION
+from ..version import __version__ as VERSION
 
 # TODO: need to relocate the class Target to target.py
 
