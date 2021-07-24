@@ -1,6 +1,11 @@
 import os
 import yaml
-import welleng
+from ..survey import (
+    Survey, SurveyHeader, get_sections
+)
+from ..connector import (
+    Connector, interpolate_well, get_survey
+)
 
 try:
     import utm
@@ -207,7 +212,7 @@ class WellPlan:
             self._process_wbp_data()
         else:
             assert isinstance(
-                survey, welleng.survey.Survey
+                survey, Survey
             ), "Not a welleng Survey"
             assert self.wbp_data is None, "Either wbp_data or survey"
             assert plan_name is not None, "Must provide plan_name"
@@ -222,7 +227,7 @@ class WellPlan:
             self.dls = dls
             self.extension = extension
 
-            self.steps = welleng.survey.get_sections(survey)
+            self.steps = get_sections(survey)
 
             self._get_surface_location()
             self._get_local_coordinates()
@@ -516,7 +521,7 @@ def add_header(doc, data):
 
 
 def add_step(doc, step):
-    if isinstance(step, welleng.exchange.wbp.TurnPoint):
+    if isinstance(step, TurnPoint):
         doc = add_turn_point(doc, step)
     else:
         doc = add_survey_point(doc, step)
@@ -617,7 +622,7 @@ def export(data, filename=None, comments=None):
         data = [data]
     for i, w in enumerate(data):
         assert isinstance(
-            w, welleng.exchange.wbp.WellPlan
+            w, WellPlan
         ), "Not a WellPlan object"
         if i == 0:
             doc.append(f"DEPTH {get_unit_key(w)}")
@@ -676,11 +681,11 @@ def wbp_to_survey(
     -------
         survey: welleng.survey.Survey object
     """
-    assert UTM, "Missing utm library, try pip install welleng[easy]"
+    assert UTM, "Missing utm library, try pip install welleng[e"
     connections = []
     for i, s in enumerate(data.steps):
         if i == 0:
-            if isinstance(s, welleng.exchange.wbp.TurnPoint):
+            if isinstance(s, TurnPoint):
                 dls = [s.dls]
             else:
                 dls = [0.]
@@ -694,7 +699,7 @@ def wbp_to_survey(
             inc = [s.inc]
             azi = [s.azi]
             pos = [p]
-            plan = [isinstance(s, welleng.exchange.wbp.TurnPoint)]
+            plan = [isinstance(s, TurnPoint)]
             continue
 
         # need to set dls_design relatively small to trigger adaption to
@@ -703,13 +708,13 @@ def wbp_to_survey(
         # TODO: update the connector code so that None can be passed for
         # dls_design, which will set np.inf for radius_design and force
         # the dls to be set by radius_critical.
-        if isinstance(s, welleng.exchange.wbp.TurnPoint):
+        if isinstance(s, TurnPoint):
             dls_design = s.dls if s.dls > 0 else 1e-5
         else:
             # dls_design = data.dls if data.dls > 0 else None
             dls_design = 1e-5
 
-        c = welleng.connector.Connector(
+        c = Connector(
             pos1=pos[-1],
             md1=md[-1],
             inc1=inc[-1],
@@ -719,12 +724,12 @@ def wbp_to_survey(
             azi2=s.azi,
             dls_design=dls_design,
         )
-        if isinstance(s, welleng.exchange.wbp.TurnPoint):
+        if isinstance(s, TurnPoint):
             dls.append(s.dls)
         else:
             dls.append(0)
         connections.append(c)
-        plan.append(isinstance(s, welleng.exchange.wbp.TurnPoint))
+        plan.append(isinstance(s, TurnPoint))
         pos.append(c.pos_target)
         inc.append(np.degrees(c.inc_target))
         azi.append(np.degrees(c.azi_target))
@@ -732,7 +737,7 @@ def wbp_to_survey(
 
     start_nev = np.array(pos[0])
 
-    survey_data = welleng.connector.interpolate_well(
+    survey_data = interpolate_well(
         connections,
         step=step
     )
@@ -744,7 +749,7 @@ def wbp_to_survey(
         northern=utm_north,
     )
 
-    sh = welleng.survey.SurveyHeader(
+    sh = SurveyHeader(
         latitude=lat,
         longitude=lon,
         altitude=start_nev[-1] * -1,
@@ -752,7 +757,7 @@ def wbp_to_survey(
         convergence=convergence,
     )
 
-    survey = welleng.connector.get_survey(
+    survey = get_survey(
         survey_data,
         survey_header=sh,
         start_nev=start_nev,
@@ -800,7 +805,7 @@ def strip_duplicates(survey):
 
     md, inc, azi, radius = np.array(temp).reshape(-1, 4).T
 
-    survey_stripped = welleng.survey.Survey(
+    survey_stripped = Survey(
         md=md,
         inc=inc,
         azi=azi,
