@@ -28,6 +28,7 @@ download_url = f'https://github.com/jonnymaserati/welleng/archive/v{__version__}
 requirements_default = set([
     'numpy',
     'scipy',
+    'PyYAML',
     'setuptools'
 ])
 
@@ -37,7 +38,6 @@ requirements_easy = set([
     'networkx',
     'openpyxl',
     'pandas',
-    'PyYAML',
     'tabulate',
     'trimesh',
     'utm',
