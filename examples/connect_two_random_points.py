@@ -12,7 +12,7 @@ import os
 pos1 = [0., 0., 0.]
 md1 = 0
 
-pos2 = np.random.random(3) * 1000
+pos2 = np.random.random(3) * 500
 
 vec1 = np.random.random(3)
 vec1 /= np.linalg.norm(vec1)
@@ -92,7 +92,9 @@ section = we.connector.Connector(
     azi2=azi2,
     degrees=True,
     min_tangent=0.,
-    delta_radius=10.,
+    dls_design=2.0,
+    # delta_radius=10.,
+    delta_dls=0.1,
 )
 
 # Print some pertinent calculation data
