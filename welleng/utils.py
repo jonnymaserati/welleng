@@ -1,4 +1,9 @@
 import numpy as np
+try:
+    from numba import njit
+    NUMBA = True
+except ImportError:
+    NUMBA = False
 
 
 class MinCurve:
@@ -159,7 +164,9 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
     return vec / np.linalg.norm(vec, axis=-1).reshape(-1, 1)
 
 
-def get_nev(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
+def get_nev(
+    pos, start_xyz=np.array([0., 0., 0.]), start_nev=np.array([0., 0., 0.])
+):
     """
     Convert [x, y, z] coordinates to [n, e, tvd] coordinates.
 
@@ -197,6 +204,10 @@ def _get_angles(vec):
     return np.stack((inc, azi), axis=1)
 
 
+if NUMBA:
+    _get_angles = njit(_get_angles)
+
+
 def get_angles(vec, nev=False):
     '''
     Determines the inclination and azimuth from a vector.
@@ -208,7 +219,7 @@ def get_angles(vec, nev=False):
 
     Returns:
         [inc, azi]: (n,2) array of floats
-            A numpy array of incs and azis in radians
+            A numpy array of incs and axis in radians
 
     '''
     # make sure it's a unit vector
@@ -222,14 +233,7 @@ def get_angles(vec, nev=False):
 
     return _get_angles(vec)
 
-    # xy = vec[:, 0] ** 2 + vec[:, 1] ** 2
-    # inc = np.arctan2(np.sqrt(xy), vec[:, 2])  # for elevation angle defined from Z-axis down
-    # azi = (np.arctan2(vec[:, 0], vec[:, 1]) + (2 * np.pi)) % (2 * np.pi)
 
-    # return np.stack((inc, azi), axis=1)
-
-
-# @njit
 def _get_transform(inc, azi):
     trans = np.array([
         [np.cos(inc) * np.cos(azi), -np.sin(azi), np.sin(inc) * np.cos(azi)],
