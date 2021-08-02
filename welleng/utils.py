@@ -181,6 +181,9 @@ def get_nev(
     Returns:
         An (n,3) array of [n, e, tvd] coordinates.
     """
+    # e, n, v = (
+    #     np.array([pos]).reshape(-1,3) - np.array([start_xyz])
+    # ).T
     e, n, v = (
         np.array([pos]).reshape(-1,3) - np.array([start_xyz])
     ).T

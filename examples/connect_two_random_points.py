@@ -92,9 +92,9 @@ section = we.connector.Connector(
     azi2=azi2,
     degrees=True,
     min_tangent=0.,
-    dls_design=2.0,
-    # delta_radius=10.,
+    dls_design=1.0,
     delta_dls=0.1,
+    max_iterations=1_000
 )
 
 # Print some pertinent calculation data
@@ -110,6 +110,9 @@ print(
 
 # Create a survey object of the section with interpolated points and coords
 survey = section.survey(radius=5, step=30)
+
+# test interpolate_md function
+node = survey.interpolate_md(123).properties()
 
 # As a QAQC step, check that the wellpath hits the defined turn points
 start_points = np.array([section.pos1])
