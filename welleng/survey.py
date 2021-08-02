@@ -19,8 +19,7 @@ from .utils import (
     get_xyz
 )
 from .error import ErrorModel, ERROR_MODELS
-# from .exchange.wbp import TurnPoint
-# from .exchange.csv import export_csv
+from .node import Node
 
 
 AZI_REF = ["true", "magnetic", "grid"]
@@ -44,7 +43,7 @@ class SurveyHeader:
         deg=True,
         depth_unit='meters',
         surface_unit='meters',
-        mag_defaults = {
+        mag_defaults={
             'b_total': 50_000.,
             'dip': 70.,
             'declination': 0.,
@@ -471,7 +470,7 @@ class Survey:
             ]).T,
             start_xyz=self.start_xyz,
             start_nev=self.start_nev
-        ).T
+        ).reshape(-1, 3).T
 
     def _make_angles(self, inc, azi, deg=True):
         """
@@ -624,6 +623,60 @@ class Survey:
         """
         export_csv(self, filename)
 
+    def interpolate_md(self, md):
+        """
+        Method to interpolate a position based on measured depth and return
+        a node.
+
+        Parameters
+        ----------
+        md: float
+            The measured depth of the point of interest.
+
+        Returns
+        -------
+        node: we.node.Node object
+            A node with attributes describing the point at the provided
+            measured depth.
+
+        Examples
+        --------
+        >>> import welleng as we
+        >>> survey = we.connector.interpolate_survey(
+        ...    survey=we.survey.Survey(
+        ...       md=[0, 500, 1000, 2000, 3000],
+        ...       inc=[0, 0, 30, 90, 90],
+        ...       azi=[0, 0, 45, 135, 180],
+        ...    ),
+        ...    step=30
+        ... )
+        >>> node = survey.interpolate_md(1234)
+        >>> node.properties()
+        {
+            'vec_nev': [0.07584209568113438, 0.5840332282889957, 0.8081789187902809],
+            'vec_xyz': [0.5840332282889957, 0.07584209568113438, 0.8081789187902809],
+            'inc_rad': 0.6297429542197106,
+            'azi_rad': 1.4416597719915565,
+            'inc_deg': 36.081613454889634,
+            'azi_deg': 82.60102042890875,
+            'pos_nev': [141.27728744087796, 201.41424652428694, 1175.5823295305202],
+            'pos_xyz': [201.41424652428694, 141.27728744087796, 1175.5823295305202],
+            'md': 1234.0,
+            'unit': 'meters',
+            'interpolated': True
+        }
+        """
+        s = interpolate_md(self, md)
+        node = Node(
+            pos=[s.n[-1], s.e[-1], s.tvd[-1]],
+            vec=s.vec_nev[-1].tolist(),
+            md=s.md[-1],
+            unit=s.unit,
+            nev=True,
+            interpolated=s.interpolated[-1]
+        )
+        return node
+
 
 class TurnPoint:
     def __init__(
@@ -732,7 +785,8 @@ def interpolate_survey(survey, x=0, index=0):
         header=sh,
         deg=False,
     )
-    # s._min_curve(vec=None)
+    interpolated = False if x == 0 else True
+    s.interpolated = [False, interpolated]
 
     return s
 
@@ -1017,20 +1071,8 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
     starts = np.concatenate((
         np.array([0]),
         np.where(continuous == False)[0] + 1,
-        # np.array([len(continuous) - 1]),
         np.array([len(survey.md) - 1])
     ))
-
-    # ends = np.concatenate(
-    #     (
-    #         starts[1:],
-    #         np.array([len(continuous) - 1])
-    #     )
-    # )
-
-    # starts = np.concatenate((
-    #     starts, np.array([len(continuous) - 1])
-    # ))
 
     actions = ["hold"]
     actions.extend([
@@ -1189,8 +1231,8 @@ def export_csv(
 ):
     """
     Function to export a minimalist (only the control points - i.e. the
-    begining and end points of hold and/or turn sections) survey to input into third
-    party trajectory planning software.
+    begining and end points of hold and/or turn sections) survey to input into
+    third party trajectory planning software.
 
     Parameters
     ----------
@@ -1252,7 +1294,7 @@ def export_csv(
     comments.extend([
         f"{k}, {v}\n" for k, v in vars(survey.header).items()
     ])
-    comments += f"\n"
+    comments += "\n"
     comments = ''.join(comments)
 
     np.savetxt(
