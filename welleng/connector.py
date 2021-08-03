@@ -1,99 +1,19 @@
 import numpy as np
 from copy import copy, deepcopy
 from scipy.spatial import distance
+from scipy.optimize import minimize
+try:
+    from numba import njit
+    NUMBA = True
+except ImportError:
+    NUMBA = False
 
 from .utils import (
-    get_vec, get_angles, get_nev, get_xyz, get_unit_vec, NEV_to_HLA,
-    dls_from_radius
+    get_vec, _get_angles, get_angles, get_nev, get_xyz, get_unit_vec,
+    NEV_to_HLA, dls_from_radius
 )
 from .survey import Survey, SurveyHeader
-
-
-class Node:
-    def __init__(
-        self,
-        pos=None,
-        vec=None,
-        md=None,
-        inc=None,
-        azi=None,
-        unit='meters',
-        degrees=True,
-        nev=True,
-    ):
-        self.check_angle_inputs(inc, azi, vec, nev, degrees)
-        self.get_pos(pos, nev)
-        self.md = md
-        self.unit = unit
-
-    def check_angle_inputs(self, inc, azi, vec, nev, degrees):
-        if all(v is None for v in [inc, azi, vec]):
-            self.vec_xyz = None
-            self.vec_nev = None
-            self.inc_rad = None
-            self.inc_deg = None
-            self.azi_rad = None
-            self.azi_rad = None
-            return
-        elif vec is None:
-            assert inc is not None and azi is not None, (
-                "vec or (inc, azi) must not be None"
-            )
-            self.vec_xyz = get_vec(inc, azi, deg=degrees).reshape(3)
-            self.vec_nev = get_nev(self.vec_xyz).reshape(3)
-        else:
-            if nev:
-                self.vec_nev = get_unit_vec(vec).reshape(3)
-                self.vec_xyz = get_xyz(self.vec_nev).reshape(3)
-            else:
-                self.vec_xyz = get_unit_vec(vec).reshape(3)
-                self.vec_nev = get_nev(self.vec_xyz).reshape(3)
-        self.inc_rad, self.azi_rad = (
-            get_angles(self.vec_xyz).T
-        ).reshape(2)
-        self.inc_deg, self.azi_deg = (
-            np.degrees(np.array([self.inc_rad, self.azi_rad]))
-        ).reshape(2)
-
-    def get_pos(self, pos, nev):
-        if pos is None:
-            self.pos_xyz = None
-            self.pos_nev = None
-            return
-        if nev:
-            self.pos_nev = np.array(pos).reshape(3)
-            self.pos_xyz = get_xyz(pos).reshape(3)
-        else:
-            self.pos_xyz = np.array(pos).reshape(3)
-            self.pos_nev = get_nev(pos).reshape(3)
-
-    @staticmethod
-    def get_unit_vec(vec):
-        vec = vec / np.linalg.norm(vec)
-
-        return vec
-
-    def get_angles(self, inc, azi, degrees):
-        if degrees:
-            self.inc_deg = inc
-            self.azi_deg = azi
-            self.inc_rad, self.azi_rad = (
-                np.radians(np.array([inc, azi]))
-            )
-        else:
-            self.inc_rad = inc
-            self.azi_rad = azi
-            self.inc_deg, self.azi_deg = (
-                np.radians(np.array([inc, azi]))
-            )
-
-
-def get_node_params(node):
-    pos = node.pos_nev
-    vec = node.vec_nev
-    md = node.md
-
-    return pos, vec, md
+from .node import Node, get_node_params
 
 
 class Connector:
@@ -116,10 +36,9 @@ class Connector:
         degrees=True,
         unit='meters',
         min_error=1e-5,
-        # delta_radius=20.,
         delta_dls=0.1,
         min_tangent=0.,
-        max_iterations=200,
+        max_iterations=1_000,
         force_min_curve=False,
         closest_approach=False
     ):
@@ -214,7 +133,6 @@ class Connector:
             pos2, vec2, md2 = get_node_params(
                 node2
             )
-        # TODO: remove self.step
 
         # Set up a lookup dictionary to use with the logic to determine
         # what connector method to deploy. Use a binary string to
@@ -375,12 +293,7 @@ class Connector:
         self.radius_design = self.denom / self.dls_design
         self.radius_design2 = self.denom / self.dls_design2
 
-        # check that the `delta_radius` actually makes sense
-        # self.delta_radius = max(
-        #     delta_radius,
-        #     abs(self.radius_design - self.radius_design2)
-        # )
-        self.delta_dls = abs(self.dls_design - self.dls_design2) + delta_dls
+        self.delta_dls = delta_dls
 
         # some more initialization stuff
         self.tangent_length = None
@@ -599,16 +512,6 @@ class Connector:
         self.dogleg = get_dogleg(
             self.inc1, self.azi1, self.inc_target, self.azi_target
         )
-        # TODO: handle when self.dogleg == 0
-        # if self.dogleg == 0:
-        #     self.dist_curve, self.func_dogleg = 0., 1.
-        #     self.md2, self.inc2, self.azi2, self.pos2, self.vec2 = (
-        #         None, None, None, None, None
-        #     )
-        #     self.pos_target = self.pos1 + (
-        #             self.vec1 * self.md_target
-        #         )
-        #     return
 
         self.dogleg = check_dogleg(self.dogleg)
         if self.md_target is None:
@@ -694,33 +597,111 @@ class Connector:
             + self.md1
         )
 
-    def _target_pos_and_vec_defined(self, pos3, vec_old=[0., 0., 0.]):
-        self.pos3 = pos3
-        self.distances1 = self._get_distances(self.pos1, self.vec1, self.pos3)
+    def _get_pos2(self, pos1, vec1, pos_target, radius):
+        distances = self._get_distances(pos1, vec1, pos_target)
 
-        radius_temp1 = get_radius_critical(
+        radius_temp = get_radius_critical(
             self.radius_design,
-            self.distances1,
+            distances,
             self.min_error
         )
-        if radius_temp1 < self.radius_critical:
-            self.radius_critical = radius_temp1
+        if radius_temp > radius:
+            radius_temp = radius
             assert self.radius_critical > 0
 
         (
-            self.tangent_length,
-            self.dogleg
+            tangent_length,
+            dogleg
         ) = min_dist_to_target(
-            min(self.radius_design, self.radius_critical),
-            self.distances1
+            radius_temp,
+            distances
         )
 
-        self.dogleg = check_dogleg(self.dogleg)
+        dogleg = check_dogleg(dogleg)
 
-        self.dist_curve, self.func_dogleg = get_curve_hold_data(
-                    min(self.radius_critical, self.radius_design),
-                    self.dogleg
+        dist_curve, func_dogleg = get_curve_hold_data(
+                    radius_temp,
+                    dogleg
                 )
+        vec3 = get_vec_target(
+            pos1,
+            vec1,
+            pos_target,
+            tangent_length,
+            dist_curve,
+            func_dogleg
+        )
+
+        tangent_temp = self._get_tangent_temp(tangent_length)
+
+        pos2 = (
+            pos_target - (
+                tangent_temp * vec3
+            )
+        )
+        return pos2
+
+    def _target_pos_and_vec_defined(self, pos3, vec_old=[0., 0., 0.]):
+        """
+        Function for fitting a curve, hold, curve path between a pair of
+        points with vectors.
+
+        It's written in this odd way to allow a solver function like scipy's
+        optimize to solve it, but so far I've not had much success using
+        these.
+
+        If the curve sections can't be achieved with the design DLS values,
+        this function will iterate until the two curve section DLSs are
+        approximately balances (in DLS terms) within the prescribed delta_dls
+        parameter.
+        """
+        args = (self, None, [0., 0., 0.])
+        minimize_target_pos_and_vec_defined(
+            *(
+                ([
+                    self.radius_design,
+                    self.radius_design2
+                ],)
+                + args + (True,)
+            )
+        )
+        if not all((
+            self.radius_critical > self.radius_design,
+            self.radius_critical2 > self.radius_design2
+        )):
+            while True and self.iterations <= self.max_iterations:
+                self.radius_critical = (
+                    (self.md_target - self.md1)
+                    / (abs(self.dogleg) + abs(self.dogleg2))
+                )
+                assert self.radius_critical > 0
+                self.radius_critical2 = self.radius_critical
+                args = (self, deepcopy(self.pos3), deepcopy(self.vec23[-1]))
+                minimize_target_pos_and_vec_defined(
+                    *(
+                        ([
+                            self.radius_design,
+                            self.radius_design2
+                        ],)
+                        + args + (True,)
+                    )
+                )
+                if abs(
+                    self.dls - self.dls2
+                ) < self.delta_dls:
+                    break
+            self._happy_finish()
+            return
+
+        self._happy_finish()
+
+    def _happy_finish(self):
+        # get pos1 to pos2 curve data
+        self.dist_curve, self.func_dogleg = get_curve_hold_data(
+            min(self.radius_critical, self.radius_design),
+            self.dogleg
+        )
+
         self.vec3 = get_vec_target(
             self.pos1,
             self.vec1,
@@ -730,187 +711,38 @@ class Connector:
             self.func_dogleg
         )
 
-        tangent_temp1 = self._get_tangent_temp(self.tangent_length)
+        self.vec2 = self.vec3
 
-        self.pos2 = (
-            self.pos3 - (
-                tangent_temp1 * self.vec3
-            )
-        )
+        self.pos2 = get_pos(
+            self.pos1,
+            self.vec1,
+            self.vec3,
+            self.dist_curve,
+            self.func_dogleg
+        ).reshape(3)
 
-        self.distances2 = self._get_distances(
-            self.pos_target,
-            self.vec_target * -1,
-            self.pos2
-        )
-
-        radius_temp2 = get_radius_critical(
-            self.radius_design2,
-            self.distances2,
-            self.min_error
-        )
-        if radius_temp2 < self.radius_critical2:
-            self.radius_critical2 = radius_temp2
-            assert self.radius_critical2 > 0
-
-        (
-            self.tangent_length2,
-            self.dogleg2
-        ) = min_dist_to_target(
-            min(self.radius_design2, self.radius_critical2),
-            self.distances2
-        )
-
-        self.dogleg2 = check_dogleg(self.dogleg2)
+        self.md2 = self.md1 + abs(self.dist_curve)
 
         self.dist_curve2, self.func_dogleg2 = get_curve_hold_data(
-                    min(self.radius_critical2, self.radius_design2),
-                    self.dogleg2
-                )
-        self.vec2 = get_vec_target(
+            min(self.radius_critical2, self.radius_design2),
+            self.dogleg2
+        )
+
+        self.pos3 = get_pos(
             self.pos_target,
             self.vec_target * -1,
-            self.pos2,
-            self.tangent_length2,
+            self.vec3 * -1,
             self.dist_curve2,
             self.func_dogleg2
+        ).reshape(3)
+
+        tangent_length = np.linalg.norm(
+            self.pos3 - self.pos2
         )
 
-        tangent_temp2 = self._get_tangent_temp(self.tangent_length2)
+        self.md3 = self.md2 + tangent_length
 
-        self.pos3 = (
-            self.pos2 - (
-                tangent_temp2 * self.vec2
-            )
-        )
-
-        vec23_denom = np.linalg.norm(self.pos3 - self.pos2)
-        if vec23_denom == 0:
-            self.vec23.append(np.array([0., 0., 0.]))
-        else:
-            self.vec23.append((self.pos3 - self.pos2) / vec23_denom)
-
-        self.error = np.allclose(
-            self.vec23[-1],
-            vec_old,
-            equal_nan=True,
-            rtol=self.min_error * 10,
-            atol=self.min_error * 0.1
-        )
-
-        self.errors.append(self.error)
-        self.pos3_list.append(self.pos3)
-        self.pos2_list.append(self.pos2)
-        self.md_target = (
-            self.md1 + self.dist_curve + tangent_temp2 + self.dist_curve2
-        )
-        self.delta_radius_list.append(
-            abs(self.radius_critical - self.radius_critical2)
-        )
-        dls = max(
-            dls_from_radius(self.radius_design),
-            dls_from_radius(self.radius_critical)
-        )
-        dls2 = max(
-            dls_from_radius(self.radius_design2),
-            dls_from_radius(self.radius_critical2)
-        )
-
-        # a bit of recursive magic - proceed with caution
-        if all((
-            self.iterations < self.max_iterations - 1,
-            (
-                not self.error
-                or
-                (
-                    (
-                        self.radius_critical2 < self.radius_design2
-                        or self.radius_critical < self.radius_design
-                    )
-                    # and
-                    # abs(self.radius_critical - self.radius_critical2)
-                    # > self.delta_radius
-                    and abs(dls - dls2) > self.delta_dls
-                    and not np.allclose(
-                        self.pos1,
-                        self.pos2,
-                        rtol=self.min_error * 10,
-                        atol=self.min_error * 0.1
-                    )
-                )
-            )
-            # and
-            # self.iterations < self.max_iterations  # the give up clause
-        )):
-            # A solution will typically be found within a few iterations,
-            # however it will likely be unbalanced in terms of dls between the
-            # two curve sections. The code below will re-initiate iterations
-            # to balance the curvatures until the delta_radius parameter is
-            # met.
-            if self.error:
-                self.radius_critical = (
-                    (self.md_target - self.md1)
-                    / (abs(self.dogleg) + abs(self.dogleg2))
-                )
-                assert self.radius_critical > 0
-                # self.radius_critical += np.random.rand() * (
-                #     self.radius_critical - self.radius_critical2
-                # )
-                self.radius_critical2 = self.radius_critical
-            self.iterations += 1
-            # prevent a loop ad infinitum
-            assert self.iterations < self.max_iterations, (
-                "Out of iteration ammo"
-            )
-            self._target_pos_and_vec_defined(self.pos3, self.vec23[-1])
-        else:
-            # get pos1 to pos2 curve data
-            self.dist_curve, self.func_dogleg = get_curve_hold_data(
-                min(self.radius_critical, self.radius_design),
-                self.dogleg
-            )
-
-            self.vec3 = get_vec_target(
-                self.pos1,
-                self.vec1,
-                self.pos3,
-                self.tangent_length,
-                self.dist_curve,
-                self.func_dogleg
-            )
-
-            self.vec2 = self.vec3
-
-            self.pos2 = get_pos(
-                self.pos1,
-                self.vec1,
-                self.vec3,
-                self.dist_curve,
-                self.func_dogleg
-            ).reshape(3)
-
-            self.md2 = self.md1 + abs(self.dist_curve)
-
-            self.dist_curve2, self.func_dogleg2 = get_curve_hold_data(
-                min(self.radius_critical2, self.radius_design2),
-                self.dogleg2
-            )
-
-            self.pos3 = get_pos(
-                self.pos_target,
-                self.vec_target * -1,
-                self.vec3 * -1,
-                self.dist_curve2,
-                self.func_dogleg2
-            ).reshape(3)
-
-            tangent_length = np.linalg.norm(
-                self.pos3 - self.pos2
-            )
-
-            self.md3 = self.md2 + tangent_length
-
-            self.md_target = self.md3 + abs(self.dist_curve2)
+        self.md_target = self.md3 + abs(self.dist_curve2)
 
     def interpolate(self, step=30):
         return interpolate_well([self], step)
@@ -981,6 +813,158 @@ class Connector:
             )
 
 
+def minimize_target_pos_and_vec_defined(
+    x, c, pos3=None, vec_old=[0., 0., 0.], result=False
+):
+    radius1, radius2 = x
+    if pos3 is None:
+        pos2_init = c._get_pos2(c.pos1, c.vec1, c.pos_target, radius1)
+        pos3_init = c._get_pos2(
+            c.pos_target, c.vec_target * -1, c.pos1, radius2
+        )
+        c.pos3 = pos2_init + (
+            pos3_init - pos2_init
+        ) / 2
+    c.distances1 = c._get_distances(c.pos1, c.vec1, c.pos3)
+
+    radius_temp1 = get_radius_critical(
+        radius1,
+        c.distances1,
+        c.min_error
+    )
+    if radius_temp1 < c.radius_critical:
+        c.radius_critical = radius_temp1
+        assert c.radius_critical > 0
+
+    radius_effective1 = min(radius1, c.radius_critical)
+
+    (
+        c.tangent_length,
+        c.dogleg
+    ) = min_dist_to_target(
+        radius_effective1,
+        c.distances1
+    )
+
+    c.dogleg = check_dogleg(c.dogleg)
+
+    c.dist_curve, c.func_dogleg = get_curve_hold_data(
+                radius_effective1,
+                c.dogleg
+            )
+    c.vec3 = get_vec_target(
+        c.pos1,
+        c.vec1,
+        c.pos3,
+        c.tangent_length,
+        c.dist_curve,
+        c.func_dogleg
+    )
+
+    tangent_temp1 = c._get_tangent_temp(c.tangent_length)
+
+    c.pos2 = (
+        c.pos3 - (
+            tangent_temp1 * c.vec3
+        )
+    )
+
+    c.distances2 = c._get_distances(
+        c.pos_target,
+        c.vec_target * -1,
+        c.pos2
+    )
+
+    radius_temp2 = get_radius_critical(
+        radius2,
+        c.distances2,
+        c.min_error
+    )
+    if radius_temp2 < c.radius_critical2:
+        c.radius_critical2 = radius_temp2
+        assert c.radius_critical2 > 0
+
+    radius_effective2 = min(radius2, c.radius_critical2)
+
+    (
+        c.tangent_length2,
+        c.dogleg2
+    ) = min_dist_to_target(
+        radius_effective2,
+        c.distances2
+    )
+
+    c.dogleg2 = check_dogleg(c.dogleg2)
+
+    c.dist_curve2, c.func_dogleg2 = get_curve_hold_data(
+                radius_effective2,
+                c.dogleg2
+            )
+    c.vec2 = get_vec_target(
+        c.pos_target,
+        c.vec_target * -1,
+        c.pos2,
+        c.tangent_length2,
+        c.dist_curve2,
+        c.func_dogleg2
+    )
+
+    tangent_temp2 = c._get_tangent_temp(c.tangent_length2)
+
+    c.pos3 = (
+        c.pos2 - (
+            tangent_temp2 * c.vec2
+        )
+    )
+
+    vec23_denom = np.linalg.norm(c.pos3 - c.pos2)
+    if vec23_denom == 0:
+        c.vec23.append(np.array([0., 0., 0.]))
+    else:
+        c.vec23.append((c.pos3 - c.pos2) / vec23_denom)
+
+    c.error = np.allclose(
+        c.vec23[-1],
+        vec_old,
+        equal_nan=True,
+        rtol=c.min_error * 10,
+        atol=c.min_error * 0.1
+    )
+
+    c.errors.append(c.error)
+    c.pos3_list.append(c.pos3)
+    c.pos2_list.append(c.pos2)
+    c.md_target = (
+        c.md1 + c.dist_curve + tangent_temp2 + c.dist_curve2
+    )
+    c.delta_radius_list.append(
+        abs(c.radius_critical - c.radius_critical2)
+    )
+    c.dls = max(
+        dls_from_radius(c.radius_design),
+        dls_from_radius(c.radius_critical)
+    )
+    c.dls2 = max(
+        dls_from_radius(c.radius_design2),
+        dls_from_radius(c.radius_critical2)
+    )
+
+    if c.error:
+        if result:
+            return c
+        result = 0.
+        if radius_temp2 < c.radius_design2:
+            result += c.radius_design2 - radius_temp2
+        if radius_temp1 < c.radius_design:
+            result += c.radius_design - radius_temp1
+        return result
+    else:
+        c.iterations += 1
+        return minimize_target_pos_and_vec_defined(
+            x, c, c.pos3, c.vec23[-1], result
+        )
+
+
 def check_dogleg(dogleg):
     # the code assumes angles are positive and clockwise
     if dogleg < 0:
@@ -999,12 +983,14 @@ def mod_vec(vec, error=1e-5):
     return vec_mod, inc_mod, azi_mod
 
 
+def _get_xyz(pos):
+        n, e, v = pos
+        return np.array([e, n, v]).reshape(-1, 3)
+
+
 def get_pos(pos1, vec1, vec2, dist_curve, func_dogleg):
-    # this function is redundent, but I'd like to reinstate it one day
-    # TODO: this seems to be a bit dodgy if you send it an array for
-    # vec2 - investigate.
-    inc1, azi1 = get_angles(vec1, nev=True).T
-    inc2, azi2 = get_angles(vec2, nev=True).T
+    inc1, azi1 = _get_angles(_get_xyz(vec1)).reshape(2)
+    inc2, azi2 = _get_angles(_get_xyz(vec2)).reshape(2)
 
     pos2 = pos1 + (
         (
@@ -1237,7 +1223,6 @@ def _remove_duplicates(md, inc, azi):
 
     temp = np.vstack((
         upper[0],
-        # lower[np.invert((upper == lower).all(axis=1))]
         lower[lower[:, 0] != upper[:, 0]]
     ))
 
@@ -1779,7 +1764,6 @@ def interpolate_survey(survey, step=30, dls=0.01):
         start_nev=survey.start_nev,
         start_xyz=survey.start_xyz,
         survey_header=survey.header,
-        # error_model=survey.error_model,
         error_model=None
     )
 
@@ -1826,3 +1810,23 @@ def interpolate_survey(survey, step=30, dls=0.01):
         ).T
 
     return survey_interpolated
+
+
+def numbafy(functions):
+    for f in functions:
+        f = njit(f)
+
+
+if NUMBA:
+    NUMBAFY = (
+        _get_xyz,
+        get_pos,
+        get_vec_target,
+        get_curve_hold_data,
+        shape_factor,
+        min_dist_to_target,
+        get_radius_critical,
+        angle,
+        get_dogleg
+    )
+    numbafy(NUMBAFY)

@@ -1,5 +1,9 @@
 import numpy as np
-from vedo import Circle
+try:
+    from vedo import Circle
+    VEDO = True
+except ImportError:
+    VEDO = False
 
 class Target:
     def __init__(
@@ -21,6 +25,7 @@ class Target:
         ----------
             geometry: 
         """
+        assert VEDO, "ImportError: try pip install welleng[easy]"
 
         SHAPES = [
             'circle',
@@ -66,5 +71,3 @@ class Target:
             g.rotate(self.orientation, point=pos, axis=(1,0,0))
 
         return g
-
-
