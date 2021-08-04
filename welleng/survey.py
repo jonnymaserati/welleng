@@ -1355,6 +1355,15 @@ def func(x0, survey, dls_cont, tolerance):
     return diff
 
 
+def derivative(x, y):
+    dx = np.diff(x)
+    dy = np.diff(y)
+    y_first = dx / dy
+    x_first = 0.5 * (x[1:] + x[:-1])
+
+    return (x_first, y_first)
+
+
 def _get_tortuosity_index(survey, mode):
     param = {
         'inc': 'inc_rad',
@@ -1362,11 +1371,27 @@ def _get_tortuosity_index(survey, mode):
     }
     assert mode in param.keys(), "Unrecognized mode"
 
+    x_first, y_first = derivative(getattr(survey, param[mode]), survey.md)
+    x_second, y_second = derivative(x_first, y_first)
+    temp = np.sign(x_second)
+
+    # manage the zero values
+    try:
+        first_non_zero = np.where(x_second != 0)[0][0]
+    except IndexError:
+        return 0
+
+    if first_non_zero != 0:
+        temp[:first_non_zero] = temp[first_non_zero]
+    temp_upper, temp_lower = temp[1:], temp[:-1]
+    temp = np.where(temp_upper == 0.0, temp_lower, temp_upper)
+
+
     inflections = np.hstack((
         np.array([0]),
         np.where(
-            np.diff(np.sign(np.diff(getattr(survey, param[mode]))))
-        )[0] + 1,
+            np.diff(temp)
+        )[0] + 2,
         np.array([len(survey.md) - 1])
     ))
     temp = np.arange(0, len(inflections))
@@ -1405,7 +1430,8 @@ def _get_tortuosity_index(survey, mode):
         ))
         tortuosity = np.nan_to_num(
             (n / (n + 1))
-            * (1 / l_c)
+            # * (1 / l_c)
+            * (1 / survey.md[-1])
         )
 
     ti = coeff * tortuosity
@@ -1430,7 +1456,7 @@ def get_tortuosity_index(survey):
 
     Returns
     -------
-    
+
     """
     inflections_inc = _get_tortuosity_index(survey, 'inc')
     inflections_azi = _get_tortuosity_index(survey, 'azi')
