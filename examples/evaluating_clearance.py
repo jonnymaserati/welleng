@@ -87,7 +87,7 @@ for well in data["wells"]:
         deg=True,
         unit="meters"
     )
-    s_inter = we.connector.interpolate_survey(s, step=10.)
+    s_inter = we.survey.interpolate_survey(s, step=10.)
     # surveys[well] = s
     surveys[well] = s_inter
 

@@ -10,7 +10,7 @@ from scipy import optimize
 from scipy.spatial import KDTree
 from scipy.spatial.distance import cdist
 
-from .survey import Survey, interpolate_survey, slice_survey
+from .survey import Survey, _interpolate_survey, slice_survey
 from .utils import NEV_to_HLA
 from .mesh import WellMesh
 
@@ -244,13 +244,13 @@ class ISCWSA:
             if res_1 and res_2 and res_1.fun < res_2.fun or not res_2:
                 closest.append((
                     station,
-                    interpolate_survey(self.c.offset, res_1.x[0], i - 1),
+                    _interpolate_survey(self.c.offset, res_1.x[0], i - 1),
                     res_1, sigma_new_1
                 ))
             else:
                 closest.append((
                     station,
-                    interpolate_survey(self.c.offset, res_2.x[0], i),
+                    _interpolate_survey(self.c.offset, res_2.x[0], i),
                     res_2,
                     sigma_new_2
                 ))
@@ -316,7 +316,7 @@ class ISCWSA:
         return (cov_hla_new, cov_nev_new)
 
     def _fun(self, x, survey, index, station):
-        s = interpolate_survey(survey, x[0], index)
+        s = _interpolate_survey(survey, x[0], index)
         new_pos = np.array([s.n, s.e, s.tvd]).T[1]
         dist = norm(new_pos - station, axis=-1)
 
@@ -586,7 +586,7 @@ class MeshClearance:
         the distance between the interpolated point and the
         position provided.
         """
-        s = interpolate_survey(survey, x[0])
+        s = _interpolate_survey(survey, x[0])
         new_pos = np.array([s.n, s.e, s.tvd]).T[1]
         dist = norm(new_pos - pos, axis=-1)
 
@@ -606,7 +606,7 @@ class MeshClearance:
             args=(survey, pos)
             )
 
-        s = interpolate_survey(survey, res.x[0])
+        s = _interpolate_survey(survey, res.x[0])
 
         nev = np.array([s.n, s.e, s.tvd]).T[-1]
 
