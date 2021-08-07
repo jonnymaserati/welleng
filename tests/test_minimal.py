@@ -11,7 +11,7 @@ import welleng as we
 class MinimalTest(unittest.TestCase):
 
     def test_survey(self):
-        survey = we.connector.interpolate_survey(
+        survey = we.survey.interpolate_survey(
             survey=we.survey.Survey(
                 md=[0, 500, 1000, 2000, 3000],
                 inc=[0, 0, 30, 90, 90],

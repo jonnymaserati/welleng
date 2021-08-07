@@ -8,9 +8,10 @@ from ..survey import (
 )
 from ..connector import (
     Connector,
-    interpolate_well,
-    get_survey
+    # interpolate_well,
+    # get_survey
 )
+from ..survey import from_connections
 
 try:
     import utm

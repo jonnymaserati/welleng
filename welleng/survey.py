@@ -1,5 +1,6 @@
 import numpy as np
 import math
+from copy import copy
 try:
     from magnetic_field_calculator import MagneticFieldCalculator
     MAG_CALC = True
@@ -20,6 +21,7 @@ from .utils import (
 )
 from .error import ErrorModel, ERROR_MODELS
 from .node import Node
+from .connector import Connector, interpolate_well
 
 
 AZI_REF = ["true", "magnetic", "grid"]
@@ -47,7 +49,8 @@ class SurveyHeader:
             'b_total': 50_000.,
             'dip': 70.,
             'declination': 0.,
-        }
+        },
+        **kwargs
     ):
         """
         A class for storing header information about a well.
@@ -226,7 +229,8 @@ class Survey:
         start_nev=[0., 0., 0.],
         start_cov_nev=None,
         deg=True,
-        unit="meters"
+        unit="meters",
+        **kwargs
     ):
         """
         Initialize a welleng.Survey object. Calculations are performed in the
@@ -358,6 +362,8 @@ class Survey:
         self.cov_nev = cov_nev
 
         self._get_errors()
+
+        self.interpolated = kwargs.get('interpolated')
 
     def _process_azi_ref(self, inc, azi, deg):
         if self.header.azi_reference == 'grid':
@@ -667,14 +673,15 @@ class Survey:
         }
         """
         s = interpolate_md(self, md)
-        node = Node(
-            pos=[s.n[-1], s.e[-1], s.tvd[-1]],
-            vec=s.vec_nev[-1].tolist(),
-            md=s.md[-1],
-            unit=s.unit,
-            nev=True,
-            interpolated=s.interpolated[-1]
-        )
+        node = get_node(s, -1, s.interpolated[-1])
+        # node = Node(
+        #     pos=[s.n[-1], s.e[-1], s.tvd[-1]],
+        #     vec=s.vec_nev[-1].tolist(),
+        #     md=s.md[-1],
+        #     unit=s.unit,
+        #     nev=True,
+        #     interpolated=s.interpolated[-1]
+        # )
         return node
 
 
@@ -706,6 +713,18 @@ class TurnPoint:
         self.location = location
 
 
+def get_node(survey, idx, interpolated=False):
+    node = Node(
+        pos=[survey.n[idx], survey.e[idx], survey.tvd[idx]],
+        vec=survey.vec_nev[idx].tolist(),
+        md=survey.md[idx],
+        unit=survey.unit,
+        nev=True,
+        interpolated=interpolated
+    )
+    return node
+
+
 def interpolate_md(survey, md):
     """
     Interpolates a survey at a given measured depth.
@@ -718,10 +737,10 @@ def interpolate_md(survey, md):
     x = md - survey.md[idx]
     assert x >= 0
 
-    return interpolate_survey(survey, x=x, index=idx)
+    return _interpolate_survey(survey, x=x, index=idx)
 
 
-def interpolate_survey(survey, x=0, index=0):
+def _interpolate_survey(survey, x=0, index=0):
     """
     Interpolates a point distance x between two survey stations
     using minimum curvature.
@@ -785,22 +804,55 @@ def interpolate_survey(survey, x=0, index=0):
         header=sh,
         deg=False,
     )
-    interpolated = False if x == 0 else True
+    interpolated = False if any((
+        x == 0,
+        x == survey.md[index + 1] - survey.md[index]
+     )) else True
     s.interpolated = [False, interpolated]
 
     return s
 
 
-def interpolate_tvd(survey, tvd):
+def interpolate_tvd(survey, tvd, **kwargs):
+    # only seem to work with relative small delta_md - re-write with minimize
+    # function?
+
+    def tidy_up_angle(d):
+        """
+        Helper function to handle large angles.
+        """
+        if abs(d) > np.pi:
+            d %= (2 * np.pi)
+        return d
+
+    coeff = 1
     # find closest point assuming tvd is sorted list
     idx = np.searchsorted(survey.tvd, tvd, side="right") - 1
-    pos1, pos2 = np.array([survey.n, survey.e, survey.tvd]).T[idx:idx + 2]
-    vec1, vec2 = survey.vec_nev[idx:idx + 2]
+    if idx == len(survey.tvd) - 1:
+        idx = len(survey.tvd) - 2
+    elif idx == -1:
+        idx = len(survey.tvd) - 2
+        coeff = -1
+    pos1, pos2 = np.array([survey.n, survey.e, survey.tvd]).T[idx: idx + 2]
+    vec1, vec2 = survey.vec_nev[idx: idx + 2]
     dogleg = survey.dogleg[idx + 1]
     delta_md = survey.delta_md[idx + 1]
 
+    node_origin = kwargs.get('node_origin')
+    if node_origin:
+        pos1, vec1 = node_origin.pos_nev, node_origin.vec_nev
+        delta_md = survey.md[idx + 1] - node_origin.md
+        # TODO: need to recalculate the dogleg
+        s_temp = Survey(
+            md=[node_origin.md, survey.md[idx + 1]],
+            inc=[node_origin.inc_rad, survey.inc_rad[idx + 1]],
+            azi=[node_origin.azi_rad, survey.azi_grid_rad[idx + 1]],
+            deg=False
+        )
+        dogleg = s_temp.dogleg[-1]
+
     if np.isnan(dogleg):
-        return interpolate_survey(survey, x=0, index=idx)
+        return _interpolate_survey(survey, x=0, index=idx)
 
     if dogleg == 0:
         x = (
@@ -810,7 +862,7 @@ def interpolate_tvd(survey, tvd):
             / (survey.tvd[idx + 1] - survey.tvd[idx])
         ) * (survey.md[idx + 1] - survey.md[idx])
     else:
-        m = np.array([0., 0., 1.])
+        m = np.array([0., 0., coeff])
         a = np.dot(m, vec1) * np.sin(dogleg)
         b = np.dot(m, vec1) * np.cos(dogleg) - np.dot(m, vec2)
         # p = get_unit_vec(np.array([0., 0., tvd]) - pos1)
@@ -830,6 +882,8 @@ def interpolate_tvd(survey, tvd):
                 b + c
             )
         )
+        d1 = tidy_up_angle(d1)
+
         d2 = 2 * np.arctan2(
             (
                 a - (a ** 2 + b ** 2 - c ** 2) ** 0.5
@@ -838,6 +892,7 @@ def interpolate_tvd(survey, tvd):
                 b + c
             )
         )
+        d2 = tidy_up_angle(d2)
 
         assert d1 >= 0 or d2 >= 0
         if d1 < 0:
@@ -849,7 +904,12 @@ def interpolate_tvd(survey, tvd):
 
         x = d / dogleg * delta_md
 
-    interpolated_survey = interpolate_survey(survey, x=x, index=idx)
+        if node_origin:
+            x -= survey.md[idx] - node_origin.md
+
+        assert x <= delta_md
+
+    interpolated_survey = _interpolate_survey(survey, x=x, index=idx)
 
     return interpolated_survey
 
@@ -1353,3 +1413,277 @@ def func(x0, survey, dls_cont, tolerance):
     )
 
     return diff
+
+
+def _remove_duplicates(md, inc, azi):
+    arr = np.array([md, inc, azi]).T
+    upper = arr[:-1]
+    lower = arr[1:]
+
+    temp = np.vstack((
+        upper[0],
+        lower[lower[:, 0] != upper[:, 0]]
+    ))
+
+    return temp.T
+
+
+def from_connections(
+    section_data, step=None, survey_header=None,
+    start_nev=[0., 0., 0.],
+    start_xyz=[0., 0., 0.],
+    radius=10, deg=False, error_model=None,
+    depth_unit='meters', surface_unit='meters'
+):
+    """
+    Constructs a well survey from a list of sections of control points.
+
+    Parameters
+    ----------
+        section_data: list of dicts with section data
+        start_nev: (3) array of floats (default: [0,0,0])
+            The starting position in NEV coordinates.
+        radius: float (default: 10)
+            The radius is passed to the `welleng.survey.Survey` object
+            and represents the radius of the wellbore. It is also used
+            when visualizing the results, so can be used to make the
+            wellbore *thicker* in the plot.
+
+    Results
+    -------
+        survey: `welleng.survey.Survey` object
+    """
+    if type(section_data) is not list:
+        section_data = [section_data]
+    section_data_interp = interpolate_well(section_data, step)
+    # generate lists for survey
+    md, inc, azi = np.vstack([np.array(list(zip(
+            s['md'].tolist(),
+            s['inc'].tolist(),
+            s['azi'].tolist(),
+        )))
+        for s in section_data_interp
+    ]).T
+
+    # remove duplicates
+    md, inc, azi = _remove_duplicates(md, inc, azi)
+
+    if survey_header is None:
+        survey_header = SurveyHeader(
+            depth_unit=depth_unit,
+            surface_unit=surface_unit
+        )
+
+    survey = Survey(
+        md=md,
+        inc=inc,
+        azi=azi,
+        start_nev=section_data[0].pos1 + start_nev,
+        start_xyz=start_xyz,
+        deg=deg,
+        radius=radius,
+        header=survey_header,
+        error_model=error_model,
+        unit=depth_unit
+    )
+
+    return survey
+
+
+def survey(self, radius=10, step=30, survey_header=None):
+        interpolation = self.interpolate(step)
+        if survey_header is None:
+            sh = SurveyHeader()
+        else:
+            sh = survey_header
+
+        survey = get_survey(
+            interpolation, survey_header=sh, radius=10,
+            start_nev=self.pos1, start_xyz=get_xyz(self.pos1)
+        )
+
+        return survey
+
+
+def interpolate_survey(survey, step=30, dls=1e-8):
+    '''
+    Interpolate a sparse survey with the desired md step.
+
+    Parameters
+    ----------
+    survey: welleng.survey.Survey object
+    step: float (default=30)
+        The desired delta md between stations.
+    dls: float (default=0.01)
+        The design DLS used to calculate the minimum curvature. This will be
+        the minimum DLS used to fit a curve between stations so should be set
+        to a small value to ensure a continuous curve is fit without any
+        tangent sections.
+
+    Returns
+    -------
+    survey_interpolated: welleng.survey.Survey object
+        Note that a `interpolated` property is added indicating if the survey
+        stations is interpolated (True) or not (False).
+    '''
+    if survey.header.azi_reference == 'true':
+        azi = survey.azi_true_rad
+    elif survey.header.azi_reference == 'grid':
+        azi = survey.azi_grid_rad
+    else:
+        azi = survey.azi_mag_rad
+
+    s = np.array([survey.md, survey.inc_rad, azi]).T
+
+    s_upper = s[:-1]
+    s_lower = s[1:]
+    well = []
+
+    for i, (u, l) in enumerate(zip(s_upper, s_lower)):
+        if i == 0:
+            node1 = Node(
+                pos=survey.start_nev,
+                md=u[0],
+                inc=u[1],
+                azi=u[2],
+                degrees=False,
+                unit=survey.unit
+            )
+        else:
+            node1 = well[-1].node_end
+        node2 = Node(
+            md=l[0],
+            inc=l[1],
+            azi=l[2],
+            degrees=False,
+            unit=survey.unit
+        )
+        c = Connector(
+            node1=node1,
+            node2=node2,
+            dls_design=dls,
+            degrees=False,
+            force_min_curve=True,
+            unit=survey.unit
+        )
+        well.append(c)
+
+    # data = interpolate_well(well, step=step)
+
+    survey_interpolated = from_connections(
+        well,
+        step=step,
+        # start_nev=survey.start_nev,
+        start_xyz=survey.start_xyz,
+        survey_header=survey.header,
+        error_model=None
+    )
+
+    survey_interpolated.interpolated = [
+        False if md in survey.md else True
+        for md in survey_interpolated.md
+    ]
+
+    i = -1
+    radii = []
+    cov_nev = []
+    for (md, boolean) in zip(
+        survey_interpolated.md,
+        survey_interpolated.interpolated
+    ):
+        if not boolean:
+            i += 1
+            if survey.error_model is not None:
+                # interpolate covariance error between survey stations
+                j = 1 if i < len(survey.md) - 1 else 0
+                delta_md = survey.md[i + j] - survey.md[i]
+                delta_cov_nev = (
+                    survey.cov_nev[i + j] - survey.cov_nev[i]
+                )
+                unit_cov_nev = (
+                    delta_cov_nev / delta_md
+                    if j == 1
+                    else 0
+                )
+        radii.append(survey.radius[i])
+        if survey.error_model is not None:
+            cov_nev.append(
+                survey.cov_nev[i]
+                + (
+                    (md - survey.md[i]) * unit_cov_nev
+                )
+            )
+    survey_interpolated.radius = np.array(radii)
+    if bool(cov_nev):
+        survey_interpolated.cov_nev = np.array(cov_nev)
+        survey_interpolated.cov_hla = NEV_to_HLA(
+            survey_interpolated.survey_rad,
+            survey_interpolated.cov_nev.T
+        ).T
+
+    return survey_interpolated
+
+
+def get_node_tvd(survey, node1, node2, tvd, node_origin):
+        node2.pos_nev, node2.pos_xyz = None, None
+        c = Connector(node1=node1, node2=node2, dls_design=1e-8)
+        s = from_connections(c, step=None)
+        s_interp = interpolate_tvd(s, tvd, node_origin=node_origin)
+        node_new = s_interp.interpolate_md(s_interp.md[-1])
+
+        return node_new
+
+
+def interpolate_survey_tvd(survey, start=None, stop=None, step=10):
+    """
+    """
+    tvds = [start] if start is not None else [survey.tvd[0]]
+    nodes = []
+
+    for i, md2 in enumerate(survey.md):
+        if i == 0:
+            nodes.append(get_node(survey, i))
+            continue
+        node_origin = nodes[-1]
+        node2_master = survey.interpolate_md(md2)
+
+        while True:
+            node1 = nodes[-1]
+            node2 = copy(node2_master)
+            if np.isclose(node1.md, md2):
+                node1.interpolated = False
+                break
+
+            # check if heading upwards
+            if node1.pos_nev[2] > tvds[-1] >= node2.pos_nev[2]:
+                tvd = tvds[-1]
+                node_new = get_node_tvd(survey, node1, node2, tvd, node_origin)
+                node_new.interpolated = True
+                nodes.append(node_new)
+                tvds.append(tvd - step)
+            elif node1.pos_nev[2] < (tvds[-1] + step) <= node2.pos_nev[2]:
+                tvd = tvds[-1] + step
+                node_new = get_node_tvd(survey, node1, node2, tvd, node_origin)
+                node_new.interpolated = True
+                nodes.append(node_new)
+                tvds.append(tvd)
+            else:
+                nodes.append(node2_master)
+                tvds.append(tvds[-1])
+                break
+
+    md, inc, azi, interpolated = np.array([
+        [n.md, n.inc_rad, n.azi_rad, n.interpolated]
+        for n in nodes
+    ]).T
+
+    s_interp = Survey(
+        md=md,
+        inc=inc,
+        azi=azi,
+        interpolated=interpolated,
+        deg=False,
+        header=survey.header
+    )
+
+    return s_interp
