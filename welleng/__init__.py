@@ -13,3 +13,4 @@ import welleng.target
 import welleng.connector
 import welleng.exchange.edm
 import welleng.fluid
+import welleng.node

@@ -53,35 +53,48 @@ we.exchange.wbp.save_to_file(doc, "demo.wbp") # save the document to file
 
 [welleng] uses a number of open source projects to work properly:
 
-* [trimesh] - awesome library for loading and using triangular meshes
-* [numpy] - the fundamental package for scientific computing with Python
-* [scipy] - a Python-based ecosystem of open-source software for mathematics, science, and engineering
+* [trimesh] - awesome library for loading and using triangular meshes.
+* [Flexible Collision Library] - for fast collision detection.
+* [numpy] - the fundamental package for scientific computing with Python.
+* [scipy] - a Python-based ecosystem of open-source software for mathematics, science, and engineering.
 * [vedo] - a python module for scientific visualization, analysis of 3D objects and point clouds based on VTK.
 * [magnetic-field-calculator] - a Python API for the British Geological Survey magnetic field calculator.
 
-## Installation
+## Simple Installation
 
-[welleng] requires [trimesh], [numpy] and [scipy] to run. Other libraries are optional depending on usage and to get [python-fcl] running on which [trimesh] is built may require some additional installations. Other than that, it should be an easy pip install to get up and running with welleng and the minimum dependencies.
+A default, minimal [welleng] installation requires [numpy] and [scipy] which is sufficient for importing or generating trajectories with error models. Other libraries are optional depending on usage - most of [welleng]'s functionality can be unlocked with the `easy` install tag, but if you wish to use mesh collision functionality, then an advanced install is required using the `all` install tag to get [python-fcl], after first installing the compiled dependencies as described below.
 
+You'll receive some `ImportError` messages and a suggested install tag if you try to use functions for which the required dependencies are missing.
+
+### Default install with minimal dependencies:
+```
+pip install welleng
+```
+### Easy install with most of the dependencies and no compiled dependencies:
+```
+pip install welleng[easy]
+```
+## Advanced Installation
+If you want to use the mesh collision detection method, then the compiled dependencies are required prior to installing all of the [welleng] dependencies.
 ### Ubuntu
 Here's how to get the trickier dependencies manually installed on Ubuntu (further instructions can be found [here](https://github.com/flexible-collision-library/fcl/blob/master/INSTALL)):
 
-```python
+```terminal
 sudo apt-get update
 sudo apt-get install libeigen3-dev libccd-dev octomap-tools
 ```
 On a Mac you should be able to install the above with brew and on a Windows machine you'll probably have to build these libraries following the instruction in the link, but it's not too tricky. Once the above are installed, then it should be a simple:
 
-```python
-pip install welleng
+```terminal
+pip install welleng[all]
 ```
 
 For developers, the repository can be cloned and locally installed in your GitHub directory via your preferred Python env (the `dev` branch is usuall a version or two ahead of the `main`).
 
-```python
+```terminal
 git clone https://github.com/jonnymaserati/welleng.git
 cd welleng
-pip install -e .
+pip install -e .[all]
 ```
 
 Make sure you include that `.` in the final line (it's not a typo) as this ensures that any changes to your development version are immediately implemented on save.
@@ -92,25 +105,26 @@ Detailed instructions for installing [welleng] in a Windows OS can be found in t
 ### Colaboratory
 Perhaps the simplest way of getting up and running with [welleng] is to with a [colab notebook](https://colab.research.google.com/notebooks/intro.ipynb). The required dependencies can be installed with the following cell:
 
-```terminal
+```python
 !apt-get install -y xvfb x11-utils libeigen3-dev libccd-dev octomap-tools
-!pip install welleng plotly jupyter-dash
-!pip install -U git+https://github.com/Kitware/ipyvtk-simple.git
+!pip install welleng[all]
 ```
 Unfortunately the visualization doesn't work with colab (or rather I've not been able to embed a VTK object) so some further work is needed to view the results. However, the [welleng] engine can be used to generate data in the notebook. Test it out with the following code:
 
 ```python
+!pip install plotly jupyter-dash pint
+!pip install -U git+https://github.com/Kitware/ipyvtk-simple.git
+
 import welleng as we
 import plotly.graph_objects as go
 from jupyter_dash import JupyterDash
-)
+
 
 # create a survey
 s = we.survey.Survey(
     md=[0., 500., 2000., 5000.],
     inc=[0., 0., 30., 90],
-    azi=[0., 0., 30., 90.,],
-    error_model='iscwsa_mwd_rev4'
+    azi=[0., 0., 30., 90.,]
 )
 
 # interpolate survey - generate points every 30 meters

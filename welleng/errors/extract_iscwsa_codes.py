@@ -1,4 +1,8 @@
-from openpyxl import load_workbook
+try:
+    from openpyxl import load_workbook
+    OPENPYXL = True
+except:
+    OPENPYXL = False
 from math import radians
 import yaml
 import os
@@ -28,6 +32,7 @@ except Exception:
 
 
 def extract_data(filename):
+    assert OPENPYXL, "ImportError: try pip install welleng[easy]"
     workbook = load_workbook(
         filename=filename,
         data_only=True

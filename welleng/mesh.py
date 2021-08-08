@@ -1,4 +1,8 @@
-import trimesh
+try:
+    import trimesh
+    TRIMESH = True
+except ImportError:
+    TRIMESH = False
 import numpy as np
 from numpy import sin, cos, pi
 from scipy.spatial import KDTree
@@ -44,6 +48,7 @@ class WellMesh:
                 The method for constructing the uncertainty edge.
                 Either "ellipse" or "pedal_curve".
         """
+        assert TRIMESH, "ImportError: try pip install welleng[easy]"
         self.s = survey
         # self.c = clearance
         self.n_verts = int(n_verts)
@@ -296,6 +301,7 @@ def make_trimesh_scene(data):
     -------
         scene: a trimesh.scene.scene.Scene object.
     """
+    assert TRIMESH, "ImportError: try pip install welleng[easy]"
     scene = trimesh.scene.scene.Scene()
     for well in data:
         mesh = data[well].mesh
@@ -329,6 +335,7 @@ def transform_trimesh_scene(scene, origin=None, scale=100, redux=0.25):
         scene_transformed: trimesh.scene.scene.Scene object
             A transformed, scaled and reprocessed scene.
     """
+    assert TRIMESH, "ImportError: try pip install welleng[easy]"
     i = 0
     if not origin:
         T = np.array([0, 0, 0])
@@ -447,6 +454,7 @@ def fix_mesh(mesh):
     -------
         good_mesh: trimesh object
     '''
+    assert TRIMESH, "ImportError: try pip install welleng[easy]"
     # it makes two outputs (unique_idx, inverse)
     unique_indices = trimesh.grouping.unique_rows(mesh.faces)[0]
     unique_faces = mesh.faces[unique_indices]
