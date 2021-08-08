@@ -1,5 +1,6 @@
 from welleng.fluid import Fluid
 
+
 def test_fluid_density_profile():
     """
     Test that the get_density_profile method in the Fluid class returns the
@@ -23,6 +24,7 @@ def test_fluid_density_profile():
     )
 
     assert round(density_profile[-1], 2) == 9.85
+
 
 if __name__ == '__main__':
     test_fluid_density_profile()

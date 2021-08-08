@@ -1,5 +1,13 @@
-import trimesh
-from vedo import show, Box, Axes, trimesh2vedo, Lines, Sphere
+try:
+    import trimesh
+    TRIMESH = True
+except ImportError:
+    TRIMESH = False
+try:
+    from vedo import show, Box, Axes, trimesh2vedo, Lines, Sphere
+    VEDO = True
+except ImportError:
+    VEDO = False
 import numpy as np
 
 from .version import __version__ as VERSION
@@ -51,6 +59,7 @@ def plot(
             applied to all meshes in data, otherwise the list of colors is
             indexed to the list of meshes.
     """
+    assert all((VEDO, TRIMESH)), "ImportError: try pip install welleng[easy]"
     if isinstance(data, trimesh.scene.scene.Scene):
         meshes = [v for k, v in data.geometry.items()]
         if names is None:
@@ -163,6 +172,7 @@ def get_bb(vertices, min_size=[1000., 1000., 0.]):
 
 # make a dictionary of axes options
 def get_axes(world):
+    assert VEDO, "ImportError: try pip install welleng[easy]"
     axes = Axes(
         world,
         xtitle='y: North (m)',  # swap axis to plot correctly
@@ -203,6 +213,7 @@ def get_lines(clearance):
         lines: vedo.Lines object
             A vedo.Lines object colored by the object's SF values.
     """
+    assert VEDO, "ImportError: try pip install welleng[easy]"
     c = clearance.SF
     start_points, end_points = clearance.get_lines()
     lines = Lines(start_points, end_points).cmap('hot_r', c, on='cells')

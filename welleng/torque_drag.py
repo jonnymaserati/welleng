@@ -1,5 +1,5 @@
 import numpy as np
-from welleng.utils import linear_convert
+from .utils import linear_convert
 
 # This model is EXPERIMENTAL, I wrote it more as a proof of concept for
 # well trajectory optimization. This model has not been validated against
