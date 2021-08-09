@@ -1,7 +1,12 @@
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
-import networkx as nx
 import numpy as np
+
+try:
+    import networkx as nx
+    NX = True
+except ImportError:
+    prNX = False
 
 
 class EDM:
@@ -123,6 +128,7 @@ class EDM:
             return tags
 
     def get_wellbore_graph(self):
+        assert NX, "ImportError: try pip install welleng[all]"
         # get nodes
         G = nx.Graph()
 
