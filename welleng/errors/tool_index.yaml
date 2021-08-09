@@ -465,6 +465,12 @@ A030Ua:
   OWSG Prefix: A030Ua
   Rev.: 1
   Short Name: ZERO-ERROR
+ISCWSA MWD Rev4:
+  Application: None
+  Long Name: ISCWSA MWD (Fixed Rig) Rev4
+  OWSG Prefix: None
+  Rev.: 4
+  Short Name: ISCWSA MWD Rev4
 ISCWSA MWD Rev5:
   Application: None
   Long Name: ISCWSA MWD (Fixed Rig) Rev5

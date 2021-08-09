@@ -448,16 +448,16 @@ def ABXY_TI2(
                 np.zeros((1, 3))
             )
         )
-
-        e_NEV_sing[1, 1] = (
-            (
-                error.survey.md[2]
-                + error.survey.md[1]
-                - 2 * error.survey.md[0]
-            ) / 2
-            * mag * cos(error.survey.azi_true_rad[1])
-            / error.survey.header.G
-        )
+        if error.error_model.lower().split(' ')[-1] != 'rev4':
+            e_NEV_sing[1, 1] = (
+                (
+                    error.survey.md[2]
+                    + error.survey.md[1]
+                    - 2 * error.survey.md[0]
+                ) / 2
+                * mag * cos(error.survey.azi_true_rad[1])
+                / error.survey.header.G
+            )
         e_NEV[sing] = e_NEV_sing[sing]
 
         e_NEV_star = error._e_NEV_star(e_DIA)
@@ -477,15 +477,15 @@ def ABXY_TI2(
                 np.zeros((1, 3))
             )
         )
-
-        e_NEV_star_sing[1, 1] = (
-            (error.survey.md[1] - error.survey.md[0])
-            * mag
-            * (
-                cos(error.survey.azi_true_rad[1])
-                / error.survey.header.G
+        if error.error_model.lower().split(' ')[-1] != 'rev4':
+            e_NEV_star_sing[1, 1] = (
+                (error.survey.md[1] - error.survey.md[0])
+                * mag
+                * (
+                    cos(error.survey.azi_true_rad[1])
+                    / error.survey.header.G
+                )
             )
-        )
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(

@@ -161,22 +161,22 @@ def make_index(tool_code, data):
 
 if __name__ == '__main__':
     # # extract rev 4 model
-    # tool_code = 'ISCWSA MWD Rev4'
-    # ec = extract_data(
-    #     "reference/error-model-example-mwdrev4-iscwsa-1.xlsx"
-    # )
+    tool_code = 'ISCWSA MWD Rev4'
+    ec = extract_data(
+        "reference/error-model-example-mwdrev4-iscwsa-1.xlsx"
+    )
 
-    # # write data to yaml
-    # filename = os.path.join(
-    #     '',
-    #     *[PATH, 'tool_codes', f'{tool_code}.yaml']
-    # )
+    # write data to yaml
+    filename = os.path.join(
+        '',
+        *[PATH, 'tool_codes', f'{tool_code}.yaml']
+    )
 
-    # with open(filename, 'w') as f:
-    #     documents = yaml.dump(ec, f)
+    with open(filename, 'w') as f:
+        documents = yaml.dump(ec, f)
 
-    # # update index file
-    # make_index(tool_code, ec)
+    # update index file
+    make_index(tool_code, ec)
 
 
     # extract rev 5 model
