@@ -20,8 +20,11 @@ welleng is fuelled by copious amounts of coffee, so if you wish to supercharge d
 <a href="https://www.buymeacoffee.com/jonnymaserati" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/arial-yellow.png" alt="Buy Me A Coffee" width="217px" ></a>
 
 ## New Features!
-
-  - **OWSG Tool Error Models:** the ISCWSA curated Rev 5 tool models have been coded up and the ISCWSA Rev 4 models are no longer supported (hence the major version bump from 0.2 to 0.3). The ISCWSA Rev 5 model continues to honor the ISCWSA diagnostic data but the OWSG tool errors are  ***experimental*** with the following status:
+  - **Interpolate Survey on TVD Depth:** new `survey` function for interpolating fixed TVD intervals along a [welleng] `Survey` instance, e.g. to interpolate `survey` every 10mTVD and return the interpolated survey as `s_interp_tvd`:
+  ```terminal
+  >>> s_interp_tvd = we.survey.interpolate_survey_tvd(survey, step=10)
+  ```
+  - **OWSG Tool Error Models:** the ISCWSA curated Rev 5 tool models have been coded up. The ISCWSA Rev 4 and 5 models continue to honor the ISCWSA diagnostic data but the OWSG tool errors are  ***experimental*** with the following status:
     - **Working**: MWD, SRGM, _Fl, SAG, IFR1, IFR2, EMS
     - **Not Currently Working Correctly**: AX, GYRO
   - **World Magnetic Model Calculator:** calculates magnetic field data from the [World Magnetic Model](http://www.geomag.bgs.ac.uk/research/modelling/WorldMagneticModel.html) if magnetic field strength is not provided with the survey data.
