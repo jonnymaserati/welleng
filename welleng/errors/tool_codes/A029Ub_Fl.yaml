@@ -1,0 +1,73 @@
+codes:
+  AZMS:
+    function: AZ
+    magnitude: 0.05235987755982989
+    propagation: systematic
+    unit: rad
+  CNA:
+    function: CNA
+    magnitude: 0.02
+    propagation: systematic
+    unit: '-'
+  CNI:
+    function: CNI
+    magnitude: 0.02
+    propagation: systematic
+    unit: '-'
+  DRFR:
+    function: DREF
+    magnitude: 2.2
+    propagation: random
+    unit: m
+  DRFS:
+    function: DREF
+    magnitude: 1
+    propagation: systematic
+    unit: m
+  DSFS:
+    function: DSF
+    magnitude: 0.00056
+    propagation: systematic
+    unit: '-'
+  DSTG:
+    function: DST
+    magnitude: 2.5e-07
+    propagation: systematic
+    unit: 1/m
+  XCLA:
+    function: XCLA
+    magnitude: 0.167
+    propagation: random
+    unit: '-'
+  XCLH:
+    function: XCLH
+    magnitude: 0.167
+    propagation: random
+    unit: '-'
+header:
+  A029Ub: UNKNOWN_Fl
+  Application: For use when survey data exists at any interval not exceeding 200ft
+    but the origin or legacy quality of the data is unknown.
+  Approved: null
+  Checked: Steve Grindrod 21-Oct-2020
+  Hor East/West Exclusion: 0 deg
+  Inclination Range Max: 180 deg
+  Inclination Range Min: 0 deg
+  Long Name: OWSG UNKNOWN [Floating Rig]
+  Misalignment Alt: 3
+  Misalignment Min Course Length: 10 m
+  Notes: It is based on the worst of the known survey tool error models.
+  OWSG Prefix: A029Ub
+  Range Comment: None
+  Replaces / Replaced By: 'OWSG_A029Ua_UNKNOWN_Fl / '
+  Revision Comment: 'Rev No changed to match ISCWSA Models (Rev.5). XCLA & XCLH terms
+    added. '
+  Revision Date: 2020-10-08 00:00:00
+  Revision History: Rev 0.1 05-Jun-2013 Draft Release for Comment.
+  Revision No: 5
+  Short Name: UNKNOWN_Fl
+  Source: OWSG - Copsegrove Developments Ltd
+  Status: Agreed
+  Tool Parameters: null
+  Tool Type: Utility
+  XCL Tortuosity: 1 deg / 100 ft

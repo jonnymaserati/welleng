@@ -9,7 +9,7 @@
 [welleng] aspires to be a collection of useful tools for Wells/Drilling Engineers, kicking off with a range of well trajectory tools.
 
   - Generate survey listings and interpolation with minimum curvature
-  - Calculate well bore uncertainty data (utilizing either the [ISCWSA] MWD Rev4 or Rev5 models) - the coded error models are within 0.001% accuracy of the ISCWSA test data.
+  - Calculate well bore uncertainty data (utilizing either the [ISCWSA] MWD Rev5 models) - the coded error models are within 0.001% accuracy of the ISCWSA test data.
   - Calculate well bore clearance and Separation Factors (SF)
     - standard [ISCWSA] method within 0.5% accuracy of the ISCWSA test data.
     - new mesh based method using the [Flexible Collision Library].
@@ -20,20 +20,25 @@ welleng is fuelled by copious amounts of coffee, so if you wish to supercharge d
 <a href="https://www.buymeacoffee.com/jonnymaserati" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/arial-yellow.png" alt="Buy Me A Coffee" width="217px" ></a>
 
 ## New Features!
-
+  - **Interpolate Survey on TVD Depth:** new `survey` function for interpolating fixed TVD intervals along a [welleng] `Survey` instance, e.g. to interpolate `survey` every 10mTVD and return the interpolated survey as `s_interp_tvd`:
+  ```terminal
+  >>> s_interp_tvd = we.survey.interpolate_survey_tvd(survey, step=10)
+  ```
+  - **OWSG Tool Error Models:** the ISCWSA curated Rev 5 tool models have been coded up. The ISCWSA Rev 4 and 5 models continue to honor the ISCWSA diagnostic data but the OWSG tool errors are  ***experimental*** with the following status:
+    - **Working**: MWD, SRGM, _Fl, SAG, IFR1, IFR2, EMS
+    - **Not Currently Working Correctly**: AX, GYRO
   - **World Magnetic Model Calculator:** calculates magnetic field data from the [World Magnetic Model](http://www.geomag.bgs.ac.uk/research/modelling/WorldMagneticModel.html) if magnetic field strength is not provided with the survey data.
-  - **ISCWSA MWD Rev5 error model:** added the latest ISCWSA error model that includes tortuousity effects on location uncertainty.
   - **Import from Landmark .wbp files:** using the `exchange.wbp` module it's now possible to import .wbp files exported from Landmark's COMPASS or DecisionSpace software.
-  ```python
+```python
 import welleng as we
 
 wp = we.exchange.wbp.load("demo.wbp") # import file
 survey = we.exchange.wbp.wbp_to_survey(wp, step=30) # convert to survey
 mesh = we.mesh.WellMesh(survey, method='circle') # convert to mesh
 we.visual.plot(mesh.mesh) # plot the mesh
-  ```
+```
   
-  - **Export to .wbp files *(experiemental)*:** using the `exchange.wbp` module, it's possible to convert a planned survey file into a list of turn points that can be exported to a .wbp file.
+  - **Export to .wbp files *(experimental)*:** using the `exchange.wbp` module, it's possible to convert a planned survey file into a list of turn points that can be exported to a .wbp file.
   ```python
 import welleng as we
 

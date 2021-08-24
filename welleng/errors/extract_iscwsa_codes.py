@@ -5,6 +5,7 @@ except:
     OPENPYXL = False
 from math import radians
 import yaml
+import os
 
 """
 Code to extract error model data from standard ISCWSA Excel files and create
@@ -17,6 +18,8 @@ the error model input data.
 If new error functions are added then these will need to be coded into the
 error module.
 """
+
+PATH = os.path.dirname(__file__)
 
 FILENAME = 'welleng/errors/error_codes.yaml'
 CHARACTERS = [":", "[", "]"]
@@ -128,16 +131,68 @@ def remove_characters(data, chars=CHARACTERS):
     return data
 
 
+def make_index(tool_code, data):
+    fields = [
+        'Application', 'Short Name', 'Long Name', 'OWSG Prefix', 'Revision No'
+    ]
+    temp = {
+        f: data['header'][f] for f in fields
+    }
+    temp = {
+        (k if k != 'Revision No' else 'Rev.'): v
+        for k, v in temp.items()
+    }
+    filename = os.path.join(
+        '',
+        *[PATH, 'tool_index.yaml']
+    )
+
+    # read tool_index file
+    with open(filename, 'r') as f:
+        tool_index = yaml.safe_load(f)
+
+    # add (or overwrite) new entry
+    tool_index[tool_code] = temp
+
+    # save new tool_index
+    with open(filename, 'w') as f:
+        yaml.dump(tool_index, f)
+
+
 if __name__ == '__main__':
-    ec['iscwsa_mwd_rev4'] = extract_data(
+    # # extract rev 4 model
+    tool_code = 'ISCWSA MWD Rev4'
+    ec = extract_data(
         "reference/error-model-example-mwdrev4-iscwsa-1.xlsx"
     )
 
-    ec['iscwsa_mwd_rev5'] = extract_data(
+    # write data to yaml
+    filename = os.path.join(
+        '',
+        *[PATH, 'tool_codes', f'{tool_code}.yaml']
+    )
+
+    with open(filename, 'w') as f:
+        documents = yaml.dump(ec, f)
+
+    # update index file
+    make_index(tool_code, ec)
+
+
+    # extract rev 5 model
+    tool_code = 'ISCWSA MWD Rev5'
+    ec = extract_data(
         "reference/error-model-example-mwdrev5-iscwsa-1.xlsx"
     )
 
-    with open(FILENAME, 'w') as f:
+    filename = os.path.join(
+        '',
+        *[PATH, 'tool_codes', f'{tool_code}.yaml']
+    )
+
+    with open(filename, 'w') as f:
         documents = yaml.dump(ec, f)
+
+    make_index(tool_code, ec)
 
     print("Done")

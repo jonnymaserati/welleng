@@ -1,15 +1,38 @@
+import os
 import numpy as np
-from .errors.iscwsa_mwd import iscwsaMwd
+import yaml
+from .errors.tool_errors import ToolError
 
 # TODO: there's likely an issue with TVD versus TVDSS that
 # needs to be resolved. This model assumes TVD relative to
 # rig floor, but often a TVDSS is provided instead (with a
 # negative value for rig floor elevation).
 
-ERROR_MODELS = [
-            "iscwsa_mwd_rev4",
-            "iscwsa_mwd_rev5"
-        ]
+ACCURACY = 1e-4
+PATH = os.path.dirname(__file__)
+TOOL_INDEX_FILENAME = os.path.join(
+    '', *[PATH, 'errors', 'tool_index.yaml']
+)
+
+
+def get_tool_index():
+    with open(TOOL_INDEX_FILENAME, 'r') as f:
+        tool_index = yaml.safe_load(f)
+    return tool_index
+
+
+def get_error_models(tool_index=None):
+    if tool_index is None:
+        tool_index = get_tool_index()
+    error_models = [
+        v['Short Name']
+        for _, v in tool_index.items()
+    ]
+    return error_models
+
+
+TOOL_INDEX = get_tool_index()
+ERROR_MODELS = get_error_models(TOOL_INDEX)
 
 
 class ErrorModel():
@@ -46,14 +69,14 @@ class ErrorModel():
     def __init__(
         self,
         survey,
-        error_model="iscwsa_mwd_rev4",
+        error_model="iscwsa_mwd_rev5",
     ):
         """
 
         """
 
-        error_models = ERROR_MODELS
-        assert error_model in error_models, "Unrecognized error model"
+        # error_models = ERROR_MODELS
+        assert error_model in ERROR_MODELS, "Unrecognized error model"
         self.error_model = error_model
         self.survey = survey
 
@@ -67,11 +90,21 @@ class ErrorModel():
         self.drdp = self._drdp(self.survey_drdp)
         self.drdp_sing = self._drdp_sing(self.survey_drdp)
 
-        if self.error_model.split("_")[0] == "iscwsa":
-            self.errors = iscwsaMwd(
-                error=self,
-                model=self.error_model
-            )
+        # if self.error_model.split("_")[0] == "iscwsa":
+        #     self.errors = iscwsaMwd(
+        #         error=self,
+        #         model=self.error_model
+        #     )
+
+        for k, v in TOOL_INDEX.items():
+            if v['Short Name'] == self.error_model:
+                model = k
+                break
+
+        self.errors = ToolError(
+            error=self,
+            model=model
+        )
 
     def _e_NEV(self, e_DIA):
         D, I, A = e_DIA.T
@@ -117,12 +150,22 @@ class ErrorModel():
         '''
         Returns a covariance matrix from an (n,3) array.
         '''
+        # Mitigate overflow
+        # with np.errstate(divide='ignore', invalid='ignore'):
+        #     coeff = np.nan_to_num(
+        #         arr / np.abs(arr) * ACCURACY,
+        #         nan=ACCURACY
+        #     )
+        # arr = np.where(np.abs(arr) > ACCURACY, arr, coeff)
+
         x, y, z = np.array(arr).T
-        return np.array([
+        result = np.array([
             [x*x, x*y, x*z],
             [y*x, y*y, y*z],
             [z*x, z*y, z*z]
         ])
+
+        return result
 
     def _sigma_e_NEV_systematic(self, e_NEV, e_NEV_star):
         return e_NEV_star + np.vstack(
@@ -225,7 +268,7 @@ class ErrorModel():
         E = np.array(0.5 * ((delta_md) * np.cos(inc2) * np.sin(azi2)))
         V = np.array(0.5 * (-delta_md * np.sin(inc2)))
 
-        if self.error_model.split('_')[-1] == 'rev5':
+        if self.error_model.lower().split()[-1] != 'rev4':
             N[0] *= 2
 
         return np.vstack(
@@ -336,3 +379,26 @@ class ErrorModel():
             delta_md=delta_md,
             azi2=azi2
         )
+
+
+def get_errors(error):
+    nn, ne, nv = error[0]
+    _, ee, ev = error[1]
+    _, __, vv = error[2]
+
+    return [nn, ee, vv, ne, nv, ev]
+
+
+def make_diagnostic_data(survey):
+    diagnostic = {}
+    dia = np.stack((survey.md, survey.inc_deg, survey.azi_grid_deg), axis=1)
+    for i, d in enumerate(survey.md):
+        diagnostic[d] = {}
+        total = []
+        for k, v in survey.err.errors.errors.items():
+            diagnostic[d][k] = get_errors(v.cov_NEV.T[i])
+            total.extend(diagnostic[d][k])
+        diagnostic[d]['TOTAL'] = np.sum((np.array(
+            total
+        ).reshape(-1, len(diagnostic[d][k]))), axis=0)
+    return diagnostic

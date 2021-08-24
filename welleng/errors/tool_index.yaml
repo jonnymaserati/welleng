@@ -1,0 +1,485 @@
+A001Mc:
+  Application: MWD using 1-Year Standard Resolution Geomagnetic Mode (e.g. BGGM up
+    to 2018, MVSD) with no additional corrections
+  Long Name: OWSG MWD + SRGM
+  'No': 1
+  OWSG Prefix: A001Mc
+  Rev.: 5.1
+  Short Name: MWD+SRGM
+A001Mc_Fl:
+  Application: MWD using 1-Year Standard Resolution Geomagnetic Mode (e.g. BGGM up
+    to 2018, MVSD) with no additional corrections on a Floating Rig
+  Long Name: OWSG MWD + SRGM [Floating Rig]
+  'No': 2
+  OWSG Prefix: A001Mc
+  Rev.: 5.1
+  Short Name: MWD+SRGM_Fl
+A002Mc:
+  Application: MWD using 1-Year Standard Resolution Geomagnetic Mode (e.g. BGGM up
+    to 2018, MVSD) and Sag Correction
+  Long Name: OWSG MWD + SRGM + Sag Correction
+  'No': 3
+  OWSG Prefix: A002Mc
+  Rev.: 5.1
+  Short Name: MWD+SRGM+SAG
+A002Mc_Fl:
+  Application: MWD using 1-Year Standard Resolution Geomagnetic Mode (e.g. BGGM up
+    to 2018, MVSD) and Sag Corrections on a Floating Rig
+  Long Name: OWSG MWD + SRGM + Sag Correction [Floating Rig]
+  'No': 4
+  OWSG Prefix: A002Mc
+  Rev.: 5.1
+  Short Name: MWD+SRGM+SAG_Fl
+A003Mc:
+  Application: MWD using 1-Year Standard Resolution Geomagnetic Mode (e.g. BGGM up
+    to 2018, MVSD) with Axial Correction
+  Long Name: OWSG MWD + SRGM + Axial Correction
+  'No': 5
+  OWSG Prefix: A003Mc
+  Rev.: 5.1
+  Short Name: MWD+SRGM+AX
+A003Mc_Fl:
+  Application: MWD using 1-Year Standard Resolution Geomagnetic Mode (e.g. BGGM up
+    to 2018, MVSD) with Axial Correction on a Floating Rig
+  Long Name: OWSG MWD + SRGM + Axial Correction [Floating Rig]
+  'No': 6
+  OWSG Prefix: A003Mc
+  Rev.: 5.1
+  Short Name: MWD+SRGM+AX_Fl
+A004Mc:
+  Application: MWD using 1-Year Standard Resolution Geomagnetic Mode (e.g. BGGM up
+    to 2018, MVSD) with Axial Correction and Sag Correction
+  Long Name: OWSG MWD + SRGM + Axial Correction + Sag Correction
+  'No': 7
+  OWSG Prefix: A004Mc
+  Rev.: 5.1
+  Short Name: MWD+SRGM+AX+SAG
+A004Mc_Fl:
+  Application: MWD using 1-Year Standard Resolution Geomagnetic Mode (e.g. BGGM up
+    to 2018, MVSD) with Axial Correction and Sag Correction on a Floating Rig
+  Long Name: OWSG MWD + SRGM + Axial Correction + Sag Correction [Floating Rig]
+  'No': 8
+  OWSG Prefix: A004Mc
+  Rev.: 5.1
+  Short Name: MWD+SRGM+AX+SAG_Fl
+A005Mc:
+  Application: MWD with IFR1 (IFR or Crustal Anomaly Correction)
+  Long Name: OWSG MWD + IFR1
+  'No': 9
+  OWSG Prefix: A005Mc
+  Rev.: 5.1
+  Short Name: MWD+IFR1
+A005Mc_Fl:
+  Application: MWD with IFR1 (IFR or Crustal Anomaly Correction) on a Floating Rig
+  Long Name: OWSG MWD + IFR1 [Floating Rig]
+  'No': 10
+  OWSG Prefix: A005Mc
+  Rev.: 5.1
+  Short Name: MWD+IFR1_Fl
+A006Mc:
+  Application: MWD with IFR1 (IFR or Crustal Anomaly Correction) and Axial Correction
+  Long Name: OWSG MWD + IFR1 + Axial Corr
+  'No': 11
+  OWSG Prefix: A006Mc
+  Rev.: 5.1
+  Short Name: MWD+IFR1+AX
+A006Mc_Fl:
+  Application: MWD with IFR1 (IFR or Crustal Anomaly Correction) and Axial Correction
+    on a Floating Rig
+  Long Name: OWSG MWD + IFR1 + Axial Corr [Floating Rig]
+  'No': 12
+  OWSG Prefix: A006Mc
+  Rev.: 5.1
+  Short Name: MWD+IFR1+AX_Fl
+A007Mc:
+  Application: MWD with IFR1 (IFR or Crustal Anomaly Correction) and Axial Correction
+    and Sag Correction
+  Long Name: OWSG MWD + IFR1 + Axial Corr + Sag Correction
+  'No': 13
+  OWSG Prefix: A007Mc
+  Rev.: 5.1
+  Short Name: MWD+IFR1+AX+SAG
+A007Mc_Fl:
+  Application: MWD with IFR1 (IFR or Crustal Anomaly Correction) and Axial Correction
+    and Sag Correction on a Floating Rig
+  Long Name: OWSG MWD + IFR1 + Axial Corr + Sag Correction [Floating Rig]
+  'No': 14
+  OWSG Prefix: A007Mc
+  Rev.: 5.1
+  Short Name: MWD+IFR1+AX+SAG_Fl
+A008Mc:
+  Application: "CARE TO BE TAKEN WHILE PLANNING A WELL \u2013 Refer to Survey Management\
+    \ Specialist to ensure MS is valid.  MWD with IFR1 (IFR or Crustal Anomaly Correction)\
+    \ and Multi-Station Correction"
+  Long Name: OWSG MWD + IFR1 + Multi-Station Correction
+  'No': 15
+  OWSG Prefix: A008Mc
+  Rev.: 5.1
+  Short Name: MWD+IFR1+MS
+A008Mc_Fl:
+  Application: "CARE TO BE TAKEN WHILE PLANNING A WELL \u2013 Refer to Survey Management\
+    \ Specialist to ensure MS is valid.  MWD with IFR1 (IFR or Crustal Anomaly Correction)\
+    \ and Multi-Station Correction on a Floating Rig"
+  Long Name: OWSG MWD + IFR1 + Multi-Station Correction [Floating Rig]
+  'No': 16
+  OWSG Prefix: A008Mc
+  Rev.: 5.1
+  Short Name: MWD+IFR1+MS_Fl
+A009Mc:
+  Application: MWD with IFR1 (IFR or Crustal Anomaly Correction) and Sag Correction
+  Long Name: OWSG MWD + IFR1 + Sag Correction
+  'No': 17
+  OWSG Prefix: A009Mc
+  Rev.: 5.1
+  Short Name: MWD+IFR1+SAG
+A009Mc_Fl:
+  Application: MWD with IFR1 (IFR or Crustal Anomaly Correction) and Sag Correction
+    on a Floating Rig
+  Long Name: OWSG MWD + IFR1 + Sag Correction [Floating Rig]
+  'No': 18
+  OWSG Prefix: A009Mc
+  Rev.: 5.1
+  Short Name: MWD+IFR1+SAG_Fl
+A010Mc:
+  Application: "CARE TO BE TAKEN WHILE PLANNING A WELL \u2013 Refer to Survey Management\
+    \ Specialist to ensure MS is valid.  MWD with IFR1 (IFR or Crustal Anomaly Correction)\
+    \ with Sag and Multi-Station Correction"
+  Long Name: OWSG MWD + IFR1 + Sag Correction + Multi-Station Correction
+  'No': 19
+  OWSG Prefix: A010Mc
+  Rev.: 5.1
+  Short Name: MWD+IFR1+SAG+MS
+A010Mc_Fl:
+  Application: "CARE TO BE TAKEN WHILE PLANNING A WELL \u2013 Refer to Survey Management\
+    \ Specialist to ensure MS is valid.  MWD with IFR1 (IFR or Crustal Anomaly Correction)\
+    \ with Sag and Multi-Station Correction on a Floating Rig"
+  Long Name: OWSG MWD + IFR1 + Sag Correction + Multi-Station Correction [Floating
+    Rig]
+  'No': 20
+  OWSG Prefix: A010Mc
+  Rev.: 5.1
+  Short Name: MWD+IFR1+SAG+MS_Fl
+A011Mc:
+  Application: MWD with IFR2 (IIFR or Crustal Anomaly with Time Varying Corrections)
+    and Axial Correction and Sag Correction
+  Long Name: OWSG MWD + IFR2 + Axial Corr + Sag Correction
+  'No': 21
+  OWSG Prefix: A011Mc
+  Rev.: 5.1
+  Short Name: MWD+IFR2+AX+SAG
+A011Mc_Fl:
+  Application: MWD with IFR2 (IIFR or Crustal Anomaly with Time Varying Corrections)
+    and Axial Correction and Sag Correction on a Floating Rig
+  Long Name: OWSG MWD + IFR2 + Axial Corr + Sag Correction [Floating Rig]
+  'No': 22
+  OWSG Prefix: A011Mc
+  Rev.: 5.1
+  Short Name: MWD+IFR2+AX+SAG_Fl
+A012Mc:
+  Application: MWD with IFR2 (IIFR or Crustal Anomaly with Time Varying Corrections)
+    and Sag Correction
+  Long Name: OWSG MWD + IFR2 + Sag Correction
+  'No': 23
+  OWSG Prefix: A012Mc
+  Rev.: 5.1
+  Short Name: MWD+IFR2+SAG
+A012Mc_Fl:
+  Application: MWD with IFR2 (IIFR or Crustal Anomaly with Time Varying Corrections)
+    and Sag Correction on a Floating Rig
+  Long Name: OWSG MWD + IFR2 + Sag Correction [Floating Rig]
+  'No': 24
+  OWSG Prefix: A012Mc
+  Rev.: 5.1
+  Short Name: MWD+IFR2+SAG_Fl
+A013Mc:
+  Application: "CARE TO BE TAKEN WHILE PLANNING A WELL \u2013 Refer to Survey Management\
+    \ Specialist to ensure MS is valid.  MWD with IFR2 (IIFR or Crustal Anomaly with\
+    \ Time Varying Corrections) with Sag and Multi-Station Correction"
+  Long Name: OWSG MWD + IFR2 + Sag + Multi-Station Correction
+  'No': 25
+  OWSG Prefix: A013Mc
+  Rev.: 5.1
+  Short Name: MWD+IFR2+SAG+MS
+A013Mc_Fl:
+  Application: "CARE TO BE TAKEN WHILE PLANNING A WELL \u2013 Refer to Survey Management\
+    \ Specialist to ensure MS is valid.  MWD with IFR2 (IIFR or Crustal Anomaly with\
+    \ Time Varying Corrections) with Sag and Multi-Station Correction on a Floating\
+    \ Rig"
+  Long Name: OWSG MWD + IFR2 + Sag + Multi-Station Correction [Floating Rig]
+  'No': 26
+  OWSG Prefix: A013Mc
+  Rev.: 5.1
+  Short Name: MWD+IFR2+SAG+MS_Fl
+A014Mc:
+  Application: EMS using 1-Year Standard Resolution Geomagnetic Mode (e.g. BGGM up
+    to 2018, MVSD) with no additional corrections
+  Long Name: OWSG EMS + SRGM
+  'No': 27
+  OWSG Prefix: A014Mc
+  Rev.: 5.1
+  Short Name: EMS+SRGM
+A014Mc_Fl:
+  Application: EMS using 1-Year Standard Resolution Geomagnetic Mode (e.g. BGGM up
+    to 2018, MVSD) with no additional corrections on a Floating Rig
+  Long Name: OWSG EMS + SRGM [Floating Rig]
+  'No': 28
+  OWSG Prefix: A014Mc
+  Rev.: 5.1
+  Short Name: EMS+SRGM_Fl
+A015Mc:
+  Application: EMS using 1-Year Standard Resolution Geomagnetic Mode (e.g. BGGM up
+    to 2018, MVSD) with Axial Correction
+  Long Name: OWSG EMS + SRGM + Axial Correction
+  'No': 29
+  OWSG Prefix: A015Mc
+  Rev.: 5.1
+  Short Name: EMS+SRGM+AX
+A015Mc_Fl:
+  Application: EMS using 1-Year Standard Resolution Geomagnetic Mode (e.g. BGGM up
+    to 2018, MVSD) with Axial Correction on a Floating Rig
+  Long Name: OWSG EMS + SRGM + Axial Correction [Floating Rig]
+  'No': 30
+  OWSG Prefix: A015Mc
+  Rev.: 5.1
+  Short Name: EMS+SRGM+AX_Fl
+A016Mc:
+  Application: EMS using 1-Year Standard Resolution Geomagnetic Mode (e.g. BGGM up
+    to 2018, MVSD) with Axial Correction and Sag Correction
+  Long Name: OWSG EMS + SRGM + Axial Correction + Sag Correction
+  'No': 31
+  OWSG Prefix: A016Mc
+  Rev.: 5.1
+  Short Name: EMS+SRGM+AX+SAG
+A016Mc_Fl:
+  Application: EMS using 1-Year Standard Resolution Geomagnetic Mode (e.g. BGGM up
+    to 2018, MVSD) with Axial Correction and Sag Correction on a Floating Rig
+  Long Name: OWSG EMS + SRGM + Axial Correction + Sag Correction [Floating Rig]
+  'No': 32
+  OWSG Prefix: A016Mc
+  Rev.: 5.1
+  Short Name: EMS+SRGM+AX+SAG_Fl
+A017Mc:
+  Application: EMS using 1-Year Standard Resolution Geomagnetic Mode (e.g. BGGM up
+    to 2018, MVSD) and Sag Correction
+  Long Name: OWSG EMS + SRGM + Sag Correction
+  'No': 33
+  OWSG Prefix: A017Mc
+  Rev.: 5.1
+  Short Name: EMS+SRGM+SAG
+A017Mc_Fl:
+  Application: EMS using 1-Year Standard Resolution Geomagnetic Mode (e.g. BGGM up
+    to 2018, MVSD) and Sag Correction on a Floating Rig
+  Long Name: OWSG EMS + SRGM + Sag Correction [Floating Rig]
+  'No': 34
+  OWSG Prefix: A017Mc
+  Rev.: 5.1
+  Short Name: EMS+SRGM+SAG_Fl
+A018Mb:
+  Application: Wireline logging tool survey data e.g. Schlumberger GPIT OBDT BGT or
+    Atlas ORIT
+  Long Name: OWSG Dipmeter or Log Survey Data
+  'No': 35
+  OWSG Prefix: A018Mb
+  Rev.: 5
+  Short Name: DIPMETER
+A018Mb_Fl:
+  Application: Wireline logging tool survey data e.g. Schlumberger GPIT OBDT BGT or
+    Atlas ORIT on a Floating Rig
+  Long Name: OWSG Dipmeter or Log Survey Data [Floating Rig]
+  'No': 36
+  OWSG Prefix: A018Mb
+  Rev.: 5
+  Short Name: DIPMETER_Fl
+A019Gb:
+  Application: Generic Gyro MWD
+  Long Name: OWSG Gyro MWD
+  'No': 37
+  OWSG Prefix: A019Gb
+  Rev.: 5
+  Short Name: GYRO-MWD
+A019Gb_Fl:
+  Application: Generic Gyro MWD on a Floating Rig
+  Long Name: OWSG Gyro MWD [Floating Rig]
+  'No': 38
+  OWSG Prefix: A019Gb
+  Rev.: 5
+  Short Name: GYRO-MWD_Fl
+A020Gb:
+  Application: Generic North Seeking Gyrocompass Gyro
+  Long Name: OWSG Gyrocompass Gyro
+  'No': 39
+  OWSG Prefix: A020Gb
+  Rev.: 5
+  Short Name: GYRO-NS
+A020Gb_Fl:
+  Application: Generic North Seeking Gyrocompass Gyro on a Floating Rig
+  Long Name: OWSG Gyrocompass Gyro [Floating Rig]
+  'No': 40
+  OWSG Prefix: A020Gb
+  Rev.: 5
+  Short Name: GYRO-NS_Fl
+A021Gc:
+  Application: Generic Hybrid Static Gyrocompass and Continuous Survey
+  Long Name: OWSG XYZ Accel with XY Static and Continuous Gyro
+  'No': 41
+  OWSG Prefix: A021Gc
+  Rev.: 5
+  Short Name: GYRO-NS-CT
+A021Gc_Fl:
+  Application: Generic Hybrid Static Gyrocompass and Continuous Survey on a Floating
+    Rig
+  Long Name: OWSG XYZ Accel with XY Static and Continuous Gyro [Floating Rig]
+  'No': 42
+  OWSG Prefix: A021Gc
+  Rev.: 5
+  Short Name: GYRO-NS-CT_Fl
+A022Gb:
+  Application: Conventional free gyro e.g. Level Rotor Gyro (LRG)
+  Long Name: OWSG Camera Based Film Gyro Multi-Shot
+  'No': 43
+  OWSG Prefix: A022Gb
+  Rev.: 5
+  Short Name: CB_Film_GMS
+A022Gb_Fl:
+  Application: Conventional free gyro e.g. Level Rotor Gyro (LRG) on a Floating Rig
+  Long Name: OWSG Camera Based Film Gyro Multi-Shot [Floating Rig]
+  'No': 44
+  OWSG Prefix: A022Gb
+  Rev.: 5
+  Short Name: CB_Film_GMS_Fl
+A023Gb:
+  Application: Conventional free gyro e.g. Level Rotor Gyro (LRG)
+  Long Name: OWSG Camera Based Film Gyro Single Shot
+  'No': 45
+  OWSG Prefix: A023Gb
+  Rev.: 5
+  Short Name: CB_Film_GSS
+A023Gb_Fl:
+  Application: Conventional free gyro e.g. Level Rotor Gyro (LRG) on a Floating Rig
+  Long Name: OWSG Camera Based Film Gyro Single Shot [Floating Rig]
+  'No': 46
+  OWSG Prefix: A023Gb
+  Rev.: 5
+  Short Name: CB_Film_GSS_Fl
+A024Mb:
+  Application: Camera Based Film Magnetic Multi-Shot with adequate length and spacing
+    in NMDC.
+  Long Name: OWSG Camera Based Film Magnetic Multi-Shot
+  'No': 47
+  OWSG Prefix: A024Mb
+  Rev.: 5
+  Short Name: CB_Film_MMS
+A024Mb_Fl:
+  Application: Camera Based Film Magnetic Multi-Shot with adequate length and spacing
+    in NMDC on a Floating Rig.
+  Long Name: OWSG Camera Based Film Magnetic Multi-Shot [Floating Rig]
+  'No': 48
+  OWSG Prefix: A024Mb
+  Rev.: 5
+  Short Name: CB_Film_MMS_Fl
+A025Mb:
+  Application: Assumes adequate spacing in NMDC.
+  Long Name: OWSG Camera Based Film Magnetic Single Shot
+  'No': 49
+  OWSG Prefix: A025Mb
+  Rev.: 5
+  Short Name: CB_Film_MSS
+A025Mb_Fl:
+  Application: Assumes adequate spacing in NMDC on a Floating Rig
+  Long Name: OWSG Camera Based Film Magnetic Single Shot [Floating Rig]
+  'No': 50
+  OWSG Prefix: A025Mb
+  Rev.: 5
+  Short Name: CB_Film_MSS_Fl
+A026Ua:
+  Application: Where no survey information was recorded or where the information no
+    longer exists and there is no other supporting information to justify the use
+    of another error model.
+  Long Name: OWSG BLIND
+  'No': 51
+  OWSG Prefix: A026Ua
+  Rev.: 1
+  Short Name: BLIND
+A026Ua_Fl:
+  Application: Where no survey information was recorded or where the information no
+    longer exists and there is no other supporting information to justify the use
+    of another error model. On a Floating Rig
+  Long Name: OWSG BLIND [Floating Rig]
+  'No': 52
+  OWSG Prefix: A026Ua
+  Rev.: 1
+  Short Name: BLIND_Fl
+A027Ub:
+  Application: Inclination only surveys for vertical wells with inclinations less
+    than 5 deg (e.g. Totco Teledrift and Anderdrift)
+  Long Name: OWSG Inclination Only Surveys
+  'No': 53
+  OWSG Prefix: A027Ub
+  Rev.: 5
+  Short Name: INC-ONLY
+A027Ub_Fl:
+  Application: Inclination only surveys for vertical wells with inclinations less
+    than 5 deg (e.g. Totco Teledrift and Anderdrift) on a Floating Rig
+  Long Name: OWSG Inclination Only Surveys [Floating Rig]
+  'No': 54
+  OWSG Prefix: A027Ub
+  Rev.: 5
+  Short Name: INC-ONLY_Fl
+A028Ub:
+  Application: Inclination only surveys for vertical wells with inclinations less
+    than 5 deg (e.g. Totco Teledrift and Anderdrift)
+  Long Name: OWSG Inclination Only Planned With 5 Deg Maximum Expected Inclination
+  'No': 55
+  OWSG Prefix: A028Ub
+  Rev.: 5
+  Short Name: INC-ONLY_PLANNED_5_DEG
+A028Ub_Fl:
+  Application: Inclination only surveys for vertical wells with inclinations less
+    than 5 deg (e.g. Totco Teledrift and Anderdrift) on a Floating Rig
+  Long Name: OWSG Inclination Only Planned With 5 Deg Maximum Expected Inclination
+    [Floating Rig]
+  'No': 56
+  OWSG Prefix: A028Ub
+  Rev.: 5
+  Short Name: INC-ONLY_PLANNED_5_DEG_Fl
+A029Ub:
+  Application: For use when survey data exists at any interval not exceeding 200ft
+    but the origin or legacy quality of the data is unknown.
+  Long Name: OWSG UNKNOWN
+  'No': 57
+  OWSG Prefix: A029Ub
+  Rev.: 5
+  Short Name: UNKNOWN
+A029Ub_Fl:
+  Application: For use when survey data exists at any interval not exceeding 200ft
+    but the origin or legacy quality of the data is unknown.
+  Long Name: OWSG UNKNOWN [Floating Rig]
+  'No': 58
+  OWSG Prefix: A029Ub
+  Rev.: 5
+  Short Name: UNKNOWN_Fl
+A030Ua:
+  Application: To give zero position uncertainty down to a particular depth.
+  Long Name: OWSG Zero Error
+  'No': 59
+  OWSG Prefix: A030Ua
+  Rev.: 1
+  Short Name: ZERO-ERROR
+ISCWSA MWD Rev4:
+  Application: None
+  Long Name: ISCWSA MWD (Fixed Rig) Rev4
+  OWSG Prefix: None
+  Rev.: 4
+  Short Name: ISCWSA MWD Rev4
+ISCWSA MWD Rev5:
+  Application: None
+  Long Name: ISCWSA MWD (Fixed Rig) Rev5
+  OWSG Prefix: None
+  Rev.: 5
+  Short Name: ISCWSA MWD Rev5
+spe-90408-ma_example_table_3:
+  Application: None
+  Long Name: spe-90408-ma_example_table_3
+  OWSG Prefix: None
+  Rev.: 5
+  Short Name: spe-90408-ma_example_table_3
