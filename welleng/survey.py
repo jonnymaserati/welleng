@@ -690,6 +690,22 @@ class Survey:
         # )
         return node
 
+    def interpolate_survey_tvd(self, start=None, stop=None, step=10):
+        """
+        Convenience method for interpolating a Survey object's TVD.
+        """
+        survey_interpolated = interpolate_survey_tvd(
+            self, start=start, stop=stop, step=step
+        )
+        return survey_interpolated
+
+    def interpolate_survey(self, step=30, dls=1e-8):
+        """
+        Convenience method for interpolating a Survey object's MD.
+        """
+        survey_interpolated = interpolate_survey(self, step=30, dls=1e-8)
+        return survey_interpolated
+
 
 class TurnPoint:
     def __init__(
@@ -1653,7 +1669,7 @@ def interpolate_survey_tvd(survey, start=None, stop=None, step=10):
         node_origin = nodes[-1]
         node2_master = survey.interpolate_md(md2)
 
-        while True:
+        while 1:
             node1 = nodes[-1]
             node2 = copy(node2_master)
             if np.isclose(node1.md, md2):
