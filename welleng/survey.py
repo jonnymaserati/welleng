@@ -680,14 +680,11 @@ class Survey:
         """
         s = interpolate_md(self, md)
         node = get_node(s, -1, s.interpolated[-1])
-        # node = Node(
-        #     pos=[s.n[-1], s.e[-1], s.tvd[-1]],
-        #     vec=s.vec_nev[-1].tolist(),
-        #     md=s.md[-1],
-        #     unit=s.unit,
-        #     nev=True,
-        #     interpolated=s.interpolated[-1]
-        # )
+
+        return node
+
+    def interpolate_tvd(self, tvd):
+        node = interpolate_tvd(self, tvd=tvd)
         return node
 
     def interpolate_survey_tvd(self, start=None, stop=None, step=10):
@@ -933,7 +930,10 @@ def interpolate_tvd(survey, tvd, **kwargs):
 
     interpolated_survey = _interpolate_survey(survey, x=x, index=idx)
 
-    return interpolated_survey
+    interpolated = True if x > 0 else False
+    node = get_node(interpolated_survey, 1, interpolated=interpolated)
+
+    return node
 
 
 def slice_survey(survey, start, stop=None):
@@ -1258,24 +1258,6 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
 
         tie_on = False
 
-    # For some reason, there's sometimes additional rows in straight
-    # sections - this removes them BUT it makes the survey less accurate
-    # upper = sections[1:-1]
-    # lower = sections[2:]
-
-    # tags = []
-
-    # for i, (u, l) in enumerate(zip(upper, lower)):
-    #     if all((
-    #         math.isclose(u.inc, l.inc),
-    #         math.isclose(u.azi, l.azi),
-    #         math.isclose(u.dls, l.dls)
-    #     )):
-    #         tags.append(i + 1)
-
-    # for i in tags:
-    #     del sections[i]
-
     return sections
 
 
@@ -1512,21 +1494,6 @@ def from_connections(
     return survey
 
 
-# def survey(self, radius=10, step=30, survey_header=None):
-#     interpolation = self.interpolate(step)
-#     if survey_header is None:
-#         sh = SurveyHeader()
-#     else:
-#         sh = survey_header
-
-#     survey = get_survey(
-#         interpolation, survey_header=sh, radius=10,
-#         start_nev=self.pos1, start_xyz=get_xyz(self.pos1)
-#     )
-
-#     return survey
-
-
 def interpolate_survey(survey, step=30, dls=1e-8):
     '''
     Interpolate a sparse survey with the desired md step.
@@ -1590,12 +1557,9 @@ def interpolate_survey(survey, step=30, dls=1e-8):
         )
         well.append(c)
 
-    # data = interpolate_well(well, step=step)
-
     survey_interpolated = from_connections(
         well,
         step=step,
-        # start_nev=survey.start_nev,
         start_xyz=survey.start_xyz,
         survey_header=survey.header,
         error_model=None
@@ -1647,13 +1611,12 @@ def interpolate_survey(survey, step=30, dls=1e-8):
 
 
 def get_node_tvd(survey, node1, node2, tvd, node_origin):
-        node2.pos_nev, node2.pos_xyz = None, None
-        c = Connector(node1=node1, node2=node2, dls_design=1e-8)
-        s = from_connections(c, step=None)
-        s_interp = interpolate_tvd(s, tvd, node_origin=node_origin)
-        node_new = s_interp.interpolate_md(s_interp.md[-1])
+    node2.pos_nev, node2.pos_xyz = None, None
+    c = Connector(node1=node1, node2=node2, dls_design=1e-8)
+    s = from_connections(c, step=None)
+    node_new = interpolate_tvd(s, tvd, node_origin=node_origin)
 
-        return node_new
+    return node_new
 
 
 def interpolate_survey_tvd(survey, start=None, stop=None, step=10):
