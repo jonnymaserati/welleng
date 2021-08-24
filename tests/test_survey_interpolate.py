@@ -37,6 +37,12 @@ def test_interpolate_md(md=800):
     assert isinstance(node, we.node.Node)
 
 
+def test_interpolate_tvd(tvd=800):
+    global survey
+    node = survey.interpolate_tvd(tvd=tvd)
+    assert isinstance(node, we.node.Node)
+
+
 def one_function_to_run_them_all():
     """
     Function to gather the test functions so that they can be tested by
