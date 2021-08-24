@@ -1490,19 +1490,19 @@ def from_connections(
     return survey
 
 
-def survey(self, radius=10, step=30, survey_header=None):
-        interpolation = self.interpolate(step)
-        if survey_header is None:
-            sh = SurveyHeader()
-        else:
-            sh = survey_header
+# def survey(self, radius=10, step=30, survey_header=None):
+#     interpolation = self.interpolate(step)
+#     if survey_header is None:
+#         sh = SurveyHeader()
+#     else:
+#         sh = survey_header
 
-        survey = get_survey(
-            interpolation, survey_header=sh, radius=10,
-            start_nev=self.pos1, start_xyz=get_xyz(self.pos1)
-        )
+#     survey = get_survey(
+#         interpolation, survey_header=sh, radius=10,
+#         start_nev=self.pos1, start_xyz=get_xyz(self.pos1)
+#     )
 
-        return survey
+#     return survey
 
 
 def interpolate_survey(survey, step=30, dls=1e-8):
