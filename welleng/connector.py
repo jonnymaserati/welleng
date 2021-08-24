@@ -747,19 +747,6 @@ class Connector:
     def interpolate(self, step=30):
         return interpolate_well([self], step)
 
-    # def survey(self, radius=10, step=30, survey_header=None):
-    #     interpolation = self.interpolate(step)
-    #     if survey_header is None:
-    #         sh = SurveyHeader()
-    #     else:
-    #         sh = survey_header
-
-    #     survey = get_survey(
-    #         interpolation, survey_header=sh, radius=10,
-    #         start_nev=self.pos1, start_xyz=get_xyz(self.pos1)
-    #     )
-
-    #     return survey
 
     def _get_tangent_temp(self, tangent_length):
         if np.isnan(tangent_length):
@@ -1218,77 +1205,6 @@ def interpolate_well(sections, step=30):
     return data
 
 
-# def _remove_duplicates(md, inc, azi):
-#     arr = np.array([md, inc, azi]).T
-#     upper = arr[:-1]
-#     lower = arr[1:]
-
-#     temp = np.vstack((
-#         upper[0],
-#         lower[lower[:, 0] != upper[:, 0]]
-#     ))
-
-#     return temp.T
-
-
-# def get_survey(
-#     section_data, survey_header=None, start_nev=[0., 0., 0.],
-#     start_xyz=[0., 0., 0.], radius=10, deg=False, error_model=None,
-#     depth_unit='meters', surface_unit='meters'
-# ):
-#     """
-#     Constructs a well survey from a list of sections of control points.
-
-#     Parameters
-#     ----------
-#         section_data: list of dicts with section data
-#         start_nev: (3) array of floats (default: [0,0,0])
-#             The starting position in NEV coordinates.
-#         radius: float (default: 10)
-#             The radius is passed to the `welleng.survey.Survey` object
-#             and represents the radius of the wellbore. It is also used
-#             when visualizing the results, so can be used to make the
-#             wellbore *thicker* in the plot.
-
-#     Results
-#     -------
-#         survey: `welleng.survey.Survey` object
-#     """
-
-#     # generate lists for survey
-#     md, inc, azi = np.vstack([np.array(list(zip(
-#             s['md'].tolist(),
-#             s['inc'].tolist(),
-#             s['azi'].tolist()
-#         )))
-#         for s in section_data
-#     ]).T
-
-#     # remove duplicates
-#     md, inc, azi = _remove_duplicates(md, inc, azi)
-
-#     if survey_header is None:
-#         survey_header = SurveyHeader(
-#             depth_unit=depth_unit,
-#             surface_unit=surface_unit
-#         )
-
-#     survey = Survey(
-#         md=md,
-#         inc=inc,
-#         azi=azi,
-#         start_nev=start_nev,
-#         start_xyz=start_xyz,
-#         deg=deg,
-#         radius=radius,
-#         header=survey_header,
-#         error_model=error_model,
-#         unit=depth_unit
-#     )
-
-#     return survey
-
-
 def interpolate_curve(
     md1,
     pos1,
@@ -1572,13 +1488,6 @@ def connect_points(
         assert np.allclose(c.pos_target, p)
         connections.append(c)
 
-    # sh = SurveyHeader()
-
-    # data = interpolate_well(connections, step)
-    # survey = get_survey(data, sh, start_nev=connections[0].pos1)
-
-    # return survey
-    # return data
     return connections
 
 
@@ -1628,9 +1537,7 @@ def survey_to_plan(survey, tolerance=0.2, dls_design=1., step=30.):
         node = section.node_end
 
     data = interpolate_well(sections, step=30)
-    # survey_new = get_survey(data)
 
-    # return (survey_new, sections)
     return sections
 
 
@@ -1696,124 +1603,6 @@ def _get_section(
         c_old,
         idx + i - 1 if idx + i != len(nev) - 1 else idx + i
     )
-
-
-# def interpolate_survey(survey, step=30, dls=0.01):
-#     '''
-#     Interpolate a sparse survey with the desired md step.
-
-#     Parameters
-#     ----------
-#     survey: welleng.survey.Survey object
-#     step: float (default=30)
-#         The desired delta md between stations.
-#     dls: float (default=0.01)
-#         The design DLS used to calculate the minimum curvature. This will be
-#         the minimum DLS used to fit a curve between stations so should be set
-#         to a small value to ensure a continuous curve is fit without any
-#         tangent sections.
-
-#     Returns
-#     -------
-#     survey_interpolated: welleng.survey.Survey object
-#         Note that a `interpolated` property is added indicating if the survey
-#         stations is interpolated (True) or not (False).
-#     '''
-#     if survey.header.azi_reference == 'true':
-#         azi = survey.azi_true_rad
-#     elif survey.header.azi_reference == 'grid':
-#         azi = survey.azi_grid_rad
-#     else:
-#         azi = survey.azi_mag_rad
-
-#     s = np.array([survey.md, survey.inc_rad, azi]).T
-
-#     s_upper = s[:-1]
-#     s_lower = s[1:]
-#     well = []
-
-#     for i, (u, l) in enumerate(zip(s_upper, s_lower)):
-#         if i == 0:
-#             node1 = Node(
-#                 pos=survey.start_nev,
-#                 md=u[0],
-#                 inc=u[1],
-#                 azi=u[2],
-#                 degrees=False,
-#                 unit=survey.unit
-#             )
-#         else:
-#             node1 = well[-1].node_end
-#         node2 = Node(
-#             md=l[0],
-#             inc=l[1],
-#             azi=l[2],
-#             degrees=False,
-#             unit=survey.unit
-#         )
-#         c = Connector(
-#             node1=node1,
-#             node2=node2,
-#             dls_design=dls,
-#             degrees=False,
-#             force_min_curve=True,
-#             unit=survey.unit
-#         )
-#         well.append(c)
-
-#     data = interpolate_well(well, step=step)
-
-#     survey_interpolated = get_survey(
-#         data,
-#         start_nev=survey.start_nev,
-#         start_xyz=survey.start_xyz,
-#         survey_header=survey.header,
-#         error_model=None
-#     )
-
-#     survey_interpolated.interpolated = [
-#         False if md in survey.md else True
-#         for md in survey_interpolated.md
-#     ]
-
-#     i = -1
-#     radii = []
-#     cov_nev = []
-#     for (md, boolean) in zip(
-#         survey_interpolated.md,
-#         survey_interpolated.interpolated
-#     ):
-#         if not boolean:
-#             i += 1
-#             if survey.error_model is not None:
-#                 # interpolate covariance error between survey stations
-#                 j = 1 if i < len(survey.md) - 1 else 0
-#                 delta_md = survey.md[i + j] - survey.md[i]
-#                 delta_cov_nev = (
-#                     survey.cov_nev[i + j] - survey.cov_nev[i]
-#                 )
-#                 unit_cov_nev = (
-#                     delta_cov_nev / delta_md
-#                     if j == 1
-#                     else 0
-#                 )
-#         radii.append(survey.radius[i])
-#         if survey.error_model is not None:
-#             cov_nev.append(
-#                 survey.cov_nev[i]
-#                 + (
-#                     (md - survey.md[i]) * unit_cov_nev
-#                 )
-#             )
-#     survey_interpolated.radius = np.array(radii)
-#     if bool(cov_nev):
-#         survey_interpolated.cov_nev = np.array(cov_nev)
-#         survey_interpolated.cov_hla = NEV_to_HLA(
-#             survey_interpolated.survey_rad,
-#             survey_interpolated.cov_nev.T
-#         ).T
-
-#     return survey_interpolated
 
 
 def numbafy(functions):
