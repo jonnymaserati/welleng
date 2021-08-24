@@ -22,6 +22,7 @@ from .utils import (
 from .error import ErrorModel, ERROR_MODELS
 from .node import Node
 from .connector import Connector, interpolate_well
+from .visual import figure
 
 
 AZI_REF = ["true", "magnetic", "grid"]
@@ -591,12 +592,6 @@ class Survey:
             curvature_dls = 1 / self.curve_radius
 
             self.toolface = np.concatenate((t1, np.array([t2[-1]])))
-            # these toolfaces are not signed. To determine the sign need to
-            # reference the change in azimuth
-
-            # t1 = np.absolute(t1) * (s.delta_azi / np.absolute(s.delta_azi))
-
-            # self.toolface = np.concatenate((np.array([0.]), t1))
 
             curvature_turn = curvature_dls * (
                 np.sin(self.toolface) / np.sin(self.inc_rad)
@@ -702,6 +697,10 @@ class Survey:
         """
         survey_interpolated = interpolate_survey(self, step=30, dls=1e-8)
         return survey_interpolated
+
+    def figure(self, **kwargs):
+        fig = figure(self, **kwargs)
+        return fig
 
 
 class TurnPoint:

@@ -10,6 +10,12 @@ except ImportError:
     VEDO = False
 import numpy as np
 
+try:
+    import plotly.graph_objects as go
+    PLOTLY = True
+except ImportError:
+    PLOTLY = False
+
 from .version import __version__ as VERSION
 
 
@@ -220,3 +226,102 @@ def get_lines(clearance):
     lines.addScalarBar(title='SF')
 
     return lines
+
+
+def figure(survey, **kwargs):
+    assert PLOTLY, "ImportError: try pip install welleng[easy]"
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter3d(
+            x=survey.e,
+            y=survey.n,
+            z=survey.tvd,
+            name='survey',
+            mode='lines',
+            line=dict(
+                color=survey.dls,
+            ),
+            hoverinfo='skip'
+        )
+    )
+    if not hasattr(survey, "interpolated"):
+        survey.interpolated = [False] * len(survey.md)
+    n, e, v, md, inc, azi = np.array([
+        [n, e, v, md, inc, azi]
+        for n, e, v, i, md, inc, azi in zip(
+            survey.n, survey.e, survey.tvd, survey.interpolated,
+            survey.md, survey.inc_deg, survey.azi_grid_deg
+        )
+        if bool(i) is True
+    ]).T
+    if n.size:
+        text = [
+            f"N: {n:.2f}m<br>E: {e:.2f}m<br>TVD: {v:.2f}m<br>"
+            + f"MD: {md:.2f}m<br>INC: {inc:.2f}\xb0<br>AZI: {azi:.2f}\xb0"
+            for n, e, v, md, inc, azi in zip(n, e, v, md, inc, azi)
+        ]
+        fig.add_trace(
+            go.Scatter3d(
+                x=e,
+                y=n,
+                z=v,
+                name='interpolated',
+                mode='markers',
+                marker=dict(
+                    size=5,
+                    color='blue',
+                ),
+                text=text,
+                hoverinfo='text'
+            )
+        )
+    n, e, v, md, inc, azi = np.array([
+        [n, e, v, md, inc, azi]
+        for n, e, v, i, md, inc, azi in zip(
+            survey.n, survey.e, survey.tvd, survey.interpolated,
+            survey.md, survey.inc_deg, survey.azi_grid_deg
+        )
+        if bool(i) is False
+    ]).T
+    text = [
+        f"N: {n:.2f}m<br>E: {e:.2f}m<br>TVD: {v:.2f}m<br>"
+        + f"MD: {md:.2f}m<br>INC: {inc:.2f}\xb0<br>AZI: {azi:.2f}\xb0"
+        for n, e, v, md, inc, azi in zip(n, e, v, md, inc, azi)
+    ]
+    fig.add_trace(
+        go.Scatter3d(
+            x=e,
+            y=n,
+            z=v,
+            name='survey_point',
+            mode='markers',
+            marker=dict(
+                size=5,
+                color='red',
+            ),
+            text=text,
+            hoverinfo='text'
+        )
+    )
+    fig.update_scenes(
+        zaxis_autorange="reversed",
+        aspectmode='data',
+        xaxis=dict(
+            title='East (m)'
+        ),
+        yaxis=dict(
+            title='North (m)',
+        ),
+        zaxis=dict(
+            title="TVD (m)"
+        )
+    )
+    for k, v in kwargs.items():
+        if k == "layout":
+            fig.update_layout(v)
+        elif k == "traces":
+            fig.update_traces(v)
+        else:
+            continue
+
+    return fig
