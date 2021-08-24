@@ -16,7 +16,7 @@ class MinimalTest(unittest.TestCase):
                 md=[0, 500, 1000, 2000, 3000],
                 inc=[0, 0, 30, 90, 90],
                 azi=[90, 90, 90, 135, 180],
-                error_model='iscwsa_mwd_rev5'
+                error_model='ISCWSA MWD Rev5'
             ),
             step=30.
         )

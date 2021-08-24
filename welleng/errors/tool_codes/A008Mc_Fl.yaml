@@ -1,0 +1,200 @@
+codes:
+  ABXY-TI1S:
+    function: ABXY_TI1
+    magnitude: 0.004
+    propagation: systematic
+    unit: m/s2
+  ABXY-TI2S:
+    function: ABXY_TI2
+    magnitude: 0.004
+    propagation: systematic
+    unit: m/s2
+  ABZ:
+    function: ABZ
+    magnitude: 0.004
+    propagation: systematic
+    unit: m/s2
+  AMIL:
+    function: AMIL
+    magnitude: 100
+    propagation: systematic
+    unit: nT
+  ASXY-TI1S:
+    function: ASXY_TI1
+    magnitude: 0.0005
+    propagation: systematic
+    unit: '-'
+  ASXY-TI2S:
+    function: ASXY_TI2
+    magnitude: 0.0005
+    propagation: systematic
+    unit: '-'
+  ASXY-TI3S:
+    function: ASXY_TI3
+    magnitude: 0.0005
+    propagation: systematic
+    unit: '-'
+  ASZ:
+    function: ASZ
+    magnitude: 0.0005
+    propagation: systematic
+    unit: '-'
+  DBH-CI:
+    function: DBH
+    magnitude: 12.426744274199626
+    propagation: systematic
+    unit: rad.nT
+  DBH-OI:
+    function: DBH
+    magnitude: 6.213372137099813
+    propagation: systematic
+    unit: rad.nT
+  DBH-U:
+    function: DBH
+    magnitude: 22.183134792847927
+    propagation: systematic
+    unit: rad.nT
+  DBHR:
+    function: DBH
+    magnitude: 52.35987755982988
+    propagation: random
+    unit: rad.nT
+  DEC-CI:
+    function: AZ
+    magnitude: 0.0015707963267948964
+    propagation: systematic
+    unit: rad
+  DEC-OI:
+    function: AZ
+    magnitude: 0.0008726646259971648
+    propagation: systematic
+    unit: rad
+  DEC-U:
+    function: AZ
+    magnitude: 0.0019198621771937625
+    propagation: systematic
+    unit: rad
+  DECR:
+    function: AZ
+    magnitude: 0.0017453292519943296
+    propagation: random
+    unit: rad
+  DRFR:
+    function: DREF
+    magnitude: 2.2
+    propagation: random
+    unit: m
+  DRFS:
+    function: DREF
+    magnitude: 1
+    propagation: systematic
+    unit: m
+  DSFS:
+    function: DSF
+    magnitude: 0.00056
+    propagation: systematic
+    unit: '-'
+  DSTG:
+    function: DST
+    magnitude: 2.5e-07
+    propagation: systematic
+    unit: 1/m
+  MBXY-TI1S:
+    function: MBXY_TI1
+    magnitude: 35
+    propagation: systematic
+    unit: nT
+  MBXY-TI2S:
+    function: MBXY_TI2
+    magnitude: 35
+    propagation: systematic
+    unit: nT
+  MBZ:
+    function: MBZ
+    magnitude: 35
+    propagation: systematic
+    unit: nT
+  MSXY-TI1S:
+    function: MSXY_TI1
+    magnitude: 0.0008
+    propagation: systematic
+    unit: '-'
+  MSXY-TI2S:
+    function: MSXY_TI2
+    magnitude: 0.0008
+    propagation: systematic
+    unit: '-'
+  MSXY-TI3S:
+    function: MSXY_TI3
+    magnitude: 0.0008
+    propagation: systematic
+    unit: '-'
+  MSZ:
+    function: MSZ
+    magnitude: 0.0008
+    propagation: systematic
+    unit: '-'
+  SAGE:
+    function: SAGE
+    magnitude: 0.003490658503988659
+    propagation: systematic
+    unit: rad
+  XCLA:
+    function: XCLA
+    magnitude: 0.167
+    propagation: random
+    unit: '-'
+  XCLH:
+    function: XCLH
+    magnitude: 0.167
+    propagation: random
+    unit: '-'
+  XYM1:
+    function: XYM1
+    magnitude: 0.0017453292519943296
+    propagation: systematic
+    unit: rad
+  XYM2:
+    function: XYM2
+    magnitude: 0.0017453292519943296
+    propagation: systematic
+    unit: rad
+  XYM3E:
+    function: XYM3E
+    magnitude: 0.005235987755982988
+    propagation: random
+    unit: rad
+  XYM4E:
+    function: XYM4E
+    magnitude: 0.005235987755982988
+    propagation: random
+    unit: rad
+header:
+  A008Mc: MWD+IFR1+MS_Fl
+  Application: "CARE TO BE TAKEN WHILE PLANNING A WELL \u2013 Refer to Survey Management\
+    \ Specialist to ensure MS is valid.  MWD with IFR1 (IFR or Crustal Anomaly Correction)\
+    \ and Multi-Station Correction on a Floating Rig"
+  Approved: null
+  Checked: Steve Grindrod 21-Oct-2020
+  Hor East/West Exclusion: 0 deg
+  Inclination Range Max: 180 deg
+  Inclination Range Min: 0 deg
+  Long Name: OWSG MWD + IFR1 + Multi-Station Correction [Floating Rig]
+  Misalignment Alt: 3
+  Misalignment Min Course Length: 10 m
+  Notes: Based on ISCWSA MWD Rev 3 - Toolface Independent Sliding
+  OWSG Prefix: A008Mc
+  Range Comment: None
+  Replaces / Replaced By: 'OWSG_A008Mb_MWD+IFR1+MS_Fl / '
+  Revision Comment: Rev No changed to match ISCWSA Models (Rev.5). XCLA & XCLH terms
+    added. XYM3 replaced by XYM3E. XYM4 replaced by XYM4E. SAG replaced by SAGE. DECG
+    replaced by DEC-U DEC-CI DEC-OI. DBHG replaced by DBH-U DBH-CI DBH-OI.
+  Revision Date: 2020-10-08 00:00:00
+  Revision History: Rev 0.1 05-Jun-2013 Draft Release for Comment.
+  Revision No: 5.1
+  Short Name: MWD+IFR1+MS_Fl
+  Source: OWSG - SPE 67616 and 63275
+  Status: Agreed
+  Tool Parameters: null
+  Tool Type: Magnetic
+  XCL Tortuosity: 1 deg / 100 ft
