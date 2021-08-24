@@ -4,7 +4,8 @@ from ..survey import (
     TurnPoint,
     Survey,
     SurveyHeader,
-    get_sections
+    get_sections,
+    from_connections,
 )
 from ..connector import (
     Connector,
@@ -715,7 +716,7 @@ def wbp_to_survey(
 
     start_nev = np.array(pos[0])
 
-    survey_data = interpolate_well(
+    survey_data = from_connections(
         connections,
         step=step
     )
@@ -735,7 +736,7 @@ def wbp_to_survey(
         convergence=convergence,
     )
 
-    survey = get_survey(
+    survey = from_connections(
         survey_data,
         survey_header=sh,
         start_nev=start_nev,
