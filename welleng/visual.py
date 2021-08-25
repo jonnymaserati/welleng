@@ -228,8 +228,17 @@ def get_lines(clearance):
     return lines
 
 
-def figure(survey, **kwargs):
-    assert PLOTLY, "ImportError: try pip install welleng[easy]"
+def figure(obj, type='scatter3d', **kwargs):
+    assert PLOTLY, "ImportError: try pip install plotly"
+    func = {
+        'scatter3d': _scatter3d,
+        'mesh3d': _mesh3d
+    }
+    fig = func[type](obj, **kwargs)
+    return fig
+
+
+def _scatter3d(survey, **kwargs):
     fig = go.Figure()
     fig.add_trace(
         go.Scatter3d(
@@ -238,9 +247,6 @@ def figure(survey, **kwargs):
             z=survey.tvd,
             name='survey',
             mode='lines',
-            line=dict(
-                color=survey.dls,
-            ),
             hoverinfo='skip'
         )
     )
@@ -303,6 +309,43 @@ def figure(survey, **kwargs):
             hoverinfo='text'
         )
     )
+    fig = _update_fig(fig, kwargs)
+
+    return fig
+
+
+def _mesh3d(mesh, **kwargs):
+    fig = go.Figure()
+    vertices = mesh.vertices.reshape(-1, 3)
+    faces = np.array(mesh.faces)
+    n, e, v = vertices.T
+    i, j, k = faces.T
+    fig.add_trace(
+        go.Mesh3d(
+            x=e, y=n, z=v,
+            i=i, j=j, k=k,
+        )
+    )
+    if kwargs.get('edges'):
+        tri_points = np.array([
+            vertices[i] for i in faces.reshape(-1)
+        ])
+        n, e, v = tri_points.T
+        fig.add_trace(
+            go.Scatter3d(
+                x=e, y=n, z=v,
+                mode='lines',
+            )
+        )
+    fig = _update_fig(fig, kwargs)
+
+    return fig
+
+
+def _update_fig(fig, kwargs):
+    """
+    Update the fig axis along with any user defined kwargs.
+    """
     fig.update_scenes(
         zaxis_autorange="reversed",
         aspectmode='data',
