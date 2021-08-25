@@ -698,7 +698,7 @@ class Survey:
         survey_interpolated = interpolate_survey(self, step=30, dls=1e-8)
         return survey_interpolated
 
-    def figure(self, **kwargs):
+    def figure(self, type='scatter3d', **kwargs):
         fig = figure(self, **kwargs)
         return fig
 
