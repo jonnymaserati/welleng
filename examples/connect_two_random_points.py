@@ -109,7 +109,7 @@ print(
 )
 
 # Create a survey object of the section with interpolated points and coords
-survey = section.survey(radius=5, step=30)
+survey = we.survey.from_connections(section, radius=5, step=30)
 
 # test interpolate_md function
 node = survey.interpolate_md(123).properties()

@@ -9,6 +9,7 @@ from scipy.spatial import KDTree
 
 from .utils import HLA_to_NEV, get_sigmas
 from .survey import slice_survey
+from .visual import figure
 
 
 class WellMesh:
@@ -286,6 +287,10 @@ class WellMesh:
 
         # self.mesh = fix_mesh(mesh)
         self.mesh = mesh
+
+    def figure(self, type='mesh3d', **kwargs):
+        fig = figure(self, type, **kwargs)
+        return fig
 
 
 def make_trimesh_scene(data):

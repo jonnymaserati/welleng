@@ -1,7 +1,7 @@
 import inspect
 import sys
 from welleng.connector import Connector
-from welleng.survey import Survey
+from welleng.survey import Survey, from_connections
 import numpy as np
 
 
@@ -18,7 +18,7 @@ def test_md_hold():
     ), "Failed c1"
     assert c.method == 'hold', "Unexpected method"
 
-    c.survey()
+    assert isinstance(from_connections(c), Survey)
 
 
 def test_md_and_vec():
@@ -62,7 +62,7 @@ def test_pos_and_vec():
     assert c.method == 'curve_hold_curve'
 
     # test if interpolator and survey functions are working
-    assert isinstance(c.survey(), Survey)
+    assert isinstance(from_connections(c, step=30), Survey)
 
 
 def test_pos_inc_azi():
