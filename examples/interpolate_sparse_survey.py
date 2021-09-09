@@ -24,7 +24,7 @@ s_ref = we.survey.Survey(
 )
 
 # interpolate points between survey stations with delta md of 30
-s_ref_interp = we.connector.interpolate_survey(s_ref, step=30)
+s_ref_interp = we.survey.interpolate_survey(s_ref, step=30)
 
 # generate meshes for visualizing the well paths
 m_ref = we.mesh.WellMesh(s_ref)
