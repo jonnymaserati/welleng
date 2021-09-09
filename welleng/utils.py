@@ -57,14 +57,14 @@ class MinCurve:
         azi_2 = azi[1:]
 
         # calculate the dogleg
-        temp = np.arccos(
-            np.cos(inc_2 - inc_1)
-            - (np.sin(inc_1) * np.sin(inc_2))
-            * (1 - np.cos(azi_2 - azi_1))
-        )
+        # temp = np.arccos(
+        #     np.cos(inc_2 - inc_1)
+        #     - (np.sin(inc_1) * np.sin(inc_2))
+        #     * (1 - np.cos(azi_2 - azi_1))
+        # )
 
         self.dogleg = np.zeros(survey_length)
-        self.dogleg[1:] = temp
+        self.dogleg[1:] = get_dogleg(inc_1, azi_1, inc_2, azi_2)
 
         # calculate rf and assume rf is 1 where dogleg is 0
         self.rf = np.ones(survey_length)
@@ -130,6 +130,15 @@ class MinCurve:
                 np.array([self.delta_x, self.delta_y, self.delta_z]).T, axis=0
             ) + self.start_xyz
         )
+
+
+def get_dogleg(inc1, azi1, inc2, azi2):
+    dogleg = np.arccos(
+        np.cos(inc2 - inc1)
+        - (np.sin(inc1) * np.sin(inc2))
+        * (1 - np.cos(azi2 - azi1))
+    )
+    return dogleg
 
 
 def get_vec(inc, azi, nev=False, r=1, deg=True):
