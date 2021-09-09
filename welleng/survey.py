@@ -600,7 +600,7 @@ class Survey:
             curvature_build = curvature_dls * np.cos(self.toolface)
             self.build_rate = self._curvature_to_rate(curvature_build)
 
-        # calculate plan normals
+        # calculate plane normals
         n12 = np.cross(s.vec1_nev, s.vec2_nev)
         with np.errstate(divide='ignore', invalid='ignore'):
             self.normals = n12 / np.linalg.norm(n12, axis=1).reshape(-1, 1)
