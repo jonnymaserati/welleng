@@ -8,6 +8,7 @@ except ImportError:
     MAG_CALC = False
 from datetime import datetime
 from scipy.optimize import minimize
+from scipy.spatial.transform import Rotation as R
 
 from .version import __version__
 from .utils import (
@@ -17,7 +18,8 @@ from .utils import (
     get_angles,
     HLA_to_NEV,
     NEV_to_HLA,
-    get_xyz
+    get_xyz,
+    radius_from_dls
 )
 from .error import ErrorModel, ERROR_MODELS
 from .node import Node
@@ -701,6 +703,44 @@ class Survey:
     def figure(self, type='scatter3d', **kwargs):
         fig = figure(self, **kwargs)
         return fig
+
+    def project_to_bit(self, delta_md, dls=None, toolface=None):
+        """
+        Convenience method to project the survey ahead to the bit.
+
+        Parameters
+        ----------
+        delta_md: float
+            The along hole distance from the surveying tool to the bit in
+            meters.
+        dls: float
+            The desired dog leg severity (deg / 30m) between the surveying
+            tool and the bit. Default is to project the DLS of the last
+            survey section.
+        toolface: float
+            The desired toolface to project from at the last survey point.
+            The default is to project the current toolface from the last
+            survey station.
+
+        Returns
+        -------
+        node: welleng.node.Node object
+        """
+        if dls is None:
+            dls = self.dls[-1]
+        if toolface is None:
+            toolface = self.toolface[-1]
+
+        node = project_ahead(
+            pos=np.array([self.n, self.e, self.tvd]).T[-1],
+            vec=self.vec_nev[-1],
+            delta_md=delta_md,
+            dls=dls,
+            toolface=toolface,
+            md=self.md[-1]
+        )
+
+        return node
 
 
 class TurnPoint:
@@ -1671,3 +1711,71 @@ def interpolate_survey_tvd(survey, start=None, stop=None, step=10):
     )
 
     return s_interp
+
+
+def project_ahead(pos, vec, delta_md, dls, toolface, md=0.0):
+    """
+    Apply a simple arc or hold from a current position and vector.
+
+    Parameters
+    ----------
+    pos: (3) array of floats
+        Current position in n, e, tvd coordinates.
+    vec: (3) array of floats
+        Current vector in n, e, tvd coordinates.
+    delta_md: float
+        The desired along hole projection length.
+    dls: float
+        The desired dogleg severity of the projection. Entering 0.0 will
+        result in a hold section.
+    toolface: float
+        The desired toolface for the projection.
+    md: float (optional)
+        The current md if applicable.
+
+    Returns
+    -------
+    node: welleng.node.Node object
+    """
+    if dls > 0:
+        radius = radius_from_dls(dls)
+        dogleg = np.radians(delta_md / 30 * dls)
+
+        pos_temp = np.array([
+            np.cos(dogleg),
+            0.,
+            np.sin(dogleg)
+        ]) * radius
+        pos_temp[0] = radius - pos_temp[0]
+
+        vec_temp = np.array([
+            np.sin(dogleg),
+            0.,
+            np.cos(dogleg)
+        ])
+
+        inc, azi = get_angles(vec, nev=True).reshape(2)
+
+        angles = [
+            toolface,
+            inc,
+            azi
+        ]
+
+        r = R.from_euler('zyz', angles, degrees=False)
+
+        pos_new, vec_new = r.apply(np.vstack((pos_temp, vec_temp)))
+        pos_new += pos
+
+    else:
+        # if dls is 0 then it's a hold
+        pos_new = pos + vec * delta_md
+        vec_new = vec
+
+    node = Node(
+        pos=pos_new,
+        vec=vec_new,
+        md=md + delta_md,
+    )
+
+    return node

@@ -399,7 +399,10 @@ class Connector:
             self.pos2_list, self.pos3_list = [], [deepcopy(self.pos_target)]
             self.vec23 = [np.array([0., 0., 0.])]
             self.delta_radius_list = []
-            self._target_pos_and_vec_defined(deepcopy(self.pos_target))
+            # self._target_pos_and_vec_defined(deepcopy(self.pos_target))
+            self._target_pos_and_vec_defined(
+                self.pos1 + (self.pos_target - self.pos1) / 2
+            )
         else:
             self.distances = self._get_distances(
                 self.pos1, self.vec1, self.pos_target
@@ -583,6 +586,7 @@ class Connector:
                 np.linalg.norm(self.pos_target - self.pos1)
                 + self.md1
             )
+        self.dls, self.dls2 = 0.0, 0.0
 
     def _get_angles_target(self):
         self.inc_target, self.azi_target = get_angles(
@@ -674,7 +678,7 @@ class Connector:
                     (self.md_target - self.md1)
                     / (abs(self.dogleg) + abs(self.dogleg2))
                 )
-                assert self.radius_critical > 0
+                assert self.radius_critical >= 0
                 self.radius_critical2 = self.radius_critical
                 args = (self, deepcopy(self.pos3), deepcopy(self.vec23[-1]))
                 minimize_target_pos_and_vec_defined(
@@ -757,7 +761,7 @@ class Connector:
         return tangent_temp
 
     def _mod_pos(self, pos):
-        pos_rand = np.random.random(3) * self.delta_radius
+        pos_rand = np.random.random(3)  # * self.delta_radius
         pos += pos_rand
 
     def _get_distances(self, pos1, vec1, pos_target):
@@ -821,7 +825,7 @@ def minimize_target_pos_and_vec_defined(
     )
     if radius_temp1 < c.radius_critical:
         c.radius_critical = radius_temp1
-        assert c.radius_critical > 0
+        assert c.radius_critical >= 0
 
     radius_effective1 = min(radius1, c.radius_critical)
 
@@ -869,7 +873,7 @@ def minimize_target_pos_and_vec_defined(
     )
     if radius_temp2 < c.radius_critical2:
         c.radius_critical2 = radius_temp2
-        assert c.radius_critical2 > 0
+        assert c.radius_critical2 >= 0
 
     radius_effective2 = min(radius2, c.radius_critical2)
 
