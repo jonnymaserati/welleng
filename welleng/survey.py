@@ -748,7 +748,7 @@ class Survey:
 
     def project_to_target(
         self,
-        pos_target, vec_target,
+        node_target,
         dls_design=3.0,
         delta_md=None,
         dls=None, toolface=None,
@@ -756,7 +756,7 @@ class Survey:
     ):
         survey = project_to_target(
             self,
-            pos_target, vec_target,
+            node_target,
             dls_design,
             delta_md,
             dls, toolface,
@@ -1807,19 +1807,42 @@ def project_ahead(pos, vec, delta_md, dls, toolface, md=0.0):
 
 def project_to_target(
     survey,
-    pos_target, vec_target,
+    node_target,
     dls_design=3.0,
     delta_md=None,
     dls=None, toolface=None,
     step=30,
 ):
+    """
+    Project a wellpath from the end of a current survey to a target, taking
+    account of the location of the bit relative to the surveying tool if the
+    `delta_md` property is not `None`.
+
+    Parameters
+    ----------
+    survey: welleng.survey.Survey obj
+    node_target: welleng.node.Node obj
+    dls_design: float
+        The dls from which to construct the projected wellpath.
+    delta_md: float
+        The along hole length from the surveying sensor to the bit.
+    dls: float
+        The desired dogleg severity for the projection from the survey tool
+        to the bit. Entering 0.0 will result in a hold section.
+    toolface: float
+        The desired toolface for the projection from the survey tool to the
+        bit.
+    step: float
+        The desired survey interval for the projected wellpath to the target.
+
+    Returns
+    -------
+    node: welleng.survey.Survey obj
+    """
     connectors = []
     node_start = Node(
             pos=survey.pos_nev[-1], vec=survey.vec_nev[-1], md=survey.md[-1]
         )
-    node_target = Node(
-        pos=pos_target, vec=vec_target
-    )
     if dls is None:
         dls = survey.dls[-1]
     if toolface is None:
