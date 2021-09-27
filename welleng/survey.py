@@ -8,6 +8,7 @@ except ImportError:
     MAG_CALC = False
 from datetime import datetime
 from scipy.optimize import minimize
+from scipy.spatial.transform import Rotation as R
 
 from .version import __version__
 from .utils import (
@@ -17,7 +18,8 @@ from .utils import (
     get_angles,
     HLA_to_NEV,
     NEV_to_HLA,
-    get_xyz
+    get_xyz,
+    radius_from_dls
 )
 from .error import ErrorModel, ERROR_MODELS
 from .node import Node
@@ -461,7 +463,8 @@ class Survey:
         self.rf = mc.rf
         self.delta_md = mc.delta_md
         self.dls = mc.dls
-        self.pos = mc.poss
+        self.pos_xyz = mc.poss
+        self.pos_nev = get_nev(self.pos_xyz)
 
         if self.x is None:
             # self.x, self.y, self.z = (mc.poss + self.start_xyz).T
@@ -501,13 +504,16 @@ class Survey:
             self.inc_deg = np.degrees(inc)
             self.azi_grid_deg = np.degrees(azi)
 
-    def get_error(self, error_model):
+    def get_error(self, error_model, return_error=False):
         assert error_model in ERROR_MODELS, "Undefined error model"
 
         self.error_model = error_model
         self._get_errors()
 
-        return self.err
+        if return_error:
+            return self.err
+        else:
+            return self
 
     def _get_errors(self):
         """
@@ -601,7 +607,7 @@ class Survey:
             curvature_build = curvature_dls * np.cos(self.toolface)
             self.build_rate = self._curvature_to_rate(curvature_build)
 
-        # calculate plan normals
+        # calculate plane normals
         n12 = np.cross(s.vec1_nev, s.vec2_nev)
         with np.errstate(divide='ignore', invalid='ignore'):
             self.normals = n12 / np.linalg.norm(n12, axis=1).reshape(-1, 1)
@@ -699,8 +705,64 @@ class Survey:
         return survey_interpolated
 
     def figure(self, type='scatter3d', **kwargs):
-        fig = figure(self, **kwargs)
+        fig = figure(self, type, **kwargs)
         return fig
+
+    def project_to_bit(self, delta_md, dls=None, toolface=None):
+        """
+        Convenience method to project the survey ahead to the bit.
+
+        Parameters
+        ----------
+        delta_md: float
+            The along hole distance from the surveying tool to the bit in
+            meters.
+        dls: float
+            The desired dog leg severity (deg / 30m) between the surveying
+            tool and the bit. Default is to project the DLS of the last
+            survey section.
+        toolface: float
+            The desired toolface to project from at the last survey point.
+            The default is to project the current toolface from the last
+            survey station.
+
+        Returns
+        -------
+        node: welleng.node.Node object
+        """
+        if dls is None:
+            dls = self.dls[-1]
+        if toolface is None:
+            toolface = self.toolface[-1]
+
+        node = project_ahead(
+            pos=np.array([self.n, self.e, self.tvd]).T[-1],
+            vec=self.vec_nev[-1],
+            delta_md=delta_md,
+            dls=dls,
+            toolface=toolface,
+            md=self.md[-1]
+        )
+
+        return node
+
+    def project_to_target(
+        self,
+        node_target,
+        dls_design=3.0,
+        delta_md=None,
+        dls=None, toolface=None,
+        step=30
+    ):
+        survey = project_to_target(
+            self,
+            node_target,
+            dls_design,
+            delta_md,
+            dls, toolface,
+            step
+        )
+        return survey
 
 
 class TurnPoint:
@@ -1435,6 +1497,7 @@ def from_connections(
     section_data, step=None, survey_header=None,
     start_nev=[0., 0., 0.],
     start_xyz=[0., 0., 0.],
+    start_cov_nev=None,
     radius=10, deg=False, error_model=None,
     depth_unit='meters', surface_unit='meters'
 ):
@@ -1483,6 +1546,7 @@ def from_connections(
         azi=azi,
         start_nev=section_data[0].pos1 + start_nev,
         start_xyz=start_xyz,
+        start_cov_nev=start_cov_nev,
         deg=deg,
         radius=radius,
         header=survey_header,
@@ -1671,3 +1735,151 @@ def interpolate_survey_tvd(survey, start=None, stop=None, step=10):
     )
 
     return s_interp
+
+
+def project_ahead(pos, vec, delta_md, dls, toolface, md=0.0):
+    """
+    Apply a simple arc or hold from a current position and vector.
+
+    Parameters
+    ----------
+    pos: (3) array of floats
+        Current position in n, e, tvd coordinates.
+    vec: (3) array of floats
+        Current vector in n, e, tvd coordinates.
+    delta_md: float
+        The desired along hole projection length.
+    dls: float
+        The desired dogleg severity of the projection. Entering 0.0 will
+        result in a hold section.
+    toolface: float
+        The desired toolface for the projection.
+    md: float (optional)
+        The current md if applicable.
+
+    Returns
+    -------
+    node: welleng.node.Node object
+    """
+    if dls > 0:
+        radius = radius_from_dls(dls)
+        dogleg = np.radians(delta_md / 30 * dls)
+
+        pos_temp = np.array([
+            np.cos(dogleg),
+            0.,
+            np.sin(dogleg)
+        ]) * radius
+        pos_temp[0] = radius - pos_temp[0]
+
+        vec_temp = np.array([
+            np.sin(dogleg),
+            0.,
+            np.cos(dogleg)
+        ])
+
+        inc, azi = get_angles(vec, nev=True).reshape(2)
+
+        angles = [
+            toolface,
+            inc,
+            azi
+        ]
+
+        r = R.from_euler('zyz', angles, degrees=False)
+
+        pos_new, vec_new = r.apply(np.vstack((pos_temp, vec_temp)))
+        pos_new += pos
+
+    else:
+        # if dls is 0 then it's a hold
+        pos_new = pos + vec * delta_md
+        vec_new = vec
+
+    node = Node(
+        pos=pos_new,
+        vec=vec_new,
+        md=md + delta_md,
+    )
+
+    return node
+
+
+def project_to_target(
+    survey,
+    node_target,
+    dls_design=3.0,
+    delta_md=None,
+    dls=None, toolface=None,
+    step=30,
+):
+    """
+    Project a wellpath from the end of a current survey to a target, taking
+    account of the location of the bit relative to the surveying tool if the
+    `delta_md` property is not `None`.
+
+    Parameters
+    ----------
+    survey: welleng.survey.Survey obj
+    node_target: welleng.node.Node obj
+    dls_design: float
+        The dls from which to construct the projected wellpath.
+    delta_md: float
+        The along hole length from the surveying sensor to the bit.
+    dls: float
+        The desired dogleg severity for the projection from the survey tool
+        to the bit. Entering 0.0 will result in a hold section.
+    toolface: float
+        The desired toolface for the projection from the survey tool to the
+        bit.
+    step: float
+        The desired survey interval for the projected wellpath to the target.
+
+    Returns
+    -------
+    node: welleng.survey.Survey obj
+    """
+    connectors = []
+    node_start = Node(
+            pos=survey.pos_nev[-1], vec=survey.vec_nev[-1], md=survey.md[-1]
+        )
+    if dls is None:
+        dls = survey.dls[-1]
+    if toolface is None:
+        toolface = survey.toolface[-1]
+    if survey.cov_nev is not None:
+        cov_nev = survey.cov_nev[-1]
+    else:
+        cov_nev = None
+
+    # first project to bit if delta_md is defined
+    if delta_md is not None:
+        node_bit = project_ahead(
+            survey.pos_nev[-1],
+            survey.vec_nev[-1],
+            delta_md,
+            dls,
+            toolface,
+            survey.md[-1]
+        )
+        connectors.append(
+            Connector(node_start, node_bit, dls_design=dls_design)
+        )
+    else:
+        node_bit = node_start
+
+    connectors.append(
+        Connector(
+            node_bit, node_target, dls_design
+        )
+    )
+    survey_to_target = from_connections(
+        connectors,
+        step=step,
+        survey_header=survey.header,
+        start_cov_nev=cov_nev,
+        radius=survey.radius[-1], deg=False, error_model=survey.error_model,
+        depth_unit=survey.header.depth_unit,
+        surface_unit=survey.header.surface_unit
+    )
+    return survey_to_target
