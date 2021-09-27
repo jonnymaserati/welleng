@@ -463,7 +463,8 @@ class Survey:
         self.rf = mc.rf
         self.delta_md = mc.delta_md
         self.dls = mc.dls
-        self.pos = mc.poss
+        self.pos_xyz = mc.poss
+        self.pos_nev = get_nev(self.pos_xyz)
 
         if self.x is None:
             # self.x, self.y, self.z = (mc.poss + self.start_xyz).T
@@ -503,13 +504,16 @@ class Survey:
             self.inc_deg = np.degrees(inc)
             self.azi_grid_deg = np.degrees(azi)
 
-    def get_error(self, error_model):
+    def get_error(self, error_model, return_error=False):
         assert error_model in ERROR_MODELS, "Undefined error model"
 
         self.error_model = error_model
         self._get_errors()
 
-        return self.err
+        if return_error:
+            return self.err
+        else:
+            return self
 
     def _get_errors(self):
         """
@@ -701,7 +705,7 @@ class Survey:
         return survey_interpolated
 
     def figure(self, type='scatter3d', **kwargs):
-        fig = figure(self, **kwargs)
+        fig = figure(self, type, **kwargs)
         return fig
 
     def project_to_bit(self, delta_md, dls=None, toolface=None):
@@ -741,6 +745,24 @@ class Survey:
         )
 
         return node
+
+    def project_to_target(
+        self,
+        pos_target, vec_target,
+        dls_design=3.0,
+        delta_md=None,
+        dls=None, toolface=None,
+        step=30
+    ):
+        survey = project_to_target(
+            self,
+            pos_target, vec_target,
+            dls_design,
+            delta_md,
+            dls, toolface,
+            step
+        )
+        return survey
 
 
 class TurnPoint:
@@ -1475,6 +1497,7 @@ def from_connections(
     section_data, step=None, survey_header=None,
     start_nev=[0., 0., 0.],
     start_xyz=[0., 0., 0.],
+    start_cov_nev=None,
     radius=10, deg=False, error_model=None,
     depth_unit='meters', surface_unit='meters'
 ):
@@ -1523,6 +1546,7 @@ def from_connections(
         azi=azi,
         start_nev=section_data[0].pos1 + start_nev,
         start_xyz=start_xyz,
+        start_cov_nev=start_cov_nev,
         deg=deg,
         radius=radius,
         header=survey_header,
@@ -1779,3 +1803,60 @@ def project_ahead(pos, vec, delta_md, dls, toolface, md=0.0):
     )
 
     return node
+
+
+def project_to_target(
+    survey,
+    pos_target, vec_target,
+    dls_design=3.0,
+    delta_md=None,
+    dls=None, toolface=None,
+    step=30,
+):
+    connectors = []
+    node_start = Node(
+            pos=survey.pos_nev[-1], vec=survey.vec_nev[-1], md=survey.md[-1]
+        )
+    node_target = Node(
+        pos=pos_target, vec=vec_target
+    )
+    if dls is None:
+        dls = survey.dls[-1]
+    if toolface is None:
+        toolface = survey.toolface[-1]
+    if survey.cov_nev is not None:
+        cov_nev = survey.cov_nev[-1]
+    else:
+        cov_nev = None
+
+    # first project to bit if delta_md is defined
+    if delta_md is not None:
+        node_bit = project_ahead(
+            survey.pos_nev[-1],
+            survey.vec_nev[-1],
+            delta_md,
+            dls,
+            toolface,
+            survey.md[-1]
+        )
+        connectors.append(
+            Connector(node_start, node_bit, dls_design=dls_design)
+        )
+    else:
+        node_bit = node_start
+
+    connectors.append(
+        Connector(
+            node_bit, node_target, dls_design
+        )
+    )
+    survey_to_target = from_connections(
+        connectors,
+        step=step,
+        survey_header=survey.header,
+        start_cov_nev=cov_nev,
+        radius=survey.radius[-1], deg=False, error_model=survey.error_model,
+        depth_unit=survey.header.depth_unit,
+        surface_unit=survey.header.surface_unit
+    )
+    return survey_to_target
