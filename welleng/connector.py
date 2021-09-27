@@ -12,7 +12,6 @@ from .utils import (
     get_vec, _get_angles, get_angles, get_nev, get_xyz, get_unit_vec,
     NEV_to_HLA, dls_from_radius
 )
-# from .survey import get_survey  # Survey, SurveyHeader
 from .node import Node, get_node_params
 
 
