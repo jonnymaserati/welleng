@@ -252,15 +252,50 @@ def _scatter3d(survey, **kwargs):
     )
     if not hasattr(survey, "interpolated"):
         survey.interpolated = [False] * len(survey.md)
-    n, e, v, md, inc, azi = np.array([
-        [n, e, v, md, inc, azi]
-        for n, e, v, i, md, inc, azi in zip(
-            survey.n, survey.e, survey.tvd, survey.interpolated,
-            survey.md, survey.inc_deg, survey.azi_grid_deg
-        )
-        if bool(i) is True
-    ]).T
-    if n.size:
+    if survey.interpolated is None:
+        survey.interpolated = [False] * len(survey.md)
+    try:
+        n, e, v, md, inc, azi = np.array([
+            [n, e, v, md, inc, azi]
+            for n, e, v, i, md, inc, azi in zip(
+                survey.n, survey.e, survey.tvd, survey.interpolated,
+                survey.md, survey.inc_deg, survey.azi_grid_deg
+            )
+            if bool(i) is True
+        ]).T
+        if n.size:
+            text = [
+                f"N: {n:.2f}m<br>E: {e:.2f}m<br>TVD: {v:.2f}m<br>"
+                + f"MD: {md:.2f}m<br>INC: {inc:.2f}\xb0<br>AZI: {azi:.2f}\xb0"
+                for n, e, v, md, inc, azi in zip(n, e, v, md, inc, azi)
+            ]
+            fig.add_trace(
+                go.Scatter3d(
+                    x=e,
+                    y=n,
+                    z=v,
+                    name='interpolated',
+                    mode='markers',
+                    marker=dict(
+                        size=5,
+                        color='blue',
+                    ),
+                    text=text,
+                    hoverinfo='text'
+                )
+            )
+    except ValueError:
+        pass
+
+    try:
+        n, e, v, md, inc, azi = np.array([
+            [n, e, v, md, inc, azi]
+            for n, e, v, i, md, inc, azi in zip(
+                survey.n, survey.e, survey.tvd, survey.interpolated,
+                survey.md, survey.inc_deg, survey.azi_grid_deg
+            )
+            if bool(i) is False
+        ]).T
         text = [
             f"N: {n:.2f}m<br>E: {e:.2f}m<br>TVD: {v:.2f}m<br>"
             + f"MD: {md:.2f}m<br>INC: {inc:.2f}\xb0<br>AZI: {azi:.2f}\xb0"
@@ -271,44 +306,19 @@ def _scatter3d(survey, **kwargs):
                 x=e,
                 y=n,
                 z=v,
-                name='interpolated',
+                name='survey_point',
                 mode='markers',
                 marker=dict(
                     size=5,
-                    color='blue',
+                    color='red',
                 ),
                 text=text,
                 hoverinfo='text'
             )
         )
-    n, e, v, md, inc, azi = np.array([
-        [n, e, v, md, inc, azi]
-        for n, e, v, i, md, inc, azi in zip(
-            survey.n, survey.e, survey.tvd, survey.interpolated,
-            survey.md, survey.inc_deg, survey.azi_grid_deg
-        )
-        if bool(i) is False
-    ]).T
-    text = [
-        f"N: {n:.2f}m<br>E: {e:.2f}m<br>TVD: {v:.2f}m<br>"
-        + f"MD: {md:.2f}m<br>INC: {inc:.2f}\xb0<br>AZI: {azi:.2f}\xb0"
-        for n, e, v, md, inc, azi in zip(n, e, v, md, inc, azi)
-    ]
-    fig.add_trace(
-        go.Scatter3d(
-            x=e,
-            y=n,
-            z=v,
-            name='survey_point',
-            mode='markers',
-            marker=dict(
-                size=5,
-                color='red',
-            ),
-            text=text,
-            hoverinfo='text'
-        )
-    )
+    except ValueError:
+        pass
+
     fig = _update_fig(fig, kwargs)
 
     return fig
