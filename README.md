@@ -20,7 +20,7 @@ welleng is fuelled by copious amounts of coffee, so if you wish to supercharge d
 <a href="https://www.buymeacoffee.com/jonnymaserati" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/arial-yellow.png" alt="Buy Me A Coffee" width="217px" ></a>
 
 ## New Features!
-  - **Hello version 0.4:** major version update to reflect all of changes happening in the back end. If you have code that's built on previous versions of [welleng] then please lock that version in your env since likely it will require modifying to run with version 0.4 and higher.
+  - **Hello version 0.4:** major version update to reflect all of the changes happening in the back end. If you have code that's built on previous versions of [welleng] then please lock that version in your env since likely it will require modifying to run with version 0.4 and higher.
   - **Project Ahead:** you can now project a survey from the last station to the bit or project to a target to see how to get back on track:
     ```terminal
     >>> node_bit = survey.project_to_bit(delta_md=9.0)
