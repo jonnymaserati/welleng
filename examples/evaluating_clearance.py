@@ -1,3 +1,14 @@
+'''
+A demonstration of how to use welleng for calculating wellbore clearances
+between the ISCWSA standard wellbore reference and offset wells, using both
+the standard pedal-curve method and the novel mesh clearance method so that
+the results can be compared.
+
+author: Jonny Corcutt
+email: jonnycorcutt@gmail.com
+date: 29-09-2021
+'''
+
 import pandas as pd
 import trimesh
 
@@ -5,7 +16,7 @@ import welleng as we
 from welleng.survey import Survey, SurveyHeader
 import welleng.clearance
 from welleng.mesh import WellMesh
-import os
+# import os
 
 # os.environ['DISPLAY'] = ':1'
 
@@ -73,7 +84,7 @@ for well in data["wells"]:
         tvd=data["wells"][well]["TVD"],
         radius=radius,
         header=sh,
-        error_model="iscwsa_mwd_rev5",
+        error_model="ISCWSA MWD Rev5",
         start_xyz=[
             data["wells"][well]["E"][0],
             data["wells"][well]["N"][0],

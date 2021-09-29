@@ -1,3 +1,14 @@
+'''
+examples/using_error_models.py
+------------------------------
+An example to demonstrate how to generate and compare different error models
+for a given wellbore survey, plotting the results for visual comparison and
+also printing the covariance data at the well TD.
+
+author: Jonny Corcutt
+email: jonnycorcutt@gmail.com
+date: 29-09-2021
+'''
 import welleng as we
 import numpy as np
 
@@ -60,7 +71,7 @@ def main():
         earth_rate=0.26251614
     )
 
-    s = we.connector.interpolate_survey(we.survey.Survey(
+    s = we.survey.Survey(
         md=np.array([0., 1200., 2100., 5100., 5400., 8000.]),
         inc=np.array([0., 0., 60., 60., 90., 90.]),
         azi=np.array([0., 0., 75., 75., 75., 75.]),
@@ -68,7 +79,7 @@ def main():
         header=sh,
         deg=True,
         unit="meters"
-    ), step=30.)
+    ).interpolate_survey(step=30.)
 
     meshes = []
 

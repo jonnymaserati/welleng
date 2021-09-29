@@ -1,5 +1,16 @@
+'''
+Demonstration of how welleng can be used to generate a well path from a list
+of cartesian coordinates - solving this problem was the seed of the welleng
+library, since in 2018 there was no trajectory planning software that could
+do this!
+
+author: Jonny Corcutt
+email: jonnycorcutt@gmail.com
+date: 29-09-2021
+'''
+
 import welleng as we
-import os
+# import os
 
 # os.environ['DISPLAY'] = ':1'
 
