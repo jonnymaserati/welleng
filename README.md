@@ -34,7 +34,7 @@ welleng is fuelled by copious amounts of coffee, so if you wish to supercharge d
     - **Working**: MWD, SRGM, _Fl, SAG, IFR1, IFR2, EMS
     - **Not Currently Working Correctly**: AX, GYRO
     
-    The available error models can be lists with the following command:
+    The available error models can be listed with the following command:
     ```terminal
     >>> welleng.errors.ERROR_MODELS
     ```
