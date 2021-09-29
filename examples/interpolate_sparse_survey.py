@@ -11,6 +11,10 @@ Here's an example of how to use the `interpolate_survey` function in the
 path between the survey stations.
 
 This is also an alternative quick method for creating a well path.
+
+author: Jonny Corcutt
+email: jonnycorcutt@gmail.com
+date: 29-09-2021
 """
 
 import welleng as we
@@ -20,11 +24,11 @@ s_ref = we.survey.Survey(
     md=[0., 1000., 2000., 5000.],
     inc=[0., 0., 30., 90.],
     azi=[0., 10., 20., 30.],
-    error_model='iscwsa_mwd_rev4'
+    error_model='ISCWSA MWD Rev4'
 )
 
 # interpolate points between survey stations with delta md of 30
-s_ref_interp = we.connector.interpolate_survey(s_ref, step=30)
+s_ref_interp = we.survey.interpolate_survey(s_ref, step=30)
 
 # generate meshes for visualizing the well paths
 m_ref = we.mesh.WellMesh(s_ref)

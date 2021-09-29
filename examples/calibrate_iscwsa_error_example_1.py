@@ -1,3 +1,14 @@
+'''
+Import the standard ISCWSA well surveys and generate the error ellipses using
+the ISCWSA MWD Rev4 model. Then print the covariance matrix of the final survey
+station so that the results can be compared with the diagnostic data curated
+by ISCWSA.
+
+author: Jonny Corcutt
+email: jonnycorcutt@gmail.com
+date: 29-09-2021
+'''
+
 import welleng as we
 
 from openpyxl import load_workbook
@@ -53,7 +64,7 @@ s = we.survey.Survey(
     inc=inc,
     azi=azi,
     header=sh,
-    error_model="iscwsa_mwd_rev4"
+    error_model="ISCWSA MWD Rev4"
 )
 
 err0 = s.err

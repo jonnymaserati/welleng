@@ -9,7 +9,7 @@
 [welleng] aspires to be a collection of useful tools for Wells/Drilling Engineers, kicking off with a range of well trajectory tools.
 
   - Generate survey listings and interpolation with minimum curvature
-  - Calculate well bore uncertainty data (utilizing either the [ISCWSA] MWD Rev4 or Rev5 models) - the coded error models are within 0.001% accuracy of the ISCWSA test data.
+  - Calculate well bore uncertainty data (utilizing either the [ISCWSA] MWD Rev5 models) - the coded error models are within 0.001% accuracy of the ISCWSA test data.
   - Calculate well bore clearance and Separation Factors (SF)
     - standard [ISCWSA] method within 0.5% accuracy of the ISCWSA test data.
     - new mesh based method using the [Flexible Collision Library].
@@ -20,27 +20,45 @@ welleng is fuelled by copious amounts of coffee, so if you wish to supercharge d
 <a href="https://www.buymeacoffee.com/jonnymaserati" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/arial-yellow.png" alt="Buy Me A Coffee" width="217px" ></a>
 
 ## New Features!
-
+  - **Hello version 0.4:** major version update to reflect all of changes happening in the back end. If you have code that's built on previous versions of [welleng] then please lock that version in your env since likely it will require modifying to run with version 0.4 and higher.
+  - **Project Ahead:** you can now project a survey from the last station to the bit or project to a target to see how to get back on track:
+    ```terminal
+    >>> node_bit = survey.project_to_bit(delta_md=9.0)
+    >>> survey_to_target = survey.project_to_target(node_target, dls_design=3.0, delta_md=9.0)
+    ```
+    The [examples] have been updated to run on version 0.4.
+  - **Interpolate Survey on TVD Depth:** new `survey` function for interpolating fixed TVD intervals along a [welleng] `Survey` instance, e.g. to interpolate `survey` every 10mTVD and return the interpolated survey as `s_interp_tvd`:
+    ```terminal
+    >>> s_interp_tvd = survey.interpolate_survey_tvd(step=10)
+    ```
+  - **OWSG Tool Error Models:** the ISCWSA curated Rev 4 and Rev 5 tool models have been coded up and continue to honor the ISCWSA diagnostic data. The OWSG tool errors are  ***experimental*** with the following status:
+    - **Working**: MWD, SRGM, _Fl, SAG, IFR1, IFR2, EMS
+    - **Not Currently Working Correctly**: AX, GYRO
+    
+    The available error models can be lists with the following command:
+    ```terminal
+    >>> welleng.errors.ERROR_MODELS
+    ```
   - **World Magnetic Model Calculator:** calculates magnetic field data from the [World Magnetic Model](http://www.geomag.bgs.ac.uk/research/modelling/WorldMagneticModel.html) if magnetic field strength is not provided with the survey data.
-  - **ISCWSA MWD Rev5 error model:** added the latest ISCWSA error model that includes tortuousity effects on location uncertainty.
   - **Import from Landmark .wbp files:** using the `exchange.wbp` module it's now possible to import .wbp files exported from Landmark's COMPASS or DecisionSpace software.
-  ```python
-import welleng as we
+    ```python
+    import welleng as we
 
-wp = we.exchange.wbp.load("demo.wbp") # import file
-survey = we.exchange.wbp.wbp_to_survey(wp, step=30) # convert to survey
-mesh = we.mesh.WellMesh(survey, method='circle') # convert to mesh
-we.visual.plot(mesh.mesh) # plot the mesh
-  ```
+    wp = we.exchange.wbp.load("demo.wbp")  # import file
+    survey = we.exchange.wbp.wbp_to_survey(wp, step=30)  # convert to survey
+    mesh = we.mesh.WellMesh(survey, method='circle')  # convert to mesh
+    we.visual.plot(mesh.mesh)  # plot the mesh
+    ```
   
-  - **Export to .wbp files *(experiemental)*:** using the `exchange.wbp` module, it's possible to convert a planned survey file into a list of turn points that can be exported to a .wbp file.
-  ```python
-import welleng as we
+  - **Export to .wbp files *(experimental)*:** using the `exchange.wbp` module, it's possible to convert a planned survey file into a list of turn points that can be exported to a .wbp file.
 
-wp = we.exchange.wbp.WellPlan(survey) # convert Survey to WellPlan object
-doc = we.exchange.wbp.export(wp) # create a .wbp document
-we.exchange.wbp.save_to_file(doc, "demo.wbp") # save the document to file
-  ```
+    ```python
+    import welleng as we
+
+    wp = we.exchange.wbp.WellPlan(survey)  # convert Survey to WellPlan object
+    doc = we.exchange.wbp.export(wp)  # create a .wbp document
+    we.exchange.wbp.save_to_file(doc, "demo.wbp")  # save the document to file
+    ```
   
   - **Well Path Creation:** the addition of the `connector` module enables drilling well paths to be created simply by providing start and end locations (with some vector data like inclination and azimuth). No need to indicate *how* to connect the points, the module will figure that out itself.
   - **Fast visualization of well trajectory meshes:** addition of the `visual` module for quick and simple viewing and QAQC of well meshes.
@@ -122,11 +140,11 @@ from jupyter_dash import JupyterDash
 s = we.survey.Survey(
     md=[0., 500., 2000., 5000.],
     inc=[0., 0., 30., 90],
-    azi=[0., 0., 30., 90.,]
+    azi=[0., 0., 30., 90.]
 )
 
 # interpolate survey - generate points every 30 meters
-s_interp = we.connector.interpolate_survey(s, step=30)
+s_interp = s.interpolate_survey(step=30)
 
 # plot the results
 fig = go.Figure()
@@ -169,23 +187,29 @@ from tabulate import tabulate
 
 # construct simple well paths
 print("Constructing wells...")
-connector_reference = we.connector.Connector(
-    pos1=[0., 0., 0.],
-    inc1=0.,
-    azi1=0.,
-    pos2=[-100., 0., 2000.],
-    inc2=90,
-    azi2=60,
-).survey(step=50)
+connector_reference = we.survey.from_connections(
+    we.connector.Connector(
+        pos1=[0., 0., 0.],
+        inc1=0.,
+        azi1=0.,
+        pos2=[-100., 0., 2000.],
+        inc2=90,
+        azi2=60,
+        ),
+    step=50
+)
 
-connector_offset = we.connector.Connector(
-    pos1=[0., 0., 0.],
-    inc1=0.,
-    azi1=225.,
-    pos2=[-280., -600., 2000.],
-    inc2=90.,
-    azi2=270.,
-).survey(step=50)
+connector_offset = we.survey.from_connections(
+    we.connector.Connector(
+        pos1=[0., 0., 0.],
+        inc1=0.,
+        azi1=225.,
+        pos2=[-280., -600., 2000.],
+        inc2=90.,
+        azi2=270.,
+    ),
+    step=50
+)
 
 # make survey objects and calculate the uncertainty covariances
 print("Making surveys...")
@@ -198,7 +222,7 @@ survey_reference = we.survey.Survey(
     inc=connector_reference.inc_deg,
     azi=connector_reference.azi_grid_deg,
     header=sh_reference,
-    error_model='iscwsa_mwd_rev4'
+    error_model='ISCWSA MWD Rev4'
 )
 sh_offset = we.survey.SurveyHeader(
     name="offset",
@@ -210,7 +234,7 @@ survey_offset = we.survey.Survey(
     azi=connector_offset.azi_grid_deg,
     start_nev=[100., 200., 0.],
     header=sh_offset,
-    error_model='iscwsa_mwd_rev4'
+    error_model='ISCWSA MWD Rev4'
 )
 
 # generate mesh objects of the well paths
@@ -264,7 +288,7 @@ This results in a quick, interactive visualization of the well meshes that's gre
 
 ![image](https://user-images.githubusercontent.com/41046859/102106351-c0dd1a00-3e30-11eb-82f0-a0454dfce1c6.png)
 
-For more examples, including how to build a well trajectory by joining up a series of sections created with the `welleng.connector` module (see pic below), check out the [examples].
+For more examples, including how to build a well trajectory by joining up a series of sections created with the `welleng.connector` module (see pic below), check out the [examples] and follow the [jonnymaserati] blog.
 
 ![image](https://user-images.githubusercontent.com/41046859/102206410-d56ef000-3ecc-11eb-9f1a-b2a6b45fe479.png)
 
@@ -272,11 +296,11 @@ Well trajectory generated by [build_a_well_from_sections.py]
 
 ## Todos
 
- - Add a Target class to see what you're aiming for - **in progress**
+ - Add a `Target` class to see what you're aiming for - **in progress**
  - Documentation
  - Generate a scene of offset wells to enable fast screening of collision risks (e.g. hundreds of wells in seconds)
- - More error models - **added the ISCWSA MWD Rev5 error model**
  - WebApp for those that just want answers
+ - Add a `units` module to handle any units system - **in progress**
 
 It's possible to generate data for visualizing well trajectories with [welleng], as can be seen with the rendered scenes below.
 ![image](https://user-images.githubusercontent.com/41046859/97724026-b78c2e00-1acc-11eb-845d-1220219843a5.png)
@@ -306,3 +330,4 @@ Please note the terms of the license. Although this software endeavors to be acc
    [ISCWSA]: <https://www.iscwsa.net/>
    [build_a_well_from_sections.py]: <https://github.com/jonnymaserati/welleng/tree/main/examples/build_a_well_from_sections.py>
    [magnetic-field-calculator]: <https://pypi.org/project/magnetic-field-calculator/>
+   [jonnymaserati]: <https://jonnymaserati.github.io/>

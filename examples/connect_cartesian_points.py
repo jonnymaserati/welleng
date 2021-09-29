@@ -1,7 +1,18 @@
-import welleng as we
-import os
+'''
+Demonstration of how welleng can be used to generate a well path from a list
+of cartesian coordinates - solving this problem was the seed of the welleng
+library, since in 2018 there was no trajectory planning software that could
+do this!
 
-os.environ['DISPLAY'] = ':1'
+author: Jonny Corcutt
+email: jonnycorcutt@gmail.com
+date: 29-09-2021
+'''
+
+import welleng as we
+# import os
+
+# os.environ['DISPLAY'] = ':1'
 
 # Make up a list of Cartesian points
 carts = [
@@ -12,14 +23,15 @@ carts = [
 ]
 
 # Push the points to the connect_points function to generate a survey
-survey = we.connector.connect_points(
+connections = we.connector.connect_points(
     carts,
     vec_start=[0, 0, 1],
     dls_design=3.0,
     nev=True,
-    step=30,
+    # step=30,
     md_start=0.
 )
+survey = we.survey.from_connections(connections, step=30)
 
 # Generate a mesh for plotting
 mesh = we.mesh.WellMesh(

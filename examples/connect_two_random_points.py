@@ -1,12 +1,26 @@
+'''
+A demonstration of how welleng can connect two points with varying parameters
+defined and determine how to connect them accordingly. For example, if a
+point has the md, inc and azi defined then likely it can be connected using
+minimum curvature, whereas if the point has a cartesian and a vector define,
+then likely a curve-hold-curve trajectory is required to connect them.
+
+Most well trajectory planning software requires the user to state what sort
+if connector is required, but welleng does it for you based on what data you
+input.
+
+author: Jonny Corcutt
+email: jonnycorcutt@gmail.com
+date 29-09-2021
+'''
+
 import welleng as we
 import numpy as np
 from vedo import Arrows, Lines
 import random
-import os
+# import os
 
 # os.environ['DISPLAY'] = ':1'
-
-# Some code for testing the connector module.
 
 # Generate some random pairs of points
 pos1 = [0., 0., 0.]
@@ -109,7 +123,7 @@ print(
 )
 
 # Create a survey object of the section with interpolated points and coords
-survey = section.survey(radius=5, step=30)
+survey = we.survey.from_connections(section, radius=5, step=30)
 
 # test interpolate_md function
 node = survey.interpolate_md(123).properties()
