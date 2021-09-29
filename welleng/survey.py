@@ -1862,9 +1862,11 @@ def project_to_target(
             toolface,
             survey.md[-1]
         )
+        node_bit.pos_nev, node_bit.pos_xyz = None, None
         connectors.append(
             Connector(node_start, node_bit, dls_design=dls_design)
         )
+        node_bit = connectors[-1].node_end
     else:
         node_bit = node_start
 

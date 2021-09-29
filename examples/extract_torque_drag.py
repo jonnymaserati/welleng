@@ -1,11 +1,20 @@
+'''
+An example of how to extract torque and drag data for a specific wellbore
+in an EDM datafile. The data has been sources from Equinor's Volve data
+village.
+
+author: Jonny Corcutt
+email: jonnycorcutt@gmail.com
+date: 29-09-2021
+'''
 from welleng.exchange.edm import EDM
 import pandas as pd
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
 # probably not necessary... vscode runs headless on my machine for some reason
-import os
-os.environ['DISPLAY'] = ':1'
+# import os
+# os.environ['DISPLAY'] = ':1'
 
 
 def main():

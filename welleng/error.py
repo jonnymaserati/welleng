@@ -69,7 +69,7 @@ class ErrorModel():
     def __init__(
         self,
         survey,
-        error_model="iscwsa_mwd_rev5",
+        error_model="ISCWSA MWD Rev5",
     ):
         """
 
