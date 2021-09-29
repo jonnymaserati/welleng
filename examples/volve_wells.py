@@ -1,11 +1,24 @@
+'''
+examples/volve_wells.py
+-----------------------
+An example of importing an EDM dataset and extracting the well survey
+(including error data) for all the wellbores in the dataset and using welleng
+to generate the uncertainty ellipses to generate meshes which can be plotted
+for visual comparison.
+
+author: Jonny Corcutt
+email: jonnycorcutt@gmail.com
+date: 29-09-2021
+'''
+
 import welleng as we
 import numpy as np
 import pandas as pd
 import xml.etree.ElementTree as ET
 from tqdm import tqdm
-import os
+# import os
 
-os.environ['DISPLAY'] = ':1'
+# os.environ['DISPLAY'] = ':1'
 
 # for ease I accessed the data file locally and gave it a
 # shorter name. You'll need to change this to reflect the

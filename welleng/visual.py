@@ -10,6 +10,12 @@ except ImportError:
     VEDO = False
 import numpy as np
 
+try:
+    import plotly.graph_objects as go
+    PLOTLY = True
+except ImportError:
+    PLOTLY = False
+
 from .version import __version__ as VERSION
 
 
@@ -220,3 +226,155 @@ def get_lines(clearance):
     lines.addScalarBar(title='SF')
 
     return lines
+
+
+def figure(obj, type='scatter3d', **kwargs):
+    assert PLOTLY, "ImportError: try pip install plotly"
+    func = {
+        'scatter3d': _scatter3d,
+        'mesh3d': _mesh3d
+    }
+    fig = func[type](obj, **kwargs)
+    return fig
+
+
+def _scatter3d(survey, **kwargs):
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter3d(
+            x=survey.e,
+            y=survey.n,
+            z=survey.tvd,
+            name='survey',
+            mode='lines',
+            hoverinfo='skip'
+        )
+    )
+    if not hasattr(survey, "interpolated"):
+        survey.interpolated = [False] * len(survey.md)
+    if survey.interpolated is None:
+        survey.interpolated = [False] * len(survey.md)
+    try:
+        n, e, v, md, inc, azi = np.array([
+            [n, e, v, md, inc, azi]
+            for n, e, v, i, md, inc, azi in zip(
+                survey.n, survey.e, survey.tvd, survey.interpolated,
+                survey.md, survey.inc_deg, survey.azi_grid_deg
+            )
+            if bool(i) is True
+        ]).T
+        if n.size:
+            text = [
+                f"N: {n:.2f}m<br>E: {e:.2f}m<br>TVD: {v:.2f}m<br>"
+                + f"MD: {md:.2f}m<br>INC: {inc:.2f}\xb0<br>AZI: {azi:.2f}\xb0"
+                for n, e, v, md, inc, azi in zip(n, e, v, md, inc, azi)
+            ]
+            fig.add_trace(
+                go.Scatter3d(
+                    x=e,
+                    y=n,
+                    z=v,
+                    name='interpolated',
+                    mode='markers',
+                    marker=dict(
+                        size=5,
+                        color='blue',
+                    ),
+                    text=text,
+                    hoverinfo='text'
+                )
+            )
+    except ValueError:
+        pass
+
+    try:
+        n, e, v, md, inc, azi = np.array([
+            [n, e, v, md, inc, azi]
+            for n, e, v, i, md, inc, azi in zip(
+                survey.n, survey.e, survey.tvd, survey.interpolated,
+                survey.md, survey.inc_deg, survey.azi_grid_deg
+            )
+            if bool(i) is False
+        ]).T
+        text = [
+            f"N: {n:.2f}m<br>E: {e:.2f}m<br>TVD: {v:.2f}m<br>"
+            + f"MD: {md:.2f}m<br>INC: {inc:.2f}\xb0<br>AZI: {azi:.2f}\xb0"
+            for n, e, v, md, inc, azi in zip(n, e, v, md, inc, azi)
+        ]
+        fig.add_trace(
+            go.Scatter3d(
+                x=e,
+                y=n,
+                z=v,
+                name='survey_point',
+                mode='markers',
+                marker=dict(
+                    size=5,
+                    color='red',
+                ),
+                text=text,
+                hoverinfo='text'
+            )
+        )
+    except ValueError:
+        pass
+
+    fig = _update_fig(fig, kwargs)
+
+    return fig
+
+
+def _mesh3d(mesh, **kwargs):
+    fig = go.Figure()
+    vertices = mesh.vertices.reshape(-1, 3)
+    faces = np.array(mesh.faces)
+    n, e, v = vertices.T
+    i, j, k = faces.T
+    fig.add_trace(
+        go.Mesh3d(
+            x=e, y=n, z=v,
+            i=i, j=j, k=k,
+        )
+    )
+    if kwargs.get('edges'):
+        tri_points = np.array([
+            vertices[i] for i in faces.reshape(-1)
+        ])
+        n, e, v = tri_points.T
+        fig.add_trace(
+            go.Scatter3d(
+                x=e, y=n, z=v,
+                mode='lines',
+            )
+        )
+    fig = _update_fig(fig, kwargs)
+
+    return fig
+
+
+def _update_fig(fig, kwargs):
+    """
+    Update the fig axis along with any user defined kwargs.
+    """
+    fig.update_scenes(
+        zaxis_autorange="reversed",
+        aspectmode='data',
+        xaxis=dict(
+            title='East (m)'
+        ),
+        yaxis=dict(
+            title='North (m)',
+        ),
+        zaxis=dict(
+            title="TVD (m)"
+        )
+    )
+    for k, v in kwargs.items():
+        if k == "layout":
+            fig.update_layout(v)
+        elif k == "traces":
+            fig.update_traces(v)
+        else:
+            continue
+
+    return fig

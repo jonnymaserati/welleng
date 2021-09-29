@@ -1,8 +1,18 @@
-# import welleng as we
-from welleng.connector import Connector, interpolate_well, get_survey
+'''
+Create some sections between pairs of points with varying parameters along
+a wellpath and then connect these sections together to create a design survey
+listing.
+
+author: Jonny Corcutt
+email: jonnycorcutt@gmail.com
+date: 29-09-2021
+'''
+
+from welleng.connector import Connector
+from welleng.survey import from_connections
 from welleng.mesh import WellMesh
 from welleng.visual import plot
-import os
+# import os
 
 # os.environ['DISPLAY'] = ':1'
 
@@ -70,11 +80,8 @@ s4 = Connector(
 # make a list of the well sections
 well = [s1, s2, s3, s4]
 
-# interpolate to get desired survey spacing
-data = interpolate_well(well, step=30)
-
-# generate the survey listing
-survey = get_survey(data)
+# generate the survey listing and interpolate to get desired survey spacing
+survey = from_connections(well, step=30)
 
 # make a mesh
 mesh = WellMesh(survey, method='circle')

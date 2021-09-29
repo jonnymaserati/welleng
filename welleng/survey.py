@@ -1,5 +1,6 @@
 import numpy as np
 import math
+from copy import copy
 try:
     from magnetic_field_calculator import MagneticFieldCalculator
     MAG_CALC = True
@@ -7,6 +8,7 @@ except ImportError:
     MAG_CALC = False
 from datetime import datetime
 from scipy.optimize import minimize
+from scipy.spatial.transform import Rotation as R
 
 from .version import __version__
 from .utils import (
@@ -16,10 +18,13 @@ from .utils import (
     get_angles,
     HLA_to_NEV,
     NEV_to_HLA,
-    get_xyz
+    get_xyz,
+    radius_from_dls
 )
 from .error import ErrorModel, ERROR_MODELS
 from .node import Node
+from .connector import Connector, interpolate_well
+from .visual import figure
 
 
 AZI_REF = ["true", "magnetic", "grid"]
@@ -35,6 +40,7 @@ class SurveyHeader:
         survey_date=None,
         G=9.80665,
         b_total=None,
+        earth_rate=0.26251614,
         dip=None,
         declination=None,
         convergence=0,
@@ -47,65 +53,70 @@ class SurveyHeader:
             'b_total': 50_000.,
             'dip': 70.,
             'declination': 0.,
-        }
+        },
+        **kwargs
     ):
         """
         A class for storing header information about a well.
 
         Parameters
         ----------
-            name: string (default: None)
-                The assigned name of the well bore.
-            longitude: float (default: None)
-                The longitude of the surface location of the well. If left
-                default (None) then it will be assigned to Grenwich, the
-                undisputed center of the universe.
-            latitude: float (default: None)
-                The latitude of the surface location of the well. If left
-                default (None) then it will be assigned to Grenwich, the
-                undisputed center of the universe.
-            altitude: float (default: None)
-                The altitude of the surface location. If left defaults (None)
-                then it will be assigned to 0.
-            survey_date: YYYY-mm-dd (default: None)
-                The date on which the survey data was recorded. If left
-                default then the current date is assigned.
-            G: float (default: 9.80665)
-                The gravitational field strength in m/s^2.
-            b_total: float (default: None)
-                The gravitation field strength in nT. If left default, then
-                the value is calculated from the longitude, latitude, altitude
-                and survey_data properties using the magnetic_field_calculator.
-            dip: float (default: None)
-                The dip (inclination) of the magnetic field relative to the
-                earth's horizontal. If left default, then the value is
-                calculated using the magnetic_field_calculator. The unit (deg
-                of rad) is determined by the deg property.
-            declination: float (default: None)
-                The angle between true north and magnetic north at the well
-                location. If left default, then the value is calculated
-                using the magnetic_field_calculator.
-            convergence: float (default: 0)
-                The angle of convergence between the projection meridian and
-                the line from true north through the location of the well.
-            azi_reference: string (default: 'true')
-                The reference system for the azimuth angles in the survey data,
-                either "true", "magnetic" or "grid". Note that survey
-                calculations are performed in the "grid" reference and
-                converted to and from the other systems.
-            vertical_inc_limit: float (default 0.0001)
-                For survey inclination angles less than the vertical_inc_limit
-                (in degrees), calculations are approximated to avoid
-                singularities and errors.
-            deg: bool (default: True)
-                Indicates whether the survey angles are measured in degrees
-                (True) or radians (False).
-            depth_unit: string (default: "meters")
-                The unit of depth for the survey data, either "meters" or
-                "feet".
-            surface_unit: string (default: "feet")
-                The unit of distance for the survey data, either "meters" or
-                "feet".
+        name: string (default: None)
+            The assigned name of the well bore.
+        longitude: float (default: None)
+            The longitude of the surface location of the well. If left
+            default (None) then it will be assigned to Grenwich, the
+            undisputed center of the universe.
+        latitude: float (default: None)
+            The latitude of the surface location of the well. If left
+            default (None) then it will be assigned to Grenwich, the
+            undisputed center of the universe.
+        altitude: float (default: None)
+            The altitude of the surface location. If left defaults (None)
+            then it will be assigned to 0.
+        survey_date: YYYY-mm-dd (default: None)
+            The date on which the survey data was recorded. If left
+            default then the current date is assigned.
+        G: float (default: 9.80665)
+            The gravitational field strength in m/s^2.
+        b_total: float (default: None)
+            The gravitation field strength in nT. If left default, then
+            the value is calculated from the longitude, latitude, altitude
+            and survey_data properties using the magnetic_field_calculator.
+        earth_rate: float (default: 0.26249751949994715)
+            The rate of rotation of the earth in radians per hour.
+        noise_reduction_factor: float (default: 1.0)
+            A fiddle factor for random gyro noise.
+        dip: float (default: None)
+            The dip (inclination) of the magnetic field relative to the
+            earth's horizontal. If left default, then the value is
+            calculated using the magnetic_field_calculator. The unit (deg
+            of rad) is determined by the deg property.
+        declination: float (default: None)
+            The angle between true north and magnetic north at the well
+            location. If left default, then the value is calculated
+            using the magnetic_field_calculator.
+        convergence: float (default: 0)
+            The angle of convergence between the projection meridian and
+            the line from true north through the location of the well.
+        azi_reference: string (default: 'true')
+            The reference system for the azimuth angles in the survey data,
+            either "true", "magnetic" or "grid". Note that survey
+            calculations are performed in the "grid" reference and
+            converted to and from the other systems.
+        vertical_inc_limit: float (default 0.0001)
+            For survey inclination angles less than the vertical_inc_limit
+            (in degrees), calculations are approximated to avoid
+            singularities and errors.
+        deg: bool (default: True)
+            Indicates whether the survey angles are measured in degrees
+            (True) or radians (False).
+        depth_unit: string (default: "meters")
+            The unit of depth for the survey data, either "meters" or
+            "feet".
+        surface_unit: string (default: "feet")
+            The unit of distance for the survey data, either "meters" or
+            "feet".
         """
         if latitude is not None:
             assert 90 >= latitude >= -90, "latitude out of bounds"
@@ -120,6 +131,7 @@ class SurveyHeader:
         self.altitude = altitude if altitude is not None else 0.
         self._get_date(survey_date)
         self.b_total = b_total
+        self.earth_rate = earth_rate
         self.dip = dip
         self.convergence = convergence
         self.declination = declination
@@ -226,7 +238,8 @@ class Survey:
         start_nev=[0., 0., 0.],
         start_cov_nev=None,
         deg=True,
-        unit="meters"
+        unit="meters",
+        **kwargs
     ):
         """
         Initialize a welleng.Survey object. Calculations are performed in the
@@ -314,7 +327,7 @@ class Survey:
         self.deg = deg
         self.start_xyz = start_xyz
         self.start_nev = start_nev
-        self.md = np.array(md)
+        self.md = np.array(md).astype('float64')
         self.start_cov_nev = start_cov_nev
 
         self._process_azi_ref(inc, azi, deg)
@@ -359,6 +372,8 @@ class Survey:
 
         self._get_errors()
 
+        self.interpolated = kwargs.get('interpolated')
+
     def _process_azi_ref(self, inc, azi, deg):
         if self.header.azi_reference == 'grid':
             self._make_angles(inc, azi, deg)
@@ -371,14 +386,14 @@ class Survey:
             self._get_azi_mag_and_true_rad()
         elif self.header.azi_reference == 'true':
             if deg:
-                self.azi_true_deg = np.array(azi)
+                self.azi_true_deg = np.array(azi).astype('float64')
                 self.azi_mag_deg = (
                     self.azi_true_deg - math.degrees(self.header.declination)
                 )
                 self._get_azi_mag_and_true_rad()
                 azi_temp = self._get_azi_temp(deg)
             else:
-                self.azi_true_rad = np.array(azi)
+                self.azi_true_rad = np.array(azi).astype('float64')
                 self.azi_mag_rad = (
                     self.azi_true_rad - self.header.declination
                 )
@@ -387,14 +402,14 @@ class Survey:
             self._make_angles(inc, azi_temp, deg)
         else:  # azi_reference is "magnetic"
             if deg:
-                self.azi_mag_deg = np.array(azi)
+                self.azi_mag_deg = np.array(azi).astype('float64')
                 self.azi_true_deg = (
                     self.azi_mag_deg + math.degrees(self.header.declination)
                 )
                 self._get_azi_mag_and_true_rad()
                 azi_temp = self._get_azi_temp(deg)
             else:
-                self.azi_mag_rad = np.array(azi)
+                self.azi_mag_rad = np.array(azi).astype('float64')
                 self.azi_true_rad = (
                     self.azi_mag_rad + self.header.declination
                 )
@@ -448,7 +463,8 @@ class Survey:
         self.rf = mc.rf
         self.delta_md = mc.delta_md
         self.dls = mc.dls
-        self.pos = mc.poss
+        self.pos_xyz = mc.poss
+        self.pos_nev = get_nev(self.pos_xyz)
 
         if self.x is None:
             # self.x, self.y, self.z = (mc.poss + self.start_xyz).T
@@ -488,13 +504,16 @@ class Survey:
             self.inc_deg = np.degrees(inc)
             self.azi_grid_deg = np.degrees(azi)
 
-    def get_error(self, error_model):
+    def get_error(self, error_model, return_error=False):
         assert error_model in ERROR_MODELS, "Undefined error model"
 
         self.error_model = error_model
         self._get_errors()
 
-        return self.err
+        if return_error:
+            return self.err
+        else:
+            return self
 
     def _get_errors(self):
         """
@@ -579,12 +598,6 @@ class Survey:
             curvature_dls = 1 / self.curve_radius
 
             self.toolface = np.concatenate((t1, np.array([t2[-1]])))
-            # these toolfaces are not signed. To determine the sign need to
-            # reference the change in azimuth
-
-            # t1 = np.absolute(t1) * (s.delta_azi / np.absolute(s.delta_azi))
-
-            # self.toolface = np.concatenate((np.array([0.]), t1))
 
             curvature_turn = curvature_dls * (
                 np.sin(self.toolface) / np.sin(self.inc_rad)
@@ -594,7 +607,7 @@ class Survey:
             curvature_build = curvature_dls * np.cos(self.toolface)
             self.build_rate = self._curvature_to_rate(curvature_build)
 
-        # calculate plan normals
+        # calculate plane normals
         n12 = np.cross(s.vec1_nev, s.vec2_nev)
         with np.errstate(divide='ignore', invalid='ignore'):
             self.normals = n12 / np.linalg.norm(n12, axis=1).reshape(-1, 1)
@@ -667,15 +680,89 @@ class Survey:
         }
         """
         s = interpolate_md(self, md)
-        node = Node(
-            pos=[s.n[-1], s.e[-1], s.tvd[-1]],
-            vec=s.vec_nev[-1].tolist(),
-            md=s.md[-1],
-            unit=s.unit,
-            nev=True,
-            interpolated=s.interpolated[-1]
-        )
+        node = get_node(s, -1, s.interpolated[-1])
+
         return node
+
+    def interpolate_tvd(self, tvd):
+        node = interpolate_tvd(self, tvd=tvd)
+        return node
+
+    def interpolate_survey_tvd(self, start=None, stop=None, step=10):
+        """
+        Convenience method for interpolating a Survey object's TVD.
+        """
+        survey_interpolated = interpolate_survey_tvd(
+            self, start=start, stop=stop, step=step
+        )
+        return survey_interpolated
+
+    def interpolate_survey(self, step=30, dls=1e-8):
+        """
+        Convenience method for interpolating a Survey object's MD.
+        """
+        survey_interpolated = interpolate_survey(self, step=30, dls=1e-8)
+        return survey_interpolated
+
+    def figure(self, type='scatter3d', **kwargs):
+        fig = figure(self, type, **kwargs)
+        return fig
+
+    def project_to_bit(self, delta_md, dls=None, toolface=None):
+        """
+        Convenience method to project the survey ahead to the bit.
+
+        Parameters
+        ----------
+        delta_md: float
+            The along hole distance from the surveying tool to the bit in
+            meters.
+        dls: float
+            The desired dog leg severity (deg / 30m) between the surveying
+            tool and the bit. Default is to project the DLS of the last
+            survey section.
+        toolface: float
+            The desired toolface to project from at the last survey point.
+            The default is to project the current toolface from the last
+            survey station.
+
+        Returns
+        -------
+        node: welleng.node.Node object
+        """
+        if dls is None:
+            dls = self.dls[-1]
+        if toolface is None:
+            toolface = self.toolface[-1]
+
+        node = project_ahead(
+            pos=np.array([self.n, self.e, self.tvd]).T[-1],
+            vec=self.vec_nev[-1],
+            delta_md=delta_md,
+            dls=dls,
+            toolface=toolface,
+            md=self.md[-1]
+        )
+
+        return node
+
+    def project_to_target(
+        self,
+        node_target,
+        dls_design=3.0,
+        delta_md=None,
+        dls=None, toolface=None,
+        step=30
+    ):
+        survey = project_to_target(
+            self,
+            node_target,
+            dls_design,
+            delta_md,
+            dls, toolface,
+            step
+        )
+        return survey
 
 
 class TurnPoint:
@@ -706,6 +793,18 @@ class TurnPoint:
         self.location = location
 
 
+def get_node(survey, idx, interpolated=False):
+    node = Node(
+        pos=[survey.n[idx], survey.e[idx], survey.tvd[idx]],
+        vec=survey.vec_nev[idx].tolist(),
+        md=survey.md[idx],
+        unit=survey.unit,
+        nev=True,
+        interpolated=interpolated
+    )
+    return node
+
+
 def interpolate_md(survey, md):
     """
     Interpolates a survey at a given measured depth.
@@ -718,10 +817,10 @@ def interpolate_md(survey, md):
     x = md - survey.md[idx]
     assert x >= 0
 
-    return interpolate_survey(survey, x=x, index=idx)
+    return _interpolate_survey(survey, x=x, index=idx)
 
 
-def interpolate_survey(survey, x=0, index=0):
+def _interpolate_survey(survey, x=0, index=0):
     """
     Interpolates a point distance x between two survey stations
     using minimum curvature.
@@ -785,22 +884,55 @@ def interpolate_survey(survey, x=0, index=0):
         header=sh,
         deg=False,
     )
-    interpolated = False if x == 0 else True
+    interpolated = False if any((
+        x == 0,
+        x == survey.md[index + 1] - survey.md[index]
+     )) else True
     s.interpolated = [False, interpolated]
 
     return s
 
 
-def interpolate_tvd(survey, tvd):
+def interpolate_tvd(survey, tvd, **kwargs):
+    # only seem to work with relative small delta_md - re-write with minimize
+    # function?
+
+    def tidy_up_angle(d):
+        """
+        Helper function to handle large angles.
+        """
+        if abs(d) > np.pi:
+            d %= (2 * np.pi)
+        return d
+
+    coeff = 1
     # find closest point assuming tvd is sorted list
     idx = np.searchsorted(survey.tvd, tvd, side="right") - 1
-    pos1, pos2 = np.array([survey.n, survey.e, survey.tvd]).T[idx:idx + 2]
-    vec1, vec2 = survey.vec_nev[idx:idx + 2]
+    if idx == len(survey.tvd) - 1:
+        idx = len(survey.tvd) - 2
+    elif idx == -1:
+        idx = len(survey.tvd) - 2
+        coeff = -1
+    pos1, pos2 = np.array([survey.n, survey.e, survey.tvd]).T[idx: idx + 2]
+    vec1, vec2 = survey.vec_nev[idx: idx + 2]
     dogleg = survey.dogleg[idx + 1]
     delta_md = survey.delta_md[idx + 1]
 
+    node_origin = kwargs.get('node_origin')
+    if node_origin:
+        pos1, vec1 = node_origin.pos_nev, node_origin.vec_nev
+        delta_md = survey.md[idx + 1] - node_origin.md
+        # TODO: need to recalculate the dogleg
+        s_temp = Survey(
+            md=[node_origin.md, survey.md[idx + 1]],
+            inc=[node_origin.inc_rad, survey.inc_rad[idx + 1]],
+            azi=[node_origin.azi_rad, survey.azi_grid_rad[idx + 1]],
+            deg=False
+        )
+        dogleg = s_temp.dogleg[-1]
+
     if np.isnan(dogleg):
-        return interpolate_survey(survey, x=0, index=idx)
+        return _interpolate_survey(survey, x=0, index=idx)
 
     if dogleg == 0:
         x = (
@@ -810,7 +942,7 @@ def interpolate_tvd(survey, tvd):
             / (survey.tvd[idx + 1] - survey.tvd[idx])
         ) * (survey.md[idx + 1] - survey.md[idx])
     else:
-        m = np.array([0., 0., 1.])
+        m = np.array([0., 0., coeff])
         a = np.dot(m, vec1) * np.sin(dogleg)
         b = np.dot(m, vec1) * np.cos(dogleg) - np.dot(m, vec2)
         # p = get_unit_vec(np.array([0., 0., tvd]) - pos1)
@@ -830,6 +962,8 @@ def interpolate_tvd(survey, tvd):
                 b + c
             )
         )
+        d1 = tidy_up_angle(d1)
+
         d2 = 2 * np.arctan2(
             (
                 a - (a ** 2 + b ** 2 - c ** 2) ** 0.5
@@ -838,6 +972,7 @@ def interpolate_tvd(survey, tvd):
                 b + c
             )
         )
+        d2 = tidy_up_angle(d2)
 
         assert d1 >= 0 or d2 >= 0
         if d1 < 0:
@@ -849,9 +984,17 @@ def interpolate_tvd(survey, tvd):
 
         x = d / dogleg * delta_md
 
-    interpolated_survey = interpolate_survey(survey, x=x, index=idx)
+        if node_origin:
+            x -= survey.md[idx] - node_origin.md
 
-    return interpolated_survey
+        assert x <= delta_md
+
+    interpolated_survey = _interpolate_survey(survey, x=x, index=idx)
+
+    interpolated = True if x > 0 else False
+    node = get_node(interpolated_survey, 1, interpolated=interpolated)
+
+    return node
 
 
 def slice_survey(survey, start, stop=None):
@@ -1176,24 +1319,6 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
 
         tie_on = False
 
-    # For some reason, there's sometimes additional rows in straight
-    # sections - this removes them BUT it makes the survey less accurate
-    # upper = sections[1:-1]
-    # lower = sections[2:]
-
-    # tags = []
-
-    # for i, (u, l) in enumerate(zip(upper, lower)):
-    #     if all((
-    #         math.isclose(u.inc, l.inc),
-    #         math.isclose(u.azi, l.azi),
-    #         math.isclose(u.dls, l.dls)
-    #     )):
-    #         tags.append(i + 1)
-
-    # for i in tags:
-    #     del sections[i]
-
     return sections
 
 
@@ -1353,3 +1478,410 @@ def func(x0, survey, dls_cont, tolerance):
     )
 
     return diff
+
+
+def _remove_duplicates(md, inc, azi):
+    arr = np.array([md, inc, azi]).T
+    upper = arr[:-1]
+    lower = arr[1:]
+
+    temp = np.vstack((
+        upper[0],
+        lower[lower[:, 0] != upper[:, 0]]
+    ))
+
+    return temp.T
+
+
+def from_connections(
+    section_data, step=None, survey_header=None,
+    start_nev=[0., 0., 0.],
+    start_xyz=[0., 0., 0.],
+    start_cov_nev=None,
+    radius=10, deg=False, error_model=None,
+    depth_unit='meters', surface_unit='meters'
+):
+    """
+    Constructs a well survey from a list of sections of control points.
+
+    Parameters
+    ----------
+        section_data: list of dicts with section data
+        start_nev: (3) array of floats (default: [0,0,0])
+            The starting position in NEV coordinates.
+        radius: float (default: 10)
+            The radius is passed to the `welleng.survey.Survey` object
+            and represents the radius of the wellbore. It is also used
+            when visualizing the results, so can be used to make the
+            wellbore *thicker* in the plot.
+
+    Results
+    -------
+        survey: `welleng.survey.Survey` object
+    """
+    if type(section_data) is not list:
+        section_data = [section_data]
+    section_data_interp = interpolate_well(section_data, step)
+    # generate lists for survey
+    md, inc, azi = np.vstack([np.array(list(zip(
+            s['md'].tolist(),
+            s['inc'].tolist(),
+            s['azi'].tolist(),
+        )))
+        for s in section_data_interp
+    ]).T
+
+    # remove duplicates
+    md, inc, azi = _remove_duplicates(md, inc, azi)
+
+    if survey_header is None:
+        survey_header = SurveyHeader(
+            depth_unit=depth_unit,
+            surface_unit=surface_unit
+        )
+
+    survey = Survey(
+        md=md,
+        inc=inc,
+        azi=azi,
+        start_nev=section_data[0].pos1 + start_nev,
+        start_xyz=start_xyz,
+        start_cov_nev=start_cov_nev,
+        deg=deg,
+        radius=radius,
+        header=survey_header,
+        error_model=error_model,
+        unit=depth_unit
+    )
+
+    return survey
+
+
+def interpolate_survey(survey, step=30, dls=1e-8):
+    '''
+    Interpolate a sparse survey with the desired md step.
+
+    Parameters
+    ----------
+    survey: welleng.survey.Survey object
+    step: float (default=30)
+        The desired delta md between stations.
+    dls: float (default=0.01)
+        The design DLS used to calculate the minimum curvature. This will be
+        the minimum DLS used to fit a curve between stations so should be set
+        to a small value to ensure a continuous curve is fit without any
+        tangent sections.
+
+    Returns
+    -------
+    survey_interpolated: welleng.survey.Survey object
+        Note that a `interpolated` property is added indicating if the survey
+        stations is interpolated (True) or not (False).
+    '''
+    if survey.header.azi_reference == 'true':
+        azi = survey.azi_true_rad
+    elif survey.header.azi_reference == 'grid':
+        azi = survey.azi_grid_rad
+    else:
+        azi = survey.azi_mag_rad
+
+    s = np.array([survey.md, survey.inc_rad, azi]).T
+
+    s_upper = s[:-1]
+    s_lower = s[1:]
+    well = []
+
+    for i, (u, l) in enumerate(zip(s_upper, s_lower)):
+        if i == 0:
+            node1 = Node(
+                pos=survey.start_nev,
+                md=u[0],
+                inc=u[1],
+                azi=u[2],
+                degrees=False,
+                unit=survey.unit
+            )
+        else:
+            node1 = well[-1].node_end
+        node2 = Node(
+            md=l[0],
+            inc=l[1],
+            azi=l[2],
+            degrees=False,
+            unit=survey.unit
+        )
+        c = Connector(
+            node1=node1,
+            node2=node2,
+            dls_design=dls,
+            degrees=False,
+            force_min_curve=True,
+            unit=survey.unit
+        )
+        well.append(c)
+
+    survey_interpolated = from_connections(
+        well,
+        step=step,
+        start_xyz=survey.start_xyz,
+        survey_header=survey.header,
+        error_model=None
+    )
+
+    survey_interpolated.interpolated = [
+        False if md in survey.md else True
+        for md in survey_interpolated.md
+    ]
+
+    i = -1
+    radii = []
+    cov_nev = []
+    for (md, boolean) in zip(
+        survey_interpolated.md,
+        survey_interpolated.interpolated
+    ):
+        if not boolean:
+            i += 1
+            if survey.error_model is not None:
+                # interpolate covariance error between survey stations
+                j = 1 if i < len(survey.md) - 1 else 0
+                delta_md = survey.md[i + j] - survey.md[i]
+                delta_cov_nev = (
+                    survey.cov_nev[i + j] - survey.cov_nev[i]
+                )
+                unit_cov_nev = (
+                    delta_cov_nev / delta_md
+                    if j == 1
+                    else 0
+                )
+        radii.append(survey.radius[i])
+        if survey.error_model is not None:
+            cov_nev.append(
+                survey.cov_nev[i]
+                + (
+                    (md - survey.md[i]) * unit_cov_nev
+                )
+            )
+    survey_interpolated.radius = np.array(radii)
+    if bool(cov_nev):
+        survey_interpolated.cov_nev = np.array(cov_nev)
+        survey_interpolated.cov_hla = NEV_to_HLA(
+            survey_interpolated.survey_rad,
+            survey_interpolated.cov_nev.T
+        ).T
+
+    return survey_interpolated
+
+
+def get_node_tvd(survey, node1, node2, tvd, node_origin):
+    node2.pos_nev, node2.pos_xyz = None, None
+    c = Connector(node1=node1, node2=node2, dls_design=1e-8)
+    s = from_connections(c, step=None)
+    node_new = interpolate_tvd(s, tvd, node_origin=node_origin)
+
+    return node_new
+
+
+def interpolate_survey_tvd(survey, start=None, stop=None, step=10):
+    """
+    """
+    tvds = [start] if start is not None else [survey.tvd[0]]
+    nodes = []
+
+    for i, md2 in enumerate(survey.md):
+        if i == 0:
+            nodes.append(get_node(survey, i))
+            continue
+        node_origin = nodes[-1]
+        node2_master = survey.interpolate_md(md2)
+
+        while 1:
+            node1 = nodes[-1]
+            node2 = copy(node2_master)
+            if np.isclose(node1.md, md2):
+                node1.interpolated = False
+                break
+
+            # check if heading upwards
+            if node1.pos_nev[2] > tvds[-1] >= node2.pos_nev[2]:
+                tvd = tvds[-1]
+                node_new = get_node_tvd(survey, node1, node2, tvd, node_origin)
+                node_new.interpolated = True
+                nodes.append(node_new)
+                tvds.append(tvd - step)
+            elif node1.pos_nev[2] < (tvds[-1] + step) <= node2.pos_nev[2]:
+                tvd = tvds[-1] + step
+                node_new = get_node_tvd(survey, node1, node2, tvd, node_origin)
+                node_new.interpolated = True
+                nodes.append(node_new)
+                tvds.append(tvd)
+            else:
+                nodes.append(node2_master)
+                tvds.append(tvds[-1])
+                break
+
+    md, inc, azi, interpolated = np.array([
+        [n.md, n.inc_rad, n.azi_rad, n.interpolated]
+        for n in nodes
+    ]).T
+
+    s_interp = Survey(
+        md=md,
+        inc=inc,
+        azi=azi,
+        interpolated=interpolated,
+        deg=False,
+        header=survey.header
+    )
+
+    return s_interp
+
+
+def project_ahead(pos, vec, delta_md, dls, toolface, md=0.0):
+    """
+    Apply a simple arc or hold from a current position and vector.
+
+    Parameters
+    ----------
+    pos: (3) array of floats
+        Current position in n, e, tvd coordinates.
+    vec: (3) array of floats
+        Current vector in n, e, tvd coordinates.
+    delta_md: float
+        The desired along hole projection length.
+    dls: float
+        The desired dogleg severity of the projection. Entering 0.0 will
+        result in a hold section.
+    toolface: float
+        The desired toolface for the projection.
+    md: float (optional)
+        The current md if applicable.
+
+    Returns
+    -------
+    node: welleng.node.Node object
+    """
+    if dls > 0:
+        radius = radius_from_dls(dls)
+        dogleg = np.radians(delta_md / 30 * dls)
+
+        pos_temp = np.array([
+            np.cos(dogleg),
+            0.,
+            np.sin(dogleg)
+        ]) * radius
+        pos_temp[0] = radius - pos_temp[0]
+
+        vec_temp = np.array([
+            np.sin(dogleg),
+            0.,
+            np.cos(dogleg)
+        ])
+
+        inc, azi = get_angles(vec, nev=True).reshape(2)
+
+        angles = [
+            toolface,
+            inc,
+            azi
+        ]
+
+        r = R.from_euler('zyz', angles, degrees=False)
+
+        pos_new, vec_new = r.apply(np.vstack((pos_temp, vec_temp)))
+        pos_new += pos
+
+    else:
+        # if dls is 0 then it's a hold
+        pos_new = pos + vec * delta_md
+        vec_new = vec
+
+    node = Node(
+        pos=pos_new,
+        vec=vec_new,
+        md=md + delta_md,
+    )
+
+    return node
+
+
+def project_to_target(
+    survey,
+    node_target,
+    dls_design=3.0,
+    delta_md=None,
+    dls=None, toolface=None,
+    step=30,
+):
+    """
+    Project a wellpath from the end of a current survey to a target, taking
+    account of the location of the bit relative to the surveying tool if the
+    `delta_md` property is not `None`.
+
+    Parameters
+    ----------
+    survey: welleng.survey.Survey obj
+    node_target: welleng.node.Node obj
+    dls_design: float
+        The dls from which to construct the projected wellpath.
+    delta_md: float
+        The along hole length from the surveying sensor to the bit.
+    dls: float
+        The desired dogleg severity for the projection from the survey tool
+        to the bit. Entering 0.0 will result in a hold section.
+    toolface: float
+        The desired toolface for the projection from the survey tool to the
+        bit.
+    step: float
+        The desired survey interval for the projected wellpath to the target.
+
+    Returns
+    -------
+    node: welleng.survey.Survey obj
+    """
+    connectors = []
+    node_start = Node(
+            pos=survey.pos_nev[-1], vec=survey.vec_nev[-1], md=survey.md[-1]
+        )
+    if dls is None:
+        dls = survey.dls[-1]
+    if toolface is None:
+        toolface = survey.toolface[-1]
+    if survey.cov_nev is not None:
+        cov_nev = survey.cov_nev[-1]
+    else:
+        cov_nev = None
+
+    # first project to bit if delta_md is defined
+    if delta_md is not None:
+        node_bit = project_ahead(
+            survey.pos_nev[-1],
+            survey.vec_nev[-1],
+            delta_md,
+            dls,
+            toolface,
+            survey.md[-1]
+        )
+        node_bit.pos_nev, node_bit.pos_xyz = None, None
+        connectors.append(
+            Connector(node_start, node_bit, dls_design=dls_design)
+        )
+        node_bit = connectors[-1].node_end
+    else:
+        node_bit = node_start
+
+    connectors.append(
+        Connector(
+            node_bit, node_target, dls_design
+        )
+    )
+    survey_to_target = from_connections(
+        connectors,
+        step=step,
+        survey_header=survey.header,
+        start_cov_nev=cov_nev,
+        radius=survey.radius[-1], deg=False, error_model=survey.error_model,
+        depth_unit=survey.header.depth_unit,
+        surface_unit=survey.header.surface_unit
+    )
+    return survey_to_target
