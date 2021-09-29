@@ -26,7 +26,6 @@ welleng is fuelled by copious amounts of coffee, so if you wish to supercharge d
     >>> node_bit = survey.project_to_bit(delta_md=9.0)
     >>> survey_to_target = survey.project_to_target(node_target, dls_design=3.0, delta_md=9.0)
     ```
-    The [examples] have been updated to run on version 0.4.
   - **Interpolate Survey on TVD Depth:** new `survey` function for interpolating fixed TVD intervals along a [welleng] `Survey` instance, e.g. to interpolate `survey` every 10mTVD and return the interpolated survey as `s_interp_tvd`:
     ```terminal
     >>> s_interp_tvd = survey.interpolate_survey_tvd(step=10)
