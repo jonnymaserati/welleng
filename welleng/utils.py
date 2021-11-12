@@ -284,6 +284,7 @@ def get_transform(
 
     # return trans
 
+
 def NEV_to_HLA(survey, NEV, cov=True):
     """
     Transform from NEV to HLA coordinate system.
@@ -305,37 +306,67 @@ def NEV_to_HLA(survey, NEV, cov=True):
     trans = get_transform(survey)
 
     if cov:
-        HLAs = [
-            np.dot(np.dot(t, NEV.T[i]), t.T) for i, t in enumerate(trans)
-        ]
+        # HLAs = [
+        #     np.dot(np.dot(t, NEV.T[i]), t.T) for i, t in enumerate(trans)
+        # ]
 
-        HLAs = np.vstack(HLAs).reshape(-1,3,3).T
+        HLAs = np.einsum(
+            '...ik,...jk',
+            np.einsum(
+                '...ik,...jk', trans, NEV.T
+            ),
+            trans
+        ).T
+
+        # HLAs = np.vstack(HLAs).reshape(-1, 3, 3).T
 
     else:
-        NEV = NEV.reshape(-1,3)
-        HLAs = [
-            np.dot(NEV[i], t.T) for i, t in enumerate(trans)
-        ]
+        NEV = NEV.reshape(-1, 3)
+        # HLAs = [
+        #     np.dot(NEV[i], t.T) for i, t in enumerate(trans)
+        # ]
+        HLAs = np.einsum(
+            '...k,...jk', NEV, trans
+        )
 
     return HLAs
+
 
 def HLA_to_NEV(survey, HLA, cov=True, trans=None):
     if trans is None:
         trans = get_transform(survey)
 
     if cov:
-        NEVs = [
-            np.dot(np.dot(t.T, HLA.T[i]), t) for i, t in enumerate(trans)
-        ]
+        # NEVs = [
+        #     np.dot(np.dot(t.T, HLA.T[i]), t) for i, t in enumerate(trans)
+        # ]
 
-        NEVs = np.vstack(NEVs).reshape(-1,3,3).T
+        # NEVs = np.vstack(NEVs).reshape(-1, 3, 3).T
+
+        # inner = [
+        #     np.dot(t.T, HLA.T[i]) for i, t in enumerate(trans)
+        # ]
+
+        NEVs = np.einsum(
+            '...ik,jk...',
+            np.einsum(
+                '...ki,...jk', trans, HLA.T
+            ),
+            trans.T
+        ).T
 
     else:
-        NEVs = [
-            np.dot(hla, t) for hla, t in zip(HLA, trans)
-        ]
+        # NEVs = [
+        #     np.dot(hla, t) for hla, t in zip(HLA, trans)
+        # ]
 
-    return np.vstack(NEVs).reshape(HLA.shape)
+        NEVs = np.einsum(
+            'k...,jk...', HLA.T, trans.T
+        )
+
+    # return np.vstack(NEVs).reshape(HLA.shape)
+
+    return NEVs
 
 
 def get_sigmas(cov, long=False):
