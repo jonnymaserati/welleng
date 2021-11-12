@@ -1,0 +1,127 @@
+codes:
+  AXYZ-MIS:
+    function: AXYZ_MIS
+    magnitude: 0.0001658062789394613
+    propagation: systematic
+    unit: rad
+  AXYZ-SF:
+    function: AXYZ_SF
+    magnitude: 0.000111
+    propagation: systematic
+    unit: '-'
+  AXYZ-ZB:
+    function: AXYZ_ZB
+    magnitude: 0.0017
+    propagation: systematic
+    unit: m/s2
+  DRFR:
+    function: DREF
+    magnitude: 2.2
+    propagation: random
+    unit: m
+  DRFS:
+    function: DREF
+    magnitude: 1
+    propagation: systematic
+    unit: m
+  DSFS:
+    function: DSF
+    magnitude: 0.00056
+    propagation: systematic
+    unit: '-'
+  DSTG:
+    function: DST
+    magnitude: 2.5e-07
+    propagation: systematic
+    unit: 1/m
+  GXY-B1R:
+    function: GXY_B1
+    magnitude: 0.002617993877991494
+    propagation: random
+    unit: rad/hr
+  GXY-B2R:
+    function: GXY_B2
+    magnitude: 0.002617993877991494
+    propagation: random
+    unit: rad/hr
+  GXY-G1:
+    function: GXY_G1
+    magnitude: 0.006981317007977318
+    propagation: systematic
+    unit: rad/hr
+  GXY-G4:
+    function: GXY_G4
+    magnitude: 0.017453292519943295
+    propagation: systematic
+    unit: rad/hr
+  GXY-RN:
+    function: GXY_RN
+    magnitude: 0.010471975511965976
+    propagation: random
+    unit: rad/hr
+  SAGE:
+    function: SAGE
+    magnitude: 0.003490658503988659
+    propagation: systematic
+    unit: rad
+  XCLA:
+    function: XCLA
+    magnitude: 0.167
+    propagation: random
+    unit: '-'
+  XCLH:
+    function: XCLH
+    magnitude: 0.167
+    propagation: random
+    unit: '-'
+  XYM1:
+    function: XYM1
+    magnitude: 0.0017453292519943296
+    propagation: systematic
+    unit: rad
+  XYM2:
+    function: XYM2
+    magnitude: 0.0017453292519943296
+    propagation: systematic
+    unit: rad
+  XYM3E:
+    function: XYM3E
+    magnitude: 0.005235987755982988
+    propagation: random
+    unit: rad
+  XYM4E:
+    function: XYM4E
+    magnitude: 0.005235987755982988
+    propagation: random
+    unit: rad
+header:
+  A019Gb: GYRO-MWD_Fl
+  Application: Generic Gyro MWD on a Floating Rig
+  Approved: null
+  Checked: Steve Grindrod 21-Oct-2020
+  Hor East/West Exclusion: 0 deg
+  Inclination Range Max: 89 deg
+  Inclination Range Min: 0 deg
+  Long Name: OWSG Gyro MWD [Floating Rig]
+  Misalignment Alt: 3
+  Misalignment Min Course Length: 10 m
+  Notes: 3-Axis Accelerometer and 2-Axis Gyro Stationary Tool
+  OWSG Prefix: A019Gb
+  Range Comment: Tool model fails at 90 deg inclination.
+  Replaces / Replaced By: 'OWSG_A019Ga_GYRO-MWD_Fl / '
+  Revision Comment: 'Rev No changed to match ISCWSA Models (Rev.5). XCLA & XCLH terms
+    added. XYM3 replaced by XYM3E. XYM4 replaced by XYM4E. SAG replaced by SAGE. '
+  Revision Date: 2020-10-08 00:00:00
+  Revision History: Rev 0.1 05-Jun-2013 Draft Release for Comment.
+  Revision No: 5
+  Short Name: GYRO-MWD_Fl
+  Source: OWSG - Gyrodata/SDI
+  Status: Agreed
+  Tool Parameters: null
+  Tool Type: Gyro
+  XCL Tortuosity: 1 deg / 100 ft
+  XY Static Gyro:
+    End Inc: 3.141592653589793
+    Initialisation Inc: 0.0
+    Start Inc: 0.0
+  XYZ Accelerometer: true

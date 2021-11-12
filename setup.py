@@ -38,6 +38,7 @@ requirements_easy = set([
     'networkx',
     'openpyxl',
     'pandas',
+    'plotly',
     'tabulate',
     'trimesh',
     'utm',
@@ -112,6 +113,7 @@ setup(
     packages=find_packages(exclude=["tests"]),
     package_data={
         'welleng': [
+            'errors/*.yaml',
             'errors/tool_codes/*.yaml',
             'exchange/*.yaml'
         ]
