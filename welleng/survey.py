@@ -1657,43 +1657,51 @@ def tortuosity_index(survey, data=False):
         for u, l in zip(sections_upper, sections_lower)
     ]).T
 
-    ti = (
-        (n_sections / (n_sections + 1)) * (1 / l_c) * (
-            np.cumsum(
-                (l_cs / l_xs) - 1
+    ti = np.hstack((
+        np.array([0.0]),
+        (
+            (n_sections / (n_sections + 1)) * (1 / l_c) * (
+                np.cumsum(
+                    (l_cs / l_xs) - 1
+                )
             )
-        )
-    ) * 1e7
+        ) * 1e7
+    ))
 
     if data:
-        md = np.array([tp.md for tp in sections])
+        md = np.array([tp.md for tp in sections])[1:]
         delta_md = np.hstack(
             (
-                md[2:] - md[1:-1], np.array([0.0])
+                0.0,
+                md[1:] - md[0:-1]
             )
         )
         result = {}
-        (
-            result['longest_build_section'],
-            result['longest_hold_section']
-        ) = 0.0, 0.0
+        result['data'] = {}
         for i, (_ti, tp, d) in enumerate(zip(ti, sections[1:], delta_md)):
             tp.ti = _ti
             tp.delta_md = d
-            tp.build_section = True if tp.dls < 1e-8 else False
-            if tp.build_section:
-                result['longest_build_section'] = max(
-                    (
-                        result['longest_build_section'], tp.delta_md
-                    )
-                )
-            else:
-                result['longest_hold_section'] = max(
-                    (
-                        result['longest_hold_section'], tp.delta_md
-                    )
-                )
-            result[i] = tp.__dict__
+            tp.build_section = False if tp.dls < 1e-8 else True
+
+            result['data'][i] = tp.__dict__
+        mask = np.array([v['build_section'] for k, v in result['data'].items()])
+        continuity = np.array([
+            np.sum(arr)
+            for arr in np.split(delta_md, 1 + np.where(np.diff(mask))[0])
+        ])
+        continuity_builds = np.array([
+            np.all(arr)
+            for arr in np.split(mask, 1 + np.where(np.diff(mask))[0])
+        ])
+
+        result['longest_build_section'] = np.max(delta_md[mask])
+        result['longest_hold_section'] = np.max(delta_md[~mask])
+        result['longest_cum_build_section'] = (
+            np.max(continuity[continuity_builds])
+        )
+        result['longest_cum_hold_section'] = (
+            np.max(continuity[~continuity_builds])
+        )
         return (ti[-1], result)
 
     else:
