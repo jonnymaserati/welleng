@@ -25,6 +25,7 @@ from .error import ErrorModel, ERROR_MODELS
 from .node import Node
 from .connector import Connector, interpolate_well
 from .visual import figure
+from .units import units_default, ureg
 
 
 AZI_REF = ["true", "magnetic", "grid"]
@@ -54,6 +55,7 @@ class SurveyHeader:
             'dip': 70.,
             'declination': 0.,
         },
+        units=units_default,
         **kwargs
     ):
         """
@@ -136,6 +138,7 @@ class SurveyHeader:
         self.convergence = convergence
         self.declination = declination
         self.vertical_inc_limit = vertical_inc_limit
+        self.units = units
 
         self.depth_unit = get_unit(depth_unit)
         self.surface_unit = get_unit(surface_unit)
@@ -216,6 +219,7 @@ class SurveyHeader:
 
 
 class Survey:
+    # TODO change radius to diameter
     def __init__(
         self,
         md,
@@ -763,6 +767,12 @@ class Survey:
             step
         )
         return survey
+
+    def tortuosity_index(self, *args, **kwargs):
+        return tortuosity_index(self, *args, **kwargs)
+
+    def directional_difficulty_index(self, *args, **kwargs):
+        return directional_difficulty_index(self, *args, **kwargs)
 
 
 class TurnPoint:
@@ -1478,6 +1488,229 @@ def func(x0, survey, dls_cont, tolerance):
     )
 
     return diff
+
+
+# def derivative(x, y):
+#     dx = np.diff(x)
+#     dy = np.diff(y)
+#     y_first = dx / dy
+#     x_first = 0.5 * (x[1:] + x[:-1])
+
+#     return (x_first, y_first)
+
+
+# def _get_tortuosity_index(survey, mode):
+#     param = {
+#         'inc': 'inc_rad',
+#         'azi': 'azi_true_rad'
+#     }
+#     assert mode in param.keys(), "Unrecognized mode"
+
+#     x_first, y_first = derivative(getattr(survey, param[mode]), survey.md)
+#     x_second, y_second = derivative(x_first, y_first)
+#     temp = np.sign(x_second)
+
+#     # manage the zero values
+#     try:
+#         first_non_zero = np.where(x_second != 0)[0][0]
+#     except IndexError:
+#         return 0
+
+#     if first_non_zero != 0:
+#         temp[:first_non_zero] = temp[first_non_zero]
+#     temp_upper, temp_lower = temp[1:], temp[:-1]
+#     temp = np.where(temp_upper == 0.0, temp_lower, temp_upper)
+
+
+#     inflections = np.hstack((
+#         np.array([0]),
+#         np.where(
+#             np.diff(temp)
+#         )[0] + 2,
+#         np.array([len(survey.md) - 1])
+#     ))
+#     temp = np.arange(0, len(inflections))
+#     n = np.zeros_like(survey.md)
+#     n[inflections] = temp
+#     n = np.maximum.accumulate(n).astype(int)
+
+#     upper = np.zeros_like(survey.md)
+#     upper[inflections[1:]] = inflections[1:]
+#     upper = upper.astype(int)
+
+#     lower = np.zeros_like(survey.md)
+#     lower[inflections[1:]] = inflections[:-1]
+#     lower = lower.astype(int)
+
+#     l_csi = survey.md[upper] - survey.md[lower]
+#     coords = np.array([
+#         survey.n,
+#         survey.e,
+#         survey.tvd                
+#     ]).T
+
+#     l_xsi = np.linalg.norm(
+#         coords[upper] - coords[lower],
+#         axis=1
+#     )
+#     l_c = np.zeros_like(survey.md)
+#     l_c[inflections] = survey.md[inflections]
+#     l_c = np.maximum.accumulate(l_c)
+
+#     with np.errstate(divide='ignore', invalid='ignore'):
+#         coeff = np.cumsum(np.nan_to_num(
+#             (
+#                 l_csi / l_xsi
+#             ) - 1,
+#         ))
+#         tortuosity = np.nan_to_num(
+#             (n / (n + 1))
+#             # * (1 / l_c)
+#             * (1 / (survey.md[-1]) * 3.281)  # this coeff is 1/ft
+#         )
+
+#     ti = coeff * tortuosity
+
+#     return ti
+
+
+# def get_tortuosity_index(survey):
+#     """
+#     Taken from an IADD presentation on "Measuring Wellbore Tortuosity" by
+#     Pradeep Ashok - https://www.iadd-intl.org/media/files/files/47d68cb4/
+#     iadd-luncheon-february-22-2018-v2.pdf with reference to the original
+#     paper "A Novel Method for the Automatic Grading of Retinal Vessel
+#     Tortuosity" by Enrico Grisan et al.
+
+#     In SPE/IADC-194099-MS there's mention that a factor of 1e7 is applied to
+#     the TI result since the results are otherwise very small numbers.
+
+#     Parameters
+#     ----------
+#     survey: welleng.survey.Survey object
+
+#     Returns
+#     -------
+
+#     """
+#     inflections_inc = _get_tortuosity_index(survey, 'inc')
+#     inflections_azi = _get_tortuosity_index(survey, 'azi')
+
+#     ti_3d = np.sqrt(
+#         inflections_inc ** 2 + inflections_azi ** 2
+#     ) * 1e7
+
+#     return ti_3d
+
+
+def tortuosity_index(survey, data=False):
+    """
+    A modified version of the Tortuosity Index function originally
+    referenced in an IADD presentation on "Measuring Wellbore
+    Tortuosity" by Pradeep Ashok - https://www.iadd-intl.org/media/
+    files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf with
+    reference to the original paper "A Novel Method for the Automatic
+    Grading of Retinal Vessel Tortuosity" by Enrico Grisan et al.
+
+    In SPE/IADC-194099-MS there's mention that a factor of 1e7 is
+    applied to the TI result since the results are otherwise very small
+    numbers.
+
+    Unlike the documented version that uses delta inc and azi for
+    determining continuity and directional intervals (which are not
+    independent and so values are double dipped in 3D), this method
+    determines the point around which the well bore is turning and tests
+    for continuity of these points. As such, this function takes account
+    of torsion of the well bore and demonstrates that actual/drilled
+    trajectories are significantly more tortuous than planned
+    trajectories (intuitively).
+
+    Parameters
+    ----------
+    survey: welleng.survey.Survey object
+    data: bool
+        If True, returns the section points along with data defining the
+        point and the next section.
+
+    Returns
+    -------
+    ti: float
+        The tortuosity index (ti) for the well (at TD).
+    data: dict (optional)
+        A dictionary with data defining section start points and
+        data about the following section.
+    """
+    sections = survey._get_sections()
+    sections_upper, sections_lower = sections[1:-1], sections[2:]
+    n_sections = len(sections_upper)
+
+    # assume that Survey object is in meters
+    l_c = (
+        (sections[-1].md - sections[1].md) * ureg.meters
+    ).to('ft').m
+
+    l_cs, l_xs = np.vstack([
+        [
+            l.md - u.md,
+            np.linalg.norm(np.array(l.location) - np.array(u.location))
+        ]
+        for u, l in zip(sections_upper, sections_lower)
+    ]).T
+
+    ti = (
+        (n_sections / (n_sections + 1)) * (1 / l_c) * (
+            np.cumsum(
+                (l_cs / l_xs) - 1
+            )
+        )
+    ) * 1e7
+
+    if data:
+        result = {}
+        for i, (_ti, tp) in enumerate(zip(ti, sections[1:])):
+            tp.ti = _ti
+            result[i] = tp.__dict__
+        return (ti[-1], result)
+
+    else:
+        return ti[-1]
+
+
+def directional_difficulty_index(survey, data=False):
+    """
+    Taken from IADC/SPE 59196 The Directional Difficulty Index - A
+    New Approach to Performance Benchmarking by Alistair W. Oag et al.
+
+    Parameters
+    ----------
+    survey: welleng.survey.Survey object
+    data: bool
+        If True, returns the ddi at each survey station.
+
+    Returns
+    -------
+    ddi: float
+        The ddi for the well at well (at TD).
+    data: (n) array of floats
+        The ddi for each survey station.
+    """
+    ddi = np.nan_to_num(np.log10(
+        (
+            (survey.md * ureg.meters).to('ft').m
+            * (
+                np.linalg.norm(
+                    (survey.n, survey.e), axis=0
+                ) * ureg.meters
+            ).to('ft').m
+            * np.cumsum(np.degrees(survey.dogleg))
+        )
+        / (survey.tvd * ureg.meters).to('ft').m
+    ), nan=0.0, posinf=0.0, neginf=0.0)
+
+    if data:
+        return (ddi[-1], ddi)
+    else:
+        return ddi[-1]
 
 
 def _remove_duplicates(md, inc, azi):
