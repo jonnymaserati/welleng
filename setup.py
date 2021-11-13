@@ -27,9 +27,10 @@ download_url = f'https://github.com/jonnymaserati/welleng/archive/v{__version__}
 # required
 requirements_default = set([
     'numpy',
-    'scipy',
+    'pint',
     'PyYAML',
-    'setuptools'
+    'setuptools',
+    'scipy',
 ])
 
 # these can be installed without compiling required
