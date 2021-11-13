@@ -1694,18 +1694,19 @@ def directional_difficulty_index(survey, data=False):
     data: (n) array of floats
         The ddi for each survey station.
     """
-    ddi = np.nan_to_num(np.log10(
-        (
-            (survey.md * ureg.meters).to('ft').m
-            * (
-                np.linalg.norm(
-                    (survey.n, survey.e), axis=0
-                ) * ureg.meters
-            ).to('ft').m
-            * np.cumsum(np.degrees(survey.dogleg))
-        )
-        / (survey.tvd * ureg.meters).to('ft').m
-    ), nan=0.0, posinf=0.0, neginf=0.0)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        ddi = np.nan_to_num(np.log10(
+            (
+                (survey.md * ureg.meters).to('ft').m
+                * (
+                    np.linalg.norm(
+                        (survey.n, survey.e), axis=0
+                    ) * ureg.meters
+                ).to('ft').m
+                * np.cumsum(np.degrees(survey.dogleg))
+            )
+            / (survey.tvd * ureg.meters).to('ft').m
+        ), nan=0.0, posinf=0.0, neginf=0.0)
 
     if data:
         return (ddi[-1], ddi)
