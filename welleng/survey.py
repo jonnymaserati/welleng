@@ -1666,9 +1666,33 @@ def tortuosity_index(survey, data=False):
     ) * 1e7
 
     if data:
+        md = np.array([tp.md for tp in sections])
+        delta_md = np.hstack(
+            (
+                md[2:] - md[1:-1], np.array([0.0])
+            )
+        )
         result = {}
-        for i, (_ti, tp) in enumerate(zip(ti, sections[1:])):
+        (
+            result['longest_build_section'],
+            result['longest_hold_section']
+        ) = 0.0, 0.0
+        for i, (_ti, tp, d) in enumerate(zip(ti, sections[1:], delta_md)):
             tp.ti = _ti
+            tp.delta_md = d
+            tp.build_section = True if tp.dls < 1e-8 else False
+            if tp.build_section:
+                result['longest_build_section'] = max(
+                    (
+                        result['longest_build_section'], tp.delta_md
+                    )
+                )
+            else:
+                result['longest_hold_section'] = max(
+                    (
+                        result['longest_hold_section'], tp.delta_md
+                    )
+                )
             result[i] = tp.__dict__
         return (ti[-1], result)
 
