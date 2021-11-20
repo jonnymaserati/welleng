@@ -28,7 +28,9 @@ from .visual import figure
 from .units import units_default, ureg
 
 
-AZI_REF = ["true", "magnetic", "grid"]
+AZI_REF = {
+    'true': "true", 'magnetic': "mag", 'grid': "grid"
+}
 
 
 class SurveyHeader:
@@ -56,6 +58,7 @@ class SurveyHeader:
             'declination': 0.,
         },
         units=units_default,
+        vertical_section_azimuth=0.0,
         **kwargs
     ):
         """
@@ -119,12 +122,14 @@ class SurveyHeader:
         surface_unit: string (default: "feet")
             The unit of distance for the survey data, either "meters" or
             "feet".
+        vertical_section_azimuth: float (default: 0.0):
+            The vertical section azimuth.
         """
         if latitude is not None:
             assert 90 >= latitude >= -90, "latitude out of bounds"
         if longitude is not None:
             assert 180 >= longitude >= -180, "longitude out of bounds"
-        assert azi_reference in AZI_REF
+        assert azi_reference in AZI_REF.keys()
 
         self._validate_date(survey_date)
         self.name = name
@@ -139,6 +144,7 @@ class SurveyHeader:
         self.declination = declination
         self.vertical_inc_limit = vertical_inc_limit
         self.units = units
+        self.vertical_section_azimuth = vertical_section_azimuth
 
         self.depth_unit = get_unit(depth_unit)
         self.surface_unit = get_unit(surface_unit)
@@ -351,15 +357,17 @@ class Survey:
         self.x = x
         self.y = y
         self.z = z
+        self._make_numpy()
+
         if vec is not None:
             if nev:
-                self.vec_nev = vec
+                self.vec_nev = np.array(vec)
                 self.vec_xyz = get_xyz(vec)
             else:
-                self.vec_xyz = vec
+                self.vec_xyz = np.array(vec)
                 self.vec_nev = get_nev(vec)
         else:
-            self.vec_nev, self.vec_xyz = vec, vec
+            self.vec_nev, self.vec_xyz = np.array(vec), np.array(vec)
 
         self._min_curve(vec)
         self._get_toolface_and_rates()
@@ -377,6 +385,19 @@ class Survey:
         self._get_errors()
 
         self.interpolated = kwargs.get('interpolated')
+
+        self._get_vertical_section()
+
+    def _make_numpy(self):
+        """
+        Make sure these properties are numpy arrays.
+        """
+        for prop in ['n', 'e', 'tvd', 'x', 'y', 'z']:
+            val = getattr(self, prop)
+            if val is None:
+                continue
+            else:
+                setattr(self, prop, np.array(val))
 
     def _process_azi_ref(self, inc, azi, deg):
         if self.header.azi_reference == 'grid':
@@ -773,6 +794,11 @@ class Survey:
 
     def directional_difficulty_index(self, *args, **kwargs):
         return directional_difficulty_index(self, *args, **kwargs)
+
+    def _get_vertical_section(self, *args, **kwargs):
+        self.vertical_section = (
+            vertical_section(self, *args, **kwargs)
+        )
 
 
 class TurnPoint:
@@ -2151,3 +2177,24 @@ def project_to_target(
         surface_unit=survey.header.surface_unit
     )
     return survey_to_target
+
+
+def vertical_section(survey):
+    vsa = (
+        survey.header.vertical_section_azimuth
+        * ureg(survey.header.units['angles'])
+    ).to('rad').m
+    hypot = np.hypot(
+        survey.n[1:] - survey.n[:-1],
+        survey.e[1:] - survey.e[:-1]
+    )
+    azi_temp = getattr(
+        survey, f"azi_{AZI_REF[survey.header.azi_reference]}_rad"
+    )
+    azi_temp[np.where(azi_temp == 0.0)] = vsa
+    result = np.cos(
+        vsa
+        - (azi_temp[1:] + azi_temp[:-1]) / 2
+    ) * hypot
+
+    return np.cumsum(np.hstack(([0.0], result)))
