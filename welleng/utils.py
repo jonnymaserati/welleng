@@ -366,7 +366,7 @@ def HLA_to_NEV(survey, HLA, cov=True, trans=None):
 
     # return np.vstack(NEVs).reshape(HLA.shape)
 
-    return NEVs
+    return np.swapaxes(NEVs, 0, 1)
 
 
 def get_sigmas(cov, long=False):
