@@ -357,15 +357,17 @@ class Survey:
         self.x = x
         self.y = y
         self.z = z
+        self._make_numpy()
+
         if vec is not None:
             if nev:
-                self.vec_nev = vec
+                self.vec_nev = np.array(vec)
                 self.vec_xyz = get_xyz(vec)
             else:
-                self.vec_xyz = vec
+                self.vec_xyz = np.array(vec)
                 self.vec_nev = get_nev(vec)
         else:
-            self.vec_nev, self.vec_xyz = vec, vec
+            self.vec_nev, self.vec_xyz = np.array(vec), np.array(vec)
 
         self._min_curve(vec)
         self._get_toolface_and_rates()
@@ -385,6 +387,17 @@ class Survey:
         self.interpolated = kwargs.get('interpolated')
 
         self._get_vertical_section()
+
+    def _make_numpy(self):
+        """
+        Make sure these properties are numpy arrays.
+        """
+        for prop in ['n', 'e', 'tvd', 'x', 'y', 'z']:
+            val = getattr(self, prop)
+            if val is None:
+                continue
+            else:
+                setattr(self, prop, np.array(val))
 
     def _process_azi_ref(self, inc, azi, deg):
         if self.header.azi_reference == 'grid':
