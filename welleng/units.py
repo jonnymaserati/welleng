@@ -163,9 +163,13 @@ def survey_to_dict(survey, units=None):
             temp_units[k] = v
 
     survey_dict_new = {}
+
+    # TODO update the units and header to align with the wellpath units
     survey_dict_new['header'] = survey.header.__dict__
+
     survey_dict_new['wellpath'] = {
-        i: dict(zip(temp_units, col)) for i, col in enumerate(zip(*temp_units.values()))
+        i: dict(zip(temp_units, col))
+        for i, col in enumerate(zip(*temp_units.values()))
     }
 
     return survey_dict_new
