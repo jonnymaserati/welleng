@@ -1,0 +1,6 @@
+# turn rates
+_30m: '30 * meters'
+_30ft: '30 * ft'
+_100ft: '100 * ft'
+_100m: '100 * meters'
+_10m: '10 * meters'

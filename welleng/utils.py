@@ -13,29 +13,20 @@ class MinCurve:
         inc,
         azi,
         start_xyz=[0., 0., 0.],
-        unit="meters"
     ):
         """
         Generate geometric data from a well bore survey.
 
         Params:
             md: list or 1d array of floats
-                Measured depth along well path from a datum.
+                Measured depth in meters along well path from a datum.
             inc: list or 1d array of floats
                 Well path inclincation (relative to z/tvd axis where 0
                 indicates down), in radians.
             azi: list or 1d array of floats
                 Well path azimuth (relative to y/North axis),
                 in radians.
-            unit: str
-                Either "meters" or "feet" to determine the unit of the dogleg
-                severity.
-
         """
-        assert unit == "meters" or unit == "feet", (
-            'Unknown unit, please select "meters" of "feet"'
-        )
-
         self.md = md
         survey_length = len(self.md)
         assert survey_length > 1, "Survey must have at least two rows"
@@ -43,7 +34,6 @@ class MinCurve:
         self.inc = inc
         self.azi = azi
         self.start_xyz = start_xyz
-        self.unit = unit
 
         # make two slices with a difference or 1 index to enable array
         # calculations
@@ -119,10 +109,7 @@ class MinCurve:
         mask = np.where(temp != np.nan)
         self.dls[1:][mask] = temp[mask]
 
-        if unit == "meters":
-            self.dls *= 30
-        else:
-            self.dls *= 100
+        self.dls *= 30
 
         # cumulate the coordinates and add surface coordinates
         self.poss = np.vstack(

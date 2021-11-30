@@ -1441,7 +1441,9 @@ def AMIL(code, error, mag=220.0, propagation='systematic', NEV=True, **kwargs):
     )
     e_DIA = dpde * mag
 
-    return error._generate_error(code, e_DIA, propagation, NEV)
+    result = error._generate_error(code, e_DIA, propagation, NEV)
+
+    return result
 
 
 def SAG(

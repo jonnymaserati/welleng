@@ -1,6 +1,6 @@
 import numpy as np
 import math
-from copy import copy
+from copy import copy, deepcopy
 try:
     from magnetic_field_calculator import MagneticFieldCalculator
     MAG_CALC = True
@@ -25,7 +25,8 @@ from .error import ErrorModel, ERROR_MODELS
 from .node import Node
 from .connector import Connector, interpolate_well
 from .visual import figure
-from .units import units_default, ureg
+from .units import unit_systems, ureg, Units, survey_to_dict
+from .units import parameters as unit_params
 
 
 AZI_REF = {
@@ -49,17 +50,13 @@ class SurveyHeader:
         convergence=0,
         azi_reference="true",
         vertical_inc_limit=0.0001,
-        deg=True,
-        depth_unit='meters',
-        surface_unit='meters',
         mag_defaults={
             'b_total': 50_000.,
             'dip': 70.,
             'declination': 0.,
         },
-        units=units_default,
+        units=None,
         vertical_section_azimuth=0.0,
-        **kwargs
     ):
         """
         A class for storing header information about a well.
@@ -70,11 +67,11 @@ class SurveyHeader:
             The assigned name of the well bore.
         longitude: float (default: None)
             The longitude of the surface location of the well. If left
-            default (None) then it will be assigned to Grenwich, the
+            default (None) then it will be assigned to Greenwich, the
             undisputed center of the universe.
         latitude: float (default: None)
             The latitude of the surface location of the well. If left
-            default (None) then it will be assigned to Grenwich, the
+            default (None) then it will be assigned to Greenwich, the
             undisputed center of the universe.
         altitude: float (default: None)
             The altitude of the surface location. If left defaults (None)
@@ -113,23 +110,23 @@ class SurveyHeader:
             For survey inclination angles less than the vertical_inc_limit
             (in degrees), calculations are approximated to avoid
             singularities and errors.
-        deg: bool (default: True)
-            Indicates whether the survey angles are measured in degrees
-            (True) or radians (False).
-        depth_unit: string (default: "meters")
-            The unit of depth for the survey data, either "meters" or
-            "feet".
-        surface_unit: string (default: "feet")
-            The unit of distance for the survey data, either "meters" or
-            "feet".
-        vertical_section_azimuth: float (default: 0.0):
+        vertical_section_azimuth: float (default: 0.0)
             The vertical section azimuth.
-        """
+        units: welleng.units.Units object
+            Defines the units of the header and associated survey input
+            data.
+        """ 
+
         if latitude is not None:
             assert 90 >= latitude >= -90, "latitude out of bounds"
         if longitude is not None:
             assert 180 >= longitude >= -180, "longitude out of bounds"
         assert azi_reference in AZI_REF.keys()
+
+        self.units = Units() if units is None else units
+        assert isinstance(self.units, Units), (
+            "Invalid units type - should be a welleng.units.Units obj"
+        )
 
         self._validate_date(survey_date)
         self.name = name
@@ -137,24 +134,30 @@ class SurveyHeader:
         self.longitude = longitude if longitude is not None else 0.0098
         self.altitude = altitude if altitude is not None else 0.
         self._get_date(survey_date)
+
         self.b_total = b_total
-        self.earth_rate = earth_rate
+        self.earth_rate = (
+            earth_rate * ureg(self.units.angular_velocity)
+        ).to(unit_systems['backend']['angular_velocity']).m
+        self.vertical_inc_limit = (
+            vertical_inc_limit * ureg(self.units.angles)
+        ).to(unit_systems['backend']['angles']).m
+        self.vertical_section_azimuth = (
+            vertical_section_azimuth * ureg(self.units.angles)
+        ).to(unit_systems['backend']['angles']).m
+        self.G = (
+            G * ureg(self.units.acceleration)
+        ).to(unit_systems['backend']['acceleration']).m
+        self.azi_reference = azi_reference
+
         self.dip = dip
         self.convergence = convergence
         self.declination = declination
-        self.vertical_inc_limit = vertical_inc_limit
-        self.units = units
-        self.vertical_section_azimuth = vertical_section_azimuth
-
-        self.depth_unit = get_unit(depth_unit)
-        self.surface_unit = get_unit(surface_unit)
-        self.G = G
-        self.azi_reference = azi_reference
 
         self.mag_defaults = mag_defaults
-        self._get_mag_data(deg)
+        self._get_mag_data()
 
-    def _get_mag_data(self, deg):
+    def _get_mag_data(self):
         """
         Initiates b_total if provided, else calculates a value.
         """
@@ -190,25 +193,35 @@ class SurveyHeader:
             }
 
         if self.b_total is None:
-            self.b_total = result['field-value']['total-intensity']['value']
-            if not deg:
-                self.b_total = math.radians(self.b_total)
-        if self.dip is None:
-            self.dip = -result['field-value']['inclination']['value']
-            if not deg:
-                self.dip = math.radians(self.dip)
-        if self.declination is None:
-            self.declination = result['field-value']['declination']['value']
-            if not deg:
-                self.declination = math.radians(self.declination)
+            self.b_total = (
+                result['field-value']['total-intensity']['value']
+                * ureg.deg
+            ).to(unit_systems['backend']['angles']).m
+        else:
+            self.b_total = (
+                self.b_total * ureg(self.units.magnetic_field)
+            ).to(unit_systems['backend']['magnetic_field']).m
 
-        if deg:
-            self.dip = math.radians(self.dip)
-            self.declination = math.radians(self.declination)
-            self.convergence = math.radians(self.convergence)
-            self.vertical_inc_limit = math.radians(
-                self.vertical_inc_limit
-            )
+        if self.dip is None:
+            self.dip = (
+                -result['field-value']['inclination']['value']
+                * ureg.deg
+            ).to(unit_systems['backend']['angles']).m
+        else:
+            self.dip = (
+                self.dip * ureg(self.units.angles)
+            ).to(unit_systems['backend']['angles']).m
+
+        if self.declination is None:
+            self.declination = (
+                result['field-value']['declination']['value']
+                * ureg.deg
+            ).to(unit_systems['backend']['angles']).m
+        else:
+            self.declination = (
+                self.declination * ureg(self.units.angles)
+            ).to(unit_systems['backend']['angles']).m
+
 
     def _get_date(self, date):
         if date is None:
@@ -240,16 +253,15 @@ class Survey:
         vec=None,
         nev=True,
         header=None,
-        radius=None,
+        diameter=None,
         cov_nev=None,
         cov_hla=None,
         error_model=None,
         start_xyz=[0., 0., 0.],
         start_nev=[0., 0., 0.],
         start_cov_nev=None,
-        deg=True,
-        unit="meters",
-        **kwargs
+        interpolated=None,
+        # **kwargs
     ):
         """
         Initialize a welleng.Survey object. Calculations are performed in the
@@ -289,37 +301,34 @@ class Survey:
                 and survey data. If left default then a SurveyHeader will be
                 generated with the default properties assigned, but these may
                 not be relevant and may result in incorrect data.
-            radius: float or (,n) list or array of floats (default: None)
+            diameter: float or (,n) list or array of floats (default: None)
                 If a single float is specified, this value will be
                 assigned to the entire well bore. If a list or array of
-                floats is provided, these are the radii of the well bore.
-                If None, a well bore radius of 12" or approximately 0.3 m
-                is applied.
+                floats is provided, these are the diameters of the well bore.
+                If None, a well bore diameter of 24" is applied. The
+                unit of input is defined by `diameters` in `header.units`.
             cov_nev: (n,3,3) list or array of floats (default: None)
                 List or array of covariance matrices in the (n,e,v)
-                coordinate system.
+                coordinate system with depth units.
             cov_hla: (n,3,3) list or array of floats (default: None)
                 List or array of covariance matrices in the (h,l,a)
                 well bore coordinate system (high side, lateral, along
-                hole).
+                hole) with `depths` units.
             error_model: str (default: None)
                 If specified, this model is used to calculate the
                 covariance matrices if they are not present. Currently,
                 only the "ISCWSA_MWD" model is provided.
             start_xyz: (,3) list or array of floats (default: [0,0,0])
-                The start position of the well bore in (x,y,z) coordinates.
+                The start position of the well bore in (x,y,z)
+                coordinates with (x, y) in `lateral_distances` units and
+                z in 'depth' units.
             start_nev: (,3) list or array of floats (default: [0,0,0])
-                The start position of the well bore in (n,e,v) coordinates.
+                The start position of the well bore in (n,e,v)
+                coordinates with (x, y) in `lateral_distances` units and
+                z in `depths` units.
             start_cov_nev: (,3,3) list or array of floats (default: None)
                 The covariance matrix for the start position of the well
-                bore in (n,e,v) coordinates.
-            deg: boolean (default: True)
-                Indicates whether the provided angles are in degrees
-                (True), else radians (False).
-            unit: str (default: 'meters')
-                Indicates whether the provided lengths and distances are
-                in 'meters' or 'feet', which impacts the calculation of
-                the dls (dog leg severity).
+                bore in (n,e,v) coordinates with `depths` units.
 
         Returns
         -------
@@ -330,19 +339,15 @@ class Survey:
         else:
             assert isinstance(header, SurveyHeader)
             self.header = header
-        assert unit == self.header.depth_unit, (
-            "inconsistent units with header"
-        )
-        self.unit = unit
-        self.deg = deg
-        self.start_xyz = start_xyz
-        self.start_nev = start_nev
-        self.md = np.array(md).astype('float64')
-        self.start_cov_nev = start_cov_nev
 
-        self._process_azi_ref(inc, azi, deg)
+        self.start_xyz = self.convert_coords_to_meters(start_xyz)
+        self.start_nev = self.convert_coords_to_meters(start_nev)
+        self.md = self.convert_to_meters(md, 'depths')
+        self.start_cov_nev = self.convert_to_meters(start_cov_nev, 'depths')
 
-        self._get_radius(radius)
+        self._process_azi_ref(inc, azi)
+
+        self._get_diameter(diameter)
 
         self.survey_deg = np.array(
             [self.md, self.inc_deg, self.azi_grid_deg]
@@ -351,13 +356,8 @@ class Survey:
             [self.md, self.inc_rad, self.azi_grid_rad]
         ).T
 
-        self.n = n
-        self.e = e
-        self.tvd = tvd
-        self.x = x
-        self.y = y
-        self.z = z
-        self._make_numpy()
+        params = {'n': n, 'e': e, 'tvd': tvd, 'x': x, 'y': y, 'z': z}
+        self._process_params(params)
 
         if vec is not None:
             if nev:
@@ -384,96 +384,157 @@ class Survey:
 
         self._get_errors()
 
-        self.interpolated = kwargs.get('interpolated')
+        # self.interpolated = kwargs.get('interpolated')
+        self.interpolated = interpolated
 
         self._get_vertical_section()
 
-    def _make_numpy(self):
-        """
-        Make sure these properties are numpy arrays.
-        """
-        for prop in ['n', 'e', 'tvd', 'x', 'y', 'z']:
-            val = getattr(self, prop)
-            if val is None:
-                continue
-            else:
-                setattr(self, prop, np.array(val))
+    def convert_to_meters(self, arr, key):
+        if arr is None:
+            return None
+        arr_temp = np.array(arr).astype('float64')
+        arr_new = (
+            arr_temp * ureg(getattr(self.header.units, key))
+        ).to('meters').m
 
-    def _process_azi_ref(self, inc, azi, deg):
+        return arr_new
+
+    def convert_coords_to_meters(self, arr):
+        """
+        Coordinates could be entered with different units for lateral
+        ((x, y) and (n, e)) values versus depth (tvd or z) values.
+
+        This function checks for this and sets these properties to
+        meters.
+        """
+        if arr is None:
+            return None
+        arr_temp = np.array(arr).reshape(-1, 3)
+        arr_new = np.zeros_like(arr_temp)
+        arr_new[:, :2] = (
+            arr_temp[:, :2] * ureg(self.header.units.lateral_distances)
+        ).to('meters').m
+        arr_new[:, 2] = (
+            arr_temp[:, 2] * ureg(self.header.units.depths)
+        ).to('meters').m
+
+        if arr_new.shape[0] == 1:
+            return arr_new[0]
+        else:
+            return arr_new
+
+    def _process_params(self, params):
+        """
+        Set properties, converting to meters and making sure they're
+        numpy arrays.
+        """
+        for k, v in params.items():
+            if v is None:
+                setattr(self, k, v)
+            else:
+                if k in unit_params['lateral_distances']:
+                    setattr(
+                        self, k,
+                        self.convert_to_meters(v, 'lateral_distance')
+                    )
+                elif k in unit_params['depths']:
+                    setattr(
+                        self, k,
+                        self.convert_to_meters(v, 'depths')
+                    )
+
+    def _process_azi_ref(self, inc, azi):
+        self.inc_deg = (
+            np.array(inc).astype('float64') * ureg(self.header.units.angles)
+        ).to('deg').m
         if self.header.azi_reference == 'grid':
-            self._make_angles(inc, azi, deg)
+            self.azi_grid_deg = (
+                np.array(azi).astype('float64')
+                * ureg(self.header.units.angles)
+            ).to('deg').m
             self.azi_true_deg = (
-                self.azi_grid_deg + math.degrees(self.header.convergence)
+                self.azi_grid_deg
+                + (
+                    self.header.convergence
+                    * ureg(unit_systems['backend']['angles'])
+                ).to('deg').m
             )
             self.azi_mag_deg = (
-                self.azi_true_deg - math.degrees(self.header.declination)
+                self.azi_true_deg
+                - (
+                    self.header.declination *
+                    ureg(unit_systems['backend']['angles'])
+                ).to('deg').m
             )
-            self._get_azi_mag_and_true_rad()
         elif self.header.azi_reference == 'true':
-            if deg:
-                self.azi_true_deg = np.array(azi).astype('float64')
-                self.azi_mag_deg = (
-                    self.azi_true_deg - math.degrees(self.header.declination)
-                )
-                self._get_azi_mag_and_true_rad()
-                azi_temp = self._get_azi_temp(deg)
-            else:
-                self.azi_true_rad = np.array(azi).astype('float64')
-                self.azi_mag_rad = (
-                    self.azi_true_rad - self.header.declination
-                )
-                self._get_azi_mag_and_true_deg()
-                azi_temp = self._get_azi_temp(deg)
-            self._make_angles(inc, azi_temp, deg)
+            self.azi_true_deg = (
+                np.array(azi).astype('float64')
+                * ureg(self.header.units.angles)
+            ).to('deg').m
+            self.azi_mag_deg = (
+                self.azi_true_deg
+                - (
+                    self.header.declination *
+                    ureg(unit_systems['backend']['angles'])
+                ).to('deg').m
+            )
+            self.azi_grid_deg = (
+                self.azi_true_deg
+                - (
+                    self.header.convergence
+                    * ureg(unit_systems['backend']['angles'])
+                ).to('deg').m
+            )
         else:  # azi_reference is "magnetic"
-            if deg:
-                self.azi_mag_deg = np.array(azi).astype('float64')
-                self.azi_true_deg = (
-                    self.azi_mag_deg + math.degrees(self.header.declination)
-                )
-                self._get_azi_mag_and_true_rad()
-                azi_temp = self._get_azi_temp(deg)
-            else:
-                self.azi_mag_rad = np.array(azi).astype('float64')
-                self.azi_true_rad = (
-                    self.azi_mag_rad + self.header.declination
-                )
-                self._get_azi_mag_and_true_deg()
-                azi_temp = self._get_azi_temp(deg)
-            self._make_angles(inc, azi_temp, deg)
+            self.azi_mag_deg = (
+                np.array(azi).astype('float64')
+                * ureg(self.header.units.angles)
+            ).to('deg').m
+            self.azi_true_deg = (
+                self.azi_mag_deg
+                + (
+                    self.header.declination
+                    * ureg(unit_systems['backend']['angles'])
+                ).to('deg').m
+            )
+            self.azi_mag_deg = (
+                self.azi_true_deg
+                - (
+                    self.header.declination
+                    * ureg(unit_systems['backend']['angles'])
+                ).to('deg').m
+            )
+            self.azi_grid_deg = (
+                self.azi_true_deg
+                - (
+                    self.header.convergence
+                    * ureg(unit_systems['backend']['angles'])
+                ).to('deg').m
+            )
+        for attr in ['inc', 'azi_mag', 'azi_true', 'azi_grid']:
+            setattr(
+                self, f'{attr}_rad',
+                (getattr(self, f'{attr}_deg') * ureg.deg).to('rad').m
+            )
 
-    def _get_azi_temp(self, deg):
-        if deg:
-            azi_temp = self.azi_true_deg - math.degrees(
-                self.header.convergence
+    def _get_diameter(self, diameter=None):
+        if diameter is None:
+            self.diameter = (
+                np.full_like(self.md.astype(float), 24.0)
+                * ureg.inches
+            ).to(unit_systems['backend']['diameters']).m
+        elif np.array([diameter]).shape[-1] == 1:
+            self.diameter = np.full_like(
+                self.md.astype(float),
+                (
+                    diameter * ureg(self.header.units.diameters)
+                ).to(unit_systems['backend']['diameters']).m
             )
         else:
-            azi_temp = self.azi_true_rad - self.header.convergence
-
-        return azi_temp
-
-    def _get_azi_mag_and_true_rad(self):
-        self.azi_true_rad, self.azi_mag_rad = (
-            np.radians(np.array([
-                self.azi_true_deg, self.azi_mag_deg
-            ]))
-        )
-
-    def _get_azi_mag_and_true_deg(self):
-        self.azi_true_deg, self.azi_mag_deg = (
-            np.degrees(np.array([
-                self.azi_true_rad, self.azi_mag_rad
-            ]))
-        )
-
-    def _get_radius(self, radius=None):
-        if radius is None:
-            self.radius = np.full_like(self.md.astype(float), 0.3048)
-        elif np.array([radius]).shape[-1] == 1:
-            self.radius = np.full_like(self.md.astype(float), radius)
-        else:
-            assert len(radius) == len(self.md), "Check radius"
-            self.radius = np.array(radius)
+            assert len(diameter) == len(self.md), "Check diameter"
+            self.diameter = (
+                np.array(diameter) * ureg(self.header.units.diameters)
+            ).to(unit_systems['backend']['diameters']).m
 
     def _min_curve(self, vec):
         """
@@ -482,7 +543,7 @@ class Survey:
         minimum curvature method.
         """
         mc = MinCurve(
-            self.md, self.inc_rad, self.azi_grid_rad, self.start_xyz, self.unit
+            self.md, self.inc_rad, self.azi_grid_rad, self.start_xyz
         )
         self.dogleg = mc.dogleg
         self.rf = mc.rf
@@ -513,21 +574,19 @@ class Survey:
             start_nev=self.start_nev
         ).reshape(-1, 3).T
 
-    def _make_angles(self, inc, azi, deg=True):
+    def _make_angles(self, inc, azi):
         """
         Calculate angles in radians if they were provided in degrees or
         vice versa.
         """
-        if deg:
-            self.inc_rad = np.radians(inc)
-            self.azi_grid_rad = np.radians(azi)
-            self.inc_deg = np.array(inc)
-            self.azi_grid_deg = np.array(azi)
-        else:
-            self.inc_rad = np.array(inc)
-            self.azi_grid_rad = np.array(azi)
-            self.inc_deg = np.degrees(inc)
-            self.azi_grid_deg = np.degrees(azi)
+        self.inc_rad = (
+            inc * ureg(self.units['degrees'])
+        ).to('rad').m
+        self.azi_grid_rad = (
+            azi * ureg(self.units['degrees'])
+        ).to('rad').m
+        self.inc_deg = np.degrees(self.inc_rad)
+        self.azi_grid_deg = np.degrees(self.azi_grid_rad)
 
     def get_error(self, error_model, return_error=False):
         assert error_model in ERROR_MODELS, "Undefined error model"
@@ -572,10 +631,7 @@ class Survey:
         with np.errstate(divide='ignore', invalid='ignore'):
             radius = 1 / curvature
         circumference = 2 * np.pi * radius
-        if self.unit == 'meters':
-            x = 30
-        else:
-            x = 100
+        x = 30
         rate = np.absolute(np.degrees(2 * np.pi / circumference) * x)
 
         return rate
@@ -587,11 +643,7 @@ class Survey:
         """
         # split the survey
         s = SplitSurvey(self)
-
-        if self.unit == 'meters':
-            x = 30
-        else:
-            x = 100
+        x = 30
 
         # this is lazy I know, but I'm using this mostly for flags
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -726,7 +778,9 @@ class Survey:
         """
         Convenience method for interpolating a Survey object's MD.
         """
-        survey_interpolated = interpolate_survey(self, step=30, dls=1e-8)
+        survey_interpolated = (
+            interpolate_survey(self, step=step, dls=dls)
+        )
         return survey_interpolated
 
     def figure(self, type='scatter3d', **kwargs):
@@ -799,6 +853,11 @@ class Survey:
         self.vertical_section = (
             vertical_section(self, *args, **kwargs)
         )
+
+    def to_dict(self, units=None):
+        result = survey_to_dict(self, units)
+
+        return result
 
 
 class TurnPoint:
@@ -1358,15 +1417,6 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
     return sections
 
 
-def get_unit(unit):
-    if unit in ['m', 'meters']:
-        return 'meters'
-    elif unit in ['ft', 'feet']:
-        return 'feet'
-    else:
-        return None
-
-
 def make_survey_header(data):
     """
     Takes a dictionary of survey header data with the same keys as the
@@ -1772,14 +1822,17 @@ def directional_difficulty_index(survey, data=False):
         return ddi[-1]
 
 
-def _remove_duplicates(md, inc, azi):
+def _remove_duplicates(md, inc, azi, eps=0.1):
+    """
+    Added eps so that entries very close to each other can be skipped.
+    """
     arr = np.array([md, inc, azi]).T
     upper = arr[:-1]
     lower = arr[1:]
 
     temp = np.vstack((
         upper[0],
-        lower[lower[:, 0] != upper[:, 0]]
+        lower[np.absolute(lower[:, 0] - upper[:, 0]) >= eps]
     ))
 
     return temp.T
@@ -1790,22 +1843,25 @@ def from_connections(
     start_nev=[0., 0., 0.],
     start_xyz=[0., 0., 0.],
     start_cov_nev=None,
-    radius=10, deg=False, error_model=None,
-    depth_unit='meters', surface_unit='meters'
+    diameter=10, error_model=None, eps=0.1
+    # depth_unit='meters', surface_unit='meters'
 ):
     """
     Constructs a well survey from a list of sections of control points.
 
     Parameters
     ----------
-        section_data: list of dicts with section data
-        start_nev: (3) array of floats (default: [0,0,0])
-            The starting position in NEV coordinates.
-        radius: float (default: 10)
-            The radius is passed to the `welleng.survey.Survey` object
-            and represents the radius of the wellbore. It is also used
-            when visualizing the results, so can be used to make the
-            wellbore *thicker* in the plot.
+    section_data: list of dicts with section data
+    start_nev: (3) array of floats (default: [0,0,0])
+        The starting position in NEV coordinates.
+    diameter: float (default: 10)
+        The diameter is passed to the `welleng.survey.Survey` object
+        and represents the radius of the wellbore. It is also used
+        when visualizing the results, so can be used to make the
+        wellbore *thicker* in the plot.
+    eps: float
+        A tolerance used when removing duplicate consecutive survey
+        stations.
 
     Results
     -------
@@ -1817,19 +1873,19 @@ def from_connections(
     # generate lists for survey
     md, inc, azi = np.vstack([np.array(list(zip(
             s['md'].tolist(),
-            s['inc'].tolist(),
-            s['azi'].tolist(),
+            np.degrees(s['inc']).tolist(),
+            np.degrees(s['azi']).tolist(),
         )))
         for s in section_data_interp
     ]).T
 
     # remove duplicates
-    md, inc, azi = _remove_duplicates(md, inc, azi)
+    md, inc, azi = _remove_duplicates(md, inc, azi, eps)
 
     if survey_header is None:
         survey_header = SurveyHeader(
-            depth_unit=depth_unit,
-            surface_unit=surface_unit
+            # depth_unit=depth_unit,
+            # surface_unit=surface_unit
         )
 
     survey = Survey(
@@ -1839,11 +1895,9 @@ def from_connections(
         start_nev=section_data[0].pos1 + start_nev,
         start_xyz=start_xyz,
         start_cov_nev=start_cov_nev,
-        deg=deg,
-        radius=radius,
+        diameter=diameter,
         header=survey_header,
         error_model=error_model,
-        unit=depth_unit
     )
 
     return survey
@@ -1877,6 +1931,8 @@ def interpolate_survey(survey, step=30, dls=1e-8):
     else:
         azi = survey.azi_mag_rad
 
+    step_meters = (step * ureg(survey.header.units.depths)).to('meters').m
+
     s = np.array([survey.md, survey.inc_rad, azi]).T
 
     s_upper = s[:-1]
@@ -1891,7 +1947,6 @@ def interpolate_survey(survey, step=30, dls=1e-8):
                 inc=u[1],
                 azi=u[2],
                 degrees=False,
-                unit=survey.unit
             )
         else:
             node1 = well[-1].node_end
@@ -1900,7 +1955,7 @@ def interpolate_survey(survey, step=30, dls=1e-8):
             inc=l[1],
             azi=l[2],
             degrees=False,
-            unit=survey.unit
+            # unit=survey.unit
         )
         c = Connector(
             node1=node1,
@@ -1908,15 +1963,18 @@ def interpolate_survey(survey, step=30, dls=1e-8):
             dls_design=dls,
             degrees=False,
             force_min_curve=True,
-            unit=survey.unit
+            # unit=survey.unit
         )
         well.append(c)
 
+    survey_header = deepcopy(survey.header)
+    survey_header.units = Units()
+
     survey_interpolated = from_connections(
         well,
-        step=step,
+        step=step_meters,
         start_xyz=survey.start_xyz,
-        survey_header=survey.header,
+        survey_header=survey_header,
         error_model=None
     )
 
@@ -1926,7 +1984,7 @@ def interpolate_survey(survey, step=30, dls=1e-8):
     ]
 
     i = -1
-    radii = []
+    diameter = []
     cov_nev = []
     for (md, boolean) in zip(
         survey_interpolated.md,
@@ -1946,7 +2004,7 @@ def interpolate_survey(survey, step=30, dls=1e-8):
                     if j == 1
                     else 0
                 )
-        radii.append(survey.radius[i])
+        diameter.append(survey.diameter[i])
         if survey.error_model is not None:
             cov_nev.append(
                 survey.cov_nev[i]
@@ -1954,13 +2012,15 @@ def interpolate_survey(survey, step=30, dls=1e-8):
                     (md - survey.md[i]) * unit_cov_nev
                 )
             )
-    survey_interpolated.radius = np.array(radii)
+    survey_interpolated.diameter = np.array(diameter)
     if bool(cov_nev):
         survey_interpolated.cov_nev = np.array(cov_nev)
         survey_interpolated.cov_hla = NEV_to_HLA(
             survey_interpolated.survey_rad,
             survey_interpolated.cov_nev.T
         ).T
+
+    survey_interpolated.header.units = survey.header.units
 
     return survey_interpolated
 
@@ -2182,7 +2242,7 @@ def project_to_target(
 def vertical_section(survey):
     vsa = (
         survey.header.vertical_section_azimuth
-        * ureg(survey.header.units['angles'])
+        * ureg(survey.header.units.angles)
     ).to('rad').m
     hypot = np.hypot(
         survey.n[1:] - survey.n[:-1],

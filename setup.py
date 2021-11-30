@@ -31,6 +31,7 @@ requirements_default = set([
     'PyYAML',
     'setuptools',
     'scipy',
+    'pint'
 ])
 
 # these can be installed without compiling required
@@ -116,7 +117,8 @@ setup(
         'welleng': [
             'errors/*.yaml',
             'errors/tool_codes/*.yaml',
-            'exchange/*.yaml'
+            'exchange/*.yaml',
+            'units/*.yaml'
         ]
     },
     install_requires=list(requirements_default),

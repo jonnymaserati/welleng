@@ -1,0 +1,52 @@
+parameters:
+  name: None
+  angles: [
+    'dogleg', 'toolface', 'dip', 'declination', 'convergence',
+    'vertical_inc_limit', 'vertical_section_azimuth'
+  ]
+  depths: [
+      'md', 'tvd', 'z', 'curve_radius', 'altitude',
+      'nn', 'ne', 'nv', 'ee', 'ev', 'vv',
+      'hh', 'hl', 'ha', 'll', 'la', 'aa'
+  ]
+  diameters: ['diameter', 'radius']
+  lateral_distances: [
+    'n', 'e', 'x', 'y', 'vertical_section'
+  ]
+  turn_rates: ['dls', 'build', 'turn']
+  magnetic_field: 'b_total'
+  angular_velocity: 'earth_rate'
+  acceleration: 'G'
+
+default:
+  name: 'default'
+  angles: 'deg'
+  depths: 'meters'
+  diameters: 'inches'
+  lateral_distances: 'meters'
+  turn_rates: 'deg / _30m'
+  magnetic_field: 'nT'
+  angular_velocity: 'rad / hr'
+  acceleration: 'meters / sec ** 2'
+
+oilfield:
+  name: 'oilfield'
+  angles: 'deg'
+  depths: 'ft'
+  diameters: 'inches'
+  lateral_distances: 'ft'
+  turn_rates: 'deg / _100ft'
+  magnetic_field: 'nT'
+  angular_velocity: 'rad / hr'
+  acceleration: 'meters / sec ** 2'
+
+backend:
+  name: 'backend'
+  angles: 'rad'
+  depths: 'meters'
+  diameters: 'meters'
+  lateral_distances: 'meters'
+  turn_rates: 'deg / _30m'
+  magnetic_field: 'nT'
+  angular_velocity: 'rad / hr'
+  acceleration: 'meters / sec ** 2'

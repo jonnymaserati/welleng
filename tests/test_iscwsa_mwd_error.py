@@ -37,10 +37,10 @@ def get_md_index(error_data, md):
 
 
 def get_err(error_model, wd):
-    sh = SurveyHeader()
+    sh = SurveyHeader(**wd['header'])
 
-    for k, v in wd['header'].items():
-        setattr(sh, k, v)
+    # for k, v in wd['header'].items():
+    #     setattr(sh, k, v)
 
     survey = Survey(
         md=wd['survey']['md'],
