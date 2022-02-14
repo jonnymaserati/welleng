@@ -49,11 +49,7 @@ class SurveyHeader:
         deg=True,
         depth_unit='meters',
         surface_unit='meters',
-        mag_defaults={
-            'b_total': 50_000.,
-            'dip': 70.,
-            'declination': 0.,
-        },
+        mag_defaults=None,
         **kwargs
     ):
         """
@@ -142,7 +138,11 @@ class SurveyHeader:
         self.G = G
         self.azi_reference = azi_reference
 
-        self.mag_defaults = mag_defaults
+        self.mag_defaults = mag_defaults or {
+            'b_total': 50_000.,
+            'dip': 70.,
+            'declination': 0.,
+        }
         self._get_mag_data(deg)
 
     def _get_mag_data(self, deg):
@@ -234,8 +234,8 @@ class Survey:
         cov_nev=None,
         cov_hla=None,
         error_model=None,
-        start_xyz=[0., 0., 0.],
-        start_nev=[0., 0., 0.],
+        start_xyz=None,
+        start_nev=None,
         start_cov_nev=None,
         deg=True,
         unit="meters",
@@ -325,8 +325,10 @@ class Survey:
         )
         self.unit = unit
         self.deg = deg
-        self.start_xyz = start_xyz
-        self.start_nev = start_nev
+
+        self.start_xyz = start_xyz or [0., 0., 0.]
+        self.start_nev = start_nev or [0., 0., 0.]
+
         self.md = np.array(md).astype('float64')
         self.start_cov_nev = start_cov_nev
 
@@ -384,6 +386,7 @@ class Survey:
                 self.azi_true_deg - math.degrees(self.header.declination)
             )
             self._get_azi_mag_and_true_rad()
+
         elif self.header.azi_reference == 'true':
             if deg:
                 self.azi_true_deg = np.array(azi).astype('float64')
@@ -400,6 +403,7 @@ class Survey:
                 self._get_azi_mag_and_true_deg()
                 azi_temp = self._get_azi_temp(deg)
             self._make_angles(inc, azi_temp, deg)
+
         else:  # azi_reference is "magnetic"
             if deg:
                 self.azi_mag_deg = np.array(azi).astype('float64')
@@ -444,8 +448,10 @@ class Survey:
     def _get_radius(self, radius=None):
         if radius is None:
             self.radius = np.full_like(self.md.astype(float), 0.3048)
+
         elif np.array([radius]).shape[-1] == 1:
             self.radius = np.full_like(self.md.astype(float), radius)
+
         else:
             assert len(radius) == len(self.md), "Check radius"
             self.radius = np.array(radius)
@@ -469,8 +475,10 @@ class Survey:
         if self.x is None:
             # self.x, self.y, self.z = (mc.poss + self.start_xyz).T
             self.x, self.y, self.z = (mc.poss).T
+
         if self.n is None:
             self._get_nev()
+
         if vec is None:
             self.vec_xyz = get_vec(self.inc_rad, self.azi_grid_rad, deg=False)
             self.vec_nev = get_vec(
@@ -512,8 +520,8 @@ class Survey:
 
         if return_error:
             return self.err
-        else:
-            return self
+
+        return self
 
     def _get_errors(self):
         """
@@ -521,18 +529,20 @@ class Survey:
         covariance matrices with the specified error model.
         """
         if self.error_model:
-            # if self.error_model == "iscwsa_mwd_rev4":
             self.err = ErrorModel(
                 self,
                 error_model=self.error_model
             )
             self.cov_hla = self.err.errors.cov_HLAs.T
             self.cov_nev = self.err.errors.cov_NEVs.T
+
         else:
             if self.cov_nev is not None and self.cov_hla is None:
                 self.cov_hla = NEV_to_HLA(self.survey_rad, self.cov_nev.T).T
+
             elif self.cov_nev is None and self.cov_hla is not None:
                 self.cov_nev = HLA_to_NEV(self.survey_rad, self.cov_hla.T).T
+
             else:
                 pass
 
@@ -547,10 +557,7 @@ class Survey:
         with np.errstate(divide='ignore', invalid='ignore'):
             radius = 1 / curvature
         circumference = 2 * np.pi * radius
-        if self.unit == 'meters':
-            x = 30
-        else:
-            x = 100
+        x = 30 if self.unit == 'meters' else 100
         rate = np.absolute(np.degrees(2 * np.pi / circumference) * x)
 
         return rate
@@ -563,10 +570,7 @@ class Survey:
         # split the survey
         s = SplitSurvey(self)
 
-        if self.unit == 'meters':
-            x = 30
-        else:
-            x = 100
+        x = 30 if self.unit == 'meters' else 100
 
         # this is lazy I know, but I'm using this mostly for flags
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -732,6 +736,7 @@ class Survey:
         """
         if dls is None:
             dls = self.dls[-1]
+
         if toolface is None:
             toolface = self.toolface[-1]
 
@@ -817,10 +822,10 @@ def interpolate_md(survey, md):
     x = md - survey.md[idx]
     assert x >= 0
 
-    return _interpolate_survey(survey, x=x, index=idx)
+    return _interpolate_survey(survey, md=x, index=idx)
 
 
-def _interpolate_survey(survey, x=0, index=0):
+def _interpolate_survey(survey, md=0, index=0):
     """
     Interpolates a point distance x between two survey stations
     using minimum curvature.
@@ -829,7 +834,7 @@ def _interpolate_survey(survey, x=0, index=0):
     ----------
         survey: welleng.Survey
             A survey object with at least two survey stations.
-        x: float
+        md: float
             Length along well path from indexed survey station to
             perform the interpolate at. Must be less than length
             to the next survey station.
@@ -861,7 +866,7 @@ def _interpolate_survey(survey, x=0, index=0):
 
         total_dogleg = survey.dogleg[index + 1]
 
-        dogleg = x * (total_dogleg / survey.delta_md[index + 1])
+        dogleg = md * (total_dogleg / survey.delta_md[index + 1])
 
         t = (
             (math.sin(total_dogleg - dogleg) / math.sin(total_dogleg)) * t1
@@ -876,7 +881,7 @@ def _interpolate_survey(survey, x=0, index=0):
     sh.azi_reference = 'grid'
 
     s = Survey(
-        md=np.array([survey.md[index], survey.md[index] + x]),
+        md=np.array([survey.md[index], survey.md[index] + md]),
         inc=np.array([survey.inc_rad[index], inc]),
         azi=np.array([survey.azi_grid_rad[index], azi]),
         start_xyz=np.array([survey.x, survey.y, survey.z]).T[index],
@@ -885,8 +890,8 @@ def _interpolate_survey(survey, x=0, index=0):
         deg=False,
     )
     interpolated = False if any((
-        x == 0,
-        x == survey.md[index + 1] - survey.md[index]
+        md == 0,
+        md == survey.md[index + 1] - survey.md[index]
      )) else True
     s.interpolated = [False, interpolated]
 
@@ -932,7 +937,7 @@ def interpolate_tvd(survey, tvd, **kwargs):
         dogleg = s_temp.dogleg[-1]
 
     if np.isnan(dogleg):
-        return _interpolate_survey(survey, x=0, index=idx)
+        return _interpolate_survey(survey, md=0, index=idx)
 
     if dogleg == 0:
         x = (
@@ -989,7 +994,7 @@ def interpolate_tvd(survey, tvd, **kwargs):
 
         assert x <= delta_md
 
-    interpolated_survey = _interpolate_survey(survey, x=x, index=idx)
+    interpolated_survey = _interpolate_survey(survey, md=x, index=idx)
 
     interpolated = True if x > 0 else False
     node = get_node(interpolated_survey, 1, interpolated=interpolated)

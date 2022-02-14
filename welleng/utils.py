@@ -161,6 +161,7 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
     else:
         inc_rad = inc
         azi_rad = azi
+    # REVIEW: why `r` is needed while at the end the vector is normalized?
     y = r * np.sin(inc_rad) * np.cos(azi_rad)
     x = r * np.sin(inc_rad) * np.sin(azi_rad)
     z = r * np.cos(inc_rad)
@@ -173,9 +174,7 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
     return vec / np.linalg.norm(vec, axis=-1).reshape(-1, 1)
 
 
-def get_nev(
-    pos, start_xyz=np.array([0., 0., 0.]), start_nev=np.array([0., 0., 0.])
-):
+def get_nev(pos, start_xyz=None, start_nev=None):
     """
     Convert [x, y, z] coordinates to [n, e, tvd] coordinates.
 
@@ -183,24 +182,27 @@ def get_nev(
         pos: (n,3) array of floats
             Array of [x, y, z] coordinates
         start_xyz: (,3) array of floats
-            The datum of the [x, y, z] cooardinates
+            The datum of the [x, y, z] coordinates
         start_nev: (,3) array of floats
             The datum of the [n, e, tvd] coordinates
 
     Returns:
         An (n,3) array of [n, e, tvd] coordinates.
     """
-    # e, n, v = (
-    #     np.array([pos]).reshape(-1,3) - np.array([start_xyz])
-    # ).T
+    start_xyz = start_xyz or np.array([0., 0., 0.])
+    start_nev = start_nev or np.array([0., 0., 0.])
+
     e, n, v = (
-        np.array([pos]).reshape(-1,3) - np.array([start_xyz])
+        np.array([pos]).reshape(-1, 3) - np.array([start_xyz])
     ).T
 
     return (np.array([n, e, v]).T + np.array([start_nev]))
 
 
-def get_xyz(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
+def get_xyz(pos, start_xyz=None, start_nev=None):
+    start_xyz = start_xyz or [0., 0., 0.]
+    start_nev = start_nev or [0., 0., 0.]
+
     y, x, z = (
         np.array([pos]).reshape(-1, 3) - np.array([start_nev])
     ).T
@@ -215,7 +217,7 @@ def _get_angles(vec):
 
     return np.stack((inc, azi), axis=1)
 
-
+# REVIEW: did using numba helped?
 if NUMBA:
     _get_angles = njit(_get_angles)
 
@@ -284,6 +286,7 @@ def get_transform(
 
     # return trans
 
+
 def NEV_to_HLA(survey, NEV, cov=True):
     """
     Transform from NEV to HLA coordinate system.
@@ -295,11 +298,11 @@ def NEV_to_HLA(survey, NEV, cov=True):
             The NEV coordinates or covariance matrices.
         cov: boolean
             If cov is True then a (3,3,d) array of covariance matrices
-            is expecte, else a (d,3) array of coordinates.
+            is expected, else a (d,3) array of coordinates.
 
     Returns:
         Either a transformed (n,3) array of HLA coordinates or an
-        (3,3,n) array of HLA covariance matrices. 
+        (3,3,n) array of HLA covariance matrices.
     """
 
     trans = get_transform(survey)
@@ -309,10 +312,10 @@ def NEV_to_HLA(survey, NEV, cov=True):
             np.dot(np.dot(t, NEV.T[i]), t.T) for i, t in enumerate(trans)
         ]
 
-        HLAs = np.vstack(HLAs).reshape(-1,3,3).T
+        HLAs = np.vstack(HLAs).reshape(-1, 3, 3).T
 
     else:
-        NEV = NEV.reshape(-1,3)
+        NEV = NEV.reshape(-1, 3)
         HLAs = [
             np.dot(NEV[i], t.T) for i, t in enumerate(trans)
         ]
@@ -328,7 +331,7 @@ def HLA_to_NEV(survey, HLA, cov=True, trans=None):
             np.dot(np.dot(t.T, HLA.T[i]), t) for i, t in enumerate(trans)
         ]
 
-        NEVs = np.vstack(NEVs).reshape(-1,3,3).T
+        NEVs = np.vstack(NEVs).reshape(-1, 3, 3).T
 
     else:
         NEVs = [
