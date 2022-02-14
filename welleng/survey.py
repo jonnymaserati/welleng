@@ -1022,6 +1022,10 @@ def slice_survey(survey, start, stop=None):
     n, e, tvd = nevs.T
     # vec = survey.vec[start:stop]
 
+    # Handle `None` values:
+    cov_hla = None if not bool(survey.cov_hla) else survey.cov_hla[start:stop]
+    cov_nev = None if not bool(survey.cov_nev) else survey.cov_nev[start:stop]
+
     s = Survey(
         md=md,
         inc=inc,
@@ -1031,8 +1035,8 @@ def slice_survey(survey, start, stop=None):
         tvd=tvd,
         header=survey.header,
         radius=survey.radius[start:stop],
-        cov_hla=survey.cov_hla[start:stop],
-        cov_nev=survey.cov_nev[start:stop],
+        cov_hla=cov_hla,
+        cov_nev=cov_hla,
         start_nev=[n[0], e[0], tvd[0]],
         deg=False,
         unit=survey.unit,
@@ -1885,3 +1889,118 @@ def project_to_target(
         surface_unit=survey.header.surface_unit
     )
     return survey_to_target
+
+
+class SurveyData:
+    def __init__(self, survey):
+        """
+        A class for extracting the minimal amount of data from a `Survey`
+        object, with methods for combining data from a list of surveys that
+        describe an entire well path.
+
+        Parameters
+        ----------
+        survey : `welleng.survey.Survey`
+        """
+        self.header = survey.header
+        self.md = survey.md
+        self.inc = survey.inc_rad
+        self.azi = getattr(
+            survey, f"azi_{getattr(self.header, 'azi_reference')}_rad"
+        )
+        self.start_nev = survey.start_nev
+        self.start_xyz = survey.start_xyz
+        self.cov_nev = survey.cov_nev
+        self.cov_hla = survey.cov_hla
+        self.radius = survey.radius
+
+    def append_survey(self, survey):
+        """
+        Method to extract data from a survey and append it to
+        the existing survey data existing in the instance.
+
+        Parameters
+        ----------
+        survey : `welleng.survey.Survey`
+        """
+        self.md = np.hstack((self.md, survey.md[1:]))
+        self.inc = np.hstack((self.inc, survey.inc_rad[1:]))
+        self.azi = np.hstack(
+            (
+                self.azi,
+                getattr(
+                    survey, f"azi_{getattr(self.header, 'azi_reference')}_rad"
+                )[1:]
+            )
+        )
+        self.cov_nev = np.hstack(
+            (
+                self.cov_nev.reshape(-1),
+                survey.cov_nev[1:].reshape(-1)
+            )
+        ).reshape(-1, 3, 3)
+        self.cov_hla = np.hstack(
+            (
+                self.cov_hla.reshape(-1),
+                survey.cov_hla[1:].reshape(-1)
+            )
+        ).reshape(-1, 3, 3)
+        self.radius = np.hstack((self.radius, survey.radius[1:]))
+
+    def get_survey(self):
+        """
+        Method to create a `welleng.survey.Survey` object from the survey
+        data existing in the instance.
+
+        Returns
+        -------
+        survey : `welleng.survey.Survey`
+        """
+        survey = Survey(
+            md=self.md,
+            inc=self.inc,
+            azi=self.azi,
+            deg=False,
+            start_nev=self.start_nev,
+            start_xyz=self.start_xyz,
+            cov_nev=self.cov_nev,
+            cov_hla=self.cov_hla,
+            radius= self.radius
+        )
+        return survey
+
+
+def splice_surveys(surveys):
+    """
+    Join together an ordered list of surveys for a well (for example, a list
+    of surveys with a different error model for each survey).
+
+    Parameters
+    ----------
+    surveys : list of `welleng.survey.Survey` objects
+        The first survey in the list is assumed to be the shallowest and the
+        survey `header` data is taken from this well. Subsequent surveys are
+        assumed to be ordered by depth, with the first `md` of the next
+        survey being equal to the last `md` of the previous survey.
+
+    Returns
+    -------
+    spliced_survey : `welleng.survey.Survey` object
+        A single survey consisting of the input surveys placed together.
+
+    Notes
+    -----
+    The returned survey will include the covariance data describing the well
+    bore uncertainty, but will not include the error models since these may
+    be different for each well section.
+    """
+    assert type(surveys) is list, "Expected a list of surveys"
+    assert type(surveys[0]) is Survey, "Expected a list of surveys"
+
+    for i, s in enumerate(surveys):
+        if i == 0:
+            survey = SurveyData(s)
+            continue
+        survey.append_survey(s)
+
+    return survey.get_survey()
