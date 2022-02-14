@@ -194,7 +194,7 @@ def get_nev(
     #     np.array([pos]).reshape(-1,3) - np.array([start_xyz])
     # ).T
     e, n, v = (
-        np.array([pos]).reshape(-1,3) - np.array([start_xyz])
+        np.array([pos]).reshape(-1, 3) - np.array([start_xyz])
     ).T
 
     return (np.array([n, e, v]).T + np.array([start_nev]))
@@ -258,7 +258,7 @@ def _get_transform(inc, azi):
 
 def get_transform(
     survey
-    ):
+):
     """
     Determine the transform for transforming between NEV and HLA coordinate
     systems.
@@ -284,6 +284,7 @@ def get_transform(
 
     # return trans
 
+
 def NEV_to_HLA(survey, NEV, cov=True):
     """
     Transform from NEV to HLA coordinate system.
@@ -299,7 +300,7 @@ def NEV_to_HLA(survey, NEV, cov=True):
 
     Returns:
         Either a transformed (n,3) array of HLA coordinates or an
-        (3,3,n) array of HLA covariance matrices. 
+        (3,3,n) array of HLA covariance matrices.
     """
 
     trans = get_transform(survey)
@@ -308,16 +309,16 @@ def NEV_to_HLA(survey, NEV, cov=True):
         HLAs = [
             np.dot(np.dot(t, NEV.T[i]), t.T) for i, t in enumerate(trans)
         ]
-
-        HLAs = np.vstack(HLAs).reshape(-1,3,3).T
+        HLAs = np.vstack(HLAs).reshape(-1, 3, 3).T
 
     else:
-        NEV = NEV.reshape(-1,3)
+        NEV = NEV.reshape(-1, 3)
         HLAs = [
             np.dot(NEV[i], t.T) for i, t in enumerate(trans)
         ]
 
     return HLAs
+
 
 def HLA_to_NEV(survey, HLA, cov=True, trans=None):
     if trans is None:
@@ -327,8 +328,7 @@ def HLA_to_NEV(survey, HLA, cov=True, trans=None):
         NEVs = [
             np.dot(np.dot(t.T, HLA.T[i]), t) for i, t in enumerate(trans)
         ]
-
-        NEVs = np.vstack(NEVs).reshape(-1,3,3).T
+        NEVs = np.vstack(NEVs).reshape(-1, 3, 3).T
 
     else:
         NEVs = [
@@ -432,3 +432,13 @@ def radius_from_dls(dls):
     radius = circumference / (2 * np.pi)
 
     return radius
+
+
+def errors_from_cov(cov):
+    """
+    Returns list of errors from (n, 3, 3) cov.
+    """
+    nn, ne, nv, _, ee, ev, _, _, vv = (
+        cov.reshape(-1, 9).T
+    )
+    return np.array([nn, ne, nv, ee, ev, vv]).T

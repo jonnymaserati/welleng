@@ -160,10 +160,10 @@ def get_start_location(start_locations):
 
 
 def get_bb(vertices, min_size=[1000., 1000., 0.]):
-    bb_max = np.amax(vertices, axis=0)
-    bb_min = np.amin(vertices, axis=0)
+    bb_max = np.amax(vertices.reshape(-1, 3), axis=0)
+    bb_min = np.amin(vertices.reshape(-1, 3), axis=0)
 
-    l, w, h = np.amax(np.array([(bb_max - bb_min), min_size]), axis=0)
+    l, w, h = np.amax(np.vstack([(bb_max - bb_min), min_size]), axis=0)
     bb_center = bb_min + np.array(bb_max - bb_min) / 2
 
     world = World(
