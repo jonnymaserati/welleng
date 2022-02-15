@@ -13,6 +13,8 @@ blender
 utils
 work
 *.vtu
+*.old
+*.pdf
 
 key.asc
 .~*
