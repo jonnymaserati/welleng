@@ -1965,7 +1965,8 @@ class SurveyData:
             start_xyz=self.start_xyz,
             cov_nev=self.cov_nev,
             cov_hla=self.cov_hla,
-            radius= self.radius
+            radius= self.radius,
+            header=self.header
         )
         return survey
 
