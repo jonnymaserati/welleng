@@ -85,7 +85,7 @@ survey = from_connections(well, step=30)
 
 # make a mesh
 mesh = WellMesh(survey, method='circle')
-    
+
 # finally, plot it
 plot([mesh.mesh], interactive=False)
 
