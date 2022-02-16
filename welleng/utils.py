@@ -259,7 +259,7 @@ def _get_transform(inc, azi):
 
 def get_transform(
     survey
-    ):
+):
     """
     Determine the transform for transforming between NEV and HLA coordinate
     systems.
@@ -310,7 +310,6 @@ def NEV_to_HLA(survey, NEV, cov=True):
         HLAs = [
             np.dot(np.dot(t, NEV.T[i]), t.T) for i, t in enumerate(trans)
         ]
-
         HLAs = np.vstack(HLAs).reshape(-1, 3, 3).T
 
     else:
@@ -321,6 +320,7 @@ def NEV_to_HLA(survey, NEV, cov=True):
 
     return HLAs
 
+
 def HLA_to_NEV(survey, HLA, cov=True, trans=None):
     if trans is None:
         trans = get_transform(survey)
@@ -329,7 +329,6 @@ def HLA_to_NEV(survey, HLA, cov=True, trans=None):
         NEVs = [
             np.dot(np.dot(t.T, HLA.T[i]), t) for i, t in enumerate(trans)
         ]
-
         NEVs = np.vstack(NEVs).reshape(-1, 3, 3).T
 
     else:
@@ -434,3 +433,13 @@ def radius_from_dls(dls):
     radius = circumference / (2 * np.pi)
 
     return radius
+
+
+def errors_from_cov(cov):
+    """
+    Returns list of errors from (n, 3, 3) cov.
+    """
+    nn, ne, nv, _, ee, ev, _, _, vv = (
+        cov.reshape(-1, 9).T
+    )
+    return np.array([nn, ne, nv, ee, ev, vv]).T
