@@ -161,7 +161,7 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
     else:
         inc_rad = inc
         azi_rad = azi
-    # REVIEW: why `r` is needed while at the end the vector is normalized?
+
     y = r * np.sin(inc_rad) * np.cos(azi_rad)
     x = r * np.sin(inc_rad) * np.sin(azi_rad)
     z = r * np.cos(inc_rad)
@@ -217,7 +217,6 @@ def _get_angles(vec):
 
     return np.stack((inc, azi), axis=1)
 
-# REVIEW: did using numba helped?
 if NUMBA:
     _get_angles = njit(_get_angles)
 
