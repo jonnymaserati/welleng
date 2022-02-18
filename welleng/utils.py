@@ -296,7 +296,7 @@ def NEV_to_HLA(survey, NEV, cov=True):
             The NEV coordinates or covariance matrices.
         cov: boolean
             If cov is True then a (3,3,d) array of covariance matrices
-            is expecte, else a (d,3) array of coordinates.
+            is expected, else a (d,3) array of coordinates.
 
     Returns:
         Either a transformed (n,3) array of HLA coordinates or an
