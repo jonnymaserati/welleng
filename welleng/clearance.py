@@ -201,7 +201,7 @@ class ISCWSA:
         self._get_delta_nev_vectors()
 
         # transform to HLA coordinates
-        self._get_delta_hla_vectors()
+        # self._get_delta_hla_vectors()
 
         # make the covariance matrices
         self._get_covs()
@@ -215,10 +215,29 @@ class ISCWSA:
         # calculate combined hole radii
         self._get_calc_hole()
 
+        # calculate Ellipse of Uncertainty Boundary
+        self.eou_boundary = (
+            self.c.k * np.sqrt(self.sigmaS ** 2 + self.c.sigma_pa ** 2)
+        )
+
+        # calculate distance between well bores
+        self.wellbore_separation = (
+            self.dist_CC_Clr.T - self.calc_hole - self.c.Sm
+        )
+
+        # calculate the Ellipse of Uncertainty Separation
+        self.eou_separation = (
+            self.wellbore_separation - self.eou_boundary
+        )
+
+        # calculate the Minimum Allowable Separation Distance
+        self.masd = (
+            self.eou_boundary + self.calc_hole + self.c.Sm
+        )
+
         # calculate SF (renamed from ISCWSA_ACR)
         self.SF = np.array(
-            (self.dist_CC_Clr.T - self.calc_hole - self.c.Sm)
-            / (self.c.k * np.sqrt(self.sigmaS ** 2 + self.c.sigma_pa ** 2)),
+            self.wellbore_separation / self.eou_boundary,
             ).reshape(-1)
 
         # for debugging
@@ -379,7 +398,11 @@ class ISCWSA:
 
     def _get_delta_nev_vectors(self):
         temp = self.off_nevs - self.c.ref_nevs
+
+        # Center to Center distance between reference survey station and
+        # closest point in the offset well
         self.dist_CC_Clr = norm(temp, axis=-1).reshape(-1, 1)
+
         with np.errstate(divide='ignore', invalid='ignore'):
             self.ref_delta_nevs = np.nan_to_num(
                 temp / self.dist_CC_Clr,
@@ -399,6 +422,16 @@ class ISCWSA:
             self.ref_delta_nevs[:, 1], self.ref_delta_nevs[:, 0]
         )
         self.hoz_bearing_deg = (np.degrees(self.hoz_bearing) + 360) % 360
+
+        self._get_delta_hla_vectors()
+        self.toolface_bearing = np.arctan2(
+            self.ref_delta_hlas[:, 1], self.ref_delta_hlas[:, 0]
+        )
+        self.toolface_bearing_deg = (
+            np.degrees(self.toolface_bearing) + 360
+        ) % 360
+
+        self._traveling_cylinder()
 
         self.dist_CC_Clr = self.dist_CC_Clr.reshape(-1)
 
@@ -434,6 +467,14 @@ class ISCWSA:
 
     def _get_calc_hole(self):
         self.calc_hole = self.c.Rr + self.c.Ro[self.idx]
+
+    def _traveling_cylinder(self):
+        """
+        Calculates the azimuthal data for a traveling cylinder plot.
+        """
+        self.trav_cyl_azi_deg = (
+            self.c.reference.azi_grid_deg + self.toolface_bearing_deg + 360
+        ) % 360
 
 
 class MeshClearance:
