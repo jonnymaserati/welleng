@@ -4,7 +4,13 @@ try:
 except ImportError:
     TRIMESH = False
 try:
-    from vedo import show, Box, Axes, trimesh2vedo, Lines, Sphere
+    from vedo import show, Box, trimesh2vedo, Lines, Sphere, Plotter
+    from vtk import (
+        vtkCubeAxesActor, vtkNamedColors, vtkInteractorStyleTerrain
+    )
+    from vtkmodules.vtkRenderingCore import (
+        vtkRenderWindow, vtkRenderWindowInteractor, vtkRenderer
+    )
     VEDO = True
 except ImportError:
     VEDO = False
@@ -17,6 +23,128 @@ except ImportError:
     PLOTLY = False
 
 from .version import __version__ as VERSION
+
+
+class Plotter(vtkRenderer):
+    def __init__(self, meshes, **kwargs):
+        super().__init__()
+
+        self.namedColors = vtkNamedColors()
+
+        self.colors = {}
+        self.colors['background'] = kwargs.get('background', 'LightGrey')
+        self.colors['background2'] = kwargs.get('background', 'Lavender')
+
+        axes = CubeAxes(self, meshes, **kwargs)
+        self.AddActor(axes)
+
+        for mesh in meshes:
+            if mesh is None:
+                continue
+            self.AddActor(mesh)
+
+        self.GetActiveCamera().Azimuth(30)
+        self.GetActiveCamera().Elevation(30)
+        self.GetActiveCamera().SetViewUp(0, 0, -1)
+        # self.GetActiveCamera().SetPosition(tuple(pos_new))
+        self.GetActiveCamera().SetFocalPoint(axes.GetCenter())
+
+        self.ResetCamera()
+        self.SetBackground(
+            self.namedColors.GetColor3d(self.colors['background'])
+        )
+        self.SetBackground2(
+            self.namedColors.GetColor3d(self.colors['background2'])
+        )
+
+    def show(self):
+        renderWindow = vtkRenderWindow()
+
+        renderWindow.AddRenderer(self)
+        renderWindow.SetSize(1200, 900)
+        renderWindow.SetWindowName(f'welleng {VERSION}')
+
+        renderWindowInteractor = vtkRenderWindowInteractor()
+        renderWindowInteractor.SetRenderWindow(renderWindow)
+        renderWindowInteractor.SetInteractorStyle(vtkInteractorStyleTerrain())
+
+        renderWindow.Render()
+        self.GetActiveCamera().Zoom(0.8)
+        renderWindowInteractor.Start()
+
+
+class CubeAxes(vtkCubeAxesActor):
+    def __init__(self, renderer, meshes, *args, **kwargs):
+        super().__init__()
+
+        bounds = []
+        for mesh in meshes:
+            if mesh is None:
+                continue
+            bounds.append(
+                np.array(mesh.GetBounds())
+            )
+        bounds = np.vstack([bounds])
+        self.bounds = np.hstack((
+            np.amin(bounds[:, :3], axis=0),
+            np.amax(bounds[:, 3:], axis=0)
+        ))
+        with np.errstate(divide='ignore', invalid='ignore'):
+            self.bounds = tuple(np.nan_to_num(
+                (
+                    np.ceil(np.abs(self.bounds) / 100) * 100
+                ) * (self.bounds / np.abs(self.bounds))
+            ))
+
+        namedColors = vtkNamedColors()
+        self.colors = {}
+
+        for n in range(1, 4):
+            self.colors[f'axis{n}Color'] = namedColors.GetColor3d(
+                kwargs.get('axis1Color', 'DarkGrey')
+            )
+
+        self.SetLabelScaling(0, 0, 0, 0)
+        self.SetXLabelFormat("%.0f")
+        self.SetYLabelFormat("%.0f")
+        self.SetZLabelFormat("%.0f")
+        self.SetUseTextActor3D(1)
+
+        self.SetBounds(self.bounds)
+        self.SetCamera(renderer.GetActiveCamera())
+
+        self.GetTitleTextProperty(0).SetColor(self.colors['axis1Color'])
+        self.GetLabelTextProperty(0).SetColor(self.colors['axis1Color'])
+        self.GetLabelTextProperty(0).SetOrientation(45.0)
+
+        self.GetTitleTextProperty(1).SetColor(self.colors['axis2Color'])
+        self.GetLabelTextProperty(1).SetColor(self.colors['axis2Color'])
+        self.GetLabelTextProperty(1).SetOrientation(45.0)
+
+        self.GetTitleTextProperty(2).SetColor(self.colors['axis3Color'])
+        self.GetLabelTextProperty(2).SetColor(self.colors['axis3Color'])
+        self.GetLabelTextProperty(2).SetOrientation(45.0)
+
+        self.DrawXGridlinesOn()
+        self.DrawYGridlinesOn()
+        self.DrawZGridlinesOn()
+        self.SetGridLineLocation(self.VTK_GRID_LINES_FURTHEST)
+
+        self.XAxisMinorTickVisibilityOff()
+        self.YAxisMinorTickVisibilityOff()
+        self.ZAxisMinorTickVisibilityOff()
+
+        units = kwargs.get('units', 'meters')
+        self.SetXTitle('East')
+        self.SetXUnits(units)
+        self.SetYTitle('North')
+        self.SetYUnits(units)
+        self.SetZTitle('TVD')
+        self.SetZUnits(units)
+
+        self.SetFlyModeToClosestTriad()
+
+        self.ForceOpaqueOff()
 
 
 class World:
@@ -37,6 +165,14 @@ class World:
             width,
             height
         ).wireframe()
+        self.bounds = (
+            bb_center[0] - 0.5 * length,
+            bb_center[1] - 0.5 * width,
+            bb_center[2] - 0.5 * height,
+            bb_center[0] + 0.5 * length,
+            bb_center[1] + 0.5 * width,
+            bb_center[2] + 0.5 * height,
+        )
 
 
 def plot(
@@ -49,7 +185,7 @@ def plot(
     text=None,
     boxes=None,
     points=None,
-    interactive=True,
+    **kwargs
 ):
     """
     A vedo wrapper for quickly visualizing well trajectories for QAQC purposes.
@@ -120,8 +256,6 @@ def plot(
 
     w = get_bb(vertices)
 
-    axes = get_axes(w.world)
-
     # try and figure out a nice start camera position
     pos = w.bb_center
     vec1 = pos - [w.length, w.width, 0]
@@ -133,9 +267,11 @@ def plot(
         viewup=[0., 0., -1.]
     )
 
+    plt = Plotter([*meshes_vedo, lines, targets, arrows, boxes], **kwargs)
+
     show(
         meshes_vedo,
-        w.world,
+        # w.world,
         lines,
         targets,
         arrows,
@@ -179,28 +315,29 @@ def get_bb(vertices, min_size=[1000., 1000., 0.]):
 # make a dictionary of axes options
 def get_axes(world):
     assert VEDO, "ImportError: try pip install welleng[easy]"
-    axes = Axes(
-        world,
-        xtitle='y: North (m)',  # swap axis to plot correctly
-        ytitle='x: East (m)',
-        ztitle='z: TVD (m)',
-        xTitleJustify='bottom-right',
-        yTitleJustify='top-right',
-        zTitleJustify='top-right',
-        xyGrid2=True, xyGrid=False,
-        zxGrid=True, yzGrid2=True,
-        zxGridTransparent=True, yzGrid2Transparent=True,
-        yzGrid=False,
-        xLabelRotation=-1,
-        yLabelRotation=1,
-        zLabelRotation=1,
-    )
+    # axes = Axes(
+    #     world,
+    #     xtitle='y: North (m)',  # swap axis to plot correctly
+    #     ytitle='x: East (m)',
+    #     ztitle='z: TVD (m)',
+    #     xTitleJustify='bottom-right',
+    #     yTitleJustify='top-right',
+    #     zTitleJustify='top-right',
+    #     xyGrid2=True, xyGrid=False,
+    #     zxGrid=True, yzGrid2=True,
+    #     zxGridTransparent=True, yzGrid2Transparent=True,
+    #     yzGrid=False,
+    #     xLabelRotation=-1,
+    #     yLabelRotation=1,
+    #     zLabelRotation=1,
+    # )
+    axes = CubeAxes(world)
 
-    for a in axes.unpack():  # unpack the Assembly to access its elements
-        if 'title' in a.name or 'NumericLabel' in a.name:
-            a.mirror('y')
-        if 'yNumericLabel' in a.name:
-            a.scale(0.8)
+    # for a in axes.unpack():  # unpack the Assembly to access its elements
+    #     if 'title' in a.name or 'NumericLabel' in a.name:
+    #         a.mirror('y')
+    #     if 'yNumericLabel' in a.name:
+    #         a.scale(0.8)
     return axes
 
 
