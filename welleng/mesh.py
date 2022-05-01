@@ -250,6 +250,9 @@ class WellMesh:
                     self.nevs[i]
                 )
 
+                if bool(np.isnan(units_2).any()):
+                    raise ValueError('Missing uncertainty data')
+
                 nearest = KDTree(units_2)
 
                 key = units_1[0]
@@ -392,7 +395,7 @@ def sliced_mesh(
             uncertainty.
         sigma_pa: float (default: 0.5)
             The desired "project ahead" value. A remnant of the ISCWSA method
-            but may be used in the future to accomodate for well bore
+            but may be used in the future to accommodate for well bore
             curvature that is not captured by the mesh.
         Sm: float
             From the ISCWSA method, this is an additional factor applied to
