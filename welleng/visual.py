@@ -4,7 +4,7 @@ try:
 except ImportError:
     TRIMESH = False
 try:
-    from vedo import show, Box, Axes, trimesh2vedo, Lines, Sphere
+    from vedo import trimesh2vedo, Lines, Sphere
     VEDO = True
 except ImportError:
     VEDO = False
@@ -16,27 +16,219 @@ try:
 except ImportError:
     PLOTLY = False
 
+from vtk import (
+        vtkCubeAxesActor, vtkNamedColors, vtkInteractorStyleTerrain
+)
+from vtkmodules.vtkRenderingCore import (
+    vtkRenderWindow, vtkRenderWindowInteractor, vtkRenderer
+)
+
 from .version import __version__ as VERSION
 
+# VEDO = False
 
-class World:
-    def __init__(
-        self,
-        bb_center,
-        length,
-        width,
-        height
-    ):
-        self.bb_center = bb_center
-        self.length = length
-        self.width = width
-        self.height = height
-        self.world = Box(
-            bb_center,
-            length,
-            width,
-            height
-        ).wireframe()
+class Plotter(vtkRenderer):
+    def __init__(self, data, **kwargs):
+        super.__init__()
+
+        """
+        A vtk wrapper for quickly visualizing well trajectories for QAQC
+        purposes. Initiates a vtkRenderer instance and populates it with
+        mesh data and a suitable axes for viewing well trajectory data.
+
+        Parameters
+        ----------
+        data: obj or list(obj)
+            A trimesh.Trimesh object or a list of trimesh.Trimesh
+            objects or a trimesh.scene object
+        names: list of strings (default: None)
+            A list of names, index aligned to the list of well meshes.
+        colors: list of strings (default: None)
+            A list of color or colors. If a single color is listed then this is
+            applied to all meshes in data, otherwise the list of colors is
+            indexed to the list of meshes.
+        """
+        assert all((VEDO, TRIMESH)), \
+            "ImportError: try pip install welleng[easy]"
+
+        names = kwargs.get('names')
+
+        if isinstance(data, trimesh.scene.scene.Scene):
+            meshes = [v for k, v in data.geometry.items()]
+            if names is None:
+                names = list(data.geometry.keys())
+
+        # handle a single mesh being passed
+        elif isinstance(data, trimesh.Trimesh):
+            meshes = [data]
+
+        else:
+            meshes = data
+            if names is not None:
+                assert len(names) == len(data), \
+                    "Names must be length of meshes list else None"
+
+        colors = kwargs.get('colors')
+        if colors is not None:
+            if len(colors) == 1:
+                colors = colors * len(meshes)
+            else:
+                assert len(colors) == len(meshes), \
+                    "Colors must be length of meshes list, 1 else None"
+
+        points = kwargs.get('points')
+        if points is not None:
+            points = [
+                Sphere(p, r=30, c='grey')
+                for p in points
+            ]
+
+        meshes_vedo = []
+        for i, mesh in enumerate(meshes):
+            if i == 0:
+                vertices = np.array(mesh.vertices)
+                start_locations = np.array([mesh.vertices[0]])
+            else:
+                vertices = np.concatenate(
+                    (vertices, np.array(mesh.vertices)),
+                    axis=0
+                )
+                start_locations = np.concatenate(
+                    (start_locations, np.array([mesh.vertices[0]])),
+                    axis=0
+                )
+
+            # convert to vedo mesh
+            m_vedo = trimesh2vedo(mesh)
+            if colors is not None:
+                m_vedo.c(colors[i])
+            if names is not None:
+                m_vedo.name = names[i]
+                m_vedo.flag()
+            meshes_vedo.append(m_vedo)
+
+        self.namedColors = vtkNamedColors()
+
+        self.colors = {}
+        self.colors['background'] = kwargs.get('background', 'LightGrey')
+        self.colors['background2'] = kwargs.get('background', 'Lavender')
+
+        for mesh in meshes_vedo:
+            if mesh is None:
+                continue
+            self.AddActor(mesh)
+
+        for obj in kwargs.values():
+            try:
+                self.AddActor(obj)
+            except TypeError:
+                continue
+
+        axes = CubeAxes(self, **kwargs)
+        self.AddActor(axes)
+
+        self.GetActiveCamera().Azimuth(30)
+        self.GetActiveCamera().Elevation(30)
+        self.GetActiveCamera().SetViewUp(0, 0, -1)
+        # self.GetActiveCamera().SetPosition(tuple(pos_new))
+        self.GetActiveCamera().SetFocalPoint(axes.GetCenter())
+
+        self.ResetCamera()
+        self.SetBackground(
+            self.namedColors.GetColor3d(self.colors['background'])
+        )
+        self.SetBackground2(
+            self.namedColors.GetColor3d(self.colors['background2'])
+        )
+
+    def show(self, **kwargs):
+        """
+        Convenient method for opening a window to view the rendered scene.
+        """
+        setSize = kwargs.get('setSize', (1200, 900))
+
+        renderWindow = vtkRenderWindow()
+
+        renderWindow.AddRenderer(self)
+        renderWindow.SetSize(*(setSize))
+        renderWindow.SetWindowName(f'welleng {VERSION}')
+
+        renderWindowInteractor = vtkRenderWindowInteractor()
+        renderWindowInteractor.SetRenderWindow(renderWindow)
+        renderWindowInteractor.SetInteractorStyle(vtkInteractorStyleTerrain())
+
+        renderWindow.Render()
+        self.GetActiveCamera().Zoom(0.8)
+        renderWindowInteractor.Start()
+
+
+class CubeAxes(vtkCubeAxesActor):
+    def __init__(self, renderer, **kwargs):
+        super().__init__()
+
+        # Determine the bounds from the meshes/actors being plotted rounded
+        # up to the nearest 100 units.
+        bounds = np.array(renderer.ComputeVisiblePropBounds())
+
+        with np.errstate(divide='ignore', invalid='ignore'):
+            self.bounds = tuple(np.nan_to_num(
+                (
+                    np.ceil(np.abs(bounds) / 100) * 100
+                ) * (bounds / np.abs(bounds))
+            ))
+
+        namedColors = vtkNamedColors()
+        self.colors = {}
+
+        for n in range(1, 4):
+            self.colors[f'axis{n}Color'] = namedColors.GetColor3d(
+                kwargs.get('axis1Color', 'DarkGrey')
+            )
+
+        self.SetLabelScaling(0, 0, 0, 0)
+
+        # Try and prevent scientific numbering on axes
+        self.SetXLabelFormat("%.0f")
+        self.SetYLabelFormat("%.0f")
+        self.SetZLabelFormat("%.0f")
+
+        self.SetUseTextActor3D(1)
+
+        self.SetBounds(self.bounds)
+        self.SetCamera(renderer.GetActiveCamera())
+
+        self.GetTitleTextProperty(0).SetColor(self.colors['axis1Color'])
+        self.GetLabelTextProperty(0).SetColor(self.colors['axis1Color'])
+        self.GetLabelTextProperty(0).SetOrientation(45.0)
+
+        self.GetTitleTextProperty(1).SetColor(self.colors['axis2Color'])
+        self.GetLabelTextProperty(1).SetColor(self.colors['axis2Color'])
+        self.GetLabelTextProperty(1).SetOrientation(45.0)
+
+        self.GetTitleTextProperty(2).SetColor(self.colors['axis3Color'])
+        self.GetLabelTextProperty(2).SetColor(self.colors['axis3Color'])
+        self.GetLabelTextProperty(2).SetOrientation(45.0)
+
+        self.DrawXGridlinesOn()
+        self.DrawYGridlinesOn()
+        self.DrawZGridlinesOn()
+        self.SetGridLineLocation(self.VTK_GRID_LINES_FURTHEST)
+
+        self.XAxisMinorTickVisibilityOff()
+        self.YAxisMinorTickVisibilityOff()
+        self.ZAxisMinorTickVisibilityOff()
+
+        units = kwargs.get('units', 'meters')
+        self.SetXTitle('East')
+        self.SetXUnits(units)
+        self.SetYTitle('North')
+        self.SetYUnits(units)
+        self.SetZTitle('TVD')
+        self.SetZUnits(units)
+
+        self.SetFlyModeToClosestTriad()
+
+        self.ForceOpaqueOff()
 
 
 def plot(
@@ -49,10 +241,11 @@ def plot(
     text=None,
     boxes=None,
     points=None,
-    interactive=True,
+    **kwargs
 ):
     """
-    A vedo wrapper for quickly visualizing well trajectories for QAQC purposes.
+    A deprecated wrapper for the Plotter class, maintained only for
+    compatability with older versions.
 
     Parameters
     ----------
@@ -65,143 +258,13 @@ def plot(
             applied to all meshes in data, otherwise the list of colors is
             indexed to the list of meshes.
     """
-    assert all((VEDO, TRIMESH)), "ImportError: try pip install welleng[easy]"
-    if isinstance(data, trimesh.scene.scene.Scene):
-        meshes = [v for k, v in data.geometry.items()]
-        if names is None:
-            names = list(data.geometry.keys())
+    for k, v in locals().items():
+        if k != 'data' and k[0] != '_':
+            kwargs.update({k: v})
 
-    # handle a single mesh being passed
-    elif isinstance(data, trimesh.Trimesh):
-        meshes = [data]
+    plt = Plotter(data, **kwargs)
 
-    else:
-        meshes = data
-        if names is not None:
-            assert len(names) == len(data), \
-                "Names must be length of meshes list else None"
-
-    if colors is not None:
-        if len(colors) == 1:
-            colors = colors * len(meshes)
-        else:
-            assert len(colors) == len(meshes), \
-                "Colors must be length of meshes list, 1 else None"
-
-    if points is not None:
-        points = [
-            Sphere(p, r=30, c='grey')
-            for p in points
-        ]
-
-    meshes_vedo = []
-    for i, mesh in enumerate(meshes):
-        if i == 0:
-            vertices = np.array(mesh.vertices)
-            start_locations = np.array([mesh.vertices[0]])
-        else:
-            vertices = np.concatenate(
-                (vertices, np.array(mesh.vertices)),
-                axis=0
-            )
-            start_locations = np.concatenate(
-                (start_locations, np.array([mesh.vertices[0]])),
-                axis=0
-            )
-
-        # convert to vedo mesh
-        m_vedo = trimesh2vedo(mesh)
-        if colors is not None:
-            m_vedo.c(colors[i])
-        if names is not None:
-            m_vedo.name = names[i]
-            m_vedo.flag()
-        meshes_vedo.append(m_vedo)
-
-    w = get_bb(vertices)
-
-    axes = get_axes(w.world)
-
-    # try and figure out a nice start camera position
-    pos = w.bb_center
-    vec1 = pos - [w.length, w.width, 0]
-    vec2 = np.array([vec1[1], vec1[0], 0])
-    pos_new = [pos[0], pos[1], -4000] + vec2 * 3
-    camera_opts = dict(
-        pos=pos_new,
-        focalPoint=pos,
-        viewup=[0., 0., -1.]
-    )
-
-    show(
-        meshes_vedo,
-        w.world,
-        lines,
-        targets,
-        arrows,
-        boxes,
-        axes,
-        points,
-        bg='lightgrey',
-        bg2='lavender',
-        camera=camera_opts,
-        interactorStyle=10,
-        resetcam=True,
-        interactive=True,
-        # verbose=True,
-        title=f'welleng {VERSION}'
-    )
-
-
-def get_start_location(start_locations):
-    start_location = np.average(start_locations, axis=0)
-    start_location[2] = np.amin(start_locations[:, 2], axis=0)
-    return start_location
-
-
-def get_bb(vertices, min_size=[1000., 1000., 0.]):
-    bb_max = np.amax(vertices.reshape(-1, 3), axis=0)
-    bb_min = np.amin(vertices.reshape(-1, 3), axis=0)
-
-    l, w, h = np.amax(np.vstack([(bb_max - bb_min), min_size]), axis=0)
-    bb_center = bb_min + np.array(bb_max - bb_min) / 2
-
-    world = World(
-        bb_center,
-        l,
-        w,
-        h
-    )
-
-    return world
-
-
-# make a dictionary of axes options
-def get_axes(world):
-    assert VEDO, "ImportError: try pip install welleng[easy]"
-    axes = Axes(
-        world,
-        xtitle='y: North (m)',  # swap axis to plot correctly
-        ytitle='x: East (m)',
-        ztitle='z: TVD (m)',
-        xTitleJustify='bottom-right',
-        yTitleJustify='top-right',
-        zTitleJustify='top-right',
-        xyGrid2=True, xyGrid=False,
-        zxGrid=True, yzGrid2=True,
-        zxGridTransparent=True, yzGrid2Transparent=True,
-        yzGrid=False,
-        xLabelRotation=-1,
-        yLabelRotation=1,
-        zLabelRotation=1,
-    )
-
-    for a in axes.unpack():  # unpack the Assembly to access its elements
-        if 'title' in a.name or 'NumericLabel' in a.name:
-            a.mirror('y')
-        if 'yNumericLabel' in a.name:
-            a.scale(0.8)
-    return axes
+    plt.show()
 
 
 def get_lines(clearance):
