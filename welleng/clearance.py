@@ -473,7 +473,8 @@ class ISCWSA:
         Calculates the azimuthal data for a traveling cylinder plot.
         """
         self.trav_cyl_azi_deg = (
-            self.c.reference.azi_grid_deg + self.toolface_bearing_deg + 360
+            self.c.reference.azi_grid_deg[self.c.kop_index:]
+            + self.toolface_bearing_deg + 360
         ) % 360
 
 

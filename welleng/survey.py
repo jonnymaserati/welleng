@@ -1023,8 +1023,8 @@ def slice_survey(survey, start, stop=None):
     # vec = survey.vec[start:stop]
 
     # Handle `None` values:
-    cov_hla = None if not bool(survey.cov_hla) else survey.cov_hla[start:stop]
-    cov_nev = None if not bool(survey.cov_nev) else survey.cov_nev[start:stop]
+    cov_hla = None if survey.cov_hla is None else survey.cov_hla[start:stop]
+    cov_nev = None if survey.cov_nev is None else survey.cov_nev[start:stop]
 
     s = Survey(
         md=md,
@@ -1058,7 +1058,7 @@ def make_cov(a, b, c, diag=False):
         c: (,n) list or array of floats
             Errors in A or V/TVD axis.
         diag: boolean (default=False)
-            If true, only the lead diagnoal is calculated
+            If true, only the lead diagonal is calculated
             with zeros filling the remainder of the matrix.
 
     Returns
@@ -1112,14 +1112,6 @@ class SplitSurvey:
         self.vec2_xyz = survey.vec_xyz[1:]
         self.vec2_nev = get_nev(self.vec2_xyz)
         self.dogleg = survey.dogleg[1:]
-
-        # for i, a in enumerate(self.delta_azi):
-        #     if a < -np.pi:
-        #         self.delta_azi[i] = np.pi + a
-        #     elif a > np.pi:
-        #         self.delta_azi[i] = np.pi - a
-        #     else:
-        #         continue
 
 
 def get_circle_radius(survey, **targets):

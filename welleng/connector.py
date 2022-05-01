@@ -47,7 +47,7 @@ class Connector:
         bore section geometry using the appropriate method based upon the
         provided parameters, with the intent of assisting machine learning
         fitness functions. Interpolation between the returned control points
-        can be performed postumously - attempts are made to keep processing to
+        can be performed posthumously - attempts are made to keep processing to
         a minimum in the event that the Connector is being used for machine
         learning.
 
