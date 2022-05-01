@@ -48,7 +48,7 @@ data = {}
 
 print("Processing wells...")
 # this is a bit slow... multithread this if you want to do it faster
-for well in tqdm(wells):
+for i, well in enumerate(tqdm(wells)):
     sh = we.survey.SurveyHeader(
         name=well,
         azi_reference="grid"
@@ -68,7 +68,7 @@ for well in tqdm(wells):
     # radius data is sometimes missing or zero and looks to be in inches
     # default these to 15" radius and convert to meters
     radius = np.array(w['casing_radius']).astype(float)
-    radius = np.where(((radius == np.nan) | (radius == 0)), 15, radius)
+    radius = np.where((np.isnan(radius) | (radius == 0)), 15, radius)
     radius *= 0.0254
 
     s = we.survey.Survey(
