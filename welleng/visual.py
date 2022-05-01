@@ -5,12 +5,6 @@ except ImportError:
     TRIMESH = False
 try:
     from vedo import trimesh2vedo, Lines, Sphere
-    from vtk import (
-        vtkCubeAxesActor, vtkNamedColors, vtkInteractorStyleTerrain
-    )
-    from vtkmodules.vtkRenderingCore import (
-        vtkRenderWindow, vtkRenderWindowInteractor, vtkRenderer
-    )
     VEDO = True
 except ImportError:
     VEDO = False
@@ -22,12 +16,20 @@ try:
 except ImportError:
     PLOTLY = False
 
+from vtk import (
+        vtkCubeAxesActor, vtkNamedColors, vtkInteractorStyleTerrain
+)
+from vtkmodules.vtkRenderingCore import (
+    vtkRenderWindow, vtkRenderWindowInteractor, vtkRenderer
+)
+
 from .version import __version__ as VERSION
 
+# VEDO = False
 
 class Plotter(vtkRenderer):
     def __init__(self, data, **kwargs):
-        super().__init__()
+        super.__init__()
 
         """
         A vtk wrapper for quickly visualizing well trajectories for QAQC

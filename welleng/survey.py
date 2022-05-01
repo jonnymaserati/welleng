@@ -1023,8 +1023,6 @@ def slice_survey(survey, start, stop=None):
     # vec = survey.vec[start:stop]
 
     # Handle `None` values:
-    # cov_hla = None if not bool(survey.cov_hla) else survey.cov_hla[start:stop]
-    # cov_nev = None if not bool(survey.cov_nev) else survey.cov_nev[start:stop]
     cov_hla = None if survey.cov_hla is None else survey.cov_hla[start:stop]
     cov_nev = None if survey.cov_nev is None else survey.cov_nev[start:stop]
 

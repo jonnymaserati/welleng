@@ -29,7 +29,8 @@ requirements_default = set([
     'numpy',
     'scipy',
     'PyYAML',
-    'setuptools'
+    'setuptools',
+    'vtk'
 ])
 
 # these can be installed without compiling required
@@ -42,7 +43,6 @@ requirements_easy = set([
     'trimesh',
     'utm',
     'vedo',
-    'vtk',
 ])
 
 # this is the troublesome requirement that needs C dependencies
