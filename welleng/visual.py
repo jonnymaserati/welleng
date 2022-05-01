@@ -46,10 +46,8 @@ class Plotter(vtkRenderer):
             applied to all meshes in data, otherwise the list of colors is
             indexed to the list of meshes.
         """
-        assert (
-            all((VEDO, TRIMESH)),
+        assert all((VEDO, TRIMESH)), \
             "ImportError: try pip install welleng[easy]"
-        )
 
         names = kwargs.get('names')
 
