@@ -52,12 +52,15 @@ requirements_all = requirements_easy.union([
 
 # if someone wants to output a requirements file
 # `python setup.py --list-all > requirements.txt`
-if '--list-all' in sys.argv:
-    # will not include default requirements (numpy)
-    print('\n'.join(requirements_all))
+if '--list-default' in sys.argv:
+    print('\n'.join(requirements_default))
+    exit()
+elif '--list-all' in sys.argv:
+    requirements = requirements_all.union(requirements_default)
+    print('\n'.join(requirements))
     exit()
 elif '--list-easy' in sys.argv:
-    # again will not include numpy+setuptools
+    requirements = requirements_easy.union(requirements_default)
     print('\n'.join(requirements_easy))
     exit()
 

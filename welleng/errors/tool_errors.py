@@ -1,12 +1,11 @@
-import numpy as np
-from numpy import sin, cos, tan, pi, sqrt
-from numpy.core.defchararray import index
-import yaml
 import os
-from collections import OrderedDict
-# import imp
 
-# import welleng.error
+import numpy as np
+import yaml
+
+from collections import OrderedDict
+from numpy import sin, cos, tan, pi, sqrt
+
 from ..utils import NEV_to_HLA
 
 # since this is running on different OS flavors

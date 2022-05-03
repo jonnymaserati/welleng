@@ -1,6 +1,8 @@
 .venv
 .vscode
 
+.devcontainer/
+
 __pycache__
 
 build
@@ -19,3 +21,5 @@ work
 key.asc
 .~*
 VERSION*
+
+test/test_data/*.xlsx

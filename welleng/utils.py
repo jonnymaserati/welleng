@@ -161,6 +161,7 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
     else:
         inc_rad = inc
         azi_rad = azi
+
     y = r * np.sin(inc_rad) * np.cos(azi_rad)
     x = r * np.sin(inc_rad) * np.sin(azi_rad)
     z = r * np.cos(inc_rad)
@@ -173,9 +174,7 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
     return vec / np.linalg.norm(vec, axis=-1).reshape(-1, 1)
 
 
-def get_nev(
-    pos, start_xyz=np.array([0., 0., 0.]), start_nev=np.array([0., 0., 0.])
-):
+def get_nev(pos, start_xyz=None, start_nev=None):
     """
     Convert [x, y, z] coordinates to [n, e, tvd] coordinates.
 
@@ -183,16 +182,16 @@ def get_nev(
         pos: (n,3) array of floats
             Array of [x, y, z] coordinates
         start_xyz: (,3) array of floats
-            The datum of the [x, y, z] cooardinates
+            The datum of the [x, y, z] coordinates
         start_nev: (,3) array of floats
             The datum of the [n, e, tvd] coordinates
 
     Returns:
         An (n,3) array of [n, e, tvd] coordinates.
     """
-    # e, n, v = (
-    #     np.array([pos]).reshape(-1,3) - np.array([start_xyz])
-    # ).T
+    start_xyz = start_xyz or np.array([0., 0., 0.])
+    start_nev = start_nev or np.array([0., 0., 0.])
+
     e, n, v = (
         np.array([pos]).reshape(-1, 3) - np.array([start_xyz])
     ).T
@@ -200,7 +199,10 @@ def get_nev(
     return (np.array([n, e, v]).T + np.array([start_nev]))
 
 
-def get_xyz(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
+def get_xyz(pos, start_xyz=None, start_nev=None):
+    start_xyz = start_xyz or [0., 0., 0.]
+    start_nev = start_nev or [0., 0., 0.]
+
     y, x, z = (
         np.array([pos]).reshape(-1, 3) - np.array([start_nev])
     ).T
@@ -214,7 +216,6 @@ def _get_angles(vec):
     azi = (np.arctan2(vec[:, 0], vec[:, 1]) + (2 * np.pi)) % (2 * np.pi)
 
     return np.stack((inc, azi), axis=1)
-
 
 if NUMBA:
     _get_angles = njit(_get_angles)
