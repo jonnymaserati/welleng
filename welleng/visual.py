@@ -29,7 +29,7 @@ from .version import __version__ as VERSION
 
 class Plotter(vtkRenderer):
     def __init__(self, data, **kwargs):
-        super.__init__()
+        super().__init__()
 
         """
         A vtk wrapper for quickly visualizing well trajectories for QAQC
