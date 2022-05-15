@@ -354,12 +354,12 @@ class Survey:
             [self.md, self.inc_rad, self.azi_grid_rad]
         ).T
 
-        self.n = n
-        self.e = e
-        self.tvd = tvd
-        self.x = x
-        self.y = y
-        self.z = z
+        self.n = np.array(n) if n is not None else n
+        self.e = np.array(e) if e is not None else e
+        self.tvd = np.array(tvd) if tvd is not None else tvd
+        self.x = np.array(x) if x is not None else x
+        self.y = np.array(y) if y is not None else y
+        self.z = np.array(z) if z is not None else z
         if vec is not None:
             if nev:
                 self.vec_nev = vec
