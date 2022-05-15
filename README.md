@@ -20,7 +20,7 @@ welleng is fuelled by copious amounts of coffee, so if you wish to supercharge d
 <a href="https://www.buymeacoffee.com/jonnymaserati" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/arial-yellow.png" alt="Buy Me A Coffee" width="217px" ></a>
 
 ## New Features!
-  - **Vertical Section:** this should have been included a long time ago, but finally a vertical section will be calculated if the `vertical_section_azimuth` parameter is included in the `SurveyHeader` when initiating a `Survey` instance. Otherwise, to return the vertical section for a given azimuth (e.g. 45 degrees), or to set the vertical section azimuth and add the vertical section data to the `Survey` then::
+  - **Vertical Section:** this should have been included a long time ago, but finally a vertical section will be calculated if the `vertical_section_azimuth` parameter is included in the `SurveyHeader` when initiating a `Survey` instance. Otherwise, to return the vertical section for a given azimuth (e.g. 45 degrees), or to set the vertical section azimuth and add the vertical section data to the `Survey` then:
     ```python
     survey.get_vertical_section(45)
     survey.set_vertical_section(45)
