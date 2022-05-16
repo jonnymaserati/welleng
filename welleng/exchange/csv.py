@@ -1,3 +1,6 @@
+import numpy as np
+from scipy.optimize import minimize
+from ..version import __version__
 from ..survey import export_csv as x_csv
 
 
@@ -8,8 +11,8 @@ def export_csv(
     Wrapper for survey.export_csv
 
     Function to export a minimalist (only the control points - i.e. the
-    beginning and end points of hold and/or turn sections) survey to input into
-    third party trajectory planning software.
+    begining and end points of hold and/or turn sections) survey to input into third
+    party trajectory planning software.
 
     Parameters
     ----------

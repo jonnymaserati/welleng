@@ -208,7 +208,7 @@ class EDM:
             wellbore_id,
             wellbore_name,
             self.get_wellbore_data(wellbore_id)
-        )
+        )        
 
         return well
 
@@ -323,8 +323,8 @@ class Well:
                                 case,
                                 t.lower()[3:],
                                 data
+                                # self.well_data[t]
                             )
-
     @staticmethod
     def _sort_ppfpt_data(data, kw):
         lookup = {
@@ -379,17 +379,16 @@ class Well:
                 for k, v in item[1].items():
                     if is_first:
                         survey[item[0]] = []
+                        # current_survey_id = k
                         current_md = md[k]
                         is_first = False
                     current_survey_id = k
                     if float(v) < current_md:
                         for station in self.well_data['CD_SURVEY_STATION']:
                             if (
-                                    (station['survey_header_id'] ==
-                                     current_survey_id)
-                                    and
-                                    (float(v) <= float(station['md'])
-                                     <= current_md)
+                                station['survey_header_id'] == current_survey_id
+                                and float(station['md']) >= float(v)
+                                and float(station['md']) <= current_md 
                             ):
                                 try:
                                     survey[item[0]].append(station)
@@ -397,10 +396,7 @@ class Well:
                                     survey[item[0]] = [station]
                         current_survey_id = k
                         current_md = float(v)
-                survey[item[0]] = sorted(
-                    survey[item[0]],
-                    key=lambda k: float(k['md'])
-                )
+                survey[item[0]] = sorted(survey[item[0]], key=lambda k: float(k['md']))
         case.survey = survey
 
     def get_parent_surveys(self, survey_header_id, data=OrderedDict()):
@@ -544,6 +540,8 @@ class Well:
 
 
 if __name__ == "__main__":
+    # import os
+    # os.environ['DISPLAY'] = ':1'
 
     # import EDM data
     FILENAME = 'data/Volve.xml'

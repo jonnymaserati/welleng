@@ -4,19 +4,16 @@ try:
     NUMBA = True
 except ImportError:
     NUMBA = False
-from typing import Tuple, Union
-
-from welleng.survey import Survey
 
 
 class MinCurve:
     def __init__(
         self,
-        md: np.ndarray,
-        inc: np.ndarray,
-        azi: np.ndarray,
-        start_xyz: list = [0., 0., 0.],
-        unit: str = "meters"
+        md,
+        inc,
+        azi,
+        start_xyz=[0., 0., 0.],
+        unit="meters"
     ):
         """
         Generate geometric data from a well bore survey.
@@ -60,6 +57,12 @@ class MinCurve:
         azi_2 = azi[1:]
 
         # calculate the dogleg
+        # temp = np.arccos(
+        #     np.cos(inc_2 - inc_1)
+        #     - (np.sin(inc_1) * np.sin(inc_2))
+        #     * (1 - np.cos(azi_2 - azi_1))
+        # )
+
         self.dogleg = np.zeros(survey_length)
         self.dogleg[1:] = get_dogleg(inc_1, azi_1, inc_2, azi_2)
 
@@ -129,20 +132,7 @@ class MinCurve:
         )
 
 
-def get_dogleg(
-        inc1: np.ndarray,
-        azi1: np.ndarray,
-        inc2: np.ndarray,
-        azi2: np.ndarray
-) -> np.ndarray:
-    """
-    Calculate DLS between two stations in rad/m
-
-    @param inc1: inclination for station1, np array, rad
-    @param azi1: Azimuth for station1, np array, rad
-    @param inc2: inclination for station2, np array, rad
-    @param azi2: Azimuth for station2, np array, rad
-    """
+def get_dogleg(inc1, azi1, inc2, azi2):
     dogleg = np.arccos(
         np.cos(inc2 - inc1)
         - (np.sin(inc1) * np.sin(inc2))
@@ -151,13 +141,7 @@ def get_dogleg(
     return dogleg
 
 
-def get_vec(
-        inc: np.ndarray,
-        azi: np.ndarray,
-        nev: bool = False,
-        r: Union[float, np.ndarray] = 1,
-        deg: bool = True
-) -> np.ndarray:
+def get_vec(inc, azi, nev=False, r=1, deg=True):
     """
     Convert inc and azi into a vector.
 
@@ -168,10 +152,6 @@ def get_vec(
             Azimuth relative to the y-axis
         r: float or array of n floats
             Scalar to return a scaled vector
-        nev: boolean (default: False)
-            Indicates if the vector is in (x,y,z) or (n,e,v) coordinates.
-        deg: boolean (default: True)
-            Indicates if the angles are in degree or radians..
 
     Returns:
         An (n,3) array of vectors
@@ -194,10 +174,8 @@ def get_vec(
 
 
 def get_nev(
-    pos: np.ndarray,
-    start_xyz: np.ndarray = np.array([0., 0., 0.]),
-    start_nev: np.ndarray = np.array([0., 0., 0.])
-) -> np.ndarray:
+    pos, start_xyz=np.array([0., 0., 0.]), start_nev=np.array([0., 0., 0.])
+):
     """
     Convert [x, y, z] coordinates to [n, e, tvd] coordinates.
 
@@ -212,47 +190,27 @@ def get_nev(
     Returns:
         An (n,3) array of [n, e, tvd] coordinates.
     """
+    # e, n, v = (
+    #     np.array([pos]).reshape(-1,3) - np.array([start_xyz])
+    # ).T
     e, n, v = (
         np.array([pos]).reshape(-1, 3) - np.array([start_xyz])
     ).T
 
-    return np.array([n, e, v]).T + np.array([start_nev])
+    return (np.array([n, e, v]).T + np.array([start_nev]))
 
 
-def get_xyz(
-        pos: np.ndarray,
-        start_xyz: np.ndarray = np.array([0., 0., 0.]),
-        start_nev: np.ndarray = np.array([0., 0., 0.])
-) -> np.ndarray:
-    """
-    Convert [n, e, tvd] coordinates to [x, y, z] coordinates.
-
-    Params:
-        pos: (n,3) array of floats
-            Array of [n, e, tvd] coordinates
-        start_xyz: (,3) array of floats
-            The datum of the [x, y, z] cooardinates
-        start_nev: (,3) array of floats
-            The datum of the [n, e, tvd] coordinates
-
-    Returns:
-        An (n,3) array of [x, y, z] coordinates.
-    """
+def get_xyz(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
     y, x, z = (
         np.array([pos]).reshape(-1, 3) - np.array([start_nev])
     ).T
 
-    return np.array([x, y, z]).T + np.array([start_xyz])
+    return (np.array([x, y, z]).T + np.array([start_xyz]))
 
 
-def _get_angles(vec: np.ndarray) -> np.ndarray:
-    """
-    Get inclination and azimuth in radians from x, y, and z.
-    """
+def _get_angles(vec):
     xy = vec[:, 0] ** 2 + vec[:, 1] ** 2
-    # for elevation angle defined from Z-axis down
-    inc = np.arctan2(np.sqrt(xy), vec[:, 2])
-
+    inc = np.arctan2(np.sqrt(xy), vec[:, 2])  # for elevation angle defined from Z-axis down
     azi = (np.arctan2(vec[:, 0], vec[:, 1]) + (2 * np.pi)) % (2 * np.pi)
 
     return np.stack((inc, azi), axis=1)
@@ -263,8 +221,8 @@ if NUMBA:
 
 
 def get_angles(vec, nev=False):
-    """
-        Determines the inclination and azimuth from a vector.
+    '''
+    Determines the inclination and azimuth from a vector.
 
     Params:
         vec: (n,3) array of floats
@@ -274,8 +232,8 @@ def get_angles(vec, nev=False):
     Returns:
         [inc, azi]: (n,2) array of floats
             A numpy array of incs and axis in radians
-    """
 
+    '''
     # make sure it's a unit vector
     vec = vec / np.linalg.norm(vec, axis=-1).reshape(-1, 1)
     vec = vec.reshape(-1, 3)
@@ -288,7 +246,7 @@ def get_angles(vec, nev=False):
     return _get_angles(vec)
 
 
-def _get_transform(inc: np.ndarray, azi: np.ndarray) -> np.ndarray:
+def _get_transform(inc, azi):
     trans = np.array([
         [np.cos(inc) * np.cos(azi), -np.sin(azi), np.sin(inc) * np.cos(azi)],
         [np.cos(inc) * np.sin(azi), np.cos(azi), np.sin(inc) * np.sin(azi)],
@@ -299,7 +257,7 @@ def _get_transform(inc: np.ndarray, azi: np.ndarray) -> np.ndarray:
 
 
 def get_transform(
-    survey: Survey
+    survey
 ):
     """
     Determine the transform for transforming between NEV and HLA coordinate
@@ -318,12 +276,16 @@ def get_transform(
 
     return _get_transform(inc, azi)
 
+    # trans = np.array([
+    #     [np.cos(inc) * np.cos(azi), -np.sin(azi), np.sin(inc) * np.cos(azi)],
+    #     [np.cos(inc) * np.sin(azi), np.cos(azi), np.sin(inc) * np.sin(azi)],
+    #     [-np.sin(inc), np.zeros_like(inc), np.cos(inc)]
+    # ]).T
 
-def NEV_to_HLA(
-        survey: np.ndarray,
-        NEV: np.ndarray,
-        cov=True
-) -> np.ndarray:
+    # return trans
+
+
+def NEV_to_HLA(survey, NEV, cov=True):
     """
     Transform from NEV to HLA coordinate system.
 
@@ -358,28 +320,9 @@ def NEV_to_HLA(
     return HLAs
 
 
-def HLA_to_NEV(
-        survey: np.ndarray,
-        HLA: np.ndarray,
-        cov: bool = True
-) -> np.ndarray:
-    """
-    Transform from HLA to NEV coordinate system.
-
-    Params:
-        survey: (n,3) array of floats
-        The [md, inc, azi] survey listing array.
-        NEV: (d,3) or (3,3,d) array of floats
-            The NEV coordinates or covariance matrices.
-        cov: boolean
-            If cov is True then a (3,3,d) array of covariance matrices
-            is expected, else a (d,3) array of coordinates.
-
-    Returns:
-        A transformed (n,3) array of NEV coordinates
-    """
-
-    trans = get_transform(survey)
+def HLA_to_NEV(survey, HLA, cov=True, trans=None):
+    if trans is None:
+        trans = get_transform(survey)
 
     if cov:
         NEVs = [
@@ -395,10 +338,7 @@ def HLA_to_NEV(
     return np.vstack(NEVs).reshape(HLA.shape)
 
 
-def get_sigmas(
-        cov: np.ndarray,
-        long: bool = False
-) -> Tuple:
+def get_sigmas(cov, long=False):
     """
     Extracts the sigma values of a covariance matrix along the principle axii.
 
@@ -424,12 +364,16 @@ def get_sigmas(
     else:
         return (np.sqrt(aa), np.sqrt(bb), np.sqrt(cc))
 
+    # a, b, c = np.array([
+    #     np.sqrt(cov[:, 0, 0]),
+    #     np.sqrt(cov[:, 1, 1]),
+    #     np.sqrt(cov[:, 2, 2])
+    # ])
 
-def get_unit_vec(vec: np.ndarray) -> np.ndarray:
-    """
-    Given a vector, calculate its unit vector.
-    """
+    # return (a, b, c)
 
+
+def get_unit_vec(vec):
     vec = vec / np.linalg.norm(vec)
 
     return vec
@@ -448,6 +392,7 @@ def linear_convert(data, factor):
 
 
 def make_cov(a, b, c, long=False):
+    # a, b, c = np.sqrt(np.array([a, b, c]))
     if long:
         cov = np.array([
             [a * a, a * b, a * c],

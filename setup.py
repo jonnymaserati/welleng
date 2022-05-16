@@ -18,8 +18,10 @@ with open(version_file, 'r') as f:
 with open("README.md", "r") as f:
     long_description = f.read()
 
-download_url = \
-    f'https://github.com/jonnymaserati/welleng/archive/v{__version__}.tar.gz'
+# with open("requirements.txt") as f:
+#     required = f.read().splitlines()
+
+download_url = f'https://github.com/jonnymaserati/welleng/archive/v{__version__}.tar.gz'
 
 # If you only want to generate surveys and errors, these are all that's
 # required
@@ -58,6 +60,11 @@ elif '--list-easy' in sys.argv:
     # again will not include numpy+setuptools
     print('\n'.join(requirements_easy))
     exit()
+
+# if sys.platform == 'win32':
+#     requirements_all.append('python-fcl-win32')
+# else:
+#     requirements_all.append('python-fcl')
 
 setup(
     name='welleng',

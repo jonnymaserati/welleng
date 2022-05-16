@@ -1,5 +1,6 @@
 from openpyxl import load_workbook
 from math import radians
+import pandas as pd
 import yaml
 import os
 
@@ -206,8 +207,8 @@ def get_short_names(index_file):
 if __name__ == '__main__':
     sheet_ignore_list = ['Sheet']
     filename = (
-        'reference/'
-        'toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-22-oct-2020.xlsx'
+        f'reference/'
+        f'toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-22-oct-2020.xlsx'
     )
 
     wb = open_workbook(
@@ -261,6 +262,8 @@ if __name__ == '__main__':
     # wb = open_workbook(
     #     'reference/toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-22-oct-2020.xlsx'
     # )
+
+
 
     # ec['iscwsa_mwd_rev4'] = extract_data(
     #     "toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-22-oct-2020.xlsx"

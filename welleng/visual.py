@@ -25,6 +25,7 @@ from vtkmodules.vtkRenderingCore import (
 
 from .version import __version__ as VERSION
 
+# VEDO = False
 
 class Plotter(vtkRenderer):
     def __init__(self, data, **kwargs):
@@ -129,6 +130,7 @@ class Plotter(vtkRenderer):
         self.GetActiveCamera().Azimuth(30)
         self.GetActiveCamera().Elevation(30)
         self.GetActiveCamera().SetViewUp(0, 0, -1)
+        # self.GetActiveCamera().SetPosition(tuple(pos_new))
         self.GetActiveCamera().SetFocalPoint(axes.GetCenter())
 
         self.ResetCamera()

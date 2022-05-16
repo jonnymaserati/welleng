@@ -25,8 +25,8 @@ WEIGHTING_MATERIAL_DENSITY = {
 class DensityDiesel:
     def __init__(self):
         """
-        An interpolation wrapper of the pressure, temperature and density
-        diesel provided in the SPE 11118 paper.
+        An interpolation wrapper of the pressure, temperature and density diesel
+        data provided in the SPE 11118 paper.
         """
         psia = np.array([15., 3_000., 7_000., 10_000., 12_500.])
         temp = np.array([100., 200., 300., 350.])
@@ -54,7 +54,6 @@ class DensityDiesel:
         )
 
         return density
-
 
 class Fluid:
     def __init__(
@@ -145,6 +144,7 @@ class Fluid:
             volume_weighting_material / volume_total
         )
 
+
     @staticmethod
     def _get_coefficients(
         density_average, pressure_applied, temperature_top,
@@ -163,7 +163,8 @@ class Fluid:
             B1 * fluid_thermal_gradient + G * B2 * density_average
         )
 
-        return alpha_1, alpha_2, beta_1, beta_2
+        return (alpha_1, alpha_2, beta_1, beta_2)
+
 
     @staticmethod
     def _func(
@@ -266,6 +267,8 @@ class Fluid:
 
 
 def main():
+    diesel_density_func = DensityDiesel()
+    diesel_density = diesel_density_func.get_density(15, 120)
     """
     An example of initiating a Fluid class and generating a density profile
     for the fluid for a range of depths and temperatures.

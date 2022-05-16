@@ -41,7 +41,7 @@ filename = (
 print("Loading data...")
 try:
     data = we.io.import_iscwsa_collision_data(filename)
-except:  # noqa E722
+except:
     print(
         "Make sure you've updated filename to your local copy of ISCWSA's"
         " clearance scenarios"
@@ -99,7 +99,6 @@ for well in data["wells"]:
         unit="meters"
     )
     s_inter = we.survey.interpolate_survey(s, step=10.)
-
     # surveys[well] = s
     surveys[well] = s_inter
 
@@ -167,10 +166,7 @@ if multiprocessing:
                 "mesh": data[i][1]
             }
         scene.add_geometry(
-            data[i][2].mesh,
-            node_name=well,
-            geom_name=well,
-            parent_node_name=None
+            data[i][2].mesh, node_name=well, geom_name=well, parent_node_name=None
         )
         colors.append(data[i][4])
         names.append(data[i][3])
@@ -243,13 +239,11 @@ we.visual.plot(scene, names=names, colors=colors)
 #     )
 
 # export the data to Excel
-save_as = 'data/output/output.xlsx'
+save_as = f'data/output/output.xlsx'
 print(f"Exporting data to {save_as}...")
-with pd.ExcelWriter(save_as) as writer:
+with pd.ExcelWriter(f'data/output/output.xlsx') as writer:
     for well in results.keys():
-        if well == "Reference well":
-            continue
-
+        if well == "Reference well": continue
         r = results[well]['iscwsa']
         data = {
             "REF_MD (m)": r.c.ref.md,

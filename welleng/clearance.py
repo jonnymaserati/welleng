@@ -82,6 +82,7 @@ class Clearance:
         self.k = k
         self.sigma_pa = sigma_pa
         self.Sm = Sm
+        # self.N_verts = N_verts
 
         self._get_kop_index(kop_depth)
         self._get_ref()
@@ -198,6 +199,9 @@ class ISCWSA:
 
         # get the unit vectors and horizontal bearing between the wells
         self._get_delta_nev_vectors()
+
+        # transform to HLA coordinates
+        # self._get_delta_hla_vectors()
 
         # make the covariance matrices
         self._get_covs()
