@@ -1,12 +1,10 @@
 import numpy as np
 from numpy import sin, cos, tan, pi, sqrt
-from numpy.core.defchararray import index
 import yaml
 import os
 from collections import OrderedDict
-# import imp
 
-# import welleng.error
+from welleng.error import ErrorModel
 from ..utils import NEV_to_HLA
 
 # since this is running on different OS flavors
@@ -21,8 +19,8 @@ ACCURACY = 1e-6
 class ToolError:
     def __init__(
         self,
-        error,
-        model
+        error: ErrorModel,
+        model: str
     ):
         """
         Class using the ISCWSA listed tool errors to determine well bore
@@ -64,24 +62,8 @@ class ToolError:
             if tool in self.em['codes']
         ]
 
-        # self.em = iscwsa_error_models[model]
-        #     iscwsa_error_models = yaml.safe_load(file)
-        # self.em = iscwsa_error_models[model]
-        if 'Default Tortusity (rad/m)' in self.em['header']:
-            self.tortuosity = self.em['header']['Default Tortusity (rad/m)']
-        elif 'XCL Tortuosity' in self.em['header']:
-            # assuming that this is always 1 deg / 100 ft but this might not
-            # be the case
-            # TODO use pint to handle this string inputs
-            self.tortuosity = (np.radians(1.) / 100) * 3.281
-        else:
-            self.tortuosity = None
-
-        # if model == "iscwsa_mwd_rev5":
-        # if model == "ISCWSA MWD Rev5":
-        # assert self.tortuosity is not None, (
-        #     "No default tortuosity defined in model header"
-        # )
+        # This removes the effect of tortuosity from the calculations
+        self.tortuosity = 0
 
         if "Inclination Range Max" in self.em['header'].keys():
             value = np.radians(float(
@@ -94,7 +76,6 @@ class ToolError:
         self._initiate_func_dict()
 
         for err in self.em['codes']:
-            # func = self._get_the_func_out(err)
             func = self.em['codes'][err]['function']
             mag = self.em['codes'][err]['magnitude']
             propagation = self.em['codes'][err]['propagation']
@@ -125,7 +106,13 @@ class ToolError:
 
         return func
 
-    def call_func(self, code, func, error, mag, propagation, **kwargs):
+    def call_func(self,
+                  code: str,
+                  func: str,
+                  error: ErrorModel,
+                  mag: float,
+                  propagation: str,
+                  **kwargs):
         """
         Function for calling functions by mapping function labels to their
         functions.
@@ -209,17 +196,7 @@ def _funky_denominator(error):
             1 - sin(error.survey.inc_rad) ** 2
             * sin(error.survey.azi_mag_rad) ** 2
             ),
-            # nan=1e-6,
-            # posinf=1.0,
-            # neginf=-1.0
         )
-    # ACCURACY = 1e-6
-    # with np.errstate(divide='ignore', invalid='ignore'):
-    #     coeff = np.nan_to_num(
-    #         result / np.abs(result) * ACCURACY,
-    #         nan=ACCURACY
-    #     )
-    # result = np.where(np.abs(result) > ACCURACY, result, coeff)
     return result
 
 
@@ -493,8 +470,12 @@ def ABXY_TI2(
         )
 
 
-def AMID(code, error, mag=0.04363323129985824, propagation='systematic',
-    NEV=True, **kwargs
+def AMID(
+        code,
+        error,
+        mag=0.04363323129985824,
+        propagation='systematic',
+        NEV=True
 ):
     dpde = np.zeros((len(error.survey_rad), 3))
     dpde[:, 2] = (
@@ -629,7 +610,7 @@ def ASIXY_TI3(
     dpde[:, 2] = (
         tan(error.survey.header.dip)
         * sin(error.survey.inc_rad)
-        *  cos(error.survey.azi_mag_rad)
+        * cos(error.survey.azi_mag_rad)
         - cos(error.survey.inc_rad)
     ) / (
         2 * _funky_denominator(error)
@@ -823,10 +804,6 @@ def CNA(
             code, e_DIA, propagation, NEV, e_NEV, e_NEV_star
         )
 
-    # result = error._generate_error(code, e_DIA, propagation, NEV)
-
-    # return result
-
 
 def CNI(
     code, error, mag=0.35, propagation='systematic', NEV=True,
@@ -996,11 +973,6 @@ def GXY_RN(
         np.zeros(len(index_systematic))
     )
 
-    # dpde[:, 2] = np.where(
-    #     error.survey.inc_rad > kwargs['header']['XY Static Gyro']['End Inc'],
-    #     dpde[:, 2],
-    #     dpde[:, 2] * kwargs['header']['Noise Reduction Factor'],
-    # )
     e_DIA = dpde * mag
 
     result = error._generate_error(code, e_DIA, propagation, NEV)
@@ -1017,20 +989,24 @@ def GXY_GD(
     """
     SPE 90408 Table 7
     """
+
+    gyro_header = kwargs['header']
     dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
     with np.errstate(divide='ignore', invalid='ignore'):
         dpde[:, 2] = np.where(
-            error.survey.inc_rad > kwargs['header']['XY Static Gyro']['End Inc'],
+            error.survey.inc_rad > gyro_header['XY Static Gyro']['End Inc'],
             np.append(
                 np.array([0]),
                 (
                     (error.survey.md[1:] - error.survey.md[:-1])
                     / (
                         float(
-                            kwargs['header']['XY Continuous Gyro']['Running Speed'].split()[0]
+                            gyro_header['XY Continuous Gyro']
+                            ['Running Speed'].split()[0]
                         )
                         * sin(
-                            (error.survey.inc_rad[1:] + error.survey.inc_rad[:-1])
+                            (error.survey.inc_rad[1:] +
+                             error.survey.inc_rad[:-1])
                             / 2
                         )
                     )
@@ -1039,21 +1015,7 @@ def GXY_GD(
             np.zeros_like(error.survey.md)
         )
 
-    init_error = []
-    for i, (u, l) in enumerate(zip(
-        error.survey.inc_rad[1:], error.survey.inc_rad[:-1]
-    )):
-        init_error.append(0.0)
-        if all((
-            u > kwargs['header']['XY Static Gyro']['End Inc'],
-            l <= kwargs['header']['XY Static Gyro']['End Inc']
-        )):
-            for tool in kwargs['errors'].gyro_stationary:
-                temp = kwargs['errors'].errors[tool].e_DIA[i - 1][2]
-                if tool in ['GXY_RN']:
-                    temp *= kwargs['header']['Noise Reduction Factor']
-                init_error[-1] += temp
-
+    init_error = get_initial_error(error, kwargs)
     temp = [0.0]
     for i, (u, e) in enumerate(zip(dpde[1:, 2], init_error)):
         temp.append(0.0)
@@ -1075,41 +1037,31 @@ def GXY_GRW(
     """
     SPE 90408 Table 7
     """
+
     dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
+
+    gryo_header = kwargs['header']
     with np.errstate(divide='ignore', invalid='ignore'):
         dpde[:, 2] = np.where(
-            error.survey.inc_rad > kwargs['header']['XY Static Gyro']['End Inc'],
+            error.survey.inc_rad > gryo_header['XY Static Gyro']['End Inc'],
             np.append(
                 np.array([0]),
                 (error.survey.md[1:] - error.survey.md[:-1])
                 / (
-                    float(
-                        kwargs['header']['XY Continuous Gyro']['Running Speed'].split()[0]
-                    )
-                    * sin(
-                        (error.survey.inc_rad[1:] + error.survey.inc_rad[:-1])
-                        / 2
-                    ) ** 2
+                        float(
+                            gryo_header['XY Continuous Gyro']
+                            ['Running Speed'].split()[0]
+                        )
+                        * sin(
+                            (error.survey.inc_rad[1:] +
+                             error.survey.inc_rad[:-1])
+                            / 2
+                        ) ** 2
                 )
             ),
             np.zeros_like(error.survey.md)
         )
-
-    init_error = []
-    for i, (u, l) in enumerate(zip(
-        error.survey.inc_rad[1:], error.survey.inc_rad[:-1]
-    )):
-        init_error.append(0.0)
-        if all((
-            u > kwargs['header']['XY Static Gyro']['End Inc'],
-            l <= kwargs['header']['XY Static Gyro']['End Inc']
-        )):
-            for tool in kwargs['errors'].gyro_stationary:
-                temp = kwargs['errors'].errors[tool].e_DIA[i - 1][2]
-                if tool in ['GXY_RN']:
-                    temp *= kwargs['header']['Noise Reduction Factor']
-                init_error[-1] += temp
-
+    init_error = get_initial_error(error, kwargs)
     temp = [0.0]
     for i, (u, e) in enumerate(zip(dpde[1:, 2], init_error)):
         temp.append(0.0)
@@ -2023,3 +1975,26 @@ def XYM4L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
         return error._generate_error(
             code, e_DIA, propagation, NEV, e_NEV, e_NEV_star
         )
+
+
+def get_initial_error(error, **kwargs):
+    """
+    Calculate initial error for a tool based on static gyro
+    """
+
+    init_error = []
+    for i, (u, l) in enumerate(zip(
+        error.survey.inc_rad[1:], error.survey.inc_rad[:-1]
+    )):
+        init_error.append(0.0)
+        if all((
+            u > kwargs['header']['XY Static Gyro']['End Inc'],
+            l <= kwargs['header']['XY Static Gyro']['End Inc']
+        )):
+            for tool in kwargs['errors'].gyro_stationary:
+                temp = kwargs['errors'].errors[tool].e_DIA[i - 1][2]
+                if tool in ['GXY_RN']:
+                    temp *= kwargs['header']['Noise Reduction Factor']
+                init_error[-1] += temp
+
+    return init_error

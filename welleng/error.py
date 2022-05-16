@@ -1,7 +1,8 @@
 import os
 import numpy as np
 import yaml
-from .errors.tool_errors import ToolError
+from .errors.tool_errors import ErrorModel, ToolError
+from welleng.survey import Survey
 
 # TODO: there's likely an issue with TVD versus TVDSS that
 # needs to be resolved. This model assumes TVD relative to
@@ -68,14 +69,9 @@ class ErrorModel():
 
     def __init__(
         self,
-        survey,
-        error_model="ISCWSA MWD Rev5",
+        survey: Survey,
+        error_model: str = "ISCWSA MWD Rev5",
     ):
-        """
-
-        """
-
-        # error_models = ERROR_MODELS
         assert error_model in ERROR_MODELS, "Unrecognized error model"
         self.error_model = error_model
         self.survey = survey
@@ -90,12 +86,6 @@ class ErrorModel():
         self.drdp = self._drdp(self.survey_drdp)
         self.drdp_sing = self._drdp_sing(self.survey_drdp)
 
-        # if self.error_model.split("_")[0] == "iscwsa":
-        #     self.errors = iscwsaMwd(
-        #         error=self,
-        #         model=self.error_model
-        #     )
-
         for k, v in TOOL_INDEX.items():
             if v['Short Name'] == self.error_model:
                 model = k
@@ -106,7 +96,11 @@ class ErrorModel():
             model=model
         )
 
-    def _e_NEV(self, e_DIA):
+    def _e_NEV(self, e_DIA: np.ndarray) -> np.ndarray:
+        """
+        This function calculates error in NEV at all stations based on error in
+         DIA.
+        """
         D, I, A = e_DIA.T
         arr = np.array([
             (self.drdp[:, 0] + self.drdp[:, 9]) * D
@@ -126,7 +120,10 @@ class ErrorModel():
 
         return arr
 
-    def _e_NEV_star(self, e_DIA):
+    def _e_NEV_star(self, e_DIA: np.ndarray) -> np.ndarray:
+        """
+        Calculate the error at a station based on error in DIA
+        """
         D, I, A = e_DIA.T
         arr = np.array([
             self.drdp[:, 0] * D
@@ -146,18 +143,12 @@ class ErrorModel():
 
         return arr
 
-    def _cov(self, arr):
-        '''
+    def _cov(self, arr: np.ndarray) -> np.ndarray:
+        """
         Returns a covariance matrix from an (n,3) array.
-        '''
-        # Mitigate overflow
-        # with np.errstate(divide='ignore', invalid='ignore'):
-        #     coeff = np.nan_to_num(
-        #         arr / np.abs(arr) * ACCURACY,
-        #         nan=ACCURACY
-        #     )
-        # arr = np.where(np.abs(arr) > ACCURACY, arr, coeff)
+        The structure of the matrix returned is (3, 3, n).
 
+        """
         x, y, z = np.array(arr).T
         result = np.array([
             [x*x, x*y, x*z],
@@ -177,13 +168,22 @@ class ErrorModel():
 
     def _generate_error(
         self,
-        code,
-        e_DIA,
-        propagation='systematic',
-        NEV=True,
-        e_NEV=None,
-        e_NEV_star=None
-    ):
+        code: str,
+        e_DIA: np.ndarray,
+        propagation: str = 'systematic',
+        NEV: bool = True,
+        e_NEV: bool = None,
+        e_NEV_star: bool = None
+    ) -> ErrorModel:
+        """
+        Calculate the error for a tool at the current station (e_NEV) and
+        the error at the final survey station
+        (e_NEV_star) in Northing Easting Vertical (NEV) using the error code,
+        error in DIA [Depth, inclination, Azimuth],
+        and the dr/dp calculated earlier.
+
+        """
+
         if not NEV:
             return e_DIA
         else:
@@ -218,15 +218,20 @@ class ErrorModel():
                 cov_NEV
             )
 
-    def drk_dDepth(self, survey):
-        '''
-        survey1 is previous survey station (with inc and azi in radians)
-        survey2 is current survey station (with inc and azi in radians)
-        '''
-        # TODO: This is essentially minimum curvature... use function from
-        # utils instead (it's already in self.mc)
-        md1, inc1, azi1 = np.array(survey[:-1]).T
-        md2, inc2, azi2 = np.array(survey[1:]).T
+    def drk_dDepth(
+            self,
+            inc1: np.ndarray,
+            azi1: np.ndarray,
+            inc2: np.ndarray,
+            azi2: np.ndarray,
+    ) -> np.ndarray:
+        """
+        This function calculates drk/dDepth
+        Refer to the notion document for information about the calculation.
+        survey1 is previous survey station
+        survey2 is current survey station
+        For both stations, md in meters, inc and azi in radians
+        """
 
         N = np.array(
             0.5 * (
@@ -255,18 +260,23 @@ class ErrorModel():
             )
         )
 
-    def drk_dInc(self, survey):
-        '''
-        survey1 is previous survey station (with inc and azi in radians)
-        survey2 is current survey station (with inc and azi in radians)
-        '''
-        md1, inc1, azi1 = np.array(survey[:-1]).T
-        md2, inc2, azi2 = np.array(survey[1:]).T
-        delta_md = md2 - md1
+    def drk_dInc(
+            self,
+            inc: np.ndarray,
+            azi: np.ndarray,
+            delta_md: float
+    ) -> np.ndarray:
+        """
+        This function calculates drk/dInc
+        Refer to the notion document for information about the calculation.
+        survey1 is previous survey station
+        survey2 is current survey station
+        For both stations, md in meters, inc and azi in radians
+        """
 
-        N = np.array(0.5 * ((delta_md) * np.cos(inc2) * np.cos(azi2)))
-        E = np.array(0.5 * ((delta_md) * np.cos(inc2) * np.sin(azi2)))
-        V = np.array(0.5 * (-delta_md * np.sin(inc2)))
+        N = np.array(0.5 * (delta_md * np.cos(inc) * np.cos(azi)))
+        E = np.array(0.5 * (delta_md * np.cos(inc) * np.sin(azi)))
+        V = np.array(0.5 * (-delta_md * np.sin(inc)))
 
         if self.error_model.lower().split()[-1] != 'rev4':
             N[0] *= 2
@@ -278,17 +288,22 @@ class ErrorModel():
             )
         )
 
-    def drk_dAz(self, survey):
-        '''
-        survey1 is previous survey station (with inc and azi in radians)
-        survey2 is current survey station (with inc and azi in radians)
-        '''
-        md1, inc1, azi1 = np.array(survey[:-1]).T
-        md2, inc2, azi2 = np.array(survey[1:]).T
-        delta_md = md2 - md1
+    def drk_dAz(
+            self,
+            inc: np.ndarray,
+            azi: np.ndarray,
+            delta_md: float
+    ) -> np.ndarray:
+        """
+        This function calculates drk/dAzi
+        Refer to the notion document for information about the calculation.
+        survey1 is previous survey station
+        survey2 is current survey station
+        For both stations, md in meters, inc and azi in radians
+        """
 
-        N = np.array(-0.5 * ((delta_md) * np.sin(inc2) * np.sin(azi2)))
-        E = np.array(0.5 * ((delta_md) * np.sin(inc2) * np.cos(azi2)))
+        N = np.array(-0.5 * (delta_md * np.sin(inc) * np.sin(azi)))
+        E = np.array(0.5 * (delta_md * np.sin(inc) * np.cos(azi)))
         V = np.zeros_like(N)
 
         return np.vstack(
@@ -298,11 +313,21 @@ class ErrorModel():
             )
         )
 
-    def drkplus1_dDepth(self, survey):
-        '''
-        survey2 is current survey station (with inc and azi in radians)
-        survey3 is next survey station (with inc and azi in radians)
-        '''
+    @staticmethod
+    def get_survey_data(survey: Survey):
+        md1, inc1, azi1 = np.array(survey[:-1]).T
+        md2, inc2, azi2 = np.array(survey[1:]).T
+        delta_md = md2 - md1
+        return (md1, inc1, azi1), (md2, inc2, azi2), delta_md
+
+    def drkplus1_dDepth(self, survey) -> np.ndarray:
+        """
+        This function calculates drk+1/dDepth
+        Refer to the notion document for information about the calculation.
+        survey1 is previous survey station
+        survey2 is current survey station
+        For both stations, md in meters, inc and azi in radians
+        """
         return np.vstack(
             (
                 self.drk_dDepth(survey)[1:] * -1,
@@ -310,64 +335,63 @@ class ErrorModel():
             )
         )
 
-    def drkplus1_dInc(self, survey):
-        '''
-        survey2 is current survey station (with inc and azi in radians)
-        survey3 is next survey station (with inc and azi in radians)
-        '''
+    def drkplus1_dInc(
+            self,
+            inc: np.ndarray,
+            azi: np.ndarray,
+            delta_md: float
+    ) -> np.ndarray:
+        """
+        This function calculates drk+1/dInc
+        Refer to the notion document for information about the calculation.
+        survey1 is previous survey station
+        survey2 is current survey station
+        For both stations, md in meters, inc and azi in radians
+        """
 
-        md2, inc2, azi2 = np.array(survey[:-1]).T
-        md3, inc3, azi3 = np.array(survey[1:]).T
-        delta_md = md3 - md2
+        self.drk_dInc(inc, azi, delta_md)
 
-        N = np.array(0.5 * ((delta_md) * np.cos(inc2) * np.cos(azi2)))
-        E = np.array(0.5 * ((delta_md) * np.cos(inc2) * np.sin(azi2)))
-        V = np.array(0.5 * (-(delta_md) * np.sin(inc2)))
+    def drkplus1_dAz(
+            self,
+            inc: np.ndarray,
+            azi: np.ndarray,
+            delta_md: float
+    ) -> np.ndarray:
+        """
+        This function calculates drk+1/dAzi
 
-        return np.vstack(
-            (
-                np.stack((N, E, V), axis=-1),
-                np.array(np.zeros((1, 3)))
-            )
-        )
+        Refer to the notion document for information about the calculation.
+        survey1 is previous survey station
+        survey2 is current survey station
+        For both stations: md in meters, inc and azi in radians
+        """
 
-    def drkplus1_dAz(self, survey):
-        '''
-        survey2 is current survey station (with inc and azi in radians)
-        survey3 is next survey station (with inc and azi in radians)
-        '''
-        md2, inc2, azi2 = np.array(survey[:-1]).T
-        md3, inc3, azi3 = np.array(survey[1:]).T
-        delta_md = md3 - md2
+        self.drk_dAz(inc, azi, delta_md)
 
-        N = np.array(-0.5 * ((delta_md) * np.sin(inc2) * np.sin(azi2)))
-        E = np.array(0.5 * ((delta_md) * np.sin(inc2) * np.cos(azi2)))
-        V = np.zeros_like(N)
+    def _drdp(self, survey: Survey) -> np.ndarray:
+        """
+        This function calculates drdp matrix from the survey data
+        """
 
-        return np.vstack(
-            (
-                np.stack((N, E, V), axis=-1),
-                np.array(np.zeros((1, 3)))
-            )
-        )
-
-    def _drdp(self, survey):
+        (_, inc1, azi1), (_, inc2, azi2), delta_md = \
+            self.get_survey_data(survey)
 
         return np.hstack((
-            self.drk_dDepth(survey),
-            self.drk_dInc(survey),
-            self.drk_dAz(survey),
+            self.drk_dDepth(inc1, azi1, inc2, azi2),
+            self.drk_dInc(inc2, azi2, delta_md),
+            self.drk_dAz(inc2, azi2, delta_md),
             self.drkplus1_dDepth(survey),
-            self.drkplus1_dInc(survey),
-            self.drkplus1_dAz(survey)
+            self.drkplus1_dInc(inc1, azi1, delta_md),
+            self.drkplus1_dAz(inc1, azi1, delta_md)
         ))
 
-    def _drdp_sing(self, survey):
-        '''
-        survey1 is previous survey station (with inc and azi in radians)
-        survey2 is current survey station
-        survey3 is next survey station (with inc and azi in radians)
-        '''
+    def _drdp_sing(self, survey: Survey) -> dict:
+        """
+        This function gets the azimuth of the current survey station (azi2) and
+        MD difference between the current and the previous station and the md
+        difference between the previous and the next stations.
+        These variables are used extensively in ISCWSA tool error models.
+        """
         md1, inc1, azi1 = np.array(survey[:-2]).T
         md2, inc2, azi2 = np.array(survey[1:-1]).T
         md3, inc3, azi3 = np.array(survey[2:]).T
@@ -391,7 +415,6 @@ def get_errors(error):
 
 def make_diagnostic_data(survey):
     diagnostic = {}
-    dia = np.stack((survey.md, survey.inc_deg, survey.azi_grid_deg), axis=1)
     for i, d in enumerate(survey.md):
         diagnostic[d] = {}
         total = []

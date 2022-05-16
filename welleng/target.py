@@ -1,9 +1,9 @@
-import numpy as np
 try:
     from vedo import Circle
     VEDO = True
 except ImportError:
     VEDO = False
+
 
 class Target:
     def __init__(
@@ -23,7 +23,7 @@ class Target:
         """
         Parameters
         ----------
-            geometry: 
+        geometry:
         """
         assert VEDO, "ImportError: try pip install welleng[easy]"
 
@@ -35,9 +35,9 @@ class Target:
         ]
 
         GEOMETRY = dict(
-            rectangle = ['pos1', 'pos2'],
-            circle = ['radius'],
-            ellipse = {'radius_1': 0, 'radius_2': 0, 'res': 120},
+            rectangle=['pos1', 'pos2'],
+            circle=['radius'],
+            ellipse={'radius_1': 0, 'radius_2': 0, 'res': 120},
         )
 
         assert shape in SHAPES, "shape not in SHAPES"
@@ -63,11 +63,10 @@ class Target:
                 r=self.geometry['radius'],
                 c=self.color,
                 alpha=self.alpha,
-                # res=self.geometry['res']
             )
             g.flag = self.name
-            g.pos=[self.n, self.e, 0]
-            g.rotate(self.dip, point=pos, axis=(0,1,0))
-            g.rotate(self.orientation, point=pos, axis=(1,0,0))
+            g.pos = [self.n, self.e, 0]
+            g.rotate(self.dip, point=pos, axis=(0, 1, 0))
+            g.rotate(self.orientation, point=pos, axis=(1, 0, 0))
 
         return g

@@ -1,7 +1,7 @@
 try:
     from openpyxl import load_workbook
     OPENPYXL = True
-except:
+except: # noqa E722
     OPENPYXL = False
 from math import radians
 import yaml
@@ -177,7 +177,6 @@ if __name__ == '__main__':
 
     # update index file
     make_index(tool_code, ec)
-
 
     # extract rev 5 model
     tool_code = 'ISCWSA MWD Rev5'

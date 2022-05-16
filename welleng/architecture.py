@@ -1,4 +1,3 @@
-import numpy as np
 from welleng.utils import linear_convert
 
 
@@ -33,35 +32,6 @@ class Casing:
             self, wall_thickness, inner_diameter, outer_diameter, drift,
             unit
         )
-
-
-# class ToolJoint:
-#     def __init__(
-#         self,
-#         type,
-#         outer_diameter,
-#         inner_diameter,
-#         grade=None,
-#         unit="imperial",
-#         pin_space=None,
-#         box_space=None,
-#     ):
-
-# class Scene:
-#     def __init__(
-#         self,
-#         survey
-#     ):
-#         self.survey = survey
-#         self.scene = []
-#         self.assembly = []
-
-#     def add_hole_section(
-#         self,
-#         obj,
-#         depth_from,
-#         depth_to,
-#     ):
 
 
 class DrillPipe:

@@ -3,12 +3,13 @@ try:
     TRIMESH = True
 except ImportError:
     TRIMESH = False
+import math
 import numpy as np
 from numpy import sin, cos, pi
 from scipy.spatial import KDTree
 
 from .utils import HLA_to_NEV, get_sigmas
-from .survey import slice_survey
+from .survey import Survey, slice_survey
 from .visual import figure
 
 
@@ -16,12 +17,12 @@ class WellMesh:
 
     def __init__(
         self,
-        survey,
-        n_verts=12,
-        sigma=3.0,
-        sigma_pa=0.5,
-        Sm=0,
-        method="ellipse",
+        survey: Survey,
+        n_verts: int = 12,
+        sigma: float = 3.0,
+        sigma_pa: float = 0.5,
+        Sm: float = 0,
+        method: str = "ellipse",
     ):
         """
         Create a WellMesh object from a welleng Survey object and a
@@ -51,8 +52,11 @@ class WellMesh:
         """
         assert TRIMESH, "ImportError: try pip install welleng[easy]"
         self.s = survey
-        # self.c = clearance
-        self.n_verts = int(n_verts)
+
+        # make sure that the n_verts is a multiple of 4 or
+        # the closest multiple of 4.
+        self.n_verts = math.ceil(n_verts / 4) * 4
+
         self.sigma = sigma
         self.radius = self.s.radius
         self.Sm = Sm
@@ -75,10 +79,11 @@ class WellMesh:
 
     # Helper functions #
     def _get_faces(self):
-        '''
+        """
         Construct a mesh of triangular faces (n,3) on the well bore
         uncertainty edge for the given well bore.
-        '''
+        """
+
         step = self.n_verts
         faces = []
         total_verts = len(self.vertices.reshape(-1, 3))
@@ -104,17 +109,15 @@ class WellMesh:
             C_start = verts + step + 1
             D_start = verts + 1
 
-            A_stop = verts + step - 1
-            B_stop = verts + step + step - 1
-            C_stop = verts + step + step
-            D_stop = verts + step
-
-            A = np.arange(A_start, A_stop)
-            B = np.arange(B_start, B_stop)
-            C = np.arange(C_start, C_stop)
-            D = np.arange(D_start, D_stop)
+            A = np.arange(A_start, A_start + step - 1)
+            B = np.arange(B_start, B_start + step - 1)
+            C = np.arange(C_start, C_start + step - 1)
+            D = np.arange(D_start, D_start + step - 1)
 
             temp.extend(np.array([C, D, A, B, C, A]).T)
+
+            D_stop = D_start + step - 1
+            C_stop = C_start + step - 1
 
             last = np.array([
                 B_start,
@@ -141,35 +144,35 @@ class WellMesh:
     def _get_vertices(
         self,
     ):
-        '''
+        """
         Determine the positions of the vertices on the desired uncertainty
-        circumference.
-        '''
+        if circumference is None:
+
+        """
+
         if self.method == "circle":
-            h = self.s.radius.reshape(-1, 1)
-            l = h
+            highside = self.s.radius.reshape(-1, 1)
+            lateral = highside
 
         else:
-            h = (
+            highside = (
                 np.array(self.sigmaH) * self.sigma
                 + self.radius + self.Sm
                 + self.sigma_pa / 2
             ).reshape(-1, 1)
 
-            l = (
+            lateral = (
                 np.array(self.sigmaL) * self.sigma
                 + self.radius
                 + self.Sm
                 + self.sigma_pa / 2
             ).reshape(-1, 1)
-            # a = self.s.sigmaA * self.c.k + self.s.radius + self.c.Sm
 
         if self.method in ["ellipse", "circle"]:
             lam = np.linspace(0, 2 * pi, self.n_verts, endpoint=False)
-            # theta = np.zeros_like(lam)
 
-            x = h * cos(lam)
-            y = l * sin(lam)
+            x = highside * cos(lam)
+            y = lateral * sin(lam)
             z = np.zeros_like(x)
             vertices = np.stack((x, y, z), axis=-1)
 
@@ -188,16 +191,22 @@ class WellMesh:
                         endpoint=False)) + np.pi
                 )
             )
-            f = h * (
-                (l ** 2 * np.cos(lam))
+            f = highside * (
+                (lateral ** 2 * np.cos(lam))
                 /
-                (l ** 2 * (np.cos(lam)) ** 2 + h ** 2 * (np.sin(lam)) ** 2)
+                (lateral ** 2
+                 * (np.cos(lam)) ** 2
+                 + highside ** 2
+                 * (np.sin(lam)) ** 2)
             )
 
-            g = l * (
-                (h ** 2 * np.sin(lam))
+            g = lateral * (
+                (highside ** 2 * np.sin(lam))
                 /
-                (l ** 2 * (np.cos(lam)) ** 2 + h ** 2 * (np.sin(lam)) ** 2)
+                (lateral ** 2
+                 * (np.cos(lam)) ** 2
+                 + highside ** 2
+                 * (np.sin(lam)) ** 2)
             )
             z = np.zeros_like(f)
             vertices = np.stack((f, g, z), axis=-1)
@@ -216,10 +225,10 @@ class WellMesh:
         )
 
     def _get_vertices_vectors(self, vertices, pos_center):
-        '''
+        """
         Determine the vectors of the vertices relative the the well path
         position.
-        '''
+        """
         vectors = vertices - pos_center
         normals = np.linalg.norm(vectors, axis=-1)
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -277,9 +286,10 @@ class WellMesh:
         ).reshape(self.vertices.shape)
 
     def _make_trimesh(self):
-        '''
+        """
         Consturct a trimesh.Trimesh object from the well vertices and faces.
-        '''
+        """
+
         vertices = self.vertices.reshape(-1, 3)
         mesh = trimesh.Trimesh(
             vertices=vertices,
@@ -288,7 +298,6 @@ class WellMesh:
             validate=True,
         )
 
-        # self.mesh = fix_mesh(mesh)
         self.mesh = mesh
 
     def figure(self, type='mesh3d', **kwargs):
@@ -344,7 +353,7 @@ def transform_trimesh_scene(scene, origin=None, scale=100, redux=0.25):
             A transformed, scaled and reprocessed scene.
     """
     assert TRIMESH, "ImportError: try pip install welleng[easy]"
-    i = 0
+
     if not origin:
         T = np.array([0, 0, 0])
     else:
@@ -410,11 +419,11 @@ def sliced_mesh(
 
     """
     meshes = []
-    l = len(survey.md)
+    length = len(survey.md)
     i = start
-    assert stop <= l, f"Out of range, {stop} > {l}"
+    assert stop <= length, f"Out of range, {stop} > {length}"
     if stop == -1:
-        stop = l
+        stop = length
 
     # TODO: set this up for multiprocessing
 
@@ -449,7 +458,7 @@ def sliced_mesh(
 
 
 def fix_mesh(mesh):
-    '''
+    """
     For whatever reason, the first pass meshing often results in a mesh
     that is not watertight. This function fixes that, as well as
     repairs the windings and normals.
@@ -461,7 +470,8 @@ def fix_mesh(mesh):
     Returns
     -------
         good_mesh: trimesh object
-    '''
+    """
+
     assert TRIMESH, "ImportError: try pip install welleng[easy]"
     # it makes two outputs (unique_idx, inverse)
     unique_indices = trimesh.grouping.unique_rows(mesh.faces)[0]

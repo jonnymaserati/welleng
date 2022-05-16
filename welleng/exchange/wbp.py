@@ -8,11 +8,8 @@ from ..survey import (
     from_connections,
 )
 from ..connector import (
-    Connector,
-    # interpolate_well,
-    # get_survey
+    Connector
 )
-from ..survey import from_connections
 
 try:
     import utm
@@ -243,17 +240,16 @@ class WellPlan:
             if i < self.lines:
                 continue
             # first split the line and look for section headers
-            l = line.split()
+            split_line = line.split()
             m = line.split(':')
-            if l[0] == '!':
+            if split_line[0] == '!':
                 pass
-            elif l[0] == "DEPTH":
-                self._get_units(l[1])
+            elif split_line[0] == "DEPTH":
+                self._get_units(split_line[1])
                 self.flag = None
-            elif l[0] == "TARGETS:":
+            elif split_line[0] == "TARGETS:":
                 self.flag = 'targets'
-            elif l[0] == "WELLPLANS:":
-                # pass
+            elif split_line[0] == "WELLPLANS:":
                 self.flag = 'wellplans'
                 self.tie_on_point_flag = True
             elif self.flag == 'targets':
@@ -280,9 +276,9 @@ class WellPlan:
                     self._add_location_data(m[1])
                     self.tie_on_point_flag = False
                 elif m[0] == "X":
-                    self._add_extended_survey_point(l[1:])
+                    self._add_extended_survey_point(split_line[1:])
                 elif m[0] == "S":
-                    self._add_survey_data(l[1:])
+                    self._add_survey_data(split_line[1:])
                 else:
                     pass
             self.lines += 1
@@ -319,7 +315,7 @@ class WellPlan:
             self.dirty_flag = None
         self.sidetrack_id = string_strip(data[14:22])
         self.plan_name = string_strip(data[23:84])
-        self.parent_name = string_strip(data[84:144])    
+        self.parent_name = string_strip(data[84:144])
         self.dls = string_strip(data[144:151], is_float=True)
         self.extension = string_strip(data[151:160], is_float=True)
         self.dls_kickoff = string_strip(data[160:171], is_float=True)
@@ -340,7 +336,7 @@ class WellPlan:
             to.method = string_strip(data[7])
             try:
                 to.target = string_strip(data[8])
-            except:
+            except: # noqa E722
                 to.target = None
         self.steps.append(to)
 
@@ -449,7 +445,6 @@ def load(filename):
             # keep passing these on to each well sequentially
             depth_unit = w.depth_unit
             surface_unit = w.surface_unit
-            targets = w.targets
 
 
 def add_targets(doc, targets):
@@ -513,11 +508,13 @@ def add_turn_point(doc, step):
     else:
         method = "0" if step.method is None else step.method
     target = "" if step.target is None else step.target
+
     # if the toolface is > -99 then need to chop off a decimal
     # this might also be the case with other variables... add similar logic
     # if that needs changing
     toolface = step.toolface
-    toolface = f'{step.toolface:>7.2f}' if toolface < -99 else f'{toolface:>7.3f}'
+    toolface = f'{step.toolface:>7.2f}' if toolface < -99 else \
+        f'{toolface:>7.3f}'
     doc.append((
         f"P:"
         f" {step.md:>7.2f}"
@@ -635,7 +632,7 @@ def add_comments(doc, comments):
 
 def save_to_file(doc, filename):
     with open(f"{filename}", 'w') as f:
-        f.writelines(f'{l}\n' for l in doc)
+        f.writelines(f'{line}\n' for line in doc)
 
 
 def wbp_to_survey(

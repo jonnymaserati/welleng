@@ -30,7 +30,7 @@ print("Importing the data...")
 try:
     tree = ET.parse(filename)
     root = tree.getroot()
-except:
+except: # noqa E722
     print("Please download the volve data and point filename to its location")
 
 # extract the survey data and create a dataframe
@@ -77,7 +77,8 @@ for i, well in enumerate(tqdm(wells)):
         azi=np.array(w['azimuth']).astype(float),
         n=np.array(w['offset_north']).astype(float),
         e=np.array(w['offset_east']).astype(float),
-        tvd=np.array(w['tvd']).astype(float) / 3.281,  # appears that TVD data is in feet?
+        tvd=np.array(w['tvd']).astype(float) / 3.281,
+        # appears that TVD data is in feet?
         header=sh,
         cov_nev=cov_nev,
         radius=radius
@@ -87,7 +88,7 @@ for i, well in enumerate(tqdm(wells)):
     try:
         m = we.mesh.WellMesh(s)
         data[well] = m
-    except:
+    except: # noqa E722
         print(f"{well} is missing data")
 
 # create a trimesh scene and plot with welleng plotter
