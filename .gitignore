@@ -19,3 +19,5 @@ work
 key.asc
 .~*
 VERSION*
+
+test/test_data/*.xlsx

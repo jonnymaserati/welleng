@@ -434,11 +434,26 @@ def radius_from_dls(dls):
     return radius
 
 
-def errors_from_cov(cov):
+def errors_from_cov(cov, data=False):
     """
-    Returns list of errors from (n, 3, 3) cov.
+    Parameters
+    ----------
+    cov: (n, 3, 3) array
+        The error covariance matrices.
+    data: bool (default: False)
+        If True returns a dictionary, else returns a list.
     """
     nn, ne, nv, _, ee, ev, _, _, vv = (
         cov.reshape(-1, 9).T
     )
+
+    if data:
+        return {
+            i: {
+                'nn': _nn, 'ne': _ne, 'nv': _nv, 'ee': _ee, 'ev': _ev, 'vv': _vv
+            }
+            for i, (_nn, _ne, _nv, _ee, _ev, _vv)
+            in enumerate(zip(nn, ne, nv, ee, ev, vv))
+        }
+
     return np.array([nn, ne, nv, ee, ev, vv]).T
