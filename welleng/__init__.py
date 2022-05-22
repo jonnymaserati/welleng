@@ -14,3 +14,6 @@ import welleng.connector
 import welleng.exchange.edm
 import welleng.fluid
 import welleng.node
+import welleng.architecture
+import welleng.torque_drag
+import welleng.units
