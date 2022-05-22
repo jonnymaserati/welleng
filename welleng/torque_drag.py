@@ -1,8 +1,12 @@
 from copy import deepcopy
 import numpy as np
-import pint
-from plotly.subplots import make_subplots
-import plotly.graph_objects as go
+
+try:
+    from plotly.subplots import make_subplots
+    import plotly.graph_objects as go
+    PLOTLY = True
+except ImportError:
+    PLOTLY = False
 
 from .utils import linear_convert
 from .survey import interpolate_md, Survey
@@ -393,6 +397,8 @@ def figure_string_tension_and_torque(
         torque='ft_lbf'
     )
 ):
+    assert PLOTLY, "Please install plotly"
+    
     fig = make_subplots(rows=1, cols=2)
 
     for k, v in td.tension.items():
@@ -449,6 +455,8 @@ def figure_hookload(
         torque='ft_lbf'
     )
 ):
+    assert PLOTLY, "Please install plotly"
+
     fig = go.Figure()
 
     lines = [None, 'dashdot', 'dash', 'dot']
