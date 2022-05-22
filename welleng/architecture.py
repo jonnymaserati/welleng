@@ -1,7 +1,3 @@
-import numpy as np
-from welleng.utils import linear_convert
-
-
 PARAMS = {
     'WellBore': ['id', 'coeff_friction_sliding']
 }
