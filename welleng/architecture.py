@@ -2,170 +2,203 @@ import numpy as np
 from welleng.utils import linear_convert
 
 
-class Casing:
-    def __init__(
-        self,
-        size,
-        weight,
-        outer_diameter,
-        drift,
-        inner_diameter=None,
-        wall_thickness=None,
-        grade=None,
-        unit='imperial',
-        yield_strength={
-            'min': None,
-            'max': None
-        },
-        tensile_strength=None,
-    ):
-        assert unit in ["imperial", "metric"], "Invalid unit"
-        assert inner_diameter is not None or wall_thickness is not None, (
-            "Provide either wall_thickness or inner_diameter"
+PARAMS = {
+    'WellBore': ['id', 'coeff_friction_sliding']
+}
+
+class String:
+    def __init__(self, name, top, bottom, *args, method="bottom_up", **kwargs):
+        """
+        A generic well bore architecture collection, e.g. a casing string
+        made up a a number of different lengths of weights and grades.
+
+        Parameters
+        ----------
+        name: str
+            The name of the collection.
+        top: float
+            The shallowest measured depth at the top of the collection of
+            items in meters.
+        bottom: float
+            The deepest measured depth at the bottom of the collection of
+            items in meters.
+        method: string (default: 'bottom up')
+            The method in which items are added to the collection, either
+            'bottom up' starting from the deepest element and adding items
+            above, else 'top down' starting from the shallowest item and
+            adding items below.
+        """
+        self.name = name
+        self.top = top
+        self.bottom = bottom
+        self.sections = {}
+        self.complete = False
+
+        assert method in {"top_down", "bottom_up"}, "Unrecognized method"
+        self.method = method
+
+    def depth(self, md):
+        assert self.top < md <= self.bottom, "Depth out of range"
+
+        string_new = String(
+            self.name, self.top, md, method="bottom_up"
         )
-        assert inner_diameter is None or wall_thickness is None, (
-            "Provide either wall_thickness or inner_diameter"
-        )
 
-        self.size = size
-        self = get_weights(self, weight, unit)
-        self = get_diameters(
-            self, wall_thickness, inner_diameter, outer_diameter, drift,
-            unit
-        )
-
-
-# class ToolJoint:
-#     def __init__(
-#         self,
-#         type,
-#         outer_diameter,
-#         inner_diameter,
-#         grade=None,
-#         unit="imperial",
-#         pin_space=None,
-#         box_space=None,
-#     ):
-
-# class Scene:
-#     def __init__(
-#         self,
-#         survey
-#     ):
-#         self.survey = survey
-#         self.scene = []
-#         self.assembly = []
-
-#     def add_hole_section(
-#         self,
-#         obj,
-#         depth_from,
-#         depth_to,
-#     ):
-
-
-class DrillPipe:
-    def __init__(
-        self,
-        size,
-        weight,
-        outer_diameter,
-        drift=None,
-        inner_diameter=None,
-        wall_thickness=None,
-        grade=None,
-        upset_type=None,
-        range=None,
-        tool_joint=None,
-        density=7.8 * 8.33,
-        unit='imperial',
-    ):
-        assert unit in ["imperial", "metric"], "Invalid unit"
-        assert inner_diameter is not None or wall_thickness is not None, (
-            "Provide either wall_thickness or inner_diameter"
-        )
-        assert inner_diameter is None or wall_thickness is None, (
-            "Provide either wall_thickness or inner_diameter"
-        )
-        self.size = size
-        self = get_weights(self, weight, unit)
-        self = get_diameters(
-            self, wall_thickness, inner_diameter, outer_diameter, drift,
-            unit
-        )
-        self = get_densities(self, density, unit)
-
-
-def get_diameters(obj, wall, inner, outer, drift, unit, factor=25.4):
-    if unit == 'imperial':
-        obj.od_imperial = outer
-        if wall is None:
-            obj.id_imperial = inner
-            obj.wall_thickness_imperial = outer - inner
-        else:
-            obj.wall_thickness_imperial = wall
-            obj.id_imperial = outer - wall
-        obj.drift_imperial = drift
-        (
-            obj.wall_thickness_metric,
-            obj.id_metric,
-            obj.od_metric,
-            obj.drift_metric
-        ) = (
-            linear_convert(
-                [
-                    obj.wall_thickness_imperial,
-                    obj.id_imperial,
-                    outer,
-                    drift
-                ], factor
+        reached_top = False
+        for section in reversed(list(self.sections.keys())):
+            if reached_top:
+                break
+            params = {
+                    k: v for k, v in self.sections[section].items()
+                    if k not in ['top', 'bottom', 'length', 'buoyancy_factor']
+            }
+            string_new.add_section(
+                length=self.sections[section]['length'], **params
             )
-        )
-    else:
-        obj.od_metric = outer
-        if wall is None:
-            obj.id_metric = inner
-            obj.wall_thickness_metric = outer - inner
+            if string_new.sections[0]['top'] == self.top:
+                reached_top = True
+
+        return string_new
+
+    def add_section(self, **kwargs):
+        if type(self).__name__ == 'WellBore':
+            for param in PARAMS.get('WellBore'):
+                assert param in kwargs.keys(), f"Missing parameter {param}"
+
+        elif type(self).__name__ == 'BHA':
+            kwargs['density'] = kwargs.get('density', 7.85)
+
+        if self.method == "top_down":
+            self.add_section_top_down(**kwargs)
+        elif self.method == "bottom_up":
+            self.add_section_bottom_up(**kwargs)
+
+    def add_section_top_down(
+        self, **kwargs
+    ):
+        """
+        Sections built from the top down until the bottom of the bottom section
+        is equal to the defined string bottom.
+        """
+        if bool(self.sections) is False:
+            temp = 0
+            top = self.top
         else:
-            obj.wall_thickness_metric = wall
-            obj.id_metric = outer - wall
-        obj.drift_metric = drift
-        (
-            obj.wall_thickness_imperial,
-            obj.id_imperial,
-            obj.od_imperial,
-            obj.drift_imperial
-        ) = (
-            linear_convert(
-                [
-                    obj.wall_thickness_metric,
-                    obj.id_metric,
-                    outer,
-                    drift
-                ], 1/factor
+            temp = len(self.sections)
+            top = self.sections[temp - 1]['bottom']
+
+        self.sections[temp] = {}
+        self.sections[temp]['top'] = top
+
+        # add the section to the sections dict
+        for k, v in kwargs.items():
+            self.sections[temp][k] = v
+
+        # sort the dict on depth of tops
+        self.sections = {
+            k: v
+            for k, v in sorted(
+                self.sections.items(), key=lambda item: item[1]['top']
             )
-        )
+        }
 
-    return obj
+        # re-index the keys
+        temp = {}
+        for i, (k, v) in enumerate(self.sections.items()):
+            temp[i] = v
+
+        # check inputs
+        for k, v in temp.items():
+            if k == 0:
+                assert v['top'] == self.top
+            else:
+                assert v['top'] == temp[k - 1]['bottom']
+            assert v['bottom'] <= self.bottom
+
+        if temp[len(temp) - 1]['bottom'] == self.bottom:
+            self.complete = True
+
+        self.sections = temp
+
+    def add_section_bottom_up(
+        self, **kwargs
+    ):
+        """
+        Sections built from the bottom up until the top of the top
+        section is equal to the defined string top.
+
+        Default is to extend the section to the top of the String as
+        defined in the String.top property (when length = top = None).
+
+        Parameters:
+        -----------
+
+        """
+        if bool(self.sections) is False:
+            temp = 0
+            bottom = self.bottom
+        else:
+            temp = len(self.sections)
+            bottom = self.sections[0]['top']
+
+        if bool(kwargs.get('length')):
+            top = bottom - kwargs.get('length')
+            if top < self.top:
+                top = self.top
+                length = bottom - top
+        elif bool(kwargs.get('top')):
+            length = bottom - kwargs.get('top')
+        else:
+            top = self.top
+            length = self.sections[0]['top']
+
+        self.sections[temp] = {}
+        self.sections[temp]['top'] = top
+        self.sections[temp]['bottom'] = bottom
+
+        # add the section to the sections dict
+        for k, v in kwargs.items():
+            self.sections[temp][k] = v
+
+        # sort the dict on depth of tops
+        self.sections = {
+            k: v
+            for k, v in sorted(
+                self.sections.items(), key=lambda item: item[1]['bottom']
+            )
+        }
+
+        # re-index the keys
+        temp = {}
+        for i, (k, v) in enumerate(self.sections.items()):
+            temp[i] = v
+
+        # check inputs
+        number_of_sections = len(temp)
+        for k, v in temp.items():
+            if k == number_of_sections - 1:
+                assert v['bottom'] == self.bottom
+            else:
+                assert v['bottom'] == temp[k + 1]['top']
+            assert v['top'] >= self.top
+
+        if temp[0]['top'] == self.top:
+            self.complete = True
+
+        self.sections = temp
 
 
-def get_weights(obj, weight, unit, factor=1.488164):
-    if unit == 'imperial':
-        obj.weight_imperial = weight
-        obj.weight_metric = linear_convert(weight, factor)
-    else:
-        obj.weight_metric = weight
-        obj.weight_imperial = linear_convert(weight, 1/factor)
-
-    return obj
+class WellBore(String):
+    def __init__(self, *args, **kwargs):
+        """
+        Inherits from `String` class, but this makes it more intuitive.
+        """
+        super().__init__(*args, **kwargs)
 
 
-def get_densities(obj, density, unit):
-    if unit == 'metric':
-        obj.density_metric = density
-        obj.density_imperial = linear_convert(density, 8.33)
-    else:
-        obj.density_imperial = density
-        obj.density_metric = linear_convert(density, 1/8.33)
-
-    return obj
+class BHA(String):
+    def __init__(self, *args, **kwargs):
+        """
+        Inherits from `String` class, but this makes it more intuitive.
+        """
+        super().__init__(*args, **kwargs)
