@@ -1,7 +1,7 @@
 OUTPUT_DIST="output_dist"
 APP_NAMES="corva-welleng"
 IGNORED_FILES="requirements*.txt setup.cfg .gitignore Makefile resources/test_data test README.md"
-SOURCE="welleng_updated"
+SOURCE="welleng"
 
 ## help: Show this help.
 .PHONY: helpccscscs
@@ -32,7 +32,7 @@ coverage-html:
 ## coverage-report: Show code coverage report.
 .PHONY: coverage-report
 coverage-report:
-	@coverage --source=${SOURCE} report
+	@coverage report
 
 ## lint: Run linter.
 .PHONY: lint
