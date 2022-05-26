@@ -28,14 +28,11 @@ requirements_default = set([
     'isort',
     'coverage',
     'numpy',
-    'scipy',
     'PyYAML',
+    'pandas',
+    'scipy',
     'setuptools',
     'vtk'
-])
-
-requirements_test = set([
-    'pandas'
 ])
 
 # these can be installed without compiling required
@@ -63,7 +60,6 @@ if '--list-default' in sys.argv:
 
 elif '--list-all' in sys.argv:
     requirements = requirements_all.union(requirements_default)
-    requirements = requirements.union(requirements_test)
     print('\n'.join(requirements))
 
 elif '--list-easy' in sys.argv:
