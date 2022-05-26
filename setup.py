@@ -18,14 +18,14 @@ with open(version_file, 'r') as f:
 with open("README.md", "r") as f:
     long_description = f.read()
 
-# with open("requirements.txt") as f:
-#     required = f.read().splitlines()
-
 download_url = f'https://github.com/jonnymaserati/welleng/archive/v{__version__}.tar.gz'
 
 # If you only want to generate surveys and errors, these are all that's
 # required
 requirements_default = set([
+    'flake8==4.0.1',
+    'isort==5.10.1',
+    'coverage==6.2',
     'numpy',
     'scipy',
     'PyYAML',

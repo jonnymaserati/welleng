@@ -17,6 +17,8 @@ install: install-requirements
 install-requirements:
 	@pip install -U pip
 	@pip install .
+	@pip install coverage==5.5
+	@pip install flake8==3.9.2
 
 ## test: Run tests and show code coverage.
 .PHONY: test

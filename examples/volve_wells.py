@@ -11,14 +11,12 @@ email: jonnycorcutt@gmail.com
 date: 29-09-2021
 '''
 
-import welleng as we
+
 import numpy as np
 import pandas as pd
-import xml.etree.ElementTree as ET
 from tqdm import tqdm
-# import os
-
-# os.environ['DISPLAY'] = ':1'
+import welleng as we
+import xml.etree.ElementTree as ET
 
 # for ease I accessed the data file locally and gave it a
 # shorter name. You'll need to change this to reflect the
@@ -30,7 +28,7 @@ print("Importing the data...")
 try:
     tree = ET.parse(filename)
     root = tree.getroot()
-except:
+except:# noqa E722
     print("Please download the volve data and point filename to its location")
 
 # extract the survey data and create a dataframe
@@ -87,7 +85,7 @@ for i, well in enumerate(tqdm(wells)):
     try:
         m = we.mesh.WellMesh(s)
         data[well] = m
-    except:
+    except:# noqa E722
         print(f"{well} is missing data")
 
 # create a trimesh scene and plot with welleng plotter
