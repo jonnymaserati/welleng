@@ -24,9 +24,9 @@ download_url = f'https://github.com/jonnymaserati/welleng/archive/v{__version__}
 # If you only want to generate surveys and errors, these are all that's
 # required
 requirements_default = set([
-    'flake8==4.0.1',
-    'isort==5.10.1',
-    'coverage==6.2',
+    'flake8',
+    'isort',
+    'coverage'
     'numpy',
     'scipy',
     'PyYAML',
