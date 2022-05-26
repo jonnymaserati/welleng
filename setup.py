@@ -34,6 +34,10 @@ requirements_default = set([
     'vtk'
 ])
 
+requirements_test = set([
+    'pandas'
+])
+
 # these can be installed without compiling required
 requirements_easy = set([
     'magnetic_field_calculator',    # used to get default mag data for survey
@@ -59,6 +63,7 @@ if '--list-default' in sys.argv:
 
 elif '--list-all' in sys.argv:
     requirements = requirements_all.union(requirements_default)
+    requirements = requirements.union(requirements_test)
     print('\n'.join(requirements))
 
 elif '--list-easy' in sys.argv:
