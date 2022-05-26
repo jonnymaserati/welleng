@@ -26,7 +26,7 @@ download_url = f'https://github.com/jonnymaserati/welleng/archive/v{__version__}
 requirements_default = set([
     'flake8',
     'isort',
-    'coverage'
+    'coverage',
     'numpy',
     'scipy',
     'PyYAML',
