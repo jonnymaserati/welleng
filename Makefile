@@ -10,7 +10,7 @@ help: Makefile
 
 ## install: Install all requirements.
 .PHONY: install
-install: install-requirements install-requirements-test
+install: install-requirements
 
 ## install-requirements: Install requirements.
 .PHONY: install-requirements
