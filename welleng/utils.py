@@ -12,7 +12,7 @@ class MinCurve:
         md,
         inc,
         azi,
-        start_xyz=[0., 0., 0.],
+        start_xyz=None,
         unit="meters"
     ):
         """
@@ -42,7 +42,7 @@ class MinCurve:
 
         self.inc = inc
         self.azi = azi
-        self.start_xyz = start_xyz
+        self.start_xyz = start_xyz if start_xyz is not None else np.array([0., 0., 0.])
         self.unit = unit
 
         # make two slices with a difference or 1 index to enable array
@@ -161,6 +161,7 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
     else:
         inc_rad = inc
         azi_rad = azi
+
     y = r * np.sin(inc_rad) * np.cos(azi_rad)
     x = r * np.sin(inc_rad) * np.sin(azi_rad)
     z = r * np.cos(inc_rad)
@@ -173,9 +174,7 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
     return vec / np.linalg.norm(vec, axis=-1).reshape(-1, 1)
 
 
-def get_nev(
-    pos, start_xyz=np.array([0., 0., 0.]), start_nev=np.array([0., 0., 0.])
-):
+def get_nev(pos, start_xyz=None, start_nev=None):
     """
     Convert [x, y, z] coordinates to [n, e, tvd] coordinates.
 
@@ -190,22 +189,27 @@ def get_nev(
     Returns:
         An (n,3) array of [n, e, tvd] coordinates.
     """
-    # e, n, v = (
-    #     np.array([pos]).reshape(-1,3) - np.array([start_xyz])
-    # ).T
+
+    start_xyz = start_xyz if start_xyz is not None else np.array([0., 0., 0.])
+    start_nev = start_nev if start_nev is not None else np.array([0., 0., 0.])
+
     e, n, v = (
         np.array([pos]).reshape(-1, 3) - np.array([start_xyz])
     ).T
 
-    return (np.array([n, e, v]).T + np.array([start_nev]))
+    return np.array([n, e, v]).T + np.array([start_nev])
 
 
-def get_xyz(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
+def get_xyz(pos, start_xyz=None, start_nev=None):
+
+    start_xyz = start_xyz if start_xyz is not None else np.array([0., 0., 0.])
+    start_nev = start_nev if start_nev is not None else np.array([0., 0., 0.])
+
     y, x, z = (
         np.array([pos]).reshape(-1, 3) - np.array([start_nev])
     ).T
 
-    return (np.array([x, y, z]).T + np.array([start_xyz]))
+    return np.array([x, y, z]).T + np.array([start_xyz])
 
 
 def _get_angles(vec):
@@ -275,14 +279,6 @@ def get_transform(
     azi = np.array(survey[:, 2])
 
     return _get_transform(inc, azi)
-
-    # trans = np.array([
-    #     [np.cos(inc) * np.cos(azi), -np.sin(azi), np.sin(inc) * np.cos(azi)],
-    #     [np.cos(inc) * np.sin(azi), np.cos(azi), np.sin(inc) * np.sin(azi)],
-    #     [-np.sin(inc), np.zeros_like(inc), np.cos(inc)]
-    # ]).T
-
-    # return trans
 
 
 def NEV_to_HLA(survey, NEV, cov=True):

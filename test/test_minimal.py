@@ -21,7 +21,3 @@ class MinimalTest(unittest.TestCase):
             step=30.
         )
         return survey
-
-
-if __name__ == '__main__':
-    unittest.main()

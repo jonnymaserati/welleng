@@ -1,0 +1,115 @@
+name: CI
+
+on: push
+
+jobs:
+  static:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions/setup-python@v1
+        with:
+          python-version: 3.8
+
+      - name: Linter
+        run: |
+          make install-requirements-lint
+          make lint
+
+  testing:
+    name: Automated Testing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v1
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ hashFiles('requirements*.txt') }}
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          make install
+
+      - name: Run unit tests
+        run: |
+          make test
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          API_ROOT_URL: ${{ secrets.API_ROOT_URL }}
+          ENVIRONMENT: ${{ secrets.ENVIRONMENT }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+          CACHE_URL: ${{ secrets.CACHE_URL }}
+
+      - name: Coverage report
+        run: |
+          make coverage-report
+
+  deploy:
+    name: Deployment
+    needs: [static, testing]
+    if: github.ref == 'refs/heads/master' || contains(github.ref, 'fix/deployment') || contains(github.ref, 'release/') || contains(github.ref, 'tags/v') || github.ref == 'refs/heads/github_actions_dry_run'
+    runs-on: ubuntu-latest
+    env:
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      LAMBDA_LAYER_ARN: arn:aws:lambda:${{ secrets.AWS_REGION }}:${{ secrets.AWS_ACCOUNT_NUMBER }}:layer:directional-requirements
+      OUTPUT_DIST: 'output_dist'
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v1
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ hashFiles('requirements*.txt') }}
+            ${{ runner.os }}-pip-
+
+      - name: Package to zip file
+        run: |
+          make package
+
+      - name: QA Deploy to Lambda
+        if: github.ref == 'refs/heads/master'
+        run: |
+          make deploy environment=qa
+
+      - name: Staging Deploy to Lambda
+        if: contains(github.ref, 'release/')
+        run: |
+          make deploy environment=staging
+
+      - name: Production Deploy to Lambda
+        if: contains(github.ref, 'tags/v')
+        run: |
+          make deploy environment=production
+
+      - name: Deployment Dry run
+        if: github.ref == 'refs/heads/github_actions_dry_run' || contains(github.ref, 'fix/deployment')
+        # This code will trigger a dry run if any push is made to github_actions_dry_run branch
+        # It will not deploy anything but it will just test out deployment params
+        run: |
+          echo "Just a dry run to test creation of files and inputs to lambda"
+          echo "Environtment variables"
+          echo ${OUTPUT_DIST}
+          echo "Test params on deploy"

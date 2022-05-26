@@ -52,19 +52,18 @@ requirements_all = requirements_easy.union([
 
 # if someone wants to output a requirements file
 # `python setup.py --list-all > requirements.txt`
-if '--list-all' in sys.argv:
-    # will not include default requirements (numpy)
-    print('\n'.join(requirements_all))
-    exit()
-elif '--list-easy' in sys.argv:
-    # again will not include numpy+setuptools
-    print('\n'.join(requirements_easy))
+if '--list-default' in sys.argv:
+    print('\n'.join(requirements_default))
     exit()
 
-# if sys.platform == 'win32':
-#     requirements_all.append('python-fcl-win32')
-# else:
-#     requirements_all.append('python-fcl')
+elif '--list-all' in sys.argv:
+    requirements = requirements_all.union(requirements_default)
+    print('\n'.join(requirements))
+
+elif '--list-easy' in sys.argv:
+    requirements = requirements_easy.union(requirements_default)
+    print('\n'.join(requirements_easy))
+    exit()
 
 setup(
     name='welleng',

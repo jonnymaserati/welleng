@@ -1,6 +1,8 @@
 .venv
 .vscode
 
+.devcontainer/
+
 __pycache__
 
 build
