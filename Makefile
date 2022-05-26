@@ -21,7 +21,7 @@ install-requirements:
 ## test: Run tests and show code coverage.
 .PHONY: test
 test:
-	@coverage run --source=${SOURCE} -m unittest  discover -s .\test -p 'test_*.py' -v
+	@coverage run --source=${SOURCE} -m unittest -v
 
 ## coverage-html: Show code coverage HTML report.
 .PHONY: coverage-html
