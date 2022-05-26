@@ -1,6 +1,7 @@
+import json
+
 from welleng.io import import_iscwsa_collision_data
 from welleng.survey import SurveyHeader
-import json
 
 # Short script to extract and serialize the well data from the
 # ISCWSA clearance model spreadsheet. The intent is to save on test time

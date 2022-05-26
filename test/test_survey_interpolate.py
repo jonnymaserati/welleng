@@ -1,6 +1,6 @@
 import unittest
-import welleng as we
 
+import welleng as we
 
 survey = we.survey.Survey(
     md=[0, 500, 1000, 2000, 2500, 3500],

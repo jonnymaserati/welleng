@@ -6,10 +6,10 @@ implementation.
 author: Jonathan Corcutt
 """
 
-import welleng as we
-import pickle
 import os
+import pickle
 
+import welleng as we
 
 PATH = os.path.dirname(os.path.abspath(__file__))
 

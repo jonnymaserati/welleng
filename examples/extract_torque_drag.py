@@ -7,10 +7,11 @@ author: Jonny Corcutt
 email: jonnycorcutt@gmail.com
 date: 29-09-2021
 '''
-from welleng.exchange.edm import EDM
 import pandas as pd
-from plotly.subplots import make_subplots
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+from welleng.exchange.edm import EDM
 
 # probably not necessary... vscode runs headless on my machine for some reason
 # import os

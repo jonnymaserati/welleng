@@ -1,11 +1,14 @@
-import numpy as np
-from numpy import sin, cos, tan, pi, sqrt
-import yaml
 import os
-# import imp
+
+import numpy as np
+import yaml
+from numpy import cos, pi, sin, sqrt, tan
 
 # import welleng.error
 from ..utils import NEV_to_HLA
+
+# import imp
+
 
 # since this is running on different OS flavors
 PATH = os.path.dirname(__file__)

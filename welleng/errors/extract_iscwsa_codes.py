@@ -1,11 +1,12 @@
 try:
     from openpyxl import load_workbook
     OPENPYXL = True
-except:
+except:# noqa E722
     OPENPYXL = False
-from math import radians
-import yaml
 import os
+from math import radians
+
+import yaml
 
 """
 Code to extract error model data from standard ISCWSA Excel files and create
@@ -177,7 +178,6 @@ if __name__ == '__main__':
 
     # update index file
     make_index(tool_code, ec)
-
 
     # extract rev 5 model
     tool_code = 'ISCWSA MWD Rev5'

@@ -10,6 +10,7 @@ email: jonnycorcutt@gmail.com
 date: 29-09-2021
 '''
 import numpy as np
+
 import welleng as we
 from welleng.error import make_diagnostic_data
 

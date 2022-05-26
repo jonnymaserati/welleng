@@ -1,5 +1,6 @@
-from welleng.fluid import Fluid
 import unittest
+
+from welleng.fluid import Fluid
 
 
 class TestFluid(unittest.TestCase):

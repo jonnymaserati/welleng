@@ -1,5 +1,6 @@
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
+
 import numpy as np
 
 try:
@@ -208,7 +209,7 @@ class EDM:
             wellbore_id,
             wellbore_name,
             self.get_wellbore_data(wellbore_id)
-        )        
+        )
 
         return well
 
@@ -323,8 +324,8 @@ class Well:
                                 case,
                                 t.lower()[3:],
                                 data
-                                # self.well_data[t]
                             )
+
     @staticmethod
     def _sort_ppfpt_data(data, kw):
         lookup = {
@@ -388,7 +389,7 @@ class Well:
                             if (
                                 station['survey_header_id'] == current_survey_id
                                 and float(station['md']) >= float(v)
-                                and float(station['md']) <= current_md 
+                                and float(station['md']) <= current_md
                             ):
                                 try:
                                     survey[item[0]].append(station)
@@ -540,8 +541,6 @@ class Well:
 
 
 if __name__ == "__main__":
-    # import os
-    # os.environ['DISPLAY'] = ':1'
 
     # import EDM data
     FILENAME = 'data/Volve.xml'

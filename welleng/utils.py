@@ -1,4 +1,5 @@
 import numpy as np
+
 try:
     from numba import njit
     NUMBA = True
@@ -214,7 +215,10 @@ def get_xyz(pos, start_xyz=None, start_nev=None):
 
 def _get_angles(vec):
     xy = vec[:, 0] ** 2 + vec[:, 1] ** 2
-    inc = np.arctan2(np.sqrt(xy), vec[:, 2])  # for elevation angle defined from Z-axis down
+
+    # for elevation angle defined from Z-axis down
+    inc = np.arctan2(np.sqrt(xy), vec[:, 2])
+
     azi = (np.arctan2(vec[:, 0], vec[:, 1]) + (2 * np.pi)) % (2 * np.pi)
 
     return np.stack((inc, azi), axis=1)

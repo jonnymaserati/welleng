@@ -1,18 +1,9 @@
 import os
+
 import yaml
-from ..survey import (
-    TurnPoint,
-    Survey,
-    SurveyHeader,
-    get_sections,
-    from_connections,
-)
-from ..connector import (
-    Connector,
-    # interpolate_well,
-    # get_survey
-)
-from ..survey import from_connections
+
+from ..connector import Connector
+from ..survey import Survey, SurveyHeader, TurnPoint, from_connections, get_sections
 
 try:
     import utm
@@ -20,8 +11,10 @@ try:
 except ImportError:
     UTM = False
 
-import numpy as np
 from datetime import datetime
+
+import numpy as np
+
 from ..version import __version__ as VERSION
 
 # TODO: need to relocate the class Target to target.py
@@ -243,46 +236,59 @@ class WellPlan:
             if i < self.lines:
                 continue
             # first split the line and look for section headers
-            l = line.split()
+            split_line = line.split()
             m = line.split(':')
-            if l[0] == '!':
+            if split_line[0] == '!':
                 pass
-            elif l[0] == "DEPTH":
-                self._get_units(l[1])
+
+            elif split_line[0] == "DEPTH":
+                self._get_units(split_line[1])
                 self.flag = None
-            elif l[0] == "TARGETS:":
+
+            elif split_line[0] == "TARGETS:":
                 self.flag = 'targets'
-            elif l[0] == "WELLPLANS:":
-                # pass
+
+            elif split_line[0] == "WELLPLANS:":
                 self.flag = 'wellplans'
                 self.tie_on_point_flag = True
+
             elif self.flag == 'targets':
+
                 if m[0] == "T":
                     self._initiate_target(m[1])
+
                 elif m[0] == "L":
                     self._add_target_location(m[1])
+
                 elif m[0] == "C":
                     self._add_target_color(line)
+
                 elif m[0] == "G":
                     self._add_target_geometry(line)
                 # need to add the rest of the target inputs
+
             else:
                 if m[0] == "W":
                     if self.flag == 'done':
                         break
+
                     else:
                         self.flag = 'done'
                         self.tie_on_point_flag = True
                         self._add_wellplan_header(line)
+
                 elif m[0] == "P":
                     self._add_turn_point(line)
+
                 elif m[0] == "L":
                     self._add_location_data(m[1])
                     self.tie_on_point_flag = False
+
                 elif m[0] == "X":
-                    self._add_extended_survey_point(l[1:])
+                    self._add_extended_survey_point(split_line[1:])
+
                 elif m[0] == "S":
-                    self._add_survey_data(l[1:])
+                    self._add_survey_data(split_line[1:])
                 else:
                     pass
             self.lines += 1
@@ -313,13 +319,15 @@ class WellPlan:
     def _add_wellplan_header(self, data):
         self.location_type = self.wbp_dict['LOCATION']['type'][data[2]]
         self.plan_method = self.wbp_dict['LOCATION']['plan_method'][data[4]]
+
         if data[5] in self.wbp_dict['LOCATION']['dirty_flag']:
             self.dirty_flag = self.wbp_dict['LOCATION']['dirty_flag'][data[5]]
         else:
             self.dirty_flag = None
+
         self.sidetrack_id = string_strip(data[14:22])
         self.plan_name = string_strip(data[23:84])
-        self.parent_name = string_strip(data[84:144])    
+        self.parent_name = string_strip(data[84:144])
         self.dls = string_strip(data[144:151], is_float=True)
         self.extension = string_strip(data[151:160], is_float=True)
         self.dls_kickoff = string_strip(data[160:171], is_float=True)
@@ -334,13 +342,14 @@ class WellPlan:
         to.turn_rate = float(data[4])
         to.dls = float(data[5])
         to.toolface = float(data[6])
+
         if self.tie_on_point_flag:
             to.tie_on = True
         else:
             to.method = string_strip(data[7])
             try:
                 to.target = string_strip(data[8])
-            except:
+            except:# noqa E722
                 to.target = None
         self.steps.append(to)
 
@@ -378,8 +387,8 @@ def string_strip(string, is_float=False):
             return float(s)
         else:
             return s
-    else:
-        return None
+
+    return None
 
 
 def get_parent_survey(filename):
@@ -396,6 +405,7 @@ def get_parent_survey(filename):
         if "WELLPLANS" in line:
             flag = False
             continue
+
         if flag:
             continue
         data.append(line)
@@ -513,6 +523,7 @@ def add_turn_point(doc, step):
     else:
         method = "0" if step.method is None else step.method
     target = "" if step.target is None else step.target
+
     # if the toolface is > -99 then need to chop off a decimal
     # this might also be the case with other variables... add similar logic
     # if that needs changing
@@ -560,7 +571,8 @@ def add_survey_point(doc, step):
 
 def get_unit_key(data):
     key = [
-        key for key in data.wbp_dict['DEPTH'] if (
+        key for key in data.wbp_dict['DEPTH']
+        if (
             data.wbp_dict['DEPTH'][key]['depth'] == data.depth_unit
             and data.wbp_dict['DEPTH'][key]['surface'] == data.surface_unit
         )
@@ -570,7 +582,8 @@ def get_unit_key(data):
 
 def get_key(d, value):
     key = [
-        key for key in d if (
+        key for key in d
+        if (
             d[key] == value
         )
     ]
@@ -599,20 +612,24 @@ def export(data, filename=None, comments=None):
     doc = []
     if not isinstance(data, list):
         data = [data]
+
     for i, w in enumerate(data):
         assert isinstance(
             w, WellPlan
         ), "Not a WellPlan object"
+
         if i == 0:
             doc.append(f"DEPTH {get_unit_key(w)}")
             doc = add_comments(doc, comments)
             doc.append("TARGETS:")
             doc = add_targets(doc, w.targets)
             doc.append("WELLPLANS:")
+
             if w.parent_data is not None:
                 for line in w.parent_data:
                     doc.append(line)
         doc = add_header(doc, w)
+
         for s in w.steps:
             doc = add_step(doc, s)
 
@@ -624,23 +641,31 @@ def export(data, filename=None, comments=None):
 
 def add_comments(doc, comments):
     doc.append(f"! {datetime.now():%Y-%m-%d %H:%M:%S%z}")
+
     if comments is None:
         doc.append(f"! welleng v{VERSION}")
         doc.append("! Written by Jonny Corcutt")
+
     else:
         for c in comments:
             doc.append(f"! {c}")
+
     return doc
 
 
 def save_to_file(doc, filename):
     with open(f"{filename}", 'w') as f:
-        f.writelines(f'{l}\n' for l in doc)
+        f.writelines(f'{line}\n' for line in doc)
 
 
 def wbp_to_survey(
-    data, step=None, radius=10, azi_reference='true', convergence=0.0,
-    utm_zone=31, utm_north=True
+        data,
+        step=None,
+        radius=10,
+        azi_reference='true',
+        convergence=0.0,
+        utm_zone=31,
+        utm_north=True
 ):
     """
     Converts a WellPlan object created from a .wbp file into a Survey object.
@@ -662,7 +687,9 @@ def wbp_to_survey(
     """
     assert UTM, "Missing utm library, try pip install welleng[easy]"
     connections = []
+
     for i, s in enumerate(data.steps):
+
         if i == 0:
             if isinstance(s, TurnPoint):
                 dls = [s.dls]
@@ -671,8 +698,10 @@ def wbp_to_survey(
             e, n, v = s.location
             start_nev = [n, e, v * -1]
             continue
+
         e, n, v = s.location
-        p = np.array([n, e, v * -1])  # - np.array(start_nev)
+        p = np.array([n, e, v * -1])
+
         if i == 1:
             md = [s.md]
             inc = [s.inc]
@@ -690,7 +719,6 @@ def wbp_to_survey(
         if isinstance(s, TurnPoint):
             dls_design = s.dls if s.dls > 0 else 1e-5
         else:
-            # dls_design = data.dls if data.dls > 0 else None
             dls_design = 1e-5
 
         c = Connector(
@@ -703,10 +731,12 @@ def wbp_to_survey(
             azi2=s.azi,
             dls_design=dls_design,
         )
+
         if isinstance(s, TurnPoint):
             dls.append(s.dls)
         else:
             dls.append(0)
+
         connections.append(c)
         plan.append(isinstance(s, TurnPoint))
         pos.append(c.pos_target)
@@ -767,13 +797,13 @@ def strip_duplicates(survey):
             A survey object with repeating survey stations removed.
     """
     temp = []
-    for i, s in enumerate(zip(
-        survey.md, survey.inc_rad, survey.azi_grid_rad, survey.radius
-    )):
+    for i, s in enumerate(
+            zip(survey.md, survey.inc_rad, survey.azi_grid_rad, survey.radius)
+    ):
         if i == 0:
             temp.append(s)
             continue
-        # if s == temp[-1]:
+
         if s[1] == temp[-1][1]:
             continue
         else:

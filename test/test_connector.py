@@ -1,5 +1,6 @@
-import numpy as np
 import unittest
+
+import numpy as np
 
 from welleng.connector import Connector
 from welleng.survey import Survey, from_connections

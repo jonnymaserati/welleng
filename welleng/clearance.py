@@ -1,5 +1,6 @@
 import numpy as np
 from numpy.linalg import norm
+
 try:
     import trimesh
     MESH_MODE = True
@@ -10,9 +11,9 @@ from scipy import optimize
 from scipy.spatial import KDTree
 from scipy.spatial.distance import cdist
 
+from .mesh import WellMesh
 from .survey import Survey, _interpolate_survey, slice_survey
 from .utils import NEV_to_HLA
-from .mesh import WellMesh
 
 
 class Clearance:

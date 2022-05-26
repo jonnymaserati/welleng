@@ -1,10 +1,9 @@
 import os
+from collections import OrderedDict
 
 import numpy as np
 import yaml
-
-from collections import OrderedDict
-from numpy import sin, cos, tan, pi, sqrt
+from numpy import cos, pi, sin, sqrt, tan
 
 from ..utils import NEV_to_HLA
 

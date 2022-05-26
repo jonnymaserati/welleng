@@ -9,9 +9,10 @@ date: 29-09-2021
 '''
 
 from welleng.connector import Connector
-from welleng.survey import from_connections
 from welleng.mesh import WellMesh
+from welleng.survey import from_connections
 from welleng.visual import plot
+
 # import os
 
 # os.environ['DISPLAY'] = ':1'

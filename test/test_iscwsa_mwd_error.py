@@ -1,11 +1,12 @@
 import json
-import numpy as np
 import os
-import pandas as pd
 import unittest
 
-from welleng.utils import get_sigmas
+import numpy as np
+import pandas as pd
+
 from welleng.survey import Survey, SurveyHeader
+from welleng.utils import get_sigmas
 
 """
 Test that the ISCWSA MWD Rev5 error model is working within a defined

@@ -14,10 +14,13 @@ email: jonnycorcutt@gmail.com
 date 29-09-2021
 '''
 
-import welleng as we
+import random
+
 import numpy as np
 from vedo import Arrows, Lines
-import random
+
+import welleng as we
+
 # import os
 
 # os.environ['DISPLAY'] = ':1'

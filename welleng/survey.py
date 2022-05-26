@@ -1,32 +1,34 @@
-import numpy as np
 import math
 from copy import copy
+
+import numpy as np
+
 try:
     from magnetic_field_calculator import MagneticFieldCalculator
     MAG_CALC = True
 except ImportError:
     MAG_CALC = False
 from datetime import datetime
+
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 
-from .version import __version__
-from .utils import (
-    MinCurve,
-    get_nev,
-    get_vec,
-    get_angles,
-    HLA_to_NEV,
-    NEV_to_HLA,
-    get_xyz,
-    radius_from_dls
-)
-
-from welleng.error import ErrorModel, ERROR_MODELS
-from welleng.node import Node
 from welleng.connector import Connector, interpolate_well
+from welleng.error import ERROR_MODELS, ErrorModel
+from welleng.node import Node
 from welleng.visual import figure
 
+from .utils import (
+    HLA_to_NEV,
+    MinCurve,
+    NEV_to_HLA,
+    get_angles,
+    get_nev,
+    get_vec,
+    get_xyz,
+    radius_from_dls,
+)
+from .version import __version__
 
 AZI_REF = ["true", "magnetic", "grid"]
 

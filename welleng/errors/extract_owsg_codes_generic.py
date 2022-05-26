@@ -1,8 +1,8 @@
-from openpyxl import load_workbook
-from math import radians
-import pandas as pd
-import yaml
 import os
+from math import radians
+
+import yaml
+from openpyxl import load_workbook
 
 """
 Code to extract error model data from standard ISCWSA Excel files and create
@@ -17,16 +17,8 @@ error module.
 """
 
 PATH = os.path.dirname(__file__)
-# PATH = os.path.join('', *[PATH, 'tool_codes'])
 
-# FILENAME = 'welleng/errors/error_codes.yaml'
 CHARACTERS = [":", "[", "]"]
-
-# try:
-#     with open(FILENAME, 'r') as file:
-#         ec = yaml.full_load(file)
-# except Exception:
-#     ec = {}
 
 
 def extract_data(file, sheet_name='Model'):
@@ -207,8 +199,8 @@ def get_short_names(index_file):
 if __name__ == '__main__':
     sheet_ignore_list = ['Sheet']
     filename = (
-        f'reference/'
-        f'toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-22-oct-2020.xlsx'
+        'reference/'
+        'toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-22-oct-2020.xlsx'
     )
 
     wb = open_workbook(
@@ -262,8 +254,6 @@ if __name__ == '__main__':
     # wb = open_workbook(
     #     'reference/toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-22-oct-2020.xlsx'
     # )
-
-
 
     # ec['iscwsa_mwd_rev4'] = extract_data(
     #     "toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-22-oct-2020.xlsx"

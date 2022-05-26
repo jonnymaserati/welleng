@@ -1,9 +1,10 @@
 import json
-import numpy as np
 import os
 import unittest
 
-from welleng.clearance import Clearance, ISCWSA
+import numpy as np
+
+from welleng.clearance import ISCWSA, Clearance
 from welleng.survey import Survey, make_survey_header
 
 """

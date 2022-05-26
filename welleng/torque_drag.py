@@ -1,4 +1,5 @@
 import numpy as np
+
 from .utils import linear_convert
 
 # This model is EXPERIMENTAL, I wrote it more as a proof of concept for

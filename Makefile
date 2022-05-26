@@ -1,5 +1,5 @@
 OUTPUT_DIST="output_dist"
-APP_NAMES="automated-directional trajectory-translator guidance-processing"
+APP_NAMES="corva-welleng"
 IGNORED_FILES="requirements*.txt setup.cfg .gitignore Makefile resources/test_data test README.md"
 SOURCE="welleng"
 
@@ -17,8 +17,6 @@ install: install-requirements
 install-requirements:
 	@pip install -U pip
 	@pip install .
-	@pip install coverage==5.5
-	@pip install flake8==3.9.2
 
 ## test: Run tests and show code coverage.
 .PHONY: test

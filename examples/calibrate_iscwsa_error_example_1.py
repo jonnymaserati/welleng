@@ -9,9 +9,9 @@ email: jonnycorcutt@gmail.com
 date: 29-09-2021
 '''
 
-import welleng as we
-
 from openpyxl import load_workbook
+
+import welleng as we
 
 # import the ISCWSA standard Excel data
 print("Importing data...")

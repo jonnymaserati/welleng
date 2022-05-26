@@ -1,6 +1,8 @@
 import os
+
 import numpy as np
 import yaml
+
 from .errors.tool_errors import ToolError
 
 # TODO: there's likely an issue with TVD versus TVDSS that
@@ -391,7 +393,6 @@ def get_errors(error):
 
 def make_diagnostic_data(survey):
     diagnostic = {}
-    dia = np.stack((survey.md, survey.inc_deg, survey.azi_grid_deg), axis=1)
     for i, d in enumerate(survey.md):
         diagnostic[d] = {}
         total = []

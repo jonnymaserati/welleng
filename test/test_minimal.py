@@ -5,6 +5,7 @@ test_minimal.py
 Test things that should work with a *minimal* welleng install.
 """
 import unittest
+
 import welleng as we
 
 

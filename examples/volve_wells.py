@@ -12,11 +12,13 @@ date: 29-09-2021
 '''
 
 
+import xml.etree.ElementTree as ET
+
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+
 import welleng as we
-import xml.etree.ElementTree as ET
 
 # for ease I accessed the data file locally and gave it a
 # shorter name. You'll need to change this to reflect the
