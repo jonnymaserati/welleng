@@ -232,7 +232,7 @@ we.visual.plot(scene, names=names, colors=colors)
 #     )
 
 # export the data to Excel
-save_as = f'data/output/output.xlsx'
+save_as = 'data/output/output.xlsx'
 print(f"Exporting data to {save_as}...")
 with pd.ExcelWriter(save_as) as writer:
     for well in results.keys():

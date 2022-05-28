@@ -15,7 +15,7 @@ PATH = os.path.dirname(os.path.abspath(__file__))
 
 
 def main():
-    surveys = {}
+
     # make ISCWSA No. 1
     md = [0., 1200.0, 2100., 5100., 5400., 8000.]
     inc = [0., 0., 60., 60., 90., 90.]
@@ -41,8 +41,6 @@ def main():
     survey_interpolated = we.connector.interpolate_survey(survey, step=30)
 
     survey_interpolated.get_error(error_model='GYRO-MWD')
-
-    diagnostic = we.error.make_diagnostic_data(survey_interpolated)
 
     filename = os.path.join(PATH, f"{sh.name}.pkl")
 

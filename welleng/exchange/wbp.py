@@ -225,7 +225,7 @@ class WellPlan:
                 self.survey.tvd
             ]).T[0]
 
-    def _process_wbp_data(self):
+    def _process_wbp_data(self): # noqa C901
         """
         Steps through imported .wbp data and interprets line by line to
         populate a WellPlan object.
@@ -437,7 +437,6 @@ def load(filename):
 
     depth_unit = None
     surface_unit = None
-    targets = []
 
     well_plans = []
 
@@ -459,7 +458,6 @@ def load(filename):
             # keep passing these on to each well sequentially
             depth_unit = w.depth_unit
             surface_unit = w.surface_unit
-            targets = w.targets
 
 
 def add_targets(doc, targets):

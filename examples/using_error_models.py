@@ -26,6 +26,7 @@ def get_errors(error):
 
     return [nn, ee, vv, ne, nv, ev]
 
+
 def main():
     # get a list of available error models
     error_models = we.error.get_error_models()

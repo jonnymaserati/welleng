@@ -619,31 +619,12 @@ class MeshClearance:
                 # find the closest point on the well trajectory to the closest
                 # points on the mesh surface
                 off_index = KDTree(off_nevs).query(closest_point_offset)[1]
-                if off_index < len(off.md) - 1:
-                    s = slice_survey(off, off_index)
-                    off_nev_1 = self._get_closest_nev(s, closest_point_offset)
-                else:
-                    off_nev_1 = False
 
-                if off_index > 0:
-                    s = slice_survey(off, off_index - 1)
-                    off_nev_0 = self._get_closest_nev(s, closest_point_offset)
-                else:
-                    off_nev_0 = False
-
-                if off_nev_0 and off_nev_1:
-                    if off_nev_0[1].fun < off_nev_1[1].fun:
-                        off_nev = off_nev_0
-                        off_md = off.md[off_index-1] + off_nev_0[1].x[0]
-                    else:
-                        off_nev = off_nev_1
-                        off_md = off.md[off_index] + off_nev_1[1].x[0]
-                elif off_nev_0:
-                    off_nev = off_nev_0
-                    off_md = off.md[off_index-1] + off_nev_0[1].x[0]
-                else:
-                    off_nev = off_nev_1
-                    off_md = off.md[off_index] + off_nev_1[1].x[0]
+                off_md, off_nev = self.get_offset_md_and_nev(
+                    off,
+                    off_index,
+                    closest_point_offset
+                )
 
                 vec = off_nev[0] - ref_nev[0]
                 distance_CC = norm(vec)
@@ -722,3 +703,33 @@ class MeshClearance:
         nev = np.array([s.n, s.e, s.tvd]).T[-1]
 
         return (nev, res)
+
+    def get_offset_md_and_nev(self, offset, offset_index, closest_point_offset):
+
+        if offset_index < len(offset.md) - 1:
+            s = slice_survey(offset, offset_index)
+            off_nev_1 = self._get_closest_nev(s, closest_point_offset)
+        else:
+            off_nev_1 = False
+
+        if offset_index > 0:
+            s = slice_survey(offset, offset_index - 1)
+            off_nev_0 = self._get_closest_nev(s, closest_point_offset)
+        else:
+            off_nev_0 = False
+
+        if off_nev_0 and off_nev_1:
+            if off_nev_0[1].fun < off_nev_1[1].fun:
+                offset_nev = off_nev_0
+                offset_md = offset.md[offset_index - 1] + off_nev_0[1].x[0]
+            else:
+                offset_nev = off_nev_1
+                offset_md = offset.md[offset_index] + off_nev_1[1].x[0]
+        elif off_nev_0:
+            offset_nev = off_nev_0
+            offset_md = offset.md[offset_index - 1] + off_nev_0[1].x[0]
+        else:
+            offset_nev = off_nev_1
+            offset_md = offset.md[offset_index] + off_nev_1[1].x[0]
+
+        return offset_md, offset_nev

@@ -182,6 +182,10 @@ class SurveyHeader:
                 }
             }
 
+        self._get_magnetic_params(result, deg)
+
+    def _get_magnetic_params(self, result, deg):
+
         if self.b_total is None:
             self.b_total = result['field-value']['total-intensity']['value']
             # TODO: Check this conditional
@@ -909,8 +913,8 @@ def _interpolate_survey(survey, x=0, index=0):
         md=np.array([survey.md[index], survey.md[index] + x]),
         inc=np.array([survey.inc_rad[index], inc]),
         azi=np.array([survey.azi_grid_rad[index], azi]),
-        start_xyz=np.array([survey.x, survey.y, survey.z]).T[index],
-        start_nev=np.array([survey.n, survey.e, survey.tvd]).T[index],
+        start_xyz=list(np.array([survey.x, survey.y, survey.z]).T[index]),
+        start_nev=list(np.array([survey.n, survey.e, survey.tvd]).T[index]),
         header=sh,
         deg=False,
     )
@@ -923,17 +927,18 @@ def _interpolate_survey(survey, x=0, index=0):
     return s
 
 
+def tidy_up_angle(d):
+    """
+    Helper function to handle large angles.
+    """
+    if abs(d) > np.pi:
+        d %= (2 * np.pi)
+    return d
+
+
 def interpolate_tvd(survey, tvd, **kwargs):
     # only seem to work with relative small delta_md - re-write with minimize
     # function?
-
-    def tidy_up_angle(d):
-        """
-        Helper function to handle large angles.
-        """
-        if abs(d) > np.pi:
-            d %= (2 * np.pi)
-        return d
 
     coeff = 1
     # find closest point assuming tvd is sorted list
@@ -1278,16 +1283,7 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
             dls = survey.dls[s]
             toolface = abs(np.degrees(survey.toolface[starts[i - 1]]))
 
-            azi_p = sections[-1].azi
-            if azi - azi_p < -180:
-                coeff = 1
-            elif azi - azi_p > 180:
-                coeff = -1
-            else:
-                with np.errstate(all='ignore'):
-                    coeff = (azi - azi_p) / abs(azi - azi_p)
-            if np.isnan(coeff):
-                coeff = 1
+            coeff = get_toolface_coeff(sections, azi)
 
             toolface *= coeff
 
@@ -1312,8 +1308,6 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
 
             delta_azi_2 = 360 - delta_azi_1
             delta_azi = min(delta_azi_1, delta_azi_2)
-
-            delta_azi = delta_azi_1
             turn_rate = delta_azi / delta_md * denominator
 
         section = TurnPoint(
@@ -1341,6 +1335,22 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
         tie_on = False
 
     return sections
+
+
+def get_toolface_coeff(sections, azi):
+
+    azi_p = sections[-1].azi
+    if azi - azi_p < -180:
+        return 1
+    elif azi - azi_p > 180:
+        return -1
+    else:
+        with np.errstate(all='ignore'):
+            coeff = (azi - azi_p) / abs(azi - azi_p)
+    if np.isnan(coeff):
+        return 1
+
+    return coeff
 
 
 def get_unit(unit: str) -> Union[str, None]:
@@ -1508,12 +1518,17 @@ def _remove_duplicates(md, inc, azi):
 
 
 def from_connections(
-    section_data, step=None, survey_header=None,
-    start_nev=[0., 0., 0.],
-    start_xyz=[0., 0., 0.],
-    start_cov_nev=None,
-    radius=10, deg=False, error_model=None,
-    depth_unit='meters', surface_unit='meters'
+        section_data,
+        step=None,
+        survey_header=None,
+        start_nev=None,
+        start_xyz=None,
+        start_cov_nev=None,
+        radius=10,
+        deg=False,
+        error_model=None,
+        depth_unit='meters',
+        surface_unit='meters'
 ):
     """
     Constructs a well survey from a list of sections of control points.
@@ -1533,6 +1548,9 @@ def from_connections(
     -------
         survey: `welleng.survey.Survey` object
     """
+    start_xyz = start_xyz or [0., 0., 0.]
+    start_nev = start_nev or [0., 0., 0.]
+
     if type(section_data) is not list:
         section_data = [section_data]
     section_data_interp = interpolate_well(section_data, step)
@@ -1558,7 +1576,7 @@ def from_connections(
         md=md,
         inc=inc,
         azi=azi,
-        start_nev=section_data[0].pos1 + start_nev,
+        start_nev=list(section_data[0].pos1 + start_nev),
         start_xyz=start_xyz,
         start_cov_nev=start_cov_nev,
         deg=deg,
@@ -1637,7 +1655,7 @@ def interpolate_survey(survey, step=30, dls=1e-8):
     survey_interpolated = from_connections(
         well,
         step=step,
-        start_xyz=survey.start_xyz,
+        start_xyz=list(survey.start_xyz),
         survey_header=survey.header,
         error_model=None
     )

@@ -77,7 +77,10 @@ for i, well in enumerate(tqdm(wells)):
         azi=np.array(w['azimuth']).astype(float),
         n=np.array(w['offset_north']).astype(float),
         e=np.array(w['offset_east']).astype(float),
-        tvd=np.array(w['tvd']).astype(float) / 3.281,  # appears that TVD data is in feet?
+
+        # appears that TVD data is in feet?
+        tvd=np.array(w['tvd']).astype(float) / 3.281,
+
         header=sh,
         cov_nev=cov_nev,
         radius=radius

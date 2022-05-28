@@ -25,7 +25,7 @@ class EDM:
         self._wellbore_id_to_name()
         self._wellbore_id_to_well_id()
 
-    def get_attributes(self, tags=None, attributes={}, logic='AND'):
+    def get_attributes(self, tags=None, attributes={}, logic='AND'):# noqa C901
         """
         Get the attributes for the given tags in an EDM instance.
 
@@ -351,7 +351,7 @@ class Well:
                 return sorted_data
         return sorted_sorted_data
 
-    def _get_surveys(self, case):
+    def _get_surveys(self, case):# noqa C901
         # get the surveys... turns out to be a bit of a PITA
         if hasattr(case, "survey_header"):
             survey_header_ids = [
