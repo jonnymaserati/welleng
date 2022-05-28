@@ -416,28 +416,32 @@ class Connector:
     def _use_method(self):
         if self.method == 'hold':
             self._hold()
+
         elif self.method == 'min_curve':
             self._min_curve()
+
         elif self.method == 'curve_hold_curve':
             self.pos2_list, self.pos3_list = [], [deepcopy(self.pos_target)]
             self.vec23 = [np.array([0., 0., 0.])]
             self.delta_radius_list = []
-            self._target_pos_and_vec_defined(
-                self.pos1 + (self.pos_target - self.pos1) / 2
-            )
+            self._target_pos_and_vec_defined()
+
         else:
             self.distances = self._get_distances(
                 self.pos1, self.vec1, self.pos_target
             )
+
             if self.radius_design <= get_radius_critical(
                 self.radius_design, self.distances, self.min_error
             ):
                 self.method = 'min_dist_to_target'
                 self._min_dist_to_target()
+
             else:
                 if self.closest_approach:
                     self.method = 'min_curve_to_target'
                     self._closest_approach()
+
                 else:
                     self.method = 'min_curve_to_target'
                     self._min_curve_to_target()
@@ -828,7 +832,7 @@ class Connector:
 def minimize_target_pos_and_vec_defined(
     x, c, pos3=None, vec_old=None, result=False
 ):
-    vec_old = vec_old or [0., 0., 0.]
+    vec_old = vec_old if vec_old is not None else [0., 0., 0.]
     radius1, radius2 = x
     if pos3 is None:
         pos2_init = c._get_pos2(c.pos1, c.vec1, c.pos_target, radius1)

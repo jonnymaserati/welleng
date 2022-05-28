@@ -15,6 +15,7 @@ jobs:
 
       - name: Linter
         run: |
+          make install-requirements-lint
           make lint
 
   testing:

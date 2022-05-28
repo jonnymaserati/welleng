@@ -34,6 +34,11 @@ coverage-html:
 coverage-report:
 	@coverage report
 
+## lint: install linter requirements.
+.PHONY: install-requirements-lint
+install-requirements-lint:
+	@pip install -U -r requirements_lint.txt
+
 ## lint: Run linter.
 .PHONY: lint
 lint:
