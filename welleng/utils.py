@@ -1,4 +1,6 @@
 import numpy as np
+from scipy.spatial.transform import Rotation as R
+
 try:
     from numba import njit
     NUMBA = True
@@ -457,3 +459,69 @@ def errors_from_cov(cov, data=False):
         }
 
     return np.array([nn, ne, nv, ee, ev, vv]).T
+
+
+class Arc:
+    def __init__(self, dogleg, radius):
+        """
+        Generates a generic arc that can be transformed with a specific pos
+        and vec via a transform method. The arc is initialized at a local
+        origin and kicks off down and to the north (assuming an NEV coordinate
+        system).
+
+        Parameters
+        ----------
+        dogleg: float
+            The sweep angle of the arc in radians.
+        radius: float
+            The radius of the arc in meters.
+
+        Returns
+        -------
+        arc: Arc object
+        """
+        self.dogleg = dogleg
+        self.radius = radius
+        self.delta_md = dogleg * radius
+
+        self.pos = np.array([
+            np.cos(dogleg),
+            0.,
+            np.sin(dogleg)
+        ]) * radius
+        self.pos[0] = radius - self.pos[0]
+
+        self.vec = np.array([
+            np.sin(dogleg),
+            0.,
+            np.cos(dogleg)
+        ])
+
+    def transform(self, toolface, pos=None, vec=None, target=False):
+        if vec is None:
+            vec = np.array([0., 0., 1.])
+        if target:
+            vec *= -1
+        inc, azi = get_angles(vec, nev=True).reshape(2)
+        angles = [
+            toolface,
+            inc,
+            azi
+        ]
+        r = R.from_euler('zyz', angles, degrees=False)
+
+        pos_new, vec_new = r.apply(np.vstack((self.pos, self.vec)))
+
+        if pos is not None:
+            pos_new += pos
+        if target:
+            vec_new *= -1
+
+        return (pos_new, vec_new)
+
+
+def get_arc(dogleg, radius, toolface, pos=None, vec=None, target=False):
+    arc = Arc(dogleg, radius)
+    pos_new, vec_new = arc.transform(toolface, pos, vec, target)
+
+    return (pos_new, vec_new, arc.delta_md)
