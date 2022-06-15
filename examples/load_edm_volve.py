@@ -1,5 +1,5 @@
 '''
-examples/volve_wells.py
+examples/load_edm_volve.py
 -----------------------
 An example of importing an EDM dataset and extracting the well survey
 (including error data) for all the wellbores in the dataset and using welleng

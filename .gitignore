@@ -10,7 +10,7 @@ dist
 *.egg-info/
 
 iframe_figures
-data
+welleng/exchange/data
 blender
 utils
 work

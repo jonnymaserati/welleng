@@ -251,22 +251,4 @@ if __name__ == '__main__':
         with open(filename, 'w') as f:
             yaml.dump(ec[k], f)
 
-    # wb = open_workbook(
-    #     'reference/toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-22-oct-2020.xlsx'
-    # )
-
-    # ec['iscwsa_mwd_rev4'] = extract_data(
-    #     "toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-22-oct-2020.xlsx"
-    # )
-
-    # ec['iscwsa_mwd_rev5'] = extract_data(
-    #     "reference/error-model-example-mwdrev5-iscwsa-1.xlsx"
-    # )
-
-    # with open(
-    #     os.path.join("", *[PATH, "tool_codes", "ISCWSA MWD Rev5.yaml"]),
-    #     'w'
-    # ) as f:
-    #     documents = yaml.dump(ec, f)
-
     print("Done")

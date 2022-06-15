@@ -1,5 +1,6 @@
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
+from typing import List, Union
 
 import numpy as np
 
@@ -11,7 +12,10 @@ except ImportError:
 
 
 class EDM:
-    def __init__(self, filename):
+    def __init__(
+            self,
+            filename: str
+    ):
         """
         Initiate an instance of an EDM object.
 
@@ -25,7 +29,12 @@ class EDM:
         self._wellbore_id_to_name()
         self._wellbore_id_to_well_id()
 
-    def get_attributes(self, tags=None, attributes={}, logic='AND'):# noqa C901
+    def get_attributes(
+            self,
+            tags: Union[str, List[str]] = None,
+            attributes: dict = None,
+            logic: str = 'AND'
+    ) -> dict:
         """
         Get the attributes for the given tags in an EDM instance.
 
@@ -47,16 +56,13 @@ class EDM:
                 A dictionary of a list of dictionaries of tags and their
                 attributes.
         """
-        assert logic in ['AND', 'OR'], "logic must be 'AND' or 'OR'"
-        if tags is None:
-            tags = self.get_tags()
+        attributes, tags = self.check_data_and_initiate(attributes, tags, logic)
         data = {}
-        if not isinstance(tags, list):
-            tags = [tags]
         for child in self.root:
             if child.tag in tags:
                 if bool(attributes):
                     booleans = []
+
                     for k, v in attributes.items():
                         if not isinstance(v, list):
                             v = [v]
@@ -80,10 +86,28 @@ class EDM:
                         data[child.tag] = [child.attrib]
         return data
 
+    def check_data_and_initiate(
+            self,
+            attributes: [dict, None],
+            tags: Union[list, None],
+            logic: str
+    ):
+
+        assert logic in ['AND', 'OR'], "logic must be 'AND' or 'OR'"
+        if attributes is None:
+            attributes = {}
+        if tags is None:
+            tags = self.get_tags()
+
+        if not isinstance(tags, list):
+            tags = [tags]
+
+        return attributes, tags
+
     def _wellbore_id_to_name(self):
         """
         It's easier for the user to reference the name of the wellbore rather
-        thatn the id, so let's make a couple of dictionaries to quickly
+        than the id, so let's make a couple of dictionaries to quickly
         perform lookups.
         """
         self.wellbore_id_to_name = {}
@@ -121,7 +145,7 @@ class EDM:
                     child.attrib['well_id']
                 )
 
-    def get_tags(self, sort=True):
+    def get_tags(self, sort=True) -> List[str]:
         tags = list(set([child.tag for child in self.root]))
         if sort:
             return sorted(tags)
@@ -239,16 +263,6 @@ class Well:
         self.wellbore_name = wellbore_name
         self.well_data = well_data
 
-    # def get_scenarios(self):
-    #     if 'CD_SCENARIO' in self.well_data:
-    #         scenarios = [
-    #             (s['scenario_id'], s['name'])
-    #             for s in self.well_data['CD_SCENARIO']
-    #         ]
-    #     else:
-    #         scenarios = None
-    #     return scenarios
-
     def _get_cases(self):
         return {
             c['case_id']: c['case_name']
@@ -351,7 +365,7 @@ class Well:
                 return sorted_data
         return sorted_sorted_data
 
-    def _get_surveys(self, case):# noqa C901
+    def _get_surveys(self, case):  # noqa C901
         # get the surveys... turns out to be a bit of a PITA
         if hasattr(case, "survey_header"):
             survey_header_ids = [

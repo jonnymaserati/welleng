@@ -17,10 +17,6 @@ import welleng.clearance
 from welleng.mesh import WellMesh
 from welleng.survey import Survey, SurveyHeader
 
-# import os
-
-# os.environ['DISPLAY'] = ':1'
-
 try:
     import ray
     multiprocessing = True

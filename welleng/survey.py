@@ -1,32 +1,34 @@
-import numpy as np
 import math
 from copy import copy
+
+import numpy as np
+
 try:
     from magnetic_field_calculator import MagneticFieldCalculator
     MAG_CALC = True
 except ImportError:
     MAG_CALC = False
 from datetime import datetime
-from scipy.optimize import minimize
-from scipy.spatial.transform import Rotation as R
 from typing import List, Union
 
-from .version import __version__
+from scipy.optimize import minimize
+from scipy.spatial.transform import Rotation as R
+
+from .connector import Connector, interpolate_well
+from .error import ERROR_MODELS, ErrorModel, ISCWSAErrorModel
+from .node import Node
 from .utils import (
+    HLA_to_NEV,
     MinCurve,
+    NEV_to_HLA,
+    get_angles,
     get_nev,
     get_vec,
-    get_angles,
-    HLA_to_NEV,
-    NEV_to_HLA,
     get_xyz,
-    radius_from_dls
+    radius_from_dls,
 )
-from .error import ErrorModel, ERROR_MODELS
-from .node import Node
-from .connector import Connector, interpolate_well
+from .version import __version__
 from .visual import figure
-
 
 AZI_REF = ["true", "magnetic", "grid"]
 
@@ -130,7 +132,7 @@ class SurveyHeader:
         self.latitude = latitude if latitude is not None else 51.4934
         self.longitude = longitude if longitude is not None else 0.0098
         self.altitude = altitude if altitude is not None else 0.
-        self._get_date(survey_date)
+        self._set_date(survey_date)
         self.b_total = b_total
         self.earth_rate = earth_rate
         self.dip = dip
@@ -160,12 +162,12 @@ class SurveyHeader:
                     altitude=self.altitude,
                     date=self.survey_date
                 )
-            except: # noqa E722
+            except:  # noqa E722
                 result = calculator.calculate(
                     latitude=self.latitude,
                     longitude=self.longitude,
                     altitude=self.altitude,
-                    date=self._get_date(date=None)
+                    date=self._set_date(date=None)
                 )
         else:
             result = {
@@ -208,9 +210,9 @@ class SurveyHeader:
                 self.vertical_inc_limit
             )
 
-    def _get_date(self, date: str):
+    def _set_date(self, date: str):
         """
-        The function to get today's dat eof date as a string in the format of
+        The function to get today's date as a string in the format of
         YYYY-MM-DD if date isn't provided.
         """
         if date is None:
@@ -247,7 +249,7 @@ class Survey:
         radius: Union[List[np.ndarray], None] = None,
         cov_nev: Union[List[np.ndarray], None] = None,
         cov_hla: Union[List[np.ndarray], None] = None,
-        error_model: 'str' = None,
+        error_model: ISCWSAErrorModel = None,
         start_xyz: list = [0., 0., 0.],
         start_nev: list = [0., 0., 0.],
         start_cov_nev=None,
@@ -355,12 +357,21 @@ class Survey:
             [self.md, self.inc_rad, self.azi_grid_rad]
         ).T
 
-        self.n = n
-        self.e = e
-        self.tvd = tvd
-        self.x = x
-        self.y = y
-        self.z = z
+        self.n = np.array(n) if n is not None else n
+        self.e = np.array(e) if e is not None else e
+        self.tvd = np.array(tvd) if tvd is not None else tvd
+
+        # start_nev will be overwritten if n, e, tvd data provided
+        if not all((self.n is None, self.e is None, self.tvd is None)):
+            self.start_nev = np.array(
+                [self.n[0], self.e[0], self.tvd[0]]
+            )
+        else:
+            self.start_nev = np.array(start_nev)
+
+        self.x = np.array(x) if x is not None else x
+        self.y = np.array(y) if y is not None else y
+        self.z = np.array(z) if z is not None else z
         if vec is not None:
             if nev:
                 self.vec_nev = vec
@@ -382,6 +393,7 @@ class Survey:
         error_models = ERROR_MODELS
         if error_model is not None:
             assert error_model in error_models, "Unrecognized error model"
+
         self.error_model = error_model
         self._get_errors()
 
@@ -494,7 +506,7 @@ class Survey:
         self.delta_md = mc.delta_md
         self.dls = mc.dls
         self.pos_xyz = mc.poss
-        self.pos_nev = get_nev(self.pos_xyz)
+        self.pos_nev = get_nev(self.pos_xyz) + self.start_nev
 
         if self.x is None:
             self.x, self.y, self.z = (mc.poss).T
@@ -614,6 +626,7 @@ class Survey:
             )
             t1 = np.nan_to_num(
                 t1,
+                # np.where(t1 < 0, t1 + 2 * np.pi, t1),
                 nan=np.nan
             )
             t2 = np.arctan2(
@@ -735,7 +748,7 @@ class Survey:
         """
         Convenience method for interpolating a Survey object's MD.
         """
-        survey_interpolated = interpolate_survey(self, step=30, dls=1e-8)
+        survey_interpolated = interpolate_survey(self, step=step, dls=dls)
         return survey_interpolated
 
     def figure(self, type='scatter3d', **kwargs):
@@ -1217,14 +1230,16 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
 
     # check for DLS continuity
     if not dls_cont:
-        dls_cont = [True] * (len(survey.dls) - 2)
+        # dls_cont = [True] * (len(survey.dls) - 2)
+        dls_cont = np.full(len(survey.dls) - 2, True)
     else:
         upper = np.around(survey.dls[1:-1], decimals=2)
         lower = np.around(survey.dls[2:], decimals=2)
-        dls_cont = [
-            True if u == l else False
-            for u, l in zip(upper, lower)
-        ]
+        # dls_cont = [
+        #     True if u == l else False
+        #     for u, l in zip(upper, lower)
+        # ]
+        dls_cont = np.equal(upper, lower)
 
     continuous = np.all((
         np.all(
@@ -1342,11 +1357,13 @@ def get_toolface_coeff(sections, azi):
     azi_p = sections[-1].azi
     if azi - azi_p < -180:
         return 1
-    elif azi - azi_p > 180:
+
+    if azi - azi_p > 180:
         return -1
-    else:
-        with np.errstate(all='ignore'):
-            coeff = (azi - azi_p) / abs(azi - azi_p)
+
+    with np.errstate(all='ignore'):
+        coeff = (azi - azi_p) / abs(azi - azi_p)
+
     if np.isnan(coeff):
         return 1
 

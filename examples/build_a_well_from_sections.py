@@ -13,10 +13,6 @@ from welleng.mesh import WellMesh
 from welleng.survey import from_connections
 from welleng.visual import plot
 
-# import os
-
-# os.environ['DISPLAY'] = ':1'
-
 # define start position and vector
 pos1 = [0., 0., 0.]
 vec1 = [0., 0., 1.]  # this is the same as inc=0, azi=0

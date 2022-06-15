@@ -27,7 +27,7 @@ from .version import __version__ as VERSION
 
 
 class Plotter(vtkRenderer):
-    def __init__(self, data, **kwargs):# noqa C901
+    def __init__(self, data, **kwargs):  # noqa C901
         super().__init__()
 
         """

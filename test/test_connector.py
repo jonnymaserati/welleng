@@ -7,7 +7,9 @@ from welleng.survey import Survey, from_connections
 
 
 class TestConnector(unittest.TestCase):
-
+    """
+    These tests check various functionality of the Connector class.
+    """
     def test_md_hold(self):
         # test hold with only md provided
         c = Connector(

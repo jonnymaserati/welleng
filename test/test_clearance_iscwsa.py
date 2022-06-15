@@ -1,5 +1,6 @@
 import json
 import os
+from typing import List
 import unittest
 
 import numpy as np
@@ -12,6 +13,9 @@ Test that the ISCWSA clearance model is working within a defined tolerance
 (the default has been set to 0.5%), testing against the ISCWSA standard
 set of wellpaths for evaluating clearance scenarios using the MWD Rev4
 error model.
+
+https://www.iscwsa.net/files/156/
+
 """
 
 # Set test tolerance as percentage
@@ -21,7 +25,10 @@ TOLERANCE = 0.5
 class TestClearanceISCWSA(unittest.TestCase):
 
     def test_clearance_iscwsa(self):
-
+        """
+        This test checks if the welleng models are performing close to the standard ISCWSA model within a
+        certain tolerance.
+        """
         # Read well and validation data
         filename = os.path.abspath(
             os.path.join(
@@ -55,7 +62,11 @@ class TestClearanceISCWSA(unittest.TestCase):
                 assert np.all(normalized < TOLERANCE)
 
 
-def generate_surveys(data):
+def generate_surveys(data: dict) -> dict:
+
+    """
+    Extract surveys for all well in data json.
+    """
 
     # Generate surveys for imported wells
     surveys = {}

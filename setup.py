@@ -5,8 +5,7 @@ Python library - thank you!
 
 import os
 import sys
-
-from setuptools import find_packages, setup
+from setuptools import setup, find_packages
 
 # load __version__ without importing anything
 version_file = os.path.join(
@@ -24,13 +23,10 @@ download_url = f'https://github.com/jonnymaserati/welleng/archive/v{__version__}
 # If you only want to generate surveys and errors, these are all that's
 # required
 requirements_default = set([
-    'flake8',
-    'isort',
-    'coverage',
     'numpy',
-    'PyYAML',
-    'pandas',
     'scipy',
+    'pint',
+    'PyYAML',
     'setuptools',
     'vtk'
 ])
@@ -40,7 +36,6 @@ requirements_easy = set([
     'magnetic_field_calculator',    # used to get default mag data for survey
     'networkx',
     'openpyxl',
-    'pandas',
     'tabulate',
     'trimesh',
     'utm',
@@ -53,16 +48,12 @@ requirements_all = requirements_easy.union([
 ])
 
 # if someone wants to output a requirements file
-# `python setup.py --list-all > requirements.txt`
-if '--list-default' in sys.argv:
-    print('\n'.join(requirements_default))
-    exit()
-
-elif '--list-all' in sys.argv:
+# `python setup.py --list-all > requirements.txt
+if '--list-all' in sys.argv:
     requirements = requirements_all.union(requirements_default)
     print('\n'.join(requirements))
 
-elif '--list-easy' in sys.argv:
+if '--list-easy' in sys.argv:
     requirements = requirements_easy.union(requirements_default)
     print('\n'.join(requirements_easy))
     exit()

@@ -1,8 +1,12 @@
-import numpy as np
-from numpy import sin, cos, tan, pi, sqrt
-import yaml
+from __future__ import annotations
+
 import os
 from collections import OrderedDict
+from typing import List
+
+import numpy as np
+import yaml
+from numpy import cos, pi, sin, sqrt, tan
 
 from ..utils import NEV_to_HLA
 
@@ -18,7 +22,7 @@ ACCURACY = 1e-6
 class ToolError:
     def __init__(
         self,
-        error,
+        error: 'Error',
         model: str
     ):
         """
@@ -61,12 +65,10 @@ class ToolError:
             if tool in self.em['codes']
         ]
 
-        # This removes the effect of tortuosity from the calculations
-        # self.tortuosity = 0
-
-        # self.em = iscwsa_error_models[model]
-        #     iscwsa_error_models = yaml.safe_load(file)
-        # self.em = iscwsa_error_models[model]
+        # Tortuosity here is used for calculating dp/de based on tool error codes.
+        # Some tools use tortuosity for this calculation
+        # Ideally, we want tortuosity to be 0 but since this is a
+        # recommendation by ISCWSA kept as is.
         if 'Default Tortusity (rad/m)' in self.em['header']:
             self.tortuosity = self.em['header']['Default Tortusity (rad/m)']
         elif 'XCL Tortuosity' in self.em['header']:
@@ -127,7 +129,7 @@ class ToolError:
     def call_func(self,
                   code: str,
                   func: str,
-                  error,
+                  error: "Error",
                   mag: float,
                   propagation: str,
                   **kwargs):
@@ -218,6 +220,49 @@ def _funky_denominator(error):
     return result
 
 
+def _get_ref_init_error(
+        dpde: np.ndarray,
+        error: "Error",
+        **kwargs
+) -> np.ndarray:
+    """
+    Function that identifies where the continuous gyro begins, initiates and
+    then carries the static errors during the continuous modes.
+    """
+    temp = [0.0]
+    for coeff, inc in zip(dpde[1:, 2], error.survey.inc_rad[1:]):
+        if inc > kwargs['header']['XY Static Gyro']['End Inc']:
+            temp.append(temp[-1])
+        else:
+            temp.append(coeff)
+    dpde[:, 2] = temp
+
+    return dpde
+
+
+def get_initial_error(error: "Error", **kwargs) -> List:
+    """
+    Calculate initial error for a tool based on static gyro
+    """
+
+    init_error = []
+    for i, (u, l) in enumerate(zip(
+        error.survey.inc_rad[1:], error.survey.inc_rad[:-1]
+    )):
+        init_error.append(0.0)
+        if all((
+            u > kwargs['header']['XY Static Gyro']['End Inc'],
+            l <= kwargs['header']['XY Static Gyro']['End Inc']
+        )):
+            for tool in kwargs['errors'].gyro_stationary:
+                temp = kwargs['errors'].errors[tool].e_DIA[i - 1][2]
+                if tool in ['GXY_RN']:
+                    temp *= kwargs['header']['Noise Reduction Factor']
+                init_error[-1] += temp
+
+    return init_error
+
+
 # error functions #
 def DREF(code, error, mag=0.35, propagation='random', NEV=True, **kwargs):
     dpde = np.full((len(error.survey_rad), 3), [1., 0., 0.])
@@ -226,9 +271,7 @@ def DREF(code, error, mag=0.35, propagation='random', NEV=True, **kwargs):
     return error._generate_error(code, e_DIA, propagation, NEV)
 
 
-def DSF(
-    code, error, mag=0.00056, propagation='systematic', NEV=True, **kwargs
-):
+def DSF(code, error, mag=0.00056, propagation='systematic', NEV=True, **kwargs):
     dpde = np.full((len(error.survey_rad), 3), [1., 0., 0.])
     dpde = dpde * np.array(error.survey_rad)
     e_DIA = dpde * mag
@@ -733,26 +776,7 @@ def AXYZ_ZB(
     return result
 
 
-def _get_ref_init_error(dpde, error, **kwargs):
-    """
-    Function that identifies where the continuous gyro begins, initiates and
-    then carries the static errors during the continuous modes.
-    """
-    temp = [0.0]
-    for coeff, inc in zip(dpde[1:, 2], error.survey.inc_rad[1:]):
-        if inc > kwargs['header']['XY Static Gyro']['End Inc']:
-            temp.append(temp[-1])
-        else:
-            temp.append(coeff)
-    dpde[:, 2] = temp
-
-    return dpde
-
-
-def CNA(
-    code, error, mag=0.35, propagation='systematic', NEV=True,
-    **kwargs
-):
+def CNA(code, error, mag=0.35, propagation='systematic', NEV=True, **kwargs):
     dpde = np.full((len(error.survey_rad), 3), [0., 0., 0.])
     with np.errstate(divide='ignore', invalid='ignore'):
         dpde[:, 2] = np.nan_to_num(
@@ -1993,26 +2017,3 @@ def XYM4L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
         return error._generate_error(
             code, e_DIA, propagation, NEV, e_NEV, e_NEV_star
         )
-
-
-def get_initial_error(error, **kwargs):
-    """
-    Calculate initial error for a tool based on static gyro
-    """
-
-    init_error = []
-    for i, (u, l) in enumerate(zip(
-        error.survey.inc_rad[1:], error.survey.inc_rad[:-1]
-    )):
-        init_error.append(0.0)
-        if all((
-            u > kwargs['header']['XY Static Gyro']['End Inc'],
-            l <= kwargs['header']['XY Static Gyro']['End Inc']
-        )):
-            for tool in kwargs['errors'].gyro_stationary:
-                temp = kwargs['errors'].errors[tool].e_DIA[i - 1][2]
-                if tool in ['GXY_RN']:
-                    temp *= kwargs['header']['Noise Reduction Factor']
-                init_error[-1] += temp
-
-    return init_error

@@ -21,10 +21,6 @@ from vedo import Arrows, Lines
 
 import welleng as we
 
-# import os
-
-# os.environ['DISPLAY'] = ':1'
-
 # Generate some random pairs of points
 pos1 = [0., 0., 0.]
 md1 = 0

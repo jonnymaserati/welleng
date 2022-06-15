@@ -13,10 +13,6 @@ from plotly.subplots import make_subplots
 
 from welleng.exchange.edm import EDM
 
-# probably not necessary... vscode runs headless on my machine for some reason
-# import os
-# os.environ['DISPLAY'] = ':1'
-
 
 def main():
     # import EDM data

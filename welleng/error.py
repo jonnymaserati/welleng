@@ -1,4 +1,5 @@
 import os
+from enum import Enum
 
 import numpy as np
 import yaml
@@ -15,6 +16,11 @@ PATH = os.path.dirname(__file__)
 TOOL_INDEX_FILENAME = os.path.join(
     '', *[PATH, 'errors', 'tool_index.yaml']
 )
+
+
+class ISCWSAErrorModel(Enum):
+    Rev4 = "ISCWSA MWD Rev4"
+    Rev5 = "ISCWSA MWD Rev5"
 
 
 def get_tool_index():
@@ -37,18 +43,12 @@ TOOL_INDEX = get_tool_index()
 ERROR_MODELS = get_error_models(TOOL_INDEX)
 
 
-class ErrorModel():
+class Error:
     """
-    A class to initiate the field parameters and error magnitudes
-    for subsequent error calculations.
+    Standard components of a well bore survey error.
     """
 
-    class Error:
-        """
-        Standard components of a well bore survey error.
-        """
-
-        def __init__(
+    def __init__(
             self,
             code: str,
             propagation: str,
@@ -58,25 +58,32 @@ class ErrorModel():
             e_NEV_star: np.ndarray,
             sigma_e_NEV: np.ndarray,
             cov_NEV: np.ndarray
-        ):
+    ):
+        self.code = code
+        self.propagation = propagation
+        self.e_DIA = e_DIA
+        self.cov_DIA = cov_DIA
+        self.e_NEV = e_NEV
+        self.e_NEV_star = e_NEV_star
+        self.sigma_e_NEV = sigma_e_NEV
+        self.cov_NEV = cov_NEV
 
-            self.code = code
-            self.propagation = propagation
-            self.e_DIA = e_DIA
-            self.cov_DIA = cov_DIA
-            self.e_NEV = e_NEV
-            self.e_NEV_star = e_NEV_star
-            self.sigma_e_NEV = sigma_e_NEV
-            self.cov_NEV = cov_NEV
+
+class ErrorModel(Error):
+    """
+    A class to initiate the field parameters and error magnitudes
+    for subsequent error calculations.
+    """
 
     def __init__(
         self,
         survey,
-        error_model: str = "ISCWSA MWD Rev5",
+        error_model: ISCWSAErrorModel = ISCWSAErrorModel.Rev5,
     ):
         """
 
         """
+        Error.__init__()
         assert error_model in ERROR_MODELS, "Unrecognized error model"
         self.error_model = error_model
         self.survey = survey

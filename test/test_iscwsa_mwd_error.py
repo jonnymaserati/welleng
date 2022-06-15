@@ -1,4 +1,5 @@
 import json
+from typing import Tuple, Union
 import os
 import unittest
 
@@ -7,18 +8,24 @@ import pandas as pd
 
 from welleng.survey import Survey, SurveyHeader
 from welleng.utils import get_sigmas
+from welleng.error import ISCWSAErrorModel, ErrorModel
 
 """
 Test that the ISCWSA MWD Rev5 error model is working within a defined
 tolerance (the default has been set to 0.001%), testing against the
 MWD Rev 5 error model example provided by ISCWSA.
+https://www.iscwsa.net/files/570/
 """
 
 # Set test tolerance as percentage
 TOLERANCE = 0.001
 
 
-def initiate(error_model, filename):
+def initiate(
+        error_model: ISCWSAErrorModel,
+        filename: str
+) -> Tuple:
+
     # Read validation data from file:
     wd = json.load(open(filename))
     err = get_err(error_model, wd)
@@ -27,12 +34,18 @@ def initiate(error_model, filename):
     return (df, err)
 
 
-def get_md_index(error_data, md):
+def get_md_index(
+        error_data: ErrorModel,
+        md: Union[int, float]
+) -> int:
     i = np.where(error_data.survey.md == md)[0][0]
     return i
 
 
-def get_err(error_model, wd):
+def get_err(
+        error_model: ISCWSAErrorModel,
+        wd: dict
+) -> ErrorModel:
     sh = SurveyHeader()
 
     for k, v in wd['header'].items():
@@ -43,7 +56,7 @@ def get_err(error_model, wd):
         inc=wd['survey']['inc'],
         azi=wd['survey']['azi'],
         header=sh,
-        error_model=error_model
+        error_model=error_model.value
     )
 
     err = survey.err
@@ -52,13 +65,16 @@ def get_err(error_model, wd):
 
 
 class TestISCWSAError(unittest.TestCase):
+    """
+    This test checks if the welleng correctly calculates error for both rev 4 and rev 5 of the ISCWSA error model.
+    """
 
     def test_iscwsa_error_models(self):
 
         input_files = {
-            "ISCWSA MWD Rev4":
+            ISCWSAErrorModel.Rev4:
                 "error_mwdrev4_1_iscwsa_data.json",
-            "ISCWSA MWD Rev5":
+            ISCWSAErrorModel.Rev5:
                 "error_mwdrev5_1_iscwsa_data.json"
         }
 

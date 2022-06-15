@@ -4,12 +4,13 @@ try:
 except ImportError:
     TRIMESH = False
 import math
+
 import numpy as np
-from numpy import sin, cos, pi
+from numpy import cos, pi, sin
 from scipy.spatial import KDTree
 
-from .utils import HLA_to_NEV, get_sigmas
 from .survey import Survey, slice_survey
+from .utils import HLA_to_NEV, get_sigmas
 from .visual import figure
 
 

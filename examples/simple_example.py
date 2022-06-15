@@ -14,10 +14,6 @@ from tabulate import tabulate
 
 import welleng as we
 
-# import os
-
-# os.environ['DISPLAY'] = ':1'
-
 # construct simple well paths
 print("Constructing wells...")
 connector_reference = we.survey.from_connections(
