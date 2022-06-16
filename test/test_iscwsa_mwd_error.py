@@ -66,7 +66,8 @@ def get_err(
 
 class TestISCWSAError(unittest.TestCase):
     """
-    This test checks if the welleng correctly calculates error for both rev 4 and rev 5 of the ISCWSA error model.
+    This test checks if the welleng correctly calculates error for both rev 4 and
+    rev 5 of the ISCWSA error model.
     """
 
     def test_iscwsa_error_models(self):

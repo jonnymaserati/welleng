@@ -1,6 +1,5 @@
 import json
 import os
-from typing import List
 import unittest
 
 import numpy as np
@@ -26,8 +25,8 @@ class TestClearanceISCWSA(unittest.TestCase):
 
     def test_clearance_iscwsa(self):
         """
-        This test checks if the welleng models are performing close to the standard ISCWSA model within a
-        certain tolerance.
+        This test checks if the welleng models are performing close to the standard
+        ISCWSA model within a certain tolerance.
         """
         # Read well and validation data
         filename = os.path.abspath(

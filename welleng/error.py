@@ -69,7 +69,7 @@ class Error:
         self.cov_NEV = cov_NEV
 
 
-class ErrorModel(Error):
+class ErrorModel:
     """
     A class to initiate the field parameters and error magnitudes
     for subsequent error calculations.
@@ -80,10 +80,6 @@ class ErrorModel(Error):
         survey,
         error_model: ISCWSAErrorModel = ISCWSAErrorModel.Rev5,
     ):
-        """
-
-        """
-        Error.__init__()
         assert error_model in ERROR_MODELS, "Unrecognized error model"
         self.error_model = error_model
         self.survey = survey
@@ -225,7 +221,7 @@ class ErrorModel(Error):
             else:
                 return
 
-            return ErrorModel.Error(
+            return Error(
                 code,
                 propagation,
                 e_DIA,
