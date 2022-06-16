@@ -6,8 +6,8 @@ Test things that should work with a *minimal* welleng install.
 """
 import unittest
 
-from welleng.error import ISCWSAErrorModel
 import welleng as we
+from welleng.error import ISCWSAErrorModel
 
 
 class MinimalTest(unittest.TestCase):

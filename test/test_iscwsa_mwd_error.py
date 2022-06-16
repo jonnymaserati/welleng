@@ -1,14 +1,14 @@
 import json
-from typing import Tuple, Union
 import os
 import unittest
+from typing import Tuple, Union
 
 import numpy as np
 import pandas as pd
 
+from welleng.error import ErrorModel, ISCWSAErrorModel
 from welleng.survey import Survey, SurveyHeader
 from welleng.utils import get_sigmas
-from welleng.error import ISCWSAErrorModel, ErrorModel
 
 """
 Test that the ISCWSA MWD Rev5 error model is working within a defined

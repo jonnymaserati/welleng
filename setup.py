@@ -5,7 +5,8 @@ Python library - thank you!
 
 import os
 import sys
-from setuptools import setup, find_packages
+
+from setuptools import find_packages, setup
 
 # load __version__ without importing anything
 version_file = os.path.join(
