@@ -811,6 +811,90 @@ class Survey:
         )
         return survey
 
+    def _get_vertical_section(self):
+        """
+        Internal function to initiate the vertical section by calculating
+        the magnitude of the lateral displacement and, if a vertical section
+        azimuth is defined, calculating the vertical section lateral
+        component along the given vertical section azimuth (relative to the
+        defined reference azimuth).
+        """
+        self.hypot = np.hypot(
+            self.n[1:] - self.n[:-1],
+            self.e[1:] - self.e[:-1]
+        )
+
+        if self.header.vertical_section_azimuth is not None:
+            self.vertical_section = self.get_vertical_section(
+                self.header.vertical_section_azimuth, deg=False
+            )
+        else:
+            self.vertical_section = None
+
+    def get_vertical_section(
+            self,
+            vertical_section_azimuth: float,
+            deg: bool = True
+    ) -> np.ndarray:
+        """
+        Calculate the vertical section.
+        Parameters
+        ----------
+        vertical_section_azimuth: float
+            The azimuth (relative to the reference azimuth defined in the
+            survey header) along which to calculate the vertical section
+            lateral displacement.
+        deg: boolean (default: True)
+            Indicates whether the vertical section azimuth parameter is in
+            degrees or radians (True or False respectively).
+        Returns
+        -------
+        result: (n, 1) ndarray
+        """
+        vertical_section_azimuth = (
+            vertical_section_azimuth if not deg
+            else math.radians(vertical_section_azimuth)
+        )
+        azi_temp = getattr(
+            self,
+            f"azi_{self.azi_ref_lookup[self.header.azi_reference]}_rad"
+        )
+        azi_temp[np.where(self.inc_rad == 0.0)] = (
+            vertical_section_azimuth
+        )
+        result = np.cos(
+            vertical_section_azimuth
+            - (azi_temp[1:] + azi_temp[:-1]) / 2
+        ) * self.hypot
+
+        result = np.cumsum(np.hstack(([0.0], result)))
+
+        return result
+
+    def set_vertical_section(
+            self,
+            vertical_section_azimuth: float,
+            deg: bool = True
+    ):
+        """
+        Sets the vertical_section_azimuth property in the survey header and
+        the vertical section data with the data calculated for the input
+        azimuth.
+        Parameters
+        ----------
+        vertical_section_azimuth: float
+            The azimuth (relative to the reference azimuth defined in the
+            survey header) along which to calculate the vertical section
+            lateral displacement.
+        deg: boolean (default: True)
+            Indicates whether the vertical section azimuth parameter is in
+            degrees or radians (True or False respectively).
+        """
+        self.header.vertical_section_azimuth = vertical_section_azimuth
+        self.vertical_section = self.get_vertical_section(
+            vertical_section_azimuth, deg
+        )
+
 
 class TurnPoint:
     def __init__(

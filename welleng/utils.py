@@ -130,6 +130,10 @@ class MinCurve:
 
 
 def get_dogleg(inc1, azi1, inc2, azi2):
+    """
+    Calculate DLS (Curvature) between two stations in rad/m.
+    """
+
     dogleg = np.arccos(
         np.cos(inc2 - inc1)
         - (np.sin(inc1) * np.sin(inc2))

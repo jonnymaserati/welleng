@@ -77,7 +77,7 @@ class ErrorModel:
 
     def __init__(
         self,
-        survey,
+        survey: 'Survey',
         error_model: ISCWSAErrorModel = ISCWSAErrorModel.Rev5,
     ):
         assert error_model in ERROR_MODELS, "Unrecognized error model"
@@ -232,7 +232,7 @@ class ErrorModel:
                 cov_NEV
             )
 
-    def drk_dDepth(self, survey):
+    def drk_dDepth(self, survey: 'Survey'):
         '''
         survey1 is previous survey station (with inc and azi in radians)
         survey2 is current survey station (with inc and azi in radians)
@@ -269,7 +269,7 @@ class ErrorModel:
             )
         )
 
-    def drk_dInc(self, survey):
+    def drk_dInc(self, survey: 'Survey'):
         '''
         survey1 is previous survey station (with inc and azi in radians)
         survey2 is current survey station (with inc and azi in radians)
@@ -292,7 +292,7 @@ class ErrorModel:
             )
         )
 
-    def drk_dAz(self, survey):
+    def drk_dAz(self, survey: 'Survey'):
         '''
         survey1 is previous survey station (with inc and azi in radians)
         survey2 is current survey station (with inc and azi in radians)
@@ -312,7 +312,7 @@ class ErrorModel:
             )
         )
 
-    def drkplus1_dDepth(self, survey):
+    def drkplus1_dDepth(self, survey: 'Survey'):
         '''
         survey2 is current survey station (with inc and azi in radians)
         survey3 is next survey station (with inc and azi in radians)
@@ -324,7 +324,7 @@ class ErrorModel:
             )
         )
 
-    def drkplus1_dInc(self, survey):
+    def drkplus1_dInc(self, survey: 'Survey'):
         '''
         survey2 is current survey station (with inc and azi in radians)
         survey3 is next survey station (with inc and azi in radians)
@@ -345,7 +345,7 @@ class ErrorModel:
             )
         )
 
-    def drkplus1_dAz(self, survey):
+    def drkplus1_dAz(self, survey: 'Survey'):
         '''
         survey2 is current survey station (with inc and azi in radians)
         survey3 is next survey station (with inc and azi in radians)
@@ -365,7 +365,16 @@ class ErrorModel:
             )
         )
 
-    def _drdp(self, survey):
+    def _drdp(self, survey: 'Survey'):
+        """
+        This function calculates dr/dp used to calculate errors.
+        Refer to Appendix A in the ISCWSA Introduction to Wellbore positioning book
+        for equations (Pages 218-220).
+
+        :param survey:
+        :return:
+        """
+
 
         return np.hstack((
             self.drk_dDepth(survey),
@@ -376,7 +385,7 @@ class ErrorModel:
             self.drkplus1_dAz(survey)
         ))
 
-    def _drdp_sing(self, survey):
+    def _drdp_sing(self, survey: 'Survey'):
         '''
         survey1 is previous survey station (with inc and azi in radians)
         survey2 is current survey station

@@ -126,13 +126,15 @@ class ToolError:
 
         return func
 
-    def call_func(self,
-                  code: str,
-                  func: str,
-                  error: "Error",
-                  mag: float,
-                  propagation: str,
-                  **kwargs):
+    def call_func(
+            self,
+            code: str,
+            func: str,
+            error: "Error",
+            mag: float,
+            propagation: str,
+            **kwargs
+    ):
         """
         Function for calling functions by mapping function labels to their
         functions.
@@ -240,7 +242,7 @@ def _get_ref_init_error(
     return dpde
 
 
-def get_initial_error(error: "Error", **kwargs) -> List:
+def get_initial_error_gyro(error: "Error", **kwargs) -> List:
     """
     Calculate initial error for a tool based on static gyro
     """
@@ -532,11 +534,11 @@ def ABXY_TI2(
 
 
 def AMID(
-        code,
-        error,
-        mag=0.04363323129985824,
-        propagation='systematic',
-        NEV=True
+    code,
+    error,
+    mag=0.04363323129985824,
+    propagation='systematic',
+    NEV=True
 ):
     dpde = np.zeros((len(error.survey_rad), 3))
     dpde[:, 2] = (
@@ -1057,7 +1059,7 @@ def GXY_GD(
             np.zeros_like(error.survey.md)
         )
 
-    init_error = get_initial_error(error, kwargs)
+    init_error = get_initial_error_gyro(error, kwargs)
     temp = [0.0]
     for i, (u, e) in enumerate(zip(dpde[1:, 2], init_error)):
         temp.append(0.0)
@@ -1103,7 +1105,7 @@ def GXY_GRW(
             ),
             np.zeros_like(error.survey.md)
         )
-    init_error = get_initial_error(error, kwargs)
+    init_error = get_initial_error_gyro(error, kwargs)
     temp = [0.0]
     for i, (u, e) in enumerate(zip(dpde[1:, 2], init_error)):
         temp.append(0.0)
