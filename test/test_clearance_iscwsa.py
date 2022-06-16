@@ -42,15 +42,11 @@ class TestClearanceISCWSA(unittest.TestCase):
 
         # Perform clearance checks for each survey
         for well in surveys:
-            if well == "Reference well":
+            if well in ["Reference well", "10 - well"]:
                 continue
             else:
                 offset = surveys[well]
-                # skip well 10
-                if well == "10 - well":
-                    continue
-                else:
-                    c = Clearance(reference, offset)
+                c = Clearance(reference, offset)
 
                 result = ISCWSA(c)
 

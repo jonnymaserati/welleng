@@ -1,6 +1,7 @@
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 from typing import List, Union
+import requests
 
 import numpy as np
 
@@ -14,17 +15,26 @@ except ImportError:
 class EDM:
     def __init__(
             self,
-            filename: str
+            source_location: str,
+            source: str = 'file'
     ):
         """
         Initiate an instance of an EDM object.
 
         Parameters
         ----------
-            filename: str
-                The path and filename of the EDM file to be imported.
+            source_location: str
+                The path and filename of the EDM file to be imported or the link to the XML file
+            source: str ["file", "link"]
         """
-        self.tree = ET.parse(filename)
+
+        if source == "file":
+            self.tree = ET.parse(source_location)
+        elif source == "link":
+            response = requests.get(source_location)
+            self.tree = ET.fromstring(response.content)
+        else:
+            raise AttributeError(f'Invalid source {source}. Source must be "file" or "link"')
         self.root = self.tree.getroot()
         self._wellbore_id_to_name()
         self._wellbore_id_to_well_id()
