@@ -375,7 +375,6 @@ class ErrorModel:
         :return:
         """
 
-
         return np.hstack((
             self.drk_dDepth(survey),
             self.drk_dInc(survey),
