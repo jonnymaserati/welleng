@@ -1,9 +1,9 @@
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 from typing import List, Union
-import requests
 
 import numpy as np
+import requests
 
 try:
     import networkx as nx

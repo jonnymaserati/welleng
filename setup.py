@@ -27,6 +27,7 @@ download_url = f'https://github.com/jonnymaserati/welleng/archive/v{__version__}
 requirements_default = [
     'numpy==1.22.4',
     'pint==0.19.2',
+    'PyYAML==6.0',
     'requests==2.28.0',
     'scipy==1.8.1',
     'setuptools==62.4.0',
