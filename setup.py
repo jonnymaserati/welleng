@@ -45,8 +45,7 @@ requirements_easy = [
 ]
 
 # this is the troublesome requirement that needs C dependencies
-requirements_all = requirements_easy.append(
-    'python-fcl==0.6.1')
+requirements_all = requirements_easy + ['python-fcl==0.6.1']
 
 # if someone wants to output a requirements file
 # `python setup.py --list-all > requirements.txt

@@ -30,12 +30,13 @@ class EDM:
 
         if source == "file":
             self.tree = ET.parse(source_location)
+            self.root = self.tree.getroot()
+
         elif source == "link":
             response = requests.get(source_location)
-            self.tree = ET.fromstring(response.content)
+            self.root = ET.fromstring(response.content)
         else:
             raise AttributeError(f'Invalid source {source}. Source must be "file" or "link"')
-        self.root = self.tree.getroot()
         self._wellbore_id_to_name()
         self._wellbore_id_to_well_id()
 
