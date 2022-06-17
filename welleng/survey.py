@@ -869,7 +869,7 @@ class Survey:
         )
 
     def modified_tortuosity_index(
-        self, rtol=1.0, data=False, **kwargs
+        self, rtol=0.01, dls_tol=None, data=False, **kwargs
     ):
         """
         Convenient method for calculating the Tortuosity Index (TI) using a
@@ -884,7 +884,10 @@ class Survey:
             Relative tolerance when determining closeness of normal vectors.
         atol: float
             Absolute tolerance when determining closeness of normal vectors.
-        data: boolean
+        dls_tol: float or None
+            Indicates whether or not to check for dls continuity within the
+            defined dls tolerance.
+        data: float
             If true returns a dictionary of properties.
 
         Returns
@@ -892,10 +895,10 @@ class Survey:
             Array of tortuosity index or a dict of results where:
         """
         return modified_tortuosity_index(
-            self, rtol=rtol, data=data, **kwargs
+            self, rtol=rtol, dls_tol=dls_tol, data=data, **kwargs
         )
 
-    def tortuosity_index(self, rtol=1.0, data=False, **kwargs):
+    def tortuosity_index(self, rtol=0.01, dls_tol=None, data=False, **kwargs):
         """
         A modified version of the Tortuosity Index function originally
         referenced in an IADD presentation on "Measuring Wellbore
@@ -930,7 +933,7 @@ class Survey:
         """
 
         return tortuosity_index(
-            self, rtol=rtol, data=data, **kwargs
+            self, rtol=rtol, dls_tol=None, data=data, **kwargs
         )
 
     def directional_difficulty_index(self, **kwargs):
@@ -948,7 +951,7 @@ class Survey:
 
 
 def modified_tortuosity_index(
-    survey, rtol=1.0, data=False, **kwargs
+    survey, rtol=0.01, dls_tol=None, data=False, **kwargs
 ):
     """
     Method for calculating the Tortuosity Index (TI) using a modified
@@ -961,7 +964,7 @@ def modified_tortuosity_index(
     kappa = kwargs.get('kapa', 1)
 
     continuous, starts, mds, locs, n_sections, n_sections_arr = _get_ti_data(
-        survey, rtol
+        survey, rtol, dls_tol
     )
 
     l_cs = (
@@ -1009,7 +1012,7 @@ def modified_tortuosity_index(
     return mti
 
 
-def tortuosity_index(survey, rtol=1.0, data=False, **kwargs):
+def tortuosity_index(survey, rtol=0.01, dls_tol=None, data=False, **kwargs):
     """
     Method for calculating the Tortuosity Index (TI) as described in the 
     International Association of Directional Drilling presentation
@@ -1021,7 +1024,7 @@ def tortuosity_index(survey, rtol=1.0, data=False, **kwargs):
     kappa = kwargs.get('kapa', 1e7)
 
     continuous, starts, mds, locs, n_sections, n_sections_arr = _get_ti_data(
-        survey, rtol
+        survey, rtol, dls_tol
     )
 
     l_cs = (survey.md[1:] - mds[n_sections_arr - 1]) / coeff
@@ -1097,7 +1100,7 @@ def directional_difficulty_index(survey, **kwargs):
     return ddi
 
 
-def _get_ti_data(survey, rtol):
+def _get_ti_data(survey, rtol, dls_tol=None):
     # tol_0 = np.full((len(survey.md) - 2, 3), rtol)
     # delta_md = (survey.md[2:] - survey.md[1:-1]).reshape(-1, 1)
     # delta_norm = survey.normals[1:] - survey.normals[:-1]
@@ -1109,14 +1112,27 @@ def _get_ti_data(survey, rtol):
     #         & np.isnan(survey.normals[:-1]).all(axis=-1)
     #     )
     # )
-    continuous = np.all(
-        np.isclose(
-            survey.normals[:-1],
-            survey.normals[1:],
+    if dls_tol is None:
+        dls_continuity = np.full(len(survey.dls) - 2, True)
+    else:
+        dls_continuity = np.isclose(
+            survey.dls[1:-1],
+            survey.dls[2:],
             equal_nan=True,
-            rtol=rtol, atol=rtol
-        ), axis=-1
-    )
+            rtol=dls_tol,
+            atol=rtol
+        )
+    continuous = np.all((
+        np.all(
+            np.isclose(
+                survey.normals[:-1],
+                survey.normals[1:],
+                equal_nan=True,
+                rtol=rtol, atol=rtol
+            ), axis=-1
+        ),
+        dls_continuity
+    ), axis=0)
 
     starts = np.concatenate((
         np.array([0]),
@@ -1887,6 +1903,12 @@ def from_connections(
     """
     if type(section_data) is not list:
         section_data = [section_data]
+
+    # get reference mds
+    mds_ref = []
+    for s in section_data:
+        mds_ref.extend([s.md1, s.md_target])
+
     section_data_interp = interpolate_well(section_data, step)
     # generate lists for survey
     md, inc, azi = np.vstack([np.array(list(zip(
@@ -1906,6 +1928,8 @@ def from_connections(
             surface_unit=surface_unit
         )
 
+    interpolated = np.array([False if m in mds_ref else True for m in md])
+
     survey = Survey(
         md=md,
         inc=inc,
@@ -1917,7 +1941,8 @@ def from_connections(
         radius=radius,
         header=survey_header,
         error_model=error_model,
-        unit=depth_unit
+        unit=depth_unit,
+        interpolated=interpolated
     )
 
     return survey
