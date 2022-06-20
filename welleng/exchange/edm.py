@@ -34,7 +34,10 @@ class EDM:
 
         elif source == "link":
             response = requests.get(source_location)
-            self.root = ET.fromstring(response.content)
+            if response.status_code == 200:
+                self.root = ET.fromstring(response.content)
+            else:
+                raise ValueError(f"Error loading the EDM file. Error code: {response.status_code}")
         else:
             raise AttributeError(f'Invalid source {source}. Source must be "file" or "link"')
         self._wellbore_id_to_name()
