@@ -4,7 +4,7 @@ try:
 except ImportError:
     TRIMESH = False
 try:
-    from vedo import trimesh2vedo, Lines, Sphere
+    from vedo import Lines, Sphere, trimesh2vedo
     VEDO = True
 except ImportError:
     VEDO = False
@@ -16,19 +16,18 @@ try:
 except ImportError:
     PLOTLY = False
 
-from vtk import (
-        vtkCubeAxesActor, vtkNamedColors, vtkInteractorStyleTerrain
-)
+from vtk import vtkCubeAxesActor, vtkInteractorStyleTerrain, vtkNamedColors
 from vtkmodules.vtkRenderingCore import (
-    vtkRenderWindow, vtkRenderWindowInteractor, vtkRenderer
+    vtkRenderer,
+    vtkRenderWindow,
+    vtkRenderWindowInteractor,
 )
 
 from .version import __version__ as VERSION
 
-# VEDO = False
 
 class Plotter(vtkRenderer):
-    def __init__(self, data, **kwargs):
+    def __init__(self, data, **kwargs):  # noqa C901
         super().__init__()
 
         """
@@ -130,7 +129,6 @@ class Plotter(vtkRenderer):
         self.GetActiveCamera().Azimuth(30)
         self.GetActiveCamera().Elevation(30)
         self.GetActiveCamera().SetViewUp(0, 0, -1)
-        # self.GetActiveCamera().SetPosition(tuple(pos_new))
         self.GetActiveCamera().SetFocalPoint(axes.GetCenter())
 
         self.ResetCamera()

@@ -1,0 +1,48 @@
+name: CI
+
+on: push
+
+jobs:
+  static:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+
+      - name: Linter
+        run: |
+          make install-requirements-lint
+          make lint
+
+  testing:
+    name: Automated Testing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+
+      - name: Install dependencies
+        run: |
+          make install
+
+      - name: Run unit tests
+        run: |
+          make test
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          API_ROOT_URL: ${{ secrets.API_ROOT_URL }}
+          ENVIRONMENT: ${{ secrets.ENVIRONMENT }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+          CACHE_URL: ${{ secrets.CACHE_URL }}
+
+      - name: Coverage report
+        run: |
+          make coverage-report

@@ -1,11 +1,12 @@
 try:
     from openpyxl import load_workbook
     OPENPYXL = True
-except:
+except:# noqa E722
     OPENPYXL = False
-from math import radians
-import yaml
 import os
+from math import radians
+
+import yaml
 
 """
 Code to extract error model data from standard ISCWSA Excel files and create
@@ -31,7 +32,7 @@ except Exception:
     ec = {}
 
 
-def extract_data(filename):
+def extract_data(filename: str) -> dict:
     assert OPENPYXL, "ImportError: try pip install welleng[easy]"
     workbook = load_workbook(
         filename=filename,
@@ -100,7 +101,7 @@ def extract_codes(workbook):
     return e
 
 
-def make_error_dict(data):
+def make_error_dict(data: dict) -> dict:
     e = {}
 
     for c, f, m, u, p in data:
@@ -114,7 +115,7 @@ def make_error_dict(data):
     return e
 
 
-def make_header_dict(data):
+def make_header_dict(data: dict) -> dict:
     h = {}
 
     for k, v in data:
@@ -131,7 +132,7 @@ def remove_characters(data, chars=CHARACTERS):
     return data
 
 
-def make_index(tool_code, data):
+def make_index(tool_code: str, data: dict):
     fields = [
         'Application', 'Short Name', 'Long Name', 'OWSG Prefix', 'Revision No'
     ]
@@ -177,7 +178,6 @@ if __name__ == '__main__':
 
     # update index file
     make_index(tool_code, ec)
-
 
     # extract rev 5 model
     tool_code = 'ISCWSA MWD Rev5'

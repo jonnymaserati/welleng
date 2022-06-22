@@ -1,5 +1,7 @@
 import numbers
+
 import numpy as np
+
 from .survey import Survey
 
 try:

@@ -1,6 +1,9 @@
 import os
+from enum import Enum
+
 import numpy as np
 import yaml
+
 from .errors.tool_errors import ToolError
 
 # TODO: there's likely an issue with TVD versus TVDSS that
@@ -13,6 +16,11 @@ PATH = os.path.dirname(__file__)
 TOOL_INDEX_FILENAME = os.path.join(
     '', *[PATH, 'errors', 'tool_index.yaml']
 )
+
+
+class ISCWSAErrorModel(Enum):
+    Rev4 = "ISCWSA MWD Rev4"
+    Rev5 = "ISCWSA MWD Rev5"
 
 
 def get_tool_index():
@@ -35,47 +43,43 @@ TOOL_INDEX = get_tool_index()
 ERROR_MODELS = get_error_models(TOOL_INDEX)
 
 
-class ErrorModel():
+class Error:
+    """
+    Standard components of a well bore survey error.
+    """
+
+    def __init__(
+            self,
+            code: str,
+            propagation: str,
+            e_DIA: np.ndarray,
+            cov_DIA: np.ndarray,
+            e_NEV: np.ndarray,
+            e_NEV_star: np.ndarray,
+            sigma_e_NEV: np.ndarray,
+            cov_NEV: np.ndarray
+    ):
+        self.code = code
+        self.propagation = propagation
+        self.e_DIA = e_DIA
+        self.cov_DIA = cov_DIA
+        self.e_NEV = e_NEV
+        self.e_NEV_star = e_NEV_star
+        self.sigma_e_NEV = sigma_e_NEV
+        self.cov_NEV = cov_NEV
+
+
+class ErrorModel:
     """
     A class to initiate the field parameters and error magnitudes
     for subsequent error calculations.
     """
 
-    class Error:
-        '''
-        Standard components of a well bore survey error.
-        '''
-        def __init__(
-            self,
-            code,
-            propagation,
-            e_DIA,
-            cov_DIA,
-            e_NEV,
-            e_NEV_star,
-            sigma_e_NEV,
-            cov_NEV
-        ):
-
-            self.code = code
-            self.propagation = propagation
-            self.e_DIA = e_DIA
-            self.cov_DIA = cov_DIA
-            self.e_NEV = e_NEV
-            self.e_NEV_star = e_NEV_star
-            self.sigma_e_NEV = sigma_e_NEV
-            self.cov_NEV = cov_NEV
-
     def __init__(
         self,
-        survey,
-        error_model="ISCWSA MWD Rev5",
+        survey: 'Survey',
+        error_model: ISCWSAErrorModel = ISCWSAErrorModel.Rev5,
     ):
-        """
-
-        """
-
-        # error_models = ERROR_MODELS
         assert error_model in ERROR_MODELS, "Unrecognized error model"
         self.error_model = error_model
         self.survey = survey
@@ -90,12 +94,6 @@ class ErrorModel():
         self.drdp = self._drdp(self.survey_drdp)
         self.drdp_sing = self._drdp_sing(self.survey_drdp)
 
-        # if self.error_model.split("_")[0] == "iscwsa":
-        #     self.errors = iscwsaMwd(
-        #         error=self,
-        #         model=self.error_model
-        #     )
-
         for k, v in TOOL_INDEX.items():
             if v['Short Name'] == self.error_model:
                 model = k
@@ -106,7 +104,12 @@ class ErrorModel():
             model=model
         )
 
-    def _e_NEV(self, e_DIA):
+    def _e_NEV(self, e_DIA: np.ndarray) -> np.ndarray:
+        """
+        This function calculates error in NEV at all stations based on error in
+         DIA.
+        """
+
         D, I, A = e_DIA.T
         arr = np.array([
             (self.drdp[:, 0] + self.drdp[:, 9]) * D
@@ -126,7 +129,10 @@ class ErrorModel():
 
         return arr
 
-    def _e_NEV_star(self, e_DIA):
+    def _e_NEV_star(self, e_DIA: np.ndarray) -> np.ndarray:
+        """
+        Calculate the error at a station based on error in DIA
+        """
         D, I, A = e_DIA.T
         arr = np.array([
             self.drdp[:, 0] * D
@@ -146,17 +152,12 @@ class ErrorModel():
 
         return arr
 
-    def _cov(self, arr):
-        '''
+    def _cov(self, arr: np.ndarray) -> np.ndarray:
+        """
         Returns a covariance matrix from an (n,3) array.
-        '''
-        # Mitigate overflow
-        # with np.errstate(divide='ignore', invalid='ignore'):
-        #     coeff = np.nan_to_num(
-        #         arr / np.abs(arr) * ACCURACY,
-        #         nan=ACCURACY
-        #     )
-        # arr = np.where(np.abs(arr) > ACCURACY, arr, coeff)
+        The structure of the matrix returned is (3, 3, n).
+
+        """
 
         x, y, z = np.array(arr).T
         result = np.array([
@@ -177,23 +178,35 @@ class ErrorModel():
 
     def _generate_error(
         self,
-        code,
-        e_DIA,
-        propagation='systematic',
-        NEV=True,
-        e_NEV=None,
-        e_NEV_star=None
-    ):
+        code: str,
+        e_DIA: np.ndarray,
+        propagation: str = 'systematic',
+        NEV: bool = True,
+        e_NEV: bool = None,
+        e_NEV_star: bool = None
+    ) :
+        """
+        Calculate the error for a tool at the current station (e_NEV) and
+        the error at the final survey station
+        (e_NEV_star) in Northing Easting Vertical (NEV) using the error code,
+        error in DIA [Depth, inclination, Azimuth],
+        and the dr/dp calculated earlier.
+
+        """
+
         if not NEV:
             return e_DIA
         else:
             cov_DIA = self._cov(e_DIA)
+
             if e_NEV is None:
                 e_NEV = self._e_NEV(e_DIA)
                 e_NEV_star = self._e_NEV_star(e_DIA)
+
             if propagation == 'systematic':
                 sigma_e_NEV = self._sigma_e_NEV_systematic(e_NEV, e_NEV_star)
                 cov_NEV = self._cov(sigma_e_NEV)
+
             elif propagation == 'random':
                 sigma_e_NEV = np.cumsum(self._cov(e_NEV), axis=-1)
                 cov_NEV = np.add(
@@ -204,10 +217,11 @@ class ErrorModel():
                             np.array(sigma_e_NEV[:, :, :-1])
                         ), axis=-1)
                     )
+
             else:
                 return
 
-            return ErrorModel.Error(
+            return Error(
                 code,
                 propagation,
                 e_DIA,
@@ -218,7 +232,7 @@ class ErrorModel():
                 cov_NEV
             )
 
-    def drk_dDepth(self, survey):
+    def drk_dDepth(self, survey: 'Survey'):
         '''
         survey1 is previous survey station (with inc and azi in radians)
         survey2 is current survey station (with inc and azi in radians)
@@ -255,7 +269,7 @@ class ErrorModel():
             )
         )
 
-    def drk_dInc(self, survey):
+    def drk_dInc(self, survey: 'Survey'):
         '''
         survey1 is previous survey station (with inc and azi in radians)
         survey2 is current survey station (with inc and azi in radians)
@@ -278,7 +292,7 @@ class ErrorModel():
             )
         )
 
-    def drk_dAz(self, survey):
+    def drk_dAz(self, survey: 'Survey'):
         '''
         survey1 is previous survey station (with inc and azi in radians)
         survey2 is current survey station (with inc and azi in radians)
@@ -298,7 +312,7 @@ class ErrorModel():
             )
         )
 
-    def drkplus1_dDepth(self, survey):
+    def drkplus1_dDepth(self, survey: 'Survey'):
         '''
         survey2 is current survey station (with inc and azi in radians)
         survey3 is next survey station (with inc and azi in radians)
@@ -310,7 +324,7 @@ class ErrorModel():
             )
         )
 
-    def drkplus1_dInc(self, survey):
+    def drkplus1_dInc(self, survey: 'Survey'):
         '''
         survey2 is current survey station (with inc and azi in radians)
         survey3 is next survey station (with inc and azi in radians)
@@ -331,7 +345,7 @@ class ErrorModel():
             )
         )
 
-    def drkplus1_dAz(self, survey):
+    def drkplus1_dAz(self, survey: 'Survey'):
         '''
         survey2 is current survey station (with inc and azi in radians)
         survey3 is next survey station (with inc and azi in radians)
@@ -351,7 +365,15 @@ class ErrorModel():
             )
         )
 
-    def _drdp(self, survey):
+    def _drdp(self, survey: 'Survey'):
+        """
+        This function calculates dr/dp used to calculate errors.
+        Refer to Appendix A in the ISCWSA Introduction to Wellbore positioning book
+        for equations (Pages 218-220).
+
+        :param survey:
+        :return:
+        """
 
         return np.hstack((
             self.drk_dDepth(survey),
@@ -362,7 +384,7 @@ class ErrorModel():
             self.drkplus1_dAz(survey)
         ))
 
-    def _drdp_sing(self, survey):
+    def _drdp_sing(self, survey: 'Survey'):
         '''
         survey1 is previous survey station (with inc and azi in radians)
         survey2 is current survey station
@@ -391,7 +413,6 @@ def get_errors(error):
 
 def make_diagnostic_data(survey):
     diagnostic = {}
-    dia = np.stack((survey.md, survey.inc_deg, survey.azi_grid_deg), axis=1)
     for i, d in enumerate(survey.md):
         diagnostic[d] = {}
         total = []

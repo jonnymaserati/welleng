@@ -14,13 +14,12 @@ email: jonnycorcutt@gmail.com
 date 29-09-2021
 '''
 
-import welleng as we
+import random
+
 import numpy as np
 from vedo import Arrows, Lines
-import random
-# import os
 
-# os.environ['DISPLAY'] = ':1'
+import welleng as we
 
 # Generate some random pairs of points
 pos1 = [0., 0., 0.]

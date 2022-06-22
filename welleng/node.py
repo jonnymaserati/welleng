@@ -1,7 +1,7 @@
 import numpy as np
-from .utils import (
-    get_unit_vec, get_vec, get_angles, get_nev, get_xyz,
-)
+
+from .utils import get_angles, get_nev, get_unit_vec, get_vec, get_xyz
+
 # from .connector import Connector
 
 

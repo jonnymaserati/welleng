@@ -1,6 +1,8 @@
 .venv
 .vscode
 
+.devcontainer/
+
 __pycache__
 
 build
@@ -8,7 +10,7 @@ dist
 *.egg-info/
 
 iframe_figures
-data
+welleng/exchange/data
 blender
 utils
 work

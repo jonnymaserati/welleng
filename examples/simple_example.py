@@ -10,11 +10,9 @@ author: Jonny Corcutt
 email: jonnycorcutt@gmail.com
 date: 29-09-2021
 '''
-import welleng as we
 from tabulate import tabulate
-# import os
 
-# os.environ['DISPLAY'] = ':1'
+import welleng as we
 
 # construct simple well paths
 print("Constructing wells...")

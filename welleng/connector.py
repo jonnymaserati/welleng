@@ -1,18 +1,16 @@
-import numpy as np
 from copy import copy, deepcopy
+
+import numpy as np
 from scipy.spatial import distance
-from scipy.optimize import minimize
+
 try:
     from numba import njit
     NUMBA = True
 except ImportError:
     NUMBA = False
 
-from .utils import (
-    get_vec, _get_angles, get_angles, get_nev, get_xyz, get_unit_vec,
-    NEV_to_HLA, dls_from_radius
-)
 from .node import Node, get_node_params
+from .utils import _get_angles, dls_from_radius, get_angles, get_vec
 
 
 class Connector:
@@ -20,7 +18,7 @@ class Connector:
         self,
         node1=None,
         node2=None,
-        pos1=[0., 0., 0.],
+        pos1=None,
         vec1=None,
         inc1=None,
         azi1=None,
@@ -124,6 +122,8 @@ class Connector:
         -------
         connector: welleng.connector.Connector object
         """
+        pos1 = pos1 or [0., 0., 0.]
+
         if node1 is not None:
             pos1, vec1, md1 = get_node_params(
                 node1
@@ -152,37 +152,12 @@ class Connector:
 
         # quick check that inputs are workable and if not some steer to
         # the user.
-        assert vec1 is not None or (inc1 is not None and azi1 is not None), (
-            "Require either vec1 or (inc1 and azi1)"
+        self._check_input_data(
+            data_station_1=(pos1, vec1, md1, inc1, azi1),
+            data_station_2=(pos2, vec2, md2, inc2, azi2),
+            dls_design=dls_design,
+            min_error=min_error
         )
-        if vec1 is not None:
-            assert inc1 is None and azi1 is None, (
-                "Either vec1 or (inc1 and azi1)"
-            )
-        if (inc1 is not None or azi1 is not None):
-            assert vec1 is None, "Either vec1 or (inc1 and azi1)"
-
-        assert (
-            md2 is not None
-            or pos2 is not None
-            or vec2 is not None
-            or inc2 is not None
-            or azi2 is not None
-        ), "Missing target parameters"
-
-        if vec2 is not None:
-            assert not (inc2 or azi2), "Either vec2 or (inc2 and azi2)"
-        if (inc2 is not None or azi2 is not None):
-            assert vec2 is None, "Either vec2 or (inc2 and azi2)"
-        if md2 is not None:
-            assert pos2 is None, "Either md2 or pos2"
-            assert md2 >= md1, "md2 must be larger than md1"
-
-        if dls_design is None:
-            dls_design = 3.0
-        else:
-            assert dls_design > 0, "dls_design must be greater than zero"
-        assert min_error < 1, "min_error must be less than 1.0"
 
         # figure out what method is required to connect the points
         target_input = convert_target_input_to_booleans(
@@ -211,66 +186,13 @@ class Connector:
         )
 
         # fill in the input data gaps
-        if (inc1 is not None and azi1 is not None):
-            if degrees:
-                self.inc1 = np.radians(inc1)
-                self.azi1 = np.radians(azi1)
-            else:
-                self.inc1 = inc1
-                self.azi1 = azi1
-            self.vec1 = np.array(get_vec(
-                self.inc1, self.azi1, nev=True, deg=False
-            )).reshape(3)
-        else:
-            self.vec1 = np.array(vec1).reshape(3)
-            self.inc1, self.azi1 = get_angles(self.vec1, nev=True).reshape(2)
+        self._set_inc1_azi1(vec1, inc1, azi1, degrees)
 
         self.md1 = md1
         self.pos_target = None if pos2 is None else np.array(pos2).reshape(3)
         self.md_target = md2
 
-        if vec2 is not None:
-            self.vec_target = np.array(vec2).reshape(3)
-            self.inc_target, self.azi_target = get_angles(
-                self.vec_target,
-                nev=True
-            ).reshape(2)
-        elif (inc2 is not None and azi2 is not None):
-            if degrees:
-                self.inc_target = np.radians(inc2)
-                self.azi_target = np.radians(azi2)
-            else:
-                self.inc_target = inc2
-                self.azi_target = azi2
-            self.vec_target = get_vec(
-                self.inc_target, self.azi_target, nev=True, deg=False
-            ).reshape(3)
-        elif inc2 is None and azi2 is None:
-            self.inc_target, self.azi_target, self.vec_target = (
-                self.inc1, self.azi1, self.vec1
-            )
-        elif inc2 is None:
-            self.inc_target = self.inc1
-            if degrees:
-                self.azi_target = np.radians(azi2)
-            else:
-                self.azi_target = azi2
-            self.vec_target = get_vec(
-                self.inc_target, self.azi_target, nev=True, deg=False
-            ).reshape(3)
-        elif azi2 is None:
-            self.azi_target = self.azi1
-            if degrees:
-                self.inc_target = np.radians(inc2)
-            else:
-                self.inc_target = inc2
-            self.vec_target = get_vec(
-                self.inc_target, self.azi_target, nev=True, deg=False
-            ).reshape(3)
-        else:
-            self.vec_target = vec2
-            self.inc_target = inc2
-            self.azi_target = azi2
+        self._set_target_inc_and_azi(vec2, inc2, azi2, degrees)
 
         self.unit = unit
         if self.unit == 'meters':
@@ -327,6 +249,108 @@ class Connector:
         self._use_method()
 
         self._get_nodes()
+
+    def _check_input_data(self, data_station_1, data_station_2, dls_design, min_error):
+
+        pos1, vec1, md1, inc1, azi1 = data_station_1
+        pos2, vec2, md2, inc2, azi2 = data_station_2
+
+        assert vec1 is not None or (inc1 is not None and azi1 is not None), (
+            "Require either vec1 or (inc1 and azi1)"
+        )
+        if vec1 is not None:
+            assert inc1 is None and azi1 is None, (
+                "Either vec1 or (inc1 and azi1)"
+            )
+        if (inc1 is not None or azi1 is not None):
+            assert vec1 is None, "Either vec1 or (inc1 and azi1)"
+
+        assert (
+            md2 is not None
+            or pos2 is not None
+            or vec2 is not None
+            or inc2 is not None
+            or azi2 is not None
+        ), "Missing target parameters"
+
+        if vec2 is not None:
+            assert not (inc2 or azi2), "Either vec2 or (inc2 and azi2)"
+        if (inc2 is not None or azi2 is not None):
+            assert vec2 is None, "Either vec2 or (inc2 and azi2)"
+        if md2 is not None:
+            assert pos2 is None, "Either md2 or pos2"
+            assert md2 >= md1, "md2 must be larger than md1"
+
+        if dls_design is None:
+            dls_design = 3.0
+        else:
+            assert dls_design > 0, "dls_design must be greater than zero"
+        assert min_error < 1, "min_error must be less than 1.0"
+
+    def _set_inc1_azi1(self, vec1, inc1, azi1, degrees):
+        if inc1 is not None and azi1 is not None:
+            if degrees:
+                self.inc1 = np.radians(inc1)
+                self.azi1 = np.radians(azi1)
+            else:
+                self.inc1 = inc1
+                self.azi1 = azi1
+            self.vec1 = np.array(get_vec(
+                self.inc1, self.azi1, nev=True, deg=False
+            )).reshape(3)
+        else:
+            self.vec1 = np.array(vec1).reshape(3)
+            self.inc1, self.azi1 = get_angles(self.vec1, nev=True).reshape(2)
+
+    def _set_target_inc_and_azi(self, vec2, inc2, azi2, degrees):
+
+        if vec2 is not None:
+            self.vec_target = np.array(vec2).reshape(3)
+            self.inc_target, self.azi_target = get_angles(
+                self.vec_target,
+                nev=True
+            ).reshape(2)
+
+        elif inc2 is not None and azi2 is not None:
+            if degrees:
+                self.inc_target = np.radians(inc2)
+                self.azi_target = np.radians(azi2)
+            else:
+                self.inc_target = inc2
+                self.azi_target = azi2
+            self.vec_target = get_vec(
+                self.inc_target, self.azi_target, nev=True, deg=False
+            ).reshape(3)
+
+        elif inc2 is None and azi2 is None:
+            self.inc_target, self.azi_target, self.vec_target = (
+                self.inc1, self.azi1, self.vec1
+            )
+
+        elif inc2 is None:
+            self.inc_target = self.inc1
+            if degrees:
+                self.azi_target = np.radians(azi2)
+            else:
+                self.azi_target = azi2
+            self.vec_target = get_vec(
+                self.inc_target, self.azi_target, nev=True, deg=False
+            ).reshape(3)
+
+        elif azi2 is None:
+            self.azi_target = self.azi1
+            if degrees:
+                self.inc_target = np.radians(inc2)
+            else:
+                self.inc_target = inc2
+            self.vec_target = get_vec(
+                self.inc_target, self.azi_target, nev=True, deg=False
+            ).reshape(3)
+
+        else:
+            self.vec_target = vec2
+            self.inc_target = inc2
+            self.azi_target = azi2
 
     def _get_nodes(self):
         self.node_start = Node(
@@ -392,29 +416,32 @@ class Connector:
     def _use_method(self):
         if self.method == 'hold':
             self._hold()
+
         elif self.method == 'min_curve':
             self._min_curve()
+
         elif self.method == 'curve_hold_curve':
             self.pos2_list, self.pos3_list = [], [deepcopy(self.pos_target)]
             self.vec23 = [np.array([0., 0., 0.])]
             self.delta_radius_list = []
-            # self._target_pos_and_vec_defined(deepcopy(self.pos_target))
-            self._target_pos_and_vec_defined(
-                self.pos1 + (self.pos_target - self.pos1) / 2
-            )
+            self._target_pos_and_vec_defined()
+
         else:
             self.distances = self._get_distances(
                 self.pos1, self.vec1, self.pos_target
             )
+
             if self.radius_design <= get_radius_critical(
                 self.radius_design, self.distances, self.min_error
             ):
                 self.method = 'min_dist_to_target'
                 self._min_dist_to_target()
+
             else:
                 if self.closest_approach:
                     self.method = 'min_curve_to_target'
                     self._closest_approach()
+
                 else:
                     self.method = 'min_curve_to_target'
                     self._min_curve_to_target()
@@ -644,7 +671,7 @@ class Connector:
         )
         return pos2
 
-    def _target_pos_and_vec_defined(self, pos3, vec_old=[0., 0., 0.]):
+    def _target_pos_and_vec_defined(self):
         """
         Function for fitting a curve, hold, curve path between a pair of
         points with vectors.
@@ -750,7 +777,6 @@ class Connector:
     def interpolate(self, step=30):
         return interpolate_well([self], step)
 
-
     def _get_tangent_temp(self, tangent_length):
         if np.isnan(tangent_length):
             tangent_temp = self.min_tangent
@@ -804,8 +830,9 @@ class Connector:
 
 
 def minimize_target_pos_and_vec_defined(
-    x, c, pos3=None, vec_old=[0., 0., 0.], result=False
+    x, c, pos3=None, vec_old=None, result=False
 ):
+    vec_old = vec_old if vec_old is not None else [0., 0., 0.]
     radius1, radius2 = x
     if pos3 is None:
         pos2_init = c._get_pos2(c.pos1, c.vec1, c.pos_target, radius1)
@@ -974,8 +1001,8 @@ def mod_vec(vec, error=1e-5):
 
 
 def _get_xyz(pos):
-        n, e, v = pos
-        return np.array([e, n, v]).reshape(-1, 3)
+    n, e, v = pos
+    return np.array([e, n, v]).reshape(-1, 3)
 
 
 def get_pos(pos1, vec1, vec2, dist_curve, func_dogleg):
@@ -1424,9 +1451,11 @@ def convert_target_input_to_booleans(*inputs):
 
 
 def connect_points(
-    cartesians, vec_start=[0., 0., 1.], dls_design=3.0, nev=True,
-    # step=30,
-    md_start=0.
+        cartesians,
+        vec_start=None,
+        dls_design=3.0,
+        nev=True,
+        md_start=0.
 ):
     """
     Function for connecting a list or array of only Cartesian points.
@@ -1453,6 +1482,8 @@ def connect_points(
     -------
         data: list of welleng.connector.Connector objects
     """
+    vec_start = vec_start or [0., 0., 1.]
+
     if nev:
         pos_nev = np.array(cartesians).reshape(-1, 3)
         vec_nev = np.zeros_like(pos_nev)
@@ -1538,8 +1569,6 @@ def survey_to_plan(survey, tolerance=0.2, dls_design=1., step=30.):
         if idx[-1] >= end:
             break
         node = section.node_end
-
-    data = interpolate_well(sections, step=30)
 
     return sections
 

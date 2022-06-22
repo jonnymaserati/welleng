@@ -9,9 +9,9 @@ email: jonnycorcutt@gmail.com
 date: 29-09-2021
 '''
 
-import welleng as we
-
 from openpyxl import load_workbook
+
+import welleng as we
 
 # import the ISCWSA standard Excel data
 print("Importing data...")
@@ -20,7 +20,7 @@ try:
         filename="examples/data/error-model-example-mwdrev4-iscwsa-1.xlsx",
         data_only=True
     )
-except:
+except:# noqa E722
     print(
         "Make sure you have a local copy of ISCWSA's Excel file and have"
         "updated the location in the code."

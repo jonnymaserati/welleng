@@ -1,6 +1,9 @@
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
+from typing import List, Union
+
 import numpy as np
+import requests
 
 try:
     import networkx as nx
@@ -10,21 +13,42 @@ except ImportError:
 
 
 class EDM:
-    def __init__(self, filename):
+    def __init__(
+            self,
+            source_location: str,
+            source: str = 'file'
+    ):
         """
         Initiate an instance of an EDM object.
 
         Parameters
         ----------
-            filename: str
-                The path and filename of the EDM file to be imported.
+            source_location: str
+                The path and filename of the EDM file to be imported or the link to the XML file
+            source: str ["file", "link"]
         """
-        self.tree = ET.parse(filename)
-        self.root = self.tree.getroot()
+
+        if source == "file":
+            self.tree = ET.parse(source_location)
+            self.root = self.tree.getroot()
+
+        elif source == "link":
+            response = requests.get(source_location)
+            if response.status_code == 200:
+                self.root = ET.fromstring(response.content)
+            else:
+                raise ValueError(f"Error loading the EDM file. Error code: {response.status_code}")
+        else:
+            raise AttributeError(f'Invalid source {source}. Source must be "file" or "link"')
         self._wellbore_id_to_name()
         self._wellbore_id_to_well_id()
 
-    def get_attributes(self, tags=None, attributes={}, logic='AND'):
+    def get_attributes(
+            self,
+            tags: Union[str, List[str]] = None,
+            attributes: dict = None,
+            logic: str = 'AND'
+    ) -> dict:
         """
         Get the attributes for the given tags in an EDM instance.
 
@@ -46,16 +70,13 @@ class EDM:
                 A dictionary of a list of dictionaries of tags and their
                 attributes.
         """
-        assert logic in ['AND', 'OR'], "logic must be 'AND' or 'OR'"
-        if tags is None:
-            tags = self.get_tags()
+        attributes, tags = self.check_data_and_initiate(attributes, tags, logic)
         data = {}
-        if not isinstance(tags, list):
-            tags = [tags]
         for child in self.root:
             if child.tag in tags:
                 if bool(attributes):
                     booleans = []
+
                     for k, v in attributes.items():
                         if not isinstance(v, list):
                             v = [v]
@@ -79,10 +100,28 @@ class EDM:
                         data[child.tag] = [child.attrib]
         return data
 
+    def check_data_and_initiate(
+            self,
+            attributes: [dict, None],
+            tags: Union[list, None],
+            logic: str
+    ):
+
+        assert logic in ['AND', 'OR'], "logic must be 'AND' or 'OR'"
+        if attributes is None:
+            attributes = {}
+        if tags is None:
+            tags = self.get_tags()
+
+        if not isinstance(tags, list):
+            tags = [tags]
+
+        return attributes, tags
+
     def _wellbore_id_to_name(self):
         """
         It's easier for the user to reference the name of the wellbore rather
-        thatn the id, so let's make a couple of dictionaries to quickly
+        than the id, so let's make a couple of dictionaries to quickly
         perform lookups.
         """
         self.wellbore_id_to_name = {}
@@ -120,7 +159,7 @@ class EDM:
                     child.attrib['well_id']
                 )
 
-    def get_tags(self, sort=True):
+    def get_tags(self, sort=True) -> List[str]:
         tags = list(set([child.tag for child in self.root]))
         if sort:
             return sorted(tags)
@@ -208,7 +247,7 @@ class EDM:
             wellbore_id,
             wellbore_name,
             self.get_wellbore_data(wellbore_id)
-        )        
+        )
 
         return well
 
@@ -237,16 +276,6 @@ class Well:
         self.wellbore_id = wellbore_id
         self.wellbore_name = wellbore_name
         self.well_data = well_data
-
-    # def get_scenarios(self):
-    #     if 'CD_SCENARIO' in self.well_data:
-    #         scenarios = [
-    #             (s['scenario_id'], s['name'])
-    #             for s in self.well_data['CD_SCENARIO']
-    #         ]
-    #     else:
-    #         scenarios = None
-    #     return scenarios
 
     def _get_cases(self):
         return {
@@ -323,8 +352,8 @@ class Well:
                                 case,
                                 t.lower()[3:],
                                 data
-                                # self.well_data[t]
                             )
+
     @staticmethod
     def _sort_ppfpt_data(data, kw):
         lookup = {
@@ -350,7 +379,7 @@ class Well:
                 return sorted_data
         return sorted_sorted_data
 
-    def _get_surveys(self, case):
+    def _get_surveys(self, case):  # noqa C901
         # get the surveys... turns out to be a bit of a PITA
         if hasattr(case, "survey_header"):
             survey_header_ids = [
@@ -388,7 +417,7 @@ class Well:
                             if (
                                 station['survey_header_id'] == current_survey_id
                                 and float(station['md']) >= float(v)
-                                and float(station['md']) <= current_md 
+                                and float(station['md']) <= current_md
                             ):
                                 try:
                                     survey[item[0]].append(station)
@@ -540,8 +569,6 @@ class Well:
 
 
 if __name__ == "__main__":
-    # import os
-    # os.environ['DISPLAY'] = ':1'
 
     # import EDM data
     FILENAME = 'data/Volve.xml'

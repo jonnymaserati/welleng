@@ -2,8 +2,17 @@ PARAMS = {
     'WellBore': ['id', 'coeff_friction_sliding']
 }
 
+
 class String:
-    def __init__(self, name, top, bottom, *args, method="bottom_up", **kwargs):
+    def __init__(
+            self,
+            name: str,
+            top: float,
+            bottom: float,
+            *args,
+            method: str = "bottom_up",
+            **kwargs
+    ):
         """
         A generic well bore architecture collection, e.g. a casing string
         made up a a number of different lengths of weights and grades.
@@ -33,7 +42,7 @@ class String:
         assert method in {"top_down", "bottom_up"}, "Unrecognized method"
         self.method = method
 
-    def depth(self, md):
+    def depth(self, md: float):
         assert self.top < md <= self.bottom, "Depth out of range"
 
         string_new = String(
@@ -44,6 +53,7 @@ class String:
         for section in reversed(list(self.sections.keys())):
             if reached_top:
                 break
+
             params = {
                     k: v for k, v in self.sections[section].items()
                     if k not in ['top', 'bottom', 'length', 'buoyancy_factor']
@@ -51,6 +61,7 @@ class String:
             string_new.add_section(
                 length=self.sections[section]['length'], **params
             )
+
             if string_new.sections[0]['top'] == self.top:
                 reached_top = True
 
@@ -69,9 +80,7 @@ class String:
         elif self.method == "bottom_up":
             self.add_section_bottom_up(**kwargs)
 
-    def add_section_top_down(
-        self, **kwargs
-    ):
+    def add_section_top_down(self, **kwargs):
         """
         Sections built from the top down until the bottom of the bottom section
         is equal to the defined string bottom.
@@ -151,6 +160,7 @@ class String:
         self.sections[temp] = {}
         self.sections[temp]['top'] = top
         self.sections[temp]['bottom'] = bottom
+        self.sections[temp]['length'] = length
 
         # add the section to the sections dict
         for k, v in kwargs.items():

@@ -5,7 +5,8 @@ Python library - thank you!
 
 import os
 import sys
-from setuptools import setup, find_packages
+
+from setuptools import find_packages, setup
 
 # load __version__ without importing anything
 version_file = os.path.join(
@@ -18,54 +19,44 @@ with open(version_file, 'r') as f:
 with open("README.md", "r") as f:
     long_description = f.read()
 
-# with open("requirements.txt") as f:
-#     required = f.read().splitlines()
-
 download_url = f'https://github.com/jonnymaserati/welleng/archive/v{__version__}.tar.gz'
 
 # If you only want to generate surveys and errors, these are all that's
 # required
-requirements_default = set([
-    'numpy',
-    'scipy',
-    'pint',
-    'PyYAML',
-    'setuptools',
-    'vtk'
-])
+
+requirements_default = [
+    'numpy==1.22.4',
+    'pint==0.19.2',
+    'PyYAML==6.0',
+    'requests==2.28.0',
+    'scipy==1.8.1',
+    'setuptools==62.4.0',
+    'vtk==9.1.0'
+]
 
 # these can be installed without compiling required
-requirements_easy = set([
-    'magnetic_field_calculator',    # used to get default mag data for survey
-    'networkx',
-    'openpyxl',
-    'pandas',
-    'tabulate',
-    'trimesh',
-    'utm',
-    'vedo',
-])
+requirements_easy = [
+    'magnetic_field_calculator==1.0.2',    # used to get default mag data for survey
+    'networkx==2.8.4',
+    'openpyxl==3.0.10',
+    'tabulate==0.8.9',
+    'trimesh==3.12.6',
+    'utm==0.7.0',
+    'vedo==2022.2.3',
+]
 
 # this is the troublesome requirement that needs C dependencies
-requirements_all = requirements_easy.union([
-    'python-fcl',
-])
+requirements_all = requirements_easy + ['python-fcl==0.6.1']
 
 # if someone wants to output a requirements file
-# `python setup.py --list-all > requirements.txt`
+# `python setup.py --list-all > requirements.txt
 if '--list-all' in sys.argv:
-    # will not include default requirements (numpy)
-    print('\n'.join(requirements_all))
-    exit()
-elif '--list-easy' in sys.argv:
-    # again will not include numpy+setuptools
-    print('\n'.join(requirements_easy))
-    exit()
+    requirements = requirements_all + requirements_default
+    print(*requirements, sep="\n")
 
-# if sys.platform == 'win32':
-#     requirements_all.append('python-fcl-win32')
-# else:
-#     requirements_all.append('python-fcl')
+if '--list-easy' in sys.argv:
+    print(*requirements_easy, sep="\n")
+    exit()
 
 setup(
     name='welleng',
@@ -118,9 +109,9 @@ setup(
             'exchange/*.yaml'
         ]
     },
-    install_requires=list(requirements_default),
+    install_requires=requirements_default,
     extras_require={
-        'easy': list(requirements_easy),
-        'all': list(requirements_all)
+        'easy': requirements_easy,
+        'all': requirements_all
     }
 )

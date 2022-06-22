@@ -1,17 +1,20 @@
-import numpy as np
-from scipy.optimize import minimize
-from ..version import __version__
+from ..survey import Survey
 from ..survey import export_csv as x_csv
 
 
 def export_csv(
-    survey, filename, tolerance=0.1, dls_cont=False, decimals=3, **kwargs
+        survey: Survey,
+        filename: str,
+        tolerance: float = 0.1,
+        dls_cont: bool = False,
+        decimals: int = 3,
+        **kwargs
 ):
     """
     Wrapper for survey.export_csv
 
     Function to export a minimalist (only the control points - i.e. the
-    begining and end points of hold and/or turn sections) survey to input into third
+    beginning and end points of hold and/or turn sections) survey to input into third
     party trajectory planning software.
 
     Parameters
@@ -31,6 +34,10 @@ def export_csv(
     """
 
     return x_csv(
-        survey, filename, tolerance=tolerance, dls_cont=dls_cont,
-        decimals=decimals, **kwargs
+        survey,
+        filename,
+        tolerance=tolerance,
+        dls_cont=dls_cont,
+        decimals=decimals,
+        **kwargs
     )

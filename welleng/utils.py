@@ -1,3 +1,5 @@
+from typing import List, Union
+
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
@@ -14,7 +16,7 @@ class MinCurve:
         md,
         inc,
         azi,
-        start_xyz=[0., 0., 0.],
+        start_xyz=None,
         unit="meters"
     ):
         """
@@ -44,7 +46,7 @@ class MinCurve:
 
         self.inc = inc
         self.azi = azi
-        self.start_xyz = start_xyz
+        self.start_xyz = start_xyz if start_xyz is not None else np.array([0., 0., 0.])
         self.unit = unit
 
         # make two slices with a difference or 1 index to enable array
@@ -57,13 +59,6 @@ class MinCurve:
 
         azi_1 = azi[:-1]
         azi_2 = azi[1:]
-
-        # calculate the dogleg
-        # temp = np.arccos(
-        #     np.cos(inc_2 - inc_1)
-        #     - (np.sin(inc_1) * np.sin(inc_2))
-        #     * (1 - np.cos(azi_2 - azi_1))
-        # )
 
         self.dogleg = np.zeros(survey_length)
         self.dogleg[1:] = get_dogleg(inc_1, azi_1, inc_2, azi_2)
@@ -135,6 +130,10 @@ class MinCurve:
 
 
 def get_dogleg(inc1, azi1, inc2, azi2):
+    """
+    Calculate DLS (Curvature) between two stations in rad/m.
+    """
+
     dogleg = np.arccos(
         np.cos(inc2 - inc1)
         - (np.sin(inc1) * np.sin(inc2))
@@ -163,6 +162,7 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
     else:
         inc_rad = inc
         azi_rad = azi
+
     y = r * np.sin(inc_rad) * np.cos(azi_rad)
     x = r * np.sin(inc_rad) * np.sin(azi_rad)
     z = r * np.cos(inc_rad)
@@ -176,8 +176,10 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
 
 
 def get_nev(
-    pos, start_xyz=np.array([0., 0., 0.]), start_nev=np.array([0., 0., 0.])
-):
+        pos: List,
+        start_xyz: Union[List, None] = None,
+        start_nev: Union[List, None] = None
+) -> np.ndarray:
     """
     Convert [x, y, z] coordinates to [n, e, tvd] coordinates.
 
@@ -192,27 +194,35 @@ def get_nev(
     Returns:
         An (n,3) array of [n, e, tvd] coordinates.
     """
-    # e, n, v = (
-    #     np.array([pos]).reshape(-1,3) - np.array([start_xyz])
-    # ).T
+
+    start_xyz = start_xyz if start_xyz is not None else np.array([0., 0., 0.])
+    start_nev = start_nev if start_nev is not None else np.array([0., 0., 0.])
+
     e, n, v = (
         np.array([pos]).reshape(-1, 3) - np.array([start_xyz])
     ).T
 
-    return (np.array([n, e, v]).T + np.array([start_nev]))
+    return np.array([n, e, v]).T + np.array([start_nev])
 
 
-def get_xyz(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
+def get_xyz(pos, start_xyz=None, start_nev=None):
+
+    start_xyz = start_xyz if start_xyz is not None else np.array([0., 0., 0.])
+    start_nev = start_nev if start_nev is not None else np.array([0., 0., 0.])
+
     y, x, z = (
         np.array([pos]).reshape(-1, 3) - np.array([start_nev])
     ).T
 
-    return (np.array([x, y, z]).T + np.array([start_xyz]))
+    return np.array([x, y, z]).T + np.array([start_xyz])
 
 
 def _get_angles(vec):
     xy = vec[:, 0] ** 2 + vec[:, 1] ** 2
-    inc = np.arctan2(np.sqrt(xy), vec[:, 2])  # for elevation angle defined from Z-axis down
+
+    # for elevation angle defined from Z-axis down
+    inc = np.arctan2(np.sqrt(xy), vec[:, 2])
+
     azi = (np.arctan2(vec[:, 0], vec[:, 1]) + (2 * np.pi)) % (2 * np.pi)
 
     return np.stack((inc, azi), axis=1)
@@ -277,14 +287,6 @@ def get_transform(
     azi = np.array(survey[:, 2])
 
     return _get_transform(inc, azi)
-
-    # trans = np.array([
-    #     [np.cos(inc) * np.cos(azi), -np.sin(azi), np.sin(inc) * np.cos(azi)],
-    #     [np.cos(inc) * np.sin(azi), np.cos(azi), np.sin(inc) * np.sin(azi)],
-    #     [-np.sin(inc), np.zeros_like(inc), np.cos(inc)]
-    # ]).T
-
-    # return trans
 
 
 def NEV_to_HLA(survey, NEV, cov=True):

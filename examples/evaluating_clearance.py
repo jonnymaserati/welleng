@@ -13,12 +13,9 @@ import pandas as pd
 import trimesh
 
 import welleng as we
-from welleng.survey import Survey, SurveyHeader
 import welleng.clearance
 from welleng.mesh import WellMesh
-# import os
-
-# os.environ['DISPLAY'] = ':1'
+from welleng.survey import Survey, SurveyHeader
 
 try:
     import ray
@@ -41,20 +38,11 @@ filename = (
 print("Loading data...")
 try:
     data = we.io.import_iscwsa_collision_data(filename)
-except:
+except:# noqa E722
     print(
         "Make sure you've updated filename to your local copy of ISCWSA's"
         " clearance scenarios"
     )
-
-# well_ref_params = dict(
-#     Latitude=60.000000,
-#     BTotal=50000.00,
-#     Dip=70.00,
-#     Declination=0.00,
-#     Convergence=0.0,
-#     G=9.80665
-# )
 
 # Make a dictionary of surveys
 print("Making surveys...")
@@ -99,7 +87,6 @@ for well in data["wells"]:
         unit="meters"
     )
     s_inter = we.survey.interpolate_survey(s, step=10.)
-    # surveys[well] = s
     surveys[well] = s_inter
 
 # Add clearance data to dictionary
@@ -166,7 +153,9 @@ if multiprocessing:
                 "mesh": data[i][1]
             }
         scene.add_geometry(
-            data[i][2].mesh, node_name=well, geom_name=well, parent_node_name=None
+            data[i][2].mesh,
+            node_name=well,
+            geom_name=well
         )
         colors.append(data[i][4])
         names.append(data[i][3])
@@ -239,11 +228,13 @@ we.visual.plot(scene, names=names, colors=colors)
 #     )
 
 # export the data to Excel
-save_as = f'data/output/output.xlsx'
+save_as = 'data/output/output.xlsx'
 print(f"Exporting data to {save_as}...")
-with pd.ExcelWriter(f'data/output/output.xlsx') as writer:
+with pd.ExcelWriter(save_as) as writer:
     for well in results.keys():
-        if well == "Reference well": continue
+        if well == "Reference well":
+            continue
+
         r = results[well]['iscwsa']
         data = {
             "REF_MD (m)": r.c.ref.md,

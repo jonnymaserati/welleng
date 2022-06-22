@@ -9,8 +9,10 @@ author: Jonny Corcutt
 email: jonnycorcutt@gmail.com
 date: 29-09-2021
 '''
-import welleng as we
 import numpy as np
+
+import welleng as we
+from welleng.error import make_diagnostic_data
 
 
 def get_errors(error):
@@ -23,33 +25,6 @@ def get_errors(error):
     _, __, vv = error[2]
 
     return [nn, ee, vv, ne, nv, ev]
-
-
-def make_diagnostic_data(survey):
-    """
-    Function to extract the diagnostic data from the survey error covariances.
-
-    Parameters
-    ----------
-    survey: welleng.survey.Survey object
-
-    Returns
-    -------
-    A dictionary of covariance coeffs for each tool error for each survey
-    station measured depth.
-    """
-    diagnostic = {}
-    dia = np.stack((survey.md, survey.inc_deg, survey.azi_grid_deg), axis=1)
-    for i, d in enumerate(survey.md):
-        diagnostic[d] = {}
-        total = []
-        for k, v in survey.err.errors.errors.items():
-            diagnostic[d][k] = get_errors(v.cov_NEV.T[i])
-            total.extend(diagnostic[d][k])
-        diagnostic[d]['TOTAL'] = np.sum((np.array(
-            total
-        ).reshape(-1, len(diagnostic[d][k]))), axis=0)
-    return diagnostic
 
 
 def main():
@@ -85,7 +60,7 @@ def main():
 
     # we'll compare the results of a 'regular' versus a more accurate survey
     for e in ['MWD+SRGM', 'MWD+IFR2+SAG+MS']:
-        # here's the method to (re)allocate the error model associated to 
+        # here's the method to (re)allocate the error model associated to
         # the survey instance and the internal function to recalculate the
         # survey errors
         s.error_model = e
@@ -113,5 +88,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
     print("Done")

@@ -1,10 +1,9 @@
-import numpy as np
-from numpy import sin, cos, tan, pi, sqrt
-import yaml
 import os
-# import imp
 
-# import welleng.error
+import numpy as np
+import yaml
+from numpy import cos, pi, sin, sqrt, tan
+
 from ..utils import NEV_to_HLA
 
 # since this is running on different OS flavors
@@ -18,7 +17,7 @@ class iscwsaMwd:
     def __init__(
         self,
         error,
-        model
+        model: str
     ):
         """
         Class using the ISCWSA MWD (Rev4) model to determine well bore
@@ -83,7 +82,15 @@ class iscwsaMwd:
 
         return func
 
-    def call_func(self, code, func, error, mag, propagation, **kwargs):
+    def call_func(
+            self,
+            code: str,
+            func: str,
+            error,
+            mag: float,
+            propagation: str,
+            **kwargs
+    ):
         """
         Function for calling functions by mapping function labels to their
         functions.

@@ -1,32 +1,34 @@
-import numpy as np
 import math
 from copy import copy
+
+import numpy as np
+
 try:
     from magnetic_field_calculator import MagneticFieldCalculator
     MAG_CALC = True
 except ImportError:
     MAG_CALC = False
 from datetime import datetime
+from typing import List, Union
+
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 
-from .version import __version__
+from .connector import Connector, interpolate_well
+from .error import ERROR_MODELS, ErrorModel, ISCWSAErrorModel
+from .node import Node
 from .utils import (
+    HLA_to_NEV,
     MinCurve,
+    NEV_to_HLA,
+    get_angles,
     get_nev,
     get_vec,
-    get_angles,
-    HLA_to_NEV,
-    NEV_to_HLA,
     get_xyz,
-    radius_from_dls
+    radius_from_dls,
 )
-from .error import ErrorModel, ERROR_MODELS
-from .node import Node
-from .connector import Connector, interpolate_well
+from .version import __version__
 from .visual import figure
-from .units import ureg
-
 
 AZI_REF = ["true", "magnetic", "grid"]
 
@@ -34,28 +36,27 @@ AZI_REF = ["true", "magnetic", "grid"]
 class SurveyHeader:
     def __init__(
         self,
-        name=None,
-        longitude=None,
-        latitude=None,
-        altitude=None,
-        survey_date=None,
-        G=9.80665,
-        b_total=None,
-        earth_rate=0.26251614,
-        dip=None,
-        declination=None,
-        convergence=0,
-        azi_reference="true",
-        vertical_inc_limit=0.0001,
-        deg=True,
-        depth_unit='meters',
-        surface_unit='meters',
-        mag_defaults={
+        name: Union[str, int] = None,
+        longitude: float = None,
+        latitude: float = None,
+        altitude: float = None,
+        survey_date: str = None,
+        G: float = 9.80665,
+        b_total: float = None,
+        earth_rate: float = 0.26251614,
+        dip: float = None,
+        declination: float = None,
+        convergence: float = 0,
+        azi_reference: str = "true",
+        vertical_inc_limit: float = 0.0001,
+        deg: bool = True,
+        depth_unit: str = 'meters',
+        surface_unit: str = 'meters',
+        mag_defaults: dict = {
             'b_total': 50_000.,
             'dip': 70.,
             'declination': 0.,
         },
-        vertical_section_azimuth=0,
         **kwargs
     ):
         """
@@ -63,8 +64,8 @@ class SurveyHeader:
 
         Parameters
         ----------
-        name: string (default: None)
-            The assigned name of the well bore.
+        name: string or int (default: None)
+            The assigned name of the well bore or asset id.
         longitude: float (default: None)
             The longitude of the surface location of the well. If left
             default (None) then it will be assigned to Grenwich, the
@@ -119,9 +120,6 @@ class SurveyHeader:
         surface_unit: string (default: "feet")
             The unit of distance for the survey data, either "meters" or
             "feet".
-        vertical_section_azimuth: float (default: 0.0)
-            The azimuth along which to determine the vertical section data
-            for the well trajectory.
         """
         if latitude is not None:
             assert 90 >= latitude >= -90, "latitude out of bounds"
@@ -134,7 +132,7 @@ class SurveyHeader:
         self.latitude = latitude if latitude is not None else 51.4934
         self.longitude = longitude if longitude is not None else 0.0098
         self.altitude = altitude if altitude is not None else 0.
-        self._get_date(survey_date)
+        self._set_date(survey_date)
         self.b_total = b_total
         self.earth_rate = earth_rate
         self.dip = dip
@@ -146,14 +144,14 @@ class SurveyHeader:
         self.surface_unit = get_unit(surface_unit)
         self.G = G
         self.azi_reference = azi_reference
-        self.vertical_section_azimuth = vertical_section_azimuth
 
         self.mag_defaults = mag_defaults
         self._get_mag_data(deg)
 
-    def _get_mag_data(self, deg):
+    def _get_mag_data(self, deg: str):
         """
         Initiates b_total if provided, else calculates a value.
+
         """
         if MAG_CALC:
             calculator = MagneticFieldCalculator()
@@ -164,12 +162,12 @@ class SurveyHeader:
                     altitude=self.altitude,
                     date=self.survey_date
                 )
-            except:
+            except:  # noqa E722
                 result = calculator.calculate(
                     latitude=self.latitude,
                     longitude=self.longitude,
                     altitude=self.altitude,
-                    date=self._get_date(date=None)
+                    date=self._set_date(date=None)
                 )
         else:
             result = {
@@ -186,8 +184,13 @@ class SurveyHeader:
                 }
             }
 
+        self._get_magnetic_params(result, deg)
+
+    def _get_magnetic_params(self, result, deg):
+
         if self.b_total is None:
             self.b_total = result['field-value']['total-intensity']['value']
+            # TODO: Check this conditional
             if not deg:
                 self.b_total = math.radians(self.b_total)
         if self.dip is None:
@@ -206,16 +209,20 @@ class SurveyHeader:
             self.vertical_inc_limit = math.radians(
                 self.vertical_inc_limit
             )
-            self.vertical_section_azimuth = math.radians(
-                self.vertical_section_azimuth
-            )
 
-    def _get_date(self, date):
+    def _set_date(self, date: str):
+        """
+        The function to get today's date as a string in the format of
+        YYYY-MM-DD if date isn't provided.
+        """
         if date is None:
             date = datetime.today().strftime('%Y-%m-%d')
         self.survey_date = date
 
-    def _validate_date(self, date):
+    def _validate_date(self, date: str):
+        """
+        This function checks if the date provided is of the correct format.
+        """
         if date is None:
             return
         try:
@@ -227,27 +234,27 @@ class SurveyHeader:
 class Survey:
     def __init__(
         self,
-        md,
-        inc,
-        azi,
-        n=None,
-        e=None,
-        tvd=None,
-        x=None,
-        y=None,
-        z=None,
-        vec=None,
-        nev=True,
-        header=None,
-        radius=None,
-        cov_nev=None,
-        cov_hla=None,
-        error_model=None,
-        start_xyz=[0., 0., 0.],
-        start_nev=[0., 0., 0.],
+        md: np.ndarray,
+        inc: np.ndarray,
+        azi: np.ndarray,
+        n: np.ndarray = None,
+        e: np.ndarray = None,
+        tvd: np.ndarray = None,
+        x: np.ndarray = None,
+        y: np.ndarray = None,
+        z: np.ndarray = None,
+        vec: Union[List[np.ndarray], None] = None,
+        nev: Union[List[np.ndarray], None] = None,
+        header: SurveyHeader = None,
+        radius: Union[List[np.ndarray], None] = None,
+        cov_nev: Union[List[np.ndarray], None] = None,
+        cov_hla: Union[List[np.ndarray], None] = None,
+        error_model: ISCWSAErrorModel = None,
+        start_xyz: list = [0., 0., 0.],
+        start_nev: list = [0., 0., 0.],
         start_cov_nev=None,
-        deg=True,
-        unit="meters",
+        deg: bool = True,
+        unit: str = "meters",
         **kwargs
     ):
         """
@@ -332,11 +339,6 @@ class Survey:
         assert unit == self.header.depth_unit, (
             "inconsistent units with header"
         )
-
-        self.azi_ref_lookup = {
-            'true': "true", 'magnetic': "mag", 'grid': "grid"
-        }
-
         self.unit = unit
         self.deg = deg
         self.start_xyz = start_xyz
@@ -383,23 +385,25 @@ class Survey:
         self._min_curve(vec)
         self._get_toolface_and_rates()
 
+        self.cov_hla = cov_hla
+        self.cov_nev = cov_nev
+
         # initialize errors
         # TODO: read this from a yaml file in errors
         error_models = ERROR_MODELS
         if error_model is not None:
             assert error_model in error_models, "Unrecognized error model"
+
         self.error_model = error_model
-
-        self.cov_hla = cov_hla
-        self.cov_nev = cov_nev
-
         self._get_errors()
 
         self.interpolated = kwargs.get('interpolated')
 
-        self._get_vertical_section()
-
-    def _process_azi_ref(self, inc, azi, deg):
+    def _process_azi_ref(self, inc: np.ndarray, azi: np.ndarray, deg: bool):
+        """
+        This function modifies the true azimuth and/or magnetic azimuth based
+        on the azimuth reference.
+        """
         if self.header.azi_reference == 'grid':
             self._make_angles(inc, azi, deg)
             self.azi_true_deg = (
@@ -409,6 +413,7 @@ class Survey:
                 self.azi_true_deg - math.degrees(self.header.declination)
             )
             self._get_azi_mag_and_true_rad()
+
         elif self.header.azi_reference == 'true':
             if deg:
                 self.azi_true_deg = np.array(azi).astype('float64')
@@ -425,6 +430,7 @@ class Survey:
                 self._get_azi_mag_and_true_deg()
                 azi_temp = self._get_azi_temp(deg)
             self._make_angles(inc, azi_temp, deg)
+
         else:  # azi_reference is "magnetic"
             if deg:
                 self.azi_mag_deg = np.array(azi).astype('float64')
@@ -442,7 +448,7 @@ class Survey:
                 azi_temp = self._get_azi_temp(deg)
             self._make_angles(inc, azi_temp, deg)
 
-    def _get_azi_temp(self, deg):
+    def _get_azi_temp(self, deg: bool):
         if deg:
             azi_temp = self.azi_true_deg - math.degrees(
                 self.header.convergence
@@ -453,6 +459,10 @@ class Survey:
         return azi_temp
 
     def _get_azi_mag_and_true_rad(self):
+        """
+        Get true and magnetic azimuth in radians from degrees.
+        """
+
         self.azi_true_rad, self.azi_mag_rad = (
             np.radians(np.array([
                 self.azi_true_deg, self.azi_mag_deg
@@ -460,13 +470,20 @@ class Survey:
         )
 
     def _get_azi_mag_and_true_deg(self):
+        """
+        Get true and magnetic azimuth in degrees from radians.
+        """
         self.azi_true_deg, self.azi_mag_deg = (
             np.degrees(np.array([
                 self.azi_true_rad, self.azi_mag_rad
             ]))
         )
 
-    def _get_radius(self, radius=None):
+    def _get_radius(self, radius: Union[List[np.ndarray], None] = None):
+        """
+        Get true and magnetic azimuth in radians.
+        """
+
         if radius is None:
             self.radius = np.full_like(self.md.astype(float), 0.3048)
         elif np.array([radius]).shape[-1] == 1:
@@ -475,7 +492,7 @@ class Survey:
             assert len(radius) == len(self.md), "Check radius"
             self.radius = np.array(radius)
 
-    def _min_curve(self, vec):
+    def _min_curve(self, vec: Union[List[np.ndarray], None] = None):
         """
         Get the (x,y,z), (n,e,v), doglegs, rfs, delta_mds, dlss and
         vectors for the well bore if they were not provided, using the
@@ -492,7 +509,6 @@ class Survey:
         self.pos_nev = get_nev(self.pos_xyz) + self.start_nev
 
         if self.x is None:
-            # self.x, self.y, self.z = (mc.poss + self.start_xyz).T
             self.x, self.y, self.z = (mc.poss).T
         if self.n is None:
             self._get_nev()
@@ -503,6 +519,10 @@ class Survey:
             )
 
     def _get_nev(self):
+        """
+        Get northing easting, TVD from given x, y, z coordinates.
+        """
+
         self.n, self.e, self.tvd = get_nev(
             np.array([
                 self.x,
@@ -529,7 +549,7 @@ class Survey:
             self.inc_deg = np.degrees(inc)
             self.azi_grid_deg = np.degrees(azi)
 
-    def get_error(self, error_model, return_error=False):
+    def get_error(self, error_model: str, return_error: bool = False):
         assert error_model in ERROR_MODELS, "Undefined error model"
 
         self.error_model = error_model
@@ -546,7 +566,6 @@ class Survey:
         covariance matrices with the specified error model.
         """
         if self.error_model:
-            # if self.error_model == "iscwsa_mwd_rev4":
             self.err = ErrorModel(
                 self,
                 error_model=self.error_model
@@ -568,7 +587,10 @@ class Survey:
             self.cov_nev += self.start_cov_nev
             self.cov_hla = NEV_to_HLA(self.survey_rad, self.cov_nev.T).T
 
-    def _curvature_to_rate(self, curvature):
+    def _curvature_to_rate(self, curvature: np.ndarray) -> np.ndarray:
+        """
+        calculate turn rate or build rate using the build or turn curvatures.
+        """
         with np.errstate(divide='ignore', invalid='ignore'):
             radius = 1 / curvature
         circumference = 2 * np.pi * radius
@@ -649,7 +671,7 @@ class Survey:
             self.tvd
         ]).T.reshape(-1, 3)
 
-    def save(self, filename):
+    def save(self, filename: str):
         """
         Saves a minimal (control points) survey listing as a .csv file,
         including the survey header information.
@@ -661,7 +683,7 @@ class Survey:
         """
         export_csv(self, filename)
 
-    def interpolate_md(self, md):
+    def interpolate_md(self, md: float):
         """
         Method to interpolate a position based on measured depth and return
         a node.
@@ -691,14 +713,14 @@ class Survey:
         >>> node = survey.interpolate_md(1234)
         >>> node.properties()
         {
-            'vec_nev': [0.07584209568113438, 0.5840332282889957, 0.8081789187902809],
-            'vec_xyz': [0.5840332282889957, 0.07584209568113438, 0.8081789187902809],
+            'vec_nev': [0.07584209568113438, 0.5840332282889957, 0.8081789187902809],  # noqa: E501
+            'vec_xyz': [0.5840332282889957, 0.07584209568113438, 0.8081789187902809],  # noqa: E501
             'inc_rad': 0.6297429542197106,
             'azi_rad': 1.4416597719915565,
             'inc_deg': 36.081613454889634,
             'azi_deg': 82.60102042890875,
-            'pos_nev': [141.27728744087796, 201.41424652428694, 1175.5823295305202],
-            'pos_xyz': [201.41424652428694, 141.27728744087796, 1175.5823295305202],
+            'pos_nev': [141.27728744087796, 201.41424652428694, 1175.5823295305202],  # noqa: E501
+            'pos_xyz': [201.41424652428694, 141.27728744087796, 1175.5823295305202],  # noqa: E501
             'md': 1234.0,
             'unit': 'meters',
             'interpolated': True
@@ -789,7 +811,7 @@ class Survey:
         )
         return survey
 
-    def _get_vertical_section(self, *args, **kwargs):
+    def _get_vertical_section(self):
         """
         Internal function to initiate the vertical section by calculating
         the magnitude of the lateral displacement and, if a vertical section
@@ -809,10 +831,13 @@ class Survey:
         else:
             self.vertical_section = None
 
-    def get_vertical_section(self, vertical_section_azimuth, deg=True):
+    def get_vertical_section(
+            self,
+            vertical_section_azimuth: float,
+            deg: bool = True
+    ) -> np.ndarray:
         """
         Calculate the vertical section.
-
         Parameters
         ----------
         vertical_section_azimuth: float
@@ -822,7 +847,6 @@ class Survey:
         deg: boolean (default: True)
             Indicates whether the vertical section azimuth parameter is in
             degrees or radians (True or False respectively).
-
         Returns
         -------
         result: (n, 1) ndarray
@@ -847,12 +871,15 @@ class Survey:
 
         return result
 
-    def set_vertical_section(self, vertical_section_azimuth, deg=True):
+    def set_vertical_section(
+            self,
+            vertical_section_azimuth: float,
+            deg: bool = True
+    ):
         """
         Sets the vertical_section_azimuth property in the survey header and
         the vertical section data with the data calculated for the input
         azimuth.
-
         Parameters
         ----------
         vertical_section_azimuth: float
@@ -867,270 +894,6 @@ class Survey:
         self.vertical_section = self.get_vertical_section(
             vertical_section_azimuth, deg
         )
-
-    def modified_tortuosity_index(
-        self, rtol=1.0, data=False, **kwargs
-    ):
-        """
-        Convenient method for calculating the Tortuosity Index (TI) using a
-        modified version of the method described in the International
-        Association of Directional Drilling presentation
-        (https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf)
-        by Pradeep Ashok et al.
-
-        Parameters
-        ----------
-        rtol: float
-            Relative tolerance when determining closeness of normal vectors.
-        atol: float
-            Absolute tolerance when determining closeness of normal vectors.
-        data: boolean
-            If true returns a dictionary of properties.
-
-        Returns
-        ti: (n,1) array or dict
-            Array of tortuosity index or a dict of results where:
-        """
-        return modified_tortuosity_index(
-            self, rtol=rtol, data=data, **kwargs
-        )
-
-    def tortuosity_index(self, rtol=1.0, data=False, **kwargs):
-        """
-        A modified version of the Tortuosity Index function originally
-        referenced in an IADD presentation on "Measuring Wellbore
-        Tortuosity" by Pradeep Ashok - https://www.iadd-intl.org/media/
-        files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf with
-        reference to the original paper "A Novel Method for the Automatic
-        Grading of Retinal Vessel Tortuosity" by Enrico Grisan et al.
-        In SPE/IADC-194099-MS there's mention that a factor of 1e7 is
-        applied to the TI result since the results are otherwise very small
-        numbers.
-        Unlike the documented version that uses delta inc and azi for
-        determining continuity and directional intervals (which are not
-        independent and so values are double dipped in 3D), this method
-        determines the point around which the well bore is turning and tests
-        for continuity of these points. As such, this function takes account
-        of torsion of the well bore and demonstrates that actual/drilled
-        trajectories are significantly more tortuous than planned
-        trajectories (intuitively).
-
-        Parameters
-        ----------
-        rtol: float
-            Relative tolerance when determining closeness of normal vectors.
-        atol: float
-            Absolute tolerance when determining closeness of normal vectors.
-        data: boolean
-            If true returns a dictionary of properties.
-
-        Returns
-        ti: (n,1) array
-            Array of tortuosity index or a dict or results.
-        """
-
-        return tortuosity_index(
-            self, rtol=rtol, data=data, **kwargs
-        )
-
-    def directional_difficulty_index(self, **kwargs):
-        """
-        Taken from IADC/SPE 59196 The Directional Difficulty Index - A
-        New Approach to Performance Benchmarking by Alistair W. Oag et al.
-
-        Returns
-        -------
-        data: (n) array of floats
-            The ddi for each survey station.
-        """
-
-        return directional_difficulty_index(self, **kwargs)
-
-
-def modified_tortuosity_index(
-    survey, rtol=1.0, data=False, **kwargs
-):
-    """
-    Method for calculating the Tortuosity Index (TI) using a modified
-    version of the method described in the International Association of
-    Directional Drilling presentation (https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf)
-    by Pradeep Ashok et al.
-    """
-    # set default params
-    coeff = kwargs.get('coeff', 1.0)  # for testing dimensionlessness
-    kappa = kwargs.get('kapa', 1)
-
-    continuous, starts, mds, locs, n_sections, n_sections_arr = _get_ti_data(
-        survey, rtol
-    )
-
-    l_cs = (
-        survey.md[1:] - mds[n_sections_arr - 1]
-    ) / coeff
-    l_xs = np.linalg.norm(
-        survey.pos_nev[1:]
-        - np.array(locs)[n_sections_arr - 1],
-        axis=1
-    ) / coeff
-    b = (
-        (l_cs / l_xs) - 1
-    ) / l_cs
-    # )
-
-    cumsum = 0
-    a = []
-    for n in n_sections:
-        a.extend(
-            b[n_sections_arr == n]
-            + cumsum
-        )
-        cumsum = a[-1]
-    a = np.array(a)
-
-    mti = np.hstack((
-        np.array([0.0]),
-        (
-            # 1
-            (n_sections_arr / (n_sections_arr + 1))
-            * (kappa * ((survey.md[1:] - survey.md[0]) / coeff))
-            # * (kappa / (np.cumsum(survey.dogleg)[1:] + 1))
-            * a
-        )
-    ))
-
-    if data:
-        return {
-            'continuous': continuous, 'starts': starts, 'mds': mds,
-            'locs': locs, 'n_sections': n_sections,
-            'n_sections_arr': n_sections_arr, 'l_cs': l_cs, 'l_xs': l_xs,
-            'mti': mti
-        }
-
-    return mti
-
-
-def tortuosity_index(survey, rtol=1.0, data=False, **kwargs):
-    """
-    Method for calculating the Tortuosity Index (TI) as described in the 
-    International Association of Directional Drilling presentation
-    (https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf)
-    by Pradeep Ashok et al.
-    """
-    # set default params
-    coeff = kwargs.get('coeff', 0.3048)  # for testing dimensionlessness
-    kappa = kwargs.get('kapa', 1e7)
-
-    continuous, starts, mds, locs, n_sections, n_sections_arr = _get_ti_data(
-        survey, rtol
-    )
-
-    l_cs = (survey.md[1:] - mds[n_sections_arr - 1]) / coeff
-    l_xs = np.linalg.norm(
-        survey.pos_nev[1:]
-        - np.array(locs)[n_sections_arr - 1],
-        axis=1
-    ) / coeff
-    b = (
-        (l_cs / l_xs) - 1
-    )
-
-    cumsum = 0
-    a = []
-    for n in n_sections:
-        a.extend(
-            b[n_sections_arr == n]
-            + cumsum
-        )
-        cumsum = a[-1]
-    a = np.array(a)
-
-    ti = np.hstack((
-        np.array([0.0]),
-        (
-            (n_sections_arr / (n_sections_arr + 1))
-            * (kappa / (survey.md[1:] - survey.md[0] / coeff))
-            * a
-        )
-    ))
-
-    if data:
-        return {
-            'continuous': continuous, 'starts': starts, 'mds': mds,
-            'locs': locs, 'n_sections': n_sections,
-            'n_sections_arr': n_sections_arr, 'l_cs': l_cs, 'l_xs': l_xs,
-            'ti': ti
-        }
-
-    return ti
-
-
-def directional_difficulty_index(survey, **kwargs):
-    """
-    Taken from IADC/SPE 59196 The Directional Difficulty Index - A
-    New Approach to Performance Benchmarking by Alistair W. Oag et al.
-    Parameters
-    ----------
-    survey: welleng.survey.Survey object
-    data: bool
-        If True, returns the ddi at each survey station.
-    Returns
-    -------
-    ddi: float
-        The ddi for the well at well (at TD).
-    data: (n) array of floats
-        The ddi for each survey station.
-    """
-    with np.errstate(divide='ignore', invalid='ignore'):
-        ddi = np.nan_to_num(np.log10(
-            (
-                (survey.md * ureg.meters).to('ft').m
-                * (
-                    np.linalg.norm(
-                        (survey.n, survey.e), axis=0
-                    ) * ureg.meters
-                ).to('ft').m
-                * np.cumsum(np.degrees(survey.dogleg))
-            )
-            / (survey.tvd * ureg.meters).to('ft').m
-        ), nan=0.0, posinf=0.0, neginf=0.0)
-
-    return ddi
-
-
-def _get_ti_data(survey, rtol):
-    # tol_0 = np.full((len(survey.md) - 2, 3), rtol)
-    # delta_md = (survey.md[2:] - survey.md[1:-1]).reshape(-1, 1)
-    # delta_norm = survey.normals[1:] - survey.normals[:-1]
-    # tol_norm = tol_0 * np.sin(delta_md / 30)
-
-    # continuous = (
-    #     (delta_norm / 30 * delta_md <= tol_norm).all(axis=-1) | (
-    #         np.isnan(survey.normals[1:]).all(axis=-1)
-    #         & np.isnan(survey.normals[:-1]).all(axis=-1)
-    #     )
-    # )
-    continuous = np.all(
-        np.isclose(
-            survey.normals[:-1],
-            survey.normals[1:],
-            equal_nan=True,
-            rtol=rtol, atol=rtol
-        ), axis=-1
-    )
-
-    starts = np.concatenate((
-        np.array([0]),
-        np.where(continuous == False)[0] + 1,
-    ))
-
-    mds = survey.md[starts]
-    locs = survey.pos_nev[starts]
-    n_sections = np.arange(1, len(starts) + 1, 1)
-    n_sections_arr = np.searchsorted(mds, survey.md[1:])
-
-    return (
-        continuous, starts, mds, locs, n_sections, n_sections_arr
-    )
 
 
 class TurnPoint:
@@ -1247,8 +1010,8 @@ def _interpolate_survey(survey, x=0, index=0):
         md=np.array([survey.md[index], survey.md[index] + x]),
         inc=np.array([survey.inc_rad[index], inc]),
         azi=np.array([survey.azi_grid_rad[index], azi]),
-        start_xyz=np.array([survey.x, survey.y, survey.z]).T[index],
-        start_nev=np.array([survey.n, survey.e, survey.tvd]).T[index],
+        start_xyz=list(np.array([survey.x, survey.y, survey.z]).T[index]),
+        start_nev=list(np.array([survey.n, survey.e, survey.tvd]).T[index]),
         header=sh,
         deg=False,
     )
@@ -1261,17 +1024,18 @@ def _interpolate_survey(survey, x=0, index=0):
     return s
 
 
+def tidy_up_angle(d):
+    """
+    Helper function to handle large angles.
+    """
+    if abs(d) > np.pi:
+        d %= (2 * np.pi)
+    return d
+
+
 def interpolate_tvd(survey, tvd, **kwargs):
     # only seem to work with relative small delta_md - re-write with minimize
     # function?
-
-    def tidy_up_angle(d):
-        """
-        Helper function to handle large angles.
-        """
-        if abs(d) > np.pi:
-            d %= (2 * np.pi)
-        return d
 
     coeff = 1
     # find closest point assuming tvd is sorted list
@@ -1313,7 +1077,6 @@ def interpolate_tvd(survey, tvd, **kwargs):
         m = np.array([0., 0., coeff])
         a = np.dot(m, vec1) * np.sin(dogleg)
         b = np.dot(m, vec1) * np.cos(dogleg) - np.dot(m, vec2)
-        # p = get_unit_vec(np.array([0., 0., tvd]) - pos1)
         p = np.array([0., 0., tvd]) - pos1
         c = (
             np.dot(m, p)
@@ -1388,7 +1151,6 @@ def slice_survey(survey, start, stop=None):
     md, inc, azi = survey.survey_rad[start:stop].T
     nevs = np.array([survey.n, survey.e, survey.tvd]).T[start:stop]
     n, e, tvd = nevs.T
-    # vec = survey.vec[start:stop]
 
     # Handle `None` values:
     cov_hla = None if survey.cov_hla is None else survey.cov_hla[start:stop]
@@ -1404,7 +1166,7 @@ def slice_survey(survey, start, stop=None):
         header=survey.header,
         radius=survey.radius[start:stop],
         cov_hla=cov_hla,
-        cov_nev=cov_hla,
+        cov_nev=cov_nev,
         start_nev=[n[0], e[0], tvd[0]],
         deg=False,
         unit=survey.unit,
@@ -1507,8 +1269,6 @@ def get_circle_radius(survey, **targets):
     starts = np.vstack((cc1, cc2))
     ends = np.vstack((nev[:-1], nev[1:]))
 
-    # n = 1
-
     return (starts, ends)
 
 
@@ -1579,7 +1339,7 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
 
     starts = np.concatenate((
         np.array([0]),
-        np.where(continuous == False)[0] + 1,
+        np.where(continuous is False)[0] + 1,
         np.array([len(survey.md) - 1])
     ))
 
@@ -1601,7 +1361,6 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
         z = -survey.tvd[s]
         location = [x, y, z]
 
-        # target = ""
         if survey.unit == 'meters':
             denominator = 30
         else:
@@ -1623,16 +1382,7 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
             dls = survey.dls[s]
             toolface = abs(np.degrees(survey.toolface[starts[i - 1]]))
 
-            azi_p = sections[-1].azi
-            if azi - azi_p < -180:
-                coeff = 1
-            elif azi - azi_p > 180:
-                coeff = -1
-            else:
-                with np.errstate(all='ignore'):
-                    coeff = (azi - azi_p) / abs(azi - azi_p)
-            if np.isnan(coeff):
-                coeff = 1
+            coeff = get_toolface_coeff(sections, azi)
 
             toolface *= coeff
 
@@ -1657,8 +1407,6 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
 
             delta_azi_2 = 360 - delta_azi_1
             delta_azi = min(delta_azi_1, delta_azi_2)
-
-            delta_azi = delta_azi_1
             turn_rate = delta_azi / delta_md * denominator
 
         section = TurnPoint(
@@ -1688,7 +1436,25 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
     return sections
 
 
-def get_unit(unit):
+def get_toolface_coeff(sections, azi):
+
+    azi_p = sections[-1].azi
+    if azi - azi_p < -180:
+        return 1
+
+    if azi - azi_p > 180:
+        return -1
+
+    with np.errstate(all='ignore'):
+        coeff = (azi - azi_p) / abs(azi - azi_p)
+
+    if np.isnan(coeff):
+        return 1
+
+    return coeff
+
+
+def get_unit(unit: str) -> Union[str, None]:
     if unit in ['m', 'meters']:
         return 'meters'
     elif unit in ['ft', 'feet']:
@@ -1708,13 +1474,6 @@ def make_survey_header(data):
         setattr(sh, k, v)
 
     return sh
-
-
-# def save(survey, filename):
-#     """
-#     Saves the survey header and survey to a text file.
-#     """
-#     export_csv(survey, filename)
 
 
 def export_csv(
@@ -1860,12 +1619,17 @@ def _remove_duplicates(md, inc, azi):
 
 
 def from_connections(
-    section_data, step=None, survey_header=None,
-    start_nev=[0., 0., 0.],
-    start_xyz=[0., 0., 0.],
-    start_cov_nev=None,
-    radius=10, deg=False, error_model=None,
-    depth_unit='meters', surface_unit='meters'
+        section_data,
+        step=None,
+        survey_header=None,
+        start_nev=None,
+        start_xyz=None,
+        start_cov_nev=None,
+        radius=10,
+        deg=False,
+        error_model=None,
+        depth_unit='meters',
+        surface_unit='meters'
 ):
     """
     Constructs a well survey from a list of sections of control points.
@@ -1885,6 +1649,9 @@ def from_connections(
     -------
         survey: `welleng.survey.Survey` object
     """
+    start_xyz = start_xyz or [0., 0., 0.]
+    start_nev = start_nev or [0., 0., 0.]
+
     if type(section_data) is not list:
         section_data = [section_data]
     section_data_interp = interpolate_well(section_data, step)
@@ -1910,7 +1677,7 @@ def from_connections(
         md=md,
         inc=inc,
         azi=azi,
-        start_nev=section_data[0].pos1 + start_nev,
+        start_nev=list(section_data[0].pos1 + start_nev),
         start_xyz=start_xyz,
         start_cov_nev=start_cov_nev,
         deg=deg,
@@ -1989,7 +1756,7 @@ def interpolate_survey(survey, step=30, dls=1e-8):
     survey_interpolated = from_connections(
         well,
         step=step,
-        start_xyz=survey.start_xyz,
+        start_xyz=list(survey.start_xyz),
         survey_header=survey.header,
         error_model=None
     )
@@ -2327,7 +2094,7 @@ class SurveyData:
             start_xyz=self.start_xyz,
             cov_nev=self.cov_nev,
             cov_hla=self.cov_hla,
-            radius= self.radius,
+            radius=self.radius,
             header=self.header
         )
         return survey
