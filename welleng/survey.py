@@ -188,8 +188,8 @@ class SurveyHeader:
 
         if self.b_total is None:
             self.b_total = result['field-value']['total-intensity']['value']
-            if not deg:
-                self.b_total = math.radians(self.b_total)
+            # if not deg:
+            #     self.b_total = math.radians(self.b_total)
         if self.dip is None:
             self.dip = -result['field-value']['inclination']['value']
             if not deg:
@@ -633,9 +633,17 @@ class Survey:
             self.build_rate = self._curvature_to_rate(curvature_build)
 
         # calculate plane normals
+        # TODO: update so its the same length as the survey - need to cascade
         n12 = np.cross(s.vec1_nev, s.vec2_nev)
         with np.errstate(divide='ignore', invalid='ignore'):
             self.normals = n12 / np.linalg.norm(n12, axis=1).reshape(-1, 1)
+
+        # get radius vectors
+        with np.errstate(divide='ignore', invalid='ignore'):
+            self.vec_radius_nev = np.cross(
+                np.vstack((self.normals[0], self.normals)),  # temp fix
+                self.vec_nev
+            )
 
     def _get_sections(self, rtol=0.1, atol=0.1, dls_cont=True):
         sections = get_sections(self, rtol, atol, dls_cont)
