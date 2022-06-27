@@ -47,7 +47,7 @@ class WellMesh:
                 the well bore radius of the offset well to oversize the hole.
             method: str (default="ellipse")
                 The method for constructing the uncertainty edge.
-                Either "ellipse" or "pedal_curve".
+                Either "ellipse", "pedal_curve" or "circle".
         """
         assert TRIMESH, "ImportError: try pip install welleng[easy]"
         self.s = survey

@@ -416,9 +416,17 @@ def dls_from_radius(radius):
     """
     Returns the dls in degrees from a radius.
     """
-    if radius == 0:
-        return np.inf
-    circumference = 2 * np.pi * radius
+    if isinstance(radius, np.ndarray):
+        circumference = np.full_like(radius, np.inf)
+        circumference = np.where(
+            radius != 0,
+            2 * np.pi * radius,
+            circumference
+        )
+    else:
+        if radius == 0:
+            return np.inf
+        circumference = 2 * np.pi * radius
     dls = 360 / circumference * 30
 
     return dls
@@ -428,9 +436,17 @@ def radius_from_dls(dls):
     """
     Returns the radius in meters from a DLS in deg/30m.
     """
-    if dls == 0:
-        return np.inf
-    circumference = (30 / dls) * 360
+    if isinstance(dls, np.ndarray):
+        circumference = np.full_like(dls, np.inf)
+        circumference = np.where(
+            dls != 0,
+            (30 / dls) * 360,
+            circumference
+        )
+    else:
+        if dls == 0:
+            return np.inf
+        circumference = (30 / dls) * 360
     radius = circumference / (2 * np.pi)
 
     return radius
