@@ -12,6 +12,7 @@ import numpy as np
 
 try:
     import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
     PLOTLY = True
 except ImportError:
     PLOTLY = False
@@ -295,9 +296,99 @@ def figure(obj, type='scatter3d', **kwargs):
     assert PLOTLY, "ImportError: try pip install plotly"
     func = {
         'scatter3d': _scatter3d,
-        'mesh3d': _mesh3d
+        'mesh3d': _mesh3d,
+        'panel': _panel
     }
     fig = func[type](obj, **kwargs)
+    return fig
+
+
+def _panel(survey, **kwargs):
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=(
+            "Plan",
+            f"Vertical Section: {np.degrees(survey.header.vertical_section_azimuth)} deg",
+            "WE Section", "NS Section"
+        )
+        # shared_xaxes=True, shared_yaxes=True
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=survey.e,
+            y=survey.n,
+            mode='lines',
+            name='NE Plan',
+            showlegend=False
+        ),
+        row=1, col=1
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=survey.vertical_section,
+            y=survey.tvd,
+            mode='lines',
+            name='Plan',
+            showlegend=False
+        ),
+        row=1, col=2
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=survey.n,
+            y=survey.tvd,
+            mode='lines',
+            name='NS Section',
+            showlegend=False,
+        ),
+        row=2, col=2
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=survey.e,
+            y=survey.tvd,
+            mode='lines',
+            name='WE Section',
+            showlegend=False
+        ),
+        row=2, col=1
+    )
+
+    fig.update_layout(
+        xaxis=dict(
+            title='West-East'
+        ),
+        yaxis=dict(
+            title='North-South'
+        ),
+        xaxis2=dict(
+            title='Outstep'
+        ),
+        yaxis2=dict(
+            title='TVD',
+            autorange="reversed",
+            matches='y3'
+        ),
+        xaxis3=dict(
+            title='West-East',
+            matches='x'
+        ),
+        yaxis3=dict(
+            title='TVD',
+            autorange="reversed"
+        ),
+        xaxis4=dict(
+            title='North-South',
+            matches='y'
+        ),
+        yaxis4=dict(
+            title='TVD',
+            autorange="reversed",
+            matches='y3'
+        ),
+    )
+
     return fig
 
 

@@ -20,6 +20,9 @@ welleng is fuelled by copious amounts of coffee, so if you wish to supercharge d
 <a href="https://www.buymeacoffee.com/jonnymaserati" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/arial-yellow.png" alt="Buy Me A Coffee" width="217px" ></a>
 
 ## New Features!
+  - **Maximum Curvature Method:** added an alternative `Survey` method for calculating a well trajectory from survey stations that add a more realistic (in terms of tortuosity) versus the traditional *minimum curvature method*. See [this post](https://jonnymaserati.github.io/2022/06/19/modified-tortuosity-index-survey-frequency.html) for more details.
+  - **Modified Tortuosity Index:** added a `Survey` method for calculating a *modified tortuosity index* as described [here](https://jonnymaserati.github.io/2022/05/26/a-modified-tortuosity-index.html).
+  - **Panel Plot:** added the `type='panel'` to the `Survey.figure()` method to return plan and section plots.
   - **Torque and Drag:** added a simple `torque_drag` module and an `architecture` module for creating scenarios (well bore and simple strings) - see this [post](https://jonnymaserati.github.io/2022/05/22/an-example-of-welleng-torque-drag.html) for instructions.
   - **Vertical Section:** this should have been included a long time ago, but finally a vertical section will be calculated if the `vertical_section_azimuth` parameter is included in the `SurveyHeader` when initiating a `Survey` instance. Otherwise, to return the vertical section for a given azimuth (e.g. 45 degrees), or to set the vertical section azimuth and add the vertical section data to the `Survey` then:
     ```python
