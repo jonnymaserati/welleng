@@ -19,7 +19,8 @@ from .utils import (
     HLA_to_NEV,
     NEV_to_HLA,
     get_xyz,
-    radius_from_dls
+    radius_from_dls,
+    get_arc
 )
 from .error import ErrorModel, ERROR_MODELS
 from .node import Node
@@ -256,69 +257,69 @@ class Survey:
 
         Parameters
         ----------
-            md: (,n) list or array of floats
-                List or array of well bore measured depths.
-            inc: (,n) list or array of floats
-                List or array of well bore survey inclinations
-            azi: (,n) list or array of floats
-                List or array of well bore survey azimuths
-            n: (,n) list or array of floats (default: None)
-                List or array of well bore northings
-            e: (,n) list or array of floats (default: None)
-                List or array of well bore eastings
-            tvd: (,n) list or array of floats (default: None)
-                List or array of local well bore z coordinates, i.e. depth
-                and usually relative to surface or mean sea level.
-            x: (,n) list or array of floats (default: None)
-                List or array of local well bore x coordinates, which is
-                usually aligned to the east direction.
-            y: (,n) list or array of floats (default: None)
-                List or array of local well bore y coordinates, which is
-                usually aligned to the north direction.
-            z: (,n) list or array of floats (default: None)
-                List or array of well bore true vertical depths relative
-                to the well surface datum (usually the drill floor
-                elevation DFE, so not always identical to tvd).
-            vec: (n,3) list or array of (,3) floats (default: None)
-                List or array of well bore unit vectors that describe the
-                inclination and azimuth of the well relative to (x,y,z)
-                coordinates.
-            header: SurveyHeader object (default: None)
-                A SurveyHeader object with information about the well location
-                and survey data. If left default then a SurveyHeader will be
-                generated with the default properties assigned, but these may
-                not be relevant and may result in incorrect data.
-            radius: float or (,n) list or array of floats (default: None)
-                If a single float is specified, this value will be
-                assigned to the entire well bore. If a list or array of
-                floats is provided, these are the radii of the well bore.
-                If None, a well bore radius of 12" or approximately 0.3 m
-                is applied.
-            cov_nev: (n,3,3) list or array of floats (default: None)
-                List or array of covariance matrices in the (n,e,v)
-                coordinate system.
-            cov_hla: (n,3,3) list or array of floats (default: None)
-                List or array of covariance matrices in the (h,l,a)
-                well bore coordinate system (high side, lateral, along
-                hole).
-            error_model: str (default: None)
-                If specified, this model is used to calculate the
-                covariance matrices if they are not present. Currently,
-                only the "ISCWSA_MWD" model is provided.
-            start_xyz: (,3) list or array of floats (default: [0,0,0])
-                The start position of the well bore in (x,y,z) coordinates.
-            start_nev: (,3) list or array of floats (default: [0,0,0])
-                The start position of the well bore in (n,e,v) coordinates.
-            start_cov_nev: (,3,3) list or array of floats (default: None)
-                The covariance matrix for the start position of the well
-                bore in (n,e,v) coordinates.
-            deg: boolean (default: True)
-                Indicates whether the provided angles are in degrees
-                (True), else radians (False).
-            unit: str (default: 'meters')
-                Indicates whether the provided lengths and distances are
-                in 'meters' or 'feet', which impacts the calculation of
-                the dls (dog leg severity).
+        md: (,n) list or array of floats
+            List or array of well bore measured depths.
+        inc: (,n) list or array of floats
+            List or array of well bore survey inclinations
+        azi: (,n) list or array of floats
+            List or array of well bore survey azimuths
+        n: (,n) list or array of floats (default: None)
+            List or array of well bore northings
+        e: (,n) list or array of floats (default: None)
+            List or array of well bore eastings
+        tvd: (,n) list or array of floats (default: None)
+            List or array of local well bore z coordinates, i.e. depth
+            and usually relative to surface or mean sea level.
+        x: (,n) list or array of floats (default: None)
+            List or array of local well bore x coordinates, which is
+            usually aligned to the east direction.
+        y: (,n) list or array of floats (default: None)
+            List or array of local well bore y coordinates, which is
+            usually aligned to the north direction.
+        z: (,n) list or array of floats (default: None)
+            List or array of well bore true vertical depths relative
+            to the well surface datum (usually the drill floor
+            elevation DFE, so not always identical to tvd).
+        vec: (n,3) list or array of (,3) floats (default: None)
+            List or array of well bore unit vectors that describe the
+            inclination and azimuth of the well relative to (x,y,z)
+            coordinates.
+        header: SurveyHeader object (default: None)
+            A SurveyHeader object with information about the well location
+            and survey data. If left default then a SurveyHeader will be
+            generated with the default properties assigned, but these may
+            not be relevant and may result in incorrect data.
+        radius: float or (,n) list or array of floats (default: None)
+            If a single float is specified, this value will be
+            assigned to the entire well bore. If a list or array of
+            floats is provided, these are the radii of the well bore.
+            If None, a well bore radius of 12" or approximately 0.3 m
+            is applied.
+        cov_nev: (n,3,3) list or array of floats (default: None)
+            List or array of covariance matrices in the (n,e,v)
+            coordinate system.
+        cov_hla: (n,3,3) list or array of floats (default: None)
+            List or array of covariance matrices in the (h,l,a)
+            well bore coordinate system (high side, lateral, along
+            hole).
+        error_model: str (default: None)
+            If specified, this model is used to calculate the
+            covariance matrices if they are not present. Currently,
+            only the "ISCWSA_MWD" model is provided.
+        start_xyz: (,3) list or array of floats (default: [0,0,0])
+            The start position of the well bore in (x,y,z) coordinates.
+        start_nev: (,3) list or array of floats (default: [0,0,0])
+            The start position of the well bore in (n,e,v) coordinates.
+        start_cov_nev: (,3,3) list or array of floats (default: None)
+            The covariance matrix for the start position of the well
+            bore in (n,e,v) coordinates.
+        deg: boolean (default: True)
+            Indicates whether the provided angles are in degrees
+            (True), else radians (False).
+        unit: str (default: 'meters')
+            Indicates whether the provided lengths and distances are
+            in 'meters' or 'feet', which impacts the calculation of
+            the dls (dog leg severity).
 
         Returns
         -------
@@ -877,10 +878,11 @@ class Survey:
         )
 
     def modified_tortuosity_index(
-        self, rtol=0.01, dls_tol=None, data=False, **kwargs
+        self, rtol=0.01, dls_tol=None, step=1.0, dls_noise=1.0, data=False,
+        **kwargs
     ):
         """
-        Convenient method for calculating the Tortuosity Index (TI) using a
+        Convenience method for calculating the Tortuosity Index (TI) using a
         modified version of the method described in the International
         Association of Directional Drilling presentation
         (https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf)
@@ -895,15 +897,37 @@ class Survey:
         dls_tol: float or None
             Indicates whether or not to check for dls continuity within the
             defined dls tolerance.
-        data: float
+        step: float or None
+            The step length in meters used for interpolating the survey prior
+            to calculating trajectory with the maximum curvature method. If
+            None or dls_noise is None then no interpolation is done.
+        dls_noise: float or None
+            The incremental Dog Leg Severity to be added when using the
+            maximum curvature method. If None then no pre-processing will be
+            done and minimum curvature is assumed.
+        data: bool
             If true returns a dictionary of properties.
 
         Returns
+        -------
         ti: (n,1) array or dict
             Array of tortuosity index or a dict of results where:
+
+        References
+        ----------
+        Further details regarding the maximum curvature method can be read
+        [here](https://jonnymaserati.github.io/2022/06/19/modified-tortuosity-index-survey-frequency.html)
         """
+        # Check whether to pre-process the survey to apply maximum curvature.
+        if bool(dls_noise):
+            survey = self.interpolate_survey(step=step)
+            survey = survey.maximum_curvature(dls_noise=dls_noise)
+
+        else:
+            survey = self
+
         return modified_tortuosity_index(
-            self, rtol=rtol, dls_tol=dls_tol, data=data, **kwargs
+            survey, rtol=rtol, dls_tol=dls_tol, data=data, **kwargs
         )
 
     def tortuosity_index(self, rtol=0.01, dls_tol=None, data=False, **kwargs):
@@ -956,6 +980,80 @@ class Survey:
         """
 
         return directional_difficulty_index(self, **kwargs)
+
+    def maximum_curvature(self, dls_noise=1.0):
+        """
+        Create a well trajectory using the Maximum Curvature method.
+
+        Parameters
+        ----------
+        survey: welleng.survey.Survey object
+        dls_noise: float
+            The additional Dog Leg Severity (DLS) in deg/30m used to calculate
+            the curvature for the initial section of the survey interval.
+
+        Returns
+        -------
+        survey_new: welleng.Survey.survey object
+            A revised survey object calculated using the Minimum Curvature
+            method with updated survey positions and additional mid-point
+            stations.
+        """
+
+        dls_effective = self.dls + dls_noise
+        radius_effective = radius_from_dls(dls_effective)
+
+        dogleg1 = (
+            (self.delta_md / radius_effective) / 2
+        )
+
+        radius_effective = np.where(
+            dogleg1 > np.pi,
+            self.delta_md * 4 / (2 * np.pi),
+            radius_effective
+        )
+
+        arc1 = [
+            get_arc(dogleg, _radius_effective, toolface, vec=vec)
+            for dogleg, _radius_effective, toolface, vec in zip(
+                dogleg1[1:], radius_effective[1:], self.toolface[:-1],
+                self.vec_nev[:-1]
+            )
+        ]
+
+        _survey_new = np.array([
+            [row[-1], *np.degrees(get_angles(row[1], nev=True))[0]]
+            for row in arc1
+        ])
+        _survey_new[:, 0] += self.md[:-1]
+
+        survey_new = np.zeros(shape=(len(_survey_new) * 2 + 1, 3))
+        survey_new[:-1] = np.stack(
+            (self.survey_deg[:-1].T, _survey_new.T),
+            axis=1
+        ).T.reshape(-1, 3)
+        survey_new[-1] = self.survey_deg[-1]
+
+        # Update the new survey header as the new azimuth reference is 'grid'.
+        sh = self.header
+        sh.azi_reference = 'grid'
+
+        # Create a new Survey instance
+        survey = Survey(
+            md=survey_new[:, 0],
+            inc=survey_new[:, 1],
+            azi=survey_new[:, 2],
+            header=sh,
+            start_xyz=self.start_xyz,
+            start_nev=self.start_nev
+        )
+
+        # Update the interpolated property to keep track of the original survey
+        # stations.
+        survey.interpolated = np.full_like(survey.md, True)
+        survey.interpolated[::2] = self.interpolated
+
+        return survey
 
 
 def modified_tortuosity_index(
@@ -1014,7 +1112,7 @@ def modified_tortuosity_index(
             'continuous': continuous, 'starts': starts, 'mds': mds,
             'locs': locs, 'n_sections': n_sections,
             'n_sections_arr': n_sections_arr, 'l_cs': l_cs, 'l_xs': l_xs,
-            'mti': mti
+            'mti': mti, 'survey': survey
         }
 
     return mti
