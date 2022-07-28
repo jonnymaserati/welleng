@@ -18,7 +18,7 @@ jobs:
           make install-requirements-lint
           make lint
 
-  testing:
+  test:
     name: Automated Testing
     runs-on: ubuntu-latest
     steps:
