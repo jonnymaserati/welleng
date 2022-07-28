@@ -46,3 +46,26 @@ jobs:
       - name: Coverage report
         run: |
           make coverage-report
+
+  deploy:
+    name: Build and Publishing to PyPI
+    needs: [ static, test ]
+    if: contains(github.ref, 'tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+
+      - name: Build the Package
+        run: |
+          rm -rf dist/*
+          python setup.py sdist
+      - name: Publishing to PyPI
+        uses: pypa/gh-action-pypi-publish@master
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
