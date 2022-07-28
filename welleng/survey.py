@@ -119,10 +119,10 @@ class SurveyHeader:
         """
         if not mag_defaults:
             mag_defaults = {
-                               'b_total': 50_000.,
-                               'dip': 70.,
-                               'declination': 0.,
-                           }
+                'b_total': 50_000.,
+                'dip': 70.,
+                'declination': 0.,
+            }
         if latitude is not None:
             assert 90 >= latitude >= -90, "latitude out of bounds"
         if longitude is not None:
@@ -371,7 +371,7 @@ class Survey:
                 [self.n[0], self.e[0], self.tvd[0]]
             )
         else:
-            self.start_nev = np.array(start_nev)
+            self.start_nev = np.array(self.start_nev)
 
         self.x = np.array(x) if x is not None else x
         self.y = np.array(y) if y is not None else y
