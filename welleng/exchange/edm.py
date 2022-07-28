@@ -213,7 +213,11 @@ class EDM:
 
         return attributes
 
-    def get_parents(self, wellbore_id, predecessors=[]):
+    def get_parents(self, wellbore_id, predecessors=None):
+
+        if not predecessors:
+            predecessors = []
+
         for child in self.root:
             if (
                 child.tag == "CD_WELLBORE"
@@ -428,7 +432,11 @@ class Well:
                 survey[item[0]] = sorted(survey[item[0]], key=lambda k: float(k['md']))
         case.survey = survey
 
-    def get_parent_surveys(self, survey_header_id, data=OrderedDict()):
+    def get_parent_surveys(self, survey_header_id, data=None):
+
+        if not data:
+            data = OrderedDict()
+
         for sh in self.well_data['CD_SURVEY_HEADER']:
             if (
                 sh['survey_header_id'] == survey_header_id

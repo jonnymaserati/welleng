@@ -137,7 +137,9 @@ def make_header_dict(data):
     return h
 
 
-def remove_characters(data, chars=CHARACTERS):
+def remove_characters(data, chars=None):
+    if not chars:
+        chars = CHARACTERS
     for c in chars:
         data = data.replace(c, "")
 
