@@ -9,7 +9,7 @@ try:
 except ImportError:
     MAG_CALC = False
 from datetime import datetime
-from typing import List, Union
+from typing import List, Optional, Union
 
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
@@ -52,11 +52,7 @@ class SurveyHeader:
         deg: bool = True,
         depth_unit: str = 'meters',
         surface_unit: str = 'meters',
-        mag_defaults: dict = {
-            'b_total': 50_000.,
-            'dip': 70.,
-            'declination': 0.,
-        },
+        mag_defaults: Optional[dict] = None,
         **kwargs
     ):
         """
@@ -121,6 +117,12 @@ class SurveyHeader:
             The unit of distance for the survey data, either "meters" or
             "feet".
         """
+        if not mag_defaults:
+            mag_defaults = {
+                'b_total': 50_000.,
+                'dip': 70.,
+                'declination': 0.,
+            }
         if latitude is not None:
             assert 90 >= latitude >= -90, "latitude out of bounds"
         if longitude is not None:
@@ -250,8 +252,8 @@ class Survey:
         cov_nev: Union[List[np.ndarray], None] = None,
         cov_hla: Union[List[np.ndarray], None] = None,
         error_model: ISCWSAErrorModel = None,
-        start_xyz: list = [0., 0., 0.],
-        start_nev: list = [0., 0., 0.],
+        start_xyz: Optional[List] = None,
+        start_nev: Optional[List] = None,
         start_cov_nev=None,
         deg: bool = True,
         unit: str = "meters",
@@ -331,6 +333,7 @@ class Survey:
         -------
         A welleng.survey.Survey object.
         """
+
         if header is None:
             self.header = SurveyHeader()
         else:
@@ -339,10 +342,11 @@ class Survey:
         assert unit == self.header.depth_unit, (
             "inconsistent units with header"
         )
+
         self.unit = unit
         self.deg = deg
-        self.start_xyz = start_xyz
-        self.start_nev = start_nev
+        self.start_xyz = start_xyz if start_xyz else [0., 0., 0.]
+        self.start_nev = start_nev if start_nev else [0., 0., 0.]
         self.md = np.array(md).astype('float64')
         self.start_cov_nev = start_cov_nev
 
@@ -367,7 +371,7 @@ class Survey:
                 [self.n[0], self.e[0], self.tvd[0]]
             )
         else:
-            self.start_nev = np.array(start_nev)
+            self.start_nev = np.array(self.start_nev)
 
         self.x = np.array(x) if x is not None else x
         self.y = np.array(y) if y is not None else y

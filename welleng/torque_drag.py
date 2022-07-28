@@ -391,14 +391,16 @@ class HookLoad:
 
 def figure_string_tension_and_torque(
     td,
-    units=dict(
-        depth='ft',
-        tension='lbf',
-        torque='ft_lbf'
-    )
+    units=None
 ):
     assert PLOTLY, "Please install plotly"
 
+    if not units:
+        units = dict(
+            depth='ft',
+            tension='lbf',
+            torque='ft_lbf'
+        )
     fig = make_subplots(rows=1, cols=2)
 
     for k, v in td.tension.items():
@@ -449,14 +451,16 @@ def figure_string_tension_and_torque(
 
 def figure_hookload(
     hl,
-    units=dict(
-        depth='ft',
-        tension='lbf',
-        torque='ft_lbf'
-    )
+    units=None
 ):
     assert PLOTLY, "Please install plotly"
 
+    if not units:
+        units = dict(
+            depth='ft',
+            tension='lbf',
+            torque='ft_lbf'
+        )
     fig = go.Figure()
 
     lines = [None, 'dashdot', 'dash', 'dot']

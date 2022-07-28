@@ -25,7 +25,9 @@ class Target:
         self,
         name,
         location=None,
-        geometry={
+        geometry=None,
+    ):
+        default_geometry = {
             'type': None,
             'locked': None,
             'offset': None,
@@ -44,11 +46,10 @@ class Target:
                 'feature': None
             },
             'category': None,
-        },
-    ):
+        }
         self.name = name
         self.location = location
-        self.geometry = geometry
+        self.geometry = geometry if geometry else default_geometry
 
 
 class SurveyPoint:
@@ -100,7 +101,7 @@ class WellPlan:
         dls=3.0,
         extension=0,
         wbp_data=None,
-        targets=[],
+        targets=None,
         line=None,
         parent_wbp_file=None,
     ):
@@ -169,7 +170,7 @@ class WellPlan:
 
         self.depth_unit = depth_unit
         self.surface_unit = surface_unit
-        self.targets = targets
+        self.targets = targets if targets else []
         if line is None:
             self.lines = 0
         else:
