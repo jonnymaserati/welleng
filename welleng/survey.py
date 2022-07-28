@@ -343,10 +343,16 @@ class Survey:
             "inconsistent units with header"
         )
 
+        if start_xyz is None:
+            start_xyz = [0., 0., 0.]
+
+        if start_nev is None:
+            start_nev = [0., 0., 0.]
+
         self.unit = unit
         self.deg = deg
-        self.start_xyz = start_xyz if start_xyz else [0., 0., 0.]
-        self.start_nev = start_nev if start_nev else [0., 0., 0.]
+        self.start_xyz = start_xyz
+        self.start_nev = start_nev
         self.md = np.array(md).astype('float64')
         self.start_cov_nev = start_cov_nev
 

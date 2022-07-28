@@ -47,9 +47,12 @@ class Target:
             },
             'category': None,
         }
+
+        if geometry is None:
+            geometry = default_geometry
         self.name = name
         self.location = location
-        self.geometry = geometry if geometry else default_geometry
+        self.geometry = geometry
 
 
 class SurveyPoint:
@@ -168,9 +171,12 @@ class WellPlan:
             'depth': self._get_units,
         }
 
+        if targets is None:
+            targets = []
+
         self.depth_unit = depth_unit
         self.surface_unit = surface_unit
-        self.targets = targets if targets else []
+        self.targets = targets
         if line is None:
             self.lines = 0
         else:
