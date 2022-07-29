@@ -11,7 +11,8 @@ from setuptools import find_packages, setup
 # load __version__ without importing anything
 version_file = os.path.join(
     os.path.dirname(__file__),
-    'welleng/version.py')
+    'welleng/version.py'
+)
 with open(version_file, 'r') as f:
     # use eval to get a clean string of version from file
     __version__ = eval(f.read().strip().split('=')[-1])
@@ -19,7 +20,7 @@ with open(version_file, 'r') as f:
 with open("README.md", "r") as f:
     long_description = f.read()
 
-download_url = f'https://github.com/jonnymaserati/welleng/archive/v{__version__}.tar.gz'
+download_url = f'https://github.com/corva-ai/welleng/archive/v{__version__}.tar.gz'
 
 # If you only want to generate surveys and errors, these are all that's
 # required
@@ -59,12 +60,12 @@ if '--list-easy' in sys.argv:
     exit()
 
 setup(
-    name='welleng',
+    name='corva-welleng',
     version=__version__,
     description='A collection of Well Engineering tools',
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url='https://github.com/jonnymaserati/welleng',
+    url='https://github.com/corva-ai/welleng',
     download_url=download_url,
     keywords=[
         'well',
@@ -90,17 +91,17 @@ setup(
         'volve',
         'witsml',
     ],
-    author='Jonathan Corcutt',
-    author_email='jonnycorcutt@gmail.com',
+    author='Mo Kamyab',
+    author_email='m.kamyab@corva.ai',
     license='Apache 2.0',
     classifiers=[
         'Development Status :: 4 - Beta',
         'License :: OSI Approved :: Apache Software License',
-        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
         'Natural Language :: English',
         'Topic :: Scientific/Engineering',
     ],
-    python_requires='>=3.7.*',
+    python_requires='>=3.8.*',
     packages=find_packages(exclude=["tests"]),
     package_data={
         'welleng': [

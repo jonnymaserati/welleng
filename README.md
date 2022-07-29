@@ -1,4 +1,8 @@
-# welleng
+# Corva Welleng
+
+This project is a fork of the [welleng](https://github.com/jonnymaserati/welleng) package originally developed by Jonathan Corcutt.
+
+---
 
 [![Open Source Love svg2](https://badges.frapsoft.com/os/v2/open-source.svg?v=103)](https://github.com/pro-well-plan/pwptemp/blob/master/LICENSE.md)
 [![PyPI version](https://badge.fury.io/py/welleng.svg)](https://badge.fury.io/py/welleng)

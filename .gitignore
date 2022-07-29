@@ -1,6 +1,7 @@
-.venv
-.vscode
+venv/
 
+.vscode/
+.idea/
 .devcontainer/
 
 __pycache__
@@ -23,3 +24,5 @@ key.asc
 VERSION*
 
 test/test_data/*.xlsx
+
+.coverage

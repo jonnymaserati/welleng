@@ -18,7 +18,7 @@ jobs:
           make install-requirements-lint
           make lint
 
-  testing:
+  test:
     name: Automated Testing
     runs-on: ubuntu-latest
     steps:
@@ -36,13 +36,26 @@ jobs:
       - name: Run unit tests
         run: |
           make test
-        env:
-          API_KEY: ${{ secrets.API_KEY }}
-          API_ROOT_URL: ${{ secrets.API_ROOT_URL }}
-          ENVIRONMENT: ${{ secrets.ENVIRONMENT }}
-          APP_NAME: ${{ secrets.APP_NAME }}
-          CACHE_URL: ${{ secrets.CACHE_URL }}
 
-      - name: Coverage report
+  deploy:
+    name: Build and Publishing to PyPI
+    needs: [ static, test ]
+    if: contains(github.ref, 'tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+
+      - name: Build the Package
         run: |
-          make coverage-report
+          rm -rf dist/*
+          python setup.py sdist
+      - name: Publishing to PyPI
+        uses: pypa/gh-action-pypi-publish@master
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
