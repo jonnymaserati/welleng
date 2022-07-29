@@ -2,6 +2,8 @@
 
 This project is a fork of the [welleng](https://github.com/jonnymaserati/welleng) package originally developed by Jonathan Corcutt.
 
+---
+
 [![Open Source Love svg2](https://badges.frapsoft.com/os/v2/open-source.svg?v=103)](https://github.com/pro-well-plan/pwptemp/blob/master/LICENSE.md)
 [![PyPI version](https://badge.fury.io/py/welleng.svg)](https://badge.fury.io/py/welleng)
 [![Downloads](https://static.pepy.tech/personalized-badge/welleng?period=total&units=international_system&left_color=grey&right_color=orange&left_text=Downloads&kill_cache=1)](https://pepy.tech/project/welleng)
