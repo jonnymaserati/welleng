@@ -1,10 +1,4 @@
-"""
-The different setup versions method is shamelessly copied from mikedh's trimesh
-Python library - thank you!
-"""
-
 import os
-import sys
 from setuptools import setup, find_packages
 
 # load __version__ without importing anything
@@ -23,53 +17,9 @@ with open("README.md", "r") as f:
 
 download_url = f'https://github.com/jonnymaserati/welleng/archive/v{__version__}.tar.gz'
 
-# If you only want to generate surveys and errors, these are all that's
-# required
-requirements_default = set([
-    'numpy',
-    'scipy',
-    'pint',
-    'PyYAML',
-    'setuptools',
-    'vtk'
-])
-
-# these can be installed without compiling required
-requirements_easy = set([
-    'magnetic_field_calculator',    # used to get default mag data for survey
-    'networkx',
-    'openpyxl',
-    'pandas',
-    'tabulate',
-    'trimesh',
-    'utm',
-    'vedo',
-])
-
-# this is the troublesome requirement that needs C dependencies
-requirements_all = requirements_easy.union([
-    'python-fcl',
-])
-
-# if someone wants to output a requirements file
-# `python setup.py --list-all > requirements.txt`
-if '--list-all' in sys.argv:
-    # will not include default requirements (numpy)
-    print('\n'.join(requirements_all))
-    exit()
-elif '--list-easy' in sys.argv:
-    # again will not include numpy+setuptools
-    print('\n'.join(requirements_easy))
-    exit()
-
-# if sys.platform == 'win32':
-#     requirements_all.append('python-fcl-win32')
-# else:
-#     requirements_all.append('python-fcl')
-
 setup(
     name='welleng',
-    version=__version__,
+    version=__version__,    
     description='A collection of Well Engineering tools',
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -86,41 +36,37 @@ setup(
         'separation',
         'minimum curvature',
         'iscwsa',
-        'owsg',
         'well engineering',
         'wells',
         'drilling engineering',
         'directional drilling',
         'mwd',
         'survey',
-        'covariance',
-        'digitalization',
-        'automation',
-        'volve',
-        'witsml',
+        'covariance'
     ],
     author='Jonathan Corcutt',
     author_email='jonnycorcutt@gmail.com',
     license='Apache 2.0',
-    classifiers=[
-        'Development Status :: 4 - Beta',
-        'License :: OSI Approved :: Apache Software License',
-        'Programming Language :: Python :: 3.7',
-        'Natural Language :: English',
-        'Topic :: Scientific/Engineering',
-    ],
-    python_requires='>=3.7.*',
     packages=find_packages(exclude=["tests"]),
-    package_data={
-        'welleng': [
-            'errors/*.yaml',
-            'errors/tool_codes/*.yaml',
-            'exchange/*.yaml'
-        ]
-    },
-    install_requires=list(requirements_default),
-    extras_require={
-        'easy': list(requirements_easy),
-        'all': list(requirements_all)
-    }
+    install_requires=[
+        'magnetic_field_calculator',
+        'matplotlib',
+        'networkx',
+        'numpy',
+        'openpyxl',
+        'pandas',
+        'python-fcl',
+        'scipy',
+        'tabulate',
+        'trimesh',
+        'utm',
+        'vedo',
+        'vtk',
+    ],
+    classifiers=[
+        'License :: OSI Approved :: Apache Software License',
+        'Operating System :: OS Independent',
+        'Programming Language :: Python :: 3',
+    ],
+    python_requires='>=3.7',
 )
