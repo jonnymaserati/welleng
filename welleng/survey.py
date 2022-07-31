@@ -878,22 +878,19 @@ class Survey:
         )
 
     def modified_tortuosity_index(
-        self, rtol=0.01, dls_tol=None, step=1.0, dls_noise=1.0, data=False,
+        self, rtol=1.0, dls_tol=1e-3, step=1.0, dls_noise=1.0, data=False,
         **kwargs
     ):
         """
         Convenience method for calculating the Tortuosity Index (TI) using a
-        modified version of the method described in the International
-        Association of Directional Drilling presentation
-        (https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf)
+        modified version of the method described in the [International
+        Association of Directional Drilling presentation](https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf)
         by Pradeep Ashok et al.
 
         Parameters
         ----------
         rtol: float
             Relative tolerance when determining closeness of normal vectors.
-        atol: float
-            Absolute tolerance when determining closeness of normal vectors.
         dls_tol: float or None
             Indicates whether or not to check for dls continuity within the
             defined dls tolerance.
@@ -1057,7 +1054,7 @@ class Survey:
 
 
 def modified_tortuosity_index(
-    survey, rtol=0.01, dls_tol=None, data=False, **kwargs
+    survey, rtol=1.0, dls_tol=1e-3, data=False, **kwargs
 ):
     """
     Method for calculating the Tortuosity Index (TI) using a modified
