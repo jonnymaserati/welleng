@@ -8,7 +8,6 @@ try:
 except ImportError:
     PLOTLY = False
 
-from .utils import linear_convert
 from .survey import interpolate_md, Survey
 from .units import ureg
 
@@ -182,7 +181,7 @@ class TorqueDrag:
                     < md <= self.wellbore.sections[section]['bottom']
                 ):
                     friction.append(
-                        self.wellbore.sections[section]['coeff_friction_sliding']
+                        self.wellbore.sections[section]['coeff_friction_sliding']  # noqa: E501
                     )
                     break
                 else:
@@ -398,7 +397,7 @@ def figure_string_tension_and_torque(
     )
 ):
     assert PLOTLY, "Please install plotly"
-    
+
     fig = make_subplots(rows=1, cols=2)
 
     for k, v in td.tension.items():
@@ -519,7 +518,7 @@ def figure_hookload(
             )
         )
 
-    title_text = (f"<b>wellbore:</b>")
+    title_text = ("<b>wellbore:</b>")
     for i, (k, v) in enumerate(hl.wellbore.sections.items()):
         coupler = "" if i == 0 else "and "
         title_text += (
@@ -527,7 +526,7 @@ def figure_hookload(
             + f" to {((v['bottom'] * ureg.meters).to(units['depth'])).m:.0f}"
             + f"{units['depth']}"
         )
-    title_text += f"<br><b>string:</b>"
+    title_text += "<br><b>string:</b>"
 
     last = len(hl.string.sections.keys()) - 1
     for i, (k, v) in enumerate(list(hl.string.sections.items())[::-1]):
@@ -535,7 +534,7 @@ def figure_hookload(
         if i == last:
             title_text += (
                 f" {coupler}{v['name']}"
-                + f" to surface"
+                + " to surface"
             )
         else:
             title_text += (
