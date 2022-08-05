@@ -248,20 +248,37 @@ class ISCWSA:
         # self.pc_method()
 
     def _get_sf_min(self, x, i, delta_md):
+        if x == 0.0:
+            return self.SF[i]
+        if x == delta_md:
+            return self.SF[i+1]
+
         node = self.c.ref.interpolate_md(x)
-        mult = x / self.c.ref.delta_md[i + 1]
+        mult = x / delta_md
 
         cov_nev = (
             self.c.ref.cov_nev[i]
-            + mult * (self.c.ref.cov_nev[i] - self.c.ref.cov_nev[i + 1])
-        )
+            + mult * (self.c.ref.cov_nev[i+1] - self.c.ref.cov_nev[i])
+        ).reshape(-1, 3, 3)
+
+        sh = self.c.ref.header
+        sh.azi_reference = 'grid'
 
         survey = Survey(
             md=np.insert(
                 self.c.ref.md[i: i+2], 1, node.md
             ),
-            inc=self.c.ref.md[i: i+2],
-            inc=self.c.ref.md[i: i+2],
+            inc=np.insert(
+                self.c.ref.inc_rad[i: i+2], 1, node.inc_rad
+            ),
+            azi=np.insert(
+                self.c.ref.azi_grid_rad[i: i+2], 1, node.azi_rad
+            ),
+            cov_nev=np.insert(
+                self.c.ref.cov_nev[1: 1+2], 1, cov_nev, axis=0
+            ),
+            start_nev=self.c.ref.survey_nev[i],
+            degrees=False
         )
 
         return
