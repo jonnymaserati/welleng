@@ -7,6 +7,7 @@ except ImportError:
     MESH_MODE = False
 
 from scipy import optimize
+from scipy.signal import argrelmin
 from scipy.spatial import KDTree
 from scipy.spatial.distance import cdist
 
@@ -240,8 +241,47 @@ class ISCWSA:
             self.wellbore_separation / self.eou_boundary,
             ).reshape(-1)
 
+        # check for minima
+        self.get_sf_mins()
+
         # for debugging
         # self.pc_method()
+
+    def _get_sf_min(self, x, i, delta_md):
+        node = self.c.ref.interpolate_md(x)
+        mult = x / self.c.ref.delta_md[i + 1]
+
+        cov_nev = (
+            self.c.ref.cov_nev[i]
+            + mult * (self.c.ref.cov_nev[i] - self.c.ref.cov_nev[i + 1])
+        )
+
+        survey = Survey(
+            md=np.insert(
+                self.c.ref.md[i: i+2], 1, node.md
+            ),
+            inc=self.c.ref.md[i: i+2],
+            inc=self.c.ref.md[i: i+2],
+        )
+
+        return
+
+    def get_sf_mins(self):
+        minimas = argrelmin(self.SF)
+
+        for minima in minimas[0].tolist():
+            delta_md = self.c.ref.delta_md[minima + 1]
+            bounds = [[0, delta_md]]
+            x0 = (np.diff(bounds) / 2)
+            args=(minima, delta_md)
+            result = optimize.minimize(
+                self._get_sf_min,
+                x0,
+                method='SLSQP',
+                bounds=bounds,
+                args=args
+            )
+
 
     def get_lines(self):
         """
