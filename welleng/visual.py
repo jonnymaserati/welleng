@@ -120,10 +120,17 @@ class Plotter(vtkRenderer):
             self.AddActor(mesh)
 
         for obj in kwargs.values():
-            try:
-                self.AddActor(obj)
-            except TypeError:
-                continue
+            if isinstance(obj, list):
+                for item in obj:
+                    try:
+                        self.AddActor(item)
+                    except TypeError:
+                        pass
+            else:
+                try:
+                    self.AddActor(obj)
+                except TypeError:
+                    pass
 
         axes = CubeAxes(self, **kwargs)
         self.AddActor(axes)
@@ -160,7 +167,10 @@ class Plotter(vtkRenderer):
 
         renderWindow.Render()
         self.GetActiveCamera().Zoom(0.8)
-        renderWindowInteractor.Start()
+
+        interactive = kwargs.get('interactive', True)
+        if interactive:
+            renderWindowInteractor.Start()
 
 
 class CubeAxes(vtkCubeAxesActor):
@@ -250,14 +260,14 @@ def plot(
 
     Parameters
     ----------
-        data: a trimesh.Trimesh object or a list of trimesh.Trimesh
-        objects or a trmiesh.scene object
-        names: list of strings (default: None)
-            A list of names, index aligned to the list of well meshes.
-        colors: list of strings (default: None)
-            A list of color or colors. If a single color is listed then this is
-            applied to all meshes in data, otherwise the list of colors is
-            indexed to the list of meshes.
+    data: a trimesh.Trimesh object or a list of trimesh.Trimesh
+    objects or a trmiesh.scene object
+    names: list of strings (default: None)
+        A list of names, index aligned to the list of well meshes.
+    colors: list of strings (default: None)
+        A list of color or colors. If a single color is listed then this is
+        applied to all meshes in data, otherwise the list of colors is
+        indexed to the list of meshes.
     """
     for k, v in locals().items():
         if k != 'data' and k[0] != '_':
