@@ -57,7 +57,7 @@ class SurveyHeader:
             'declination': 0.,
         },
         vertical_section_azimuth=0,
-        **kwargs
+        # **kwargs
     ):
         """
         A class for storing header information about a well.
