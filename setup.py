@@ -56,13 +56,13 @@ setup(
         'openpyxl',
         'pandas',
         'python-fcl',
+        'pyyaml',
         'scipy',
         'tabulate',
         'trimesh',
         'utm',
         'vedo',
         'vtk',
-        'yaml'
     ],
     classifiers=[
         'License :: OSI Approved :: Apache Software License',
