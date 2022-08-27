@@ -62,6 +62,7 @@ setup(
         'utm',
         'vedo',
         'vtk',
+        'yaml'
     ],
     classifiers=[
         'License :: OSI Approved :: Apache Software License',
