@@ -27,8 +27,8 @@ class Clearance:
         Rr=0.4572,
         Ro=0.3048,
         kop_depth=-np.inf,
-        *args,
-        **kwargs
+        # *args,
+        # **kwargs
     ):
         """
         Initialize a welleng.clearance.Clearance object.
@@ -174,6 +174,7 @@ class ISCWSA:
     def __init__(
         self,
         clearance,
+        minimize_SF=True
     ):
         """
         Class to calculate the clearance between two well bores using the
@@ -185,6 +186,7 @@ class ISCWSA:
 
         Clearance.__init__
         self.c = clearance
+        self.minimize_SF = minimize_SF
         # get closest survey station in offset well for each survey
         # station in the reference well
         self.idx = np.argmin(
@@ -237,28 +239,48 @@ class ISCWSA:
         )
 
         # calculate SF (renamed from ISCWSA_ACR)
-        self.SF = np.array(
-            self.wellbore_separation / self.eou_boundary,
-            ).reshape(-1)
+        self.SF = np.stack((
+            self.c.ref.md,
+            np.array(
+                self.wellbore_separation / self.eou_boundary,
+            ).reshape(-1),
+            np.zeros_like(self.c.ref.md)
+        ), axis=1)
 
         # check for minima
-        self.get_sf_mins()
+        if self.minimize_SF:
+            self.get_sf_mins()
 
         # for debugging
         # self.pc_method()
 
     def _get_sf_min(self, x, i, delta_md):
         if x == 0.0:
-            return self.SF[i]
-        if x == delta_md:
-            return self.SF[i+1]
+            return self.SF[i][1]
+        if x == -delta_md[0]:
+            return self.SF[i-1][1]
+        if x == delta_md[1]:
+            return self.SF[i+1][1]
 
-        node = self.c.ref.interpolate_md(x)
-        mult = x / delta_md
+        if x < 0:
+            ii = i - 1
+            xx = delta_md[0] + x
+            mult = xx / delta_md[0]
+        else:
+            ii = i
+            xx = x
+            mult = xx / delta_md[1]
+
+        node = self.c.ref.interpolate_md(
+            self.c.ref.md[ii] + xx
+        )
 
         cov_nev = (
-            self.c.ref.cov_nev[i]
-            + mult * (self.c.ref.cov_nev[i+1] - self.c.ref.cov_nev[i])
+            self.c.ref.cov_nev[ii]
+            + (
+                np.full(shape=(1, 3, 3), fill_value=mult)
+                * (self.c.ref.cov_nev[ii+1] - self.c.ref.cov_nev[ii])
+            )
         ).reshape(-1, 3, 3)
 
         sh = self.c.ref.header
@@ -266,39 +288,89 @@ class ISCWSA:
 
         survey = Survey(
             md=np.insert(
-                self.c.ref.md[i: i+2], 1, node.md
+                self.c.ref.md[ii: ii+2], 1, node.md
             ),
             inc=np.insert(
-                self.c.ref.inc_rad[i: i+2], 1, node.inc_rad
+                self.c.ref.inc_rad[ii: ii+2], 1, node.inc_rad
             ),
             azi=np.insert(
-                self.c.ref.azi_grid_rad[i: i+2], 1, node.azi_rad
+                self.c.ref.azi_grid_rad[ii: ii+2], 1, node.azi_rad
             ),
             cov_nev=np.insert(
-                self.c.ref.cov_nev[1: 1+2], 1, cov_nev, axis=0
+                self.c.ref.cov_nev[ii: ii+2], 1, cov_nev, axis=0
             ),
-            start_nev=self.c.ref.survey_nev[i],
-            degrees=False
+            start_nev=self.c.ref.pos_nev[ii],
+            # start_xyz=self.c.ref.pos_xyz[ii],
+            deg=False
         )
 
-        return
+        clearance = Clearance(
+            survey,
+            self.c.offset,
+            k=self.c.k,
+            sigma_pa=self.c.sigma_pa,
+            Sm=0.0,
+            Rr=np.insert(
+                self.c.Rr[ii: ii+2], 1, self.c.Rr[ii+1]
+            ),
+            Ro=self.c.Ro,
+            kop_depth=self.c.kop_depth
+        )
+
+        SF_interpolated = ISCWSA(clearance, minimize_SF=False).SF[1, 1]
+
+        return SF_interpolated
 
     def get_sf_mins(self):
-        minimas = argrelmin(self.SF)
+        """
+        Method for assessing whether a minima has occurred between survey
+        station SF values on the reference well and if so calculates the
+        minimum SF value between stations (between the previous and next
+        station relative to the identified station).
+
+        Modifies the SF property to include the interpolated minimum SF values.
+        """
+        minimas = argrelmin(self.SF[:, 1])
+
+        sf_interpolated = []
 
         for minima in minimas[0].tolist():
-            delta_md = self.c.ref.delta_md[minima + 1]
-            bounds = [[0, delta_md]]
-            x0 = (np.diff(bounds) / 2)
-            args=(minima, delta_md)
+            delta_md = self.c.ref.delta_md[minima: minima + 2]
+            bounds = [[-delta_md[0], delta_md[1]]]
+            # x0 = (np.diff(bounds) / 2)
+            x0 = [0]
+            args = (minima, delta_md)
+            options = {
+                'eps': np.sum(delta_md) / 10
+            }
+
+            # SLSQP and L-BFGS-B don't work when using neg to pos ranges in
+            # this example, but Powell seems to do the job.
             result = optimize.minimize(
                 self._get_sf_min,
                 x0,
-                method='SLSQP',
+                method='Powell',
                 bounds=bounds,
-                args=args
+                args=args,
             )
 
+            if any((
+                result.x == 0,
+                result.x in delta_md
+            )):
+                continue
+
+            else:
+                sf_interpolated.append((
+                    self.c.ref.md[minima] + result.x[0], result.fun
+                ))
+
+        if bool(sf_interpolated):
+            for md, sf in sf_interpolated:
+                i = np.searchsorted(self.SF[:, 0], md, side='right')
+                self.SF = np.insert(
+                    self.SF, i, np.array([md, sf, 1]), axis=0
+                )
 
     def get_lines(self):
         """
