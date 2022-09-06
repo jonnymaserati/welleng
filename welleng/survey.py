@@ -1502,8 +1502,9 @@ def slice_survey(survey, start, stop=None):
         s: welleng.survey.Survey object
             A survey object of the desired slice is returned.
     """
-    if stop is None:
-        stop = start + 2
+    # Removing this start + 2 code - define this explicitly when making call 
+    # if stop is None:
+    #     stop = start + 2
     md, inc, azi = survey.survey_rad[start:stop].T
     nevs = np.array([survey.n, survey.e, survey.tvd]).T[start:stop]
     n, e, tvd = nevs.T
@@ -1528,6 +1529,8 @@ def slice_survey(survey, start, stop=None):
         deg=False,
         unit=survey.unit,
     )
+
+    s.error_model=survey.error_model
 
     return s
 

@@ -29,7 +29,7 @@ from .version import __version__ as VERSION
 # VEDO = False
 
 class Plotter(vtkRenderer):
-    def __init__(self, data, **kwargs):
+    def __init__(self, data=None, **kwargs):
         super().__init__()
 
         """
@@ -52,61 +52,80 @@ class Plotter(vtkRenderer):
         assert all((VEDO, TRIMESH)), \
             "ImportError: try pip install welleng[easy]"
 
-        names = kwargs.get('names')
+        if data is not None:
+            names = kwargs.get('names')
 
-        if isinstance(data, trimesh.scene.scene.Scene):
-            meshes = [v for k, v in data.geometry.items()]
-            if names is None:
-                names = list(data.geometry.keys())
+            if isinstance(data, trimesh.scene.scene.Scene):
+                meshes = [v for k, v in data.geometry.items()]
+                if names is None:
+                    names = list(data.geometry.keys())
 
-        # handle a single mesh being passed
-        elif isinstance(data, trimesh.Trimesh):
-            meshes = [data]
+            # handle a single mesh being passed
+            elif isinstance(data, trimesh.Trimesh):
+                meshes = [data]
 
-        else:
-            meshes = data
-            if names is not None:
-                assert len(names) == len(data), \
-                    "Names must be length of meshes list else None"
-
-        colors = kwargs.get('colors')
-        if colors is not None:
-            if len(colors) == 1:
-                colors = colors * len(meshes)
             else:
-                assert len(colors) == len(meshes), \
-                    "Colors must be length of meshes list, 1 else None"
+                meshes = data
+                if names is not None:
+                    assert len(names) == len(data), \
+                        "Names must be length of meshes list else None"
 
-        points = kwargs.get('points')
-        if points is not None:
-            points = [
-                Sphere(p, r=30, c='grey')
-                for p in points
-            ]
-
-        meshes_vedo = []
-        for i, mesh in enumerate(meshes):
-            if i == 0:
-                vertices = np.array(mesh.vertices)
-                start_locations = np.array([mesh.vertices[0]])
-            else:
-                vertices = np.concatenate(
-                    (vertices, np.array(mesh.vertices)),
-                    axis=0
-                )
-                start_locations = np.concatenate(
-                    (start_locations, np.array([mesh.vertices[0]])),
-                    axis=0
-                )
-
-            # convert to vedo mesh
-            m_vedo = trimesh2vedo(mesh)
+            colors = kwargs.get('colors')
             if colors is not None:
-                m_vedo.c(colors[i])
-            if names is not None:
-                m_vedo.name = names[i]
-                m_vedo.flag()
-            meshes_vedo.append(m_vedo)
+                if len(colors) == 1:
+                    colors = colors * len(meshes)
+                else:
+                    assert len(colors) == len(meshes), \
+                        "Colors must be length of meshes list, 1 else None"
+
+            points = kwargs.get('points')
+            if points is not None:
+                points = [
+                    Sphere(p, r=30, c='grey')
+                    for p in points
+                ]
+
+            meshes_vedo = []
+            for i, mesh in enumerate(meshes):
+                if i == 0:
+                    vertices = np.array(mesh.vertices)
+                    start_locations = np.array([mesh.vertices[0]])
+                else:
+                    vertices = np.concatenate(
+                        (vertices, np.array(mesh.vertices)),
+                        axis=0
+                    )
+                    start_locations = np.concatenate(
+                        (start_locations, np.array([mesh.vertices[0]])),
+                        axis=0
+                    )
+
+                # convert to vedo mesh
+                m_vedo = trimesh2vedo(mesh)
+                if colors is not None:
+                    m_vedo.c(colors[i])
+                if names is not None:
+                    m_vedo.name = names[i]
+                    m_vedo.flag()
+                meshes_vedo.append(m_vedo)
+
+                for mesh in meshes_vedo:
+                    if mesh is None:
+                        continue
+                    self.AddActor(mesh)
+
+                for obj in kwargs.values():
+                    if isinstance(obj, list):
+                        for item in obj:
+                            try:
+                                self.AddActor(item)
+                            except TypeError:
+                                pass
+                    else:
+                        try:
+                            self.AddActor(obj)
+                        except TypeError:
+                            pass
 
         self.namedColors = vtkNamedColors()
 
@@ -114,32 +133,28 @@ class Plotter(vtkRenderer):
         self.colors['background'] = kwargs.get('background', 'LightGrey')
         self.colors['background2'] = kwargs.get('background', 'Lavender')
 
-        for mesh in meshes_vedo:
-            if mesh is None:
-                continue
-            self.AddActor(mesh)
-
-        for obj in kwargs.values():
-            if isinstance(obj, list):
-                for item in obj:
-                    try:
-                        self.AddActor(item)
-                    except TypeError:
-                        pass
-            else:
-                try:
-                    self.AddActor(obj)
-                except TypeError:
-                    pass
-
+    def add_axes(self, **kwargs):
         axes = CubeAxes(self, **kwargs)
         self.AddActor(axes)
+    
+    def get_center(self):
+        min, max = np.array(self.ComputeVisiblePropBounds()).reshape(-1, 3)
+        center = min + (max - min) / 2
 
-        self.GetActiveCamera().Azimuth(30)
-        self.GetActiveCamera().Elevation(30)
+        return tuple(center)
+
+    def show(self, add_axes=True, **kwargs):
+        """
+        Convenient method for opening a window to view the rendered scene.
+        """
+        if add_axes:
+            self.add_axes(**kwargs)
+        
+        self.GetActiveCamera().Azimuth(kwargs.get('azimuth', 30))
+        self.GetActiveCamera().Elevation(kwargs.get('elevation', 30))
         self.GetActiveCamera().SetViewUp(0, 0, -1)
         # self.GetActiveCamera().SetPosition(tuple(pos_new))
-        self.GetActiveCamera().SetFocalPoint(axes.GetCenter())
+        self.GetActiveCamera().SetFocalPoint(self.get_center())
 
         self.ResetCamera()
         self.SetBackground(
@@ -149,10 +164,6 @@ class Plotter(vtkRenderer):
             self.namedColors.GetColor3d(self.colors['background2'])
         )
 
-    def show(self, **kwargs):
-        """
-        Convenient method for opening a window to view the rendered scene.
-        """
         setSize = kwargs.get('setSize', (1200, 900))
 
         renderWindow = vtkRenderWindow()
