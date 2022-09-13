@@ -12,6 +12,7 @@ import numpy as np
 
 try:
     import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
     PLOTLY = True
 except ImportError:
     PLOTLY = False
@@ -118,10 +119,17 @@ class Plotter(vtkRenderer):
             self.AddActor(mesh)
 
         for obj in kwargs.values():
-            try:
-                self.AddActor(obj)
-            except TypeError:
-                continue
+            if isinstance(obj, list):
+                for item in obj:
+                    try:
+                        self.AddActor(item)
+                    except TypeError:
+                        pass
+            else:
+                try:
+                    self.AddActor(obj)
+                except TypeError:
+                    pass
 
         axes = CubeAxes(self, **kwargs)
         self.AddActor(axes)
@@ -157,7 +165,10 @@ class Plotter(vtkRenderer):
 
         renderWindow.Render()
         self.GetActiveCamera().Zoom(0.8)
-        renderWindowInteractor.Start()
+
+        interactive = kwargs.get('interactive', True)
+        if interactive:
+            renderWindowInteractor.Start()
 
 
 class CubeAxes(vtkCubeAxesActor):
@@ -247,14 +258,14 @@ def plot(
 
     Parameters
     ----------
-        data: a trimesh.Trimesh object or a list of trimesh.Trimesh
-        objects or a trmiesh.scene object
-        names: list of strings (default: None)
-            A list of names, index aligned to the list of well meshes.
-        colors: list of strings (default: None)
-            A list of color or colors. If a single color is listed then this is
-            applied to all meshes in data, otherwise the list of colors is
-            indexed to the list of meshes.
+    data: a trimesh.Trimesh object or a list of trimesh.Trimesh
+    objects or a trmiesh.scene object
+    names: list of strings (default: None)
+        A list of names, index aligned to the list of well meshes.
+    colors: list of strings (default: None)
+        A list of color or colors. If a single color is listed then this is
+        applied to all meshes in data, otherwise the list of colors is
+        indexed to the list of meshes.
     """
     for k, v in locals().items():
         if k != 'data' and k[0] != '_':
@@ -293,9 +304,99 @@ def figure(obj, type='scatter3d', **kwargs):
     assert PLOTLY, "ImportError: try pip install plotly"
     func = {
         'scatter3d': _scatter3d,
-        'mesh3d': _mesh3d
+        'mesh3d': _mesh3d,
+        'panel': _panel
     }
     fig = func[type](obj, **kwargs)
+    return fig
+
+
+def _panel(survey, **kwargs):
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=(
+            "Plan",
+            f"Vertical Section: {np.degrees(survey.header.vertical_section_azimuth)} deg",
+            "WE Section", "NS Section"
+        )
+        # shared_xaxes=True, shared_yaxes=True
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=survey.e,
+            y=survey.n,
+            mode='lines',
+            name='NE Plan',
+            showlegend=False
+        ),
+        row=1, col=1
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=survey.vertical_section,
+            y=survey.tvd,
+            mode='lines',
+            name='Plan',
+            showlegend=False
+        ),
+        row=1, col=2
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=survey.n,
+            y=survey.tvd,
+            mode='lines',
+            name='NS Section',
+            showlegend=False,
+        ),
+        row=2, col=2
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=survey.e,
+            y=survey.tvd,
+            mode='lines',
+            name='WE Section',
+            showlegend=False
+        ),
+        row=2, col=1
+    )
+
+    fig.update_layout(
+        xaxis=dict(
+            title='West-East'
+        ),
+        yaxis=dict(
+            title='North-South'
+        ),
+        xaxis2=dict(
+            title='Outstep'
+        ),
+        yaxis2=dict(
+            title='TVD',
+            autorange="reversed",
+            matches='y3'
+        ),
+        xaxis3=dict(
+            title='West-East',
+            matches='x'
+        ),
+        yaxis3=dict(
+            title='TVD',
+            autorange="reversed"
+        ),
+        xaxis4=dict(
+            title='North-South',
+            matches='y'
+        ),
+        yaxis4=dict(
+            title='TVD',
+            autorange="reversed",
+            matches='y3'
+        ),
+    )
+
     return fig
 
 

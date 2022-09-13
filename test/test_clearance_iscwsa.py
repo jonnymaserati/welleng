@@ -51,7 +51,10 @@ class TestClearanceISCWSA(unittest.TestCase):
                 result = ISCWSA(c)
 
                 normalized = np.absolute(
-                    np.array(result.SF) - np.array(data["wells"][well]["SF"])
+                    result.SF[
+                        np.where(result.SF[:, 2] == 0)
+                    ][:, 1]
+                    - np.array(data["wells"][well]["SF"])
                 ) / np.array(data["wells"][well]["SF"]) * 100
 
                 assert np.all(normalized < TOLERANCE)
@@ -88,12 +91,12 @@ def generate_surveys(data: dict) -> dict:
                 data["wells"][well]["E"][0],
                 data["wells"][well]["N"][0],
                 data["wells"][well]["TVD"][0]
-                ],
+            ],
             start_nev=[
                 data["wells"][well]["N"][0],
                 data["wells"][well]["E"][0],
                 data["wells"][well]["TVD"][0]
-                ],
+            ],
             deg=True,
             unit="meters"
         )

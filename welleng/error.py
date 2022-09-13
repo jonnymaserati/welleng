@@ -161,9 +161,9 @@ class ErrorModel:
 
         x, y, z = np.array(arr).T
         result = np.array([
-            [x*x, x*y, x*z],
-            [y*x, y*y, y*z],
-            [z*x, z*y, z*z]
+            [x * x, x * y, x * z],
+            [y * x, y * y, y * z],
+            [z * x, z * y, z * z]
         ])
 
         return result
@@ -216,7 +216,7 @@ class ErrorModel:
                             np.array(np.zeros((3, 3, 1))),
                             np.array(sigma_e_NEV[:, :, :-1])
                         ), axis=-1)
-                    )
+                )
 
             else:
                 return

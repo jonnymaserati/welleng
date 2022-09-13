@@ -133,7 +133,7 @@ class TestISCWSAError(unittest.TestCase):
             with np.errstate(divide='ignore', invalid='ignore'):
                 error = np.nan_to_num(np.absolute(
                     np.array(df_d) / np.array(df.iloc[:, 2:])
-                    ) * 100
+                ) * 100
                 )
 
             assert np.all(error < TOLERANCE), (

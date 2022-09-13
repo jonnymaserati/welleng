@@ -49,7 +49,7 @@ class WellMesh:
                 the well bore radius of the offset well to oversize the hole.
             method: str (default="ellipse")
                 The method for constructing the uncertainty edge.
-                Either "ellipse" or "pedal_curve".
+                Either "ellipse", "pedal_curve" or "circle".
         """
         assert TRIMESH, "ImportError: try pip install welleng[easy]"
         self.s = survey
@@ -190,24 +190,24 @@ class WellMesh:
                     np.linspace(
                         1., -1., int(self.n_verts / 2),
                         endpoint=False)) + np.pi
-                )
+            )
             )
             f = highside * (
-                (lateral ** 2 * np.cos(lam))
-                /
-                (lateral ** 2
-                 * (np.cos(lam)) ** 2
-                 + highside ** 2
-                 * (np.sin(lam)) ** 2)
+                (lateral ** 2 * np.cos(lam)) / (
+                    lateral ** 2
+                    * (np.cos(lam)) ** 2
+                    + highside ** 2
+                    * (np.sin(lam)) ** 2
+                )
             )
 
             g = lateral * (
-                (highside ** 2 * np.sin(lam))
-                /
-                (lateral ** 2
-                 * (np.cos(lam)) ** 2
-                 + highside ** 2
-                 * (np.sin(lam)) ** 2)
+                (highside ** 2 * np.sin(lam)) / (
+                    lateral ** 2
+                    * (np.cos(lam)) ** 2
+                    + highside ** 2
+                    * (np.sin(lam)) ** 2
+                )
             )
             z = np.zeros_like(f)
             vertices = np.stack((f, g, z), axis=-1)

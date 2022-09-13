@@ -532,8 +532,8 @@ class Connector:
 
         # recalculate self.distances with new self.pos_target
         self.distances = self._get_distances(
-                self.pos1, self.vec1, self.pos_target
-            )
+            self.pos1, self.vec1, self.pos_target
+        )
 
         self._min_curve_to_target()
 
@@ -546,16 +546,16 @@ class Connector:
         if self.md_target is None:
             self.md2 = None
             self.dist_curve, self.func_dogleg = get_curve_hold_data(
-                        self.radius_design, self.dogleg
-                    )
+                self.radius_design, self.dogleg
+            )
             self.md_target = self.md1 + abs(self.dist_curve)
             self.pos_target = get_pos(
-                    self.pos1,
-                    self.vec1,
-                    self.vec_target,
-                    self.dist_curve,
-                    self.func_dogleg
-                ).reshape(3)
+                self.pos1,
+                self.vec1,
+                self.vec_target,
+                self.dist_curve,
+                self.func_dogleg
+            ).reshape(3)
         else:
             self.radius_critical = abs(
                 (self.md_target - self.md1) / self.dogleg
@@ -576,8 +576,8 @@ class Connector:
                     self.inc2, self.azi2, self.vec2
                 ) = self.inc_target, self.azi_target, self.vec_target
                 self.dist_curve, self.func_dogleg = get_curve_hold_data(
-                        min(self.radius_design, self.radius_critical),
-                        self.dogleg
+                    min(self.radius_design, self.radius_critical),
+                    self.dogleg
                 )
                 self.pos2 = get_pos(
                     self.pos1,
@@ -591,8 +591,8 @@ class Connector:
                 )
             else:
                 self.dist_curve, self.func_dogleg = get_curve_hold_data(
-                        self.radius_critical, self.dogleg
-                    )
+                    self.radius_critical, self.dogleg
+                )
                 self.md2 = None
                 self.pos_target = get_pos(
                     self.pos1,
@@ -650,9 +650,9 @@ class Connector:
         dogleg = check_dogleg(dogleg)
 
         dist_curve, func_dogleg = get_curve_hold_data(
-                    radius_temp,
-                    dogleg
-                )
+            radius_temp,
+            dogleg
+        )
         vec3 = get_vec_target(
             pos1,
             vec1,
@@ -866,9 +866,9 @@ def minimize_target_pos_and_vec_defined(
     c.dogleg = check_dogleg(c.dogleg)
 
     c.dist_curve, c.func_dogleg = get_curve_hold_data(
-                radius_effective1,
-                c.dogleg
-            )
+        radius_effective1,
+        c.dogleg
+    )
     c.vec3 = get_vec_target(
         c.pos1,
         c.vec1,
@@ -914,9 +914,9 @@ def minimize_target_pos_and_vec_defined(
     c.dogleg2 = check_dogleg(c.dogleg2)
 
     c.dist_curve2, c.func_dogleg2 = get_curve_hold_data(
-                radius_effective2,
-                c.dogleg2
-            )
+        radius_effective2,
+        c.dogleg2
+    )
     c.vec2 = get_vec_target(
         c.pos_target,
         c.vec_target * -1,
@@ -1012,9 +1012,7 @@ def get_pos(pos1, vec1, vec2, dist_curve, func_dogleg):
     pos2 = pos1 + (
         (
             dist_curve * func_dogleg / 2
-        )
-        *
-        np.array([
+        ) * np.array([
             np.sin(inc1) * np.cos(azi1) + np.sin(inc2) * np.cos(azi2),
             np.sin(inc1) * np.sin(azi1) + np.sin(inc2) * np.sin(azi2),
             np.cos(inc1) + np.cos(inc2)
@@ -1038,12 +1036,10 @@ def get_vec_target(
     vec_target = (
         (
             pos_target - pos1 - (
-                    dist_curve
-                    * func_dogleg
-                ) / 2 * vec1
-        )
-        /
-        (
+                dist_curve
+                * func_dogleg
+            ) / 2 * vec1
+        ) / (
             (
                 dist_curve * func_dogleg / 2
             ) + tangent_length
@@ -1175,9 +1171,7 @@ def get_radius_critical(radius, distances, min_error):
 
 def angle(vec1, vec2, acute=True):
     angle = np.arccos(
-        np.dot(vec1, vec2)
-        /
-        (
+        np.dot(vec1, vec2) / (
             np.linalg.norm(vec1) * np.linalg.norm(vec2)
         )
     )
@@ -1274,9 +1268,7 @@ def interpolate_curve(
     vec = (
         (
             np.sin(dogleg - dogleg_interp) / np.sin(dogleg) * vec1
-        )
-        +
-        (
+        ) + (
             np.sin(dogleg_interp) / np.sin(dogleg) * vec2
         )
     )
