@@ -55,8 +55,8 @@ class String:
                 break
 
             params = {
-                    k: v for k, v in self.sections[section].items()
-                    if k not in ['top', 'bottom', 'length', 'buoyancy_factor']
+                k: v for k, v in self.sections[section].items()
+                if k not in ['top', 'bottom', 'length', 'buoyancy_factor']
             }
             string_new.add_section(
                 length=self.sections[section]['length'], **params

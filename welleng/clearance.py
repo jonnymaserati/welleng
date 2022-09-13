@@ -1,9 +1,10 @@
+from typing import Union
+
 import numpy as np
 from numpy.linalg import norm
 from scipy import optimize
 from scipy.signal import argrelmin
 from scipy.spatial.distance import cdist
-from typing import Union
 
 from .survey import Survey, _interpolate_survey
 from .utils import NEV_to_HLA
@@ -136,12 +137,12 @@ class Clearance:
                     self.reference.x[self.kop_index],
                     self.reference.y[self.kop_index],
                     self.reference.z[self.kop_index],
-                    ],
+                ],
                 start_nev=[
                     self.reference.n[self.kop_index],
                     self.reference.e[self.kop_index],
                     self.reference.tvd[self.kop_index],
-                    ],
+                ],
                 deg=self.reference.deg,
                 unit=self.reference.unit,
                 nev=True
@@ -265,11 +266,10 @@ class ISCWSA:
         )
 
         cov_nev = (
-                self.c.ref.cov_nev[ii]
-                + (
-                        np.full(shape=(1, 3, 3), fill_value=mult)
-                        * (self.c.ref.cov_nev[ii + 1] - self.c.ref.cov_nev[ii])
-                )
+            self.c.ref.cov_nev[ii] + (
+                np.full(shape=(1, 3, 3), fill_value=mult)
+                * (self.c.ref.cov_nev[ii + 1] - self.c.ref.cov_nev[ii])
+            )
         ).reshape(-1, 3, 3)
 
         sh = self.c.ref.header
@@ -285,9 +285,9 @@ class ISCWSA:
             azi=np.insert(
                 self.c.ref.azi_grid_rad[ii: ii + 2], 1, node.azi_rad
             ),
-            cov_nev=[np.insert(
+            cov_nev=np.insert(
                 self.c.ref.cov_nev[ii: ii + 2], 1, cov_nev, axis=0
-            )],
+            ),
             start_nev=self.c.ref.pos_nev[ii],
             # start_xyz=self.c.ref.pos_xyz[ii],
             deg=False
@@ -340,6 +340,7 @@ class ISCWSA:
                 method='Powell',
                 bounds=bounds,
                 args=args,
+                options=options
             )
 
             if any((
@@ -400,8 +401,8 @@ class ISCWSA:
                     bnds[0][1],
                     method='SLSQP',
                     bounds=bnds,
-                    args=(self.c.offset, i-1, station)
-                    )
+                    args=(self.c.offset, i - 1, station)
+                )
                 mult = res_1.x[0] / (bnds[0][1] - bnds[0][0])
                 sigma_new_1 = self._interpolate_covs(i, mult)
             else:
@@ -415,7 +416,7 @@ class ISCWSA:
                     method='SLSQP',
                     bounds=bnds,
                     args=(self.c.offset, i, station)
-                    )
+                )
                 mult = res_2.x[0] / (bnds[0][1] - bnds[0][0])
                 sigma_new_2 = self._interpolate_covs(i + 1, mult)
             else:
@@ -436,7 +437,7 @@ class ISCWSA:
                 ))
 
         self.closest = closest
-        md, inc, azi, n, e, tvd, x, y, z,  = np.array([
+        md, inc, azi, n, e, tvd, x, y, z = np.array([
             [
                 r[1].md[1],
                 r[1].inc_rad[1],
@@ -490,12 +491,12 @@ class ISCWSA:
         """
         cov_hla_new = (
             self.c.offset.cov_hla[i - 1]
-            + mult * (self.c.offset.cov_hla[i] - self.c.offset.cov_hla[i-1])
+            + mult * (self.c.offset.cov_hla[i] - self.c.offset.cov_hla[i - 1])
         )
 
         cov_nev_new = (
             self.c.offset.cov_nev[i - 1]
-            + mult * (self.c.offset.cov_nev[i] - self.c.offset.cov_nev[i-1])
+            + mult * (self.c.offset.cov_nev[i] - self.c.offset.cov_nev[i - 1])
         )
 
         return (cov_hla_new, cov_nev_new)

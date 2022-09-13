@@ -481,11 +481,11 @@ def add_targets(doc, targets):
 def add_location(doc, location):
     x, y, z = location
     doc.append((
-            f"L:"
-            f"{x:>13.2f}"
-            f"{y:>13.2f}"
-            f"{z:>11.2f}"
-        ))
+        f"L:"
+        f"{x:>13.2f}"
+        f"{y:>13.2f}"
+        f"{z:>11.2f}"
+    ))
     return doc
 
 

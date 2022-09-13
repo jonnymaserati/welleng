@@ -17,21 +17,20 @@ from scipy.spatial.transform import Rotation as R
 from .connector import Connector, interpolate_well
 from .error import ERROR_MODELS, ErrorModel, ISCWSAErrorModel
 from .node import Node
+from .units import ureg
 from .utils import (
     HLA_to_NEV,
     MinCurve,
     NEV_to_HLA,
     get_angles,
+    get_arc,
     get_nev,
     get_vec,
     get_xyz,
     radius_from_dls,
-    get_arc
 )
 from .version import __version__
 from .visual import figure
-from .units import ureg
-
 
 AZI_REF = ["true", "magnetic", "grid"]
 
@@ -918,7 +917,8 @@ class Survey:
         """
         Convenience method for calculating the Tortuosity Index (TI) using a
         modified version of the method described in the [International
-        Association of Directional Drilling presentation](https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf)
+        Association of Directional Drilling presentation]
+        (https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf)
         by Pradeep Ashok et al.
         Parameters
         ----------
@@ -1089,7 +1089,8 @@ def modified_tortuosity_index(
     """
     Method for calculating the Tortuosity Index (TI) using a modified
     version of the method described in the International Association of
-    Directional Drilling presentation (https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf)
+    Directional Drilling presentation
+    (https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf)
     by Pradeep Ashok et al.
     """
     # set default params
@@ -1149,7 +1150,7 @@ def tortuosity_index(
         survey: Survey,
         rtol: float = 0.01,
         dls_tol: float = None,
-        data: bool =False,
+        data: bool = False,
         **kwargs
 ):
     """
@@ -1264,7 +1265,7 @@ def _get_ti_data(survey: Survey, rtol: float, dls_tol: float = None):
 
     starts = np.concatenate((
         np.array([0]),
-        np.where(continuous == False)[0] + 1,
+        np.where(continuous is False)[0] + 1,
     ))
 
     mds = survey.md[starts]
@@ -1396,10 +1397,12 @@ def _interpolate_survey(survey, x=0, index=0):
         header=sh,
         deg=False,
     )
-    interpolated = False if any((
-        x == 0,
-        x == survey.md[index + 1] - survey.md[index]
-     )) else True
+    interpolated = False if any(
+        (
+            x == 0,
+            x == survey.md[index + 1] - survey.md[index]
+        )
+    ) else True
     s.interpolated = [False, interpolated]
 
     return s
@@ -2043,13 +2046,19 @@ def from_connections(
     section_data_interp = interpolate_well(section_data, step)
 
     # generate lists for survey
-    md, inc, azi = np.vstack([np.array(list(zip(
-            s['md'].tolist(),
-            s['inc'].tolist(),
-            s['azi'].tolist(),
-        )))
-        for s in section_data_interp
-    ]).T
+    md, inc, azi = np.vstack(
+        [np.array(
+            list(
+                zip(
+                    s['md'].tolist(),
+                    s['inc'].tolist(),
+                    s['azi'].tolist(),
+                )
+            )
+        )
+            for s in section_data_interp
+        ]
+    ).T
 
     # remove duplicates
     md, inc, azi = _remove_duplicates(md, inc, azi)
@@ -2364,8 +2373,8 @@ def project_to_target(
     """
     connectors = []
     node_start = Node(
-            pos=survey.pos_nev[-1], vec=survey.vec_nev[-1], md=survey.md[-1]
-        )
+        pos=survey.pos_nev[-1], vec=survey.vec_nev[-1], md=survey.md[-1]
+    )
     if dls is None:
         dls = survey.dls[-1]
     if toolface is None:

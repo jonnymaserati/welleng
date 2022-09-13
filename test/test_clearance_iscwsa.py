@@ -91,12 +91,12 @@ def generate_surveys(data: dict) -> dict:
                 data["wells"][well]["E"][0],
                 data["wells"][well]["N"][0],
                 data["wells"][well]["TVD"][0]
-                ],
+            ],
             start_nev=[
                 data["wells"][well]["N"][0],
                 data["wells"][well]["E"][0],
                 data["wells"][well]["TVD"][0]
-                ],
+            ],
             deg=True,
             unit="meters"
         )

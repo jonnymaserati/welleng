@@ -189,7 +189,7 @@ def ABXY_TI2(
         dpde[:, 2] = np.nan_to_num(
             (
                 (
-                    tan(-(error.survey_rad[:, 1]) + (pi/2))
+                    tan(-(error.survey_rad[:, 1]) + (pi / 2))
                     - tan(error.survey.header.dip)
                     * cos(error.survey.azi_mag_rad)
                 ) / error.survey.header.G
@@ -213,7 +213,7 @@ def ABXY_TI2(
         e = np.array(
             0.5 * error.drdp_sing['double_delta_md']
                 * cos(error.drdp_sing['azi2']) * mag
-            ) / error.survey.header.G
+        ) / error.survey.header.G
         v = np.zeros_like(n)
         e_NEV_sing = np.vstack(
             (
@@ -238,11 +238,11 @@ def ABXY_TI2(
         n = np.array(
             0.5 * error.drdp_sing['delta_md']
                 * -sin(error.drdp_sing['azi2']) * mag
-            ) / error.survey.header.G
+        ) / error.survey.header.G
         e = np.array(
             0.5 * error.drdp_sing['delta_md']
                 * cos(error.drdp_sing['azi2']) * mag
-            ) / error.survey.header.G
+        ) / error.survey.header.G
         v = np.zeros_like(n)
         e_NEV_star_sing = np.vstack(
             (
@@ -610,7 +610,7 @@ def XYM4(
             / sin(np.array(error.survey_rad)[:, 1]),
             posinf=0.0,
             neginf=0.0
-            )
+        )
     e_DIA = dpde * mag
 
     sing = np.where(

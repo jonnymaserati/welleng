@@ -156,7 +156,7 @@ class MeshClearance:
                 closest_point_offset = distance[2].point(name_offset_absolute)
 
                 ref_nev = self._get_closest_nev(s, closest_point_reference)
-                ref_md = ref.md[i-1] + ref_nev[1].x[0]
+                ref_md = ref.md[i - 1] + ref_nev[1].x[0]
 
                 # find the closest point on the well trajectory to the closest
                 # points on the mesh surface
@@ -238,7 +238,7 @@ class MeshClearance:
             method='SLSQP',
             bounds=bnds,
             args=(survey, pos)
-            )
+        )
 
         s = _interpolate_survey(survey, res.x[0])
 

@@ -214,9 +214,10 @@ class ToolError:
 
 def _funky_denominator(error):
     with np.errstate(divide='ignore', invalid='ignore'):
-        result = np.nan_to_num((
-            1 - sin(error.survey.inc_rad) ** 2
-            * sin(error.survey.azi_mag_rad) ** 2
+        result = np.nan_to_num(
+            (
+                1 - sin(error.survey.inc_rad) ** 2
+                * sin(error.survey.azi_mag_rad) ** 2
             ),
         )
     return result
@@ -365,7 +366,7 @@ def ABIXY_TI2(
                     tan(error.survey.header.dip)
                     * cos(error.survey.azi_mag_rad)
                     - tan(
-                        pi/2 - error.survey.inc_rad
+                        pi / 2 - error.survey.inc_rad
                     )
                 ) / (
                     error.survey.header.G
@@ -393,7 +394,7 @@ def ABIXY_TI2(
         e = np.array(
             0.5 * error.drdp_sing['double_delta_md']
                 * cos(error.drdp_sing['azi2']) * mag
-            ) / error.survey.header.G
+        ) / error.survey.header.G
         v = np.zeros_like(n)
         e_NEV_sing = np.vstack(
             (
@@ -418,11 +419,11 @@ def ABIXY_TI2(
         n = np.array(
             0.5 * error.drdp_sing['delta_md']
                 * -sin(error.drdp_sing['azi2']) * mag
-            ) / error.survey.header.G
+        ) / error.survey.header.G
         e = np.array(
             0.5 * error.drdp_sing['delta_md']
                 * cos(error.drdp_sing['azi2']) * mag
-            ) / error.survey.header.G
+        ) / error.survey.header.G
         v = np.zeros_like(n)
         e_NEV_star_sing = np.vstack(
             (
@@ -455,7 +456,7 @@ def ABXY_TI2(
         dpde[:, 2] = np.nan_to_num(
             (
                 (
-                    tan(-(error.survey_rad[:, 1]) + (pi/2))
+                    tan(-(error.survey_rad[:, 1]) + (pi / 2))
                     - tan(error.survey.header.dip)
                     * cos(error.survey.azi_mag_rad)
                 ) / error.survey.header.G
@@ -479,7 +480,7 @@ def ABXY_TI2(
         e = np.array(
             0.5 * error.drdp_sing['double_delta_md']
                 * cos(error.drdp_sing['azi2']) * mag
-            ) / error.survey.header.G
+        ) / error.survey.header.G
         v = np.zeros_like(n)
         e_NEV_sing = np.vstack(
             (
@@ -504,11 +505,11 @@ def ABXY_TI2(
         n = np.array(
             0.5 * error.drdp_sing['delta_md']
                 * -sin(error.drdp_sing['azi2']) * mag
-            ) / error.survey.header.G
+        ) / error.survey.header.G
         e = np.array(
             0.5 * error.drdp_sing['delta_md']
                 * cos(error.drdp_sing['azi2']) * mag
-            ) / error.survey.header.G
+        ) / error.survey.header.G
         v = np.zeros_like(n)
         e_NEV_star_sing = np.vstack(
             (
@@ -1043,17 +1044,9 @@ def GXY_GD(
                 np.array([0]),
                 (
                     (error.survey.md[1:] - error.survey.md[:-1])
-                    / (
-                        float(
-                            gyro_header['XY Continuous Gyro']
-                            ['Running Speed'].split()[0]
-                        )
-                        * sin(
-                            (error.survey.inc_rad[1:] +
-                             error.survey.inc_rad[:-1])
-                            / 2
-                        )
-                    )
+                    / (float(gyro_header['XY Continuous Gyro']['Running Speed'].split()[0])
+                       * sin((error.survey.inc_rad[1:] + error.survey.inc_rad[:-1]) / 2)
+                       )
                 )
             ),
             np.zeros_like(error.survey.md)
@@ -1091,17 +1084,9 @@ def GXY_GRW(
             np.append(
                 np.array([0]),
                 (error.survey.md[1:] - error.survey.md[:-1])
-                / (
-                        float(
-                            gryo_header['XY Continuous Gyro']
-                            ['Running Speed'].split()[0]
-                        )
-                        * sin(
-                            (error.survey.inc_rad[1:] +
-                             error.survey.inc_rad[:-1])
-                            / 2
-                        ) ** 2
-                )
+                / (float(gryo_header['XY Continuous Gyro']['Running Speed'].split()[0])
+                    * sin((error.survey.inc_rad[1:] + error.survey.inc_rad[:-1]) / 2) ** 2
+                   )
             ),
             np.zeros_like(error.survey.md)
         )
@@ -1615,7 +1600,7 @@ def XYM4(
             / sin(np.array(error.survey_rad)[:, 1]),
             posinf=0.0,
             neginf=0.0
-            )
+        )
     e_DIA = dpde * mag
 
     sing = np.where(
