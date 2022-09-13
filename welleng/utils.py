@@ -418,9 +418,17 @@ def dls_from_radius(radius):
     """
     Returns the dls in degrees from a radius.
     """
-    if radius == 0:
-        return np.inf
-    circumference = 2 * np.pi * radius
+    if isinstance(radius, np.ndarray):
+        circumference = np.full_like(radius, np.inf)
+        circumference = np.where(
+            radius != 0,
+            2 * np.pi * radius,
+            circumference
+        )
+    else:
+        if radius == 0:
+            return np.inf
+        circumference = 2 * np.pi * radius
     dls = 360 / circumference * 30
 
     return dls
@@ -430,9 +438,17 @@ def radius_from_dls(dls):
     """
     Returns the radius in meters from a DLS in deg/30m.
     """
-    if dls == 0:
-        return np.inf
-    circumference = (30 / dls) * 360
+    if isinstance(dls, np.ndarray):
+        circumference = np.full_like(dls, np.inf)
+        circumference = np.where(
+            dls != 0,
+            (30 / dls) * 360,
+            circumference
+        )
+    else:
+        if dls == 0:
+            return np.inf
+        circumference = (30 / dls) * 360
     radius = circumference / (2 * np.pi)
 
     return radius
@@ -500,6 +516,26 @@ class Arc:
         ])
 
     def transform(self, toolface, pos=None, vec=None, target=False):
+        """
+        Transforms an Arc to a position and orientation.
+
+        Parameters
+        ----------
+        pos: (,3) array
+        The desired position to transform the arc.
+        vec: (,3) array
+            The orientation unit vector to transform the arc.
+        target: bool
+            If true, returned arc vector is reversed.
+
+        Returns
+        -------
+        tuple (pos_new, vec_new)
+        pos_new: (,3) array
+            The position at the end of the arc post transform.
+        vec_new: (,3) array
+            The unit vector at the end of the arc post transform.
+        """
         if vec is None:
             vec = np.array([0., 0., 1.])
         if target:
@@ -523,6 +559,36 @@ class Arc:
 
 
 def get_arc(dogleg, radius, toolface, pos=None, vec=None, target=False):
+    """
+    Creates an Arc instance and transforms it to the desired position and
+    orientation.
+
+    Parameters
+    ----------
+    dogleg: float
+        The swept angle of the arc (arc angle) in radians.
+    radius: float
+        The radius of the arc (in meters).
+    toolface: float
+        The toolface angle in radians (relative to the high side) to rotate the
+        arc at the desired position and orientation.
+    pos: (,3) array
+        The desired position to transform the arc.
+    vec: (,3) array
+        The orientation unit vector to transform the arc.
+    target: bool
+        If true, returned arc vector is reversed.
+
+    Returns
+    -------
+    tuple of (pos_new, vec_new, arc.delta_md)
+    pos_new: (,3) array
+        The position at the end of the arc post transform.
+    vec_new: (,3) array
+        The unit vector at the end of the arc post transform.
+    arc.delta_md: int
+        The arc length of the arc.
+    """
     arc = Arc(dogleg, radius)
     pos_new, vec_new = arc.transform(toolface, pos, vec, target)
 

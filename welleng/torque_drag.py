@@ -182,7 +182,7 @@ class TorqueDrag:
                     < md <= self.wellbore.sections[section]['bottom']
                 ):
                     friction.append(
-                        self.wellbore.sections[section]['coeff_friction_sliding']
+                        self.wellbore.sections[section]['coeff_friction_sliding']   # noqa: E501
                     )
                     break
                 else:
@@ -523,7 +523,7 @@ def figure_hookload(
             )
         )
 
-    title_text = ("<b>wellbore:</b>")
+    title_text = "<b>wellbore:</b>"
     for i, (k, v) in enumerate(hl.wellbore.sections.items()):
         coupler = "" if i == 0 else "and "
         title_text += (
