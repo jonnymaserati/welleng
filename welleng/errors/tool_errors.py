@@ -3,12 +3,14 @@ from __future__ import annotations
 import copy
 import os
 from collections import OrderedDict
-from typing import List
+from typing import Callable, List
 
 import numpy as np
 import yaml
 from numpy import cos, pi, sin, sqrt, tan
 
+from ..error_formula_extractor.enums import Propagation, VectorType
+from ..error_formula_extractor.models import ErrorTerm, SurveyToolErrorModel
 from ..utils import NEV_to_HLA
 
 # since this is running on different OS flavors
@@ -55,7 +57,7 @@ class ToolError:
 
         self._calculate_error_from_edm_models(model)
 
-    def _calculate_error_from_edm_models(self, model):
+    def _calculate_error_from_edm_models(self, model: SurveyToolErrorModel):
         self.extract_tortuosity(error_from_edm=True)
 
         for term in model.error_terms:
@@ -84,7 +86,16 @@ class ToolError:
 
         self.cov_HLAs = NEV_to_HLA(self.e.survey_rad, self.cov_NEVs)
 
-    def call_func_from_edm(self, term, func, error, mag: float, propagation, vector_type, **kwargs):
+    def call_func_from_edm(
+            self,
+            term: ErrorTerm,
+            func: Callable,
+            error: 'Error',
+            mag: float,
+            propagation: Propagation,
+            vector_type: VectorType
+    ) -> np.ndarray:
+
         if not self.map:
             self._initiate_map(error)
 
@@ -141,10 +152,16 @@ class ToolError:
             "din": np.append(0, np.diff(np.array(error.survey_rad)[:, 1])),
             "azt": error.survey.azi_true_rad,
             "azm": error.survey.azi_mag_rad,
-
         }
 
-    def caclcualte_error_with_sing(self, error, code, e_DIA, propagation, NEV):
+    def caclcualte_error_with_sing(
+            self,
+            error: 'Error',
+            code: str,
+            e_DIA: np.ndarray,
+            propagation: str,
+            NEV: np.ndarray
+    ) -> np.ndarray:
 
         sing = np.where(
             error.survey.inc_rad < error.survey.header.vertical_inc_limit

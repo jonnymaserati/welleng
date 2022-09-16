@@ -286,7 +286,8 @@ class ErrorModel:
         E = np.array(0.5 * ((delta_md) * np.cos(inc2) * np.sin(azi2)))
         V = np.array(0.5 * (-delta_md * np.sin(inc2)))
 
-        if self.error_model.lower().split()[-1] != 'rev4':
+        if (type(self.error_model) == str and self.error_model.lower().split()[-1] != 'rev4') \
+                or type(self.error_model) != str:
             N[0] *= 2
 
         return np.vstack(
