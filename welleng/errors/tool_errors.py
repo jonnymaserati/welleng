@@ -328,7 +328,7 @@ class ToolError:
         # Ideally, we want tortuosity to be 0 but since this is a
         # recommendation by ISCWSA kept as is.
         if error_from_edm:
-            # Not sure how to get tortuosity based on survey tools from EDM. 
+            # Not sure how to get tortuosity based on survey tools from EDM.
             self.tortuosity = None
             return
 

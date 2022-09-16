@@ -29,7 +29,7 @@ requirements_default = [
     'numpy==1.22.4',
     'pint==0.19.2',
     'PyYAML==6.0',
-    "pydantic==1.10.2"
+    "pydantic==1.10.2",
     'requests==2.28.0',
     'scipy==1.8.1',
     'setuptools==62.4.0',
