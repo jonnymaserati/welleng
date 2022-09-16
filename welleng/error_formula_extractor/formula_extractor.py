@@ -69,9 +69,9 @@ class ErrorFormulaExtractor:
     def initiate_survey_tools(self):
 
         survey_tools = []
-        for program_no in range(len(self.survey_programs)):
+        for program_no, program in enumerate(self.survey_programs):
 
-            tool_id = self.survey_programs[program_no]["survey_tool_id"]
+            tool_id = program["survey_tool_id"]
 
             # Get the survey tool information from the EDM file.
             survey_tool = self.edm.get_attributes(
@@ -85,8 +85,7 @@ class ErrorFormulaExtractor:
             # Since the survey programs is a list of sorted surveys, start_depth = md_min of current survey header
             # the end_depth = md_min of the next survey header or
             # end_depth = md_max of the current survey header if it is the last survey.
-
-            start_depth = float(self.survey_programs[program_no]["md_top"])
+            start_depth = float(program["md_top"])
             if program_no == len(self.survey_programs) - 1:
                 end_depth = float(self.survey_programs[-1]["md_base"])
             else:
