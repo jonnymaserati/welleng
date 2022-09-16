@@ -79,8 +79,8 @@ class ErrorModel:
         self,
         survey: 'Survey',
         error_model: ISCWSAErrorModel = ISCWSAErrorModel.Rev5,
+        error_from_edm: bool = False
     ):
-        assert error_model in ERROR_MODELS, "Unrecognized error model"
         self.error_model = error_model
         self.survey = survey
 
@@ -94,14 +94,18 @@ class ErrorModel:
         self.drdp = self._drdp(self.survey_drdp)
         self.drdp_sing = self._drdp_sing(self.survey_drdp)
 
-        for k, v in TOOL_INDEX.items():
-            if v['Short Name'] == self.error_model:
-                model = k
-                break
+        model = error_model
+        if not error_from_edm:
+            for k, v in TOOL_INDEX.items():
+                if v['Short Name'] == self.error_model:
+                    model = k
+                    break
 
         self.errors = ToolError(
             error=self,
-            model=model
+            model=model,
+            is_error_from_edm=error_from_edm
+
         )
 
     def _e_NEV(self, e_DIA: np.ndarray) -> np.ndarray:
