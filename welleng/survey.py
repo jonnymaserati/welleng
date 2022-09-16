@@ -17,13 +17,11 @@ from scipy.spatial.transform import Rotation as R
 from .connector import Connector, interpolate_well
 from .error import ERROR_MODELS, ErrorModel, ISCWSAErrorModel
 from .node import Node
-from .units import ureg
 from .utils import (
     HLA_to_NEV,
     MinCurve,
     NEV_to_HLA,
     get_angles,
-    get_arc,
     get_nev,
     get_vec,
     get_xyz,
@@ -353,6 +351,7 @@ class Survey:
         self.start_nev = start_nev
         self.md = np.array(md).astype('float64')
         self.start_cov_nev = start_cov_nev
+        self.error_model_from_edm = False
 
         self._process_azi_ref(inc, azi, deg)
 
@@ -557,10 +556,16 @@ class Survey:
             self.inc_deg = np.degrees(inc)
             self.azi_grid_deg = np.degrees(azi)
 
-    def get_error(self, error_model: str, return_error: bool = False):
-        assert error_model in ERROR_MODELS, "Undefined error model"
+    def get_error(self, error_model: str = None, return_error: bool = False, edm_error_model=None):
 
-        self.error_model = error_model
+        if error_model:
+            assert error_model in ERROR_MODELS, "Undefined error model"
+            self.error_model = error_model
+            setattr(self, "error_model_from_edm", False)
+        else:
+            self.error_model = edm_error_model
+            setattr(self, "error_model_from_edm", True)
+
         self._get_errors()
 
         if return_error:
@@ -576,7 +581,8 @@ class Survey:
         if self.error_model:
             self.err = ErrorModel(
                 self,
-                error_model=self.error_model
+                error_model=self.error_model,
+                error_from_edm=self.error_model_from_edm
             )
             self.cov_hla = self.err.errors.cov_HLAs.T
             self.cov_nev = self.err.errors.cov_NEVs.T
@@ -909,373 +915,6 @@ class Survey:
         self.vertical_section = self.get_vertical_section(
             vertical_section_azimuth, deg
         )
-
-    def modified_tortuosity_index(
-        self, rtol=1.0, dls_tol=1e-3, step=1.0, dls_noise=1.0, data=False,
-        **kwargs
-    ):
-        """
-        Convenience method for calculating the Tortuosity Index (TI) using a
-        modified version of the method described in the [International
-        Association of Directional Drilling presentation]
-        (https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf)
-        by Pradeep Ashok et al.
-        Parameters
-        ----------
-        rtol: float
-            Relative tolerance when determining closeness of normal vectors.
-        dls_tol: float or None
-            Indicates whether or not to check for dls continuity within the
-            defined dls tolerance.
-        step: float or None
-            The step length in meters used for interpolating the survey prior
-            to calculating trajectory with the maximum curvature method. If
-            None or dls_noise is None then no interpolation is done.
-        dls_noise: float or None
-            The incremental Dog Leg Severity to be added when using the
-            maximum curvature method. If None then no pre-processing will be
-            done and minimum curvature is assumed.
-        data: bool
-            If true returns a dictionary of properties.
-        Returns
-        -------
-        ti: (n,1) array or dict
-            Array of tortuosity index or a dict of results where:
-        References
-        ----------
-        Further details regarding the maximum curvature method can be read
-        [here](https://jonnymaserati.github.io/2022/06/19/modified-tortuosity-index-survey-frequency.html)
-        """
-        # Check whether to pre-process the survey to apply maximum curvature.
-        if bool(dls_noise):
-            survey = self.interpolate_survey(step=step)
-            survey = survey.maximum_curvature(dls_noise=dls_noise)
-
-        else:
-            survey = self
-
-        return modified_tortuosity_index(
-            survey, rtol=rtol, dls_tol=dls_tol, data=data, **kwargs
-        )
-
-    def tortuosity_index(self, rtol=0.01, dls_tol=None, data=False, **kwargs):
-        """
-        A modified version of the Tortuosity Index function originally
-        referenced in an IADD presentation on "Measuring Wellbore
-        Tortuosity" by Pradeep Ashok - https://www.iadd-intl.org/media/
-        files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf with
-        reference to the original paper "A Novel Method for the Automatic
-        Grading of Retinal Vessel Tortuosity" by Enrico Grisan et al.
-        In SPE/IADC-194099-MS there's mention that a factor of 1e7 is
-        applied to the TI result since the results are otherwise very small
-        numbers.
-        Unlike the documented version that uses delta inc and azi for
-        determining continuity and directional intervals (which are not
-        independent and so values are double dipped in 3D), this method
-        determines the point around which the well bore is turning and tests
-        for continuity of these points. As such, this function takes account
-        of torsion of the well bore and demonstrates that actual/drilled
-        trajectories are significantly more tortuous than planned
-        trajectories (intuitively).
-        Parameters
-        ----------
-        rtol: float
-            Relative tolerance when determining closeness of normal vectors.
-        atol: float
-            Absolute tolerance when determining closeness of normal vectors.
-        data: boolean
-            If true returns a dictionary of properties.
-        Returns
-        ti: (n,1) array
-            Array of tortuosity index or a dict or results.
-        """
-
-        return tortuosity_index(
-            self, rtol=rtol, dls_tol=dls_tol, data=data, **kwargs
-        )
-
-    def directional_difficulty_index(self, **kwargs):
-        """
-        Taken from IADC/SPE 59196 The Directional Difficulty Index - A
-        New Approach to Performance Benchmarking by Alistair W. Oag et al.
-        Returns
-        -------
-        data: (n) array of floats
-            The ddi for each survey station.
-        """
-
-        return directional_difficulty_index(self, **kwargs)
-
-    def maximum_curvature(self, dls_noise=1.0):
-        """
-        Create a well trajectory using the Maximum Curvature method.
-        Parameters
-        ----------
-        survey: welleng.survey.Survey object
-        dls_noise: float
-            The additional Dog Leg Severity (DLS) in deg/30m used to calculate
-            the curvature for the initial section of the survey interval.
-        Returns
-        -------
-        survey_new: welleng.Survey.survey object
-            A revised survey object calculated using the Minimum Curvature
-            method with updated survey positions and additional mid-point
-            stations.
-        """
-
-        dls_effective = self.dls + dls_noise
-        radius_effective = radius_from_dls(dls_effective)
-
-        dogleg1 = (
-            (self.delta_md / radius_effective) / 2
-        )
-
-        radius_effective = np.where(
-            dogleg1 > np.pi,
-            self.delta_md * 4 / (2 * np.pi),
-            radius_effective
-        )
-
-        arc1 = [
-            get_arc(dogleg, _radius_effective, toolface, vec=vec)
-            for dogleg, _radius_effective, toolface, vec in zip(
-                dogleg1[1:], radius_effective[1:], self.toolface[:-1],
-                self.vec_nev[:-1]
-            )
-        ]
-
-        _survey_new = np.array([
-            [row[-1], *np.degrees(get_angles(row[1], nev=True))[0]]
-            for row in arc1
-        ])
-        _survey_new[:, 0] += self.md[:-1]
-
-        survey_new = np.zeros(shape=(len(_survey_new) * 2 + 1, 3))
-        survey_new[:-1] = np.stack(
-            (self.survey_deg[:-1].T, _survey_new.T),
-            axis=1
-        ).T.reshape(-1, 3)
-        survey_new[-1] = self.survey_deg[-1]
-
-        # Update the new survey header as the new azimuth reference is 'grid'.
-        sh = self.header
-        sh.azi_reference = 'grid'
-
-        # Create a new Survey instance
-        survey = Survey(
-            md=survey_new[:, 0],
-            inc=survey_new[:, 1],
-            azi=survey_new[:, 2],
-            header=sh,
-            start_xyz=self.start_xyz,
-            start_nev=self.start_nev
-        )
-
-        # Update the interpolated property to keep track of the original survey
-        # stations.
-        survey.interpolated = np.full_like(survey.md, True)
-        survey.interpolated[::2] = self.interpolated
-
-        return survey
-
-
-def modified_tortuosity_index(
-        survey: Survey,
-        rtol: float = 1.0,
-        dls_tol: float = 1e-3,
-        data: bool = False,
-        **kwargs
-):
-    """
-    Method for calculating the Tortuosity Index (TI) using a modified
-    version of the method described in the International Association of
-    Directional Drilling presentation
-    (https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf)
-    by Pradeep Ashok et al.
-    """
-    # set default params
-    coeff = kwargs.get('coeff', 1.0)  # for testing dimensionlessness
-    kappa = kwargs.get('kapa', 1)
-
-    continuous, starts, mds, locs, n_sections, n_sections_arr = _get_ti_data(
-        survey, rtol, dls_tol
-    )
-
-    l_cs = (
-        survey.md[1:] - mds[n_sections_arr - 1]
-    ) / coeff
-    l_xs = np.linalg.norm(
-        survey.pos_nev[1:]
-        - np.array(locs)[n_sections_arr - 1],
-        axis=1
-    ) / coeff
-    b = (
-        (l_cs / l_xs) - 1
-    ) / l_cs
-    # )
-
-    cumsum = 0
-    a = []
-    for n in n_sections:
-        a.extend(
-            b[n_sections_arr == n]
-            + cumsum
-        )
-        cumsum = a[-1]
-    a = np.array(a)
-
-    mti = np.hstack((
-        np.array([0.0]),
-        (
-            # 1
-            (n_sections_arr / (n_sections_arr + 1))
-            * (kappa * ((survey.md[1:] - survey.md[0]) / coeff))
-            # * (kappa / (np.cumsum(survey.dogleg)[1:] + 1))
-            * a
-        )
-    ))
-
-    if data:
-        return {
-            'continuous': continuous, 'starts': starts, 'mds': mds,
-            'locs': locs, 'n_sections': n_sections,
-            'n_sections_arr': n_sections_arr, 'l_cs': l_cs, 'l_xs': l_xs,
-            'mti': mti, 'survey': survey
-        }
-
-    return mti
-
-
-def tortuosity_index(
-        survey: Survey,
-        rtol: float = 0.01,
-        dls_tol: float = None,
-        data: bool = False,
-        **kwargs
-):
-    """
-    Method for calculating the Tortuosity Index (TI) as described in the
-    International Association of Directional Drilling presentation
-    (https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf)
-    by Pradeep Ashok et al.
-    """
-    # set default params
-    coeff = kwargs.get('coeff', 0.3048)  # for testing dimensionlessness
-    kappa = kwargs.get('kapa', 1e7)
-
-    continuous, starts, mds, locs, n_sections, n_sections_arr = _get_ti_data(
-        survey, rtol, dls_tol
-    )
-
-    l_cs = (survey.md[1:] - mds[n_sections_arr - 1]) / coeff
-    l_xs = np.linalg.norm(
-        survey.pos_nev[1:]
-        - np.array(locs)[n_sections_arr - 1],
-        axis=1
-    ) / coeff
-    b = (
-        (l_cs / l_xs) - 1
-    )
-
-    cumsum = 0
-    a = []
-    for n in n_sections:
-        a.extend(
-            b[n_sections_arr == n]
-            + cumsum
-        )
-        cumsum = a[-1]
-    a = np.array(a)
-
-    ti = np.hstack((
-        np.array([0.0]),
-        (
-            (n_sections_arr / (n_sections_arr + 1))
-            * (kappa / (survey.md[1:] - survey.md[0] / coeff))
-            * a
-        )
-    ))
-
-    if data:
-        return {
-            'continuous': continuous, 'starts': starts, 'mds': mds,
-            'locs': locs, 'n_sections': n_sections,
-            'n_sections_arr': n_sections_arr, 'l_cs': l_cs, 'l_xs': l_xs,
-            'ti': ti
-        }
-
-    return ti
-
-
-def directional_difficulty_index(survey: Survey, **kwargs):
-    """
-    Taken from IADC/SPE 59196 The Directional Difficulty Index - A
-    New Approach to Performance Benchmarking by Alistair W. Oag et al.
-    Parameters
-    ----------
-    survey: welleng.survey.Survey object
-    data: bool
-        If True, returns the ddi at each survey station.
-    Returns
-    -------
-    ddi: float
-        The ddi for the well at well (at TD).
-    data: (n) array of floats
-        The ddi for each survey station.
-    """
-    with np.errstate(divide='ignore', invalid='ignore'):
-        ddi = np.nan_to_num(np.log10(
-            (
-                (survey.md * ureg.meters).to('ft').m
-                * (
-                    np.linalg.norm(
-                        (survey.n, survey.e), axis=0
-                    ) * ureg.meters
-                ).to('ft').m
-                * np.cumsum(np.degrees(survey.dogleg))
-            )
-            / (survey.tvd * ureg.meters).to('ft').m
-        ), nan=0.0, posinf=0.0, neginf=0.0)
-
-    return ddi
-
-
-def _get_ti_data(survey: Survey, rtol: float, dls_tol: float = None):
-    if dls_tol is None:
-        dls_continuity = np.full(len(survey.dls) - 2, True)
-    else:
-        dls_continuity = np.isclose(
-            survey.dls[1:-1],
-            survey.dls[2:],
-            equal_nan=True,
-            rtol=dls_tol,
-            atol=rtol
-        )
-    continuous = np.all((
-        np.all(
-            np.isclose(
-                survey.normals[:-1],
-                survey.normals[1:],
-                equal_nan=True,
-                rtol=rtol, atol=rtol
-            ), axis=-1
-        ),
-        dls_continuity
-    ), axis=0)
-
-    starts = np.concatenate((
-        np.array([0]),
-        np.where(continuous is False)[0] + 1,
-    ))
-
-    mds = survey.md[starts]
-    locs = survey.pos_nev[starts]
-    n_sections = np.arange(1, len(starts) + 1, 1)
-    n_sections_arr = np.searchsorted(mds, survey.md[1:])
-
-    return (
-        continuous, starts, mds, locs, n_sections, n_sections_arr
-    )
 
 
 class TurnPoint:
