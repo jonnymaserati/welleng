@@ -1,6 +1,7 @@
 from typing import Callable, List
 
 from pydantic import BaseModel
+
 from welleng.error_formula_extractor.enums import Propagation, VectorType
 
 
