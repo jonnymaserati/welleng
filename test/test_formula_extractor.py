@@ -1,11 +1,7 @@
 import math
 import unittest
-from pathlib import Path
 
 from welleng.error_formula_extractor.formula_utils import function_builder
-
-filename = "Volve F.edm.xml"
-file_path = (Path(__file__) / ".." / ".." / "resources" / filename).resolve()
 
 
 class TestErrorFormulaExtractor(unittest.TestCase):
