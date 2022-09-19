@@ -68,9 +68,7 @@ class ToolError:
                     error=self.e,
                     mag=term.magnitude,
                     propagation=term.tie_type,
-                    tortuosity=self.tortuosity,
-                    vector_type=term.vector_type,
-                    errors=self
+                    vector_type=term.vector_type
                 )
             )
 
@@ -124,7 +122,7 @@ class ToolError:
 
             args.append(self.map[arg.lower()])
 
-        if vector_type.column_no is not None:
+        if vector_type.column_no is not None and propagation != Propagation.NA:
 
             dpde[:, vector_type.column_no] = np.vectorize(func)(*args) * multiplier
 

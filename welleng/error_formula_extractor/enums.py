@@ -32,7 +32,7 @@ class VectorType(Enum):
     def __new__(cls, vector_type: str, column_no: int, multiplier: int):
         obj = object.__new__(cls)
 
-        obj._value_ = vector_type  # using the task_action as the main value
+        obj._value_ = vector_type
         obj.column_no = column_no
         obj.multiplier = multiplier
 
