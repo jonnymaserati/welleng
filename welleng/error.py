@@ -222,6 +222,19 @@ class ErrorModel:
                         ), axis=-1)
                 )
 
+            elif propagation == 'global':
+                sigma_e_NEV = np.cumsum(e_NEV, axis=0)
+                cov_NEV = self._cov(
+                    np.add(
+                        e_NEV_star,
+                        np.concatenate(
+                            (np.array(np.zeros((1, 3))),
+                             np.array(sigma_e_NEV[:-1, :])
+                             ),
+                            axis=0)
+                    )
+                )
+
             else:
                 return
 

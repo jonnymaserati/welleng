@@ -145,8 +145,7 @@ class ErrorFormulaExtractor:
         elif code["tie_type"] == "s":
             return Propagation.SYSTEMATIC
         elif code["tie_type"] == "g":
-            # since welleng only covers random and systematic errors, convert global errors to systematic.
-            return Propagation.SYSTEMATIC
+            return Propagation.GLOBAL
         elif code["tie_type"] == "n":
             return Propagation.NA
 
