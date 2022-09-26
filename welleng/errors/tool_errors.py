@@ -27,7 +27,7 @@ class ToolError:
             self,
             error: 'Error',
             model: str,
-            is_error_from_edm: bool = False
+            is_error_from_edm: bool = False,
     ):
         """
         Class using the ISCWSA listed tool errors to determine well bore
@@ -48,6 +48,7 @@ class ToolError:
         self.e = error
         self.errors = {}
         self.map = None
+        self.model = None
 
         if not is_error_from_edm:
             self.extract_tortuosity(error_from_edm=True)
@@ -60,17 +61,21 @@ class ToolError:
     def _calculate_error_from_edm_models(self, model: SurveyToolErrorModel):
         self.extract_tortuosity(error_from_edm=True)
 
+        self.model = model
         for term in model.error_terms:
-            self.errors[term.term_name] = (
-                self.call_func_from_edm(
-                    term=term,
-                    func=term.error_function,
-                    error=self.e,
-                    mag=term.magnitude,
-                    propagation=term.tie_type,
-                    vector_type=term.vector_type
+            if term.term_name in self.errors.keys():
+                term.term_name += "_2"
+            if term.term_name not in self.errors.keys():
+                self.errors[term.term_name] = (
+                    self.call_func_from_edm(
+                        term=term,
+                        func=term.error_function,
+                        error=self.e,
+                        mag=term.magnitude,
+                        propagation=term.tie_type,
+                        vector_type=term.vector_type
+                    )
                 )
-            )
 
         self.errors = {
             key: value
@@ -113,8 +118,25 @@ class ToolError:
         for arg in term.arguments:
 
             if arg.lower() not in self.map.keys() and arg.lower() not in self.errors.keys():
-                raise KeyError(f"{arg} not in {list(self.errors.keys())} or in the map: {list(self.map.keys())} "
-                               f" for error term {term.term_name}")
+                term_backfilled = False
+                for back_filled_term in self.model.error_terms:
+                    if back_filled_term.term_name == arg.lower():
+                        self.errors[back_filled_term.term_name] = (
+                            self.call_func_from_edm(
+                                term=back_filled_term,
+                                func=back_filled_term.error_function,
+                                error=self.e,
+                                mag=back_filled_term.magnitude,
+                                propagation=back_filled_term.tie_type,
+                                vector_type=back_filled_term.vector_type
+                            )
+                        )
+                        term_backfilled = True
+                        break
+
+                if not term_backfilled:
+                    raise KeyError(f"{arg} not in {list(self.errors.keys())} or in the map: {list(self.map.keys())} "
+                                   f" for error term {term.term_name}")
 
             if arg.lower() not in self.map.keys():
                 args.append(self.errors[arg.lower()])
@@ -129,10 +151,20 @@ class ToolError:
             e_DIA = dpde * mag
 
             if not sing_calc:
-                return error._generate_error(term, e_DIA, propagation.value, NEV=True)
+                return error._generate_error(
+                    term,
+                    e_DIA,
+                    propagation.value,
+                    NEV=True
+                )
             else:
-                return self.caclcualte_error_with_sing(error, term, e_DIA, propagation.value, NEV=True)
-
+                return self.caclcualte_error_with_sing(
+                    error,
+                    term,
+                    e_DIA,
+                    propagation.value,
+                    NEV=True
+                )
         return np.vectorize(func)(*args) * term.magnitude
 
     def _initiate_map(self, error):
@@ -145,7 +177,7 @@ class ToolError:
             "dip": error.survey.header.dip,
             "erot": error.survey.header.earth_rate,
             "mtot": error.survey.header.b_total,
-            "lat": error.survey.header.latitude,
+            "lat": np.radians(error.survey.header.latitude),
             "dmd": np.append(0, np.diff(np.array(error.survey_rad)[:, 0])),
             "din": np.append(0, np.diff(np.array(error.survey_rad)[:, 1])),
             "azt": error.survey.azi_true_rad,
