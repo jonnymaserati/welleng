@@ -530,9 +530,10 @@ class Connector:
                     self.func_dogleg
                 ).reshape(3)
         else:
-            self.radius_critical = abs(
-                (self.md_target - self.md1) / self.dogleg
-            )
+            with np.errstate(divide='ignore'):
+                self.radius_critical = np.nan_to_num(abs(
+                    (self.md_target - self.md1) / self.dogleg
+                ), nan=np.inf)
             if (
                 self.radius_critical > self.radius_design
                 or (
