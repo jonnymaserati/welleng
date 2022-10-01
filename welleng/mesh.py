@@ -3,12 +3,13 @@ try:
     TRIMESH = True
 except ImportError:
     TRIMESH = False
+from copy import deepcopy
 import numpy as np
 from numpy import sin, cos, pi
 from scipy.spatial import KDTree
 
 from .utils import HLA_to_NEV, get_sigmas
-from .survey import slice_survey
+from .survey import slice_survey, Survey
 from .visual import figure
 
 
@@ -16,12 +17,12 @@ class WellMesh:
 
     def __init__(
         self,
-        survey,
-        n_verts=12,
-        sigma=3.0,
-        sigma_pa=0.5,
-        Sm=0,
-        method="ellipse",
+        survey: Survey,
+        n_verts: int = 12,
+        sigma: float = 3.0,
+        sigma_pa: float = 0.5,
+        Sm: float = 0,
+        method: str = "ellipse",
     ):
         """
         Create a WellMesh object from a welleng Survey object and a
@@ -111,7 +112,13 @@ class WellMesh:
             # a = self.s.sigmaA * self.c.k + self.s.radius + self.c.Sm
 
         if self.method in ["ellipse", "circle"]:
-            lam = np.linspace(0, 2 * pi, self.n_verts, endpoint=False)
+            temp = np.linspace(0, 2 * pi, self.n_verts, endpoint=False)
+
+            temp = np.broadcast_to(temp, (len(self.s.md), len(temp)))
+            lam = deepcopy(temp)
+            # lam[1:] = (
+            #     (temp[1:] + self.s.azi_grid_rad[1:].reshape(-1, 1)) % (2 * np.pi)
+            # )
             # theta = np.zeros_like(lam)
 
             x = h * cos(lam)

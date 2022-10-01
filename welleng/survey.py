@@ -1301,8 +1301,12 @@ def interpolate_md(survey, md):
 
     assert idx < len(survey.md), "The md is beyond the survey"
 
-    x = md - survey.md[idx]
-    assert x >= 0
+    if idx < 0:
+        idx = 0
+        x = 0
+
+    else:
+        x = md - survey.md[idx]
 
     return _interpolate_survey(survey, x=x, index=idx)
 
