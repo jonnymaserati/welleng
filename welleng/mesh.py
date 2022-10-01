@@ -3,12 +3,13 @@ try:
     TRIMESH = True
 except ImportError:
     TRIMESH = False
+from copy import deepcopy
 import numpy as np
 from numpy import sin, cos, pi
 from scipy.spatial import KDTree
 
 from .utils import HLA_to_NEV, get_sigmas
-from .survey import slice_survey
+from .survey import slice_survey, Survey
 from .visual import figure
 
 
@@ -16,12 +17,12 @@ class WellMesh:
 
     def __init__(
         self,
-        survey,
-        n_verts=12,
-        sigma=3.0,
-        sigma_pa=0.5,
-        Sm=0,
-        method="ellipse",
+        survey: Survey,
+        n_verts: int = 12,
+        sigma: float = 3.0,
+        sigma_pa: float = 0.5,
+        Sm: float = 0,
+        method: str = "ellipse",
     ):
         """
         Create a WellMesh object from a welleng Survey object and a
@@ -79,64 +80,10 @@ class WellMesh:
         Construct a mesh of triangular faces (n,3) on the well bore
         uncertainty edge for the given well bore.
         '''
-        step = self.n_verts
-        faces = []
         total_verts = len(self.vertices.reshape(-1, 3))
         rows = int(total_verts / self.n_verts)
 
-        # make first end
-        B = np.arange(1, step - 1, 1)
-        C = np.arange(2, step, 1)
-        A = np.zeros_like(B)
-        temp = np.array([A, B, C]).T
-        faces.extend(temp.tolist())
-
-        # make cylinder
-        temp = ([np.array([
-            step, 0, step - 1, 2 * step - 1, step, step - 1
-        ])])
-        # TODO: this can probably be vectorized to speed it up
-        for row in range(0, rows - 1):
-            verts = row * self.n_verts
-
-            A_start = verts
-            B_start = verts + step
-            C_start = verts + step + 1
-            D_start = verts + 1
-
-            A_stop = verts + step - 1
-            B_stop = verts + step + step - 1
-            C_stop = verts + step + step
-            D_stop = verts + step
-
-            A = np.arange(A_start, A_stop)
-            B = np.arange(B_start, B_stop)
-            C = np.arange(C_start, C_stop)
-            D = np.arange(D_start, D_stop)
-
-            temp.extend(np.array([C, D, A, B, C, A]).T)
-
-            last = np.array([
-                B_start,
-                A_start,
-                D_stop - 1,
-                C_stop - 1,
-                B_start,
-                D_stop - 1
-            ])
-
-            temp.extend([last])
-
-        faces.extend(np.stack(temp, axis=0).reshape(-1, 3).tolist())
-
-        # make final end
-        B = np.arange(total_verts - step + 1, (total_verts - 1), 1)
-        C = np.arange(total_verts - step + 2, (total_verts), 1)
-        A = np.full_like(B, total_verts - step)
-        temp = np.array([A, B, C]).T
-        faces.extend(temp.tolist())
-
-        self.faces = faces
+        self.faces = get_faces(self.n_verts, rows)
 
     def _get_vertices(
         self,
@@ -165,7 +112,13 @@ class WellMesh:
             # a = self.s.sigmaA * self.c.k + self.s.radius + self.c.Sm
 
         if self.method in ["ellipse", "circle"]:
-            lam = np.linspace(0, 2 * pi, self.n_verts, endpoint=False)
+            temp = np.linspace(0, 2 * pi, self.n_verts, endpoint=False)
+
+            temp = np.broadcast_to(temp, (len(self.s.md), len(temp)))
+            lam = deepcopy(temp)
+            # lam[1:] = (
+            #     (temp[1:] + self.s.azi_grid_rad[1:].reshape(-1, 1)) % (2 * np.pi)
+            # )
             # theta = np.zeros_like(lam)
 
             x = h * cos(lam)
@@ -482,3 +435,39 @@ def fix_mesh(mesh):
     trimesh.repair.fix_normals(good_mesh)
 
     return good_mesh
+
+
+def get_ends(n_verts, rows):
+    """
+    Given a number of vertices per station and a number of stations, returns
+    the faces of the trimesh vertices.
+    """
+    B = np.arange(1, n_verts - 1, 1)
+    C = np.arange(2, n_verts, 1)
+    A = np.zeros_like(B)
+
+    faces = np.array([
+        np.array([A, B, C]) + np.array([0]),
+        np.array([A, B, C]) + np.array([(rows - 1) * (n_verts)])
+    ])
+
+    return faces.transpose((0, 2, 1))
+
+
+def get_faces(n_verts, rows):
+    A = np.arange(n_verts).reshape(-1, 1)
+    B = np.roll(A, -1).reshape(-1, 1)
+
+    lower = np.arange(rows) + np.arange(rows) * (n_verts - 1)
+    upper = lower[1:]
+    lower = lower[:-1]
+
+
+    faces = np.array([
+        A + lower, A + upper, B + upper,
+        A + lower, B + lower, B + upper
+    ]).T.reshape(-1, 3)
+
+    top, bottom = get_ends(n_verts, rows)
+
+    return np.vstack([top, faces, bottom])

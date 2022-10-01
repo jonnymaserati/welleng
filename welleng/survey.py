@@ -1301,8 +1301,12 @@ def interpolate_md(survey, md):
 
     assert idx < len(survey.md), "The md is beyond the survey"
 
-    x = md - survey.md[idx]
-    assert x >= 0
+    if idx < 0:
+        idx = 0
+        x = 0
+
+    else:
+        x = md - survey.md[idx]
 
     return _interpolate_survey(survey, x=x, index=idx)
 
@@ -1502,8 +1506,9 @@ def slice_survey(survey, start, stop=None):
         s: welleng.survey.Survey object
             A survey object of the desired slice is returned.
     """
-    if stop is None:
-        stop = start + 2
+    # Removing this start + 2 code - define this explicitly when making call 
+    # if stop is None:
+    #     stop = start + 2
     md, inc, azi = survey.survey_rad[start:stop].T
     nevs = np.array([survey.n, survey.e, survey.tvd]).T[start:stop]
     n, e, tvd = nevs.T
@@ -1528,6 +1533,8 @@ def slice_survey(survey, start, stop=None):
         deg=False,
         unit=survey.unit,
     )
+
+    s.error_model=survey.error_model
 
     return s
 
