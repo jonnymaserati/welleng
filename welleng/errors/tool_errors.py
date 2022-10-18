@@ -180,6 +180,7 @@ class ToolError:
             "lat": np.radians(error.survey.header.latitude),
             "dmd": np.append(0, np.diff(np.array(error.survey_rad)[:, 0])),
             "din": np.append(0, np.diff(np.array(error.survey_rad)[:, 1])),
+            "dazt": np.append(0, np.diff(np.array(error.survey_rad)[:, 2])),
             "azt": error.survey.azi_true_rad,
             "azm": error.survey.azi_mag_rad,
         }
