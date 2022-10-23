@@ -7,18 +7,16 @@ on:
   
 jobs:
   docs:
-      name: Build Docs
-      # needs: [tests, containers]
-      runs-on: ubuntu-latest
-      steps:
-      - name: Build Docs
-      - uses: actions/checkout@v3
-      - uses: ammaraskar/sphinx-action@master
-        with:
-          docs-folder: "docs/"
-      - name: Deploy To Pages
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./docs/build/html
-          force_orphan: true
+    runs-on: ubuntu-latest
+    steps:
+    - name: Build Docs
+    - uses: actions/checkout@v3
+    - uses: ammaraskar/sphinx-action@master
+      with:
+        docs-folder: "docs/"
+    - name: Deploy To Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs/build/html
+        force_orphan: true
