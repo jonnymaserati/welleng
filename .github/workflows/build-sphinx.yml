@@ -1,7 +1,7 @@
 name: build-sphinx-to-gh-pages
 
 on:
-  push:
+- push:
     branches:
       - main
   
@@ -9,7 +9,7 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-    - name: Build Docs
+    # - name: Build Docs
     - uses: actions/checkout@v3
     - uses: ammaraskar/sphinx-action@master
       with:
