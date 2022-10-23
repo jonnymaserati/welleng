@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  pull-request:
   
 jobs:
   docs:
@@ -11,11 +12,11 @@ jobs:
       # needs: [tests, containers]
       runs-on: ubuntu-latest
       steps:
-      - uses: actions/checkout@v3
       - name: Build Docs
-        run: |
-          make ./docs clear
-          make ./docs html
+      - uses: actions/checkout@v3
+      - uses: ammaraskar/sphinx-action@master
+        with:
+          docs-folder: "docs/"
       - name: Deploy To Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
