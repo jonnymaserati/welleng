@@ -13,6 +13,7 @@ jobs:
     - name: Install Dependencies
       run: |
         pip install .
+        pip install myst_parser
     - name: Build Docs
       uses: ammaraskar/sphinx-action@master
       with:
