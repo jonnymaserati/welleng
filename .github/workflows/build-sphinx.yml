@@ -1,8 +1,8 @@
 name: build-sphinx-to-gh-pages
 
 env:
-  GITHUB_ACTOR: annegentle
-  GITHUB_REPOSITORY: annegentle/create-demo
+  GITHUB_ACTOR: jonnymaserati
+  GITHUB_REPOSITORY: jonnymaserati/welleng
   GITHUB_TOKEN: ${{ secrets.CREATE_DEMO_SECRET }}
 
 on: 
@@ -31,5 +31,5 @@ jobs:
       - name: Run build script for Sphinx pages
         env:
           GITHUB_TOKEN: ${{ secrets.CREATE_DEMO_SECRET }}
-        run: "../docs/buildsite.sh"
+        run: "../buildsite.sh"
         shell: bash
