@@ -1,6 +1,9 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+from numpy.typing import ArrayLike, NDArray
+from typing import Any, Annotated, Literal, Union, Tuple
+
 try:
     from numba import njit
     NUMBA = True
@@ -223,18 +226,22 @@ if NUMBA:
     _get_angles = njit(_get_angles)
 
 
-def get_angles(vec, nev=False):
+def get_angles(
+    vec: Annotated[NDArray, Literal["N", 3]], nev: bool = False
+):
     '''
     Determines the inclination and azimuth from a vector.
 
-    Params:
-        vec: (n,3) array of floats
-        nev: boolean (default: False)
-            Indicates if the vector is in (x,y,z) or (n,e,v) coordinates.
+    Parameters
+    ----------
+    vec: (n,3) array of floats
+    nev: boolean (default: False)
+        Indicates if the vector is in (x,y,z) or (n,e,v) coordinates.
 
-    Returns:
-        [inc, azi]: (n,2) array of floats
-            A numpy array of incs and axis in radians
+    Returns
+    -------
+    [inc, azi]: (n,2) array of floats
+        A numpy array of incs and axis in radians
 
     '''
     # make sure it's a unit vector
@@ -288,20 +295,33 @@ def get_transform(
     # return trans
 
 
-def NEV_to_HLA(survey, NEV, cov=True):
+def NEV_to_HLA(
+    survey: Annotated[NDArray, Literal["N", 3]],
+    NEV: Union[
+        Annotated[NDArray, Literal["N", 3]],
+        Annotated[NDArray, Literal[3, 3, "N"]]
+    ],
+    cov: bool = True
+) -> Union[
+        Annotated[NDArray, Literal['..., 3']],
+        Annotated[NDArray, Literal['3, 3, ...']]
+]:
     """
     Transform from NEV to HLA coordinate system.
 
-    Params:
-        survey: (n,3) array of floats
+    Parameters:
+    -----------
+    survey: (n,3) array of floats
         The [md, inc, azi] survey listing array.
-        NEV: (d,3) or (3,3,d) array of floats
-            The NEV coordinates or covariance matrices.
-        cov: boolean
-            If cov is True then a (3,3,d) array of covariance matrices
-            is expected, else a (d,3) array of coordinates.
+    NEV: (d,3) or (3,3,d) array of floats
+        The NEV coordinates or covariance matrices.
+    cov: boolean
+        If cov is True then a (3,3,d) array of covariance matrices
+        is expected, else a (d,3) array of coordinates.
 
     Returns:
+    --------
+    HLAs: NDArray
         Either a transformed (n,3) array of HLA coordinates or an
         (3,3,n) array of HLA covariance matrices.
     """

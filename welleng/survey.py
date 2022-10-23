@@ -28,14 +28,82 @@ from .connector import Connector, interpolate_well
 from .visual import figure
 from .units import ureg
 
+from typing import List, Union
+from numpy.typing import NDArray
+
 
 AZI_REF = ["true", "magnetic", "grid"]
 
 
 class SurveyHeader:
+    """
+    A class for storing header information about a well.
+
+    Parameters
+    ----------
+    name: string (default: None)
+        The assigned name of the well bore.
+    longitude: float (default: None)
+        The longitude of the surface location of the well. If left
+        default (None) then it will be assigned to Grenwich, the
+        undisputed center of the universe.
+    latitude: float (default: None)
+        The latitude of the surface location of the well. If left
+        default (None) then it will be assigned to Grenwich, the
+        undisputed center of the universe.
+    altitude: float (default: None)
+        The altitude of the surface location. If left defaults (None)
+        then it will be assigned to 0.
+    survey_date: YYYY-mm-dd (default: None)
+        The date on which the survey data was recorded. If left
+        default then the current date is assigned.
+    G: float (default: 9.80665)
+        The gravitational field strength in m/s^2.
+    b_total: float (default: None)
+        The gravitation field strength in nT. If left default, then
+        the value is calculated from the longitude, latitude, altitude
+        and survey_data properties using the magnetic_field_calculator.
+    earth_rate: float (default: 0.26249751949994715)
+        The rate of rotation of the earth in radians per hour.
+    noise_reduction_factor: float (default: 1.0)
+        A fiddle factor for random gyro noise.
+    dip: float (default: None)
+        The dip (inclination) of the magnetic field relative to the
+        earth's horizontal. If left default, then the value is
+        calculated using the magnetic_field_calculator. The unit (deg
+        of rad) is determined by the deg property.
+    declination: float (default: None)
+        The angle between true north and magnetic north at the well
+        location. If left default, then the value is calculated
+        using the magnetic_field_calculator.
+    convergence: float (default: 0)
+        The angle of convergence between the projection meridian and
+        the line from true north through the location of the well.
+    azi_reference: string (default: 'true')
+        The reference system for the azimuth angles in the survey data,
+        either "true", "magnetic" or "grid". Note that survey
+        calculations are performed in the "grid" reference and
+        converted to and from the other systems.
+    vertical_inc_limit: float (default 0.0001)
+        For survey inclination angles less than the vertical_inc_limit
+        (in degrees), calculations are approximated to avoid
+        singularities and errors.
+    deg: bool (default: True)
+        Indicates whether the survey angles are measured in degrees
+        (True) or radians (False).
+    depth_unit: string (default: "meters")
+        The unit of depth for the survey data, either "meters" or
+        "feet".
+    surface_unit: string (default: "feet")
+        The unit of distance for the survey data, either "meters" or
+        "feet".
+    vertical_section_azimuth: float (default: 0.0)
+        The azimuth along which to determine the vertical section data
+        for the well trajectory.
+    """
     def __init__(
         self,
-        name=None,
+        name: str = None,
         longitude=None,
         latitude=None,
         altitude=None,
@@ -59,71 +127,6 @@ class SurveyHeader:
         vertical_section_azimuth=0,
         # **kwargs
     ):
-        """
-        A class for storing header information about a well.
-
-        Parameters
-        ----------
-        name: string (default: None)
-            The assigned name of the well bore.
-        longitude: float (default: None)
-            The longitude of the surface location of the well. If left
-            default (None) then it will be assigned to Grenwich, the
-            undisputed center of the universe.
-        latitude: float (default: None)
-            The latitude of the surface location of the well. If left
-            default (None) then it will be assigned to Grenwich, the
-            undisputed center of the universe.
-        altitude: float (default: None)
-            The altitude of the surface location. If left defaults (None)
-            then it will be assigned to 0.
-        survey_date: YYYY-mm-dd (default: None)
-            The date on which the survey data was recorded. If left
-            default then the current date is assigned.
-        G: float (default: 9.80665)
-            The gravitational field strength in m/s^2.
-        b_total: float (default: None)
-            The gravitation field strength in nT. If left default, then
-            the value is calculated from the longitude, latitude, altitude
-            and survey_data properties using the magnetic_field_calculator.
-        earth_rate: float (default: 0.26249751949994715)
-            The rate of rotation of the earth in radians per hour.
-        noise_reduction_factor: float (default: 1.0)
-            A fiddle factor for random gyro noise.
-        dip: float (default: None)
-            The dip (inclination) of the magnetic field relative to the
-            earth's horizontal. If left default, then the value is
-            calculated using the magnetic_field_calculator. The unit (deg
-            of rad) is determined by the deg property.
-        declination: float (default: None)
-            The angle between true north and magnetic north at the well
-            location. If left default, then the value is calculated
-            using the magnetic_field_calculator.
-        convergence: float (default: 0)
-            The angle of convergence between the projection meridian and
-            the line from true north through the location of the well.
-        azi_reference: string (default: 'true')
-            The reference system for the azimuth angles in the survey data,
-            either "true", "magnetic" or "grid". Note that survey
-            calculations are performed in the "grid" reference and
-            converted to and from the other systems.
-        vertical_inc_limit: float (default 0.0001)
-            For survey inclination angles less than the vertical_inc_limit
-            (in degrees), calculations are approximated to avoid
-            singularities and errors.
-        deg: bool (default: True)
-            Indicates whether the survey angles are measured in degrees
-            (True) or radians (False).
-        depth_unit: string (default: "meters")
-            The unit of depth for the survey data, either "meters" or
-            "feet".
-        surface_unit: string (default: "feet")
-            The unit of distance for the survey data, either "meters" or
-            "feet".
-        vertical_section_azimuth: float (default: 0.0)
-            The azimuth along which to determine the vertical section data
-            for the well trajectory.
-        """
         if latitude is not None:
             assert 90 >= latitude >= -90, "latitude out of bounds"
         if longitude is not None:
@@ -226,6 +229,80 @@ class SurveyHeader:
 
 
 class Survey:
+    """
+    Initialize a `welleng.Survey` object. Calculations are performed in the
+    azi_reference "grid" domain.
+
+    Parameters
+    ----------
+    md: (,n) list or array of floats
+        List or array of well bore measured depths.
+    inc: (,n) list or array of floats
+        List or array of well bore survey inclinations
+    azi: (,n) list or array of floats
+        List or array of well bore survey azimuths
+    n: (,n) list or array of floats (default: None)
+        List or array of well bore northings
+    e: (,n) list or array of floats (default: None)
+        List or array of well bore eastings
+    tvd: (,n) list or array of floats (default: None)
+        List or array of local well bore z coordinates, i.e. depth
+        and usually relative to surface or mean sea level.
+    x: (,n) list or array of floats (default: None)
+        List or array of local well bore x coordinates, which is
+        usually aligned to the east direction.
+    y: (,n) list or array of floats (default: None)
+        List or array of local well bore y coordinates, which is
+        usually aligned to the north direction.
+    z: (,n) list or array of floats (default: None)
+        List or array of well bore true vertical depths relative
+        to the well surface datum (usually the drill floor
+        elevation DFE, so not always identical to tvd).
+    vec: (n,3) list or array of (,3) floats (default: None)
+        List or array of well bore unit vectors that describe the
+        inclination and azimuth of the well relative to (x,y,z)
+        coordinates.
+    header: SurveyHeader object (default: None)
+        A SurveyHeader object with information about the well location
+        and survey data. If left default then a SurveyHeader will be
+        generated with the default properties assigned, but these may
+        not be relevant and may result in incorrect data.
+    radius: float or (,n) list or array of floats (default: None)
+        If a single float is specified, this value will be
+        assigned to the entire well bore. If a list or array of
+        floats is provided, these are the radii of the well bore.
+        If None, a well bore radius of 12" or approximately 0.3 m
+        is applied.
+    cov_nev: (n,3,3) list or array of floats (default: None)
+        List or array of covariance matrices in the (n,e,v)
+        coordinate system.
+    cov_hla: (n,3,3) list or array of floats (default: None)
+        List or array of covariance matrices in the (h,l,a)
+        well bore coordinate system (high side, lateral, along
+        hole).
+    error_model: str (default: None)
+        If specified, this model is used to calculate the
+        covariance matrices if they are not present. Currently,
+        only the "ISCWSA_MWD" model is provided.
+    start_xyz: (,3) list or array of floats (default: [0,0,0])
+        The start position of the well bore in (x,y,z) coordinates.
+    start_nev: (,3) list or array of floats (default: [0,0,0])
+        The start position of the well bore in (n,e,v) coordinates.
+    start_cov_nev: (,3,3) list or array of floats (default: None)
+        The covariance matrix for the start position of the well
+        bore in (n,e,v) coordinates.
+    deg: boolean (default: True)
+        Indicates whether the provided angles are in degrees
+        (True), else radians (False).
+    unit: str (default: 'meters')
+        Indicates whether the provided lengths and distances are
+        in 'meters' or 'feet', which impacts the calculation of
+        the dls (dog leg severity).
+
+    Returns
+    -------
+    A welleng.survey.Survey object.
+    """
     def __init__(
         self,
         md,
@@ -251,80 +328,6 @@ class Survey:
         unit="meters",
         **kwargs
     ):
-        """
-        Initialize a welleng.Survey object. Calculations are performed in the
-        azi_reference "grid" domain.
-
-        Parameters
-        ----------
-        md: (,n) list or array of floats
-            List or array of well bore measured depths.
-        inc: (,n) list or array of floats
-            List or array of well bore survey inclinations
-        azi: (,n) list or array of floats
-            List or array of well bore survey azimuths
-        n: (,n) list or array of floats (default: None)
-            List or array of well bore northings
-        e: (,n) list or array of floats (default: None)
-            List or array of well bore eastings
-        tvd: (,n) list or array of floats (default: None)
-            List or array of local well bore z coordinates, i.e. depth
-            and usually relative to surface or mean sea level.
-        x: (,n) list or array of floats (default: None)
-            List or array of local well bore x coordinates, which is
-            usually aligned to the east direction.
-        y: (,n) list or array of floats (default: None)
-            List or array of local well bore y coordinates, which is
-            usually aligned to the north direction.
-        z: (,n) list or array of floats (default: None)
-            List or array of well bore true vertical depths relative
-            to the well surface datum (usually the drill floor
-            elevation DFE, so not always identical to tvd).
-        vec: (n,3) list or array of (,3) floats (default: None)
-            List or array of well bore unit vectors that describe the
-            inclination and azimuth of the well relative to (x,y,z)
-            coordinates.
-        header: SurveyHeader object (default: None)
-            A SurveyHeader object with information about the well location
-            and survey data. If left default then a SurveyHeader will be
-            generated with the default properties assigned, but these may
-            not be relevant and may result in incorrect data.
-        radius: float or (,n) list or array of floats (default: None)
-            If a single float is specified, this value will be
-            assigned to the entire well bore. If a list or array of
-            floats is provided, these are the radii of the well bore.
-            If None, a well bore radius of 12" or approximately 0.3 m
-            is applied.
-        cov_nev: (n,3,3) list or array of floats (default: None)
-            List or array of covariance matrices in the (n,e,v)
-            coordinate system.
-        cov_hla: (n,3,3) list or array of floats (default: None)
-            List or array of covariance matrices in the (h,l,a)
-            well bore coordinate system (high side, lateral, along
-            hole).
-        error_model: str (default: None)
-            If specified, this model is used to calculate the
-            covariance matrices if they are not present. Currently,
-            only the "ISCWSA_MWD" model is provided.
-        start_xyz: (,3) list or array of floats (default: [0,0,0])
-            The start position of the well bore in (x,y,z) coordinates.
-        start_nev: (,3) list or array of floats (default: [0,0,0])
-            The start position of the well bore in (n,e,v) coordinates.
-        start_cov_nev: (,3,3) list or array of floats (default: None)
-            The covariance matrix for the start position of the well
-            bore in (n,e,v) coordinates.
-        deg: boolean (default: True)
-            Indicates whether the provided angles are in degrees
-            (True), else radians (False).
-        unit: str (default: 'meters')
-            Indicates whether the provided lengths and distances are
-            in 'meters' or 'feet', which impacts the calculation of
-            the dls (dog leg severity).
-
-        Returns
-        -------
-        A welleng.survey.Survey object.
-        """
         if header is None:
             self.header = SurveyHeader()
         else:
