@@ -17,67 +17,65 @@ from .mesh import WellMesh
 
 
 class Clearance:
+    """
+    Initialize a `welleng.clearance.Clearance` object.
+
+    Parameters
+    ----------
+    reference : `welleng.survey.Survey` object
+        The current well from which other wells are referenced.
+    offset : `welleng.survey.Survey` object
+        The other well.
+    k : float
+        The dimensionless scaling factor that determines the probability
+        of well crossing.
+    sigma_pa : float
+        Quantifies the 1-SD uncertainty in the projection ahead of the
+        current survey station. Its value is partially correlated with
+        the projection distance, determined as the current survey depth to
+        the bit plus the next survey interval. The magnitude of the actual
+        uncertainty also depends on the planned curvature and on the actual
+        BHA performance at the wellbore attitude in the formation being
+        drilled. The project-ahead uncertainty is only an approximation,
+        and although it is predominantly oriented normal to the reference
+        well, it is mathematically convenient to define sigma_pa as being
+        the radius of a sphere.
+    Sm : float
+        The surface margin term increases the effective radius of the
+        offset well. It accommodates small, unidentified errors and helps
+        overcome one of the geometric limitations of the separation rule,
+        described in the Separation-Rule Limitations section. It also
+        defines the minimum acceptable slot separation during facility
+        design and ensures that the separation rule will prohibit the
+        activity before nominal contact between the reference and offset
+        wells, even if the position uncertainty is zero.
+    Rr : float
+        The openhole radius of the reference borehole (in meters).
+    Ro : float
+        The openhole radius of the offset borehole (in meters).
+    kop_depth: float
+        The kick-off point (measured) depth along the well bore - the
+        default value assures that the first survey station is utilized.
+
+    References
+    ----------
+    Sawaryn, S. J., Wilson, H.. , Bang, J.. , Nyrnes, E.. , Sentance,
+    A.. , Poedjono, B.. , Lowdon, R.. , Mitchell, I.. , Codling, J.. ,
+    Clark, P. J., and W. T. Allen. "Well-Collision-Avoidance Separation
+    Rule." SPE Drill & Compl 34 (2019): 01–15.
+    doi: https://doi.org/10.2118/187073-PA
+    """
     def __init__(
         self,
-        reference,
-        offset,
-        k=3.5,
-        sigma_pa=0.5,
-        Sm=0.3,
-        Rr=0.4572,
-        Ro=0.3048,
-        kop_depth=-np.inf,
-        # *args,
-        # **kwargs
+        reference: Survey,
+        offset: Survey,
+        k: float = 3.5,
+        sigma_pa: float = 0.5,
+        Sm: float = 0.3,
+        Rr: float = 0.4572,
+        Ro: float = 0.3048,
+        kop_depth: float = -np.inf,
     ):
-        """
-        Initialize a welleng.clearance.Clearance object.
-
-        Parameters
-        ----------
-        reference : welleng.survey.Survey object
-            The current well from which other wells are referenced.
-        offset : welleng.survey.Survey object
-            The other well.
-        k : float
-            The dimensionless scaling factor that determines the probability
-            of well crossing.
-        sigma_pa : float
-            Quantifies the 1-SD uncertainty in the projection ahead of the
-            current survey station. Its value is partially correlated with
-            the projection distance, determined as the current survey depth to
-            the bit plus the next survey interval. The magnitude of the actual
-            uncertainty also depends on the planned curvature and on the actual
-            BHA performance at the wellbore attitude in the formation being
-            drilled. The project-ahead uncertainty is only an approximation,
-            and although it is predominantly oriented normal to the reference
-            well, it is mathematically convenient to define sigma_pa as being
-            the radius of a sphere.
-        Sm : float
-            The surface margin term increases the effective radius of the
-            offset well. It accommodates small, unidentified errors and helps
-            overcome one of the geometric limitations of the separation rule,
-            described in the Separation-Rule Limitations section. It also
-            defines the minimum acceptable slot separation during facility
-            design and ensures that the separation rule will prohibit the
-            activity before nominal contact between the reference and offset
-            wells, even if the position uncertainty is zero.
-        Rr : float
-            The openhole radius of the reference borehole (in meters).
-        Ro : float
-            The openhole radius of the offset borehole (in meters).
-        kop_depth: float
-            The kick-off point (measured) depth along the well bore - the
-            default value assures that the first survey station is utilized.
-
-        References
-        ----------
-        Sawaryn, S. J., Wilson, H.. , Bang, J.. , Nyrnes, E.. , Sentance,
-        A.. , Poedjono, B.. , Lowdon, R.. , Mitchell, I.. , Codling, J.. ,
-        Clark, P. J., and W. T. Allen. "Well-Collision-Avoidance Separation
-        Rule." SPE Drill & Compl 34 (2019): 01–15.
-        doi: https://doi.org/10.2118/187073-PA
-        """
         self.reference = reference
         self.offset = offset
         self.k = k
@@ -608,35 +606,37 @@ class ISCWSA:
 
 
 class MeshClearance:
+    """
+    Class to calculate the clearance between two well bores using a novel
+    mesh clearance method. This method is experimental and was developed
+    to provide a fast method for determining if well bores are potentially
+    colliding.
+
+    This class requires that `trimesh` is installed along with
+    `python-fcl`.
+
+    Parameters
+    ----------
+    clearance : `welleng.clearnance.Clearance` object
+    n_verts : int
+        The number of points (vertices) used to generate the uncertainty
+        ellipses which are used to generate a `trimesh` representation of
+        the well bores. The default is 12 which is a good balance between
+        accuracy and speed.
+    sigma : float
+        The required/desired sigma value representation of the generated
+        mesh. The default value of 2.445 represents about 98.5% confidence
+        of the well bore being located within the volume of the generated
+        mesh.
+    """
     def __init__(
         self,
-        clearance,
-        n_verts=12,
-        sigma=2.445,
-        return_data=True,
-        return_meshes=False,
+        clearance: Clearance,
+        n_verts: int = 12,
+        sigma: float = 2.445,
+        return_data: bool = True,
+        return_meshes: bool = False,
     ):
-        """
-        Class to calculate the clearance between two well bores using a novel
-        mesh clearnace method. This method is experimental and was developed
-        to provide a fast method for determining if well bores are potentially
-        colliding.
-
-        This class requires that `trimesh` is installed along with
-        `python-fcl`.
-
-        clearance : `welleng.clearnance.Clearance` object
-        n_verts : int
-            The number of points (vertices) used to generate the uncertainty
-            ellipses which are used to generate a `trimesh` representation of
-            the well bores. The default is 12 which is a good balance between
-            accuracy and speed.
-        sigma : float
-            The required/desired sigma value representation of the generated
-            mesh. The default value of 2.445 represents about 98.5% confidence
-            of the well bore being located within the volume of the generated
-            mesh.
-        """
         assert MESH_MODE, "ImportError: try pip install welleng[all]"
         Clearance.__init__
         self.c = clearance
