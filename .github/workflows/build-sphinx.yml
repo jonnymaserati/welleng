@@ -1,35 +1,19 @@
 name: build-sphinx-to-gh-pages
 
-env:
-  GITHUB_ACTOR: jonnymaserati
-  GITHUB_REPOSITORY: jonnymaserati/welleng
-  GITHUB_TOKEN: ${{ secrets.CREATE_DEMO_SECRET }}
-
-on: 
-  push:
-    branches: [ main ]
-
-
-jobs:
-
-  build_sphinx_job:
+docs:
+    name: Build Docs
+    needs: [tests, containers]
     runs-on: ubuntu-latest
-    container: debian:buster-slim
-
     steps:
-    
-      - name: Get prerequisites and clone repository
-        env:
-          GITHUB_TOKEN: ${{ secrets.CREATE_DEMO_SECRET }}
-        run: |
-          set -x
-          apt-get update
-          apt-get install -y git
-          git clone "https://token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" .
-        shell: bash
-
-      - name: Run build script for Sphinx pages
-        env:
-          GITHUB_TOKEN: ${{ secrets.CREATE_DEMO_SECRET }}
-        run: "docs/buildsite.sh"
-        shell: bash
+    - uses: actions/checkout@v3
+    - name: Build Docs
+      run: |
+         cd docs
+         make clear
+         make html
+    - name: Deploy To Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs/build/html
+        force_orphan: true
