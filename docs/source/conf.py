@@ -75,7 +75,7 @@ master_doc = 'index'
 exec(open(abspath('../../welleng/version.py')).read())
 version = __version__  # noqa: F821
 # The full version, including alpha/beta/rc tags.
-release = __version__
+release = __version__  # noqa: F821
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'sphinx'
