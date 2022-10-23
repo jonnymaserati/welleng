@@ -230,14 +230,16 @@ def get_angles(vec, nev=False):
     '''
     Determines the inclination and azimuth from a vector.
 
-    Params:
-        vec: (n,3) array of floats
-        nev: boolean (default: False)
-            Indicates if the vector is in (x,y,z) or (n,e,v) coordinates.
+    Parameters
+    ----------
+    vec: (n,3) array of floats
+    nev: boolean (default: False)
+        Indicates if the vector is in (x,y,z) or (n,e,v) coordinates.
 
-    Returns:
-        [inc, azi]: (n,2) array of floats
-            A numpy array of incs and axis in radians
+    Returns
+    -------
+    [inc, azi]: (n,2) array of floats
+        A numpy array of incs and axis in radians
 
     '''
     # make sure it's a unit vector

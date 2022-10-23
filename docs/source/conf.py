@@ -68,7 +68,7 @@ source_suffix = {
 master_doc = 'index'
 
 # grab from trimesh without installing
-exec(open(abspath('../welleng/version.py')).read())
+exec(open(abspath('../../welleng/version.py')).read())
 version = __version__
 # The full version, including alpha/beta/rc tags.
 release = __version__
