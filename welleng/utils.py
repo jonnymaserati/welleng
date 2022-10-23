@@ -226,7 +226,9 @@ if NUMBA:
     _get_angles = njit(_get_angles)
 
 
-def get_angles(vec, nev=False):
+def get_angles(
+    vec: Annotated[NDArray, Literal["N", 3]], nev: bool = False
+):
     '''
     Determines the inclination and azimuth from a vector.
 
@@ -294,7 +296,7 @@ def get_transform(
 
 
 def NEV_to_HLA(
-    survey: Annotated[NDArray[float], Literal["N", 3]],
+    survey: Annotated[NDArray, Literal["N", 3]],
     NEV: Union[
         Annotated[NDArray, Literal["N", 3]],
         Annotated[NDArray, Literal[3, 3, "N"]]

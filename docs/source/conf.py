@@ -33,7 +33,11 @@ def abspath(rel):
     # current working directory
     cwd = os.path.dirname(os.path.abspath(
         inspect.getfile(inspect.currentframe())))
-    return os.path.abspath(os.path.join(cwd, rel))
+
+    path = os.path.join(cwd, rel)
+    print(path)
+
+    return os.path.abspath(path)
 
 
 # -- Project information -----------------------------------------------------
