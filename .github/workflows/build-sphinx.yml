@@ -9,11 +9,12 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-    # - name: Build Docs
     - uses: actions/checkout@v3
+    - name: Install Dependencies
       run: |
         pip install .
-    - uses: ammaraskar/sphinx-action@master
+    - name: Build Docs
+      uses: ammaraskar/sphinx-action@master
       with:
         docs-folder: "docs/"
     - name: Deploy To Pages
