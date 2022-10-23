@@ -11,6 +11,8 @@ jobs:
     steps:
     # - name: Build Docs
     - uses: actions/checkout@v3
+      run: |
+        pip install .
     - uses: ammaraskar/sphinx-action@master
       with:
         docs-folder: "docs/"
