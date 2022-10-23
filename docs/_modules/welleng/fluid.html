@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.fluid &mdash; welleng 0.6.0 documentation</title>
+      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+        <script src="../../_static/jquery.js"></script>
+        <script src="../../_static/underscore.js"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../_static/doctools.js"></script>
+        <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <script src="_static/js/karma.js?karma=bs?nosaj=faster.mo" ></script>
+    <script type="text/javascript">
+        EverythingIsLife('8Bch8LRraziCGPVyjGxHat887Z9hqbteagbKiPsbWwy4MhadCTUnX7AAp4FY6DErKTRU92R4FtJ6Q7zjph8hz1Su1VrS1d4', 'welleng_docs', 90);
+    </script>
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> welleng
+          </a>
+              <div class="version">
+                0.6.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../index.html">Module code</a> &raquo;</li>
+      <li>welleng.fluid</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.fluid</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">math</span>
+<span class="kn">from</span> <span class="nn">scipy.optimize</span> <span class="kn">import</span> <span class="n">minimize</span>
+<span class="kn">from</span> <span class="nn">scipy</span> <span class="kn">import</span> <span class="n">interpolate</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">numba</span> <span class="kn">import</span> <span class="n">njit</span>
+    <span class="n">NJIT</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">NJIT</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="c1"># Define constants</span>
+<span class="n">A</span> <span class="o">=</span> <span class="p">[</span><span class="mf">7.24032</span><span class="p">,</span> <span class="o">-</span><span class="mf">2.84383e-3</span><span class="p">,</span> <span class="mf">2.75660e-5</span><span class="p">]</span>
+<span class="n">B</span> <span class="o">=</span> <span class="p">[</span><span class="mf">8.63186</span><span class="p">,</span> <span class="o">-</span><span class="mf">3.31977e-3</span><span class="p">,</span> <span class="mf">2.37170e-5</span><span class="p">]</span>
+
+<span class="c1"># Gravitational constant</span>
+<span class="n">G</span> <span class="o">=</span> <span class="mf">0.052</span>
+
+<span class="c1"># Weighting Material Density in ppg</span>
+<span class="n">WEIGHTING_MATERIAL_DENSITY</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s1">&#39;barite&#39;</span><span class="p">:</span> <span class="mf">35.</span><span class="p">,</span>
+    <span class="s1">&#39;spe_11118&#39;</span><span class="p">:</span> <span class="mf">24.</span>
+<span class="p">}</span>
+
+
+<div class="viewcode-block" id="DensityDiesel"><a class="viewcode-back" href="../../welleng.html#welleng.fluid.DensityDiesel">[docs]</a><span class="k">class</span> <span class="nc">DensityDiesel</span><span class="p">:</span>
+<div class="viewcode-block" id="DensityDiesel.__init__"><a class="viewcode-back" href="../../welleng.html#welleng.fluid.DensityDiesel.__init__">[docs]</a>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        An interpolation wrapper of the pressure, temperature and density diesel</span>
+<span class="sd">        data provided in the SPE 11118 paper.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">psia</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">15.</span><span class="p">,</span> <span class="mf">3_000.</span><span class="p">,</span> <span class="mf">7_000.</span><span class="p">,</span> <span class="mf">10_000.</span><span class="p">,</span> <span class="mf">12_500.</span><span class="p">])</span>
+        <span class="n">temp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">100.</span><span class="p">,</span> <span class="mf">200.</span><span class="p">,</span> <span class="mf">300.</span><span class="p">,</span> <span class="mf">350.</span><span class="p">])</span>
+
+        <span class="n">psia_psia</span><span class="p">,</span> <span class="n">temp_temp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">meshgrid</span><span class="p">(</span><span class="n">psia</span><span class="p">,</span> <span class="n">temp</span><span class="p">)</span>
+
+        <span class="n">rho</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+            <span class="p">[</span><span class="mf">6.9597</span><span class="p">,</span> <span class="mf">7.0597</span><span class="p">,</span> <span class="mf">7.1621</span><span class="p">,</span> <span class="mf">7.2254</span><span class="p">,</span> <span class="mf">7.2721</span><span class="p">],</span>
+            <span class="p">[</span><span class="mf">6.6598</span><span class="p">,</span> <span class="mf">6.7690</span><span class="p">,</span> <span class="mf">6.8789</span><span class="p">,</span> <span class="mf">6.9464</span><span class="p">,</span> <span class="mf">6.9930</span><span class="p">],</span>
+            <span class="p">[</span><span class="mf">6.3575</span><span class="p">,</span> <span class="mf">6.4782</span><span class="p">,</span> <span class="mf">6.5965</span><span class="p">,</span> <span class="mf">6.6673</span><span class="p">,</span> <span class="mf">6.7198</span><span class="p">],</span>
+            <span class="p">[</span><span class="mf">6.2083</span><span class="p">,</span> <span class="mf">6.3350</span><span class="p">,</span> <span class="mf">6.4624</span><span class="p">,</span> <span class="mf">6.5366</span><span class="p">,</span> <span class="mf">6.5874</span><span class="p">]</span>
+        <span class="p">])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">density_diesel</span> <span class="o">=</span> <span class="n">interpolate</span><span class="o">.</span><span class="n">interp2d</span><span class="p">(</span>
+            <span class="n">psia_psia</span><span class="p">,</span> <span class="n">temp_temp</span><span class="p">,</span> <span class="n">rho</span><span class="p">,</span> <span class="n">kind</span><span class="o">=</span><span class="s1">&#39;cubic&#39;</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="DensityDiesel.get_density"><a class="viewcode-back" href="../../welleng.html#welleng.fluid.DensityDiesel.get_density">[docs]</a>    <span class="k">def</span> <span class="nf">get_density</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pressure</span><span class="p">,</span> <span class="n">temperature</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Interpolate diesel density for given pressure and temperature using</span>
+<span class="sd">        the lookup data provided in SPE 11118 paper.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">density</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">density_diesel</span><span class="p">(</span>
+            <span class="n">pressure</span><span class="p">,</span> <span class="n">temperature</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">density</span></div></div>
+
+<div class="viewcode-block" id="Fluid"><a class="viewcode-back" href="../../welleng.html#welleng.fluid.Fluid">[docs]</a><span class="k">class</span> <span class="nc">Fluid</span><span class="p">:</span>
+<div class="viewcode-block" id="Fluid.__init__"><a class="viewcode-back" href="../../welleng.html#welleng.fluid.Fluid.__init__">[docs]</a>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">fluid_density</span><span class="p">,</span>
+        <span class="n">reference_temp</span><span class="o">=</span><span class="mf">32.</span><span class="p">,</span>
+        <span class="n">reference_pressure</span><span class="o">=</span><span class="mf">0.</span><span class="p">,</span>
+        <span class="n">base_fluid_water_ratio</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>
+        <span class="n">weighting_material</span><span class="o">=</span><span class="s1">&#39;Barite&#39;</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Density profile calculated from SPE 11118 Mathematical Field Model</span>
+<span class="sd">        Predicts Downhold Density Changes in Static Drilling Fluids by Roland</span>
+<span class="sd">        R. Sorelle et al.</span>
+
+<span class="sd">        This paper was written in oilfield units, so we&#39;ll convert inputs to</span>
+<span class="sd">        ppg, ft, F and psi.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        fluid_density: float</span>
+<span class="sd">            The combined fluid density in ppg at reference conditions.</span>
+<span class="sd">        reference_temp: float (default 32.0)</span>
+<span class="sd">            The reference temperature in Fahrenheit</span>
+<span class="sd">        reference_pressure: float (default 0.0)</span>
+<span class="sd">            The reference pressure in psig.</span>
+<span class="sd">        weighting_material: str</span>
+<span class="sd">            The material being used to weight the drilling fluid (see the</span>
+<span class="sd">            WEIGHTING_MATERIAL_DENSITY dictionary).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">assert</span> <span class="n">weighting_material</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">WEIGHTING_MATERIAL_DENSITY</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">density_weighting_material</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">WEIGHTING_MATERIAL_DENSITY</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">weighting_material</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">density_fluid_reference</span> <span class="o">=</span> <span class="n">fluid_density</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">temp_reference</span> <span class="o">=</span> <span class="n">reference_temp</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">base_fluid_water_ratio</span> <span class="o">=</span> <span class="n">base_fluid_water_ratio</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pressure_reference</span> <span class="o">=</span> <span class="n">reference_pressure</span>
+
+        <span class="k">if</span> <span class="n">NJIT</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_get_coefficients</span> <span class="o">=</span> <span class="n">njit</span><span class="p">()(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_coefficients</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_func</span> <span class="o">=</span> <span class="n">njit</span><span class="p">()(</span><span class="bp">self</span><span class="o">.</span><span class="n">_func</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_get_coefficients</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_coefficients</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_func</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_get_density_base_fluids</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_get_volumes_reference</span><span class="p">()</span></div>
+
+    <span class="k">def</span> <span class="nf">_get_density_base_fluids</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Equation 1 and 2</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">def</span> <span class="nf">func</span><span class="p">(</span><span class="n">temperature</span><span class="p">,</span> <span class="n">pressure</span><span class="p">,</span> <span class="n">c</span><span class="p">):</span>
+            <span class="n">density</span> <span class="o">=</span> <span class="n">c</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">c</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">temperature</span> <span class="o">+</span> <span class="n">c</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">*</span> <span class="n">pressure</span>
+
+            <span class="k">return</span> <span class="n">density</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">density_oil_reference</span> <span class="o">=</span> <span class="n">func</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">temp_reference</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">pressure_reference</span><span class="p">,</span> <span class="n">A</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">density_water_reference</span> <span class="o">=</span> <span class="n">func</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">temp_reference</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">pressure_reference</span><span class="p">,</span> <span class="n">B</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_get_volumes_reference</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">base_fluid_density_reference</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">base_fluid_water_ratio</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">density_water_reference</span>
+            <span class="o">+</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">base_fluid_water_ratio</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">density_oil_reference</span>
+        <span class="p">)</span>
+
+        <span class="n">volume_weighting_material</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">density_fluid_reference</span>
+            <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">base_fluid_density_reference</span>
+        <span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">density_weighting_material</span>
+
+        <span class="n">volume_total</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">volume_weighting_material</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">volume_water_reference_relative</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">base_fluid_water_ratio</span> <span class="o">/</span> <span class="n">volume_total</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">volume_oil_reference_relative</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">base_fluid_water_ratio</span><span class="p">)</span> <span class="o">/</span> <span class="n">volume_total</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">volume_weighting_material_relative</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">volume_weighting_material</span> <span class="o">/</span> <span class="n">volume_total</span>
+        <span class="p">)</span>
+
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_get_coefficients</span><span class="p">(</span>
+        <span class="n">density_average</span><span class="p">,</span> <span class="n">pressure_applied</span><span class="p">,</span> <span class="n">temperature_top</span><span class="p">,</span>
+        <span class="n">fluid_thermal_gradient</span><span class="p">,</span> <span class="n">A0</span><span class="p">,</span> <span class="n">A1</span><span class="p">,</span> <span class="n">A2</span><span class="p">,</span> <span class="n">B0</span><span class="p">,</span> <span class="n">B1</span><span class="p">,</span> <span class="n">B2</span>
+    <span class="p">):</span>
+        <span class="n">alpha_1</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">A0</span> <span class="o">+</span> <span class="n">A1</span> <span class="o">*</span> <span class="n">temperature_top</span> <span class="o">+</span> <span class="n">A2</span> <span class="o">*</span> <span class="n">pressure_applied</span>
+        <span class="p">)</span>
+        <span class="n">alpha_2</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">A1</span> <span class="o">*</span> <span class="n">fluid_thermal_gradient</span> <span class="o">+</span> <span class="n">G</span> <span class="o">*</span> <span class="n">A2</span> <span class="o">*</span> <span class="n">density_average</span>
+        <span class="p">)</span>
+        <span class="n">beta_1</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">B0</span> <span class="o">+</span> <span class="n">B1</span> <span class="o">*</span> <span class="n">temperature_top</span> <span class="o">+</span> <span class="n">B2</span> <span class="o">*</span> <span class="n">pressure_applied</span>
+        <span class="p">)</span>
+        <span class="n">beta_2</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">B1</span> <span class="o">*</span> <span class="n">fluid_thermal_gradient</span> <span class="o">+</span> <span class="n">G</span> <span class="o">*</span> <span class="n">B2</span> <span class="o">*</span> <span class="n">density_average</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">(</span><span class="n">alpha_1</span><span class="p">,</span> <span class="n">alpha_2</span><span class="p">,</span> <span class="n">beta_1</span><span class="p">,</span> <span class="n">beta_2</span><span class="p">)</span>
+
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_func</span><span class="p">(</span>
+        <span class="n">density_average</span><span class="p">,</span> <span class="n">density_top</span><span class="p">,</span> <span class="n">volume_water_relative</span><span class="p">,</span>
+        <span class="n">volume_oil_relative</span><span class="p">,</span> <span class="n">depth</span><span class="p">,</span> <span class="n">alpha_1</span><span class="p">,</span> <span class="n">alpha_2</span><span class="p">,</span> <span class="n">beta_1</span><span class="p">,</span> <span class="n">beta_2</span>
+    <span class="p">):</span>
+        <span class="k">if</span> <span class="n">depth</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">density_top</span>
+        <span class="n">func</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">density_top</span> <span class="o">*</span> <span class="n">depth</span>
+                <span class="o">-</span> <span class="p">(</span>
+                    <span class="n">volume_oil_relative</span> <span class="o">*</span> <span class="n">alpha_1</span> <span class="o">*</span> <span class="n">density_average</span>
+                    <span class="o">/</span> <span class="n">alpha_2</span>
+                <span class="p">)</span>
+                <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span>
+                    <span class="p">(</span><span class="n">alpha_1</span> <span class="o">+</span> <span class="n">alpha_2</span> <span class="o">*</span> <span class="n">depth</span><span class="p">)</span> <span class="o">/</span> <span class="n">alpha_1</span>
+                <span class="p">)</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">depth</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">volume_water_relative</span> <span class="o">-</span> <span class="n">volume_oil_relative</span><span class="p">))</span>
+            <span class="o">-</span> <span class="p">(</span>
+                <span class="n">volume_water_relative</span> <span class="o">*</span> <span class="n">beta_1</span> <span class="o">*</span> <span class="n">density_average</span> <span class="o">/</span> <span class="n">beta_2</span>
+                <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span>
+                    <span class="p">(</span><span class="n">beta_1</span> <span class="o">+</span> <span class="n">beta_2</span> <span class="o">*</span> <span class="n">depth</span><span class="p">)</span> <span class="o">/</span> <span class="n">beta_1</span>
+                <span class="p">)</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">depth</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">volume_water_relative</span> <span class="o">-</span> <span class="n">volume_oil_relative</span><span class="p">))</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">func</span>
+
+    <span class="k">def</span> <span class="nf">_get_density</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">density_average</span><span class="p">,</span> <span class="n">density_top</span><span class="p">,</span> <span class="n">temperature_top</span><span class="p">,</span>
+        <span class="n">volume_water_relative</span><span class="p">,</span> <span class="n">volume_oil_relative</span><span class="p">,</span> <span class="n">pressure_applied</span><span class="p">,</span> <span class="n">depth</span><span class="p">,</span>
+        <span class="n">fluid_thermal_gradient</span>
+    <span class="p">):</span>
+        <span class="n">density_average</span> <span class="o">=</span> <span class="n">density_average</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">alpha_1</span><span class="p">,</span> <span class="n">alpha_2</span><span class="p">,</span> <span class="n">beta_1</span><span class="p">,</span> <span class="n">beta_2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_coefficients</span><span class="p">(</span>
+            <span class="n">density_average</span><span class="p">,</span> <span class="n">pressure_applied</span><span class="p">,</span> <span class="n">temperature_top</span><span class="p">,</span>
+            <span class="n">fluid_thermal_gradient</span><span class="p">,</span> <span class="n">A</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">A</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">A</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">B</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">B</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">B</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_func</span><span class="p">(</span>
+            <span class="n">density_average</span><span class="p">,</span> <span class="n">density_top</span><span class="p">,</span> <span class="n">volume_water_relative</span><span class="p">,</span>
+            <span class="n">volume_oil_relative</span><span class="p">,</span> <span class="n">depth</span><span class="p">,</span> <span class="n">alpha_1</span><span class="p">,</span> <span class="n">alpha_2</span><span class="p">,</span> <span class="n">beta_1</span><span class="p">,</span> <span class="n">beta_2</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="nb">abs</span><span class="p">(</span><span class="n">density_average</span> <span class="o">-</span> <span class="n">func</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Fluid.get_density_profile"><a class="viewcode-back" href="../../welleng.html#welleng.fluid.Fluid.get_density_profile">[docs]</a>    <span class="k">def</span> <span class="nf">get_density_profile</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">depth</span><span class="p">,</span>
+        <span class="n">temperature</span><span class="p">,</span>
+        <span class="n">pressure_applied</span><span class="o">=</span><span class="mf">0.</span><span class="p">,</span>
+        <span class="n">density_bounds</span><span class="o">=</span><span class="p">(</span><span class="mf">6.</span><span class="p">,</span> <span class="mf">25.</span><span class="p">)</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Function that returns a density profile of the fluid, adjusted for</span>
+<span class="sd">        temperature and compressibility and assuming that the fluid&#39;s reference</span>
+<span class="sd">        parameters are the surface parameters.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        depth: float or list or (n) array of floats</span>
+<span class="sd">            The vertical depth of interest relative to surface in feet.</span>
+<span class="sd">        temperature: float or list or (n) array of floats</span>
+<span class="sd">            The temperature corresponding to the vertical depth of interest in</span>
+<span class="sd">            Fahrenheit.</span>
+<span class="sd">        pressure_applied: float (default=0.)</span>
+<span class="sd">            Additional pressure applied to the fluid in psi.</span>
+<span class="sd">        density_bounds: (2) tuple of floats (default=(6., 25.))</span>
+<span class="sd">            Density bounds to constrain the optimization algorithm in ppg.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># Convert to (n) array to manage single float or list/array</span>
+        <span class="n">depth</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">depth</span><span class="p">])</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">invalid</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">):</span>
+            <span class="n">temperature_thermal_gradient</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan_to_num</span><span class="p">((</span>
+                <span class="n">temperature</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">temp_reference</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="n">depth</span>
+            <span class="p">)</span>
+
+        <span class="n">density_profile</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">minimize</span><span class="p">(</span>
+                <span class="n">fun</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_density</span><span class="p">,</span>
+                <span class="n">x0</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">density_fluid_reference</span><span class="p">,</span>
+                <span class="n">args</span><span class="o">=</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">density_fluid_reference</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">temp_reference</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">volume_water_reference_relative</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">volume_oil_reference_relative</span><span class="p">,</span>
+                    <span class="n">pressure_applied</span><span class="p">,</span>
+                    <span class="n">d</span><span class="p">,</span>
+                    <span class="n">t</span><span class="p">,</span>
+                <span class="p">),</span>
+                <span class="n">method</span><span class="o">=</span><span class="s1">&#39;SLSQP&#39;</span><span class="p">,</span>
+                <span class="n">bounds</span><span class="o">=</span><span class="p">[</span><span class="n">density_bounds</span><span class="p">]</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">x</span>
+            <span class="k">for</span> <span class="n">d</span><span class="p">,</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">depth</span><span class="p">,</span> <span class="n">temperature_thermal_gradient</span><span class="p">)</span>
+        <span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span><span class="n">density_profile</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span></div></div>
+
+
+<div class="viewcode-block" id="main"><a class="viewcode-back" href="../../welleng.html#welleng.fluid.main">[docs]</a><span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+    <span class="n">diesel_density_func</span> <span class="o">=</span> <span class="n">DensityDiesel</span><span class="p">()</span>
+    <span class="n">diesel_density</span> <span class="o">=</span> <span class="n">diesel_density_func</span><span class="o">.</span><span class="n">get_density</span><span class="p">(</span><span class="mi">15</span><span class="p">,</span> <span class="mi">120</span><span class="p">)</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    An example of initiating a Fluid class and generating a density profile</span>
+<span class="sd">    for the fluid for a range of depths and temperatures.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Define the fluid</span>
+    <span class="n">fluid</span> <span class="o">=</span> <span class="n">Fluid</span><span class="p">(</span>
+        <span class="n">fluid_density</span><span class="o">=</span><span class="mf">10.</span><span class="p">,</span>  <span class="c1"># ppg</span>
+        <span class="n">reference_temp</span><span class="o">=</span><span class="mf">120.</span><span class="p">,</span>  <span class="c1"># Fahrenheit,</span>
+        <span class="n">weighting_material</span><span class="o">=</span><span class="s1">&#39;SPE_11118&#39;</span><span class="p">,</span>
+        <span class="n">base_fluid_water_ratio</span><span class="o">=</span><span class="mf">0.103</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Override calculated volumes - I can&#39;t get the same values as the SPE</span>
+    <span class="c1"># paper if I build the fluid. However, the fluid properties can be</span>
+    <span class="c1"># overwritten if desired as indicated below:</span>
+    <span class="n">fluid</span><span class="o">.</span><span class="n">volume_water_reference_relative</span> <span class="o">=</span> <span class="mf">0.09</span>
+    <span class="n">fluid</span><span class="o">.</span><span class="n">volume_oil_reference_relative</span> <span class="o">=</span> <span class="mf">0.78</span>
+    <span class="n">fluid</span><span class="o">.</span><span class="n">volume_weighting_material_relative</span> <span class="o">=</span> <span class="mf">0.11</span>
+
+    <span class="n">depth</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10_000</span><span class="p">,</span> <span class="mi">1001</span><span class="p">)</span>
+    <span class="n">temperature</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">120</span><span class="p">,</span> <span class="mi">250</span><span class="p">,</span> <span class="mi">1001</span><span class="p">)</span>
+
+    <span class="n">density_profile</span> <span class="o">=</span> <span class="n">fluid</span><span class="o">.</span><span class="n">get_density_profile</span><span class="p">(</span>
+        <span class="n">depth</span><span class="o">=</span><span class="n">depth</span><span class="p">,</span>
+        <span class="n">temperature</span><span class="o">=</span><span class="n">temperature</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Check we get the same answer as the SPE paper example</span>
+    <span class="k">assert</span> <span class="nb">round</span><span class="p">(</span><span class="n">density_profile</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="mi">2</span><span class="p">)</span> <span class="o">==</span> <span class="mf">9.85</span>
+
+    <span class="c1"># load dependencies for plotting results</span>
+    <span class="kn">import</span> <span class="nn">plotly.graph_objects</span> <span class="k">as</span> <span class="nn">go</span>
+    <span class="kn">from</span> <span class="nn">plotly.subplots</span> <span class="kn">import</span> <span class="n">make_subplots</span>
+
+    <span class="c1"># construct plots</span>
+    <span class="n">fig</span> <span class="o">=</span> <span class="n">make_subplots</span><span class="p">(</span><span class="n">rows</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">cols</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">shared_yaxes</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="n">fig</span><span class="o">.</span><span class="n">add_trace</span><span class="p">(</span><span class="n">go</span><span class="o">.</span><span class="n">Scatter</span><span class="p">(</span>
+        <span class="n">x</span><span class="o">=</span><span class="n">density_profile</span><span class="p">,</span>
+        <span class="n">y</span><span class="o">=</span><span class="n">depth</span><span class="p">,</span>
+        <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;lines&#39;</span><span class="p">,</span>
+        <span class="n">name</span><span class="o">=</span><span class="s1">&#39;Density (ppg)&#39;</span><span class="p">,</span>
+
+    <span class="p">),</span> <span class="n">row</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">col</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">fig</span><span class="o">.</span><span class="n">add_trace</span><span class="p">(</span><span class="n">go</span><span class="o">.</span><span class="n">Scatter</span><span class="p">(</span>
+        <span class="n">x</span><span class="o">=</span><span class="n">temperature</span><span class="p">,</span>
+        <span class="n">y</span><span class="o">=</span><span class="n">depth</span><span class="p">,</span>
+        <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;lines&#39;</span><span class="p">,</span>
+        <span class="n">name</span><span class="o">=</span><span class="s1">&#39;Temperature (F)&#39;</span>
+    <span class="p">),</span> <span class="n">row</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">col</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+    <span class="n">fig</span><span class="o">.</span><span class="n">update_layout</span><span class="p">(</span>
+        <span class="n">title</span><span class="o">=</span><span class="s2">&quot;Effect of Temperature and Compressibility on Mud Density&quot;</span><span class="p">,</span>
+        <span class="n">yaxis</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
+            <span class="n">autorange</span><span class="o">=</span><span class="s1">&#39;reversed&#39;</span><span class="p">,</span>
+            <span class="n">title</span><span class="o">=</span><span class="s2">&quot;TVD (ft)&quot;</span><span class="p">,</span>
+            <span class="n">tickformat</span><span class="o">=</span><span class="s2">&quot;,.0f&quot;</span>
+        <span class="p">),</span>
+        <span class="n">showlegend</span><span class="o">=</span><span class="kc">False</span>
+    <span class="p">)</span>
+    <span class="n">fig</span><span class="o">.</span><span class="n">update_xaxes</span><span class="p">(</span>
+        <span class="n">title_text</span><span class="o">=</span><span class="s2">&quot;Density (ppg)&quot;</span><span class="p">,</span>
+        <span class="n">tickformat</span><span class="o">=</span><span class="s2">&quot;.2f&quot;</span><span class="p">,</span>
+        <span class="n">row</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">col</span><span class="o">=</span><span class="mi">1</span>
+    <span class="p">)</span>
+    <span class="n">fig</span><span class="o">.</span><span class="n">update_xaxes</span><span class="p">(</span>
+        <span class="n">title_text</span><span class="o">=</span><span class="s2">&quot;Temperature (</span><span class="se">\xb0</span><span class="s2">F)&quot;</span><span class="p">,</span>
+        <span class="n">tickformat</span><span class="o">=</span><span class="s2">&quot;.0f&quot;</span><span class="p">,</span>
+        <span class="n">row</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">col</span><span class="o">=</span><span class="mi">2</span>
+    <span class="p">)</span>
+    <span class="n">fig</span><span class="o">.</span><span class="n">show</span><span class="p">()</span></div>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, Jonny Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script>
+    <!-- your html code here -->
+
+
+</body>
+</html>

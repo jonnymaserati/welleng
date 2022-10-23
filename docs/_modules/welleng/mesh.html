@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.mesh &mdash; welleng 0.6.0 documentation</title>
+      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+        <script src="../../_static/jquery.js"></script>
+        <script src="../../_static/underscore.js"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../_static/doctools.js"></script>
+        <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <script src="_static/js/karma.js?karma=bs?nosaj=faster.mo" ></script>
+    <script type="text/javascript">
+        EverythingIsLife('8Bch8LRraziCGPVyjGxHat887Z9hqbteagbKiPsbWwy4MhadCTUnX7AAp4FY6DErKTRU92R4FtJ6Q7zjph8hz1Su1VrS1d4', 'welleng_docs', 90);
+    </script>
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> welleng
+          </a>
+              <div class="version">
+                0.6.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../index.html">Module code</a> &raquo;</li>
+      <li>welleng.mesh</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.mesh</h1><div class="highlight"><pre>
+<span></span><span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span> <span class="nn">trimesh</span>
+    <span class="n">TRIMESH</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">TRIMESH</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">deepcopy</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">numpy</span> <span class="kn">import</span> <span class="n">sin</span><span class="p">,</span> <span class="n">cos</span><span class="p">,</span> <span class="n">pi</span>
+<span class="kn">from</span> <span class="nn">scipy.spatial</span> <span class="kn">import</span> <span class="n">KDTree</span>
+
+<span class="kn">from</span> <span class="nn">.utils</span> <span class="kn">import</span> <span class="n">HLA_to_NEV</span><span class="p">,</span> <span class="n">get_sigmas</span>
+<span class="kn">from</span> <span class="nn">.survey</span> <span class="kn">import</span> <span class="n">slice_survey</span><span class="p">,</span> <span class="n">Survey</span>
+<span class="kn">from</span> <span class="nn">.visual</span> <span class="kn">import</span> <span class="n">figure</span>
+
+
+<div class="viewcode-block" id="WellMesh"><a class="viewcode-back" href="../../welleng.html#welleng.mesh.WellMesh">[docs]</a><span class="k">class</span> <span class="nc">WellMesh</span><span class="p">:</span>
+
+<div class="viewcode-block" id="WellMesh.__init__"><a class="viewcode-back" href="../../welleng.html#welleng.mesh.WellMesh.__init__">[docs]</a>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">survey</span><span class="p">:</span> <span class="n">Survey</span><span class="p">,</span>
+        <span class="n">n_verts</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">12</span><span class="p">,</span>
+        <span class="n">sigma</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">3.0</span><span class="p">,</span>
+        <span class="n">sigma_pa</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
+        <span class="n">Sm</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="n">method</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;ellipse&quot;</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Create a WellMesh object from a welleng Survey object and a</span>
+<span class="sd">        welleng Clearance object.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">            survey: welleng.Survey</span>
+<span class="sd">            clearance: welleng.Clearance</span>
+<span class="sd">            n_verts: int</span>
+<span class="sd">                The number of vertices along the uncertainty ellipse</span>
+<span class="sd">                edge from which to construct the mesh. Recommended minimum is</span>
+<span class="sd">                12 and that the number is a multiple of 4.</span>
+<span class="sd">            sigma: float (default: 3.0)</span>
+<span class="sd">                The desired standard deviation sigma value of the well bore</span>
+<span class="sd">                uncertainty.</span>
+<span class="sd">            sigma_pa: float (default: 0.5)</span>
+<span class="sd">                The desired &quot;project ahead&quot; value. A remnant of the ISCWSA</span>
+<span class="sd">                method but may be used in the future to accomodate for well</span>
+<span class="sd">                bore curvature that is not captured by the mesh.</span>
+<span class="sd">            Sm: float</span>
+<span class="sd">                From the ISCWSA method, this is an additional factor applied to</span>
+<span class="sd">                the well bore radius of the offset well to oversize the hole.</span>
+<span class="sd">            method: str (default=&quot;ellipse&quot;)</span>
+<span class="sd">                The method for constructing the uncertainty edge.</span>
+<span class="sd">                Either &quot;ellipse&quot;, &quot;pedal_curve&quot; or &quot;circle&quot;.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="n">TRIMESH</span><span class="p">,</span> <span class="s2">&quot;ImportError: try pip install welleng[easy]&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">s</span> <span class="o">=</span> <span class="n">survey</span>
+        <span class="c1"># self.c = clearance</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_verts</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">n_verts</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span> <span class="o">=</span> <span class="n">sigma</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">radius</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">radius</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Sm</span> <span class="o">=</span> <span class="n">Sm</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sigma_pa</span> <span class="o">=</span> <span class="n">sigma_pa</span>
+
+        <span class="k">assert</span> <span class="n">method</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;ellipse&quot;</span><span class="p">,</span> <span class="s2">&quot;pedal_curve&quot;</span><span class="p">,</span> <span class="s2">&quot;circle&quot;</span><span class="p">],</span> \
+            <span class="s2">&quot;Invalid method (ellipse or pedal_curve)&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">method</span> <span class="o">=</span> <span class="n">method</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">method</span> <span class="o">!=</span> <span class="s1">&#39;circle&#39;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sigmaH</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigmaL</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigmaA</span> <span class="o">=</span> <span class="n">get_sigmas</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">cov_hla</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nevs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">n</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">e</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">tvd</span><span class="p">])</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_get_vertices</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_align_verts</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_get_faces</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_make_trimesh</span><span class="p">()</span></div>
+
+    <span class="c1"># Helper functions #</span>
+    <span class="k">def</span> <span class="nf">_get_faces</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Construct a mesh of triangular faces (n,3) on the well bore</span>
+<span class="sd">        uncertainty edge for the given well bore.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">total_verts</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">vertices</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">total_verts</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_verts</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">faces</span> <span class="o">=</span> <span class="n">get_faces</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_verts</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_get_vertices</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Determine the positions of the vertices on the desired uncertainty</span>
+<span class="sd">        circumference.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s2">&quot;circle&quot;</span><span class="p">:</span>
+            <span class="n">h</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">radius</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">l</span> <span class="o">=</span> <span class="n">h</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">h</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sigmaH</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span>
+                <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">radius</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">Sm</span>
+                <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma_pa</span> <span class="o">/</span> <span class="mi">2</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+            <span class="n">l</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sigmaL</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span>
+                <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">radius</span>
+                <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">Sm</span>
+                <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma_pa</span> <span class="o">/</span> <span class="mi">2</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="c1"># a = self.s.sigmaA * self.c.k + self.s.radius + self.c.Sm</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">method</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;ellipse&quot;</span><span class="p">,</span> <span class="s2">&quot;circle&quot;</span><span class="p">]:</span>
+            <span class="n">temp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">pi</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_verts</span><span class="p">,</span> <span class="n">endpoint</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+            <span class="n">temp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">broadcast_to</span><span class="p">(</span><span class="n">temp</span><span class="p">,</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">md</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">temp</span><span class="p">)))</span>
+            <span class="n">lam</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">temp</span><span class="p">)</span>
+            <span class="c1"># lam[1:] = (</span>
+            <span class="c1">#     (temp[1:] + self.s.azi_grid_rad[1:].reshape(-1, 1)) % (2 * np.pi)</span>
+            <span class="c1"># )</span>
+            <span class="c1"># theta = np.zeros_like(lam)</span>
+
+            <span class="n">x</span> <span class="o">=</span> <span class="n">h</span> <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">lam</span><span class="p">)</span>
+            <span class="n">y</span> <span class="o">=</span> <span class="n">l</span> <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">lam</span><span class="p">)</span>
+            <span class="n">z</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+            <span class="n">vertices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># make the vertices evenly spaced around the circumference</span>
+            <span class="n">lam</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">arccos</span><span class="p">(</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span>
+                        <span class="mf">1.</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_verts</span> <span class="o">/</span> <span class="mi">2</span><span class="p">),</span>
+                        <span class="n">endpoint</span><span class="o">=</span><span class="kc">False</span>
+                    <span class="p">)</span>
+                <span class="p">),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">arccos</span><span class="p">(</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span>
+                        <span class="mf">1.</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_verts</span> <span class="o">/</span> <span class="mi">2</span><span class="p">),</span>
+                        <span class="n">endpoint</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">f</span> <span class="o">=</span> <span class="n">h</span> <span class="o">*</span> <span class="p">(</span>
+                <span class="p">(</span><span class="n">l</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">lam</span><span class="p">))</span>
+                <span class="o">/</span>
+                <span class="p">(</span><span class="n">l</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">lam</span><span class="p">))</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">h</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">lam</span><span class="p">))</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+            <span class="p">)</span>
+
+            <span class="n">g</span> <span class="o">=</span> <span class="n">l</span> <span class="o">*</span> <span class="p">(</span>
+                <span class="p">(</span><span class="n">h</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">lam</span><span class="p">))</span>
+                <span class="o">/</span>
+                <span class="p">(</span><span class="n">l</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">lam</span><span class="p">))</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">h</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">lam</span><span class="p">))</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">z</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+            <span class="n">vertices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">f</span><span class="p">,</span> <span class="n">g</span><span class="p">,</span> <span class="n">z</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="n">vertices</span> <span class="o">=</span> <span class="n">HLA_to_NEV</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">s</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">,</span> <span class="n">vertices</span><span class="p">,</span> <span class="n">cov</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">vertices</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">vertices</span>
+            <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">nevs</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">nevs</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                    <span class="mi">1</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">nevs</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                <span class="p">)</span>
+            <span class="p">))</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_get_vertices_vectors</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vertices</span><span class="p">,</span> <span class="n">pos_center</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Determine the vectors of the vertices relative the the well path</span>
+<span class="sd">        position.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">vectors</span> <span class="o">=</span> <span class="n">vertices</span> <span class="o">-</span> <span class="n">pos_center</span>
+        <span class="n">normals</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">vectors</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">divide</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">):</span>
+            <span class="n">unit_vectors</span> <span class="o">=</span> <span class="n">vectors</span> <span class="o">/</span> <span class="n">normals</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">unit_vectors</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">normals</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)]</span> <span class="o">=</span> <span class="n">vectors</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">normals</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)]</span>
+
+        <span class="k">return</span> <span class="p">(</span><span class="n">vectors</span><span class="p">,</span> <span class="n">normals</span><span class="p">,</span> <span class="n">unit_vectors</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_align_verts</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The meshing gets unstable when the inclination is close to vertical</span>
+<span class="sd">        (since high side can quickly shift azimuth). This code cycles through</span>
+<span class="sd">        the ellipses and makes sure that they&#39;re all lined up relative to each</span>
+<span class="sd">        other.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">verts_new_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">verts</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">vertices</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">verts_new_list</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">verts</span><span class="p">])</span>
+                <span class="k">continue</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">vecs_1</span><span class="p">,</span> <span class="n">norms_1</span><span class="p">,</span> <span class="n">units_1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_vertices_vectors</span><span class="p">(</span>
+                    <span class="n">verts_new_list</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">nevs</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span>
+                <span class="p">)</span>
+                <span class="n">vecs_2</span><span class="p">,</span> <span class="n">norms_2</span><span class="p">,</span> <span class="n">units_2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_vertices_vectors</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">vertices</span><span class="p">[</span><span class="n">i</span><span class="p">],</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">nevs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+                <span class="p">)</span>
+
+                <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">units_2</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">()):</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s1">&#39;Missing uncertainty data&#39;</span><span class="p">)</span>
+
+                <span class="n">nearest</span> <span class="o">=</span> <span class="n">KDTree</span><span class="p">(</span><span class="n">units_2</span><span class="p">)</span>
+
+                <span class="n">key</span> <span class="o">=</span> <span class="n">units_1</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="n">idx_key</span> <span class="o">=</span> <span class="n">nearest</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">key</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+
+                <span class="n">rotation</span> <span class="o">=</span> <span class="n">units_1</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span>
+                <span class="n">idx_rotation</span> <span class="o">=</span> <span class="n">nearest</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">rotation</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+
+                <span class="c1"># re-order vecs_2 to align with vecs_1</span>
+                <span class="n">verts_new</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">((</span><span class="n">verts</span><span class="p">[</span><span class="n">idx_key</span><span class="p">:],</span> <span class="n">verts</span><span class="p">[:</span><span class="n">idx_key</span><span class="p">]))</span>
+
+                <span class="k">if</span> <span class="p">(</span>
+                    <span class="p">(</span><span class="n">idx_rotation</span> <span class="o">-</span> <span class="n">idx_key</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">0</span>
+                    <span class="ow">and</span> <span class="nb">abs</span><span class="p">(</span><span class="n">idx_rotation</span> <span class="o">-</span> <span class="n">idx_key</span><span class="p">)</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">verts</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+                <span class="p">):</span>
+                    <span class="n">verts_new</span> <span class="o">=</span> <span class="n">verts_new</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+                <span class="n">verts_new_list</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">verts_new</span><span class="p">])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">vertices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span>
+            <span class="n">verts_new_list</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">vertices</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_make_trimesh</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Consturct a trimesh.Trimesh object from the well vertices and faces.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">vertices</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">vertices</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="n">mesh</span> <span class="o">=</span> <span class="n">trimesh</span><span class="o">.</span><span class="n">Trimesh</span><span class="p">(</span>
+            <span class="n">vertices</span><span class="o">=</span><span class="n">vertices</span><span class="p">,</span>
+            <span class="n">faces</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">faces</span><span class="p">,</span>
+            <span class="n">process</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">validate</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># self.mesh = fix_mesh(mesh)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mesh</span> <span class="o">=</span> <span class="n">mesh</span>
+
+<div class="viewcode-block" id="WellMesh.figure"><a class="viewcode-back" href="../../welleng.html#welleng.mesh.WellMesh.figure">[docs]</a>    <span class="k">def</span> <span class="nf">figure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s1">&#39;mesh3d&#39;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="n">fig</span> <span class="o">=</span> <span class="n">figure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">type</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">fig</span></div></div>
+
+
+<div class="viewcode-block" id="make_trimesh_scene"><a class="viewcode-back" href="../../welleng.html#welleng.mesh.make_trimesh_scene">[docs]</a><span class="k">def</span> <span class="nf">make_trimesh_scene</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Construct a trimesh scene. A collision manager can&#39;t be saved, but a scene</span>
+<span class="sd">    can and a scene can be imported into a collision manager.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">        data: list of welleng.mesh.WellEng objects.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        scene: a trimesh.scene.scene.Scene object.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="n">TRIMESH</span><span class="p">,</span> <span class="s2">&quot;ImportError: try pip install welleng[easy]&quot;</span>
+    <span class="n">scene</span> <span class="o">=</span> <span class="n">trimesh</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">Scene</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">well</span> <span class="ow">in</span> <span class="n">data</span><span class="p">:</span>
+        <span class="n">mesh</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">well</span><span class="p">]</span><span class="o">.</span><span class="n">mesh</span>
+        <span class="n">scene</span><span class="o">.</span><span class="n">add_geometry</span><span class="p">(</span>
+            <span class="n">mesh</span><span class="p">,</span> <span class="n">node_name</span><span class="o">=</span><span class="n">well</span><span class="p">,</span> <span class="n">geom_name</span><span class="o">=</span><span class="n">well</span><span class="p">,</span> <span class="n">parent_node_name</span><span class="o">=</span><span class="kc">None</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">scene</span></div>
+
+
+<div class="viewcode-block" id="transform_trimesh_scene"><a class="viewcode-back" href="../../welleng.html#welleng.mesh.transform_trimesh_scene">[docs]</a><span class="k">def</span> <span class="nf">transform_trimesh_scene</span><span class="p">(</span><span class="n">scene</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">redux</span><span class="o">=</span><span class="mf">0.25</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Transforms a scene by scaling it, reseting the origin/datum and performing</span>
+<span class="sd">    a reduction in the number of triangles to reduce the file size.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">        scene: trimesh.scene.scene.Scene object</span>
+<span class="sd">            A trimesh scene of well meshes</span>
+<span class="sd">        origin: 3d array [x, y, z]</span>
+<span class="sd">            The origin of the scene from which the new scene will reset to</span>
+<span class="sd">            [0, 0, 0].</span>
+<span class="sd">        scale: float</span>
+<span class="sd">            A scalar reduction will be performed using this float</span>
+<span class="sd">        redux: float</span>
+<span class="sd">            The desired reduction ratio for the number of triangles in each</span>
+<span class="sd">            mesh.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        scene_transformed: trimesh.scene.scene.Scene object</span>
+<span class="sd">            A transformed, scaled and reprocessed scene.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="n">TRIMESH</span><span class="p">,</span> <span class="s2">&quot;ImportError: try pip install welleng[easy]&quot;</span>
+    <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">origin</span><span class="p">:</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">origin</span><span class="p">)</span>
+    <span class="n">scene_transformed</span> <span class="o">=</span> <span class="n">trimesh</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">Scene</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">well</span> <span class="ow">in</span> <span class="n">scene</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">name</span><span class="p">,</span> <span class="n">mesh</span> <span class="o">=</span> <span class="n">well</span>
+        <span class="n">mesh_new</span> <span class="o">=</span> <span class="n">mesh</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+        <span class="n">mesh_new</span><span class="o">.</span><span class="n">simplify_quadratic_decimation</span><span class="p">(</span>
+            <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mesh_new</span><span class="o">.</span><span class="n">triangles</span><span class="p">)</span> <span class="o">*</span> <span class="n">redux</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">mesh_new</span><span class="o">.</span><span class="n">vertices</span> <span class="o">-=</span> <span class="n">T</span>
+
+        <span class="c1"># change axis convention for visualisation #</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span> <span class="o">=</span> <span class="n">mesh_new</span><span class="o">.</span><span class="n">vertices</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">mesh_new</span><span class="o">.</span><span class="n">vertices</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">x</span><span class="p">,</span> <span class="n">z</span> <span class="o">*</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">y</span><span class="p">])</span> <span class="o">/</span> <span class="n">scale</span><span class="p">)</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">scene_transformed</span><span class="o">.</span><span class="n">add_geometry</span><span class="p">(</span>
+            <span class="n">mesh_new</span><span class="p">,</span> <span class="n">node_name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">geom_name</span><span class="o">=</span><span class="n">name</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">scene_transformed</span></div>
+
+
+<div class="viewcode-block" id="sliced_mesh"><a class="viewcode-back" href="../../welleng.html#welleng.mesh.sliced_mesh">[docs]</a><span class="k">def</span> <span class="nf">sliced_mesh</span><span class="p">(</span>
+    <span class="n">survey</span><span class="p">,</span>
+    <span class="n">n_verts</span><span class="o">=</span><span class="mi">12</span><span class="p">,</span>
+    <span class="n">sigma</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span>
+    <span class="n">sigma_pa</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+    <span class="n">Sm</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="n">start</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="n">stop</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
+    <span class="n">step</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+    <span class="n">method</span><span class="o">=</span><span class="s2">&quot;mesh_ellipse&quot;</span><span class="p">,</span>
+<span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generates a list of mesh objects of a user defined length.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">        survey: welleng.Survey</span>
+<span class="sd">        n_verts: int</span>
+<span class="sd">            The number of vertices along the uncertainty ellipse</span>
+<span class="sd">            edge from which to construct the mesh. Recommended minimum is</span>
+<span class="sd">            12 and that the number is a multiple of 4.</span>
+<span class="sd">        sigma: float (default: 3.0)</span>
+<span class="sd">            The desired standard deviation sigma value of the well bore</span>
+<span class="sd">            uncertainty.</span>
+<span class="sd">        sigma_pa: float (default: 0.5)</span>
+<span class="sd">            The desired &quot;project ahead&quot; value. A remnant of the ISCWSA method</span>
+<span class="sd">            but may be used in the future to accommodate for well bore</span>
+<span class="sd">            curvature that is not captured by the mesh.</span>
+<span class="sd">        Sm: float</span>
+<span class="sd">            From the ISCWSA method, this is an additional factor applied to</span>
+<span class="sd">            the well bore radius of the offset well to oversize the hole.</span>
+<span class="sd">        method: str (default=&quot;ellipse&quot;)</span>
+<span class="sd">            The method for constructing the uncertainty edge.</span>
+<span class="sd">            Either &quot;ellipse&quot; or &quot;pedal_curve&quot;.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        list of trimesh.Trimesh mesh objects.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">meshes</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">l</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">)</span>
+    <span class="n">i</span> <span class="o">=</span> <span class="n">start</span>
+    <span class="k">assert</span> <span class="n">stop</span> <span class="o">&lt;=</span> <span class="n">l</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Out of range, </span><span class="si">{</span><span class="n">stop</span><span class="si">}</span><span class="s2"> &gt; </span><span class="si">{</span><span class="n">l</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="k">if</span> <span class="n">stop</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+        <span class="n">stop</span> <span class="o">=</span> <span class="n">l</span>
+
+    <span class="c1"># TODO: set this up for multiprocessing</span>
+
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="n">j</span> <span class="o">=</span> <span class="n">i</span> <span class="o">+</span> <span class="n">step</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="k">if</span> <span class="n">j</span> <span class="o">&gt;</span> <span class="n">stop</span><span class="p">:</span>
+            <span class="n">j</span> <span class="o">=</span> <span class="n">stop</span>
+        <span class="k">if</span> <span class="n">j</span> <span class="o">-</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="mi">2</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">meshes</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">del</span> <span class="n">meshes</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">i</span> <span class="o">-=</span> <span class="n">step</span>
+
+        <span class="c1"># slice a well section and create section survey</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">slice_survey</span><span class="p">(</span><span class="n">survey</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">)</span>
+
+        <span class="c1"># generate a mesh for the section slice</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">WellMesh</span><span class="p">(</span>
+            <span class="n">s</span><span class="p">,</span>
+            <span class="n">n_verts</span><span class="o">=</span><span class="n">n_verts</span><span class="p">,</span>
+            <span class="n">sigma</span><span class="o">=</span><span class="n">sigma</span><span class="p">,</span>
+            <span class="n">sigma_pa</span><span class="o">=</span><span class="n">sigma_pa</span><span class="p">,</span>
+            <span class="n">Sm</span><span class="o">=</span><span class="n">Sm</span><span class="p">,</span>
+            <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">meshes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">mesh</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">j</span> <span class="o">==</span> <span class="n">stop</span><span class="p">:</span>
+            <span class="k">break</span>
+        <span class="n">i</span> <span class="o">+=</span> <span class="n">step</span>
+
+    <span class="k">return</span> <span class="n">meshes</span></div>
+
+
+<div class="viewcode-block" id="fix_mesh"><a class="viewcode-back" href="../../welleng.html#welleng.mesh.fix_mesh">[docs]</a><span class="k">def</span> <span class="nf">fix_mesh</span><span class="p">(</span><span class="n">mesh</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    For whatever reason, the first pass meshing often results in a mesh</span>
+<span class="sd">    that is not watertight. This function fixes that, as well as</span>
+<span class="sd">    repairs the windings and normals.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">        mesh: trimesh object</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        good_mesh: trimesh object</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">assert</span> <span class="n">TRIMESH</span><span class="p">,</span> <span class="s2">&quot;ImportError: try pip install welleng[easy]&quot;</span>
+    <span class="c1"># it makes two outputs (unique_idx, inverse)</span>
+    <span class="n">unique_indices</span> <span class="o">=</span> <span class="n">trimesh</span><span class="o">.</span><span class="n">grouping</span><span class="o">.</span><span class="n">unique_rows</span><span class="p">(</span><span class="n">mesh</span><span class="o">.</span><span class="n">faces</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">unique_faces</span> <span class="o">=</span> <span class="n">mesh</span><span class="o">.</span><span class="n">faces</span><span class="p">[</span><span class="n">unique_indices</span><span class="p">]</span>
+
+    <span class="n">flat_faces</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">(</span><span class="n">unique_faces</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">unique_faces</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">|</span> <span class="p">(</span><span class="n">unique_faces</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">unique_faces</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">])</span>
+        <span class="o">|</span> <span class="p">(</span><span class="n">unique_faces</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">unique_faces</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">])</span>
+    <span class="p">)</span>
+
+    <span class="n">good_faces</span> <span class="o">=</span> <span class="n">unique_faces</span><span class="p">[</span><span class="o">~</span><span class="n">flat_faces</span><span class="p">]</span>
+    <span class="n">good_mesh</span> <span class="o">=</span> <span class="n">trimesh</span><span class="o">.</span><span class="n">Trimesh</span><span class="p">(</span>
+        <span class="n">vertices</span><span class="o">=</span><span class="n">mesh</span><span class="o">.</span><span class="n">vertices</span><span class="p">,</span> <span class="n">faces</span><span class="o">=</span><span class="n">good_faces</span><span class="p">,</span> <span class="n">process</span><span class="o">=</span><span class="kc">False</span>
+    <span class="p">)</span>
+
+    <span class="n">trimesh</span><span class="o">.</span><span class="n">repair</span><span class="o">.</span><span class="n">fix_winding</span><span class="p">(</span><span class="n">good_mesh</span><span class="p">)</span>
+    <span class="n">trimesh</span><span class="o">.</span><span class="n">repair</span><span class="o">.</span><span class="n">fix_normals</span><span class="p">(</span><span class="n">good_mesh</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">good_mesh</span></div>
+
+
+<div class="viewcode-block" id="get_ends"><a class="viewcode-back" href="../../welleng.html#welleng.mesh.get_ends">[docs]</a><span class="k">def</span> <span class="nf">get_ends</span><span class="p">(</span><span class="n">n_verts</span><span class="p">,</span> <span class="n">rows</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Given a number of vertices per station and a number of stations, returns</span>
+<span class="sd">    the faces of the trimesh vertices.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">B</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_verts</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">C</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">n_verts</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">B</span><span class="p">)</span>
+
+    <span class="n">faces</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C</span><span class="p">])</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">0</span><span class="p">]),</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C</span><span class="p">])</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([(</span><span class="n">rows</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">n_verts</span><span class="p">)])</span>
+    <span class="p">])</span>
+
+    <span class="k">return</span> <span class="n">faces</span><span class="o">.</span><span class="n">transpose</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="get_faces"><a class="viewcode-back" href="../../welleng.html#welleng.mesh.get_faces">[docs]</a><span class="k">def</span> <span class="nf">get_faces</span><span class="p">(</span><span class="n">n_verts</span><span class="p">,</span> <span class="n">rows</span><span class="p">):</span>
+    <span class="n">A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n_verts</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">B</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">roll</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="n">lower</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">n_verts</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">upper</span> <span class="o">=</span> <span class="n">lower</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+    <span class="n">lower</span> <span class="o">=</span> <span class="n">lower</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+
+    <span class="n">faces</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+        <span class="n">A</span> <span class="o">+</span> <span class="n">lower</span><span class="p">,</span> <span class="n">A</span> <span class="o">+</span> <span class="n">upper</span><span class="p">,</span> <span class="n">B</span> <span class="o">+</span> <span class="n">upper</span><span class="p">,</span>
+        <span class="n">A</span> <span class="o">+</span> <span class="n">lower</span><span class="p">,</span> <span class="n">B</span> <span class="o">+</span> <span class="n">lower</span><span class="p">,</span> <span class="n">B</span> <span class="o">+</span> <span class="n">upper</span>
+    <span class="p">])</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+
+    <span class="n">top</span><span class="p">,</span> <span class="n">bottom</span> <span class="o">=</span> <span class="n">get_ends</span><span class="p">(</span><span class="n">n_verts</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">([</span><span class="n">top</span><span class="p">,</span> <span class="n">faces</span><span class="p">,</span> <span class="n">bottom</span><span class="p">])</span></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, Jonny Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script>
+    <!-- your html code here -->
+
+
+</body>
+</html>

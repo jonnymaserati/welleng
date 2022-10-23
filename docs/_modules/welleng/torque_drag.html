@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.torque_drag &mdash; welleng 0.6.0 documentation</title>
+      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+        <script src="../../_static/jquery.js"></script>
+        <script src="../../_static/underscore.js"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../_static/doctools.js"></script>
+        <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <script src="_static/js/karma.js?karma=bs?nosaj=faster.mo" ></script>
+    <script type="text/javascript">
+        EverythingIsLife('8Bch8LRraziCGPVyjGxHat887Z9hqbteagbKiPsbWwy4MhadCTUnX7AAp4FY6DErKTRU92R4FtJ6Q7zjph8hz1Su1VrS1d4', 'welleng_docs', 90);
+    </script>
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> welleng
+          </a>
+              <div class="version">
+                0.6.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../index.html">Module code</a> &raquo;</li>
+      <li>welleng.torque_drag</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.torque_drag</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">deepcopy</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">plotly.subplots</span> <span class="kn">import</span> <span class="n">make_subplots</span>
+    <span class="kn">import</span> <span class="nn">plotly.graph_objects</span> <span class="k">as</span> <span class="nn">go</span>
+    <span class="n">PLOTLY</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">PLOTLY</span> <span class="o">=</span> <span class="kc">False</span>
+
+<span class="kn">from</span> <span class="nn">.survey</span> <span class="kn">import</span> <span class="n">interpolate_md</span><span class="p">,</span> <span class="n">Survey</span>
+<span class="kn">from</span> <span class="nn">.units</span> <span class="kn">import</span> <span class="n">ureg</span>
+
+
+<div class="viewcode-block" id="TorqueDrag"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.TorqueDrag">[docs]</a><span class="k">class</span> <span class="nc">TorqueDrag</span><span class="p">:</span>
+<div class="viewcode-block" id="TorqueDrag.__init__"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.TorqueDrag.__init__">[docs]</a>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">survey</span><span class="p">,</span> <span class="n">wellbore</span><span class="p">,</span> <span class="n">string</span><span class="p">,</span> <span class="n">fluid_density</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">wob</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tob</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">overpull</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        A class for calculating wellbore torque and drag, based on the</span>
+<span class="sd">        &quot;Torque and Drag in Directional Wells--Prediction and Measurement</span>
+<span class="sd">        (SPE 11380-PA) by C.A. Johancsik et al.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        survey: welleng.survey.Survey instance</span>
+<span class="sd">            The well trajectory of the scenario being modelled.</span>
+<span class="sd">        wellbore: welleng.architecture.WellBore instance</span>
+<span class="sd">            The well bore architecture of the scenario being modelled.</span>
+<span class="sd">        string: welleng.architecture.BHA or welleng.architecture.CasingString</span>
+<span class="sd">        instance</span>
+<span class="sd">            The string being run inside the well bore for the scenario being</span>
+<span class="sd">            modelled.</span>
+<span class="sd">        fluid_density: float</span>
+<span class="sd">            The density (in SG) of the fluid in the well bore.</span>
+<span class="sd">        name: str</span>
+<span class="sd">            The name of the scenario being modeled.</span>
+<span class="sd">        wob: float</span>
+<span class="sd">            The compressive force (weight on bit) applied at the bottom of the</span>
+<span class="sd">            string in N.</span>
+<span class="sd">        tob: float</span>
+<span class="sd">            The torque (torque on bit) applied at the bottom of the string in</span>
+<span class="sd">            N.m.</span>
+<span class="sd">        overpull: float</span>
+<span class="sd">            The tension applied at the bottom of the string in N.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="n">wellbore</span><span class="o">.</span><span class="n">complete</span><span class="p">,</span> <span class="s2">&quot;Wellbore not complete&quot;</span>
+        <span class="k">assert</span> <span class="n">string</span><span class="o">.</span><span class="n">complete</span><span class="p">,</span> <span class="s2">&quot;String not complete&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">survey_original</span> <span class="o">=</span> <span class="n">survey</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wellbore</span> <span class="o">=</span> <span class="n">wellbore</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">string</span> <span class="o">=</span> <span class="n">string</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fluid_density</span> <span class="o">=</span> <span class="n">fluid_density</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_survey_points_from_strings</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">bottom</span><span class="p">)[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">get_buoyancy_factors</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">get_inc_average</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">get_inc_delta</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">get_azi_delta</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">get_weight_buoyed_and_radius</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">torque</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tension</span> <span class="o">=</span> <span class="p">{},</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">get_coeff_friction_sliding</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">get_forces_and_torsion</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">((</span><span class="n">wob</span><span class="p">,</span> <span class="n">tob</span><span class="p">,</span> <span class="n">overpull</span><span class="p">)):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">get_forces_and_torsion</span><span class="p">(</span><span class="n">wob</span><span class="o">=</span><span class="n">wob</span><span class="p">,</span> <span class="n">tob</span><span class="o">=</span><span class="n">tob</span><span class="p">,</span> <span class="n">overpull</span><span class="o">=</span><span class="n">overpull</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="TorqueDrag.add_survey_points_from_strings"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.TorqueDrag.add_survey_points_from_strings">[docs]</a>    <span class="k">def</span> <span class="nf">add_survey_points_from_strings</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that there&#39;s survey stations for the top and bottoms of</span>
+<span class="sd">        the string sections to ensure that the torque and drag is</span>
+<span class="sd">        calculated for these key locations.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">q</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">wellbore</span><span class="o">.</span><span class="n">sections</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">v</span><span class="p">[</span><span class="s1">&#39;bottom&#39;</span><span class="p">]</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">survey_original</span><span class="o">.</span><span class="n">md</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">q</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">interpolate_md</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">survey_original</span><span class="p">,</span> <span class="n">v</span><span class="p">[</span><span class="s1">&#39;bottom&#39;</span><span class="p">]</span>
+                <span class="p">))</span>
+
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">sections</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">v</span><span class="p">[</span><span class="s1">&#39;bottom&#39;</span><span class="p">]</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">survey_original</span><span class="o">.</span><span class="n">md</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">q</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">interpolate_md</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">survey_original</span><span class="p">,</span> <span class="n">v</span><span class="p">[</span><span class="s1">&#39;bottom&#39;</span><span class="p">]</span>
+                <span class="p">))</span>
+
+        <span class="n">md</span><span class="p">,</span> <span class="n">inc</span><span class="p">,</span> <span class="n">azi</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">survey_original</span><span class="o">.</span><span class="n">md</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">survey_original</span><span class="o">.</span><span class="n">inc_rad</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">survey_original</span><span class="o">.</span><span class="n">azi_grid_rad</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="p">)</span>
+
+        <span class="n">md</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">station</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">station</span> <span class="ow">in</span> <span class="n">q</span><span class="p">])</span>
+        <span class="n">inc</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">station</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">station</span> <span class="ow">in</span> <span class="n">q</span><span class="p">])</span>
+        <span class="n">azi</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">station</span><span class="o">.</span><span class="n">azi_grid_rad</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">station</span> <span class="ow">in</span> <span class="n">q</span><span class="p">])</span>
+
+        <span class="n">md</span><span class="p">,</span> <span class="n">inc</span><span class="p">,</span> <span class="n">azi</span> <span class="o">=</span> <span class="nb">zip</span><span class="p">(</span><span class="o">*</span><span class="nb">sorted</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">md</span><span class="p">,</span> <span class="n">inc</span><span class="p">,</span> <span class="n">azi</span><span class="p">)))</span>
+
+        <span class="n">sh</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">survey_original</span><span class="o">.</span><span class="n">header</span>
+        <span class="n">sh</span><span class="o">.</span><span class="n">azi_reference</span> <span class="o">=</span> <span class="s1">&#39;grid&#39;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">survey</span> <span class="o">=</span> <span class="n">Survey</span><span class="p">(</span>
+            <span class="n">md</span><span class="o">=</span><span class="n">md</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">inc</span><span class="p">,</span> <span class="n">azi</span><span class="o">=</span><span class="n">azi</span><span class="p">,</span> <span class="n">header</span><span class="o">=</span><span class="n">sh</span><span class="p">,</span> <span class="n">deg</span><span class="o">=</span><span class="kc">False</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="TorqueDrag.get_buoyancy_factors"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.TorqueDrag.get_buoyancy_factors">[docs]</a>    <span class="k">def</span> <span class="nf">get_buoyancy_factors</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Determine the buoyancy factor for each string section and add it</span>
+<span class="sd">        to the string sections dict.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">sections</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">v</span><span class="p">[</span><span class="s1">&#39;buoyancy_factor&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">buoyancy_factor</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">fluid_density</span><span class="p">,</span> <span class="n">v</span><span class="p">[</span><span class="s1">&#39;density&#39;</span><span class="p">]</span>
+            <span class="p">)</span></div>
+
+<div class="viewcode-block" id="TorqueDrag.get_inc_average"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.TorqueDrag.get_inc_average">[docs]</a>    <span class="k">def</span> <span class="nf">get_inc_average</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inc_average</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inc_average</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">average</span><span class="p">(</span>
+            <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span>
+            <span class="n">axis</span><span class="o">=</span><span class="mi">0</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="TorqueDrag.get_inc_delta"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.TorqueDrag.get_inc_delta">[docs]</a>    <span class="k">def</span> <span class="nf">get_inc_delta</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inc_delta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inc_delta</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="TorqueDrag.get_azi_delta"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.TorqueDrag.get_azi_delta">[docs]</a>    <span class="k">def</span> <span class="nf">get_azi_delta</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">azi_delta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_grid_rad</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">azi_delta</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_grid_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_grid_rad</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="TorqueDrag.get_characteristic_od"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.TorqueDrag.get_characteristic_od">[docs]</a>    <span class="k">def</span> <span class="nf">get_characteristic_od</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">section</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">sections</span><span class="p">[</span><span class="n">section</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;tooljoint_od&#39;</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">sections</span><span class="p">[</span><span class="n">section</span><span class="p">][</span><span class="s1">&#39;tooljoint_od&#39;</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">sections</span><span class="p">[</span><span class="n">section</span><span class="p">][</span><span class="s1">&#39;od&#39;</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="TorqueDrag.get_weight_buoyed_and_radius"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.TorqueDrag.get_weight_buoyed_and_radius">[docs]</a>    <span class="k">def</span> <span class="nf">get_weight_buoyed_and_radius</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">section</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">weights</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">diameter</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">get_characteristic_od</span><span class="p">(</span><span class="n">section</span><span class="p">)]</span>
+        <span class="k">for</span> <span class="n">md</span><span class="p">,</span> <span class="n">delta_md</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">delta_md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]):</span>
+            <span class="k">if</span> <span class="n">md</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">bottom</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="k">while</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">if</span> <span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">sections</span><span class="p">[</span><span class="n">section</span><span class="p">][</span><span class="s1">&#39;top&#39;</span><span class="p">]</span>
+                    <span class="o">&lt;</span> <span class="n">md</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">sections</span><span class="p">[</span><span class="n">section</span><span class="p">][</span><span class="s1">&#39;bottom&#39;</span><span class="p">]</span>
+                <span class="p">):</span>
+                    <span class="n">weights</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">sections</span><span class="p">[</span><span class="n">section</span><span class="p">][</span><span class="s1">&#39;unit_weight&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="n">delta_md</span>
+                        <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">sections</span><span class="p">[</span><span class="n">section</span><span class="p">][</span><span class="s1">&#39;buoyancy_factor&#39;</span><span class="p">]</span>
+                    <span class="p">)</span>
+                    <span class="n">diameter</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">get_characteristic_od</span><span class="p">(</span><span class="n">section</span><span class="p">)</span>
+                    <span class="p">)</span>
+                    <span class="k">break</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">section</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">weight_buoyed</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">weights</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">radius</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">diameter</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span></div>
+
+<div class="viewcode-block" id="TorqueDrag.get_coeff_friction_sliding"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.TorqueDrag.get_coeff_friction_sliding">[docs]</a>    <span class="k">def</span> <span class="nf">get_coeff_friction_sliding</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">section</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">friction</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">wellbore</span><span class="o">.</span><span class="n">sections</span><span class="p">[</span><span class="n">section</span><span class="p">][</span><span class="s1">&#39;coeff_friction_sliding&#39;</span><span class="p">]]</span>
+        <span class="k">for</span> <span class="n">md</span><span class="p">,</span> <span class="n">delta_md</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">delta_md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]):</span>
+            <span class="k">if</span> <span class="n">md</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">wellbore</span><span class="o">.</span><span class="n">bottom</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="k">while</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">if</span> <span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">wellbore</span><span class="o">.</span><span class="n">sections</span><span class="p">[</span><span class="n">section</span><span class="p">][</span><span class="s1">&#39;top&#39;</span><span class="p">]</span>
+                    <span class="o">&lt;</span> <span class="n">md</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">wellbore</span><span class="o">.</span><span class="n">sections</span><span class="p">[</span><span class="n">section</span><span class="p">][</span><span class="s1">&#39;bottom&#39;</span><span class="p">]</span>
+                <span class="p">):</span>
+                    <span class="n">friction</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">wellbore</span><span class="o">.</span><span class="n">sections</span><span class="p">[</span><span class="n">section</span><span class="p">][</span><span class="s1">&#39;coeff_friction_sliding&#39;</span><span class="p">]</span>  <span class="c1"># noqa: E501</span>
+                    <span class="p">)</span>
+                    <span class="k">break</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">section</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">coeff_friction_sliding</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">friction</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="TorqueDrag.get_forces_and_torsion"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.TorqueDrag.get_forces_and_torsion">[docs]</a>    <span class="k">def</span> <span class="nf">get_forces_and_torsion</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wob</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">tob</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">overpull</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">((</span><span class="n">wob</span><span class="p">,</span> <span class="n">tob</span><span class="p">)):</span>
+            <span class="k">assert</span> <span class="n">tob</span><span class="p">,</span> <span class="s2">&quot;Can&#39;t have WOB without TOB&quot;</span>
+            <span class="k">assert</span> <span class="n">wob</span><span class="p">,</span> <span class="s2">&quot;Can&#39;t have TOB wihtouh WOB&quot;</span>
+            <span class="n">ft</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="n">wob</span><span class="p">,</span> <span class="o">-</span><span class="n">wob</span><span class="p">])]</span>
+            <span class="n">tn</span> <span class="o">=</span> <span class="p">[</span><span class="n">tob</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ft</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">3</span><span class="p">)]</span>
+            <span class="n">tn</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">overpull</span><span class="p">:</span>
+            <span class="n">ft</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">overpull</span>
+        <span class="n">fn</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">inc_average</span><span class="p">[:</span><span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="p">][::</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">inc_delta</span><span class="p">[:</span><span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="p">][::</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">azi_delta</span><span class="p">[:</span><span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="p">][::</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">weight_buoyed</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">coeff_friction_sliding</span><span class="p">[:</span><span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="p">][::</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">radius</span>
+        <span class="p">):</span>
+            <span class="p">(</span>
+                <span class="n">inc_average</span><span class="p">,</span> <span class="n">inc_delta</span><span class="p">,</span> <span class="n">azi_delta</span><span class="p">,</span> <span class="n">weight_buoyed</span><span class="p">,</span>
+                <span class="n">coeff_friction_sliding</span><span class="p">,</span> <span class="n">radius</span>
+            <span class="p">)</span> <span class="o">=</span> <span class="n">row</span>
+
+            <span class="n">fn</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">force_normal</span><span class="p">(</span>
+                <span class="n">ft</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">inc_average</span><span class="p">,</span> <span class="n">inc_delta</span><span class="p">,</span> <span class="n">azi_delta</span><span class="p">,</span>
+                <span class="n">weight_buoyed</span>
+            <span class="p">))</span>
+            <span class="n">ft</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ft</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">force_tension_delta</span><span class="p">(</span>
+                <span class="n">weight_buoyed</span><span class="p">,</span> <span class="n">inc_average</span><span class="p">,</span> <span class="n">coeff_friction_sliding</span><span class="p">,</span> <span class="n">fn</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="p">)))</span>
+            <span class="n">tn</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">tn</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">torsion_delta</span><span class="p">(</span>
+                <span class="n">coeff_friction_sliding</span><span class="p">,</span> <span class="n">fn</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="mi">2</span><span class="p">],</span> <span class="n">radius</span>
+            <span class="p">)))</span>
+
+        <span class="n">fn</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">fn</span><span class="p">)[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">ft</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">ft</span><span class="p">)[::</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="mi">1</span><span class="p">:]</span>
+        <span class="n">tn</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">tn</span><span class="p">)[::</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="mi">1</span><span class="p">:]</span>
+        <span class="k">if</span> <span class="n">wob</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tension</span><span class="p">[</span><span class="s2">&quot;drilling&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ft</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tension</span><span class="p">[</span><span class="s2">&quot;sliding&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ft</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tension</span><span class="p">[</span><span class="s1">&#39;slackoff&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ft</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tension</span><span class="p">[</span><span class="s1">&#39;rotating&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ft</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">tob</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">torque</span><span class="p">[</span><span class="s1">&#39;drilling&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">tn</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">torque</span><span class="p">[</span><span class="s1">&#39;rotating&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">tn</span>
+
+        <span class="k">if</span> <span class="n">overpull</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tension</span><span class="p">[</span><span class="s1">&#39;overpull&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ft</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tension</span><span class="p">[</span><span class="s1">&#39;pickup&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ft</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">wob</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tob</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">overpull</span> <span class="o">=</span> <span class="n">wob</span><span class="p">,</span> <span class="n">tob</span><span class="p">,</span> <span class="n">overpull</span></div>
+
+<div class="viewcode-block" id="TorqueDrag.figure"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.TorqueDrag.figure">[docs]</a>    <span class="k">def</span> <span class="nf">figure</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">figure_string_tension_and_torque</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div></div>
+
+
+<div class="viewcode-block" id="force_normal"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.force_normal">[docs]</a><span class="k">def</span> <span class="nf">force_normal</span><span class="p">(</span>
+    <span class="n">force_tension</span><span class="p">,</span>
+    <span class="n">inc_average</span><span class="p">,</span>
+    <span class="n">inc_delta</span><span class="p">,</span>
+    <span class="n">azi_delta</span><span class="p">,</span>
+    <span class="n">weight_buoyed</span><span class="p">,</span>
+<span class="p">):</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span>
+        <span class="p">(</span><span class="n">force_tension</span> <span class="o">*</span> <span class="n">azi_delta</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc_average</span><span class="p">))</span> <span class="o">**</span> <span class="mi">2</span>
+        <span class="o">+</span> <span class="p">(</span>
+            <span class="n">force_tension</span> <span class="o">*</span> <span class="n">inc_delta</span>
+            <span class="o">+</span> <span class="n">weight_buoyed</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc_average</span><span class="p">)</span>
+        <span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">result</span></div>
+
+
+<div class="viewcode-block" id="force_tension_delta"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.force_tension_delta">[docs]</a><span class="k">def</span> <span class="nf">force_tension_delta</span><span class="p">(</span>
+    <span class="n">weight_buoyed</span><span class="p">,</span>
+    <span class="n">inc_average</span><span class="p">,</span>
+    <span class="n">coeff_friction_sliding</span><span class="p">,</span>
+    <span class="n">force_normal</span>
+<span class="p">):</span>
+    <span class="n">A</span> <span class="o">=</span> <span class="n">weight_buoyed</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc_average</span><span class="p">)</span>
+    <span class="n">B</span> <span class="o">=</span> <span class="n">coeff_friction_sliding</span> <span class="o">*</span> <span class="n">force_normal</span>
+
+    <span class="n">pickup</span><span class="p">,</span> <span class="n">slackoff</span><span class="p">,</span> <span class="n">rotating</span> <span class="o">=</span> <span class="n">A</span> <span class="o">+</span> <span class="n">B</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
+
+    <span class="k">return</span> <span class="p">(</span><span class="n">pickup</span><span class="p">,</span> <span class="n">slackoff</span><span class="p">,</span> <span class="n">rotating</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="torsion_delta"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.torsion_delta">[docs]</a><span class="k">def</span> <span class="nf">torsion_delta</span><span class="p">(</span>
+    <span class="n">coeff_friction_sliding</span><span class="p">,</span>
+    <span class="n">force_normal</span><span class="p">,</span>
+    <span class="n">radius</span>
+<span class="p">):</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">coeff_friction_sliding</span> <span class="o">*</span> <span class="n">force_normal</span> <span class="o">*</span> <span class="n">radius</span>
+
+    <span class="k">return</span> <span class="n">result</span></div>
+
+
+<div class="viewcode-block" id="buoyancy_factor"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.buoyancy_factor">[docs]</a><span class="k">def</span> <span class="nf">buoyancy_factor</span><span class="p">(</span><span class="n">fluid_density</span><span class="p">,</span> <span class="n">string_density</span><span class="o">=</span><span class="mf">7.85</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    fluid_density: float</span>
+<span class="sd">        The density of the fluid in SG.</span>
+<span class="sd">    string_density: float</span>
+<span class="sd">        The density of the string, typically made from steel.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    result: float</span>
+<span class="sd">        The buoyancy factor when when multiplied against the string weight</span>
+<span class="sd">        yields the bouyed string weight.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="p">(</span><span class="n">string_density</span> <span class="o">-</span> <span class="n">fluid_density</span><span class="p">)</span> <span class="o">/</span> <span class="n">string_density</span>
+
+    <span class="k">return</span> <span class="n">result</span></div>
+
+
+<div class="viewcode-block" id="HookLoad"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.HookLoad">[docs]</a><span class="k">class</span> <span class="nc">HookLoad</span><span class="p">:</span>
+<div class="viewcode-block" id="HookLoad.__init__"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.HookLoad.__init__">[docs]</a>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">survey</span><span class="p">,</span> <span class="n">wellbore</span><span class="p">,</span> <span class="n">string</span><span class="p">,</span> <span class="n">fluid_density</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">ff_range</span><span class="o">=</span><span class="p">(</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.4</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">)</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        A class for calculating the hookload or broomstick plot data for</span>
+<span class="sd">        running or pulling a string in a wellbore.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        survey: welleng.survey.Survey instance</span>
+<span class="sd">            The well trajectory of the scenario being modelled.</span>
+<span class="sd">        wellbore: welleng.architecture.WellBore instance</span>
+<span class="sd">            The well bore architecture of the scenario being modelled.</span>
+<span class="sd">        string: welleng.architecture.BHA or welleng.architecture.CasingString</span>
+<span class="sd">        instance</span>
+<span class="sd">            The string being run inside the well bore for the scenario being</span>
+<span class="sd">            modelled.</span>
+<span class="sd">        fluid_density: float</span>
+<span class="sd">            The density (in SG) of the fluid in the well bore.</span>
+<span class="sd">        step: float</span>
+<span class="sd">            The measured depth step distance in meters to move the string.</span>
+<span class="sd">        name: str</span>
+<span class="sd">            The name of the scenario being modeled.</span>
+<span class="sd">        ff_range: (3) tuple</span>
+<span class="sd">            The start, stop and step for the range of friction factors to be</span>
+<span class="sd">            used in the hookload calculations.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">survey</span> <span class="o">=</span> <span class="n">survey</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wellbore</span> <span class="o">=</span> <span class="n">wellbore</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">string</span> <span class="o">=</span> <span class="n">string</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fluid_density</span> <span class="o">=</span> <span class="n">fluid_density</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">step</span> <span class="o">=</span> <span class="n">step</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">get_ff_range</span><span class="p">(</span><span class="n">ff_range</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">get_data</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="HookLoad.get_ff_range"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.HookLoad.get_ff_range">[docs]</a>    <span class="k">def</span> <span class="nf">get_ff_range</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ff_range</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ff_range</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="o">*</span><span class="n">ff_range</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ff_range</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ff_range</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span></div>
+
+<div class="viewcode-block" id="HookLoad.get_data"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.HookLoad.get_data">[docs]</a>    <span class="k">def</span> <span class="nf">get_data</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">md_range</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">top</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">step</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">bottom</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">step</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">md_range</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">bottom</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">ff</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">ff_range</span><span class="p">:</span>
+            <span class="n">wellbore_temp</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wellbore</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">wellbore_temp</span><span class="o">.</span><span class="n">sections</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                <span class="n">wellbore_temp</span><span class="o">.</span><span class="n">sections</span><span class="p">[</span><span class="n">k</span><span class="p">][</span><span class="s1">&#39;coeff_friction_sliding&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ff</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">ff</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="n">data_temp</span> <span class="o">=</span> <span class="p">[]</span>
+
+            <span class="k">for</span> <span class="n">md</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">md_range</span><span class="p">:</span>
+                <span class="n">bha_temp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">depth</span><span class="p">(</span><span class="n">md</span><span class="p">)</span>
+                <span class="n">data_temp</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">TorqueDrag</span><span class="p">(</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="p">,</span> <span class="n">wellbore_temp</span><span class="p">,</span> <span class="n">bha_temp</span><span class="p">,</span>
+                        <span class="n">fluid_density</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">fluid_density</span><span class="p">,</span>
+                        <span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span>
+                    <span class="p">)</span>
+                <span class="p">)</span>
+
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">data_temp</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tension</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">ff</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+                    <span class="n">d</span><span class="o">.</span><span class="n">tension</span><span class="p">[</span><span class="n">t</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">data_temp</span>
+                <span class="p">]</span></div>
+
+<div class="viewcode-block" id="HookLoad.figure"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.HookLoad.figure">[docs]</a>    <span class="k">def</span> <span class="nf">figure</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">figure_hookload</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div></div>
+
+
+<div class="viewcode-block" id="figure_string_tension_and_torque"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.figure_string_tension_and_torque">[docs]</a><span class="k">def</span> <span class="nf">figure_string_tension_and_torque</span><span class="p">(</span>
+    <span class="n">td</span><span class="p">,</span>
+    <span class="n">units</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
+        <span class="n">depth</span><span class="o">=</span><span class="s1">&#39;ft&#39;</span><span class="p">,</span>
+        <span class="n">tension</span><span class="o">=</span><span class="s1">&#39;lbf&#39;</span><span class="p">,</span>
+        <span class="n">torque</span><span class="o">=</span><span class="s1">&#39;ft_lbf&#39;</span>
+    <span class="p">)</span>
+<span class="p">):</span>
+    <span class="k">assert</span> <span class="n">PLOTLY</span><span class="p">,</span> <span class="s2">&quot;Please install plotly&quot;</span>
+
+    <span class="n">fig</span> <span class="o">=</span> <span class="n">make_subplots</span><span class="p">(</span><span class="n">rows</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">cols</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">td</span><span class="o">.</span><span class="n">tension</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">fig</span><span class="o">.</span><span class="n">add_trace</span><span class="p">(</span>
+            <span class="n">go</span><span class="o">.</span><span class="n">Scatter</span><span class="p">(</span>
+                <span class="n">x</span><span class="o">=</span><span class="p">((</span><span class="n">v</span> <span class="o">*</span> <span class="n">ureg</span><span class="p">(</span><span class="s1">&#39;N&#39;</span><span class="p">))</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">units</span><span class="p">[</span><span class="s1">&#39;tension&#39;</span><span class="p">]))</span><span class="o">.</span><span class="n">m</span><span class="p">,</span>
+                <span class="n">y</span><span class="o">=</span><span class="p">((</span><span class="n">td</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span> <span class="o">*</span> <span class="n">ureg</span><span class="o">.</span><span class="n">meters</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">units</span><span class="p">[</span><span class="s1">&#39;depth&#39;</span><span class="p">]))</span><span class="o">.</span><span class="n">m</span><span class="p">,</span>
+                <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;tension: </span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="p">),</span>
+            <span class="n">row</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">col</span><span class="o">=</span><span class="mi">1</span>
+        <span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="ow">in</span> <span class="n">td</span><span class="o">.</span><span class="n">torque</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">fig</span><span class="o">.</span><span class="n">add_trace</span><span class="p">(</span>
+            <span class="n">go</span><span class="o">.</span><span class="n">Scatter</span><span class="p">(</span>
+                <span class="n">x</span><span class="o">=</span><span class="p">((</span><span class="n">v</span> <span class="o">*</span> <span class="n">ureg</span><span class="p">(</span><span class="s1">&#39;Nm&#39;</span><span class="p">))</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">units</span><span class="p">[</span><span class="s1">&#39;torque&#39;</span><span class="p">]))</span><span class="o">.</span><span class="n">m</span><span class="p">,</span>
+                <span class="n">y</span><span class="o">=</span><span class="p">((</span><span class="n">td</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span> <span class="o">*</span> <span class="n">ureg</span><span class="o">.</span><span class="n">meters</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">units</span><span class="p">[</span><span class="s1">&#39;depth&#39;</span><span class="p">]))</span><span class="o">.</span><span class="n">m</span><span class="p">,</span>
+                <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;torque: </span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="p">),</span>
+            <span class="n">row</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">col</span><span class="o">=</span><span class="mi">2</span>
+        <span class="p">)</span>
+
+    <span class="n">fig</span><span class="o">.</span><span class="n">update_layout</span><span class="p">(</span>
+        <span class="n">title_text</span><span class="o">=</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;&lt;b&gt;wellbore:&lt;/b&gt; </span><span class="si">{</span><span class="n">td</span><span class="o">.</span><span class="n">wellbore</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&lt;br&gt;&quot;</span>
+            <span class="o">+</span> <span class="sa">f</span><span class="s2">&quot;&lt;b&gt;string:&lt;/b&gt; </span><span class="si">{</span><span class="n">td</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">),</span>
+        <span class="n">xaxis</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
+            <span class="n">title</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Tension (</span><span class="si">{</span><span class="n">units</span><span class="p">[</span><span class="s1">&#39;tension&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">)&quot;</span>
+        <span class="p">),</span>
+        <span class="n">yaxis</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
+            <span class="n">autorange</span><span class="o">=</span><span class="s1">&#39;reversed&#39;</span><span class="p">,</span>
+            <span class="n">title</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;MD (</span><span class="si">{</span><span class="n">units</span><span class="p">[</span><span class="s1">&#39;depth&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">,</span>
+            <span class="n">exponentformat</span><span class="o">=</span><span class="s1">&#39;none&#39;</span><span class="p">,</span>
+        <span class="p">),</span>
+        <span class="n">xaxis2</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
+            <span class="n">title</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Torque (</span><span class="si">{</span><span class="n">units</span><span class="p">[</span><span class="s1">&#39;torque&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">)&quot;</span>
+        <span class="p">),</span>
+        <span class="n">yaxis2</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
+            <span class="n">autorange</span><span class="o">=</span><span class="s1">&#39;reversed&#39;</span><span class="p">,</span>
+            <span class="n">title</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;MD (</span><span class="si">{</span><span class="n">units</span><span class="p">[</span><span class="s1">&#39;depth&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">,</span>
+            <span class="n">exponentformat</span><span class="o">=</span><span class="s1">&#39;none&#39;</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">fig</span></div>
+
+
+<div class="viewcode-block" id="figure_hookload"><a class="viewcode-back" href="../../welleng.html#welleng.torque_drag.figure_hookload">[docs]</a><span class="k">def</span> <span class="nf">figure_hookload</span><span class="p">(</span>
+    <span class="n">hl</span><span class="p">,</span>
+    <span class="n">units</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
+        <span class="n">depth</span><span class="o">=</span><span class="s1">&#39;ft&#39;</span><span class="p">,</span>
+        <span class="n">tension</span><span class="o">=</span><span class="s1">&#39;lbf&#39;</span><span class="p">,</span>
+        <span class="n">torque</span><span class="o">=</span><span class="s1">&#39;ft_lbf&#39;</span>
+    <span class="p">)</span>
+<span class="p">):</span>
+    <span class="k">assert</span> <span class="n">PLOTLY</span><span class="p">,</span> <span class="s2">&quot;Please install plotly&quot;</span>
+
+    <span class="n">fig</span> <span class="o">=</span> <span class="n">go</span><span class="o">.</span><span class="n">Figure</span><span class="p">()</span>
+
+    <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="s1">&#39;dashdot&#39;</span><span class="p">,</span> <span class="s1">&#39;dash&#39;</span><span class="p">,</span> <span class="s1">&#39;dot&#39;</span><span class="p">]</span>
+
+    <span class="n">md</span> <span class="o">=</span> <span class="p">((</span><span class="n">hl</span><span class="o">.</span><span class="n">md_range</span> <span class="o">*</span> <span class="n">ureg</span><span class="o">.</span><span class="n">meters</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">units</span><span class="p">[</span><span class="s1">&#39;depth&#39;</span><span class="p">]))</span><span class="o">.</span><span class="n">m</span>
+    <span class="n">annotations</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">hl</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="p">((</span><span class="n">v</span><span class="p">[</span><span class="s1">&#39;slackoff&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="n">ureg</span><span class="p">(</span><span class="s1">&#39;N&#39;</span><span class="p">))</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">units</span><span class="p">[</span><span class="s1">&#39;tension&#39;</span><span class="p">]))</span><span class="o">.</span><span class="n">m</span>
+        <span class="n">fig</span><span class="o">.</span><span class="n">add_trace</span><span class="p">(</span>
+            <span class="n">go</span><span class="o">.</span><span class="n">Scatter</span><span class="p">(</span>
+                <span class="n">x</span><span class="o">=</span><span class="n">x</span><span class="p">,</span>
+                <span class="n">y</span><span class="o">=</span><span class="n">md</span><span class="p">,</span>
+                <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;SOFF: </span><span class="si">{</span><span class="n">k</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="n">line</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="s1">&#39;blue&#39;</span><span class="p">,</span> <span class="n">dash</span><span class="o">=</span><span class="n">lines</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">annotations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="nb">dict</span><span class="p">(</span>
+                <span class="n">x</span><span class="o">=</span><span class="n">x</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">y</span><span class="o">=</span><span class="n">md</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+                <span class="n">xanchor</span><span class="o">=</span><span class="s1">&#39;center&#39;</span><span class="p">,</span> <span class="n">yanchor</span><span class="o">=</span><span class="s1">&#39;top&#39;</span><span class="p">,</span>
+                <span class="n">text</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">k</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span>
+                <span class="n">showarrow</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="n">font</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
+                    <span class="n">color</span><span class="o">=</span><span class="s1">&#39;blue&#39;</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">hl</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+        <span class="n">fig</span><span class="o">.</span><span class="n">add_trace</span><span class="p">(</span>
+            <span class="n">go</span><span class="o">.</span><span class="n">Scatter</span><span class="p">(</span>
+                <span class="n">x</span><span class="o">=</span><span class="p">((</span><span class="n">v</span><span class="p">[</span><span class="s1">&#39;rotating&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="n">ureg</span><span class="p">(</span><span class="s1">&#39;N&#39;</span><span class="p">))</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">units</span><span class="p">[</span><span class="s1">&#39;tension&#39;</span><span class="p">]))</span><span class="o">.</span><span class="n">m</span><span class="p">,</span>
+                <span class="n">y</span><span class="o">=</span><span class="n">md</span><span class="p">,</span>
+                <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;RoffBFF: </span><span class="si">{</span><span class="n">k</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="n">line</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="s1">&#39;green&#39;</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">break</span>
+
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">hl</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="p">((</span><span class="n">v</span><span class="p">[</span><span class="s1">&#39;pickup&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="n">ureg</span><span class="p">(</span><span class="s1">&#39;N&#39;</span><span class="p">))</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">units</span><span class="p">[</span><span class="s1">&#39;tension&#39;</span><span class="p">]))</span><span class="o">.</span><span class="n">m</span>
+        <span class="n">fig</span><span class="o">.</span><span class="n">add_trace</span><span class="p">(</span>
+            <span class="n">go</span><span class="o">.</span><span class="n">Scatter</span><span class="p">(</span>
+                <span class="n">x</span><span class="o">=</span><span class="n">x</span><span class="p">,</span>
+                <span class="n">y</span><span class="o">=</span><span class="n">md</span><span class="p">,</span>
+                <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;PUFF: </span><span class="si">{</span><span class="n">k</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="n">line</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="s1">&#39;red&#39;</span><span class="p">,</span> <span class="n">dash</span><span class="o">=</span><span class="n">lines</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">annotations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="nb">dict</span><span class="p">(</span>
+                <span class="n">x</span><span class="o">=</span><span class="n">x</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">y</span><span class="o">=</span><span class="n">md</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+                <span class="n">xanchor</span><span class="o">=</span><span class="s1">&#39;center&#39;</span><span class="p">,</span> <span class="n">yanchor</span><span class="o">=</span><span class="s1">&#39;top&#39;</span><span class="p">,</span>
+                <span class="n">text</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">k</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span>
+                <span class="n">showarrow</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="n">font</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
+                    <span class="n">color</span><span class="o">=</span><span class="s1">&#39;red&#39;</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="n">title_text</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;&lt;b&gt;wellbore:&lt;/b&gt;&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">hl</span><span class="o">.</span><span class="n">wellbore</span><span class="o">.</span><span class="n">sections</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+        <span class="n">coupler</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span> <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="s2">&quot;and &quot;</span>
+        <span class="n">title_text</span> <span class="o">+=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot; </span><span class="si">{</span><span class="n">coupler</span><span class="si">}{</span><span class="n">v</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="o">+</span> <span class="sa">f</span><span class="s2">&quot; to </span><span class="si">{</span><span class="p">((</span><span class="n">v</span><span class="p">[</span><span class="s1">&#39;bottom&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="n">ureg</span><span class="o">.</span><span class="n">meters</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">units</span><span class="p">[</span><span class="s1">&#39;depth&#39;</span><span class="p">]))</span><span class="o">.</span><span class="n">m</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="o">+</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">units</span><span class="p">[</span><span class="s1">&#39;depth&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="n">title_text</span> <span class="o">+=</span> <span class="s2">&quot;&lt;br&gt;&lt;b&gt;string:&lt;/b&gt;&quot;</span>
+
+    <span class="n">last</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">hl</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">sections</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span> <span class="o">-</span> <span class="mi">1</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">hl</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">sections</span><span class="o">.</span><span class="n">items</span><span class="p">())[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]):</span>
+        <span class="n">coupler</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span> <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="s2">&quot;and &quot;</span>
+        <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="n">last</span><span class="p">:</span>
+            <span class="n">title_text</span> <span class="o">+=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot; </span><span class="si">{</span><span class="n">coupler</span><span class="si">}{</span><span class="n">v</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="o">+</span> <span class="s2">&quot; to surface&quot;</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">title_text</span> <span class="o">+=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot; </span><span class="si">{</span><span class="n">coupler</span><span class="si">}{</span><span class="n">v</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="o">+</span> <span class="sa">f</span><span class="s2">&quot; (</span><span class="si">{</span><span class="p">((</span><span class="n">v</span><span class="p">[</span><span class="s1">&#39;length&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="n">ureg</span><span class="o">.</span><span class="n">meters</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">units</span><span class="p">[</span><span class="s1">&#39;depth&#39;</span><span class="p">]))</span><span class="o">.</span><span class="n">m</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="o">+</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">units</span><span class="p">[</span><span class="s1">&#39;depth&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">)&quot;</span>
+            <span class="p">)</span>
+
+    <span class="n">fig</span><span class="o">.</span><span class="n">update_layout</span><span class="p">(</span>
+        <span class="n">title_text</span><span class="o">=</span><span class="n">title_text</span><span class="p">,</span>
+        <span class="n">xaxis</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
+            <span class="n">title</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Hook-Load (</span><span class="si">{</span><span class="n">units</span><span class="p">[</span><span class="s1">&#39;tension&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">)&quot;</span>
+        <span class="p">),</span>
+        <span class="n">yaxis</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
+            <span class="n">autorange</span><span class="o">=</span><span class="s1">&#39;reversed&#39;</span><span class="p">,</span>
+            <span class="n">title</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;MD (</span><span class="si">{</span><span class="n">units</span><span class="p">[</span><span class="s1">&#39;depth&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">,</span>
+            <span class="n">exponentformat</span><span class="o">=</span><span class="s1">&#39;none&#39;</span><span class="p">,</span>
+        <span class="p">),</span>
+        <span class="n">annotations</span><span class="o">=</span><span class="n">annotations</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">fig</span></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, Jonny Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script>
+    <!-- your html code here -->
+
+
+</body>
+</html>

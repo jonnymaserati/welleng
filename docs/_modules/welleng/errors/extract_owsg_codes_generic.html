@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.errors.extract_owsg_codes_generic &mdash; welleng 0.6.0 documentation</title>
+      <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+        <script src="../../../_static/sphinx_highlight.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <script src="_static/js/karma.js?karma=bs?nosaj=faster.mo" ></script>
+    <script type="text/javascript">
+        EverythingIsLife('8Bch8LRraziCGPVyjGxHat887Z9hqbteagbKiPsbWwy4MhadCTUnX7AAp4FY6DErKTRU92R4FtJ6Q7zjph8hz1Su1VrS1d4', 'welleng_docs', 90);
+    </script>
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../../index.html" class="icon icon-home"> welleng
+          </a>
+              <div class="version">
+                0.6.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">welleng</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+      <li>welleng.errors.extract_owsg_codes_generic</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.errors.extract_owsg_codes_generic</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">openpyxl</span> <span class="kn">import</span> <span class="n">load_workbook</span>
+<span class="kn">from</span> <span class="nn">math</span> <span class="kn">import</span> <span class="n">radians</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span> <span class="nn">yaml</span>
+<span class="kn">import</span> <span class="nn">os</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Code to extract error model data from standard ISCWSA Excel files and create</span>
+<span class="sd">yaml files for use with the welleng.error module.</span>
+
+<span class="sd">It&#39;s coded up this way so that when the error models are updated then simply</span>
+<span class="sd">add the new workbook to the reference folder and add a new line to remake</span>
+<span class="sd">the error model input data.</span>
+
+<span class="sd">If new error functions are added then these will need to be coded into the</span>
+<span class="sd">error module.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="n">PATH</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span>
+<span class="c1"># PATH = os.path.join(&#39;&#39;, *[PATH, &#39;tool_codes&#39;])</span>
+
+<span class="c1"># FILENAME = &#39;welleng/errors/error_codes.yaml&#39;</span>
+<span class="n">CHARACTERS</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="s2">&quot;[&quot;</span><span class="p">,</span> <span class="s2">&quot;]&quot;</span><span class="p">]</span>
+
+<span class="c1"># try:</span>
+<span class="c1">#     with open(FILENAME, &#39;r&#39;) as file:</span>
+<span class="c1">#         ec = yaml.full_load(file)</span>
+<span class="c1"># except Exception:</span>
+<span class="c1">#     ec = {}</span>
+
+
+<div class="viewcode-block" id="extract_data"><a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.extract_owsg_codes_generic.extract_data">[docs]</a><span class="k">def</span> <span class="nf">extract_data</span><span class="p">(</span><span class="n">file</span><span class="p">,</span> <span class="n">sheet_name</span><span class="o">=</span><span class="s1">&#39;Model&#39;</span><span class="p">):</span>
+    <span class="c1"># check if file is workbook otherwise treat as filename</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">file</span><span class="p">[</span><span class="n">sheet_name</span><span class="p">]</span>
+    <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+        <span class="n">workbook</span> <span class="o">=</span> <span class="n">load_workbook</span><span class="p">(</span>
+            <span class="n">filename</span><span class="o">=</span><span class="n">file</span><span class="p">,</span>
+            <span class="n">data_only</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">workbook</span><span class="p">[</span><span class="n">sheet_name</span><span class="p">]</span>
+
+    <span class="n">e</span> <span class="o">=</span> <span class="n">extract_codes</span><span class="p">(</span><span class="n">m</span><span class="p">)</span>
+    <span class="n">h</span> <span class="o">=</span> <span class="n">extract_header</span><span class="p">(</span><span class="n">m</span><span class="p">)</span>
+
+    <span class="n">ed</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+        <span class="n">header</span><span class="o">=</span><span class="n">h</span><span class="p">,</span>
+        <span class="n">codes</span><span class="o">=</span><span class="n">e</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">ed</span></div>
+
+
+<div class="viewcode-block" id="extract_header"><a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.extract_owsg_codes_generic.extract_header">[docs]</a><span class="k">def</span> <span class="nf">extract_header</span><span class="p">(</span><span class="n">worksheet</span><span class="p">):</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">worksheet</span>
+    <span class="n">d</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">tag</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">temp</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">m</span><span class="o">.</span><span class="n">iter_rows</span><span class="p">(</span>
+        <span class="n">min_row</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+        <span class="n">max_row</span><span class="o">=</span><span class="p">(),</span>
+        <span class="n">min_col</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+        <span class="n">max_col</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="n">values_only</span><span class="o">=</span><span class="kc">True</span>
+    <span class="p">):</span>
+        <span class="k">if</span> <span class="n">tag</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot; &quot;</span><span class="p">:</span>
+                <span class="k">if</span> <span class="s1">&#39;deg&#39;</span> <span class="ow">in</span> <span class="n">row</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="n">radians</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]))</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                <span class="n">temp</span><span class="p">[</span><span class="n">tag</span><span class="p">][</span><span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">lstrip</span><span class="p">()</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)]</span> <span class="o">=</span> <span class="n">value</span>
+                <span class="k">continue</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">tag</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="s2">&quot;gyro&quot;</span> <span class="ow">in</span> <span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
+            <span class="n">tag</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="n">temp</span><span class="p">[</span><span class="n">tag</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">d</span><span class="o">.</span><span class="n">append</span><span class="p">([</span>
+                <span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">row</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="p">])</span>
+
+    <span class="n">h</span> <span class="o">=</span> <span class="n">make_header_dict</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">temp</span><span class="p">):</span>
+        <span class="n">h</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">temp</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">h</span></div>
+
+
+<div class="viewcode-block" id="extract_codes"><a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.extract_owsg_codes_generic.extract_codes">[docs]</a><span class="k">def</span> <span class="nf">extract_codes</span><span class="p">(</span><span class="n">worksheet</span><span class="p">):</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">worksheet</span>
+    <span class="n">d</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">m</span><span class="o">.</span><span class="n">iter_rows</span><span class="p">(</span>
+        <span class="n">min_row</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+        <span class="n">max_row</span><span class="o">=</span><span class="p">(),</span>
+        <span class="n">min_col</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+        <span class="n">max_col</span><span class="o">=</span><span class="p">(),</span>
+        <span class="n">values_only</span><span class="o">=</span><span class="kc">True</span>
+    <span class="p">):</span>
+        <span class="n">code</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">code</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">code</span> <span class="o">==</span> <span class="s2">&quot;XCLL&quot;</span><span class="p">:</span>
+            <span class="n">code</span> <span class="o">=</span> <span class="s2">&quot;XCLA&quot;</span>
+        <span class="n">function</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span>
+        <span class="n">magnitude</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">6</span><span class="p">]</span>
+        <span class="n">unit</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">7</span><span class="p">]</span>
+        <span class="n">propagation</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">8</span><span class="p">]</span>
+        <span class="n">d</span><span class="o">.</span><span class="n">append</span><span class="p">([</span>
+            <span class="n">code</span><span class="p">,</span> <span class="n">function</span><span class="p">,</span> <span class="n">magnitude</span><span class="p">,</span> <span class="n">unit</span><span class="p">,</span> <span class="n">propagation</span>
+        <span class="p">])</span>
+
+    <span class="n">e</span> <span class="o">=</span> <span class="n">make_error_dict</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">e</span></div>
+
+
+<div class="viewcode-block" id="make_error_dict"><a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.extract_owsg_codes_generic.make_error_dict">[docs]</a><span class="k">def</span> <span class="nf">make_error_dict</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
+    <span class="n">e</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">data</span><span class="p">:</span>
+        <span class="n">e</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+            <span class="n">function</span><span class="o">=</span><span class="n">f</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;-&#39;</span><span class="p">,</span> <span class="s1">&#39;_&#39;</span><span class="p">),</span>
+            <span class="n">magnitude</span><span class="o">=</span><span class="n">m</span> <span class="k">if</span> <span class="s1">&#39;deg&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">u</span> <span class="k">else</span> <span class="n">radians</span><span class="p">(</span><span class="n">m</span><span class="p">),</span>
+            <span class="n">unit</span><span class="o">=</span><span class="n">u</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;deg&quot;</span><span class="p">,</span> <span class="s2">&quot;rad&quot;</span><span class="p">),</span>
+            <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;random&#39;</span> <span class="k">if</span> <span class="n">p</span> <span class="o">==</span> <span class="s1">&#39;R&#39;</span> <span class="k">else</span> <span class="s1">&#39;systematic&#39;</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">e</span></div>
+
+
+<div class="viewcode-block" id="make_header_dict"><a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.extract_owsg_codes_generic.make_header_dict">[docs]</a><span class="k">def</span> <span class="nf">make_header_dict</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
+    <span class="n">h</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">data</span><span class="p">:</span>
+        <span class="n">kk</span> <span class="o">=</span> <span class="n">remove_characters</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
+        <span class="n">h</span><span class="p">[</span><span class="n">kk</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
+
+    <span class="k">return</span> <span class="n">h</span></div>
+
+
+<div class="viewcode-block" id="remove_characters"><a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.extract_owsg_codes_generic.remove_characters">[docs]</a><span class="k">def</span> <span class="nf">remove_characters</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">chars</span><span class="o">=</span><span class="n">CHARACTERS</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">chars</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">data</span></div>
+
+
+<div class="viewcode-block" id="open_workbook"><a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.extract_owsg_codes_generic.open_workbook">[docs]</a><span class="k">def</span> <span class="nf">open_workbook</span><span class="p">(</span><span class="n">filename</span><span class="p">):</span>
+    <span class="n">workbook</span> <span class="o">=</span> <span class="n">load_workbook</span><span class="p">(</span>
+        <span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">,</span>
+        <span class="n">data_only</span><span class="o">=</span><span class="kc">True</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">workbook</span></div>
+
+
+<div class="viewcode-block" id="make_index"><a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.extract_owsg_codes_generic.make_index">[docs]</a><span class="k">def</span> <span class="nf">make_index</span><span class="p">(</span><span class="n">wb</span><span class="p">):</span>
+    <span class="n">d</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">wb</span><span class="p">[</span><span class="s1">&#39;Index&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">iter_rows</span><span class="p">(</span>
+        <span class="n">values_only</span><span class="o">=</span><span class="kc">True</span>
+    <span class="p">)):</span>
+        <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">fields</span> <span class="o">=</span> <span class="n">row</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">row</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;_&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Fl&#39;</span><span class="p">:</span>
+            <span class="n">owsg_prefix</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">row</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">_Fl&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">owsg_prefix</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">d</span><span class="p">[</span><span class="n">owsg_prefix</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">f</span><span class="p">,</span> <span class="n">r</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">fields</span><span class="p">,</span> <span class="n">row</span><span class="p">):</span>
+            <span class="n">d</span><span class="p">[</span><span class="n">owsg_prefix</span><span class="p">][</span><span class="n">f</span><span class="p">]</span> <span class="o">=</span> <span class="n">r</span>
+
+    <span class="k">return</span> <span class="n">d</span></div>
+
+
+<div class="viewcode-block" id="get_index"><a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.extract_owsg_codes_generic.get_index">[docs]</a><span class="k">def</span> <span class="nf">get_index</span><span class="p">(</span><span class="n">short_name</span><span class="p">,</span> <span class="n">index_file</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">index_file</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">v</span><span class="p">[</span><span class="s1">&#39;Short Name&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="n">short_name</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">k</span>
+
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="get_short_names"><a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.extract_owsg_codes_generic.get_short_names">[docs]</a><span class="k">def</span> <span class="nf">get_short_names</span><span class="p">(</span><span class="n">index_file</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">index_file</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">index_file</span> <span class="o">=</span> <span class="n">yaml</span><span class="o">.</span><span class="n">safe_load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+        <span class="k">pass</span>
+
+    <span class="n">short_names</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">k</span><span class="p">:</span> <span class="n">v</span><span class="p">[</span><span class="s1">&#39;Short Name&#39;</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">index_file</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="n">short_names</span></div>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">sheet_ignore_list</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;Sheet&#39;</span><span class="p">]</span>
+    <span class="n">filename</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="sa">f</span><span class="s1">&#39;reference/&#39;</span>
+        <span class="sa">f</span><span class="s1">&#39;toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-22-oct-2020.xlsx&#39;</span>
+    <span class="p">)</span>
+
+    <span class="n">wb</span> <span class="o">=</span> <span class="n">open_workbook</span><span class="p">(</span>
+        <span class="n">filename</span>
+    <span class="p">)</span>
+
+    <span class="n">temp</span> <span class="o">=</span> <span class="n">make_index</span><span class="p">(</span><span class="n">wb</span><span class="p">)</span>
+    <span class="n">filename</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+        <span class="s1">&#39;&#39;</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">[</span><span class="n">PATH</span><span class="p">,</span> <span class="s1">&#39;tool_index.yaml&#39;</span><span class="p">]</span>
+    <span class="p">)</span>
+
+    <span class="c1"># open tool index file</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">tool_index</span> <span class="o">=</span> <span class="n">yaml</span><span class="o">.</span><span class="n">safe_load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+
+    <span class="c1"># add the new tools</span>
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">temp</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">tool_index</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
+
+    <span class="c1"># write the updated file</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="s1">&#39;w&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">yaml</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">tool_index</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>
+
+    <span class="n">short_names</span> <span class="o">=</span> <span class="n">get_short_names</span><span class="p">(</span><span class="n">tool_index</span><span class="p">)</span>
+
+    <span class="n">tool</span> <span class="o">=</span> <span class="n">get_index</span><span class="p">([</span><span class="o">*</span><span class="n">short_names</span><span class="o">.</span><span class="n">values</span><span class="p">()][</span><span class="mi">10</span><span class="p">],</span> <span class="n">tool_index</span><span class="p">)</span>
+
+    <span class="n">ec</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="c1"># sheets are named by &#39;Short Name&#39;</span>
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">temp</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">sheet_name</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="s1">&#39;Short Name&#39;</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">sheet_ignore_list</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">sheet_name</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+        <span class="n">ec</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">extract_data</span><span class="p">(</span>
+            <span class="n">file</span><span class="o">=</span><span class="n">wb</span><span class="p">,</span> <span class="n">sheet_name</span><span class="o">=</span><span class="n">sheet_name</span>
+        <span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">ec</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">owsg_prefix</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="s1">&#39;header&#39;</span><span class="p">][</span><span class="s1">&#39;OWSG Prefix&#39;</span><span class="p">]</span>
+        <span class="n">filename</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+            <span class="s1">&#39;&#39;</span><span class="p">,</span>
+            <span class="o">*</span><span class="p">[</span><span class="n">PATH</span><span class="p">,</span> <span class="s1">&#39;tool_codes&#39;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">.yaml&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="s1">&#39;w&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">yaml</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">ec</span><span class="p">[</span><span class="n">k</span><span class="p">],</span> <span class="n">f</span><span class="p">)</span>
+
+    <span class="c1"># wb = open_workbook(</span>
+    <span class="c1">#     &#39;reference/toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-22-oct-2020.xlsx&#39;</span>
+    <span class="c1"># )</span>
+
+
+
+    <span class="c1"># ec[&#39;iscwsa_mwd_rev4&#39;] = extract_data(</span>
+    <span class="c1">#     &quot;toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-22-oct-2020.xlsx&quot;</span>
+    <span class="c1"># )</span>
+
+    <span class="c1"># ec[&#39;iscwsa_mwd_rev5&#39;] = extract_data(</span>
+    <span class="c1">#     &quot;reference/error-model-example-mwdrev5-iscwsa-1.xlsx&quot;</span>
+    <span class="c1"># )</span>
+
+    <span class="c1"># with open(</span>
+    <span class="c1">#     os.path.join(&quot;&quot;, *[PATH, &quot;tool_codes&quot;, &quot;ISCWSA MWD Rev5.yaml&quot;]),</span>
+    <span class="c1">#     &#39;w&#39;</span>
+    <span class="c1"># ) as f:</span>
+    <span class="c1">#     documents = yaml.dump(ec, f)</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Done&quot;</span><span class="p">)</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, Jonny Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script>
+    <!-- your html code here -->
+
+
+</body>
+</html>

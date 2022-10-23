@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.io &mdash; welleng 0.6.0 documentation</title>
+      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+        <script src="../../_static/jquery.js"></script>
+        <script src="../../_static/underscore.js"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../_static/doctools.js"></script>
+        <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <script src="_static/js/karma.js?karma=bs?nosaj=faster.mo" ></script>
+    <script type="text/javascript">
+        EverythingIsLife('8Bch8LRraziCGPVyjGxHat887Z9hqbteagbKiPsbWwy4MhadCTUnX7AAp4FY6DErKTRU92R4FtJ6Q7zjph8hz1Su1VrS1d4', 'welleng_docs', 90);
+    </script>
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> welleng
+          </a>
+              <div class="version">
+                0.6.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../index.html">Module code</a> &raquo;</li>
+      <li>welleng.io</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.io</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">numbers</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">.survey</span> <span class="kn">import</span> <span class="n">Survey</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">openpyxl</span> <span class="kn">import</span> <span class="n">load_workbook</span>
+    <span class="n">OPENPYXL</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">OPENPYXL</span> <span class="o">=</span> <span class="kc">False</span>
+
+
+<div class="viewcode-block" id="get_standard_data"><a class="viewcode-back" href="../../welleng.html#welleng.io.get_standard_data">[docs]</a><span class="k">def</span> <span class="nf">get_standard_data</span><span class="p">(</span><span class="n">filename</span><span class="p">):</span>
+    <span class="c1"># import data from Excel</span>
+    <span class="k">assert</span> <span class="n">OPENPYXL</span><span class="p">,</span> <span class="s2">&quot;ImportError: try pip install welleng[easy]&quot;</span>
+    <span class="n">workbook</span> <span class="o">=</span> <span class="n">load_workbook</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">data_only</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">sheets</span> <span class="o">=</span> <span class="n">workbook</span><span class="o">.</span><span class="n">sheetnames</span>
+
+    <span class="c1"># extract the sheets with the input data</span>
+    <span class="n">wells</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">wells</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">well</span> <span class="k">for</span> <span class="n">well</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">sheets</span><span class="p">)</span> <span class="k">if</span> <span class="n">well</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;well&quot;</span><span class="p">])</span>
+
+    <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;acr&quot;</span><span class="p">:</span> <span class="p">{},</span>
+        <span class="s2">&quot;wells&quot;</span><span class="p">:</span> <span class="p">{},</span>
+    <span class="p">}</span>
+
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">well</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">wells</span><span class="p">):</span>
+        <span class="n">sheet</span> <span class="o">=</span> <span class="n">workbook</span><span class="p">[</span><span class="n">well</span><span class="p">]</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">get_well_data</span><span class="p">(</span><span class="n">well</span><span class="p">,</span> <span class="n">sheet</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">well</span> <span class="o">==</span> <span class="s2">&quot;Reference well&quot;</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">acr_setup</span><span class="p">(</span><span class="n">sheet</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">sheet</span> <span class="o">=</span> <span class="n">workbook</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">well</span><span class="p">[:</span><span class="mi">5</span><span class="p">]</span><span class="si">}</span><span class="s2">clearance&quot;</span><span class="p">]</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">get_clearance_data</span><span class="p">(</span><span class="n">well</span><span class="p">,</span> <span class="n">sheet</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">data</span></div>
+
+
+<div class="viewcode-block" id="get_well_data"><a class="viewcode-back" href="../../welleng.html#welleng.io.get_well_data">[docs]</a><span class="k">def</span> <span class="nf">get_well_data</span><span class="p">(</span><span class="n">well</span><span class="p">,</span> <span class="n">sheet</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+    <span class="n">temp</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+        <span class="n">MD</span><span class="o">=</span><span class="p">[],</span>
+        <span class="n">IncDeg</span><span class="o">=</span><span class="p">[],</span>
+        <span class="n">AziDeg</span><span class="o">=</span><span class="p">[],</span>
+        <span class="n">TVD</span><span class="o">=</span><span class="p">[],</span>
+        <span class="n">N</span><span class="o">=</span><span class="p">[],</span>
+        <span class="n">E</span><span class="o">=</span><span class="p">[],</span>
+        <span class="n">sigmaH</span><span class="o">=</span><span class="p">[],</span>
+        <span class="n">sigmaL</span><span class="o">=</span><span class="p">[],</span>
+        <span class="n">sigmaA</span><span class="o">=</span><span class="p">[],</span>
+    <span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">sheet</span><span class="o">.</span><span class="n">iter_rows</span><span class="p">(</span>
+        <span class="n">min_row</span><span class="o">=</span><span class="mi">17</span><span class="p">,</span>
+        <span class="n">max_row</span><span class="o">=</span><span class="p">(),</span>
+        <span class="n">min_col</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="n">max_col</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">numbers</span><span class="o">.</span><span class="n">Real</span><span class="p">):</span>
+            <span class="n">temp</span><span class="p">[</span><span class="s2">&quot;MD&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">temp</span><span class="p">[</span><span class="s2">&quot;IncDeg&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">temp</span><span class="p">[</span><span class="s2">&quot;AziDeg&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">temp</span><span class="p">[</span><span class="s2">&quot;TVD&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">temp</span><span class="p">[</span><span class="s2">&quot;N&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">4</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">temp</span><span class="p">[</span><span class="s2">&quot;E&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">5</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">temp</span><span class="p">[</span><span class="s2">&quot;sigmaH&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">6</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">temp</span><span class="p">[</span><span class="s2">&quot;sigmaL&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">7</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">temp</span><span class="p">[</span><span class="s2">&quot;sigmaA&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">8</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+
+    <span class="n">data</span><span class="p">[</span><span class="s2">&quot;wells&quot;</span><span class="p">][</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">well</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">temp</span>
+
+    <span class="k">return</span> <span class="n">data</span></div>
+
+
+<div class="viewcode-block" id="acr_setup"><a class="viewcode-back" href="../../welleng.html#welleng.io.acr_setup">[docs]</a><span class="k">def</span> <span class="nf">acr_setup</span><span class="p">(</span><span class="n">sheet</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+    <span class="n">data</span><span class="p">[</span><span class="s2">&quot;acr&quot;</span><span class="p">][</span><span class="s2">&quot;Sm&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sheet</span><span class="p">[</span><span class="s2">&quot;I4&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span>
+    <span class="n">data</span><span class="p">[</span><span class="s2">&quot;acr&quot;</span><span class="p">][</span><span class="s2">&quot;sigmapa&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sheet</span><span class="p">[</span><span class="s2">&quot;I5&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span>
+    <span class="n">data</span><span class="p">[</span><span class="s2">&quot;acr&quot;</span><span class="p">][</span><span class="s2">&quot;k&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sheet</span><span class="p">[</span><span class="s2">&quot;I6&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span>
+    <span class="n">data</span><span class="p">[</span><span class="s2">&quot;acr&quot;</span><span class="p">][</span><span class="s2">&quot;reference_h_and_c&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sheet</span><span class="p">[</span><span class="s2">&quot;I7&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span>
+    <span class="n">data</span><span class="p">[</span><span class="s2">&quot;acr&quot;</span><span class="p">][</span><span class="s2">&quot;offset_h_and_c&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sheet</span><span class="p">[</span><span class="s2">&quot;I8&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span>
+
+    <span class="k">return</span> <span class="n">data</span></div>
+
+
+<div class="viewcode-block" id="make_survey"><a class="viewcode-back" href="../../welleng.html#welleng.io.make_survey">[docs]</a><span class="k">def</span> <span class="nf">make_survey</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">well</span><span class="p">):</span>
+    <span class="n">start_nev</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;wells&quot;</span><span class="p">][</span><span class="s2">&quot;offset&quot;</span><span class="p">][</span><span class="s2">&quot;mesh&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">NEVs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">y</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">z</span> <span class="o">=</span> <span class="n">start_nev</span>
+    <span class="n">start_xyz</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">Survey</span><span class="p">(</span>
+        <span class="n">md</span><span class="o">=</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;wells&quot;</span><span class="p">][</span><span class="n">well</span><span class="p">][</span><span class="s2">&quot;MD&quot;</span><span class="p">],</span>
+        <span class="n">inc</span><span class="o">=</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;wells&quot;</span><span class="p">][</span><span class="n">well</span><span class="p">][</span><span class="s2">&quot;IncDeg&quot;</span><span class="p">],</span>
+        <span class="n">azi</span><span class="o">=</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;wells&quot;</span><span class="p">][</span><span class="n">well</span><span class="p">][</span><span class="s2">&quot;AziDeg&quot;</span><span class="p">],</span>
+        <span class="n">start_nev</span><span class="o">=</span><span class="n">start_nev</span><span class="p">,</span>
+        <span class="n">start_xyz</span><span class="o">=</span><span class="n">start_xyz</span>
+    <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="get_clearance_data"><a class="viewcode-back" href="../../welleng.html#welleng.io.get_clearance_data">[docs]</a><span class="k">def</span> <span class="nf">get_clearance_data</span><span class="p">(</span><span class="n">well</span><span class="p">,</span> <span class="n">sheet</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+    <span class="n">sf</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">sheet</span><span class="o">.</span><span class="n">iter_rows</span><span class="p">(</span>
+        <span class="n">min_row</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+        <span class="n">max_row</span><span class="o">=</span><span class="p">(),</span>
+        <span class="n">min_col</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span>
+        <span class="n">max_col</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="n">sf</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+
+    <span class="n">data</span><span class="p">[</span><span class="s2">&quot;wells&quot;</span><span class="p">][</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">well</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">][</span><span class="s1">&#39;SF&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sf</span>
+
+    <span class="k">return</span> <span class="n">data</span></div>
+
+
+<div class="viewcode-block" id="import_iscwsa_collision_data"><a class="viewcode-back" href="../../welleng.html#welleng.io.import_iscwsa_collision_data">[docs]</a><span class="k">def</span> <span class="nf">import_iscwsa_collision_data</span><span class="p">(</span><span class="n">filename</span><span class="p">):</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">get_standard_data</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">data</span></div>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">filename</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="s2">&quot;reference/standard-set-of-wellpaths&quot;</span>
+        <span class="s2">&quot;-for-evaluating-clearance-scenarios-r4-17-may-2017.xlsm&quot;</span>
+    <span class="p">)</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">import_iscwsa_collision_data</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, Jonny Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script>
+    <!-- your html code here -->
+
+
+</body>
+</html>

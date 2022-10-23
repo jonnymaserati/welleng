@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.utils &mdash; welleng 0.6.0 documentation</title>
+      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+        <script src="../../_static/jquery.js"></script>
+        <script src="../../_static/underscore.js"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../_static/doctools.js"></script>
+        <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <script src="_static/js/karma.js?karma=bs?nosaj=faster.mo" ></script>
+    <script type="text/javascript">
+        EverythingIsLife('8Bch8LRraziCGPVyjGxHat887Z9hqbteagbKiPsbWwy4MhadCTUnX7AAp4FY6DErKTRU92R4FtJ6Q7zjph8hz1Su1VrS1d4', 'welleng_docs', 90);
+    </script>
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> welleng
+          </a>
+              <div class="version">
+                0.6.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../index.html">Module code</a> &raquo;</li>
+      <li>welleng.utils</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.utils</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">scipy.spatial.transform</span> <span class="kn">import</span> <span class="n">Rotation</span> <span class="k">as</span> <span class="n">R</span>
+
+<span class="kn">from</span> <span class="nn">numpy.typing</span> <span class="kn">import</span> <span class="n">ArrayLike</span><span class="p">,</span> <span class="n">NDArray</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Annotated</span><span class="p">,</span> <span class="n">Literal</span><span class="p">,</span> <span class="n">Union</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">numba</span> <span class="kn">import</span> <span class="n">njit</span>
+    <span class="n">NUMBA</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">NUMBA</span> <span class="o">=</span> <span class="kc">False</span>
+
+
+<div class="viewcode-block" id="MinCurve"><a class="viewcode-back" href="../../welleng.html#welleng.utils.MinCurve">[docs]</a><span class="k">class</span> <span class="nc">MinCurve</span><span class="p">:</span>
+<div class="viewcode-block" id="MinCurve.__init__"><a class="viewcode-back" href="../../welleng.html#welleng.utils.MinCurve.__init__">[docs]</a>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">md</span><span class="p">,</span>
+        <span class="n">inc</span><span class="p">,</span>
+        <span class="n">azi</span><span class="p">,</span>
+        <span class="n">start_xyz</span><span class="o">=</span><span class="p">[</span><span class="mf">0.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">],</span>
+        <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;meters&quot;</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Generate geometric data from a well bore survey.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        md: list or 1d array of floats</span>
+<span class="sd">            Measured depth along well path from a datum.</span>
+<span class="sd">        inc: list or 1d array of floats</span>
+<span class="sd">            Well path inclincation (relative to z/tvd axis where 0</span>
+<span class="sd">            indicates down), in radians.</span>
+<span class="sd">        azi: list or 1d array of floats</span>
+<span class="sd">            Well path azimuth (relative to y/North axis),</span>
+<span class="sd">            in radians.</span>
+<span class="sd">        unit: str</span>
+<span class="sd">            Either &quot;meters&quot; or &quot;feet&quot; to determine the unit of the dogleg</span>
+<span class="sd">            severity.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="n">unit</span> <span class="o">==</span> <span class="s2">&quot;meters&quot;</span> <span class="ow">or</span> <span class="n">unit</span> <span class="o">==</span> <span class="s2">&quot;feet&quot;</span><span class="p">,</span> <span class="p">(</span>
+            <span class="s1">&#39;Unknown unit, please select &quot;meters&quot; of &quot;feet&quot;&#39;</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">md</span> <span class="o">=</span> <span class="n">md</span>
+        <span class="n">survey_length</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">md</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">survey_length</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;Survey must have at least two rows&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">inc</span> <span class="o">=</span> <span class="n">inc</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">azi</span> <span class="o">=</span> <span class="n">azi</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">start_xyz</span> <span class="o">=</span> <span class="n">start_xyz</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">unit</span> <span class="o">=</span> <span class="n">unit</span>
+
+        <span class="c1"># make two slices with a difference or 1 index to enable array</span>
+        <span class="c1"># calculations</span>
+        <span class="n">md_1</span> <span class="o">=</span> <span class="n">md</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">md_2</span> <span class="o">=</span> <span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+
+        <span class="n">inc_1</span> <span class="o">=</span> <span class="n">inc</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">inc_2</span> <span class="o">=</span> <span class="n">inc</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+
+        <span class="n">azi_1</span> <span class="o">=</span> <span class="n">azi</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">azi_2</span> <span class="o">=</span> <span class="n">azi</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+
+        <span class="c1"># calculate the dogleg</span>
+        <span class="c1"># temp = np.arccos(</span>
+        <span class="c1">#     np.cos(inc_2 - inc_1)</span>
+        <span class="c1">#     - (np.sin(inc_1) * np.sin(inc_2))</span>
+        <span class="c1">#     * (1 - np.cos(azi_2 - azi_1))</span>
+        <span class="c1"># )</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">dogleg</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">survey_length</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dogleg</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">=</span> <span class="n">get_dogleg</span><span class="p">(</span><span class="n">inc_1</span><span class="p">,</span> <span class="n">azi_1</span><span class="p">,</span> <span class="n">inc_2</span><span class="p">,</span> <span class="n">azi_2</span><span class="p">)</span>
+
+        <span class="c1"># calculate rf and assume rf is 1 where dogleg is 0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rf</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">survey_length</span><span class="p">)</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dogleg</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">dogleg</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">tan</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dogleg</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span>
+
+        <span class="c1"># calculate the change in md between survey stations</span>
+        <span class="n">temp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">md_2</span><span class="p">)</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">md_1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">delta_md</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">survey_length</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">delta_md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">=</span> <span class="n">temp</span>
+
+        <span class="c1"># calculate change in y direction (north)</span>
+        <span class="n">temp</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">delta_md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+            <span class="o">/</span> <span class="mi">2</span>
+            <span class="o">*</span> <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc_1</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">azi_1</span><span class="p">)</span>
+                <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc_2</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">azi_2</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">delta_y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">survey_length</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">delta_y</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">=</span> <span class="n">temp</span>
+
+        <span class="c1"># calculate change in x direction (east)</span>
+        <span class="n">temp</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">delta_md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+            <span class="o">/</span> <span class="mi">2</span>
+            <span class="o">*</span> <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc_1</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">azi_1</span><span class="p">)</span>
+                <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc_2</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">azi_2</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">delta_x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">survey_length</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">delta_x</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">=</span> <span class="n">temp</span>
+
+        <span class="c1"># calculate change in z direction</span>
+        <span class="n">temp</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">delta_md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+            <span class="o">/</span> <span class="mi">2</span>
+            <span class="o">*</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc_1</span><span class="p">)</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc_2</span><span class="p">))</span>
+            <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">delta_z</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">survey_length</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">delta_z</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">=</span> <span class="n">temp</span>
+
+        <span class="c1"># calculate the dog leg severity</span>
+        <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">divide</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">):</span>
+            <span class="n">temp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dogleg</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">delta_md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dls</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">survey_length</span><span class="p">)</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">temp</span> <span class="o">!=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dls</span><span class="p">[</span><span class="mi">1</span><span class="p">:][</span><span class="n">mask</span><span class="p">]</span> <span class="o">=</span> <span class="n">temp</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">unit</span> <span class="o">==</span> <span class="s2">&quot;meters&quot;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">dls</span> <span class="o">*=</span> <span class="mi">30</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">dls</span> <span class="o">*=</span> <span class="mi">100</span>
+
+        <span class="c1"># cumulate the coordinates and add surface coordinates</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">poss</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">delta_x</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">delta_y</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">delta_z</span><span class="p">])</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span>
+            <span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_xyz</span>
+        <span class="p">)</span></div></div>
+
+
+<div class="viewcode-block" id="get_dogleg"><a class="viewcode-back" href="../../welleng.html#welleng.utils.get_dogleg">[docs]</a><span class="k">def</span> <span class="nf">get_dogleg</span><span class="p">(</span><span class="n">inc1</span><span class="p">,</span> <span class="n">azi1</span><span class="p">,</span> <span class="n">inc2</span><span class="p">,</span> <span class="n">azi2</span><span class="p">):</span>
+    <span class="n">dogleg</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arccos</span><span class="p">(</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc2</span> <span class="o">-</span> <span class="n">inc1</span><span class="p">)</span>
+        <span class="o">-</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc1</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc2</span><span class="p">))</span>
+        <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">azi2</span> <span class="o">-</span> <span class="n">azi1</span><span class="p">))</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">dogleg</span></div>
+
+
+<div class="viewcode-block" id="get_vec"><a class="viewcode-back" href="../../welleng.html#welleng.utils.get_vec">[docs]</a><span class="k">def</span> <span class="nf">get_vec</span><span class="p">(</span><span class="n">inc</span><span class="p">,</span> <span class="n">azi</span><span class="p">,</span> <span class="n">nev</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">deg</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Convert inc and azi into a vector.</span>
+
+<span class="sd">    Params:</span>
+<span class="sd">        inc: array of n floats</span>
+<span class="sd">            Inclination relative to the z-axis (up)</span>
+<span class="sd">        azi: array of n floats</span>
+<span class="sd">            Azimuth relative to the y-axis</span>
+<span class="sd">        r: float or array of n floats</span>
+<span class="sd">            Scalar to return a scaled vector</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        An (n,3) array of vectors</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">deg</span><span class="p">:</span>
+        <span class="n">inc_rad</span><span class="p">,</span> <span class="n">azi_rad</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">inc</span><span class="p">,</span> <span class="n">azi</span><span class="p">]))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">inc_rad</span> <span class="o">=</span> <span class="n">inc</span>
+        <span class="n">azi_rad</span> <span class="o">=</span> <span class="n">azi</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">r</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc_rad</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">azi_rad</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">r</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc_rad</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">azi_rad</span><span class="p">)</span>
+    <span class="n">z</span> <span class="o">=</span> <span class="n">r</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc_rad</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">nev</span><span class="p">:</span>
+        <span class="n">vec</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">y</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">z</span><span class="p">])</span><span class="o">.</span><span class="n">T</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">vec</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="p">])</span><span class="o">.</span><span class="n">T</span>
+
+    <span class="k">return</span> <span class="n">vec</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">vec</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="get_nev"><a class="viewcode-back" href="../../welleng.html#welleng.utils.get_nev">[docs]</a><span class="k">def</span> <span class="nf">get_nev</span><span class="p">(</span>
+    <span class="n">pos</span><span class="p">,</span> <span class="n">start_xyz</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">]),</span> <span class="n">start_nev</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">])</span>
+<span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Convert [x, y, z] coordinates to [n, e, tvd] coordinates.</span>
+
+<span class="sd">    Params:</span>
+<span class="sd">        pos: (n,3) array of floats</span>
+<span class="sd">            Array of [x, y, z] coordinates</span>
+<span class="sd">        start_xyz: (,3) array of floats</span>
+<span class="sd">            The datum of the [x, y, z] cooardinates</span>
+<span class="sd">        start_nev: (,3) array of floats</span>
+<span class="sd">            The datum of the [n, e, tvd] coordinates</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        An (n,3) array of [n, e, tvd] coordinates.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># e, n, v = (</span>
+    <span class="c1">#     np.array([pos]).reshape(-1,3) - np.array([start_xyz])</span>
+    <span class="c1"># ).T</span>
+    <span class="n">e</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">pos</span><span class="p">])</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">start_xyz</span><span class="p">])</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">T</span>
+
+    <span class="k">return</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">n</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">v</span><span class="p">])</span><span class="o">.</span><span class="n">T</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">start_nev</span><span class="p">]))</span></div>
+
+
+<div class="viewcode-block" id="get_xyz"><a class="viewcode-back" href="../../welleng.html#welleng.utils.get_xyz">[docs]</a><span class="k">def</span> <span class="nf">get_xyz</span><span class="p">(</span><span class="n">pos</span><span class="p">,</span> <span class="n">start_xyz</span><span class="o">=</span><span class="p">[</span><span class="mf">0.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">],</span> <span class="n">start_nev</span><span class="o">=</span><span class="p">[</span><span class="mf">0.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">]):</span>
+    <span class="n">y</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">z</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">pos</span><span class="p">])</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">start_nev</span><span class="p">])</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">T</span>
+
+    <span class="k">return</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="p">])</span><span class="o">.</span><span class="n">T</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">start_xyz</span><span class="p">]))</span></div>
+
+
+<span class="k">def</span> <span class="nf">_get_angles</span><span class="p">(</span><span class="n">vec</span><span class="p">):</span>
+    <span class="n">xy</span> <span class="o">=</span> <span class="n">vec</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">vec</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="mi">2</span>
+    <span class="n">inc</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">xy</span><span class="p">),</span> <span class="n">vec</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">])</span>  <span class="c1"># for elevation angle defined from Z-axis down</span>
+    <span class="n">azi</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span><span class="n">vec</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">vec</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">])</span> <span class="o">+</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">))</span> <span class="o">%</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">inc</span><span class="p">,</span> <span class="n">azi</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+
+<span class="k">if</span> <span class="n">NUMBA</span><span class="p">:</span>
+    <span class="n">_get_angles</span> <span class="o">=</span> <span class="n">njit</span><span class="p">(</span><span class="n">_get_angles</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="get_angles"><a class="viewcode-back" href="../../welleng.html#welleng.utils.get_angles">[docs]</a><span class="k">def</span> <span class="nf">get_angles</span><span class="p">(</span>
+    <span class="n">vec</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="n">NDArray</span><span class="p">,</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;N&quot;</span><span class="p">,</span> <span class="mi">3</span><span class="p">]],</span> <span class="n">nev</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    Determines the inclination and azimuth from a vector.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    vec: (n,3) array of floats</span>
+<span class="sd">    nev: boolean (default: False)</span>
+<span class="sd">        Indicates if the vector is in (x,y,z) or (n,e,v) coordinates.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    [inc, azi]: (n,2) array of floats</span>
+<span class="sd">        A numpy array of incs and axis in radians</span>
+
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="c1"># make sure it&#39;s a unit vector</span>
+    <span class="n">vec</span> <span class="o">=</span> <span class="n">vec</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">vec</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">vec</span> <span class="o">=</span> <span class="n">vec</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+
+    <span class="c1"># if it&#39;s nev then need to do the shuffle</span>
+    <span class="k">if</span> <span class="n">nev</span><span class="p">:</span>
+        <span class="n">y</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">z</span> <span class="o">=</span> <span class="n">vec</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">vec</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="p">])</span><span class="o">.</span><span class="n">T</span>
+
+    <span class="k">return</span> <span class="n">_get_angles</span><span class="p">(</span><span class="n">vec</span><span class="p">)</span></div>
+
+
+<span class="k">def</span> <span class="nf">_get_transform</span><span class="p">(</span><span class="n">inc</span><span class="p">,</span> <span class="n">azi</span><span class="p">):</span>
+    <span class="n">trans</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+        <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">azi</span><span class="p">),</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">azi</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">azi</span><span class="p">)],</span>
+        <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">azi</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">azi</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">azi</span><span class="p">)],</span>
+        <span class="p">[</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">inc</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc</span><span class="p">)]</span>
+    <span class="p">])</span><span class="o">.</span><span class="n">T</span>
+
+    <span class="k">return</span> <span class="n">trans</span>
+
+
+<div class="viewcode-block" id="get_transform"><a class="viewcode-back" href="../../welleng.html#welleng.utils.get_transform">[docs]</a><span class="k">def</span> <span class="nf">get_transform</span><span class="p">(</span>
+    <span class="n">survey</span>
+<span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Determine the transform for transforming between NEV and HLA coordinate</span>
+<span class="sd">    systems.</span>
+
+<span class="sd">    Params:</span>
+<span class="sd">        survey: (n,3) array of floats</span>
+<span class="sd">        The [md, inc, azi] survey listing array.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        transform: (n,3,3) array of floats</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">survey</span> <span class="o">=</span> <span class="n">survey</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+    <span class="n">inc</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">survey</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">])</span>
+    <span class="n">azi</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">survey</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">])</span>
+
+    <span class="k">return</span> <span class="n">_get_transform</span><span class="p">(</span><span class="n">inc</span><span class="p">,</span> <span class="n">azi</span><span class="p">)</span></div>
+
+    <span class="c1"># trans = np.array([</span>
+    <span class="c1">#     [np.cos(inc) * np.cos(azi), -np.sin(azi), np.sin(inc) * np.cos(azi)],</span>
+    <span class="c1">#     [np.cos(inc) * np.sin(azi), np.cos(azi), np.sin(inc) * np.sin(azi)],</span>
+    <span class="c1">#     [-np.sin(inc), np.zeros_like(inc), np.cos(inc)]</span>
+    <span class="c1"># ]).T</span>
+
+    <span class="c1"># return trans</span>
+
+
+<div class="viewcode-block" id="NEV_to_HLA"><a class="viewcode-back" href="../../welleng.html#welleng.utils.NEV_to_HLA">[docs]</a><span class="k">def</span> <span class="nf">NEV_to_HLA</span><span class="p">(</span>
+    <span class="n">survey</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="n">NDArray</span><span class="p">,</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;N&quot;</span><span class="p">,</span> <span class="mi">3</span><span class="p">]],</span>
+    <span class="n">NEV</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
+        <span class="n">Annotated</span><span class="p">[</span><span class="n">NDArray</span><span class="p">,</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;N&quot;</span><span class="p">,</span> <span class="mi">3</span><span class="p">]],</span>
+        <span class="n">Annotated</span><span class="p">[</span><span class="n">NDArray</span><span class="p">,</span> <span class="n">Literal</span><span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="s2">&quot;N&quot;</span><span class="p">]]</span>
+    <span class="p">],</span>
+    <span class="n">cov</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span>
+        <span class="n">Annotated</span><span class="p">[</span><span class="n">NDArray</span><span class="p">,</span> <span class="n">Literal</span><span class="p">[</span><span class="s1">&#39;..., 3&#39;</span><span class="p">]],</span>
+        <span class="n">Annotated</span><span class="p">[</span><span class="n">NDArray</span><span class="p">,</span> <span class="n">Literal</span><span class="p">[</span><span class="s1">&#39;3, 3, ...&#39;</span><span class="p">]]</span>
+<span class="p">]:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Transform from NEV to HLA coordinate system.</span>
+
+<span class="sd">    Parameters:</span>
+<span class="sd">    -----------</span>
+<span class="sd">    survey: (n,3) array of floats</span>
+<span class="sd">        The [md, inc, azi] survey listing array.</span>
+<span class="sd">    NEV: (d,3) or (3,3,d) array of floats</span>
+<span class="sd">        The NEV coordinates or covariance matrices.</span>
+<span class="sd">    cov: boolean</span>
+<span class="sd">        If cov is True then a (3,3,d) array of covariance matrices</span>
+<span class="sd">        is expected, else a (d,3) array of coordinates.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">    --------</span>
+<span class="sd">    HLAs: NDArray</span>
+<span class="sd">        Either a transformed (n,3) array of HLA coordinates or an</span>
+<span class="sd">        (3,3,n) array of HLA covariance matrices.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">trans</span> <span class="o">=</span> <span class="n">get_transform</span><span class="p">(</span><span class="n">survey</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">cov</span><span class="p">:</span>
+        <span class="c1"># HLAs = [</span>
+        <span class="c1">#     np.dot(np.dot(t, NEV.T[i]), t.T) for i, t in enumerate(trans)</span>
+        <span class="c1"># ]</span>
+        <span class="c1"># HLAs = np.vstack(HLAs).reshape(-1, 3, 3).T</span>
+
+        <span class="n">HLAs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span>
+            <span class="s1">&#39;...ik,...jk&#39;</span><span class="p">,</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span>
+                <span class="s1">&#39;...ik,...jk&#39;</span><span class="p">,</span> <span class="n">trans</span><span class="p">,</span> <span class="n">NEV</span><span class="o">.</span><span class="n">T</span>
+            <span class="p">),</span>
+            <span class="n">trans</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">T</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">NEV</span> <span class="o">=</span> <span class="n">NEV</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="c1"># HLAs = [</span>
+        <span class="c1">#     np.dot(NEV[i], t.T) for i, t in enumerate(trans)</span>
+        <span class="c1"># ]</span>
+
+        <span class="n">HLAs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span>
+            <span class="s1">&#39;...k,...jk&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="p">,</span> <span class="n">trans</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">HLAs</span></div>
+
+
+<div class="viewcode-block" id="HLA_to_NEV"><a class="viewcode-back" href="../../welleng.html#welleng.utils.HLA_to_NEV">[docs]</a><span class="k">def</span> <span class="nf">HLA_to_NEV</span><span class="p">(</span><span class="n">survey</span><span class="p">,</span> <span class="n">HLA</span><span class="p">,</span> <span class="n">cov</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">trans</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">trans</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">trans</span> <span class="o">=</span> <span class="n">get_transform</span><span class="p">(</span><span class="n">survey</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">cov</span><span class="p">:</span>
+        <span class="c1"># NEVs = [</span>
+        <span class="c1">#     np.dot(np.dot(t.T, HLA.T[i]), t) for i, t in enumerate(trans)</span>
+        <span class="c1"># ]</span>
+        <span class="c1"># NEVs = np.vstack(NEVs).reshape(-1, 3, 3).T</span>
+
+        <span class="n">NEVs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span>
+            <span class="s1">&#39;...ik,jk...&#39;</span><span class="p">,</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span>
+                <span class="s1">&#39;...ki,...jk&#39;</span><span class="p">,</span> <span class="n">trans</span><span class="p">,</span> <span class="n">HLA</span><span class="o">.</span><span class="n">T</span>
+            <span class="p">),</span>
+            <span class="n">trans</span><span class="o">.</span><span class="n">T</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">T</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># NEVs = [</span>
+        <span class="c1">#     np.dot(hla, t) for hla, t in zip(HLA, trans)</span>
+        <span class="c1"># ]</span>
+
+        <span class="n">NEVs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span>
+            <span class="s1">&#39;k...,jk...&#39;</span><span class="p">,</span> <span class="n">HLA</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="n">trans</span><span class="o">.</span><span class="n">T</span>
+        <span class="p">)</span>
+
+    <span class="c1"># return np.vstack(NEVs).reshape(HLA.shape)</span>
+
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">swapaxes</span><span class="p">(</span><span class="n">NEVs</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="get_sigmas"><a class="viewcode-back" href="../../welleng.html#welleng.utils.get_sigmas">[docs]</a><span class="k">def</span> <span class="nf">get_sigmas</span><span class="p">(</span><span class="n">cov</span><span class="p">,</span> <span class="n">long</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Extracts the sigma values of a covariance matrix along the principle axii.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">        cov: (n,3,3) array of floats</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        arr: (n,3) array of floats</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">assert</span> <span class="n">cov</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">:]</span> <span class="o">==</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="s2">&quot;Cov is the wrong shape&quot;</span>
+
+    <span class="n">cov</span> <span class="o">=</span> <span class="n">cov</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+
+    <span class="n">aa</span><span class="p">,</span> <span class="n">ab</span><span class="p">,</span> <span class="n">ac</span> <span class="o">=</span> <span class="n">cov</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">T</span>
+    <span class="n">ab</span><span class="p">,</span> <span class="n">bb</span><span class="p">,</span> <span class="n">bc</span> <span class="o">=</span> <span class="n">cov</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">T</span>
+    <span class="n">ac</span><span class="p">,</span> <span class="n">bc</span><span class="p">,</span> <span class="n">cc</span> <span class="o">=</span> <span class="n">cov</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">T</span>
+
+    <span class="k">if</span> <span class="n">long</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">aa</span><span class="p">,</span> <span class="n">bb</span><span class="p">,</span> <span class="n">cc</span><span class="p">,</span> <span class="n">ab</span><span class="p">,</span> <span class="n">ac</span><span class="p">,</span> <span class="n">bc</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">aa</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">bb</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">cc</span><span class="p">))</span></div>
+
+    <span class="c1"># a, b, c = np.array([</span>
+    <span class="c1">#     np.sqrt(cov[:, 0, 0]),</span>
+    <span class="c1">#     np.sqrt(cov[:, 1, 1]),</span>
+    <span class="c1">#     np.sqrt(cov[:, 2, 2])</span>
+    <span class="c1"># ])</span>
+
+    <span class="c1"># return (a, b, c)</span>
+
+
+<div class="viewcode-block" id="get_unit_vec"><a class="viewcode-back" href="../../welleng.html#welleng.utils.get_unit_vec">[docs]</a><span class="k">def</span> <span class="nf">get_unit_vec</span><span class="p">(</span><span class="n">vec</span><span class="p">):</span>
+    <span class="n">vec</span> <span class="o">=</span> <span class="n">vec</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">vec</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">vec</span></div>
+
+
+<div class="viewcode-block" id="linear_convert"><a class="viewcode-back" href="../../welleng.html#welleng.utils.linear_convert">[docs]</a><span class="k">def</span> <span class="nf">linear_convert</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">factor</span><span class="p">):</span>
+    <span class="n">flag</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">list</span><span class="p">:</span>
+        <span class="n">flag</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="p">[</span><span class="n">data</span><span class="p">]</span>
+    <span class="n">converted</span> <span class="o">=</span> <span class="p">[</span><span class="n">d</span> <span class="o">*</span> <span class="n">factor</span> <span class="k">if</span> <span class="n">d</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">data</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">flag</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">converted</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">converted</span></div>
+
+
+<div class="viewcode-block" id="make_cov"><a class="viewcode-back" href="../../welleng.html#welleng.utils.make_cov">[docs]</a><span class="k">def</span> <span class="nf">make_cov</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">c</span><span class="p">,</span> <span class="n">long</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="c1"># a, b, c = np.sqrt(np.array([a, b, c]))</span>
+    <span class="k">if</span> <span class="n">long</span><span class="p">:</span>
+        <span class="n">cov</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+            <span class="p">[</span><span class="n">a</span> <span class="o">*</span> <span class="n">a</span><span class="p">,</span> <span class="n">a</span> <span class="o">*</span> <span class="n">b</span><span class="p">,</span> <span class="n">a</span> <span class="o">*</span> <span class="n">c</span><span class="p">],</span>
+            <span class="p">[</span><span class="n">a</span> <span class="o">*</span> <span class="n">b</span><span class="p">,</span> <span class="n">b</span> <span class="o">*</span> <span class="n">b</span><span class="p">,</span> <span class="n">b</span> <span class="o">*</span> <span class="n">c</span><span class="p">],</span>
+            <span class="p">[</span><span class="n">a</span> <span class="o">*</span> <span class="n">c</span><span class="p">,</span> <span class="n">b</span> <span class="o">*</span> <span class="n">c</span><span class="p">,</span> <span class="n">c</span> <span class="o">*</span> <span class="n">c</span><span class="p">]</span>
+        <span class="p">])</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">cov</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+            <span class="p">[</span><span class="n">a</span> <span class="o">*</span> <span class="n">a</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">a</span><span class="p">)],</span>
+            <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="n">b</span> <span class="o">*</span> <span class="n">b</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">a</span><span class="p">)],</span>
+            <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="n">c</span> <span class="o">*</span> <span class="n">c</span><span class="p">]</span>
+        <span class="p">])</span>
+
+    <span class="k">return</span> <span class="n">cov</span><span class="o">.</span><span class="n">T</span></div>
+
+
+<div class="viewcode-block" id="dls_from_radius"><a class="viewcode-back" href="../../welleng.html#welleng.utils.dls_from_radius">[docs]</a><span class="k">def</span> <span class="nf">dls_from_radius</span><span class="p">(</span><span class="n">radius</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns the dls in degrees from a radius.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">radius</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+        <span class="n">circumference</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full_like</span><span class="p">(</span><span class="n">radius</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">inf</span><span class="p">)</span>
+        <span class="n">circumference</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+            <span class="n">radius</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">radius</span><span class="p">,</span>
+            <span class="n">circumference</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">radius</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">inf</span>
+        <span class="n">circumference</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">radius</span>
+    <span class="n">dls</span> <span class="o">=</span> <span class="mi">360</span> <span class="o">/</span> <span class="n">circumference</span> <span class="o">*</span> <span class="mi">30</span>
+
+    <span class="k">return</span> <span class="n">dls</span></div>
+
+
+<div class="viewcode-block" id="radius_from_dls"><a class="viewcode-back" href="../../welleng.html#welleng.utils.radius_from_dls">[docs]</a><span class="k">def</span> <span class="nf">radius_from_dls</span><span class="p">(</span><span class="n">dls</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns the radius in meters from a DLS in deg/30m.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dls</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+        <span class="n">circumference</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full_like</span><span class="p">(</span><span class="n">dls</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">inf</span><span class="p">)</span>
+        <span class="n">circumference</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+            <span class="n">dls</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="p">(</span><span class="mi">30</span> <span class="o">/</span> <span class="n">dls</span><span class="p">)</span> <span class="o">*</span> <span class="mi">360</span><span class="p">,</span>
+            <span class="n">circumference</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">dls</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">inf</span>
+        <span class="n">circumference</span> <span class="o">=</span> <span class="p">(</span><span class="mi">30</span> <span class="o">/</span> <span class="n">dls</span><span class="p">)</span> <span class="o">*</span> <span class="mi">360</span>
+    <span class="n">radius</span> <span class="o">=</span> <span class="n">circumference</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">radius</span></div>
+
+
+<div class="viewcode-block" id="errors_from_cov"><a class="viewcode-back" href="../../welleng.html#welleng.utils.errors_from_cov">[docs]</a><span class="k">def</span> <span class="nf">errors_from_cov</span><span class="p">(</span><span class="n">cov</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    cov: (n, 3, 3) array</span>
+<span class="sd">        The error covariance matrices.</span>
+<span class="sd">    data: bool (default: False)</span>
+<span class="sd">        If True returns a dictionary, else returns a list.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">nn</span><span class="p">,</span> <span class="n">ne</span><span class="p">,</span> <span class="n">nv</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">ee</span><span class="p">,</span> <span class="n">ev</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">vv</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">cov</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">9</span><span class="p">)</span><span class="o">.</span><span class="n">T</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">data</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="n">i</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s1">&#39;nn&#39;</span><span class="p">:</span> <span class="n">_nn</span><span class="p">,</span> <span class="s1">&#39;ne&#39;</span><span class="p">:</span> <span class="n">_ne</span><span class="p">,</span> <span class="s1">&#39;nv&#39;</span><span class="p">:</span> <span class="n">_nv</span><span class="p">,</span> <span class="s1">&#39;ee&#39;</span><span class="p">:</span> <span class="n">_ee</span><span class="p">,</span> <span class="s1">&#39;ev&#39;</span><span class="p">:</span> <span class="n">_ev</span><span class="p">,</span> <span class="s1">&#39;vv&#39;</span><span class="p">:</span> <span class="n">_vv</span>
+            <span class="p">}</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">_nn</span><span class="p">,</span> <span class="n">_ne</span><span class="p">,</span> <span class="n">_nv</span><span class="p">,</span> <span class="n">_ee</span><span class="p">,</span> <span class="n">_ev</span><span class="p">,</span> <span class="n">_vv</span><span class="p">)</span>
+            <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">nn</span><span class="p">,</span> <span class="n">ne</span><span class="p">,</span> <span class="n">nv</span><span class="p">,</span> <span class="n">ee</span><span class="p">,</span> <span class="n">ev</span><span class="p">,</span> <span class="n">vv</span><span class="p">))</span>
+        <span class="p">}</span>
+
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">nn</span><span class="p">,</span> <span class="n">ne</span><span class="p">,</span> <span class="n">nv</span><span class="p">,</span> <span class="n">ee</span><span class="p">,</span> <span class="n">ev</span><span class="p">,</span> <span class="n">vv</span><span class="p">])</span><span class="o">.</span><span class="n">T</span></div>
+
+
+<div class="viewcode-block" id="Arc"><a class="viewcode-back" href="../../welleng.html#welleng.utils.Arc">[docs]</a><span class="k">class</span> <span class="nc">Arc</span><span class="p">:</span>
+<div class="viewcode-block" id="Arc.__init__"><a class="viewcode-back" href="../../welleng.html#welleng.utils.Arc.__init__">[docs]</a>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dogleg</span><span class="p">,</span> <span class="n">radius</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Generates a generic arc that can be transformed with a specific pos</span>
+<span class="sd">        and vec via a transform method. The arc is initialized at a local</span>
+<span class="sd">        origin and kicks off down and to the north (assuming an NEV coordinate</span>
+<span class="sd">        system).</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        dogleg: float</span>
+<span class="sd">            The sweep angle of the arc in radians.</span>
+<span class="sd">        radius: float</span>
+<span class="sd">            The radius of the arc in meters.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        arc: Arc object</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dogleg</span> <span class="o">=</span> <span class="n">dogleg</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">radius</span> <span class="o">=</span> <span class="n">radius</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">delta_md</span> <span class="o">=</span> <span class="n">dogleg</span> <span class="o">*</span> <span class="n">radius</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">pos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">dogleg</span><span class="p">),</span>
+            <span class="mf">0.</span><span class="p">,</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">dogleg</span><span class="p">)</span>
+        <span class="p">])</span> <span class="o">*</span> <span class="n">radius</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pos</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">radius</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">pos</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">vec</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">dogleg</span><span class="p">),</span>
+            <span class="mf">0.</span><span class="p">,</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">dogleg</span><span class="p">)</span>
+        <span class="p">])</span></div>
+
+<div class="viewcode-block" id="Arc.transform"><a class="viewcode-back" href="../../welleng.html#welleng.utils.Arc.transform">[docs]</a>    <span class="k">def</span> <span class="nf">transform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">toolface</span><span class="p">,</span> <span class="n">pos</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">vec</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Transforms an Arc to a position and orientation.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        pos: (,3) array</span>
+<span class="sd">        The desired position to transform the arc.</span>
+<span class="sd">        vec: (,3) array</span>
+<span class="sd">            The orientation unit vector to transform the arc.</span>
+<span class="sd">        target: bool</span>
+<span class="sd">            If true, returned arc vector is reversed.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        tuple (pos_new, vec_new)</span>
+<span class="sd">        pos_new: (,3) array</span>
+<span class="sd">            The position at the end of the arc post transform.</span>
+<span class="sd">        vec_new: (,3) array</span>
+<span class="sd">            The unit vector at the end of the arc post transform.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">vec</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">vec</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">,</span> <span class="mf">1.</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">target</span><span class="p">:</span>
+            <span class="n">vec</span> <span class="o">*=</span> <span class="o">-</span><span class="mi">1</span>
+        <span class="n">inc</span><span class="p">,</span> <span class="n">azi</span> <span class="o">=</span> <span class="n">get_angles</span><span class="p">(</span><span class="n">vec</span><span class="p">,</span> <span class="n">nev</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">angles</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">toolface</span><span class="p">,</span>
+            <span class="n">inc</span><span class="p">,</span>
+            <span class="n">azi</span>
+        <span class="p">]</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">R</span><span class="o">.</span><span class="n">from_euler</span><span class="p">(</span><span class="s1">&#39;zyz&#39;</span><span class="p">,</span> <span class="n">angles</span><span class="p">,</span> <span class="n">degrees</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="n">pos_new</span><span class="p">,</span> <span class="n">vec_new</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">pos</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">vec</span><span class="p">)))</span>
+
+        <span class="k">if</span> <span class="n">pos</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">pos_new</span> <span class="o">+=</span> <span class="n">pos</span>
+        <span class="k">if</span> <span class="n">target</span><span class="p">:</span>
+            <span class="n">vec_new</span> <span class="o">*=</span> <span class="o">-</span><span class="mi">1</span>
+
+        <span class="k">return</span> <span class="p">(</span><span class="n">pos_new</span><span class="p">,</span> <span class="n">vec_new</span><span class="p">)</span></div></div>
+
+
+<div class="viewcode-block" id="get_arc"><a class="viewcode-back" href="../../welleng.html#welleng.utils.get_arc">[docs]</a><span class="k">def</span> <span class="nf">get_arc</span><span class="p">(</span><span class="n">dogleg</span><span class="p">,</span> <span class="n">radius</span><span class="p">,</span> <span class="n">toolface</span><span class="p">,</span> <span class="n">pos</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">vec</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Creates an Arc instance and transforms it to the desired position and</span>
+<span class="sd">    orientation.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    dogleg: float</span>
+<span class="sd">        The swept angle of the arc (arc angle) in radians.</span>
+<span class="sd">    radius: float</span>
+<span class="sd">        The radius of the arc (in meters).</span>
+<span class="sd">    toolface: float</span>
+<span class="sd">        The toolface angle in radians (relative to the high side) to rotate the</span>
+<span class="sd">        arc at the desired position and orientation.</span>
+<span class="sd">    pos: (,3) array</span>
+<span class="sd">        The desired position to transform the arc.</span>
+<span class="sd">    vec: (,3) array</span>
+<span class="sd">        The orientation unit vector to transform the arc.</span>
+<span class="sd">    target: bool</span>
+<span class="sd">        If true, returned arc vector is reversed.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    tuple of (pos_new, vec_new, arc.delta_md)</span>
+<span class="sd">    pos_new: (,3) array</span>
+<span class="sd">        The position at the end of the arc post transform.</span>
+<span class="sd">    vec_new: (,3) array</span>
+<span class="sd">        The unit vector at the end of the arc post transform.</span>
+<span class="sd">    arc.delta_md: int</span>
+<span class="sd">        The arc length of the arc.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">arc</span> <span class="o">=</span> <span class="n">Arc</span><span class="p">(</span><span class="n">dogleg</span><span class="p">,</span> <span class="n">radius</span><span class="p">)</span>
+    <span class="n">pos_new</span><span class="p">,</span> <span class="n">vec_new</span> <span class="o">=</span> <span class="n">arc</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">toolface</span><span class="p">,</span> <span class="n">pos</span><span class="p">,</span> <span class="n">vec</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">(</span><span class="n">pos_new</span><span class="p">,</span> <span class="n">vec_new</span><span class="p">,</span> <span class="n">arc</span><span class="o">.</span><span class="n">delta_md</span><span class="p">)</span></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, Jonny Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script>
+    <!-- your html code here -->
+
+
+</body>
+</html>
