@@ -1,19 +1,26 @@
 name: build-sphinx-to-gh-pages
 
-docs:
-    name: Build Docs
-    needs: [tests, containers]
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v3
-    - name: Build Docs
-      run: |
-         cd docs
-         make clear
-         make html
-    - name: Deploy To Pages
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./docs/build/html
-        force_orphan: true
+on:
+  push:
+    branches:
+      - main
+  
+  
+
+  docs:
+      name: Build Docs
+      # needs: [tests, containers]
+      runs-on: ubuntu-latest
+      steps:
+      - uses: actions/checkout@v3
+      - name: Build Docs
+        run: |
+          cd docs
+          make clear
+          make html
+      - name: Deploy To Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs/build/html
+          force_orphan: true
