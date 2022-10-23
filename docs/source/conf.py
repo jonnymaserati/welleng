@@ -73,7 +73,7 @@ master_doc = 'index'
 
 # grab from trimesh without installing
 exec(open(abspath('../../welleng/version.py')).read())
-version = __version__
+version = __version__  # noqa: F821
 # The full version, including alpha/beta/rc tags.
 release = __version__
 
