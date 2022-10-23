@@ -5,8 +5,7 @@ on:
     branches:
       - main
   
-  
-
+jobs:
   docs:
       name: Build Docs
       # needs: [tests, containers]
