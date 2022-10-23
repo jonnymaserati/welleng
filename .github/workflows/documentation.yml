@@ -13,11 +13,68 @@ jobs:
         run: |
           cd docs
           make html
+        
+      # Clone and set up the old gh-pages branch
+      - name: Clone old gh-pages
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          set -x
+          git fetch
+          ( git branch gh-pages remotes/origin/gh-pages && git clone . --branch=gh-pages _gh-pages/ ) || mkdir _gh-pages
+          rm -rf _gh-pages/.git/
+          mkdir -p _gh-pages/branch/
+      # If a push and default branch, copy build to _gh-pages/ as the "main"
+      # deployment.
+      - name: Copy new build (default branch)
+        if: |
+          contains(github.event_name, 'push') &&
+          contains(github.ref, env.DEFAULT_BRANCH)
+        run: |
+          set -x
+          # Delete everything under _gh-pages/ that is from the
+          # primary branch deployment.  Eicludes the other branches
+          # _gh-pages/branch-* paths, and not including
+          # _gh-pages itself.
+          find _gh-pages/ -mindepth 1 ! -path '_gh-pages/branch*' -delete
+          rsync -a _build/html/ _gh-pages/
+      # If a push and not on default branch, then copy the build to
+      # _gh-pages/branch/$brname (transforming '/' into '--')
+      - name: Copy new build (branch)
+        if: |
+          contains(github.event_name, 'push') &&
+          !contains(github.ref, env.DEFAULT_BRANCH)
+        run: |
+          set -x
+          #brname=$(git rev-parse --abbrev-ref HEAD)
+          brname="${{github.ref}}"
+          brname="${brname##refs/heads/}"
+          brdir=${brname//\//--}   # replace '/' with '--'
+          rm -rf   _gh-pages/branch/${brdir}
+          rsync -a _build/html/ _gh-pages/branch/${brdir}
+      # Go through each branch in _gh-pages/branch/, if it's not a
+      # ref, then delete it.
+      - name: Delete old feature branches
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          set -x
+          for brdir in `ls _gh-pages/branch/` ; do
+              brname=${brdir//--/\/}   # replace '--' with '/'
+              if ! git show-ref remotes/origin/$brname ; then
+                  echo "Removing $brdir"
+                  rm -r _gh-pages/branch/$brdir/
+              fi
+          done
+      # Add the .nojekyll file
+      - name: nojekyll
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          touch _gh-pages/.nojekyll
+
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v3
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         with:
-          # publish_branch: gh-pages
+          publish_branch: gh-pages
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./build/html
+          publish_dir: _gh-pages
           force_orphan: true
