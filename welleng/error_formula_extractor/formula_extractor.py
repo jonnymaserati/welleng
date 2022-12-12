@@ -2,8 +2,7 @@ from welleng.error_formula_extractor.enums import Propagation, VectorType
 from welleng.error_formula_extractor.formula_utils import function_builder
 from welleng.error_formula_extractor.models import ErrorTerm, SurveyToolErrorModel
 from welleng.exchange.edm import EDM
-
-DEGREE_TO_RAD = 0.0174533
+from welleng.units import DEGREE_TO_RAD, TORTUOSITY_RAD_PER_M
 
 
 class ErrorFormulaExtractor:
@@ -112,34 +111,56 @@ class ErrorFormulaExtractor:
             attributes={"survey_tool_id": survey_tool.survey_tool_id}
         )['DP_TOOL_TERM']
 
-        error_terms = []
+        error_terms = {}
         for code in error_codes:
 
-            tie_type = self.extract_tie_type(code, survey_tool.survey_tool_id)
-            vector = self.extract_vector_type(code, survey_tool.survey_tool_id)
+            if "xcl" in code["term_name"].lower():
+                code["c_formula"] = self.extract_xcl_formula(code["c_formula"])
+
+            tie_type = self.extract_tie_type(code)
+            vector = self.extract_vector_type(code)
 
             mag = float(code["c_value"])
             if code["c_units"] in ["d", "dnt"]:
                 mag = mag * DEGREE_TO_RAD
 
-            error_terms.append(
-                ErrorTerm(
-                    sequence_no=int(code["sequence_no"]),
-                    term_name=code["term_name"],
-                    formula=code["c_formula"],
-                    error_function=(result := function_builder(code["c_formula"], code["term_name"]))[0],
-                    magnitude=mag,
-                    units=code["c_units"],
-                    vector_type=vector,
-                    tie_type=tie_type,
-                    arguments=result[1],
-                    func_string=result[2]
+            # if the term name already exists, append the current function to the list for the specific term.
+            if code["term_name"] in error_terms.keys():
+
+                error_terms[code["term_name"]].formula.append(code["c_formula"])
+                error_terms[code["term_name"]].error_function.append(
+                    (result := function_builder(code["c_formula"], code["term_name"]))[0]
                 )
-            )
+                error_terms[code["term_name"]].magnitude.append(mag)
+                error_terms[code["term_name"]].units.append(code["c_units"])
+                error_terms[code["term_name"]].vector_type.append(vector)
+                error_terms[code["term_name"]].tie_type.append(tie_type)
+                error_terms[code["term_name"]].arguments.append(result[1])
+                error_terms[code["term_name"]].func_string.append(result[2])
 
-        survey_tool.error_terms = sorted(error_terms, key=lambda d: d.sequence_no)
+            else:
+                error_terms[code["term_name"]] = (
+                    ErrorTerm(
+                        sequence_no=int(code["sequence_no"]),
+                        term_name=code["term_name"],
+                        formula=[code["c_formula"]],
+                        error_function=[(result := function_builder(code["c_formula"], code["term_name"]))[0]],
+                        magnitude=[mag],
+                        units=[code["c_units"]],
+                        vector_type=[vector],
+                        tie_type=[tie_type],
+                        arguments=[result[1]],
+                        func_string=[result[2]]
+                    )
+                )
 
-    def extract_tie_type(self, code: dict, survey_tool_id: str) -> str:
+        terms = list(error_terms.values())
+        survey_tool.error_terms = sorted(terms, key=lambda d: d.sequence_no)
+
+    def extract_tie_type(self, code: dict) -> str:
+        """
+        Extract propagation type (tie type) from the EDM file and assign the correct enum based on the propagation.
+        """
         if code["tie_type"] == 'r':
             return Propagation.RANDOM
         elif code["tie_type"] == "s":
@@ -148,19 +169,44 @@ class ErrorFormulaExtractor:
             return Propagation.GLOBAL
         elif code["tie_type"] == "n":
             return Propagation.NA
-
+        elif code["tie_type"] == "w":
+            return Propagation.WELL
         return Propagation.SYSTEMATIC
 
-    def extract_vector_type(self, code: dict, survey_tool_id: str) -> VectorType:
-        if code["vector_type"] == VectorType.AZIMUTH.value:
-            return VectorType.AZIMUTH
-        elif code["vector_type"] == VectorType.INCLINATION.value:
-            return VectorType.INCLINATION
-        elif code["vector_type"] == VectorType.DEPTH.value:
-            return VectorType.DEPTH
+    def extract_vector_type(self, code: dict) -> VectorType:
+
+        terms = VectorType.get_object()
+
+        if code["vector_type"] in terms.get("azimuth_terms"):
+            return VectorType.AZIMUTH_TERMS
+        elif code["vector_type"] == terms.get("inclination_terms"):
+            return VectorType.INCLINATION_TERMS
+        elif code["vector_type"] == terms.get("depth_terms"):
+            return VectorType.DEPTH_TERMS
         elif code["vector_type"] == VectorType.LATERAL.value:
             return VectorType.LATERAL
         elif code["vector_type"] == VectorType.NA:
             return VectorType.NA
 
-        return VectorType.DEPTH
+        return VectorType.DEPTH_TERMS
+
+    @staticmethod
+    def extract_xcl_formula(formula: str) -> str:
+        """
+        This function updates the formula string from the EDM and puts it in the correct format
+        that can be used with the formula extractor
+        """
+
+        # remove swon from the formula string
+        formula = formula.replace("swon", "")
+
+        # Assigning constant XCL tortuosity of 1deg/ft
+        formula = formula.replace("tort", str(TORTUOSITY_RAD_PER_M))
+
+        # split the formula based on swoff
+        term1, term2 = formula.split("+swoff")
+
+        # create the new string with max
+        formula_updated = f"max({term1}, {term2})"
+
+        return formula_updated
