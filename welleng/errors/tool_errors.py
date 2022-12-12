@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import os
 from collections import OrderedDict
 from typing import Callable, List
@@ -11,7 +10,9 @@ from numpy import cos, pi, sin, sqrt, tan
 
 from ..error_formula_extractor.enums import Propagation, VectorType
 from ..error_formula_extractor.models import ErrorTerm, SurveyToolErrorModel
+from ..units import METER_TO_FOOT
 from ..utils import NEV_to_HLA
+from .singularity_util import calculate_error_singularity
 
 # since this is running on different OS flavors
 PATH = os.path.dirname(__file__)
@@ -92,123 +93,149 @@ class ToolError:
     def call_func_from_edm(
             self,
             term: ErrorTerm,
-            func: Callable,
+            func: List[Callable],
             error: 'Error',
-            mag: float,
-            propagation: Propagation,
-            vector_type: VectorType
+            mag: List[float],
+            propagation: List[Propagation],
+            vector_type: List[VectorType]
     ) -> np.ndarray:
+        """
+        This function calculates the covariances from the error model imported from the EDM file.
+        """
 
+        # initiate the variable map if it is not available.
         if not self.map:
             self._initiate_map(error)
 
-        dpde = np.zeros((len(error.survey_rad), 3))
+        dpde = np.zeros((len(error.survey_rad) - 1, 3))
 
+        # check if the given term is an intermediate step
+        intermediate_step = propagation[0] == Propagation.NA
         sing_calc = False
-        multiplier = copy.deepcopy(vector_type.multiplier)
-        if multiplier is None:
-            multiplier = np.nan_to_num(
-                1 / sin(np.array(self.e.survey_rad)[:, 1]),
-                posinf=0.0,
-                neginf=0.0
+
+        for vector_no in range(len(vector_type)):
+            # for each vector in vector_type, first, extract all arguments from the equation.
+            args = []
+            for arg in term.arguments[vector_no]:
+                # for each argument first check if the argument is in the map or is one of the previously calculated
+                # error terms
+                self.backfill_terms(arg, term)
+
+                if arg.lower() not in self.map.keys():
+                    args.append(self.errors[arg.lower()])
+                    continue
+
+                args.append(self.map[arg.lower()])
+
+            if intermediate_step:
+                return np.vectorize(func[0])(*args) * term.magnitude[0]
+
+            try:
+                dpde[:, vector_type[vector_no].column_no] = np.vectorize(func[vector_no])(*args)
+
+            except ZeroDivisionError:
+                # if there is a zero division error, calculate the covariance row by row. If there is a zero
+                # division error for a row, put zero as the value, same if the calculation returns np.inf.
+                for index in range(len(np.array(error.survey_rad)) - 1):
+                    vars = [val
+                            if not type(val) == np.ndarray
+                            else val[index]
+                            for val in args
+                            ]
+
+                    try:
+                        val_to_put = func[vector_no](*vars)
+
+                    except ZeroDivisionError:
+                        val_to_put = 0
+
+                    if val_to_put == np.inf:
+                        val_to_put = 0
+
+                    dpde[:, vector_type[vector_no].column_no][index] = val_to_put
+
+        dpde = np.vstack((np.array([0., 0., 0.]), dpde))
+
+        e_DIA = dpde.round(decimals=10) * mag[0]
+        if not sing_calc:
+            return error._generate_error(
+                term.term_name,
+                e_DIA,
+                propagation[0].value,
+                NEV=True
             )
-            sing_calc = True
-
-        args = []
-        for arg in term.arguments:
-
-            if arg.lower() not in self.map.keys() and arg.lower() not in self.errors.keys():
-                term_backfilled = False
-                for back_filled_term in self.model.error_terms:
-                    if back_filled_term.term_name == arg.lower():
-                        self.errors[back_filled_term.term_name] = (
-                            self.call_func_from_edm(
-                                term=back_filled_term,
-                                func=back_filled_term.error_function,
-                                error=self.e,
-                                mag=back_filled_term.magnitude,
-                                propagation=back_filled_term.tie_type,
-                                vector_type=back_filled_term.vector_type
-                            )
-                        )
-                        term_backfilled = True
-                        break
-
-                if not term_backfilled:
-                    raise KeyError(f"{arg} not in {list(self.errors.keys())} or in the map: {list(self.map.keys())} "
-                                   f" for error term {term.term_name}")
-
-            if arg.lower() not in self.map.keys():
-                args.append(self.errors[arg.lower()])
-                continue
-
-            args.append(self.map[arg.lower()])
-
-        if vector_type.column_no is not None and propagation != Propagation.NA:
-
-            dpde[:, vector_type.column_no] = np.vectorize(func)(*args) * multiplier
-
-            e_DIA = dpde * mag
-
-            if not sing_calc:
-                return error._generate_error(
-                    term,
-                    e_DIA,
-                    propagation.value,
-                    NEV=True
-                )
-            else:
-                return self.caclcualte_error_with_sing(
-                    error,
-                    term,
-                    e_DIA,
-                    propagation.value,
-                    NEV=True
-                )
-        return np.vectorize(func)(*args) * term.magnitude
+        else:
+            return self.caclcualte_error_with_sing(
+                error,
+                term.term_name,
+                e_DIA,
+                propagation[0].value,
+                NEV=True,
+                magnitude=mag[0]
+            )
 
     def _initiate_map(self, error):
         self.map = {
-            "tmd": np.array(error.survey_rad)[:, 0],
-            "tvd": np.array(error.survey.tvd),
-            "inc": np.array(error.survey_rad)[:, 1],
-            "azi": np.array(error.survey_rad)[:, 2],
+            "tmd": np.array(error.survey_rad)[:, 0][1:],
+            "tvd": np.array(error.survey.tvd)[1:],
+            "inc": np.array(error.survey_rad)[:, 1][1:],
+            "azi": np.array(error.survey_rad)[:, 2][1:],
             "gtot": error.survey.header.G,
             "dip": error.survey.header.dip,
             "erot": error.survey.header.earth_rate,
             "mtot": error.survey.header.b_total,
             "lat": np.radians(error.survey.header.latitude),
-            "dmd": np.append(0, np.diff(np.array(error.survey_rad)[:, 0])),
-            "din": np.append(0, np.diff(np.array(error.survey_rad)[:, 1])),
-            "dazt": np.append(0, np.diff(np.array(error.survey_rad)[:, 2])),
-            "azt": error.survey.azi_true_rad,
-            "azm": error.survey.azi_mag_rad,
+            "dmd": np.diff(np.array(error.survey_rad)[:, 0]),
+            "din": np.diff(np.array(error.survey_rad)[:, 1]),
+            "dazt": np.diff(np.array(error.survey_rad)[:, 2]),
+            "azt": error.survey.azi_true_rad[1:],
+            "azm": error.survey.azi_mag_rad[1:],
+            "xcltortuosity": (np.radians(1) / 100) * METER_TO_FOOT
         }
 
+    def backfill_terms(self, arg: str, term: ErrorTerm):
+        if arg.lower() not in self.map.keys() and arg.lower() not in self.errors.keys():
+            term_backfilled = False
+            # if the argument is not in the map or in the previously calculated error terms, it needs to be
+            # back-filled before it can be used for the current term.
+            for back_filled_term in self.model.error_terms:
+                if back_filled_term.term_name == arg.lower():
+                    self.errors[back_filled_term.term_name] = (
+                        self.call_func_from_edm(
+                            term=back_filled_term,
+                            func=back_filled_term.error_function,
+                            error=self.e,
+                            mag=back_filled_term.magnitude,
+                            propagation=back_filled_term.tie_type,
+                            vector_type=back_filled_term.vector_type
+                        )
+                    )
+                    term_backfilled = True
+                    break
+
+            if not term_backfilled:
+                raise KeyError(
+                    f"{arg} not in {list(self.errors.keys())} or in the map: {list(self.map.keys())} "
+                    f" for error term {term.term_name}")
+
+    @staticmethod
     def caclcualte_error_with_sing(
-            self,
             error: 'Error',
             code: str,
             e_DIA: np.ndarray,
             propagation: str,
-            NEV: np.ndarray
-    ) -> np.ndarray:
+            NEV: bool,
+            magnitude: float
+    ) -> 'Error':
 
         sing = np.where(
             error.survey.inc_rad < error.survey.header.vertical_inc_limit
         )
+
         if len(sing[0]) < 1:
             return error._generate_error(code, e_DIA, propagation, NEV)
         else:
-            e_NEV = error._e_NEV(e_DIA)
-            e_NEV_sing = np.zeros_like(e_NEV)
-            e_NEV_sing[:, 0] = e_NEV[:, 0]
-            e_NEV[sing] = e_NEV_sing[sing]
-
-            e_NEV_star = error._e_NEV_star(e_DIA)
-            e_NEV_star_sing = np.zeros_like(e_NEV_star)
-            e_NEV_star_sing[:, 0] = e_NEV_star[:, 0]
-            e_NEV_star[sing] = e_NEV_star_sing[sing]
+            e_DIA, e_NEV, e_NEV_star = calculate_error_singularity(sing, error, e_DIA, magnitude, code, propagation)
 
             return error._generate_error(
                 code, e_DIA, propagation, NEV, e_NEV, e_NEV_star

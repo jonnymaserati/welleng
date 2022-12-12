@@ -4,10 +4,10 @@ from typing import Callable, Tuple
 
 # functions under math library used in the formulas. This dict is used to manager imports (from {key} import {value})
 import_functions = {
-    "math": ["cos", "sin", "tan", "sqrt"]
+    "math": ["cos", "sin", "tan", "sqrt", "pi"]
 }
 # the built in python functions included in the function in EDM.
-builtin_functions = ["abs"]
+builtin_functions = ["abs", "max"]
 
 # replace ^ with power from python.
 replaces = [

@@ -8,14 +8,14 @@ from welleng.error_formula_extractor.enums import Propagation, VectorType
 class ErrorTerm(BaseModel):
     sequence_no: int
     term_name: str
-    formula: str
-    error_function: Callable
-    magnitude: float
-    units: str
-    tie_type: Propagation
-    vector_type: VectorType
-    arguments: set
-    func_string: str
+    formula: List[str]
+    error_function: List[Callable]
+    magnitude: List[float]
+    units: List[str]
+    tie_type: List[Propagation]
+    vector_type: List[VectorType]
+    arguments: List[set]
+    func_string: List[str]
 
 
 class SurveyToolErrorModel(BaseModel):

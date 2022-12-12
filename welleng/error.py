@@ -205,7 +205,11 @@ class ErrorModel:
 
             if e_NEV is None:
                 e_NEV = self._e_NEV(e_DIA)
-                e_NEV_star = self._e_NEV_star(e_DIA)
+                if "xcl" in code.lower():
+                    # for xcl terms, e_NEV_star == e_NEV
+                    e_NEV_star = e_NEV
+                else:
+                    e_NEV_star = self._e_NEV_star(e_DIA)
 
             if propagation == 'systematic':
                 sigma_e_NEV = self._sigma_e_NEV_systematic(e_NEV, e_NEV_star)
@@ -222,7 +226,7 @@ class ErrorModel:
                         ), axis=-1)
                 )
 
-            elif propagation == 'global':
+            elif propagation == 'global' or propagation == "well_to_well":
                 sigma_e_NEV = np.cumsum(e_NEV, axis=0)
                 cov_NEV = self._cov(
                     np.add(
@@ -358,8 +362,8 @@ class ErrorModel:
 
         return np.vstack(
             (
-                np.stack((N, E, V), axis=-1),
-                np.array(np.zeros((1, 3)))
+                np.array(np.zeros((1, 3))),
+                np.stack((N, E, V), axis=-1)
             )
         )
 
