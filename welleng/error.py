@@ -362,8 +362,8 @@ class ErrorModel:
 
         return np.vstack(
             (
-                np.array(np.zeros((1, 3))),
-                np.stack((N, E, V), axis=-1)
+                np.stack((N, E, V), axis=-1),
+                np.array(np.zeros((1, 3)))
             )
         )
 

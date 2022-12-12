@@ -52,7 +52,6 @@ class ToolError:
         self.model = None
 
         if not is_error_from_edm:
-            self.extract_tortuosity(error_from_edm=True)
 
             self._calculate_error_from_welleng_models(model)
             return
@@ -249,6 +248,8 @@ class ToolError:
 
         with open(filename, 'r') as file:
             self.em = yaml.safe_load(file)
+
+        self.extract_tortuosity()
 
         # for gyro tools the continuous survey errors need to be done last
         self.em['codes'] = OrderedDict(self.em['codes'])
