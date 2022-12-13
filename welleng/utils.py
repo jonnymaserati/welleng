@@ -464,7 +464,7 @@ def errors_from_cov(cov, data=False):
         If True returns a dictionary, else returns a list.
     """
     nn, ne, nv, _, ee, ev, _, _, vv = (
-        cov.reshape(9, -1)
+        cov.reshape(-1, 9).T
     )
 
     if data:
