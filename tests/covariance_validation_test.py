@@ -27,9 +27,11 @@ var_map = {
 
 def run():
 
+    filename = 'error-model-example-mwdrev5-1-iscwsa-1 (1).xlsx'
+
     # Load the error model data from the ISCWSA test file
     dfs = pd.read_excel(
-        'error-model-example-mwdrev5-1-iscwsa-1 (1).xlsx',
+        filename,
         sheet_name="Model",
         usecols="D:W",
         header=2
@@ -79,7 +81,7 @@ def run():
 
     # load the survey from the excel sheet and store it in the Survey object
     df_survey = pd.read_excel(
-        'error-model-example-mwdrev5-1-iscwsa-demo.xlsx',
+        filename,
         sheet_name="Wellpath",
         usecols="E:I",
         header=1
@@ -88,7 +90,7 @@ def run():
     df_survey.columns = ["measured_depth", "inclination", "azimuth"]
 
     df_survey_header = pd.read_excel(
-        'error-model-example-mwdrev5-1-iscwsa-demo.xlsx',
+        filename,
         sheet_name="Wellpath",
         usecols="A:C",
         header=0
