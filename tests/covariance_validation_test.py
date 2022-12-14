@@ -8,6 +8,7 @@ from welleng.error_formula_extractor.formula_utils import function_builder
 from welleng.error_formula_extractor.models import ErrorTerm, SurveyToolErrorModel
 from welleng.survey import Survey, SurveyHeader
 from welleng.utils import errors_from_cov
+from welleng.units import TORTUOSITY_RAD_PER_M
 
 METER_TO_FOOT = 3.28084
 var_map = {
@@ -195,16 +196,22 @@ def convert_error_terms(row: pd.Series, error_terms: dict, sequence_no: int) -> 
     term_name = row["term_name"]
     if row["Depth Formula"]:
         formula = row["Depth Formula"]
+        if "0.0328084" in formula:
+            formula = formula.replace("0.0328084", str(TORTUOSITY_RAD_PER_M))
         vector = VectorType.DEPTH_TERMS
         error_terms[term_name] = create_error_class(row, formula, vector)
 
     if row["Inclination Formula"]:
         formula = row["Inclination Formula"]
+        if "0.0328084" in formula:
+            formula = formula.replace("0.0328084", str(TORTUOSITY_RAD_PER_M))
         vector = VectorType.INCLINATION_TERMS
         error_terms[term_name] = create_error_class(row, formula, vector)
 
     if row["Azimuth Formula"]:
         formula = row["Azimuth Formula"]
+        if "0.0328084" in formula:
+            formula = formula.replace("0.0328084", str(TORTUOSITY_RAD_PER_M))
         if type(row['Singularity North Formula']) == str or type(row['Singularity East Formula']) == str:
             vector = VectorType.LATERAL
         else:
