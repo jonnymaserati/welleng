@@ -28,7 +28,7 @@ var_map = {
 
 def run():
 
-    filename = 'error-model-example-mwdrev5-1-iscwsa-1 (1).xlsx'
+    filename = 'error-model-example-mwdrev5-1-iscwsa-2.xlsx'
 
     # Load the error model data from the ISCWSA test file
     dfs = pd.read_excel(
@@ -127,10 +127,10 @@ def run():
     )
 
     iscwsa_survey = Survey(
-        md=df_survey["measured_depth"].values,
+        md=df_survey["measured_depth"].values * 0.3048,
         inc=df_survey["inclination"].values,
         azi=df_survey["azimuth"].values,
-        header=sh
+        header=sh,
     )
 
     # calculate covariance for the Survey object
@@ -146,7 +146,7 @@ def run():
     cov_code = pd.DataFrame.from_records(df_output["covariance"])
     data_code_combined = pd.concat([df_output, cov_code], axis=1)
     data_code_combined.drop(["covariance"], axis=1, inplace=True)
-    data_code_combined.to_csv("ISCWSA_code.csv")
+    data_code_combined.to_csv("ISCWSA_code_ex2.csv")
 
 
 def replace_str(formula_str: str) -> str:

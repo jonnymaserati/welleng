@@ -12,7 +12,7 @@ from ..error_formula_extractor.enums import Propagation, VectorType
 from ..error_formula_extractor.models import ErrorTerm, SurveyToolErrorModel
 from ..units import METER_TO_FOOT
 from ..utils import NEV_to_HLA
-from .singularity_util import calculate_error_singularity
+from .singularity_util import calculate_error_singularity, calc_xclh
 
 # since this is running on different OS flavors
 PATH = os.path.dirname(__file__)
@@ -82,7 +82,6 @@ class ToolError:
             for key, value in self.errors.items()
             if type(value) not in [list, float, int, np.ndarray]
         }
-
         self.cov_NEVs = np.zeros((3, 3, len(self.e.survey_rad)))
         for _, value in self.errors.items():
             self.cov_NEVs += value.cov_NEV
@@ -112,8 +111,16 @@ class ToolError:
         intermediate_step = propagation[0] == Propagation.NA
         sing_calc = False
 
+        if term.term_name.lower() == "xclh":
+            # TODO: Check with Steve why this calculation was different in the excel file
+            return calc_xclh(term.term_name, error, mag[0], propagation[0].value)
+
         for vector_no in range(len(vector_type)):
             # for each vector in vector_type, first, extract all arguments from the equation.
+
+            if vector_type[vector_no] == VectorType.LATERAL:
+                sing_calc = True
+
             args = []
             for arg in term.arguments[vector_no]:
                 # for each argument first check if the argument is in the map or is one of the previously calculated
@@ -155,7 +162,7 @@ class ToolError:
 
         dpde = np.vstack((np.array([0., 0., 0.]), dpde))
 
-        e_DIA = dpde.round(decimals=10) * mag[0]
+        e_DIA = dpde * mag[0]
         if not sing_calc:
             return error._generate_error(
                 term.term_name,
