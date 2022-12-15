@@ -12,7 +12,7 @@ from ..error_formula_extractor.enums import Propagation, VectorType
 from ..error_formula_extractor.models import ErrorTerm, SurveyToolErrorModel
 from ..units import METER_TO_FOOT
 from ..utils import NEV_to_HLA
-from .singularity_util import calculate_error_singularity, calc_xclh
+from .singularity_util import calc_xclh, calculate_error_singularity
 
 # since this is running on different OS flavors
 PATH = os.path.dirname(__file__)
