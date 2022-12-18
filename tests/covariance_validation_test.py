@@ -28,7 +28,7 @@ var_map = {
 
 def run():
 
-    filename = 'error-model-example-mwdrev5-1-iscwsa-2.xlsx'
+    filename = 'error-model-example-mwdrev5-1-iscwsa-3.xlsx'
 
     # Load the error model data from the ISCWSA test file
     dfs = pd.read_excel(
@@ -51,7 +51,6 @@ def run():
         'Singularity North Formula': 'Singularity North Formula',
         'Singularity East Formula': 'Singularity East Formula',
         'Singularity Vert. Formula': 'Singularity Vert. Formula'
-
     }
 
     # filter the df to just keep the columns specified in the dict above and change the column names
@@ -127,7 +126,7 @@ def run():
     )
 
     iscwsa_survey = Survey(
-        md=df_survey["measured_depth"].values * 0.3048,
+        md=df_survey["measured_depth"].values,
         inc=df_survey["inclination"].values,
         azi=df_survey["azimuth"].values,
         header=sh,
@@ -137,7 +136,7 @@ def run():
     iscwsa_survey.get_error(edm_error_model=survey_tool)
 
     cov_nevs = []
-    cov_nevs.append(iscwsa_survey.cov_nev[1:])
+    cov_nevs.append(iscwsa_survey.cov_nev)  # deep used [1:] to remove the first
 
     azimuth_reference = iscwsa_survey.azi_true_deg
     result_with_covariance = construct_results_dict(iscwsa_survey, azimuth_reference, cov_nevs)

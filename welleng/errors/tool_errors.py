@@ -5,13 +5,14 @@ from collections import OrderedDict
 from typing import Callable, List
 
 import numpy as np
+import pandas as pd
 import yaml
 from numpy import cos, pi, sin, sqrt, tan
 
 from ..error_formula_extractor.enums import Propagation, VectorType
 from ..error_formula_extractor.models import ErrorTerm, SurveyToolErrorModel
 from ..units import METER_TO_FOOT
-from ..utils import NEV_to_HLA
+from ..utils import NEV_to_HLA, errors_from_cov
 from .singularity_util import calc_xclh, calculate_error_singularity
 
 # since this is running on different OS flavors
@@ -50,6 +51,7 @@ class ToolError:
         self.errors = {}
         self.map = None
         self.model = None
+        self.converted_covs = {}
 
         if not is_error_from_edm:
 
@@ -66,6 +68,7 @@ class ToolError:
             if term.term_name in self.errors.keys():
                 term.term_name += "_2"
             if term.term_name not in self.errors.keys():
+                print(f"Calculating {term.term_name}")
                 self.errors[term.term_name] = (
                     self.call_func_from_edm(
                         term=term,
@@ -76,12 +79,21 @@ class ToolError:
                         vector_type=term.vector_type
                     )
                 )
-
         self.errors = {
             key: value
             for key, value in self.errors.items()
             if type(value) not in [list, float, int, np.ndarray]
         }
+
+        for key, value in self.errors.items():
+            # vstack the covariances
+            reshaped_cov_nev = np.vstack(value.cov_NEV).T
+            columns = ['nn', 'ne', 'nv', 'en', 'ee', 'ev', 'vn', 've', 'vv']
+            df = pd.DataFrame(reshaped_cov_nev, columns=columns)
+            keep_cols = ['nn', 'ee', 'vv', 'ne', 'nv', 'ev']
+            df = df[keep_cols]
+            df.to_csv(f"cov_per_error/{key}.csv")
+
         self.cov_NEVs = np.zeros((3, 3, len(self.e.survey_rad)))
         for _, value in self.errors.items():
             self.cov_NEVs += value.cov_NEV
