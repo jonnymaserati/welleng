@@ -28,7 +28,7 @@ var_map = {
 
 def run():
 
-    filename = 'error-model-example-mwdrev5-1-iscwsa-3.xlsx'
+    filename = 'error-model-example-mwdrev5-1-iscwsa-1.xlsx'
 
     # Load the error model data from the ISCWSA test file
     dfs = pd.read_excel(

@@ -2,7 +2,8 @@ import pandas as pd
 import numpy as np
 import os
 from matplotlib import pyplot as plt
-
+import warnings
+warnings.filterwarnings("ignore")
 # get the Path of current file
 Path = os.path.dirname(os.path.abspath(__file__))
 # print(Path)
@@ -60,9 +61,9 @@ for tab in list_of_errors_csv:
 
     # print the shape of error_percentage for each tab
     print(tab, error_percentage.shape)
-    if tab == "XCLA":
-        print(tab)
-        print("")
+    # if tab == "XCLA":
+    #     print(tab)
+    #     print("")
 
     # a depth column for plotting the error
     # between 0 and 8000 increment by 30
@@ -80,6 +81,8 @@ for tab in list_of_errors_csv:
     ax.set_ylabel('Error (%)')
     ax.set_title(tab)
     ax.legend()
-    plt.show()
+    # save the plot in error figues folder
+    plt.savefig(Path + '/error_figures/' + tab + '.png')
+    # plt.show()
 
 
