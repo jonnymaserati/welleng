@@ -3,6 +3,7 @@ import numpy as np
 import os
 from matplotlib import pyplot as plt
 import warnings
+
 warnings.filterwarnings("ignore")
 # get the Path of current file
 Path = os.path.dirname(os.path.abspath(__file__))
@@ -31,7 +32,7 @@ sum_of_errors.to_csv(Path + '/AA_sum_of_errors.csv', index=False)
 ISCWSA_file_name = 'error-model-example-mwdrev5-1-iscwsa-1.xlsx'
 df = pd.read_excel(ISCWSA_file_name)
 
-jump = False
+jump = True
 for tab in list_of_errors_csv:
     if jump:
         continue
@@ -42,7 +43,7 @@ for tab in list_of_errors_csv:
         sheet_name=tab,
         usecols="Q:V",
         header=1
-        )
+    )
 
     # drop the last row of ISCWSA_cov_nev
     ISCWSA_cov_nev.drop(ISCWSA_cov_nev.tail(1).index, inplace=True)
@@ -90,41 +91,87 @@ for tab in list_of_errors_csv:
 
 # print(sum_of_errors)
 
-
-ISCWSA_TOTAL_cov_nev = pd.read_excel(
-    ISCWSA_file_name,
-    sheet_name='TOTALS',
-    usecols="B:G",
-    header=1
+# calculate sum of errors percentage and plot
+Calculate_sum_err = True
+if Calculate_sum_err:
+    ISCWSA_TOTAL_cov_nev = pd.read_excel(
+        ISCWSA_file_name,
+        sheet_name='TOTALS',
+        usecols="B:G",
+        header=1
     )
 
-# print(ISCWSA_TOTAL_cov_nev.shape)
+    # print(ISCWSA_TOTAL_cov_nev.shape)
 
-# compute the error between ISCWSA_cov_nev and corva_welleng_cov_nev for each column
-sum_of_errors.columns = ['NN', 'EE', 'VV', 'NE', 'NV', 'EV']
-diff = sum_of_errors - ISCWSA_TOTAL_cov_nev
-# change the type of diff to float
-diff = diff.astype(float)
-error = diff / ISCWSA_TOTAL_cov_nev
-depth = np.arange(0, 8030, 30)
-# calculate error percentage
-error_percentage = error * 100
-error_percentage.columns = ['NN', 'EE', 'VV', 'NE', 'NV', 'EV']
-# plot scatter the error percentage for each column in one plot
-fig, ax = plt.subplots()
-ax.scatter(depth, error_percentage['NN'], label='NN')
-ax.scatter(depth, error_percentage['EE'], label='EE')
-ax.scatter(depth, error_percentage['VV'], label='VV')
-ax.scatter(depth, error_percentage['NE'], label='NE')
-ax.scatter(depth, error_percentage['NV'], label='NV')
-ax.scatter(depth, error_percentage['EV'], label='EV')
-ax.set_xlabel('Depth (m)')
-ax.set_ylabel('Error (%)')
-ax.set_title("TOTALS")
-ax.legend()
+    # compute the error between ISCWSA_cov_nev and corva_welleng_cov_nev for each column
+    sum_of_errors.columns = ['NN', 'EE', 'VV', 'NE', 'NV', 'EV']
+    diff = sum_of_errors - ISCWSA_TOTAL_cov_nev
+    # change the type of diff to float
+    diff = diff.astype(float)
+    error = diff / ISCWSA_TOTAL_cov_nev
+    depth = np.arange(0, 8030, 30)
+    # calculate error percentage
+    error_percentage = error * 100
+    error_percentage.columns = ['NN', 'EE', 'VV', 'NE', 'NV', 'EV']
+    # plot scatter the error percentage for each column in one plot
+    fig, ax = plt.subplots()
+    ax.scatter(depth, error_percentage['NN'], label='NN')
+    ax.scatter(depth, error_percentage['EE'], label='EE')
+    ax.scatter(depth, error_percentage['VV'], label='VV')
+    ax.scatter(depth, error_percentage['NE'], label='NE')
+    ax.scatter(depth, error_percentage['NV'], label='NV')
+    ax.scatter(depth, error_percentage['EV'], label='EV')
+    ax.set_xlabel('Depth (m)')
+    ax.set_ylabel('Error (%)')
+    ax.set_title("TOTALS")
+    ax.legend()
 
-# save the plot in error figues folder
-plt.savefig(Path + '/error_figures/' + "TOTALS" + '.png')
+    # save the plot in error figues folder
+    plt.savefig(Path + '/error_figures/' + "TOTALS" + '.png')
+    plt.show()
+
+# import r2_score from sklearn.metrics
+from sklearn.metrics import r2_score
+
+# plot the ISCWSA TOTALS cov NEV versus the sum of errors cov NEV
+# on a 3x2 subplot
+fig, axs = plt.subplots(3, 2)
+fig.suptitle('Cov NEV')
+
+columns = ['NN', 'EE', 'VV', 'NE', 'NV', 'EV']
+
+sum_of_errors = sum_of_errors.astype(float)
+ISCWSA_TOTAL_cov_nev = ISCWSA_TOTAL_cov_nev.astype(float)
+
+# plot using loop for each column
+for i in range(3):
+    for j in range(2):
+        axs[i, j].scatter(ISCWSA_TOTAL_cov_nev[columns[i * 2 + j]], sum_of_errors[columns[i * 2 + j]])
+        axs[i, j].set_xlabel('ISCWSA TOTALS')
+        axs[i, j].set_ylabel('Corva-welleng')
+        axs[i, j].set_title(columns[i * 2 + j])
+
+        # fit a line to the data
+        z = np.polyfit(ISCWSA_TOTAL_cov_nev[columns[i * 2 + j]],
+                       sum_of_errors[columns[i * 2 + j]], 1)
+        p = np.poly1d(z)
+        axs[i, j].plot(ISCWSA_TOTAL_cov_nev[columns[i * 2 + j]],
+                       p(ISCWSA_TOTAL_cov_nev[columns[i * 2 + j]]), "r--")
+
+        # show the equation of the line with 2 decimal places
+        axs[i, j].text(0.05, 0.9, 'y = ' + str(round(z[0], 3)) + 'x + ' + str(round(z[1], 2)),
+                       transform=axs[i, j].transAxes,
+                       fontsize=8,
+                       verticalalignment='top')
+
+        # calculate the r2 score
+        r2 = r2_score(ISCWSA_TOTAL_cov_nev[columns[i * 2 + j]],
+                      sum_of_errors[columns[i * 2 + j]])
+        axs[i, j].text(0.05, 0.7, 'r2 = ' + str(round(r2, 3)),
+                       transform=axs[i, j].transAxes,
+                       fontsize=8,
+                       verticalalignment='top')
+
+# make plot tight layout
+plt.tight_layout()
 plt.show()
-
-
