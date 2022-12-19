@@ -31,7 +31,10 @@ sum_of_errors.to_csv(Path + '/AA_sum_of_errors.csv', index=False)
 ISCWSA_file_name = 'error-model-example-mwdrev5-1-iscwsa-1.xlsx'
 df = pd.read_excel(ISCWSA_file_name)
 
+jump = False
 for tab in list_of_errors_csv:
+    if jump:
+        continue
     tab = tab.replace('.csv', '')
 
     ISCWSA_cov_nev = pd.read_excel(
@@ -84,5 +87,43 @@ for tab in list_of_errors_csv:
     # save the plot in error figues folder
     plt.savefig(Path + '/error_figures/' + tab + '.png')
     # plt.show()
+
+# print(sum_of_errors)
+
+
+ISCWSA_TOTAL_cov_nev = pd.read_excel(
+    ISCWSA_file_name,
+    sheet_name='TOTALS',
+    usecols="B:G",
+    header=1
+    )
+
+# print(ISCWSA_TOTAL_cov_nev.shape)
+
+# compute the error between ISCWSA_cov_nev and corva_welleng_cov_nev for each column
+sum_of_errors.columns = ['NN', 'EE', 'VV', 'NE', 'NV', 'EV']
+diff = ISCWSA_TOTAL_cov_nev - sum_of_errors
+# change the type of diff to float
+diff = diff.astype(float)
+error = diff / ISCWSA_TOTAL_cov_nev
+depth = np.arange(0, 8030, 30)
+# calculate error percentage
+error_percentage = error * 100
+error_percentage.columns = ['NN', 'EE', 'VV', 'NE', 'NV', 'EV']
+# plot scatter the error percentage for each column in one plot
+fig, ax = plt.subplots()
+ax.scatter(depth, error_percentage['NN'], label='NN')
+ax.scatter(depth, error_percentage['EE'], label='EE')
+ax.scatter(depth, error_percentage['VV'], label='VV')
+ax.scatter(depth, error_percentage['NE'], label='NE')
+ax.scatter(depth, error_percentage['NV'], label='NV')
+ax.scatter(depth, error_percentage['EV'], label='EV')
+ax.set_xlabel('Depth (m)')
+ax.set_ylabel('Error (%)')
+ax.set_title("TOTALS")
+ax.legend()
+plt.show()
+# save the plot in error figues folder
+plt.savefig(Path + '/error_figures/' + "TOTALS" + '.png')
 
 
