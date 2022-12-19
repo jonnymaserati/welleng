@@ -159,7 +159,7 @@ for i in range(3):
                        p(ISCWSA_TOTAL_cov_nev[columns[i * 2 + j]]), "r--")
 
         # show the equation of the line with 2 decimal places
-        axs[i, j].text(0.05, 0.9, 'y = ' + str(round(z[0], 3)) + 'x + ' + str(round(z[1], 2)),
+        axs[i, j].text(0.05, 0.9, 'y = ' + str(z[0]) + 'x + ' + str(z[1]),
                        transform=axs[i, j].transAxes,
                        fontsize=8,
                        verticalalignment='top')
@@ -167,11 +167,14 @@ for i in range(3):
         # calculate the r2 score
         r2 = r2_score(ISCWSA_TOTAL_cov_nev[columns[i * 2 + j]],
                       sum_of_errors[columns[i * 2 + j]])
-        axs[i, j].text(0.05, 0.7, 'r2 = ' + str(round(r2, 3)),
+        axs[i, j].text(0.05, 0.7, 'r2 = ' + str(r2),
                        transform=axs[i, j].transAxes,
                        fontsize=8,
                        verticalalignment='top')
 
 # make plot tight layout
 plt.tight_layout()
+
+# save the plot in error figues folder
+plt.savefig(Path + '/error_figures/' + "ISCWSAvsCORVA" + '_cov_nev.png')
 plt.show()
