@@ -57,7 +57,7 @@ for tab in list_of_errors_csv:
     corva_welleng_cov_nev.columns = ['NN', 'EE', 'VV', 'NE', 'NV', 'EV']
 
     # compute the error between ISCWSA_cov_nev and corva_welleng_cov_nev for each column
-    diff = ISCWSA_cov_nev - corva_welleng_cov_nev
+    diff = corva_welleng_cov_nev - ISCWSA_cov_nev
     error = diff / ISCWSA_cov_nev
     # calculate error percentage
     error_percentage = error * 100
@@ -102,7 +102,7 @@ ISCWSA_TOTAL_cov_nev = pd.read_excel(
 
 # compute the error between ISCWSA_cov_nev and corva_welleng_cov_nev for each column
 sum_of_errors.columns = ['NN', 'EE', 'VV', 'NE', 'NV', 'EV']
-diff = ISCWSA_TOTAL_cov_nev - sum_of_errors
+diff = sum_of_errors - ISCWSA_TOTAL_cov_nev
 # change the type of diff to float
 diff = diff.astype(float)
 error = diff / ISCWSA_TOTAL_cov_nev
@@ -122,8 +122,9 @@ ax.set_xlabel('Depth (m)')
 ax.set_ylabel('Error (%)')
 ax.set_title("TOTALS")
 ax.legend()
-plt.show()
+
 # save the plot in error figues folder
 plt.savefig(Path + '/error_figures/' + "TOTALS" + '.png')
+plt.show()
 
 
