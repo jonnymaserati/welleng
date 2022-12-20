@@ -25,9 +25,14 @@ var_map = {
     "AzM": "azm",
 }
 
+survey_unit = {
+    'error-model-example-mwdrev5-1-iscwsa-1.xlsx': 'meter',
+    'error-model-example-mwdrev5-1-iscwsa-2.xlsx': 'ft',
+    'error-model-example-mwdrev5-1-iscwsa-3.xlsx': 'meter',
+}
+
 
 def run():
-
     filename = 'error-model-example-mwdrev5-1-iscwsa-1.xlsx'
 
     # Load the error model data from the ISCWSA test file
@@ -125,8 +130,13 @@ def run():
         surface_unit='meters'
     )
 
+    if survey_unit[filename] == 'ft':
+        survey_unit_conversion_ft_meter = 0.3048
+    else:
+        survey_unit_conversion_ft_meter = 1
+
     iscwsa_survey = Survey(
-        md=df_survey["measured_depth"].values,
+        md=df_survey["measured_depth"].values * survey_unit_conversion_ft_meter,
         inc=df_survey["inclination"].values,
         azi=df_survey["azimuth"].values,
         header=sh,
@@ -145,6 +155,9 @@ def run():
     cov_code = pd.DataFrame.from_records(df_output["covariance"])
     data_code_combined = pd.concat([df_output, cov_code], axis=1)
     data_code_combined.drop(["covariance"], axis=1, inplace=True)
+    columns = ['measured_depth', 'inclination', 'azimuth', 'northing', 'easting',
+               'tvd', 'nn', 'ee', 'vv', 'ne', 'nv', 'ev']
+    data_code_combined = data_code_combined[columns]
     data_code_combined.to_csv("ISCWSA_code_ex2.csv")
 
 
@@ -277,7 +290,7 @@ def construct_results_dict(
             np.round(survey.md, 3),
             np.round(survey.inc_deg, 3),
             np.round(azimuth, 3),
-            np.round(survey.n , 3),
+            np.round(survey.n, 3),
             np.round(survey.e, 3),
             np.round(survey.tvd, 3),
             stacked_cov_nev
