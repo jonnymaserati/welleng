@@ -92,7 +92,7 @@ class ToolError:
             df = pd.DataFrame(reshaped_cov_nev, columns=columns)
             keep_cols = ['nn', 'ee', 'vv', 'ne', 'nv', 'ev']
             df = df[keep_cols]
-            df.to_csv(f"cov_per_error/{key}.csv")
+            df.to_csv(f"cov_per_error_test_1/{key}.csv")
 
         self.cov_NEVs = np.zeros((3, 3, len(self.e.survey_rad)))
         for _, value in self.errors.items():
