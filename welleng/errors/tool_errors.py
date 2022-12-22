@@ -172,6 +172,8 @@ class ToolError:
 
                     dpde[:, vector_type[vector_no].column_no][index] = val_to_put
 
+        print('this is inside the tool_errors.py \nsing_calc ', sing_calc)
+
         dpde = np.vstack((np.array([0., 0., 0.]), dpde))
 
         e_DIA = dpde * mag[0]
