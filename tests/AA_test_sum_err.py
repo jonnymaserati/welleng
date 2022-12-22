@@ -252,7 +252,7 @@ if Calculate_sum_err:
     # calculate abs diff
     abs_diff = abs(diff)
     error = diff / ISCWSA_TOTAL_cov_nev
-    depth = np.arange(0, 8030, 30)
+    # depth = np.arange(0, 8030, 30)
     # calculate error percentage
     error_percentage = error * 100
     error_percentage.columns = ['NN', 'EE', 'VV', 'NE', 'NV', 'EV']
