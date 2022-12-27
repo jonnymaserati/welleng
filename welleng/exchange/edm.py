@@ -40,6 +40,8 @@ class EDM:
                 raise ValueError(f"Error loading the EDM file. Error code: {response.status_code}")
         else:
             raise AttributeError(f'Invalid source {source}. Source must be "file" or "link"')
+
+        self.convert_attribute_lowercase()
         self._wellbore_id_to_name()
         self._wellbore_id_to_well_id()
 
@@ -129,6 +131,12 @@ class EDM:
         for _, v in self.get_wellbore_ids().items():
             self.wellbore_id_to_name[v['wellbore_id']] = v['wellbore_name']
             self.wellbore_name_to_id[v['wellbore_name']] = v['wellbore_id']
+
+    def convert_attribute_lowercase(self):
+        for tag in self.get_tags():
+            for child in self.root:
+                if child.tag == tag:
+                    child.attrib = {k.lower(): v for k, v in child.attrib.items()}
 
     def get_wells(self):
         return {
