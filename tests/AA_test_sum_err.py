@@ -38,7 +38,6 @@ ISCWSA_case = {
     },
 }
 
-
 list_of_errors_csv = os.listdir(Path + '/' + ISCWSA_case[ISCWSA_file_name]['folder_csv'])
 print('list_of_errors_csv ', len(list_of_errors_csv))
 
@@ -103,7 +102,6 @@ for tab in list_of_errors_csv:
     # check the iscwsa 2 and 3 and go to error tabs
     ISCWSA_cov_nev = ISCWSA_cov_nev.head(corva_welleng_cov_nev.shape[0])
 
-
     # compute the error between ISCWSA_cov_nev and corva_welleng_cov_nev for each column
     diff = corva_welleng_cov_nev - ISCWSA_cov_nev
     # calculate abs diff
@@ -137,9 +135,6 @@ for tab in list_of_errors_csv:
     # save the plot in error figures folder
     plt.savefig(Path + '/' + ISCWSA_case[ISCWSA_file_name]['folder_to_save_fig'] + '/' + tab + '.png')
     # plt.show()
-
-
-
 
     # concatenate the ISCWSA_cov_nev, abs diff and error percentage to one dataframe
     error_absdif_df = pd.concat([ISCWSA_cov_nev, abs_diff, error_percentage], axis=1)
@@ -227,7 +222,6 @@ for tab in list_of_errors_csv:
     # save the plot
     plt.savefig(ISCWSA_case[ISCWSA_file_name]['error_absdif_df_folder_for_plots'] + '/' + tab + '.png')
 
-
 # calculate sum of errors percentage and plot
 Calculate_sum_err = True
 if Calculate_sum_err:
@@ -242,7 +236,6 @@ if Calculate_sum_err:
     # in the ISCWSA_cov_nev file there are some rows that should be deleted from the bottom manually
     # check the iscwsa 2 and 3 and go to error tabs
     ISCWSA_TOTAL_cov_nev = ISCWSA_TOTAL_cov_nev.head(sum_of_errors.shape[0])
-
 
     # compute the error between ISCWSA_cov_nev and corva_welleng_cov_nev for each column
     sum_of_errors.columns = ['NN', 'EE', 'VV', 'NE', 'NV', 'EV']
@@ -273,7 +266,6 @@ if Calculate_sum_err:
     # plt.savefig(Path + '/error_figures/' + "TOTALS" + '.png')
     plt.savefig(Path + '/' + ISCWSA_case[ISCWSA_file_name]['folder_to_save_fig'] + '/' + "TOTALS" + '.png')
     # plt.show()
-
 
     # concatenate the ISCWSA_cov_nev, abs diff and error percentage to one dataframe
     error_absdif_df = pd.concat([ISCWSA_TOTAL_cov_nev, abs_diff, error_percentage], axis=1)
@@ -356,24 +348,8 @@ if Calculate_sum_err:
     # save the plot
     plt.savefig(ISCWSA_case[ISCWSA_file_name]['error_absdif_df_folder_for_plots'] + '/' + 'TOTAL' + '.png')
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # import r2_score from sklearn.metrics
-from sklearn.metrics import r2_score
+# from sklearn.metrics import r2_score
 
 # plot the ISCWSA TOTALS cov NEV versus the sum of errors cov NEV
 # on a 3x2 subplot
