@@ -5,6 +5,7 @@ from collections import OrderedDict
 from typing import Callable, List
 
 import numpy as np
+
 # import pandas as pd
 import yaml
 from numpy import cos, pi, sin, sqrt, tan
@@ -13,6 +14,7 @@ from ..error_formula_extractor.enums import Propagation, VectorType
 from ..error_formula_extractor.models import ErrorTerm, SurveyToolErrorModel
 from ..units import METER_TO_FOOT
 from ..utils import NEV_to_HLA
+
 # from ..utils import NEV_to_HLA, errors_from_cov
 from .singularity_util import calc_xclh, calculate_error_singularity
 
