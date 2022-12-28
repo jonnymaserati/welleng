@@ -5,13 +5,14 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
-warnings.filterwarnings("ignore")
 from welleng.error_formula_extractor.enums import Propagation, VectorType
 from welleng.error_formula_extractor.formula_utils import function_builder
 from welleng.error_formula_extractor.models import ErrorTerm, SurveyToolErrorModel
 from welleng.survey import Survey, SurveyHeader
 from welleng.units import TORTUOSITY_RAD_PER_M
 from welleng.utils import errors_from_cov
+
+warnings.filterwarnings("ignore")
 
 METER_TO_FOOT = 3.28084
 var_map = {
