@@ -556,7 +556,8 @@ class Survey:
             self.inc_deg = np.degrees(inc)
             self.azi_grid_deg = np.degrees(azi)
 
-    def get_error(self, error_model: str = None, return_error: bool = False, edm_error_model=None):
+    def get_error(self, error_model: str = None, return_error: bool = False, edm_error_model=None,
+                  path_for_csv_files=None):
 
         if error_model:
             assert error_model in ERROR_MODELS, "Undefined error model"
@@ -566,14 +567,14 @@ class Survey:
             self.error_model = edm_error_model
             setattr(self, "error_model_from_edm", True)
 
-        self._get_errors()
+        self._get_errors(path_for_csv_files)
 
         if return_error:
             return self.err
         else:
             return self
 
-    def _get_errors(self):
+    def _get_errors(self, path_for_csv_files=None):
         """
         Initiate a welleng.error.ErrorModel object and calculate the
         covariance matrices with the specified error model.
@@ -582,8 +583,9 @@ class Survey:
             self.err = ErrorModel(
                 self,
                 error_model=self.error_model,
-                error_from_edm=self.error_model_from_edm
-            )
+                error_from_edm=self.error_model_from_edm,
+                path_for_csv_files=path_for_csv_files)
+
             self.cov_hla = self.err.errors.cov_HLAs.T
             self.cov_nev = self.err.errors.cov_NEVs.T
         else:

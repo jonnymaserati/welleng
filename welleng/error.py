@@ -79,7 +79,8 @@ class ErrorModel:
         self,
         survey: 'Survey',
         error_model: ISCWSAErrorModel = ISCWSAErrorModel.Rev5,
-        error_from_edm: bool = False
+        error_from_edm: bool = False,
+        path_for_csv_files=None
     ):
         self.error_model = error_model
         self.survey = survey
@@ -104,8 +105,8 @@ class ErrorModel:
         self.errors = ToolError(
             error=self,
             model=model,
-            is_error_from_edm=error_from_edm
-
+            is_error_from_edm=error_from_edm,
+            path_for_csv_files=path_for_csv_files
         )
 
     def _e_NEV(self, e_DIA: np.ndarray) -> np.ndarray:

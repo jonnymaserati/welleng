@@ -53,10 +53,18 @@ def run():
     # for more details please review the Excel file provided in the directory.
     filename = 'error-model-example-mwdrev5-1-iscwsa-3.xlsx'
 
-    filename_to_save = {
-        'error-model-example-mwdrev5-1-iscwsa-1.xlsx': "ISCWSA_code_ex1.csv",
-        'error-model-example-mwdrev5-1-iscwsa-2.xlsx': "ISCWSA_code_ex2.csv",
-        'error-model-example-mwdrev5-1-iscwsa-3.xlsx': "ISCWSA_code_ex3.csv",
+    ISCWSA_cases = {
+        'error-model-example-mwdrev5-1-iscwsa-1.xlsx': {
+            'filename_to_save': "ISCWSA_code_ex1.csv",
+            'path_to_save_cov_csv_files': 'cov_per_error_test_1',
+        },
+        'error-model-example-mwdrev5-1-iscwsa-2.xlsx': {
+            'filename_to_save': "ISCWSA_code_ex2.csv",
+            'path_to_save_cov_csv_files': 'cov_per_error_test_2'},
+
+        'error-model-example-mwdrev5-1-iscwsa-3.xlsx': {
+            'filename_to_save': "ISCWSA_code_ex3.csv",
+            'path_to_save_cov_csv_files': 'cov_per_error_test_3'},
     }
 
     # Load the error model data from the ISCWSA test file
@@ -167,7 +175,8 @@ def run():
     )
 
     # calculate covariance for the Survey object
-    iscwsa_survey.get_error(edm_error_model=survey_tool)
+    iscwsa_survey.get_error(edm_error_model=survey_tool,
+                            path_for_csv_files=ISCWSA_cases[filename]['path_to_save_cov_csv_files'])
 
     cov_nevs = []
     cov_nevs.append(iscwsa_survey.cov_nev)  # deep used [1:] to remove the first
@@ -183,8 +192,8 @@ def run():
                'tvd', 'nn', 'ee', 'vv', 'ne', 'nv', 'ev']
     data_code_combined = data_code_combined[columns]
 
-    data_code_combined.to_csv(filename_to_save[filename])
-
+    # data_code_combined.to_csv(filename_to_save[filename])
+    data_code_combined.to_csv(ISCWSA_cases[filename]['filename_to_save'])
 
 def replace_str(formula_str: str) -> str:
     formula_str = str(formula_str)
