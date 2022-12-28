@@ -26,3 +26,8 @@ VERSION*
 test/test_data/*.xlsx
 
 .coverage
+
+# ignore all folders inside the tests directory
+# that start with "cov_" and "error"
+tests/cov_*/
+tests/error*/
