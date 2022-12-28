@@ -1,8 +1,11 @@
+import os
+import warnings
 from typing import Tuple
 
 import numpy as np
 import pandas as pd
 
+warnings.filterwarnings("ignore")
 from welleng.error_formula_extractor.enums import Propagation, VectorType
 from welleng.error_formula_extractor.formula_utils import function_builder
 from welleng.error_formula_extractor.models import ErrorTerm, SurveyToolErrorModel
@@ -31,9 +34,29 @@ survey_unit = {
     'error-model-example-mwdrev5-1-iscwsa-3.xlsx': 'meter',
 }
 
+# the following list of folder are needed to keep the generated files
+# separate which is later is used to compare the generated files with the expected files.
+# check inside the directory to see if there are following list of folders
+folder_list = ['cov_per_error_test_1', 'cov_per_error_test_2', 'cov_per_error_test_3',
+               'error_absdif_df_plots_test_1', 'error_absdif_df_plots_test_2', 'error_absdif_df_plots_test_3',
+               'error_absdif_df_test_1', 'error_absdif_df_test_2', 'error_absdif_df_test_3',
+               'error_figures_test_1', 'error_figures_test_2', 'error_figures_test_3']
+# if folder is not exist then create it
+for folder in folder_list:
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+
 
 def run():
-    filename = 'error-model-example-mwdrev5-1-iscwsa-1.xlsx'
+    # Note that the ISCWSA tests 2 and 3 in this directory were edited for XCLL, XYM2 and XYM4E.
+    # for more details please review the Excel file provided in the directory.
+    filename = 'error-model-example-mwdrev5-1-iscwsa-3.xlsx'
+
+    filename_to_save = {
+        'error-model-example-mwdrev5-1-iscwsa-1.xlsx': "ISCWSA_code_ex1.csv",
+        'error-model-example-mwdrev5-1-iscwsa-2.xlsx': "ISCWSA_code_ex2.csv",
+        'error-model-example-mwdrev5-1-iscwsa-3.xlsx': "ISCWSA_code_ex3.csv",
+    }
 
     # Load the error model data from the ISCWSA test file
     dfs = pd.read_excel(
@@ -158,7 +181,8 @@ def run():
     columns = ['measured_depth', 'inclination', 'azimuth', 'northing', 'easting',
                'tvd', 'nn', 'ee', 'vv', 'ne', 'nv', 'ev']
     data_code_combined = data_code_combined[columns]
-    data_code_combined.to_csv("ISCWSA_code_ex2.csv")
+
+    data_code_combined.to_csv(filename_to_save[filename])
 
 
 def replace_str(formula_str: str) -> str:
