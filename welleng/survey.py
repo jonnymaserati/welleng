@@ -556,8 +556,12 @@ class Survey:
             self.inc_deg = np.degrees(inc)
             self.azi_grid_deg = np.degrees(azi)
 
-    def get_error(self, error_model: str = None, return_error: bool = False, edm_error_model=None,
-                  path_for_csv_files=None):
+    def get_error(self,
+                  error_model: str = None,
+                  return_error: bool = False,
+                  edm_error_model=None,
+                  path_for_csv_files=None
+                  ):
 
         if error_model:
             assert error_model in ERROR_MODELS, "Undefined error model"
