@@ -14,7 +14,7 @@ Path = os.path.dirname(os.path.abspath(__file__))
 
 # Note that the ISCWSA tests 2 and 3 in this directory were edited for XCLL, XYM2 and XYM4E.
 # for more details please review the Excel file provided in the directory.
-ISCWSA_file_name = 'error-model-example-mwdrev5-1-iscwsa-1.xlsx'
+ISCWSA_file_name = 'error-model-example-mwdrev5-1-iscwsa-3.xlsx'
 
 ISCWSA_case = {
     'error-model-example-mwdrev5-1-iscwsa-1.xlsx': {

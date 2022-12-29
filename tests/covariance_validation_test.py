@@ -50,7 +50,7 @@ for folder in folder_list:
 def run():
     # Note that the ISCWSA tests 2 and 3 in this directory were edited for XCLL, XYM2 and XYM4E.
     # for more details please review the Excel file provided in the directory.
-    filename = 'error-model-example-mwdrev5-1-iscwsa-1.xlsx'
+    filename = 'error-model-example-mwdrev5-1-iscwsa-3.xlsx'
 
     ISCWSA_cases = {
         'error-model-example-mwdrev5-1-iscwsa-1.xlsx': {
@@ -174,8 +174,17 @@ def run():
     )
 
     # calculate covariance for the Survey object
-    iscwsa_survey.get_error(edm_error_model=survey_tool,
-                            path_for_csv_files=ISCWSA_cases[filename]['path_to_save_cov_csv_files'])
+    iscwsa_survey.get_error(edm_error_model=survey_tool)
+
+    # get the covariances for each individual error term and save them in a csv file
+    for key, value in iscwsa_survey.err.errors.errors.items():
+        # vstack the covariances
+        reshaped_cov_nev = np.vstack(value.cov_NEV).T
+        columns = ['nn', 'ne', 'nv', 'en', 'ee', 'ev', 'vn', 've', 'vv']
+        df = pd.DataFrame(reshaped_cov_nev, columns=columns)
+        keep_cols = ['nn', 'ee', 'vv', 'ne', 'nv', 'ev']
+        df = df[keep_cols]
+        df.to_csv(f"{ISCWSA_cases[filename]['path_to_save_cov_csv_files']}/{key}.csv")
 
     cov_nevs = []
     cov_nevs.append(iscwsa_survey.cov_nev)
