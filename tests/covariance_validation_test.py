@@ -14,7 +14,6 @@ from welleng.utils import errors_from_cov
 
 warnings.filterwarnings("ignore")
 
-METER_TO_FOOT = 3.28084
 var_map = {
     "Inc-IncPrev": "din",
     "MD-MDPrev": "dmd",
@@ -51,7 +50,7 @@ for folder in folder_list:
 def run():
     # Note that the ISCWSA tests 2 and 3 in this directory were edited for XCLL, XYM2 and XYM4E.
     # for more details please review the Excel file provided in the directory.
-    filename = 'error-model-example-mwdrev5-1-iscwsa-3.xlsx'
+    filename = 'error-model-example-mwdrev5-1-iscwsa-1.xlsx'
 
     ISCWSA_cases = {
         'error-model-example-mwdrev5-1-iscwsa-1.xlsx': {
@@ -179,7 +178,7 @@ def run():
                             path_for_csv_files=ISCWSA_cases[filename]['path_to_save_cov_csv_files'])
 
     cov_nevs = []
-    cov_nevs.append(iscwsa_survey.cov_nev)  # deep used [1:] to remove the first
+    cov_nevs.append(iscwsa_survey.cov_nev)
 
     azimuth_reference = iscwsa_survey.azi_true_deg
     result_with_covariance = construct_results_dict(iscwsa_survey, azimuth_reference, cov_nevs)
