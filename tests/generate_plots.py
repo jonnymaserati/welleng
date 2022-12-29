@@ -5,6 +5,9 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
+# import r2_score from sklearn.metrics
+from sklearn.metrics import r2_score
+
 warnings.filterwarnings("ignore")
 # get the Path of current file
 Path = os.path.dirname(os.path.abspath(__file__))
@@ -353,8 +356,6 @@ if Calculate_sum_err:
     # save the plot
     plt.savefig(ISCWSA_case[ISCWSA_file_name]['error_absdif_df_folder_for_plots'] + '/' + 'TOTAL' + '.png')
 
-# import r2_score from sklearn.metrics
-from sklearn.metrics import r2_score
 
 # plot the ISCWSA TOTALS cov NEV versus the sum of errors cov NEV
 # on a 3x2 subplot
