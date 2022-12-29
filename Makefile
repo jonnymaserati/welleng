@@ -18,10 +18,19 @@ install-requirements:
 	@pip install -U pip
 	@pip install .
 
+## install-requirements-lint: install linter requirements.
+.PHONY: install-requirements-lint
+install-requirements-lint:
+	@pip install -U -r requirements_lint.txt
+
+## install-requirements-test: install test requirements.
+.PHONY: install-requirements-test
+install-requirements-test:
+	@pip install -U -r requirements_test.txt
+
 ## test: Run tests and show code coverage.
 .PHONY: test
 test:
-	@pip install -r requirements_test.txt
 	@coverage run --source=${SOURCE} -m unittest -v
 
 ## coverage-html: Show code coverage HTML report.
@@ -34,11 +43,6 @@ coverage-html:
 .PHONY: coverage-report
 coverage-report:
 	@coverage report
-
-## lint: install linter requirements.
-.PHONY: install-requirements-lint
-install-requirements-lint:
-	@pip install -U -r requirements_lint.txt
 
 ## lint: Run linter.
 .PHONY: lint
