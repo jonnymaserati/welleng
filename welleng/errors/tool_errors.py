@@ -533,15 +533,15 @@ def ABIZ(
     dpde = np.zeros((len(error.survey_rad), 3))
     dpde[:, 1] = -sin(error.survey.inc_rad) / error.survey.header.G
     dpde[:, 2] = (
-                         sin(error.survey.inc_rad)
-                         * cos(error.survey.inc_rad)
-                         * sin(error.survey.azi_mag_rad)
-                         * (
-                                 tan(error.survey.header.dip)
-                                 * cos(error.survey.inc_rad)
-                                 + sin(error.survey.inc_rad) * cos(error.survey.azi_mag_rad)
-                         )
-                 ) / denom
+         sin(error.survey.inc_rad)
+         * cos(error.survey.inc_rad)
+         * sin(error.survey.azi_mag_rad)
+         * (
+             tan(error.survey.header.dip)
+             * cos(error.survey.inc_rad)
+             + sin(error.survey.inc_rad) * cos(error.survey.azi_mag_rad)
+         )
+ ) / denom
 
     e_DIA = dpde * mag
 
