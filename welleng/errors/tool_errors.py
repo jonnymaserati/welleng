@@ -103,6 +103,8 @@ class ToolError:
 
         self.cov_HLAs = NEV_to_HLA(self.e.survey_rad, self.cov_NEVs)
 
+        return self.errors
+
     def call_func_from_edm(
             self,
             term: ErrorTerm,

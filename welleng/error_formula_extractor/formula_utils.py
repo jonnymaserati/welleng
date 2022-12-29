@@ -11,7 +11,8 @@ builtin_functions = ["abs", "max"]
 
 # replace ^ with power from python.
 replaces = [
-    ("^", "**")
+    ("^", "**"),
+    ("sqr", "sqrt"),
 ]
 
 function_keywords = [x for v in import_functions.values() for x in v]

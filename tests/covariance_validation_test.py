@@ -222,8 +222,6 @@ def extract_tie_type(code: dict) -> str:
 def create_error_class(row, formula: str, vector: VectorType) -> ErrorTerm:
     tie_type = extract_tie_type(row)
 
-    formula = formula.replace("sqr(", "sqrt(")
-
     return ErrorTerm(
         sequence_no=row["sequence_no"],
         term_name=row["term_name"],
@@ -235,7 +233,6 @@ def create_error_class(row, formula: str, vector: VectorType) -> ErrorTerm:
         vector_type=[vector],
         arguments=[result[1]],
         func_string=[result[2]]
-
     )
 
 
