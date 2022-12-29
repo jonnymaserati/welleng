@@ -29,8 +29,7 @@ class ToolError:
             self,
             error: 'Error',
             model: str,
-            is_error_from_edm: bool = False,
-            path_for_csv_files=None
+            is_error_from_edm: bool = False
     ):
         """
         Class using the ISCWSA listed tool errors to determine well bore
@@ -58,11 +57,9 @@ class ToolError:
             self._calculate_error_from_welleng_models(model)
             return
 
-        self._calculate_error_from_edm_models(model, path_for_csv_files=path_for_csv_files)
+        self._calculate_error_from_edm_models(model)
 
-    def _calculate_error_from_edm_models(self,
-                                         model: SurveyToolErrorModel,
-                                         path_for_csv_files=None):
+    def _calculate_error_from_edm_models(self, model: SurveyToolErrorModel):
         self.extract_tortuosity(error_from_edm=True)
 
         self.model = model
@@ -86,16 +83,6 @@ class ToolError:
             for key, value in self.errors.items()
             if type(value) not in [list, float, int, np.ndarray]
         }
-
-        if path_for_csv_files:
-            for key, value in self.errors.items():
-                # vstack the covariances
-                reshaped_cov_nev = np.vstack(value.cov_NEV).T
-                columns = ['nn', 'ne', 'nv', 'en', 'ee', 'ev', 'vn', 've', 'vv']
-                df = pd.DataFrame(reshaped_cov_nev, columns=columns)
-                keep_cols = ['nn', 'ee', 'vv', 'ne', 'nv', 'ev']
-                df = df[keep_cols]
-                df.to_csv(f"{path_for_csv_files}/{key}.csv")
 
         self.cov_NEVs = np.zeros((3, 3, len(self.e.survey_rad)))
         for _, value in self.errors.items():
