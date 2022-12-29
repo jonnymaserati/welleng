@@ -195,6 +195,7 @@ def run():
     # data_code_combined.to_csv(filename_to_save[filename])
     data_code_combined.to_csv(ISCWSA_cases[filename]['filename_to_save'])
 
+
 def replace_str(formula_str: str) -> str:
     formula_str = str(formula_str)
     for search, replace in var_map.items():
