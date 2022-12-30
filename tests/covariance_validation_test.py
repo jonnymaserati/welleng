@@ -50,7 +50,7 @@ for folder in folder_list:
 def run():
     # Note that the ISCWSA tests 2 and 3 in this directory were edited for XCLL, XYM2 and XYM4E.
     # for more details please review the Excel file provided in the directory.
-    filename = 'error-model-example-mwdrev5-1-iscwsa-3.xlsx'
+    filename = 'error-model-example-mwdrev5-1-iscwsa-1.xlsx'
 
     ISCWSA_cases = {
         'error-model-example-mwdrev5-1-iscwsa-1.xlsx': {
@@ -186,6 +186,7 @@ def run():
         df = df[keep_cols]
         df.to_csv(f"{ISCWSA_cases[filename]['path_to_save_cov_csv_files']}/{key}.csv")
 
+
     cov_nevs = []
     cov_nevs.append(iscwsa_survey.cov_nev)
 
@@ -248,6 +249,7 @@ def convert_error_terms(row: pd.Series, error_terms: dict, sequence_no: int) -> 
     term_name = row["term_name"]
     if row["Depth Formula"]:
         formula = row["Depth Formula"]
+        formula = formula.replace("sqr(", "sqrt(")  # TODO: this can be removed as added to the function builder
         if "0.0328084" in formula:
             formula = formula.replace("0.0328084", str(TORTUOSITY_RAD_PER_M))
         vector = VectorType.DEPTH_TERMS
@@ -255,6 +257,7 @@ def convert_error_terms(row: pd.Series, error_terms: dict, sequence_no: int) -> 
 
     if row["Inclination Formula"]:
         formula = row["Inclination Formula"]
+        formula = formula.replace("sqr(", "sqrt(")  # TODO: this can be removed as added to the function builder
         if "0.0328084" in formula:
             formula = formula.replace("0.0328084", str(TORTUOSITY_RAD_PER_M))
         vector = VectorType.INCLINATION_TERMS
@@ -262,6 +265,7 @@ def convert_error_terms(row: pd.Series, error_terms: dict, sequence_no: int) -> 
 
     if row["Azimuth Formula"]:
         formula = row["Azimuth Formula"]
+        formula = formula.replace("sqr(", "sqrt(")  # TODO: this can be removed as added to the function builder
         if "0.0328084" in formula:
             formula = formula.replace("0.0328084", str(TORTUOSITY_RAD_PER_M))
         if type(row['Singularity North Formula']) == str or type(row['Singularity East Formula']) == str:
@@ -271,8 +275,7 @@ def convert_error_terms(row: pd.Series, error_terms: dict, sequence_no: int) -> 
 
         if term_name in error_terms.keys():
             tie_type = extract_tie_type(row)
-            formula = formula.replace("sqr(", "sqrt(")
-
+            # TODO: maybe this portion can be put in a function
             error_terms[term_name].formula.append(formula)
             error_terms[term_name].error_function.append(
                 (result := function_builder(formula, row["term_name"].lower().replace("-", "_")))[0]
