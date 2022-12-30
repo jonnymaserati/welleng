@@ -51,7 +51,6 @@ for folder in folder_list:
 def run():
     # Note that the ISCWSA tests 2 and 3 in this directory were edited for XCLL, XYM2 and XYM4E.
     # for more details please review the Excel file provided in the directory.
-
     # get the path to the resources folder
     resource_path = Path(__file__) / ".." / "resources"
     filename = 'error-model-example-mwdrev5-1-iscwsa-1.xlsx'
@@ -190,7 +189,6 @@ def run():
         keep_cols = ['nn', 'ee', 'vv', 'ne', 'nv', 'ev']
         df = df[keep_cols]
         df.to_csv(f"{ISCWSA_cases[filename]['path_to_save_cov_csv_files']}/{key}.csv")
-
 
     cov_nevs = []
     cov_nevs.append(iscwsa_survey.cov_nev)
