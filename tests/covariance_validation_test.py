@@ -1,7 +1,7 @@
 import os
 import warnings
 from typing import Tuple
-
+from pathlib import Path
 import numpy as np
 import pandas as pd
 
@@ -50,25 +50,29 @@ for folder in folder_list:
 def run():
     # Note that the ISCWSA tests 2 and 3 in this directory were edited for XCLL, XYM2 and XYM4E.
     # for more details please review the Excel file provided in the directory.
+
+    # get the path to the resources folder
+    resource_path = Path(__file__) / ".." / "resources"
     filename = 'error-model-example-mwdrev5-1-iscwsa-3.xlsx'
+    file_path = (resource_path / filename).resolve()
 
     ISCWSA_cases = {
         'error-model-example-mwdrev5-1-iscwsa-1.xlsx': {
-            'filename_to_save': "ISCWSA_code_ex1.csv",
+            'filename_to_save': "corva_welleng_covs_ISCWSA_1.csv",
             'path_to_save_cov_csv_files': 'cov_per_error_test_1',
         },
         'error-model-example-mwdrev5-1-iscwsa-2.xlsx': {
-            'filename_to_save': "ISCWSA_code_ex2.csv",
+            'filename_to_save': "corva_welleng_covs_ISCWSA_2.csv",
             'path_to_save_cov_csv_files': 'cov_per_error_test_2'},
 
         'error-model-example-mwdrev5-1-iscwsa-3.xlsx': {
-            'filename_to_save': "ISCWSA_code_ex3.csv",
+            'filename_to_save': "corva_welleng_covs_ISCWSA_3.csv",
             'path_to_save_cov_csv_files': 'cov_per_error_test_3'},
     }
 
     # Load the error model data from the ISCWSA test file
     dfs = pd.read_excel(
-        filename,
+        file_path,
         sheet_name="Model",
         usecols="D:W",
         header=2
@@ -117,7 +121,7 @@ def run():
 
     # load the survey from the excel sheet and store it in the Survey object
     df_survey = pd.read_excel(
-        filename,
+        file_path,
         sheet_name="Wellpath",
         usecols="E:I",
         header=1
@@ -126,7 +130,7 @@ def run():
     df_survey.columns = ["measured_depth", "inclination", "azimuth"]
 
     df_survey_header = pd.read_excel(
-        filename,
+        file_path,
         sheet_name="Wellpath",
         usecols="A:C",
         header=0
@@ -201,7 +205,7 @@ def run():
     data_code_combined = data_code_combined[columns]
 
     # data_code_combined.to_csv(filename_to_save[filename])
-    data_code_combined.to_csv(ISCWSA_cases[filename]['filename_to_save'])
+    data_code_combined.to_csv('resources/' + ISCWSA_cases[filename]['filename_to_save'])
 
 
 def replace_str(formula_str: str) -> str:
