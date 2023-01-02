@@ -1,5 +1,6 @@
 import os
 import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -14,27 +15,29 @@ Path = os.path.dirname(os.path.abspath(__file__))
 
 # Note that the ISCWSA tests 2 and 3 in this directory were edited for XCLL, XYM2 and XYM4E.
 # for more details please review the Excel file provided in the directory.
+# get the path to the resources folder
 ISCWSA_file_name = 'error-model-example-mwdrev5-1-iscwsa-3.xlsx'
+ISCWSA_file_path = os.path.join(Path, 'resources', ISCWSA_file_name)
 
 ISCWSA_case = {
     'error-model-example-mwdrev5-1-iscwsa-1.xlsx': {
         'folder_csv': 'cov_per_error_test_1',
         'folder_to_save_fig': 'error_figures_test_1',
-        'sum_of_error_file_name_csv': 'sum_of_error_test_1.csv',
+        'sum_of_error_file_name_csv': 'sum_of_covs_ISCWSA_1.csv',
         'error_absdif_df_folder': 'error_absdif_df_test_1',
         'error_absdif_df_folder_for_plots': 'error_absdif_df_plots_test_1',
     },
     'error-model-example-mwdrev5-1-iscwsa-2.xlsx': {
         'folder_csv': 'cov_per_error_test_2',
         'folder_to_save_fig': 'error_figures_test_2',
-        'sum_of_error_file_name_csv': 'sum_of_error_test_2.csv',
+        'sum_of_error_file_name_csv': 'sum_of_covs_ISCWSA_2.csv',
         'error_absdif_df_folder': 'error_absdif_df_test_2',
         'error_absdif_df_folder_for_plots': 'error_absdif_df_plots_test_2',
     },
     'error-model-example-mwdrev5-1-iscwsa-3.xlsx': {
         'folder_csv': 'cov_per_error_test_3',
         'folder_to_save_fig': 'error_figures_test_3',
-        'sum_of_error_file_name_csv': 'sum_of_error_test_3.csv',
+        'sum_of_error_file_name_csv': 'sum_of_covs_ISCWSA_3.csv',
         'error_absdif_df_folder': 'error_absdif_df_test_3',
         'error_absdif_df_folder_for_plots': 'error_absdif_df_plots_test_3',
     },
@@ -55,11 +58,10 @@ for file in list_of_errors_csv:
     sum_of_errors = sum_of_errors.add(df[columns], fill_value=0)
 
 # save the sum of errors to csv file
-sum_of_errors.to_csv(Path + '/' + ISCWSA_case[ISCWSA_file_name]['sum_of_error_file_name_csv'], index=False)
+sum_of_errors.to_csv(Path + '/resources/' + ISCWSA_case[ISCWSA_file_name]['sum_of_error_file_name_csv'], index=False)
 
 # read excel file
-# ISCWSA_file_name = 'error-model-example-mwdrev5-1-iscwsa-1.xlsx'
-df = pd.read_excel(ISCWSA_file_name)
+df = pd.read_excel(ISCWSA_file_path)
 
 jump = False
 for tab in list_of_errors_csv:
@@ -68,7 +70,7 @@ for tab in list_of_errors_csv:
     tab = tab.replace('.csv', '')
 
     ISCWSA_cov_nev = pd.read_excel(
-        ISCWSA_file_name,
+        ISCWSA_file_path,
         sheet_name=tab,
         usecols="Q:V",
         header=1
@@ -207,7 +209,7 @@ for tab in list_of_errors_csv:
 Calculate_sum_err = True
 if Calculate_sum_err:
     ISCWSA_TOTAL_cov_nev = pd.read_excel(
-        ISCWSA_file_name,
+        ISCWSA_file_path,
         sheet_name='TOTALS',
         usecols="B:G",
         header=1
