@@ -4,6 +4,7 @@ from enum import Enum
 import numpy as np
 import yaml
 
+from .error_formula_extractor.models import SurveyToolErrorModel
 from .errors.tool_errors import ToolError
 
 # TODO: there's likely an issue with TVD versus TVDSS that
@@ -78,7 +79,7 @@ class ErrorModel:
     def __init__(
         self,
         survey: 'Survey',
-        error_model: ISCWSAErrorModel = ISCWSAErrorModel.Rev5,
+        error_model: SurveyToolErrorModel,
         error_from_edm: bool = False
     ):
         self.error_model = error_model
