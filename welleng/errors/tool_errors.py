@@ -194,9 +194,10 @@ class ToolError:
             "erot": error.survey.header.earth_rate,
             "mtot": error.survey.header.b_total,
             "lat": np.radians(error.survey.header.latitude),
-            "dmd": np.diff(np.array(error.survey_rad)[:, 0]),
+            "smd": np.diff(np.array(error.survey_rad)[:, 0]),
+            "dmd": np.array(error.survey_rad)[:, 0][1:],
             "din": np.diff(np.array(error.survey_rad)[:, 1]),
-            "dazt": np.diff(np.array(error.survey_rad)[:, 2]),
+            "daz": np.diff(np.array(error.survey_rad)[:, 2]),
             "azt": error.survey.azi_true_rad[1:],
             "azm": error.survey.azi_mag_rad[1:],
             "xcltortuosity": (np.radians(1) / 100) * METER_TO_FOOT
