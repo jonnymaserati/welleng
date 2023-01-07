@@ -11,8 +11,8 @@ from numpy import cos, pi, sin, sqrt, tan
 from ..error_formula_extractor.enums import Propagation, VectorType
 from ..error_formula_extractor.models import ErrorTerm, SurveyToolErrorModel
 from ..units import METER_TO_FOOT
-from ..utils import NEV_to_HLA  # errors_from_cov
-from .singularity_util import calc_xclh, calculate_error_singularity
+from ..utils import NEV_to_HLA
+from .singularity_util import calculate_error_singularity
 
 # since this is running on different OS flavors
 PATH = os.path.dirname(__file__)
@@ -50,7 +50,6 @@ class ToolError:
         self.errors = {}
         self.map = None
         self.model = None
-        self.converted_covs = {}
 
         if not is_error_from_edm:
             self._calculate_error_from_welleng_models(model)
@@ -66,7 +65,6 @@ class ToolError:
             if term.term_name in self.errors.keys():
                 term.term_name += "_2"
             if term.term_name not in self.errors.keys():
-                # print(f"Calculating {term.term_name}")
                 self.errors[term.term_name] = (
                     self.call_func_from_edm(
                         term=term,
@@ -77,6 +75,7 @@ class ToolError:
                         vector_type=term.vector_type
                     )
                 )
+
         self.errors = {
             key: value
             for key, value in self.errors.items()
@@ -112,16 +111,8 @@ class ToolError:
         intermediate_step = propagation[0] == Propagation.NA
         sing_calc = False
 
-        if term.term_name.lower() == "xclh":
-            # TODO: Check with Steve why this calculation was different in the excel file
-            return calc_xclh(term.term_name, error, mag[0], propagation[0].value)
-
         for vector_no in range(len(vector_type)):
             # for each vector in vector_type, first, extract all arguments from the equation.
-
-            if vector_type[vector_no] == VectorType.LATERAL:
-                sing_calc = True
-
             args = []
             for arg in term.arguments[vector_no]:
                 # for each argument first check if the argument is in the map or is one of the previously calculated
@@ -161,11 +152,9 @@ class ToolError:
 
                     dpde[:, vector_type[vector_no].column_no][index] = val_to_put
 
-        # print('this is inside the tool_errors.py \nsing_calc ', sing_calc)
-
         dpde = np.vstack((np.array([0., 0., 0.]), dpde))
 
-        e_DIA = dpde * mag[0]
+        e_DIA = dpde.round(decimals=10) * mag[0]
         if not sing_calc:
             return error._generate_error(
                 term.term_name,
