@@ -178,7 +178,6 @@ def run():
     )
 
     # calculate covariance for the Survey object
-<<<<<<< HEAD
     iscwsa_survey.get_error(edm_error_model=survey_tool)
 
     # get the covariances for each individual error term and save them in a csv file
@@ -190,11 +189,6 @@ def run():
         keep_cols = ['nn', 'ee', 'vv', 'ne', 'nv', 'ev']
         df = df[keep_cols]
         df.to_csv(f"{ISCWSA_cases[filename]['path_to_save_cov_csv_files']}/{key}.csv")
-
-=======
-    errors = iscwsa_survey.get_error(edm_error_model=survey_tool,
-                            path_for_csv_files=ISCWSA_cases[filename]['path_to_save_cov_csv_files'])
->>>>>>> fd391d7 (some fixes)
 
     cov_nevs = []
     cov_nevs.append(iscwsa_survey.cov_nev)
