@@ -8,6 +8,24 @@ class Propagation(Enum):
     NA: str = "n/a"
     WELL: str = "well_to_well"
 
+    @staticmethod
+    def extract_tie_type(tie_type: str) -> 'Propagation':
+        """
+        Extract propagation type (tie type) from the EDM file and assign the correct enum based on the propagation.
+        """
+        mapping = {
+            "r": Propagation.RANDOM,
+            "s": Propagation.SYSTEMATIC,
+            "g": Propagation.GLOBAL,
+            "n": Propagation.NA,
+            "w": Propagation.WELL
+        }
+
+        if tie_type in mapping.keys():
+            return mapping[tie_type]
+
+        return Propagation.SYSTEMATIC
+
 
 class VectorType(Enum):
     AZIMUTH_TERMS = (

@@ -121,7 +121,7 @@ class ErrorFormulaExtractor:
             if "xcl" in code["term_name"].lower():
                 code["c_formula"] = self.extract_xcl_formula(code["c_formula"])
 
-            tie_type = self.extract_tie_type(code)
+            tie_type = Propagation.extract_tie_type(code["tie_type"])
             vector = self.extract_vector_type(code)
 
             mag = float(code["c_value"])
@@ -160,22 +160,6 @@ class ErrorFormulaExtractor:
 
         terms = list(error_terms.values())
         survey_tool.error_terms = sorted(terms, key=lambda d: d.sequence_no)
-
-    def extract_tie_type(self, code: dict) -> str:
-        """
-        Extract propagation type (tie type) from the EDM file and assign the correct enum based on the propagation.
-        """
-        if code["tie_type"] == 'r':
-            return Propagation.RANDOM
-        elif code["tie_type"] == "s":
-            return Propagation.SYSTEMATIC
-        elif code["tie_type"] == "g":
-            return Propagation.GLOBAL
-        elif code["tie_type"] == "n":
-            return Propagation.NA
-        elif code["tie_type"] == "w":
-            return Propagation.WELL
-        return Propagation.SYSTEMATIC
 
     def extract_vector_type(self, code: dict) -> VectorType:
 

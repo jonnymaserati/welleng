@@ -137,11 +137,10 @@ class ToolError:
                 # if there is a zero division error, calculate the covariance row by row. If there is a zero
                 # division error for a row, put zero as the value, same if the calculation returns np.inf.
                 for index in range(len(np.array(error.survey_rad)) - 1):
-                    vars = [val
-                            if not type(val) == np.ndarray
-                            else val[index]
-                            for val in args
-                            ]
+                    vars = [
+                        val if not type(val) == np.ndarray else val[index]
+                        for val in args
+                    ]
 
                     try:
                         val_to_put = func[vector_no](*vars)
