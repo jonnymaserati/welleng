@@ -54,7 +54,7 @@ def run():
 
     # get the path to the resources folder
     resource_path = Path(__file__) / ".." / "resources"
-    filename = 'error-model-example-mwdrev5-1-iscwsa-3.xlsx'
+    filename = 'error-model-example-mwdrev5-1-iscwsa-1.xlsx'
     file_path = (resource_path / filename).resolve()
 
     ISCWSA_cases = {
