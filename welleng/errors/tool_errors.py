@@ -12,7 +12,7 @@ from ..error_formula_extractor.enums import Propagation, VectorType
 from ..error_formula_extractor.models import ErrorTerm, SurveyToolErrorModel
 from ..units import METER_TO_FOOT
 from ..utils import NEV_to_HLA
-from .singularity_util import calculate_error_singularity
+from .singularity_util import calc_xclh, calculate_error_singularity
 
 # since this is running on different OS flavors
 PATH = os.path.dirname(__file__)
@@ -50,6 +50,7 @@ class ToolError:
         self.errors = {}
         self.map = None
         self.model = None
+        self.converted_covs = {}
 
         if not is_error_from_edm:
             self._calculate_error_from_welleng_models(model)
@@ -113,8 +114,16 @@ class ToolError:
         intermediate_step = propagation[0] == Propagation.NA
         sing_calc = False
 
+        if term.term_name.lower() == "xclh":
+            # TODO: Check with Steve why this calculation was different in the excel file
+            return calc_xclh(term.term_name, error, mag[0], propagation[0].value)
+
         for vector_no in range(len(vector_type)):
             # for each vector in vector_type, first, extract all arguments from the equation.
+
+            if vector_type[vector_no] == VectorType.LATERAL:
+                sing_calc = True
+
             args = []
             for arg in term.arguments[vector_no]:
                 # for each argument first check if the argument is in the map or is one of the previously calculated

@@ -32,19 +32,18 @@ var_map = {
 
 # Excel resources and their properties
 ISCWSA_cases = {
-    "error-model-example-mwdrev5-1-iscwsa-3.xlsx": {
-        "test_number": 3,
-        "measured_depth_unit": "meter",
-    },
     "error-model-example-mwdrev5-1-iscwsa-1.xlsx": {
         "test_number": 1,
         "measured_depth_unit": "meter",
     },
-
-    # "error-model-example-mwdrev5-1-iscwsa-2.xlsx": {
-    #     "test_number": 2,
-    #     "measured_depth_unit": "ft",
-    # },
+    "error-model-example-mwdrev5-1-iscwsa-2.xlsx": {
+        "test_number": 2,
+        "measured_depth_unit": "ft",
+    },
+    "error-model-example-mwdrev5-1-iscwsa-3.xlsx": {
+        "test_number": 3,
+        "measured_depth_unit": "meter",
+    },
 }
 
 # the following list of folder are needed to keep the generated files

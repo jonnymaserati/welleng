@@ -52,7 +52,7 @@ class ErrorFormulaExtractor:
             for param in params_to_adjust:
                 program[param] = float(program[param]) + datum_elevation
 
-        self.survey_programs = sorted(survey_programs, key=lambda d: int(float(d['sequence_no'])))
+        self.survey_programs = sorted(survey_programs, key=lambda d: int(d['sequence_no']))
 
         self.survey_tools = None
 
@@ -111,9 +111,9 @@ class ErrorFormulaExtractor:
             attributes={"survey_tool_id": survey_tool.survey_tool_id}
         )['DP_TOOL_TERM']
 
-        # make all sequences_no in the error_codes list float
-        for error_code in error_codes:
-            error_code["sequence_no"] = float(error_code["sequence_no"])
+        # # make all sequences_no in the error_codes list float
+        # for error_code in error_codes:
+        #     error_code["sequence_no"] = float(error_code["sequence_no"])
 
         error_terms = {}
         for code in error_codes:
