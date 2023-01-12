@@ -70,6 +70,10 @@ class TestISCWSACovarianceTestCases(unittest.TestCase):
             self._run_test_case(filename)
 
     def _run_test_case(self, filename: str):
+        # get the path to the resources folder
+        resource_path = Path(__file__) / ".." / "resources"
+        filename = 'error-model-example-mwdrev5-1-iscwsa-1.xlsx'
+        file_path = (resource_path / filename).resolve()
 
         print(f"Running test case: {filename}")
 
