@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import os
 from collections import OrderedDict
-from typing import List
+from typing import Callable, List
 
 import numpy as np
 import yaml
 from numpy import cos, pi, sin, sqrt, tan
 
+from ..error_formula_extractor.enums import Propagation, VectorType
+from ..error_formula_extractor.models import ErrorTerm, SurveyToolErrorModel
+from ..units import METER_TO_FOOT
 from ..utils import NEV_to_HLA
+from .singularity_util import calc_xclh, calculate_error_singularity
 
 # since this is running on different OS flavors
 PATH = os.path.dirname(__file__)
@@ -21,9 +25,10 @@ ACCURACY = 1e-6
 
 class ToolError:
     def __init__(
-        self,
-        error: 'Error',
-        model: str
+            self,
+            error: 'Error',
+            model: str,
+            is_error_from_edm: bool = False
     ):
         """
         Class using the ISCWSA listed tool errors to determine well bore
@@ -43,6 +48,210 @@ class ToolError:
 
         self.e = error
         self.errors = {}
+        self.map = None
+        self.model = None
+        self.converted_covs = {}
+
+        if not is_error_from_edm:
+            self._calculate_error_from_welleng_models(model)
+            return
+
+        self._calculate_error_from_edm_models(model)
+
+    def _calculate_error_from_edm_models(self, model: SurveyToolErrorModel):
+        self.extract_tortuosity(error_from_edm=True)
+
+        self.model = model
+        for term in model.error_terms:
+            if term.term_name in self.errors.keys():
+                term.term_name += "_2"
+            if term.term_name not in self.errors.keys():
+                self.errors[term.term_name] = (
+                    self.call_func_from_edm(
+                        term=term,
+                        func=term.error_function,
+                        error=self.e,
+                        mag=term.magnitude,
+                        propagation=term.tie_type,
+                        vector_type=term.vector_type
+                    )
+                )
+
+        self.errors = {
+            key: value
+            for key, value in self.errors.items()
+            if type(value) not in [list, float, int, np.ndarray]
+        }
+
+        self.cov_NEVs = np.zeros((3, 3, len(self.e.survey_rad)))
+        for _, value in self.errors.items():
+            self.cov_NEVs += value.cov_NEV
+
+        self.cov_HLAs = NEV_to_HLA(self.e.survey_rad, self.cov_NEVs)
+
+        return self.errors
+
+    def call_func_from_edm(
+            self,
+            term: ErrorTerm,
+            func: List[Callable],
+            error: 'Error',
+            mag: List[float],
+            propagation: List[Propagation],
+            vector_type: List[VectorType]
+    ) -> np.ndarray:
+        """
+        This function calculates the covariances from the error model imported from the EDM file.
+        """
+
+        # initiate the variable map if it is not available.
+        if not self.map:
+            self._initiate_map(error)
+
+        dpde = np.zeros((len(error.survey_rad) - 1, 3))
+
+        # check if the given term is an intermediate step
+        intermediate_step = propagation[0] == Propagation.NA
+        sing_calc = False
+
+        if term.term_name.lower() == "xclh":
+            # TODO: Check with Steve why this calculation was different in the excel file
+            return calc_xclh(term.term_name, error, mag[0], propagation[0].value)
+
+        for vector_no in range(len(vector_type)):
+            # for each vector in vector_type, first, extract all arguments from the equation.
+
+            if vector_type[vector_no] == VectorType.LATERAL:
+                sing_calc = True
+
+            args = []
+            for arg in term.arguments[vector_no]:
+                # for each argument first check if the argument is in the map or is one of the previously calculated
+                # error terms
+                self.backfill_terms(arg, term)
+
+                if arg.lower() not in self.map.keys():
+                    args.append(self.errors[arg.lower()])
+                    continue
+
+                args.append(self.map[arg.lower()])
+
+            if intermediate_step:
+                return np.vectorize(func[0])(*args) * term.magnitude[0]
+
+            try:
+                dpde[:, vector_type[vector_no].column_no] = np.vectorize(func[vector_no])(*args)
+
+            except ZeroDivisionError:
+                # if there is a zero division error, calculate the covariance row by row. If there is a zero
+                # division error for a row, put zero as the value, same if the calculation returns np.inf.
+                for index in range(len(np.array(error.survey_rad)) - 1):
+                    vars = [
+                        val if not type(val) == np.ndarray else val[index]
+                        for val in args
+                    ]
+
+                    try:
+                        val_to_put = func[vector_no](*vars)
+
+                    except ZeroDivisionError:
+                        val_to_put = 0
+
+                    if val_to_put == np.inf:
+                        val_to_put = 0
+
+                    dpde[:, vector_type[vector_no].column_no][index] = val_to_put
+
+        dpde = np.vstack((np.array([0., 0., 0.]), dpde))
+
+        e_DIA = dpde.round(decimals=10) * mag[0]
+        if not sing_calc:
+            return error._generate_error(
+                term.term_name,
+                e_DIA,
+                propagation[0].value,
+                NEV=True
+            )
+        else:
+            return self.caclcualte_error_with_sing(
+                error,
+                term.term_name,
+                e_DIA,
+                propagation[0].value,
+                NEV=True,
+                magnitude=mag[0]
+            )
+
+    def _initiate_map(self, error):
+        self.map = {
+            "tmd": np.array(error.survey_rad)[:, 0][1:],
+            "tvd": np.array(error.survey.tvd)[1:],
+            "inc": np.array(error.survey_rad)[:, 1][1:],
+            "azi": np.array(error.survey_rad)[:, 2][1:],
+            "gtot": error.survey.header.G,
+            "dip": error.survey.header.dip,
+            "erot": error.survey.header.earth_rate,
+            "mtot": error.survey.header.b_total,
+            "lat": np.radians(error.survey.header.latitude),
+            "smd": np.diff(np.array(error.survey_rad)[:, 0]),
+            "dmd": np.array(error.survey_rad)[:, 0][1:],
+            "din": np.diff(np.array(error.survey_rad)[:, 1]),
+            "daz": np.diff(np.array(error.survey_rad)[:, 2]),
+            "azt": error.survey.azi_true_rad[1:],
+            "dazt": np.diff(error.survey.azi_true_rad),  # this term is not available in Compass
+            "azm": error.survey.azi_mag_rad[1:],
+            "xcltortuosity": (np.radians(1) / 100) * METER_TO_FOOT
+        }
+
+    def backfill_terms(self, arg: str, term: ErrorTerm):
+        if arg.lower() not in self.map.keys() and arg.lower() not in self.errors.keys():
+            term_backfilled = False
+            # if the argument is not in the map or in the previously calculated error terms, it needs to be
+            # back-filled before it can be used for the current term.
+            for back_filled_term in self.model.error_terms:
+                if back_filled_term.term_name == arg.lower():
+                    self.errors[back_filled_term.term_name] = (
+                        self.call_func_from_edm(
+                            term=back_filled_term,
+                            func=back_filled_term.error_function,
+                            error=self.e,
+                            mag=back_filled_term.magnitude,
+                            propagation=back_filled_term.tie_type,
+                            vector_type=back_filled_term.vector_type
+                        )
+                    )
+                    term_backfilled = True
+                    break
+
+            if not term_backfilled:
+                raise KeyError(
+                    f"{arg} not in {list(self.errors.keys())} or in the map: {list(self.map.keys())} "
+                    f" for error term {term.term_name}")
+
+    @staticmethod
+    def caclcualte_error_with_sing(
+            error: 'Error',
+            code: str,
+            e_DIA: np.ndarray,
+            propagation: str,
+            NEV: bool,
+            magnitude: float
+    ) -> 'Error':
+
+        sing = np.where(
+            error.survey.inc_rad < error.survey.header.vertical_inc_limit
+        )
+
+        if len(sing[0]) < 1:
+            return error._generate_error(code, e_DIA, propagation, NEV)
+        else:
+            e_DIA, e_NEV, e_NEV_star = calculate_error_singularity(sing, error, e_DIA, magnitude, code, propagation)
+
+            return error._generate_error(
+                code, e_DIA, propagation, NEV, e_NEV, e_NEV_star
+            )
+
+    def _calculate_error_from_welleng_models(self, model: str):
 
         filename = os.path.join(
             '', *[PATH, 'tool_codes', f"{model}.yaml"]
@@ -50,6 +259,8 @@ class ToolError:
 
         with open(filename, 'r') as file:
             self.em = yaml.safe_load(file)
+
+        self.extract_tortuosity()
 
         # for gyro tools the continuous survey errors need to be done last
         self.em['codes'] = OrderedDict(self.em['codes'])
@@ -65,20 +276,7 @@ class ToolError:
             if tool in self.em['codes']
         ]
 
-        # Tortuosity here is used for calculating dp/de based on tool error codes.
-        # Some tools use tortuosity for this calculation
-        # Ideally, we want tortuosity to be 0 but since this is a
-        # recommendation by ISCWSA kept as is.
-        if 'Default Tortusity (rad/m)' in self.em['header']:
-            self.tortuosity = self.em['header']['Default Tortusity (rad/m)']
-        elif 'XCL Tortuosity' in self.em['header']:
-            # assuming that this is always 1 deg / 100 ft but this might not
-            # be the case
-            # TODO use pint to handle this string inputs
-            self.tortuosity = (np.radians(1.) / 100) * 3.281
-        else:
-            self.tortuosity = None
-
+        self.extract_tortuosity()
         # if model == "iscwsa_mwd_rev5":
         # if model == "ISCWSA MWD Rev5":
         # assert self.tortuosity is not None, (
@@ -210,6 +408,26 @@ class ToolError:
             'CNA': CNA,  # Needs QAQC
             'CNI': CNI,  # Needs QAQC
         }
+
+    def extract_tortuosity(self, error_from_edm: bool = False):
+        # Tortuosity here is used for calculating dp/de based on tool error codes.
+        # Some tools use tortuosity for this calculation
+        # Ideally, we want tortuosity to be 0 but since this is a
+        # recommendation by ISCWSA kept as is.
+        if error_from_edm:
+            # Not sure how to get tortuosity based on survey tools from EDM.
+            self.tortuosity = None
+            return
+
+        if 'Default Tortusity (rad/m)' in self.em['header']:
+            self.tortuosity = self.em['header']['Default Tortusity (rad/m)']
+        elif 'XCL Tortuosity' in self.em['header']:
+            # assuming that this is always 1 deg / 100 ft but this might not
+            # be the case
+            # TODO use pint to handle this string inputs
+            self.tortuosity = (np.radians(1.) / 100) * 3.281
+        else:
+            self.tortuosity = None
 
 
 def _funky_denominator(error):

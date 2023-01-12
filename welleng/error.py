@@ -4,6 +4,7 @@ from enum import Enum
 import numpy as np
 import yaml
 
+from .error_formula_extractor.models import SurveyToolErrorModel
 from .errors.tool_errors import ToolError
 
 # TODO: there's likely an issue with TVD versus TVDSS that
@@ -78,9 +79,9 @@ class ErrorModel:
     def __init__(
         self,
         survey: 'Survey',
-        error_model: ISCWSAErrorModel = ISCWSAErrorModel.Rev5,
+        error_model: SurveyToolErrorModel,
+        error_from_edm: bool = False
     ):
-        assert error_model in ERROR_MODELS, "Unrecognized error model"
         self.error_model = error_model
         self.survey = survey
 
@@ -94,14 +95,17 @@ class ErrorModel:
         self.drdp = self._drdp(self.survey_drdp)
         self.drdp_sing = self._drdp_sing(self.survey_drdp)
 
-        for k, v in TOOL_INDEX.items():
-            if v['Short Name'] == self.error_model:
-                model = k
-                break
+        model = error_model
+        if not error_from_edm:
+            for k, v in TOOL_INDEX.items():
+                if v['Short Name'] == self.error_model:
+                    model = k
+                    break
 
         self.errors = ToolError(
             error=self,
-            model=model
+            model=model,
+            is_error_from_edm=error_from_edm
         )
 
     def _e_NEV(self, e_DIA: np.ndarray) -> np.ndarray:
@@ -201,7 +205,11 @@ class ErrorModel:
 
             if e_NEV is None:
                 e_NEV = self._e_NEV(e_DIA)
-                e_NEV_star = self._e_NEV_star(e_DIA)
+                if "xcl" in code.lower():
+                    # for xcl terms, e_NEV_star == e_NEV
+                    e_NEV_star = e_NEV
+                else:
+                    e_NEV_star = self._e_NEV_star(e_DIA)
 
             if propagation == 'systematic':
                 sigma_e_NEV = self._sigma_e_NEV_systematic(e_NEV, e_NEV_star)
@@ -216,6 +224,19 @@ class ErrorModel:
                             np.array(np.zeros((3, 3, 1))),
                             np.array(sigma_e_NEV[:, :, :-1])
                         ), axis=-1)
+                )
+
+            elif propagation == 'global' or propagation == "well_to_well":
+                sigma_e_NEV = np.cumsum(e_NEV, axis=0)
+                cov_NEV = self._cov(
+                    np.add(
+                        e_NEV_star,
+                        np.concatenate(
+                            (np.array(np.zeros((1, 3))),
+                             np.array(sigma_e_NEV[:-1, :])
+                             ),
+                            axis=0)
+                    )
                 )
 
             else:
@@ -282,7 +303,8 @@ class ErrorModel:
         E = np.array(0.5 * ((delta_md) * np.cos(inc2) * np.sin(azi2)))
         V = np.array(0.5 * (-delta_md * np.sin(inc2)))
 
-        if self.error_model.lower().split()[-1] != 'rev4':
+        if (isinstance(self.error_model, str) and self.error_model.lower().split()[-1] != 'rev4') \
+                or not isinstance(self.error_model, str):
             N[0] *= 2
 
         return np.vstack(

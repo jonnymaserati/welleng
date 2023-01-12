@@ -23,6 +23,7 @@ key.asc
 .~*
 VERSION*
 
-test/test_data/*.xlsx
-
 .coverage
+
+test/test_data/*.xlsx
+tests/results/*
