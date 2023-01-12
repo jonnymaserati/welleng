@@ -46,7 +46,6 @@ coverage-report:
 ## lint: Run linter.
 .PHONY: lint
 lint:
-	@pip install -r requirements_lint.txt
 	@flake8
 	@isort --check .
 
