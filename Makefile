@@ -15,7 +15,6 @@ install: install-requirements
 ## install-requirements: Install requirements.
 .PHONY: install-requirements
 install-requirements:
-	@pip install -U pip
 	@pip install .
 
 ## install-requirements-lint: install linter requirements.

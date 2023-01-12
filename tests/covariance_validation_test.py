@@ -2,7 +2,7 @@ import os
 import unittest
 import warnings
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -206,7 +206,6 @@ class TestISCWSACovarianceTestCases(unittest.TestCase):
             df = df[keep_cols]
             df.to_csv(f"results/cov_per_error_test_{ISCWSA_cases[filename]['test_number']}/{key}.csv", index=False)
 
-
         cov_nevs = []
         cov_nevs.append(iscwsa_survey.cov_nev)
 
@@ -221,7 +220,10 @@ class TestISCWSACovarianceTestCases(unittest.TestCase):
                    'tvd', 'nn', 'ee', 'vv', 'ne', 'nv', 'ev']
         data_code_combined = data_code_combined[columns]
 
-        data_code_combined.to_csv(f"results/cov_per_error_test_{ISCWSA_cases[filename]['test_number']}/Total.csv", index=False)
+        data_code_combined.to_csv(
+            f"results/cov_per_error_test_{ISCWSA_cases[filename]['test_number']}/Total.csv",
+            index=False
+        )
         df_actual = data_code_combined[["measured_depth", "nn", "ee", "vv", "ne", "nv", "ev"]].rename(
             # to match the expected column names
             columns={
@@ -312,7 +314,6 @@ def create_error_class(
 
 
 def convert_error_terms(row: pd.Series, error_terms: dict) -> dict:
-    sequence_no = row["sequence_no"]
     term_name = row["term_name"]
 
     if row["Depth Formula"]:
