@@ -13,6 +13,8 @@ class Propagation(Enum):
         """
         Extract propagation type (tie type) from the EDM file and assign the correct enum based on the propagation.
         """
+        tie_type = tie_type.lower()
+
         mapping = {
             "r": Propagation.RANDOM,
             "s": Propagation.SYSTEMATIC,

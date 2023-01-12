@@ -189,6 +189,7 @@ class ToolError:
             "din": np.diff(np.array(error.survey_rad)[:, 1]),
             "daz": np.diff(np.array(error.survey_rad)[:, 2]),
             "azt": error.survey.azi_true_rad[1:],
+            "dazt": np.diff(error.survey.azi_true_rad),  # this term is not available in Compass
             "azm": error.survey.azi_mag_rad[1:],
             "xcltortuosity": (np.radians(1) / 100) * METER_TO_FOOT
         }
