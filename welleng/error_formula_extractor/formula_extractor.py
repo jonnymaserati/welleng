@@ -52,7 +52,7 @@ class ErrorFormulaExtractor:
             for param in params_to_adjust:
                 program[param] = float(program[param]) + datum_elevation
 
-        self.survey_programs = sorted(survey_programs, key=lambda d: int(float(d['previous_sequence_no'])))
+        self.survey_programs = sorted(survey_programs, key=lambda d: int(float(d['sequence_no'])))
 
         self.survey_tools = None
 
@@ -113,7 +113,7 @@ class ErrorFormulaExtractor:
 
         # make all sequences_no in the error_codes list float
         for error_code in error_codes:
-            error_code["previous_sequence_no"] = float(error_code["previous_sequence_no"])
+            error_code["sequence_no"] = float(error_code["sequence_no"])
 
         error_terms = {}
         for code in error_codes:
@@ -145,7 +145,7 @@ class ErrorFormulaExtractor:
             else:
                 error_terms[code["term_name"]] = (
                     ErrorTerm(
-                        sequence_no=int(code["previous_sequence_no"]),
+                        sequence_no=int(code["sequence_no"]),
                         term_name=code["term_name"],
                         formula=[code["c_formula"]],
                         error_function=[(result := function_builder(code["c_formula"], code["term_name"]))[0]],
