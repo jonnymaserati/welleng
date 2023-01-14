@@ -121,8 +121,8 @@ class ToolError:
         for vector_no in range(len(vector_type)):
             # for each vector in vector_type, first, extract all arguments from the equation.
 
-            if vector_type[vector_no] == VectorType.LATERAL:
-                sing_calc = True
+            # if vector_type[vector_no] == VectorType.LATERAL:
+            #     sing_calc = True
 
             args = []
             for arg in term.arguments[vector_no]:
