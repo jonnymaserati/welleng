@@ -27,3 +27,4 @@ VERSION*
 
 test/test_data/*.xlsx
 tests/results/*
+/tests/results/

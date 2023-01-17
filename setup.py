@@ -103,7 +103,7 @@ setup(
         'Topic :: Scientific/Engineering',
     ],
     python_requires='>=3.8.*',
-    packages=find_packages(exclude=["tests"]),
+    packages=find_packages(exclude=["tests", "unit_tests"]),
     package_data={
         'welleng': [
             'errors/*.yaml',
