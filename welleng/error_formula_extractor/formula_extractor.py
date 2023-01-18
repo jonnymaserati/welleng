@@ -195,10 +195,15 @@ class ErrorFormulaExtractor:
         # Assigning constant XCL tortuosity of 1deg/ft
         formula = formula.replace("tort", str(TORTUOSITY_RAD_PER_M))
 
-        # split the formula based on swoff
-        term1, term2 = formula.split("+swoff")
+        # if string +swoff is in the formula
+        if "+swoff" in formula:
 
-        # create the new string with max
-        formula_updated = f"max({term1}, {term2})"
+            # split the formula based on swoff
+            term1, term2 = formula.split("+swoff")
+
+            # create the new string with max
+            formula_updated = f"max({term1}, {term2})"
+        else:
+            formula_updated = formula
 
         return formula_updated
