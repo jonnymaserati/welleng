@@ -1,6 +1,6 @@
 OUTPUT_DIST="dist"
 APP_NAMES="corva-welleng"
-IGNORED_FILES="requirements*.txt setup.cfg .gitignore Makefile resources/test_data test README.md"
+IGNORED_FILES="requirements*.txt setup.cfg .gitignore Makefile resources/test_data tests unit_tests README.md"
 SOURCE="welleng"
 
 ## help: Show this help.

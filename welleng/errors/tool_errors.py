@@ -12,7 +12,7 @@ from ..error_formula_extractor.enums import Propagation, VectorType
 from ..error_formula_extractor.models import ErrorTerm, SurveyToolErrorModel
 from ..units import METER_TO_FOOT
 from ..utils import NEV_to_HLA
-from .singularity_util import calc_xclh, calculate_error_singularity
+from .singularity_util import calculate_error_singularity
 
 # since this is running on different OS flavors
 PATH = os.path.dirname(__file__)
@@ -114,9 +114,9 @@ class ToolError:
         intermediate_step = propagation[0] == Propagation.NA
         sing_calc = False
 
-        if term.term_name.lower() == "xclh":
-            # TODO: Check with Steve why this calculation was different in the excel file
-            return calc_xclh(term.term_name, error, mag[0], propagation[0].value)
+        # if term.term_name.lower() == "xclh":
+        #     # TODO: Check with Steve why this calculation was different in the excel file
+        #     return calc_xclh(term.term_name, error, mag[0], propagation[0].value)
 
         for vector_no in range(len(vector_type)):
             # for each vector in vector_type, first, extract all arguments from the equation.

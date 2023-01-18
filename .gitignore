@@ -26,4 +26,4 @@ VERSION*
 .coverage
 
 test/test_data/*.xlsx
-tests/results/*
+/tests/results/
