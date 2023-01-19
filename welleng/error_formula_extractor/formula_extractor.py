@@ -196,14 +196,12 @@ class ErrorFormulaExtractor:
         formula = formula.replace("tort", str(TORTUOSITY_RAD_PER_M))
 
         # if string +swoff is in the formula
-        if "+swoff" in formula:
+        if "+swoff" not in formula:
+            return formula
 
-            # split the formula based on swoff
-            term1, term2 = formula.split("+swoff")
-
-            # create the new string with max
-            formula_updated = f"max({term1}, {term2})"
-        else:
-            formula_updated = formula
+        # split the formula based on swoff
+        term1, term2 = formula.split("+swoff")
+        # create the new string with max
+        formula_updated = f"max({term1}, {term2})"
 
         return formula_updated
