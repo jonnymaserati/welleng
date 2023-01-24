@@ -168,16 +168,16 @@ class ErrorFormulaExtractor:
         if code["vector_type"] in terms.get("azimuth_terms"):
             return VectorType.AZIMUTH_TERMS
 
-        if code["vector_type"] == terms.get("inclination_terms"):
+        if code["vector_type"] in terms.get("inclination_terms"):
             return VectorType.INCLINATION_TERMS
 
-        if code["vector_type"] == terms.get("depth_terms"):
+        if code["vector_type"] in terms.get("depth_terms"):
             return VectorType.DEPTH_TERMS
 
-        if code["vector_type"] == VectorType.LATERAL.value:
+        if code["vector_type"] in VectorType.LATERAL.value:
             return VectorType.LATERAL
 
-        if code["vector_type"] == VectorType.NA:
+        if code["vector_type"] == 'n':
             return VectorType.NA
 
         return VectorType.DEPTH_TERMS
