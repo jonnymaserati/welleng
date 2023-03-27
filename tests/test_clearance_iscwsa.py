@@ -1,5 +1,5 @@
 from welleng.survey import Survey, make_survey_header
-from welleng.clearance import Clearance, ISCWSA
+from welleng.clearance import IscwsaClearance
 import numpy as np
 import json
 
@@ -11,7 +11,7 @@ error model.
 """
 
 # Set test tolerance as percentage
-TOLERANCE = 0.5
+TOLERANCE = 0.3
 
 # Read well and validation data
 filename = (
@@ -74,19 +74,16 @@ def test_clearance_iscwsa(data=data, tolerance=TOLERANCE):
             if well == "10 - well":
                 continue
             else:
-                c = Clearance(reference, offset)
-
-            result = ISCWSA(c)
+                result = IscwsaClearance(reference, offset, minimize_sf=True)
 
             normalized = np.absolute(
-                result.SF[
-                    np.where(result.SF[:, 2] == 0)
-                ][:, 1]
+                result.sf[np.where(result.ref.interpolated == False)]
                 - np.array(data["wells"][well]["SF"])
             ) / np.array(data["wells"][well]["SF"]) * 100
 
             assert np.all(normalized < tolerance)
 
+            pass
 
 # make above test runnanble separately
 if __name__ == '__main__':
