@@ -399,7 +399,11 @@ class Survey:
 
         self._get_errors()
 
-        self.interpolated = kwargs.get('interpolated')
+        self.interpolated = (
+            np.full_like(self.md, False)
+            if kwargs.get('interpolated') is None
+            else kwargs.get('interpolated')
+        )
 
         self._get_vertical_section()
 
@@ -1366,18 +1370,33 @@ def _interpolate_survey(survey, x=0, index=0):
 
         inc, azi = get_angles(t)[0]
 
+    mult = x / (survey.delta_md[index + 1])
+
+    cov_nev = (
+        survey.cov_nev[index]
+        + (
+            np.full(shape=(1, 3, 3), fill_value=mult)
+            * (survey.cov_nev[index+1] - survey.cov_nev[index])
+        )
+    ).reshape(3, 3)
+
     sh = survey.header
     sh.azi_reference = 'grid'
 
     s = Survey(
-        md=np.array([survey.md[index], survey.md[index] + x]),
+        md=np.array(
+            [survey.md[index], survey.md[index] + x],
+            dtype='object'
+        ).astype(np.float64),  # this is to prevent VisibleDeprecationWarning
         inc=np.array([survey.inc_rad[index], inc]),
         azi=np.array([survey.azi_grid_rad[index], azi]),
+        cov_nev=np.array([survey.cov_nev[index], cov_nev]),
         start_xyz=np.array([survey.x, survey.y, survey.z]).T[index],
         start_nev=np.array([survey.n, survey.e, survey.tvd]).T[index],
         header=sh,
         deg=False,
     )
+
     interpolated = False if any((
         x == 0,
         x == survey.md[index + 1] - survey.md[index]
@@ -1491,23 +1510,23 @@ def interpolate_tvd(survey, tvd, **kwargs):
     return node
 
 
-def slice_survey(survey, start, stop=None):
+def slice_survey(survey: Survey, start: int, stop: int = None):
     """
     Take a slice from a welleng.survey.Survey object.
 
     Parameters
     ----------
-        survey: welleng.survey.Survey object
-        start: int
-            The start index of the desired slice.
-        stop: int (default: None)
-            The stop index of the desired slice, else the remainder of
-            the well bore TD is the default.
+    survey: welleng.survey.Survey object
+    start: int
+        The start index of the desired slice.
+    stop: int (default: None)
+        The stop index of the desired slice, else the remainder of
+        the well bore TD is the default.
 
     Returns
     -------
-        s: welleng.survey.Survey object
-            A survey object of the desired slice is returned.
+    s: welleng.survey.Survey object
+        A survey object of the desired slice is returned.
     """
     # Removing this start + 2 code - define this explicitly when making call 
     # if stop is None:
@@ -1531,13 +1550,13 @@ def slice_survey(survey, start, stop=None):
         header=survey.header,
         radius=survey.radius[start:stop],
         cov_hla=cov_hla,
-        cov_nev=cov_hla,
+        cov_nev=cov_nev,
         start_nev=[n[0], e[0], tvd[0]],
         deg=False,
         unit=survey.unit,
     )
 
-    s.error_model=survey.error_model
+    s.error_model = survey.error_model
 
     return s
 
