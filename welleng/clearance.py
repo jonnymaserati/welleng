@@ -1,5 +1,6 @@
 import numpy as np
 from numpy.linalg import norm
+from copy import deepcopy
 
 try:
     import trimesh
@@ -98,6 +99,8 @@ class Clearance:
         )
 
     def _get_nevs(self, survey):
+        # TODO:
+        # - [ ] Take this from the `Survey` where it is already calculated.
         return np.array([
             survey.n,
             survey.e,
@@ -454,6 +457,9 @@ class IscwsaClearance(Clearance):
 
                 node = self.ref.interpolate_md(md)
 
+                sh = self.ref.header
+                sh.azi_reference = 'grid'
+
                 survey = Survey(
                     md=np.insert(
                         self.ref.md, i, node.md
@@ -468,17 +474,22 @@ class IscwsaClearance(Clearance):
                         self.ref.cov_nev, i, node.cov_nev, axis=0
                     ),
                     start_nev=self.ref.start_nev,
+                    start_xyz=self.ref.start_xyz,
                     deg=False,
                     interpolated=np.insert(
                         self.ref.interpolated, i, True
-                    )
+                    ),
+                    radius=np.insert(
+                        self.ref.radius, i, self.ref.radius[i]
+                    ),
+                    header=sh
                 )
 
                 self.ref = survey
 
                 pass
 
-            clearance_args = (self.ref, self.offset)
+            clearance_args = (deepcopy(self.ref), self.offset)
             clearance_kwargs = dict(
                 k=self.k,
                 sigma_pa=self.sigma_pa,
@@ -530,8 +541,6 @@ class IscwsaClearance(Clearance):
         the offset well that is closest to each survey stations on the
         reference well.
         """
-        # TODO: The surveys being appended to closest are too long - they
-        # should only have two points in them.
         closest = []
         for j, (i, station) in enumerate(zip(
             self.idx, self.ref_nevs.tolist()
@@ -541,7 +550,8 @@ class IscwsaClearance(Clearance):
                 res_1 = optimize.minimize(
                     self._fun,
                     bnds[0][1],
-                    method='SLSQP',
+                    # method='SLSQP',
+                    method='Powell',
                     bounds=bnds,
                     args=(self.offset, i-1, station)
                     )
@@ -555,7 +565,8 @@ class IscwsaClearance(Clearance):
                 res_2 = optimize.minimize(
                     self._fun,
                     bnds[0][0],
-                    method='SLSQP',
+                    # method='SLSQP',
+                    method='Powell',
                     bounds=bnds,
                     args=(self.offset, i, station)
                     )
@@ -679,12 +690,21 @@ class IscwsaClearance(Clearance):
         self.hoz_bearing = np.arctan2(
             self.ref_delta_nevs[:, 1], self.ref_delta_nevs[:, 0]
         )
+        self.hoz_bearing = (
+            (np.around(self.hoz_bearing, 6) + np.pi * 2) % (np.pi * 2)
+        )
+
         self.hoz_bearing_deg = (np.degrees(self.hoz_bearing) + 360) % 360
 
         self._get_delta_hla_vectors()
+
         self.toolface_bearing = np.arctan2(
             self.ref_delta_hlas[:, 1], self.ref_delta_hlas[:, 0]
         )
+        self.toolface_bearing = (
+            (np.around(self.toolface_bearing, 6) + np.pi * 2) % (np.pi * 2)
+        )
+
         self.toolface_bearing_deg = (
             np.degrees(self.toolface_bearing) + 360
         ) % 360
@@ -975,7 +995,8 @@ class MeshClearance(Clearance):
         res = optimize.minimize(
             self._fun,
             bnds[0][1] / 2,
-            method='SLSQP',
+            # method='SLSQP',
+            method='Powell',
             bounds=bnds,
             args=(survey, pos)
             )
