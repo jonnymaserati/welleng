@@ -1372,7 +1372,7 @@ def _interpolate_survey(survey, x=0, index=0):
 
     mult = x / (survey.delta_md[index + 1])
 
-    cov_nev = (
+    cov_nev = None if survey.cov_nev is None else (
         survey.cov_nev[index]
         + (
             np.full(shape=(1, 3, 3), fill_value=mult)
@@ -1390,7 +1390,10 @@ def _interpolate_survey(survey, x=0, index=0):
         ).astype(np.float64),  # this is to prevent VisibleDeprecationWarning
         inc=np.array([survey.inc_rad[index], inc]),
         azi=np.array([survey.azi_grid_rad[index], azi]),
-        cov_nev=np.array([survey.cov_nev[index], cov_nev]),
+        cov_nev=(
+            None if cov_nev is None
+            else np.array([survey.cov_nev[index], cov_nev])
+        ),
         start_xyz=np.array([survey.x, survey.y, survey.z]).T[index],
         start_nev=np.array([survey.n, survey.e, survey.tvd]).T[index],
         header=sh,
