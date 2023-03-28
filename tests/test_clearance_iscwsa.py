@@ -77,7 +77,7 @@ def test_clearance_iscwsa(data=data, tolerance=TOLERANCE):
                 result = IscwsaClearance(reference, offset, minimize_sf=True)
 
             normalized = np.absolute(
-                result.sf[np.where(result.ref.interpolated == False)]
+                result.sf[np.where(result.ref.interpolated==False)]
                 - np.array(data["wells"][well]["SF"])
             ) / np.array(data["wells"][well]["SF"]) * 100
 
