@@ -16,12 +16,15 @@ class Node:
         unit='meters',
         degrees=True,
         nev=True,
+        cov_nev=None,
         **kwargs
     ):
         self.check_angle_inputs(inc, azi, vec, nev, degrees)
         self.get_pos(pos, nev)
         self.md = md
         self.unit = unit
+        self.cov_nev = np.zeros(shape=(1, 3, 3)) if cov_nev is None else cov_nev
+
         for k, v in kwargs.items():
             setattr(self, k, v)
 
