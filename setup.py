@@ -109,7 +109,7 @@ setup(
         'Natural Language :: English',
         'Topic :: Scientific/Engineering',
     ],
-    python_requires='>=3.7.*',
+    python_requires='>=3.10',
     packages=find_packages(exclude=["tests"]),
     package_data={
         'welleng': [
