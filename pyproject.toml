@@ -49,7 +49,7 @@ exclude = ["tests"]
 
 [tool.poetry.dependencies]
 python = ">=3.9, <3.12"
-numpy = "^1.24.2"
+numpy = "^1.18"
 scipy = "^1.10.1"
 Pint = "^0.20.1"
 PyYAML = "^6.0"
