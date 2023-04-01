@@ -21,4 +21,7 @@ key.asc
 .~*
 VERSION*
 
+*.lock
+setup.py
+
 test/test_data/*.xlsx

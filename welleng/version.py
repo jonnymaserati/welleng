@@ -1,3 +1,3 @@
 import importlib.metadata
 
-__version__ = importlib.metadata.version('ProjectName')  # in case I missed one
+__version__ = importlib.metadata.version('welleng')  # in case I missed one

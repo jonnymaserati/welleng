@@ -24,10 +24,7 @@ from vtkmodules.vtkRenderingCore import (
     vtkRenderWindow, vtkRenderWindowInteractor, vtkRenderer
 )
 
-import importlib.metadata
-VERSION = importlib.metadata.version('ProjectName')
-
-# from .version import __version__ as VERSION
+from .version import __version__ as VERSION
 
 # VEDO = False
 
