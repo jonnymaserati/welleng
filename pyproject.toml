@@ -65,7 +65,7 @@ vedo = {version="^2023.4.4", optional=true}
 python-fcl = {version="^0.7.0", optional=true}
 
 [tool.poetry.dev-dependencies]
-numba = {version="^0.56.4", optional=true}
+# numba = {version="^0.56.4", optional=true}
 
 [tool.poetry.extras]
 easy = ["magnetic-field-calculator", "networkx", "openpyxl", "pandas",
