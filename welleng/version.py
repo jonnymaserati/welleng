@@ -1,1 +1,3 @@
-__version__ = '0.7.3'
+import importlib.metadata
+
+__version__ = importlib.metadata.version('ProjectName')  # in case I missed one

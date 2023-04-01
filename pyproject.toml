@@ -3,7 +3,49 @@ name = "welleng"
 version = "0.7.3"
 description = "A collection of Well Engineering tools"
 authors = ["Jonathan Corcutt <jonnycorcutt@gmail.com>"]
-license = "Apache 2.0"
+license = "Apache-2.0"
+readme = "README.md"
+homepage = "https://github.com/jonnymaserati/welleng"
+repository = "https://github.com/python-poetry/poetry"
+documentation = "https://jonnymaserati.github.io/welleng/build/html/index.html"
+keywords = [
+    "well",
+    "trajectory",
+    "wellpath",
+    "wellbore",
+    "drilling",
+    "drill",
+    "error",
+    "separation",
+    "minimum curvature",
+    "iscwsa",
+    "owsg",
+    "well engineering",
+    "wells",
+    "drilling engineering",
+    "directional drilling",
+    "mwd",
+    "survey",
+    "covariance",
+    "digitalization",
+    "automation",
+    "volve",
+    "witsml",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Natural Language :: English",
+    "Topic :: Scientific/Engineering",
+]
+include = [
+    {path = "errors/*.yaml"},
+    {path = "errors/tool_codes/*.yaml"},
+    {path = "exchange/*.yaml"}
+]
+exclude = ["tests"]
 
 [tool.poetry.dependencies]
 python = "^3.9"

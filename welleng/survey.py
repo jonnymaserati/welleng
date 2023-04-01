@@ -10,7 +10,10 @@ from datetime import datetime
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 
-from .version import __version__
+import importlib.metadata
+VERSION = importlib.metadata.version('ProjectName')
+
+# from .version import __version__
 from .utils import (
     MinCurve,
     get_nev,
@@ -1930,7 +1933,7 @@ def export_csv(
 
     author = kwargs.get('author', 'Jonny Corcutt')
     comments = [
-        f"welleng, version: {__version__}\n"
+        f"welleng, version: {VERSION}\n"
         f"author, {author}\n"
     ]
     comments.extend([
