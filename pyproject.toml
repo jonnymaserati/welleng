@@ -23,7 +23,7 @@ utm = {version="^0.7.0", optional=true}
 vedo = {version="^2023.4.4", extroptional=true}
 python-fcl = {version="^0.7.0", optional=true}
 
-[tool.poetry.dev-dependencies]
+# [tool.poetry.dev-dependencies]
 
 [tool.poetry.extras]
 easy = ["magnetic-field-calculator", "networkx", "openpyxl", "pandas",
