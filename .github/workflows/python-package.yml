@@ -37,7 +37,12 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test a minimal install
       run: |
-        pip install .
+        python -m pip install -U pip poetry
+        poetry --version
+        poetry check --no-interaction
+        poetry config virtualenvs.in-project true
+        poetry install --no-interaction
+        # pip install .
         python tests/test_minimal.py
     - name: Install APT and dependencies On Linux
       run: |
