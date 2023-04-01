@@ -12,6 +12,7 @@ scipy = "^1.10.1"
 Pint = "^0.20.1"
 PyYAML = "^6.0"
 vtk = "^9.2.6"
+magnetic-field-calculator = {version="^1.0.2", optional=true}
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
