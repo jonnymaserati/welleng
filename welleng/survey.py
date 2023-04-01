@@ -10,7 +10,8 @@ from datetime import datetime
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 
-from .version import __version__
+from .version import __version__ as VERSION
+
 from .utils import (
     MinCurve,
     get_nev,
