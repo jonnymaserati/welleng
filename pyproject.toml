@@ -46,7 +46,7 @@ include = [
     {path = "exchange/*.yaml"}
 ]
 exclude = [
-    {path = "tests"}
+    "tests/*"
 ]
 
 [tool.poetry.dependencies]
