@@ -45,7 +45,9 @@ include = [
     {path = "errors/tool_codes/*.yaml"},
     {path = "exchange/*.yaml"}
 ]
-exclude = ["tests"]
+exclude = [
+    {path = "tests"}
+]
 
 [tool.poetry.dependencies]
 python = ">=3.9, <3.12"
