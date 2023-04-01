@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "welleng"
+version = "0.7.3"
+description = "A collection of Well Engineering tools"
+authors = ["Jonathan Corcutt <jonnycorcutt@gmail.com>"]
+license = "Apache 2.0"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+numpy = "^1.24.2"
+scipy = "^1.10.1"
+Pint = "^0.20.1"
+PyYAML = "^6.0"
+vtk = "^9.2.6"
+
+[tool.poetry.dev-dependencies]
+magnetic-field-calculator = "^1.0.2"
+networkx = "^3.0"
+openpyxl = "^3.1.2"
+pandas = "^1.5.3"
+tabulate = "^0.9.0"
+trimesh = "^3.21.3"
+utm = "^0.7.0"
+vedo = "^2023.4.4"
+python-fcl = "^0.7.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
