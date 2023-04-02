@@ -14,6 +14,9 @@
 
 import os
 import inspect
+import sys
+
+sys.path.insert(0, os.path.abspath('..'))
 
 
 def abspath(rel):
@@ -95,7 +98,7 @@ html_theme_options = {
     # toc options
     'collapse_navigation': True,
     'sticky_navigation': True,
-    'navigation_depth': 4,
+    'navigation_depth': 5,
     'includehidden': True,
     'titles_only': False,
 }
