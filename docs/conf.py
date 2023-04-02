@@ -16,7 +16,7 @@ import os
 import inspect
 import sys
 
-sys.path.insert(0, os.path.abspath('welleng'))
+sys.path.insert(0, os.path.abspath(''))
 
 
 def abspath(rel):
