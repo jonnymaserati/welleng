@@ -17,6 +17,8 @@ work
 *.old
 *.pdf
 
+poetry.lock
+
 key.asc
 .~*
 VERSION*
