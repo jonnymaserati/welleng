@@ -35,7 +35,7 @@ TOOL_INDEX = get_tool_index()
 ERROR_MODELS = get_error_models(TOOL_INDEX)
 
 
-class ErrorModel():
+class ErrorModel:
     """
     A class to initiate the field parameters and error magnitudes
     for subsequent error calculations.

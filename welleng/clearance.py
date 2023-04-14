@@ -1,6 +1,7 @@
+from copy import deepcopy
+
 import numpy as np
 from numpy.linalg import norm
-from copy import deepcopy
 
 try:
     import trimesh
@@ -20,18 +21,21 @@ from .utils import NEV_to_HLA
 
 class Clearance:
     """
-    Initialize a `welleng.clearance.Clearance` object.
+    Initialize a scene on which to perform clearance calculations.
+
+    Refer to Well-Collision-Avoidance Separation Rule [1]_ for more detailed
+    descriptions of parameters.
 
     Parameters
     ----------
-    reference : `welleng.survey.Survey` object
+    reference : Survey
         The current well from which other wells are referenced.
-    offset : `welleng.survey.Survey` object
+    offset : Survey
         The other well.
-    k : float
+    k : float, optional
         The dimensionless scaling factor that determines the probability
         of well crossing.
-    sigma_pa : float
+    sigma_pa : float, optional
         Quantifies the 1-SD uncertainty in the projection ahead of the
         current survey station. Its value is partially correlated with
         the projection distance, determined as the current survey depth to
@@ -42,7 +46,7 @@ class Clearance:
         and although it is predominantly oriented normal to the reference
         well, it is mathematically convenient to define sigma_pa as being
         the radius of a sphere.
-    Sm : float
+    Sm : float, optional
         The surface margin term increases the effective radius of the
         offset well. It accommodates small, unidentified errors and helps
         overcome one of the geometric limitations of the separation rule,
@@ -51,21 +55,26 @@ class Clearance:
         design and ensures that the separation rule will prohibit the
         activity before nominal contact between the reference and offset
         wells, even if the position uncertainty is zero.
-    Rr : float
-        The openhole radius of the reference borehole (in meters).
-    Ro : float
-        The openhole radius of the offset borehole (in meters).
-    kop_depth: float
+    Rr : float, optional
+        The open hole radius of the reference borehole (in meters).
+    Ro : float, optional
+        The open hole radius of the offset borehole (in meters).
+    kop_depth: float, optional
         The kick-off point (measured) depth along the well bore - the
         default value assures that the first survey station is utilized.
 
+    See Also
+    --------
+    welleng.clearance.IscwsaClearance
+    welleng.clearance.MeshClearance
+
     References
     ----------
-    Sawaryn, S. J., Wilson, H.. , Bang, J.. , Nyrnes, E.. , Sentance,
-    A.. , Poedjono, B.. , Lowdon, R.. , Mitchell, I.. , Codling, J.. ,
-    Clark, P. J., and W. T. Allen. "Well-Collision-Avoidance Separation
-    Rule." SPE Drill & Compl 34 (2019): 01–15.
-    doi: https://doi.org/10.2118/187073-PA
+    ..  [1] Sawaryn, S. J., Wilson, H.. , Bang, J.. , Nyrnes, E.. , Sentance,
+        A.. , Poedjono, B.. , Lowdon, R.. , Mitchell, I.. , Codling, J.. ,
+        Clark, P. J., and W. T. Allen. "Well-Collision-Avoidance Separation
+        Rule." SPE Drill & Compl 34 (2019): 01–15.
+        doi: https://doi.org/10.2118/187073-PA
     """
     def __init__(
         self,
@@ -162,25 +171,28 @@ class Clearance:
 
 class IscwsaClearance(Clearance):
     """
-    Parameters:
-    -----------
-    clearance_args: List
-        See 'welleng.clearance.Clearance` for args.
-    minimize_sf: bool
-        If `True` (default), then the closest points on the reference well
-        are determined and added to the `ref` object as interpolated stations.
-    clearance_kwargs: dict
-         See 'welleng.clearance.Clearance` for kwargs.
+    Perform clearance calculations between two wellbores using the ISCWSA
+    method.
 
-    Attributes:
-    -----------
-    Ro : array of floats
-        The radius of the offset well at each station of the off well.
-    Rr : array
-        The radius of the reference well at each station on the ref well.
-    sf : array of floats
-        The calculated Separation Factor to the closest point on the offset
-        well for each station on the reference well.
+    Parameters
+    ----------
+    clearance_args: List
+        See :class:`Clearance` docstring for args.
+    minimize_sf: bool, optional
+        If ``True`` (default), then the closest points on the reference well
+        are determined and added to the `ref` object as interpolated stations.
+    clearance_kwargs : dict, optional
+         See :class:`Clearance` docstring for kwargs.
+
+
+    Attributes
+    ----------
+    Ro : ndarray
+        1D array of the radius of the offset well at each station of the
+        ``off`` well.
+    Rr : ndarray
+        1D array of the radius of the reference well at each station on the
+        ``ref`` well.
     Sm : float
         The surface margin term increases the effective radius of the
         offset well. It accommodates small, unidentified errors and helps
@@ -190,79 +202,88 @@ class IscwsaClearance(Clearance):
         design and ensures that the separation rule will prohibit the
         activity before nominal contact between the reference and offset
         wells, even if the position uncertainty is zero.
-    calc_hole: array of floats
-        The calculated combined equivalent radius of the two well bores, i.e.
-        the sum or their radii plus margins.
+    calc_hole : ndarray
+        1D array of the calculated combined equivalent radius of the two well
+        bores, i.e. the sum or their radii plus margins.
     closest:
-        The closest point on the `off` well from each station on the ref well.
-    distance_cc:
-        The closest center to center distance for each station on the `ref`
-        well to the `off` well.
-    eou_boundary:
-        The sum of the ellipse of uncertainty radii of the `ref` and `off`
-        wells.
-    eou_separation:
-        The distance between the ellipses of uncertainty of the `ref` and `off`
-        wells.
-    hoz_bearing:
-        The horizontal bearing between the closest points in radians.
-    hoz_bearing_deg:
-        The horizontal bearing between the closest points in degrees.
-    idx: int
-        The index of the closest point on the `off` well for each station on
-        the `ref` well.
-    masd:
-        The Minimum Allowable Separation Distance from the `ref` well.
-    off: Survey
-        The offset well `Survey`.
-    off_pcr:
-        The Pedal Curve Radii for each station on the `off` well.
-    off_cov_hla:
-        The covariance matrix in the HLA domain for each station of the `off`
+        The closest point on the `off` well from each station on the ``ref``
         well.
-    off_cov_nev:
-        The covariance matrix in the NEV domain for each station of the `off`
+    distance_cc : ndarray
+        1D array of the closest center to center distance for each station on
+        the ``ref`` well to the ``off`` well.
+    eou_boundary : ndarray
+        1D array of the sum of the ellipse of uncertainty radii of the ``ref``
+        and ``off`` wells.
+    eou_separation : ndarray
+        1D array of the distance between the ellipses of uncertainty of the
+        ``ref`` and ``off`` wells.
+    hoz_bearing : ndarray
+        1D array of the horizontal bearing between the closest points in
+        radians.
+    hoz_bearing_deg : ndarray
+        1D array of the horizontal bearing between the closest points in
+        degrees.
+    idx : int
+        1D array of the index of the closest point on the ``off`` well for each
+        station on the ``ref`` well.
+    masd : ndarray
+        1D array of the Minimum Allowable Separation Distance from the ``ref``
         well.
-    off_nevs:
-        The NEV coordinates of the `off` well.
-    offset: Survey
-        The initial `offset` well `Survey`.
-    offset_nevs:
-        The initial NEV coordinates of the `offset` well.
+    off : Survey
+        The offset well :class:`Survey`.
+    off_pcr : ndarray
+        1D array of the Pedal Curve Radii for each station on the ``off`` well.
+    off_cov_hla : ndarray
+        [N, 3, 3] array of the covariance matrix in the HLA domain for each
+        station of the ``off`` well.
+    off_cov_nev : ndarray
+        [N, 3, 3] array of the covariance matrix in the NEV domain for each
+        station of the ``off`` well.
+    off_nevs : ndarray
+        [N, 3] array of the NEV coordinates of the ``off`` well.
+    offset : Survey
+        The initial ``offset`` well :class:`Survey`.
+    offset_nevs : ndarray
+        [N, 3] array of the initial NEV coordinates of the `offset` well.
     ref: Survey
-        The `ref` well `Survey`.
-    ref_pcr:
-        The Pedal Curve Radii for each station on the `ref` well.
-    ref_cov_hla:
-        The covariance matrix in the HLA domain for each station of the `ref`
-        well.
-    ref_cov_nev:
-        The covariance matrix in the NEV domain for each station of the `ref`
-        well.
-    ref_nevs:
-        The NEV coordinates of the `ref` well.
-    reference: Survey
-        The initial `reference` well `Survey`.
-    reference_nevs:
-        The initial NEV coordinates of the `reference` well.
-    sf:
-        The Separation Factor between the closest point on the `off` well for
-        each station on the `ref` well.
-    toolface_bearing:
-        The toolface bearing in radians from each station on the `ref` well to
-        the closest point on the `off` well.
-    trav_cyl_azi_deg:
-        The heading in degrees from each station on teh `ref` well to the
-        closest point on the `off` well.
-    wellbore_separation:
-        The distance between the edge of the wellbore for each station on the
-        `ref` well to the closest point on the `off` well.
+        The ``ref`` well :class:`Survey`.
+    ref_pcr : ndarray
+        1D array of the Pedal Curve Radius for each station on the ``ref`` well.
+    ref_cov_hla : ndarray
+        [N, 3, 3] array of the covariance matrix in the HLA domain for each
+        station of the ``ref`` well.
+    ref_cov_nev : ndarray
+        [N, 3, 3] array of the covariance matrix in the NEV domain for each
+        station of the ``ref`` well.
+    ref_nevs : ndarray
+        [N, 3] array of the NEV coordinates of the ``ref`` well.
+    reference : Survey
+        The initial ``reference`` well :class:`Survey`.
+    reference_nevs : ndarray
+        [N, 3] array of the initial NEV coordinates of the ``reference`` well.
+    sf : ndarray
+        1D array of the calculated Separation Factor to the closest point on
+        the offset well for each station on the reference well.
+    toolface_bearing : ndarray
+        1D array of the toolface bearing in radians from each station on the
+        ``ref`` well to the closest point on the ``off`` well.
+    trav_cyl_azi_deg : ndarray
+        1D array of the heading in degrees from each station on teh ``ref``
+        well to the closest point on the ``off`` well.
+    wellbore_separation : ndarray
+        1D array of the distance between the edge of the well bore for each
+        station on the ``ref`` well to the closest point on the ``off`` well.
+
+    See Also
+    --------
+    welleng.clearance.Clearance
+    welleng.clearance.MeshClearance
     """
     def __init__(
         self,
-        *clearance_args,
-        minimize_sf=None,
-        **clearance_kwargs
+        *clearance_args: list,
+        minimize_sf: bool = None,
+        **clearance_kwargs: dict
     ):
         # TODO:
         # - [ ] Can probably remove the `offset` Survey since `off` is a copy.
@@ -330,7 +351,7 @@ class IscwsaClearance(Clearance):
 
         # check for minima
         if minimize_sf:
-            self.get_sf_mins()
+            self._get_sf_mins()
 
         # for debugging
         # self.pc_method()
@@ -402,7 +423,7 @@ class IscwsaClearance(Clearance):
 
         return sf_interpolated
 
-    def get_sf_mins(self):
+    def _get_sf_mins(self):
         """
         Method for assessing whether a minima has occurred between survey
         station SF values on the reference well and if so calculates the
@@ -510,9 +531,21 @@ class IscwsaClearance(Clearance):
 
             pass
 
-    def get_lines(self):
+    def get_lines(self) -> np.array:
         """
         Extracts the closest points between wells for each survey section.
+
+        A convenience method for generating line data to quickly QAQC the
+        results of a clearance calculation by e.g. overlaying these lines on a
+        plot of the two well bores.
+
+        Returns
+        -------
+        result: ndarray
+            [2, N, 3] array of start points and end points of the lines
+            representing the shortest distances between the reference and
+            offset wells between each pair of survey stations on the reference
+            well.
         """
         points = [
             [
@@ -759,18 +792,18 @@ class IscwsaClearance(Clearance):
 class MeshClearance(Clearance):
     """
     Class to calculate the clearance between two well bores using a novel
-    mesh clearance method. This method is experimental and was developed
-    to provide a fast method for determining if well bores are potentially
-    colliding.
-
-    This class requires that `trimesh` is installed along with
-    `python-fcl`.
+    mesh clearance method.
+    
+    This method is experimental and was developed to provide a fast method for
+    determining if well bores are potentially colliding.
 
     Parameters
     ----------
+    clearance_args: List
+        See :class:`Clearance` docstring for args.
     n_verts : int
         The number of points (vertices) used to generate the uncertainty
-        ellipses which are used to generate a `trimesh` representation of
+        ellipses which are used to generate a ``trimesh`` representation of
         the well bores. The default is 12 which is a good balance between
         accuracy and speed.
     sigma : float
@@ -778,6 +811,26 @@ class MeshClearance(Clearance):
         mesh. The default value of 2.445 represents about 98.5% confidence
         of the well bore being located within the volume of the generated
         mesh.
+    return_data: bool
+        If you're only interested in a go-no-go collision check (i.e. if the
+        meshes/EOU are touching or not), then switching this param from the
+        default ``True`` to ``False`` will only forgo the expensive separation
+        factor calculations - perfect for automated trajectory planning!
+    return_meshes: bool
+        The ``trimesh`` instances generated to determine if there's a collision
+        can be returned (to avoid having to recalculate them) if this is set
+        to ``True`` rather than the default ``False``.
+    clearance_kwargs : dict, optional
+         See :class:`Clearance` docstring for kwargs.
+
+    Notes
+    -----
+    This class requires that `trimesh` is installed along with `python-fcl`.
+
+    See Also
+    --------
+    welleng.clearance.Clearance
+    welleng.clearance.IscwsaClearance
     """
     def __init__(
         self,
@@ -1008,6 +1061,7 @@ class MeshClearance(Clearance):
         return (nev, res)
 
 
+# TODO: move this to utils.
 def get_ref_sigma(sigma1, sigma2, sigma3, kop_index):
     sigma = np.array([sigma1, sigma2, sigma3]).T
     sigma_diff = np.diff(sigma, axis=0)

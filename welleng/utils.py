@@ -2,7 +2,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 from numpy.typing import ArrayLike, NDArray
-from typing import Any, Annotated, Literal, Union, Tuple
+from typing import Any, Annotated, Literal, Union, Tuple, List
 
 try:
     from numba import njit
@@ -14,33 +14,29 @@ except ImportError:
 class MinCurve:
     def __init__(
         self,
-        md,
-        inc,
-        azi,
-        start_xyz=[0., 0., 0.],
-        unit="meters"
+        md: List[float],
+        inc: List[float],
+        azi: List[float],
+        start_xyz: List[float] = None,
+        dls_denominator: float = None
     ):
         """
         Generate geometric data from a well bore survey.
 
         Parameters
         ----------
-        md: list or 1d array of floats
-            Measured depth along well path from a datum.
-        inc: list or 1d array of floats
-            Well path inclincation (relative to z/tvd axis where 0
-            indicates down), in radians.
-        azi: list or 1d array of floats
-            Well path azimuth (relative to y/North axis),
-            in radians.
-        unit: str
-            Either "meters" or "feet" to determine the unit of the dogleg
-            severity.
-
+        md: array_like
+            1D list or array of measured depth along well path from a datum.
+        inc: array_like
+            1D list or array of well path inclination (relative to z/tvd axis
+            where 0 indicates down), in radians.
+        azi: array_like
+            1D array of well path azimuth (relative to y/North axis) in radians.
+        dls_denominator : float, optional
+            The denominator used to calculate the DLS, e.g. for a DLS in
+            degrees per 30 meters, the default value ``dls_denominator=30``
+            should be used.
         """
-        assert unit == "meters" or unit == "feet", (
-            'Unknown unit, please select "meters" of "feet"'
-        )
 
         self.md = md
         survey_length = len(self.md)
@@ -48,8 +44,11 @@ class MinCurve:
 
         self.inc = inc
         self.azi = azi
-        self.start_xyz = start_xyz
-        self.unit = unit
+        self.start_xyz = np.zeros(3) if start_xyz is None else start_xyz
+        self.dls_denominator = (
+            30 if dls_denominator is None
+            else dls_denominator
+        )
 
         # make two slices with a difference or 1 index to enable array
         # calculations
@@ -61,13 +60,6 @@ class MinCurve:
 
         azi_1 = azi[:-1]
         azi_2 = azi[1:]
-
-        # calculate the dogleg
-        # temp = np.arccos(
-        #     np.cos(inc_2 - inc_1)
-        #     - (np.sin(inc_1) * np.sin(inc_2))
-        #     * (1 - np.cos(azi_2 - azi_1))
-        # )
 
         self.dogleg = np.zeros(survey_length)
         self.dogleg[1:] = get_dogleg(inc_1, azi_1, inc_2, azi_2)
@@ -84,8 +76,7 @@ class MinCurve:
 
         # calculate change in y direction (north)
         temp = (
-            self.delta_md[1:]
-            / 2
+            self.delta_md[1:] / 2
             * (
                 np.sin(inc_1) * np.cos(azi_1)
                 + np.sin(inc_2) * np.cos(azi_2)
@@ -97,8 +88,7 @@ class MinCurve:
 
         # calculate change in x direction (east)
         temp = (
-            self.delta_md[1:]
-            / 2
+            self.delta_md[1:] / 2
             * (
                 np.sin(inc_1) * np.sin(azi_1)
                 + np.sin(inc_2) * np.sin(azi_2)
@@ -121,14 +111,11 @@ class MinCurve:
         # calculate the dog leg severity
         with np.errstate(divide='ignore', invalid='ignore'):
             temp = np.degrees(self.dogleg[1:]) / self.delta_md[1:]
+
         self.dls = np.zeros(survey_length)
         mask = np.where(temp != np.nan)
         self.dls[1:][mask] = temp[mask]
-
-        if unit == "meters":
-            self.dls *= 30
-        else:
-            self.dls *= 100
+        self.dls *= self.dls_denominator
 
         # cumulate the coordinates and add surface coordinates
         self.poss = np.vstack(

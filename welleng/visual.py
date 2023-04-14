@@ -136,7 +136,7 @@ class Plotter(vtkRenderer):
     def add_axes(self, **kwargs):
         axes = CubeAxes(self, **kwargs)
         self.AddActor(axes)
-    
+
     def get_center(self):
         min, max = np.array(self.ComputeVisiblePropBounds()).reshape(-1, 3)
         center = min + (max - min) / 2
@@ -149,7 +149,7 @@ class Plotter(vtkRenderer):
         """
         if add_axes:
             self.add_axes(**kwargs)
-        
+
         self.GetActiveCamera().Azimuth(kwargs.get('azimuth', 30))
         self.GetActiveCamera().Elevation(kwargs.get('elevation', 30))
         self.GetActiveCamera().SetViewUp(0, 0, -1)

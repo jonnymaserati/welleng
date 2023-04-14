@@ -33,7 +33,7 @@ class Connector:
         inc2=None,
         azi2=None,
         degrees=True,
-        unit='meters',
+        dls_denominator=30,
         min_error=1e-5,
         delta_dls=0.1,
         min_tangent=0.,
@@ -88,9 +88,9 @@ class Connector:
         degrees: boolean (default: True)
             Indicates whether the input angles (inc, azi) are in degrees
             (True) or radians (False).
-        unit: string (default: 'meters')
-            Indicates the distance unit, either 'meters' or 'feet'.
-        min_error: float (default: 1e-5):
+        dls_denominator: float
+            The denominator for determining the DLS - default is 30.
+        min_error: float (default: 1e-5)
             Infers the error tolerance of the results and is used to set
             iteration stops when the desired error tolerance is met. Value
             must be less than 1. Use with caution as the code may
@@ -123,6 +123,10 @@ class Connector:
         Results
         -------
         connector: welleng.connector.Connector object
+
+        References
+        ----------
+
         """
         if node1 is not None:
             pos1, vec1, md1 = get_node_params(
@@ -272,11 +276,9 @@ class Connector:
             self.inc_target = inc2
             self.azi_target = azi2
 
-        self.unit = unit
-        if self.unit == 'meters':
-            self.denom = 30
-        else:
-            self.denom = 100
+        self.dls_denominator = (
+            30 if dls_denominator is None else dls_denominator
+        )
 
         if degrees:
             self.dls_design = np.radians(dls_design)
@@ -289,8 +291,8 @@ class Connector:
         if not dls_design2:
             self.dls_design2 = self.dls_design
 
-        self.radius_design = self.denom / self.dls_design
-        self.radius_design2 = self.denom / self.dls_design2
+        self.radius_design = self.dls_denominator / self.dls_design
+        self.radius_design2 = self.dls_denominator / self.dls_design2
 
         self.delta_dls = delta_dls
 
@@ -674,6 +676,7 @@ class Connector:
             self.radius_critical2 > self.radius_design2
         )):
             while True and self.iterations <= self.max_iterations:
+                # TODO: there seems to be something not working right here...
                 self.radius_critical = (
                     (self.md_target - self.md1)
                     / (abs(self.dogleg) + abs(self.dogleg2))

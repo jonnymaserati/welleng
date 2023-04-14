@@ -43,6 +43,12 @@ def test_interpolate_tvd(tvd=800):
     assert isinstance(node, we.node.Node)
 
 
+def test_export_csv():
+    global survey
+    df = survey.save()
+    pass
+
+
 def one_function_to_run_them_all():
     """
     Function to gather the test functions so that they can be tested by

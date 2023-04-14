@@ -1,36 +1,29 @@
-import numpy as np
 import math
 from copy import copy
+
+import numpy as np
+import pandas as pd
+
 try:
     from magnetic_field_calculator import MagneticFieldCalculator
     MAG_CALC = True
 except ImportError:
     MAG_CALC = False
 from datetime import datetime
+from typing import List, Union
+
+from numpy.typing import ArrayLike, NDArray
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 
-from .version import __version__
-from .utils import (
-    MinCurve,
-    get_nev,
-    get_vec,
-    get_angles,
-    HLA_to_NEV,
-    NEV_to_HLA,
-    get_xyz,
-    radius_from_dls,
-    get_arc
-)
-from .error import ErrorModel, ERROR_MODELS
-from .node import Node
 from .connector import Connector, interpolate_well
-from .visual import figure
+from .error import ERROR_MODELS, ErrorModel
+from .node import Node
 from .units import ureg
-
-from typing import List, Union
-from numpy.typing import NDArray
-
+from .utils import (HLA_to_NEV, MinCurve, NEV_to_HLA, get_angles, get_arc,
+                    get_nev, get_vec, get_xyz, radius_from_dls)
+from .version import __version__
+from .visual import figure
 
 AZI_REF = ["true", "magnetic", "grid"]
 
@@ -230,102 +223,114 @@ class SurveyHeader:
 
 class Survey:
     """
-    Initialize a `welleng.Survey` object. Calculations are performed in the
-    azi_reference "grid" domain.
+    Calculates survey data using the Minimum Curvature method.
+
+    Survey data inputs should be equal length lists or arrays - think of them
+    as columns from a data table. Calculated variables subsequently are indexed
+    from the input data, e.g. to find out the DLS at a specific survey, index
+    the ``dls`` array at the index corresponding to that depth - if 300 meters
+    is indexed at ``5`` in the ``md``, then the corresponding ``dls`` value is
+    at index ``5``.
 
     Parameters
     ----------
-    md: (,n) list or array of floats
-        List or array of well bore measured depths.
-    inc: (,n) list or array of floats
-        List or array of well bore survey inclinations
-    azi: (,n) list or array of floats
-        List or array of well bore survey azimuths
-    n: (,n) list or array of floats (default: None)
-        List or array of well bore northings
-    e: (,n) list or array of floats (default: None)
-        List or array of well bore eastings
-    tvd: (,n) list or array of floats (default: None)
-        List or array of local well bore z coordinates, i.e. depth
+    md : array_like
+        1D list or array of well bore measured depths.
+    inc : array_like
+        1D ist or array of well bore survey inclinations.
+    azi : array_like
+        1D list or array of well bore survey azimuths.
+    n : array_like, optional
+        1D list or array of well bore northings.
+    e : array_like, optional
+        1D list or array of well bore eastings.
+    tvd : array_like, optional
+        1D list or array of local well bore z coordinates, i.e. depth
         and usually relative to surface or mean sea level.
-    x: (,n) list or array of floats (default: None)
-        List or array of local well bore x coordinates, which is
+    x : array_like, optional
+        1D list or array of local well bore x coordinates, which is
         usually aligned to the east direction.
-    y: (,n) list or array of floats (default: None)
+    y : (,n) list or array of floats (default: None)
         List or array of local well bore y coordinates, which is
         usually aligned to the north direction.
-    z: (,n) list or array of floats (default: None)
+    z : (,n) list or array of floats (default: None)
         List or array of well bore true vertical depths relative
         to the well surface datum (usually the drill floor
         elevation DFE, so not always identical to tvd).
-    vec: (n,3) list or array of (,3) floats (default: None)
+    vec : (n,3) list or array of (,3) floats (default: None)
         List or array of well bore unit vectors that describe the
         inclination and azimuth of the well relative to (x,y,z)
         coordinates.
-    header: SurveyHeader object (default: None)
-        A SurveyHeader object with information about the well location
-        and survey data. If left default then a SurveyHeader will be
+    header : SurveyHeader
+        A :class:`SurveyHeader` object with information about the well location
+        and survey data. If left default (``None``) then a SurveyHeader will be
         generated with the default properties assigned, but these may
         not be relevant and may result in incorrect data.
-    radius: float or (,n) list or array of floats (default: None)
+    radius : float or array_like, optional
         If a single float is specified, this value will be
-        assigned to the entire well bore. If a list or array of
+        assigned to the entire well bore. If a 1D list or array of
         floats is provided, these are the radii of the well bore.
-        If None, a well bore radius of 12" or approximately 0.3 m
-        is applied.
-    cov_nev: (n,3,3) list or array of floats (default: None)
-        List or array of covariance matrices in the (n,e,v)
-        coordinate system.
-    cov_hla: (n,3,3) list or array of floats (default: None)
-        List or array of covariance matrices in the (h,l,a)
+        The default is a well bore radius of 12" (approximately 0.3 meters).
+    cov_nev: array_like
+        [n, 3, 3] list or array of covariance matrices in the (n,e,v)
+        coordinate system - default is ``None``.
+    cov_hla: array_like
+        [n, 3, 3] list or array of covariance matrices in the (h,l,a)
         well bore coordinate system (high side, lateral, along
-        hole).
-    error_model: str (default: None)
-        If specified, this model is used to calculate the
-        covariance matrices if they are not present. Currently,
-        only the "ISCWSA_MWD" model is provided.
-    start_xyz: (,3) list or array of floats (default: [0,0,0])
-        The start position of the well bore in (x,y,z) coordinates.
-    start_nev: (,3) list or array of floats (default: [0,0,0])
-        The start position of the well bore in (n,e,v) coordinates.
-    start_cov_nev: (,3,3) list or array of floats (default: None)
-        The covariance matrix for the start position of the well
-        bore in (n,e,v) coordinates.
-    deg: boolean (default: True)
-        Indicates whether the provided angles are in degrees
-        (True), else radians (False).
-    unit: str (default: 'meters')
-        Indicates whether the provided lengths and distances are
-        in 'meters' or 'feet', which impacts the calculation of
-        the dls (dog leg severity).
+        hole) - default is ``None``.
+    error_model: str
+        If specified, this model is used to calculate the covariance matrices
+        if they are not present - see :class:`welleng.error.ErrorModel`
+        docstring for more info.
+    start_xyz: array_like
+        The start position of the well bore in [x, y, z] coordinates - the
+        default is [0, 0, 0].
+    start_nev: array_like
+        The start position of the well bore in [n, e, v] coordinates - the
+        default is [0, 0, 0]
+    start_cov_nev: ndarray
+        [1, 3, 3] array of the covariance matrix for the start position of the
+        well bore in [n, e, v] coordinate system - default is None.
+    deg: bool
+        Indicates whether the provided angles are in degrees (True), else
+        radians (False).
+    dls_denominator : float
+            The denominator used to calculate the DLS, e.g. for a DLS in
+            degrees per 30 meters, the default value ``dls_denominator=30``
+            should be used.
 
-    Returns
-    -------
-    A welleng.survey.Survey object.
+
+    Notes
+    -----
+    Calculations are performed in the ``azi_reference`` grid domain in meters.
+
+    See Also
+    --------
+    welleng.utils.MinCurve
     """
     def __init__(
         self,
-        md,
-        inc,
-        azi,
-        n=None,
-        e=None,
-        tvd=None,
-        x=None,
-        y=None,
-        z=None,
-        vec=None,
-        nev=True,
-        header=None,
-        radius=None,
-        cov_nev=None,
-        cov_hla=None,
-        error_model=None,
-        start_xyz=[0., 0., 0.],
-        start_nev=[0., 0., 0.],
-        start_cov_nev=None,
-        deg=True,
-        unit="meters",
+        md: List[float],
+        inc: List[float],
+        azi: List[float],
+        n: List[float] = None,
+        e: List[float] = None,
+        tvd: List[float] = None,
+        x: List[float] = None,
+        y: List[float] = None,
+        z: List[float] = None,
+        vec: List[float] = None,
+        nev: bool = True,
+        header: SurveyHeader = None,
+        radius: Union[float, List[float]] = None,
+        cov_nev: NDArray = None,
+        cov_hla: NDArray = None,
+        error_model: str = None,
+        start_xyz: List[float] = None,
+        start_nev: List[float] = None,
+        start_cov_nev: List[float] = None,
+        deg: bool = True,
+        dls_denominator: float = None,
         **kwargs
     ):
         if header is None:
@@ -333,18 +338,20 @@ class Survey:
         else:
             assert isinstance(header, SurveyHeader)
             self.header = header
-        assert unit == self.header.depth_unit, (
-            "inconsistent units with header"
+        # assert unit == self.header.depth_unit, (
+        #     "inconsistent units with header"
+        # )
+        self.dls_denominator = (
+            30 if dls_denominator is None else dls_denominator
         )
 
         self.azi_ref_lookup = {
             'true': "true", 'magnetic': "mag", 'grid': "grid"
         }
 
-        self.unit = unit
         self.deg = deg
-        self.start_xyz = start_xyz
-        self.start_nev = start_nev
+        self.start_xyz = np.zeros(3) if start_xyz is None else start_xyz
+        self.start_nev = np.zeros(3) if start_nev is None else start_nev
         self.md = np.array(md).astype('float64')
         self.start_cov_nev = start_cov_nev
 
@@ -369,7 +376,7 @@ class Survey:
                 [self.n[0], self.e[0], self.tvd[0]]
             )
         else:
-            self.start_nev = np.array(start_nev)
+            self.start_nev = np.array(self.start_nev)
 
         self.x = np.array(x) if x is not None else x
         self.y = np.array(y) if y is not None else y
@@ -490,7 +497,8 @@ class Survey:
         minimum curvature method.
         """
         mc = MinCurve(
-            self.md, self.inc_rad, self.azi_grid_rad, self.start_xyz, self.unit
+            self.md, self.inc_rad, self.azi_grid_rad, self.start_xyz,
+            self.dls_denominator
         )
         self.dogleg = mc.dogleg
         self.rf = mc.rf
@@ -580,11 +588,8 @@ class Survey:
         with np.errstate(divide='ignore', invalid='ignore'):
             radius = 1 / curvature
         circumference = 2 * np.pi * radius
-        if self.unit == 'meters':
-            x = 30
-        else:
-            x = 100
-        rate = np.absolute(np.degrees(2 * np.pi / circumference) * x)
+        rate = np.absolute(
+            np.degrees(2 * np.pi / circumference) * self.dls_denominator)
 
         return rate
 
@@ -595,11 +600,6 @@ class Survey:
         """
         # split the survey
         s = SplitSurvey(self)
-
-        if self.unit == 'meters':
-            x = 30
-        else:
-            x = 100
 
         # this is lazy I know, but I'm using this mostly for flags
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -626,7 +626,9 @@ class Survey:
                 np.where(t2 < 0, t2 + 2 * np.pi, t2),
                 nan=np.nan
             )
-            self.curve_radius = (360 / self.dls * x) / (2 * np.pi)
+            self.curve_radius = (
+                360 / self.dls * self.dls_denominator
+            ) / (2 * np.pi)
 
             curvature_dls = 1 / self.curve_radius
 
@@ -665,7 +667,7 @@ class Survey:
             self.tvd
         ]).T.reshape(-1, 3)
 
-    def save(self, filename):
+    def save(self, filename: str = None):
         """
         Saves a minimal (control points) survey listing as a .csv file,
         including the survey header information.
@@ -673,9 +675,19 @@ class Survey:
         Parameters
         ----------
         filename: str
-            The path and filename for saving the text file.
+            The path and filename for saving the text file. The default
+            ``None`` returns a DataFrame.
+
+        Returns
+        -------
+        df: pandas.DataFrame
+            If the default ``filename=None`` is set then a ``DataFrame`` is
+            returned.
         """
-        export_csv(self, filename)
+        df = export_csv(self, filename)
+
+        if df is not None:
+            return df
 
     def interpolate_md(self, md):
         """
@@ -726,12 +738,19 @@ class Survey:
         return node
 
     def interpolate_tvd(self, tvd):
+        """
+        Convenience method to interpolate a ``Survey`` for a given ``tvd``.
+
+        Refer to :func:`interpolate_tvd` docstring or more information.
+        """
         node = interpolate_tvd(self, tvd=tvd)
         return node
 
     def interpolate_survey_tvd(self, start=None, stop=None, step=10):
         """
         Convenience method for interpolating a Survey object's TVD.
+
+        Refer to :func:`interpolate_survey_tvd` docstring for more information.
         """
         survey_interpolated = interpolate_survey_tvd(
             self, start=start, stop=stop, step=step
@@ -974,13 +993,17 @@ class Survey:
 
     def directional_difficulty_index(self, **kwargs):
         """
-        Taken from IADC/SPE 59196 The Directional Difficulty Index - A
-        New Approach to Performance Benchmarking by Alistair W. Oag et al.
+        Taken from IADC/SPE 59196 The Directional Difficulty Index [2]_ .
 
         Returns
         -------
         data: (n) array of floats
             The ddi for each survey station.
+
+        References
+        ----------
+        ..  [2] IADC/SPE 59196 The Directional Difficulty Index - A
+            New Approach to Performance Benchmarking by Alistair W. Oag et al.
         """
 
         return directional_difficulty_index(self, **kwargs)
@@ -1288,14 +1311,35 @@ class TurnPoint:
 
 
 def get_node(survey, idx, interpolated=False):
+    """
+    Returns survey station data from a survey.
+
+    Parameters
+    ----------
+    survey: Survey
+        A :class:`Survey` instance.
+    idx: int
+        The index of the survey station to return the survey station data.
+
+    Returns
+    -------
+    node: Node
+        A :class:`Node` instance with the survey station data at the provided
+        index.
+
+    See Also
+    --------
+    welleng.node.Node
+    """
     node = Node(
         pos=[survey.n[idx], survey.e[idx], survey.tvd[idx]],
         vec=survey.vec_nev[idx].tolist(),
         md=survey.md[idx],
-        unit=survey.unit,
+        dls_denominator=survey.dls_denominator,
         nev=True,
         interpolated=interpolated
     )
+
     return node
 
 
@@ -1410,6 +1454,20 @@ def _interpolate_survey(survey, x=0, index=0):
 
 
 def interpolate_tvd(survey, tvd, **kwargs):
+    """
+    Parameters
+    ----------
+    survey: Survey
+        A :class:`Survey` instance.
+    tvd: float
+        The True Vertical Depth of the ``Survey`` for which survey station
+        data is required.
+
+    Returns
+    -------
+    node: Node
+        A :class:`Node` instance.
+    """
     # only seem to work with relative small delta_md - re-write with minimize
     # function?
 
@@ -1633,7 +1691,7 @@ class SplitSurvey:
         self.dogleg = survey.dogleg[1:]
 
 
-def get_circle_radius(survey, **targets):
+def _get_circle_radius(survey, **targets):
     # TODO: add target data to sections
     ss = SplitSurvey(survey)
 
@@ -1753,10 +1811,6 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
         location = [x, y, z]
 
         # target = ""
-        if survey.unit == 'meters':
-            denominator = 30
-        else:
-            denominator = 100
 
         if a == "hold" or tie_on or i == 0:
             dls = 0.0
@@ -1795,7 +1849,7 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
             # sections
             build_rate = abs(
                 (survey.inc_deg[s] - survey.inc_deg[lb])
-                / delta_md * denominator
+                / delta_md * survey.dls_denominator
             )
 
             # TODO: should sum this line by line to avoid issues with long
@@ -1810,7 +1864,7 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
             delta_azi = min(delta_azi_1, delta_azi_2)
 
             delta_azi = delta_azi_1
-            turn_rate = delta_azi / delta_md * denominator
+            turn_rate = delta_azi / delta_md * survey.dls_denominator
 
         section = TurnPoint(
             md=md,
@@ -1878,11 +1932,13 @@ def export_csv(
 
     Parameters
     ----------
-    survey: welleng.survey.Survey object
+    survey: Survey
+        A :class:`Survey` instance.
     filename: str
-        The path and filename for saving the text file.
+        The path and filename for saving the text file. If default ``None``
+        then a :class:`pandas.DataFrame` is returned.
     tolerance: float (default: 0.1)
-        How close the the final N, E, TVD position of the minimalist survey
+        How close the final N, E, TVD position of the minimalist survey
         should be to the original survey point (e.g. within 1 meter)
     dls_cont: bool
         Whether to explicitly check for dls continuity. May result in a
@@ -1890,16 +1946,42 @@ def export_csv(
         fit to the survey.
     decimals: int (default: 3)
         Number of decimal places provided in the output file listing
+    
+    Returns
+    -------
+    
     """
 
     start_tol = 0
 
+    def _func(x0, survey, dls_cont, tolerance):
+        data = _get_data(x0, survey, dls_cont)
+
+        md, inc, azi, n, e, tvd, dls, tf, br, tr = data.T
+        nev = np.array([survey.n, survey.e, survey.tvd]).T
+
+        s = Survey(
+            md=md,
+            inc=inc,
+            azi=azi,
+            start_nev=nev[0],
+            header=survey.header
+        )
+
+        s_nev = np.array([s.n, s.e, s.tvd]).T
+
+        diff = abs(
+            tolerance - np.amax(np.absolute(s_nev[-1] - nev[-1]))
+        )
+
+        return diff
+
     res = minimize(
-        func, start_tol, args=(survey, dls_cont, tolerance), method='SLSQP',
+        _func, start_tol, args=(survey, dls_cont, tolerance), method='SLSQP',
         bounds=[[0, 1.0]], options={'eps': 0.001}
     )
 
-    data = get_data(
+    data = _get_data(
         res.x[0], survey, dls_cont
     )
 
@@ -1924,7 +2006,15 @@ def export_csv(
                 data,
                 columns=headers.split(',')
             )
+            attrs = {
+                k: v for k, v in vars(survey.header).items()
+            }
+            attrs.update({'author': kwargs.get('author', 'Jonny Corcutt')})
+            attrs.update({'welleng': __version__})
+            df.attrs = attrs
+
             return df
+
         except ImportError:
             print("Missing pandas dependency")
 
@@ -1949,7 +2039,7 @@ def export_csv(
     )
 
 
-def get_data(tol, survey, dls_cont):
+def _get_data(tol, survey, dls_cont):
 
     rtol = atol = tol
 
@@ -1971,30 +2061,6 @@ def get_data(tol, survey, dls_cont):
     data = np.vstack(data[1:])
 
     return data
-
-
-def func(x0, survey, dls_cont, tolerance):
-
-    data = get_data(x0, survey, dls_cont)
-
-    md, inc, azi, n, e, tvd, dls, tf, br, tr = data.T
-    nev = np.array([survey.n, survey.e, survey.tvd]).T
-
-    s = Survey(
-        md=md,
-        inc=inc,
-        azi=azi,
-        start_nev=nev[0],
-        header=survey.header
-    )
-
-    s_nev = np.array([s.n, s.e, s.tvd]).T
-
-    diff = abs(
-        tolerance - np.amax(np.absolute(s_nev[-1] - nev[-1]))
-    )
-
-    return diff
 
 
 def _remove_duplicates(md, inc, azi):
@@ -2023,18 +2089,18 @@ def from_connections(
 
     Parameters
     ----------
-        section_data: list of dicts with section data
-        start_nev: (3) array of floats (default: [0,0,0])
-            The starting position in NEV coordinates.
-        radius: float (default: 10)
-            The radius is passed to the `welleng.survey.Survey` object
-            and represents the radius of the wellbore. It is also used
-            when visualizing the results, so can be used to make the
-            wellbore *thicker* in the plot.
+    section_data: list of dicts with section data
+    start_nev: (3) array of floats (default: [0,0,0])
+        The starting position in NEV coordinates.
+    radius: float (default: 10)
+        The radius is passed to the `welleng.survey.Survey` object
+        and represents the radius of the wellbore. It is also used
+        when visualizing the results, so can be used to make the
+        wellbore *thicker* in the plot.
 
     Results
     -------
-        survey: `welleng.survey.Survey` object
+    survey: `welleng.survey.Survey` object
     """
     if type(section_data) is not list:
         section_data = [section_data]
@@ -2125,7 +2191,7 @@ def interpolate_survey(survey, step=30, dls=1e-8):
                 inc=u[1],
                 azi=u[2],
                 degrees=False,
-                unit=survey.unit
+                dls_denominator=survey.dls_denominator
             )
         else:
             node1 = well[-1].node_end
@@ -2134,7 +2200,7 @@ def interpolate_survey(survey, step=30, dls=1e-8):
             inc=l[1],
             azi=l[2],
             degrees=False,
-            unit=survey.unit
+            dls_denominator=survey.dls_denominator
         )
         c = Connector(
             node1=node1,
@@ -2142,7 +2208,7 @@ def interpolate_survey(survey, step=30, dls=1e-8):
             dls_design=dls,
             degrees=False,
             force_min_curve=True,
-            unit=survey.unit
+            dls_denominator=survey.dls_denominator
         )
         well.append(c)
 
@@ -2210,7 +2276,36 @@ def get_node_tvd(survey, node1, node2, tvd, node_origin):
 
 def interpolate_survey_tvd(survey, start=None, stop=None, step=10):
     """
+    Interpolates a survey with even step changes in TVD.
+
+    Parameters
+    ----------
+    survey : Survey
+        A :class:`Survey` instance.
+    start : float
+        The start TVD depth for the interpolating range.
+    step : float
+        The delta step for interploting the survey TVDs.
+
+    Returns
+    -------
+    s_interp: Survey
+        A :class:`Survey` instance that is a copy of the input instance, with
+        additional interpolated survey stations included.
+
+        To determine which stations are interpolated, use the ``interpolated``
+        attribute as a mask - interpolated stations are ``True``.
+
     """
+    min = np.amin(survey.tvd)
+    max = np.amax(survey.tvd)
+
+    for tvd in (start, stop):
+        if tvd is None:
+            continue
+        else:
+            assert all((tvd >= min, tvd <= max)), "TVD out of range"
+
     tvds = [start] if start is not None else [survey.tvd[0]]
     nodes = []
 
@@ -2257,7 +2352,8 @@ def interpolate_survey_tvd(survey, start=None, stop=None, step=10):
         azi=azi,
         interpolated=interpolated,
         deg=False,
-        header=survey.header
+        header=survey.header,
+        dls_denominator=survey.dls_denominator
     )
 
     return s_interp

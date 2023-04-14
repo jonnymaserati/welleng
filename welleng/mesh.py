@@ -14,42 +14,51 @@ from .visual import figure
 
 
 class WellMesh:
+    """
+    Create a WellMesh object from a welleng Survey object and a
+    welleng Clearance object.
 
+    Parameters
+    ----------
+    survey: Survey
+        A :class:``Survey`` instance.
+    n_verts: int, optional
+        The number of vertices along the uncertainty ellipse edge from
+        which to construct the mesh. Recommended minimum is 12 and that
+        the number is a multiple of 4.
+    method: str {"ellipse", "circle", "pedal_curve"}, optional
+        The method for constructing the uncertainty edge. Either "ellipse",
+        "pedal_curve" or "circle". The default will select ``circle`` if
+        the ``Survey`` is missing ``cov_hla`` attributes, else ``ellipse``.
+    sigma: float, optional
+        The desired standard deviation sigma value of the well bore
+        uncertainty - default is 3. Not required for ``method='circle'``.
+    sigma_pa: float
+        The desired "project ahead" value. A remnant of the ISCWSA method
+        but may be used in the future to accommodate for well bore curvature
+        that is not captured by the mesh. Default is 0.5 (meters). Not required
+        for ``method='circle'``.
+    Sm: float, optional
+        From the ISCWSA method, this is an additional factor applied to
+        the well bore radius of the offset well to oversize the hole.
+        Not required for ``method='circle'``.
+
+    Notes
+    -----
+    Requires the ``trimesh`` dependency which is included when installing
+    ``welleng`` with the ``[easy]`` optional extras:
+
+    >>> pip install welleng[easy]
+    """
     def __init__(
         self,
         survey: Survey,
         n_verts: int = 12,
+        method: str = None,
         sigma: float = 3.0,
         sigma_pa: float = 0.5,
-        Sm: float = 0,
-        method: str = "ellipse",
+        Sm: float = 0
     ):
-        """
-        Create a WellMesh object from a welleng Survey object and a
-        welleng Clearance object.
-
-        Parameters
-        ----------
-            survey: welleng.Survey
-            clearance: welleng.Clearance
-            n_verts: int
-                The number of vertices along the uncertainty ellipse
-                edge from which to construct the mesh. Recommended minimum is
-                12 and that the number is a multiple of 4.
-            sigma: float (default: 3.0)
-                The desired standard deviation sigma value of the well bore
-                uncertainty.
-            sigma_pa: float (default: 0.5)
-                The desired "project ahead" value. A remnant of the ISCWSA
-                method but may be used in the future to accomodate for well
-                bore curvature that is not captured by the mesh.
-            Sm: float
-                From the ISCWSA method, this is an additional factor applied to
-                the well bore radius of the offset well to oversize the hole.
-            method: str (default="ellipse")
-                The method for constructing the uncertainty edge.
-                Either "ellipse", "pedal_curve" or "circle".
-        """
         assert TRIMESH, "ImportError: try pip install welleng[easy]"
         self.s = survey
         # self.c = clearance
@@ -58,6 +67,12 @@ class WellMesh:
         self.radius = self.s.radius
         self.Sm = Sm
         self.sigma_pa = sigma_pa
+
+        if method is None:
+            if self.s.cov_hla is None:
+                method = 'circle'
+            else:
+                method = 'ellipse'
 
         assert method in ["ellipse", "pedal_curve", "circle"], \
             "Invalid method (ellipse or pedal_curve)"
@@ -245,6 +260,13 @@ class WellMesh:
         self.mesh = mesh
 
     def figure(self, type='mesh3d', **kwargs):
+        """
+        A convenience method to generate a quick QAQC plot.
+
+        Uses ``plotly`` to generate a figure to check if the generated
+        ``WellMesh`` instance is as expected. The figure can be customized by
+        passing ``kwargs``.
+        """
         fig = figure(self, type, **kwargs)
         return fig
 
