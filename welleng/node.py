@@ -36,9 +36,6 @@ class Node:
     ----
     A ``Node`` requires direction data which can be provided as either an
     ``inc`` and ``azi`` or a ``vec``, but not both.
-
-    Example
-    -------
     """
     def __init__(
         self,
@@ -108,10 +105,19 @@ class Node:
             self.pos_nev = get_nev(np.array(pos)).reshape(3).tolist()
 
     def properties(self):
+        """
+        Returns
+        -------
+        data : dict
+            A ``dict`` of ``Node`` vars.
+        """
         return vars(self)
 
 
 def get_node_params(node):
+    """
+    Returns the ``pos``, ``vec`` and ``md`` of a :class:`Node`.
+    """
     pos = node.pos_nev
     vec = node.vec_nev
     md = node.md
