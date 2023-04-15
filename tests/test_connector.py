@@ -1,8 +1,11 @@
 import inspect
 import sys
-from welleng.connector import Connector
-from welleng.survey import Survey, from_connections
+
 import numpy as np
+
+from welleng.connector import Connector
+from welleng.node import Node
+from welleng.survey import Survey, from_connections
 
 
 def test_md_hold():
@@ -121,6 +124,27 @@ def test_radius_critical_with_min_curve():
         azi2=0,
     )
     assert c.radius_critical < c.radius_design
+
+
+def test_node_pos_vec():
+    # there was an issue when pos2 and vec2 are straight ahead - check that
+    # this is fixed.
+
+    node1 = Node(pos=[0, 0, 0], vec=[0, 0, 1])
+
+    c = Connector(
+        node1=node1,
+        pos2=np.array(node1.pos_nev) + (100 * np.array(node1.vec_nev)),
+        vec2=node1.vec_nev
+    )
+
+    assert np.allclose(
+        np.array([
+            np.array(node1.pos_nev) + (100 * np.array(node1.vec_nev)),
+            c.vec1
+        ]),
+        np.array([c.pos_target, c.vec_target])
+    )
 
 
 def one_function_to_run_them_all():
