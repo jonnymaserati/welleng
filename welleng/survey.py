@@ -904,8 +904,8 @@ class Survey:
         )
 
     def modified_tortuosity_index(
-        self, rtol=1.0, dls_tol=1e-3, step=1.0, dls_noise=1.0, data=False,
-        **kwargs
+        self, mode=None, rtol=1.0, dls_tol=1e-3, step=1.0, dls_noise=1.0,
+        data=False, **kwargs
     ):
         """
         Convenience method for calculating the Tortuosity Index (TI) using a
@@ -915,6 +915,10 @@ class Survey:
 
         Parameters
         ----------
+        mode : int {"actual", "plan"}, optional
+            Indicates which mode to do MTI calculation for - default is
+            ``actual``, but the ``plan`` mode can provide insight when planning
+            about, plotting the risk distribution along the well path.
         rtol: float
             Relative tolerance when determining closeness of normal vectors.
         dls_tol: float or None
@@ -934,7 +938,12 @@ class Survey:
         Returns
         -------
         ti: (n,1) array or dict
-            Array of tortuosity index or a dict of results where:
+            Array of tortuosity index or a dict of results.
+
+        Note
+        ----
+        If ``mode="plan"`` is selected, ``step``, ``dls_tol`` and
+        ``dls_noise`` are ignored.
 
         References
         ----------
@@ -942,7 +951,7 @@ class Survey:
         [here](https://jonnymaserati.github.io/2022/06/19/modified-tortuosity-index-survey-frequency.html)
         """
         # Check whether to pre-process the survey to apply maximum curvature.
-        if bool(dls_noise):
+        if all((bool(dls_noise), mode == "actual")):
             survey = self.interpolate_survey(step=step)
             survey = survey.maximum_curvature(dls_noise=dls_noise)
 
@@ -950,7 +959,8 @@ class Survey:
             survey = self
 
         return modified_tortuosity_index(
-            survey, rtol=rtol, dls_tol=dls_tol, data=data, **kwargs
+            survey, mode=mode, rtol=rtol, dls_tol=dls_tol, data=data,
+            **kwargs
         )
 
     def tortuosity_index(self, rtol=0.01, dls_tol=None, data=False, **kwargs):
@@ -1084,7 +1094,7 @@ class Survey:
 
 
 def modified_tortuosity_index(
-    survey, rtol=1.0, dls_tol=1e-3, data=False, **kwargs
+    survey, mode=None, rtol=1.0, dls_tol=1e-3, data=False, **kwargs
 ):
     """
     Method for calculating the Tortuosity Index (TI) using a modified
@@ -1095,44 +1105,54 @@ def modified_tortuosity_index(
     # set default params
     coeff = kwargs.get('coeff', 1.0)  # for testing dimensionlessness
     kappa = kwargs.get('kapa', 1)
+    mode = 'actual' if mode is None else mode
 
     continuous, starts, mds, locs, n_sections, n_sections_arr = _get_ti_data(
         survey, rtol, dls_tol
     )
 
-    l_cs = (
-        survey.md[1:] - mds[n_sections_arr - 1]
-    ) / coeff
+    l_cs = (survey.md[1:] - mds[n_sections_arr - 1]) / coeff
+    l_c = survey.md[1:] - survey.md[0]
+
     l_xs = np.linalg.norm(
-        survey.pos_nev[1:]
-        - np.array(locs)[n_sections_arr - 1],
+        survey.pos_nev[1:] - np.array(locs)[n_sections_arr - 1],
         axis=1
     ) / coeff
-    b = (
-        (l_cs / l_xs) - 1
-    ) / l_cs
-    # )
 
-    cumsum = 0
+    match mode:
+        case 'actual':
+            b = ((l_cs / l_xs) - 1) / l_cs
+
+        case 'plan':
+            b = ((l_cs / l_xs) - 1) * l_cs
+
     a = []
     for n in n_sections:
         a.extend(
             b[n_sections_arr == n]
-            + cumsum
         )
-        cumsum = a[-1]
-    a = np.array(a)
 
-    mti = np.hstack((
-        np.array([0.0]),
-        (
-            # 1
-            (n_sections_arr / (n_sections_arr + 1))
-            * (kappa * ((survey.md[1:] - survey.md[0]) / coeff))
-            # * (kappa / (np.cumsum(survey.dogleg)[1:] + 1))
-            * a
-        )
-    ))
+    a = np.cumsum(a)
+
+    match mode:
+        case 'actual':
+            mti = np.hstack((
+                # np.array([0.0]),
+                (
+                    (n_sections_arr / (n_sections_arr + 1))
+                    * (kappa * (l_c / coeff))
+                    * a
+                )
+            ))
+
+        case 'plan':
+            mti = np.hstack((
+                (
+                    (n_sections_arr / (n_sections_arr + 1))
+                    * (kappa / (l_c / coeff))
+                    * a
+                )
+            ))
 
     if data:
         return {
