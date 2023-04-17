@@ -625,3 +625,36 @@ def get_arc(dogleg, radius, toolface, pos=None, vec=None, target=False):
     pos_new, vec_new = arc.transform(toolface, pos, vec, target)
 
     return (pos_new, vec_new, arc.delta_md)
+
+
+def annular_volume(od: float, id: float = None, length: float = None):
+    """
+    Calculate an annular volume.
+
+    If no ``id`` is provided then circular volume is calculated. If no
+    ``length`` is provided, then the unit volume is calculated (i.e. the
+    area).
+
+    Units are assumed consistent across input parameters, i.e. the
+    calculation is dimensionless.
+
+    Parameters
+    ----------
+    od : float
+        The outer diameter.
+    id : float | None, optional
+        The inner diameter, default is 0.
+    length : float | None, optional
+        The length of the annulus, the default is 1 (i.e. unit volume or area)
+
+    Returns
+    -------
+    annular_volume : float
+        The (unit) volume of the annulus or cylinder.
+    """
+    length = 1 if length is None else length
+    id = 0 if id is None else id
+    annular_unit_volume = np.pi * ((od - id)**2) / 4
+    annular_volume = annular_unit_volume * length
+
+    return annular_volume
