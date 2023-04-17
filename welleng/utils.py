@@ -428,6 +428,27 @@ def linear_convert(data, factor):
 
 
 def make_cov(a, b, c, long=False):
+    """
+    Generates a covariance matrix from orthogonal error magnitudes in the
+    HLA or NEV coordinate systems.
+
+    Parameters
+    ----------
+    a : float | ndarray
+        The 1D array of (1-sigma) error in the H or N direction.
+    b : float | ndarray
+        The 1D array of (1-sigma) error in the L or E direction.
+    c : float | ndarray
+        The 1D array of (1-sigma) error in the A or V direction.
+    long : bool, optional
+        Constructs a covariance matrix of only the lead diagonal for the
+        default ``False``, otherwise a full martix is calculated.
+
+    Returns
+    -------
+    cov : ndarray
+        An [n, 3, 3] array of covariance matrices.
+    """
     # a, b, c = np.sqrt(np.array([a, b, c]))
     if long:
         cov = np.array([
@@ -502,7 +523,8 @@ def errors_from_cov(cov, data=False):
     if data:
         return {
             i: {
-                'nn': _nn, 'ne': _ne, 'nv': _nv, 'ee': _ee, 'ev': _ev, 'vv': _vv
+                'nn': _nn, 'ne': _ne, 'nv': _nv, 'ee': _ee, 'ev': _ev,
+                'vv': _vv
             }
             for i, (_nn, _ne, _nv, _ee, _ev, _vv)
             in enumerate(zip(nn, ne, nv, ee, ev, vv))
