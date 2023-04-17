@@ -17,6 +17,7 @@ filename = (
 )
 data = json.load(open(filename))
 
+
 def generate_surveys(data):
     # Generate surveys for imported wells
     surveys = {}
@@ -61,43 +62,35 @@ SURVEYS = generate_surveys(data)
 
 
 # TODO: get some decent diagnostic data here to test.
-# def test_min_curve():
-#     """
-#     Test that the minimum curvature calcs are not broken by comparing a
-#     calculated trajectory with diagnostic survey data.
-#     """
-#     sh = SurveyHeader(
-#         name="ISCWSA No. 1: North Sea extended reach well",
-#         latitude=60,
-#         longitude=2,
-#         G=9.80665,
-#         b_total=50_000,
-#         dip=72,
-#         declination=-4,
-#         vertical_section_azimuth=75,
-#         azi_reference='magnetic'
-#     )
+def test_min_curve():
+    """
+    Test that the minimum curvature calcs are not broken by comparing a
+    calculated trajectory with diagnostic survey data.
+    """
+    for diagnostic, survey in zip(
+        [well for well in data.get('wells').values()], SURVEYS.values()
+    ):
+        assert (
+            np.allclose(
+                np.array(diagnostic.get('TVD')), np.around(survey.tvd, 2)
+            )
+        ), "TVD calculation"
 
-#     # generate survey
-#     md, inc, azi = np.array([
-#         [0.0, 0.0, 0.0],
-#         [1200.0, 0.0, 0.0],
-#         [2100.0, 60.0, 75.0],
-#         [5100.0, 60.0, 75.0],
-#         [5400.0, 90.0, 75.0],
-#         [8000.0, 90.0, 75.0]
-#     ]).T
+        assert (
+            np.allclose(
+                np.array(diagnostic.get('N')), np.around(survey.n, 2)
+            )
+        ), "North calculation"
 
-#     survey = Survey(
-#         md, inc, azi,
-#         header=sh
-#     ).interpolate_survey(step=30)
+        assert (
+            np.allclose(
+                np.array(diagnostic.get('E')), np.around(survey.e, 2)
+            )
+        ), "East calculation"
 
-#     survey_diagnostic = SURVEYS.get('01 - well')
+        pass
 
-#     assert all((
-#         np.allclose(survey.md, survey_diagnostic.md)
-#     ))
+    pass
 
 
 def test_modified_tortuosity_index(figure=False):
@@ -137,5 +130,5 @@ def test_modified_tortuosity_index(figure=False):
 
 # make above test runnanble separately
 if __name__ == '__main__':
-    # test_min_curve()
+    test_min_curve()
     test_modified_tortuosity_index()
