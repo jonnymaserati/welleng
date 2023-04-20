@@ -2,8 +2,7 @@ import json
 
 import numpy as np
 
-from welleng.clearance import IscwsaClearance
-from welleng.survey import Survey, SurveyHeader, make_survey_header
+from welleng.survey import Survey, make_survey_header
 
 """
 Test that the ISCWSA clearance model is working within a defined tolerance,

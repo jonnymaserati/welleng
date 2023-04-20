@@ -36,15 +36,24 @@ class MinCurve:
             The denominator used to calculate the DLS, e.g. for a DLS in
             degrees per 30 meters, the default value ``dls_denominator=30``
             should be used.
+
+
+        Variables
+        ---------
+        md : ndarray
+            The 1D array of measured depth.
         """
 
-        self.md = md
+        self.md = np.array(md)
         survey_length = len(self.md)
         assert survey_length > 1, "Survey must have at least two rows"
 
-        self.inc = inc
-        self.azi = azi
-        self.start_xyz = np.zeros(3) if start_xyz is None else start_xyz
+        self.inc = np.array(inc)
+        self.azi = np.array(azi)
+        self.start_xyz = (
+            np.zeros(3) if start_xyz is None
+            else np.array(start_xyz)
+        )
         self.dls_denominator = (
             30 if dls_denominator is None
             else dls_denominator
@@ -52,9 +61,6 @@ class MinCurve:
 
         # make two slices with a difference or 1 index to enable array
         # calculations
-        md_1 = md[:-1]
-        md_2 = md[1:]
-
         inc_1 = inc[:-1]
         inc_2 = inc[1:]
 
@@ -70,12 +76,11 @@ class MinCurve:
         self.rf[idx] = 2 / self.dogleg[idx] * np.tan(self.dogleg[idx] / 2)
 
         # calculate the change in md between survey stations
-        temp = np.array(md_2) - np.array(md_1)
-        self.delta_md = np.zeros(survey_length)
-        self.delta_md[1:] = temp
+        self.delta_md = np.diff(self.md, prepend=0)
 
         # calculate change in y direction (north)
-        temp = (
+        self.delta_y = np.zeros(survey_length)
+        self.delta_y[1:] = (
             self.delta_md[1:] / 2
             * (
                 np.sin(inc_1) * np.cos(azi_1)
@@ -83,11 +88,10 @@ class MinCurve:
             )
             * self.rf[1:]
         )
-        self.delta_y = np.zeros(survey_length)
-        self.delta_y[1:] = temp
 
         # calculate change in x direction (east)
-        temp = (
+        self.delta_x = np.zeros(survey_length)
+        self.delta_x[1:] = (
             self.delta_md[1:] / 2
             * (
                 np.sin(inc_1) * np.sin(azi_1)
@@ -95,18 +99,15 @@ class MinCurve:
             )
             * self.rf[1:]
         )
-        self.delta_x = np.zeros(survey_length)
-        self.delta_x[1:] = temp
 
         # calculate change in z direction
-        temp = (
+        self.delta_z = np.zeros(survey_length)
+        self.delta_z[1:] = (
             self.delta_md[1:]
             / 2
             * (np.cos(inc_1) + np.cos(inc_2))
             * self.rf[1:]
         )
-        self.delta_z = np.zeros(survey_length)
-        self.delta_z[1:] = temp
 
         # calculate the dog leg severity
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -126,6 +127,25 @@ class MinCurve:
 
 
 def get_dogleg(inc1, azi1, inc2, azi2):
+    """
+    Calculated the dogleg (arc angle) of a well path between two points.
+
+    Parameters
+    ----------
+    inc1 : float | ndarray
+        A float or 1D array of inclination (in radians) at the current station.
+    azi1 : float | ndarray
+        A float or 1D array of azimuth (in radians) at the current station.
+    inc2 : float | ndarray
+        A float or 1D array of inclination (in radians) at the next station.
+    azi2 : float | ndarray
+        A float or 1D array of azimuth (in radians) at the next station.
+
+    Returns
+    -------
+    dogleg : float | ndarray
+        A float or 1D array of doglegs (in radians) between the stations.
+    """
     dogleg = np.arccos(
         np.cos(inc2 - inc1)
         - (np.sin(inc1) * np.sin(inc2))
@@ -138,15 +158,17 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
     """
     Convert inc and azi into a vector.
 
-    Params:
-        inc: array of n floats
-            Inclination relative to the z-axis (up)
-        azi: array of n floats
-            Azimuth relative to the y-axis
-        r: float or array of n floats
-            Scalar to return a scaled vector
+    Parameters
+    ----------
+    inc: array of n floats
+        Inclination relative to the z-axis (up)
+    azi: array of n floats
+        Azimuth relative to the y-axis
+    r: float or array of n floats
+        Scalar to return a scaled vector
 
-    Returns:
+    Returns
+    -------
         An (n,3) array of vectors
     """
     if deg:
@@ -442,7 +464,7 @@ def make_cov(a, b, c, long=False):
         The 1D array of (1-sigma) error in the A or V direction.
     long : bool, optional
         Constructs a covariance matrix of only the lead diagonal for the
-        default ``False``, otherwise a full martix is calculated.
+        default ``False``, otherwise a full matrix is calculated.
 
     Returns
     -------
