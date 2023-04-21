@@ -8,7 +8,7 @@ import numpy as np
 from numpy import sin, cos, pi
 from scipy.spatial import KDTree
 
-from .utils import HLA_to_NEV, get_sigmas
+from .utils import hla_to_nev, get_sigmas
 from .survey import slice_survey, Survey
 from .visual import figure
 
@@ -170,7 +170,7 @@ class WellMesh:
             z = np.zeros_like(f)
             vertices = np.stack((f, g, z), axis=-1)
 
-        vertices = HLA_to_NEV(self.s.survey_rad, vertices, cov=False)
+        vertices = hla_to_nev(self.s.survey_rad, vertices, cov=False)
 
         self.vertices = (
             vertices

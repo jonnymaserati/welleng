@@ -2,7 +2,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 from numpy.typing import ArrayLike, NDArray
-from typing import Any, Annotated, Literal, Union, Tuple, List
+from typing import Annotated, Literal, Union, List
 
 try:
     from numba import njit
@@ -160,16 +160,20 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
 
     Parameters
     ----------
-    inc: array of n floats
-        Inclination relative to the z-axis (up)
-    azi: array of n floats
-        Azimuth relative to the y-axis
-    r: float or array of n floats
-        Scalar to return a scaled vector
+    inc : float or array_like
+        Float or 1D list or array of inclination relative to the z-axis (up).
+    azi : float or array_like
+        Float or 1D list or array of azimuth relative to the y-axis.
+    r : float or array_like, optional
+        Float or 1D list or array of scalar to return a scaled vector.
+    deg : bool, optional
+        Indicates whether the inclination and azimuth angles are in the default
+        degrees (``True``) or radians (``False``).
 
     Returns
     -------
-        An (n,3) array of vectors
+    vec : ndarray
+        An (n, 3) array of vectors.
     """
     if deg:
         inc_rad, azi_rad = np.radians(np.array([inc, azi]))
@@ -188,34 +192,78 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
     return vec / np.linalg.norm(vec, axis=-1).reshape(-1, 1)
 
 
+def _get_start_nev_and_xyz(start_nev, start_xyz):
+    start_xyz = np.array([0., 0., 0.]) if start_xyz is None else start_xyz
+    start_nev = np.array([0., 0., 0.]) if start_nev is None else start_nev
+
+    return (start_nev, start_xyz)
+
+
 def get_nev(
-    pos, start_xyz=np.array([0., 0., 0.]), start_nev=np.array([0., 0., 0.])
+    pos, start_xyz=None, start_nev=None
 ):
     """
     Convert [x, y, z] coordinates to [n, e, tvd] coordinates.
 
-    Params:
-        pos: (n,3) array of floats
-            Array of [x, y, z] coordinates
-        start_xyz: (,3) array of floats
-            The datum of the [x, y, z] cooardinates
-        start_nev: (,3) array of floats
-            The datum of the [n, e, tvd] coordinates
+    Parameters
+    ----------
+    pos : array_like
+        An [x, y, z] list or array or an (n, 3) array of [x, y, z]
+        coordinates.
+    start_xyz : array_like | None, optional
+        A list or array of the datum of the [x, y, z] coordinates. The default
+        is [0, 0, 0].
+    start_nev : array_like | None, optional
+        A list or array of the datum of the [n, e, tvd] coordinates. The
+        default is [0, 0, 0].
 
-    Returns:
-        An (n,3) array of [n, e, tvd] coordinates.
+    Returns
+    -------
+    pos_nev : ndarray
+        An (n, 3) array of [n, e, tvd] coordinates.
+
+    See Also
+    --------
+    welleng.utils.get_xyz
     """
-    # e, n, v = (
-    #     np.array([pos]).reshape(-1,3) - np.array([start_xyz])
-    # ).T
+    start_xyz, start_nev = _get_start_nev_and_xyz(start_nev, start_xyz)
+
     e, n, v = (
         np.array([pos]).reshape(-1, 3) - np.array([start_xyz])
     ).T
 
-    return (np.array([n, e, v]).T + np.array([start_nev]))
+    pos_nev = np.array([n, e, v]).T + np.array([start_nev])
+
+    return pos_nev
 
 
-def get_xyz(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
+def get_xyz(pos, start_xyz=None, start_nev=None):
+    """
+    Convert [n, e, tvd] coordinates to [x, y, z] coordinates.
+
+    Parameters
+    ----------
+    pos : array_like
+        An [n, e, v] list or array or an (n, 3) array of [n, e, v]
+        coordinates.
+    start_xyz : array_like | None, optional
+        A list or array of the datum of the [n, e, v] coordinates. The default
+        is [0, 0, 0].
+    start_nev : array_like | None, optional
+        A list or array of the datum of the [x, y, z] coordinates. The
+        default is [0, 0, 0].
+
+    Returns
+    -------
+    pos_xyz : ndarray
+        An (n, 3) array of [x, y, z] coordinates.
+
+    See Also
+    --------
+    welleng.utils.get_nev
+    """
+    start_xyz, start_nev = _get_start_nev_and_xyz(start_nev, start_xyz)
+
     y, x, z = (
         np.array([pos]).reshape(-1, 3) - np.array([start_nev])
     ).T
@@ -237,21 +285,26 @@ if NUMBA:
 
 def get_angles(
     vec: Annotated[NDArray, Literal["N", 3]], nev: bool = False
-):
+) -> Annotated[NDArray, Literal["N", 2]]:
     '''
     Determines the inclination and azimuth from a vector.
 
     Parameters
     ----------
-    vec: (n,3) array of floats
-    nev: boolean (default: False)
-        Indicates if the vector is in (x,y,z) or (n,e,v) coordinates.
+    vec : ndarray
+        An (n, 3) array of floats of vectors.
+    nev : bool, optional
+        Indicates if the vectors are in default (x, y, z) when ``nev=False``
+        or (n, e, v) coordinates.
 
     Returns
     -------
-    [inc, azi]: (n,2) array of floats
-        A numpy array of incs and axis in radians
+    angles : ndarray
+        An (n, 2) array of inclinations and azimuths in radians.
 
+    See Also
+    --------
+    welleng.utils.get_vec
     '''
     # make sure it's a unit vector
     vec = vec / np.linalg.norm(vec, axis=-1).reshape(-1, 1)
@@ -262,7 +315,9 @@ def get_angles(
         y, x, z = vec.T
         vec = np.array([x, y, z]).T
 
-    return _get_angles(vec)
+    angles = _get_angles(vec)
+
+    return angles
 
 
 def _get_transform(inc, azi):
@@ -276,37 +331,35 @@ def _get_transform(inc, azi):
 
 
 def get_transform(
-    survey
-):
+    survey: Annotated[NDArray, Literal["N", 3]]
+) -> Annotated[NDArray, Literal["N", 3, 3]]:
     """
     Determine the transform for transforming between NEV and HLA coordinate
     systems.
 
-    Params:
-        survey: (n,3) array of floats
-        The [md, inc, azi] survey listing array.
+    Parameters
+    ----------
+    survey : ndarray
+        An (n, 3) array of the [md, inc, azi] survey listing.
 
-    Returns:
-        transform: (n,3,3) array of floats
+    Returns
+    -------
+    transform: ndarray
+        An (n, 3, 3) array of floats representing the transform matrix for
+        each survey station.
     """
     survey = survey.reshape(-1, 3)
     inc = np.array(survey[:, 1])
     azi = np.array(survey[:, 2])
 
-    return _get_transform(inc, azi)
+    transform = _get_transform(inc, azi)
 
-    # trans = np.array([
-    #     [np.cos(inc) * np.cos(azi), -np.sin(azi), np.sin(inc) * np.cos(azi)],
-    #     [np.cos(inc) * np.sin(azi), np.cos(azi), np.sin(inc) * np.sin(azi)],
-    #     [-np.sin(inc), np.zeros_like(inc), np.cos(inc)]
-    # ]).T
-
-    # return trans
+    return transform
 
 
-def NEV_to_HLA(
+def nev_to_hla(
     survey: Annotated[NDArray, Literal["N", 3]],
-    NEV: Union[
+    nev: Union[
         Annotated[NDArray, Literal["N", 3]],
         Annotated[NDArray, Literal[3, 3, "N"]]
     ],
@@ -318,95 +371,110 @@ def NEV_to_HLA(
     """
     Transform from NEV to HLA coordinate system.
 
-    Parameters:
-    -----------
-    survey: (n,3) array of floats
-        The [md, inc, azi] survey listing array.
-    NEV: (d,3) or (3,3,d) array of floats
-        The NEV coordinates or covariance matrices.
-    cov: boolean
-        If cov is True then a (3,3,d) array of covariance matrices
-        is expected, else a (d,3) array of coordinates.
+    Parameters
+    ----------
+    survey : ndarray
+        An (n, 3) array of an [md, inc, azi] survey listing array.
+    nev : ndarray
+        An (n, 3) or (3, 3, n) array of the NEV coordinates or covariance
+        matrices.
+    cov : bool, optional
+        If cov is True then a (3, 3, n) array of covariance matrices
+        is expected, else an (n, 3) array of coordinates.
 
-    Returns:
+    Returns
+    -------
+    hla : ndarray
+        Either a transformed (n, 3) array of HLA coordinates or an
+        (3, 3, n) array of HLA covariance matrices.
+
+    See Also
     --------
-    HLAs: NDArray
-        Either a transformed (n,3) array of HLA coordinates or an
-        (3,3,n) array of HLA covariance matrices.
+    welleng.utils.hla_to_nev
     """
 
     trans = get_transform(survey)
 
     if cov:
-        # HLAs = [
-        #     np.dot(np.dot(t, NEV.T[i]), t.T) for i, t in enumerate(trans)
-        # ]
-        # HLAs = np.vstack(HLAs).reshape(-1, 3, 3).T
-
-        HLAs = np.einsum(
+        hla = np.einsum(
             '...ik,...jk',
             np.einsum(
-                '...ik,...jk', trans, NEV.T
+                '...ik,...jk', trans, nev.T
             ),
             trans
         ).T
 
     else:
-        NEV = NEV.reshape(-1, 3)
-        # HLAs = [
-        #     np.dot(NEV[i], t.T) for i, t in enumerate(trans)
-        # ]
+        nev = nev.reshape(-1, 3)
 
-        HLAs = np.einsum(
-            '...k,...jk', NEV, trans
+        hla = np.einsum(
+            '...k,...jk', nev, trans
         )
 
-    return HLAs
+    return hla
 
 
-def HLA_to_NEV(survey, HLA, cov=True, trans=None):
+def hla_to_nev(survey, hla, cov=True, trans=None):
+    """
+    Transform from HLA to NEV coordinate system.
+
+    Parameters
+    ----------
+    survey : ndarray
+        An (n, 3) array of the [md, inc, azi] survey listing.
+    hla : ndarray
+        An (n, 3) or (3, 3, n) array of the NEV coordinates or covariance
+        matrices.
+    cov : bool, optional
+        If cov is ``True`` then a (3, 3, n) array of covariance matrices
+        is expected, else a (n, 3) array of coordinates.
+    trans : ndarray | None, optional
+        An (n, 3, 3) array of transforms. If default ``None`` then they will be
+        calculated.
+
+    Returns
+    -------
+    nev : NDArray
+        Either a transformed (n, 3) array of nev coordinates or an
+        (3, 3, n) array of nev covariance matrices.
+
+    See Also
+    --------
+    welleng.utils.nev_to_hla
+    """
     if trans is None:
         trans = get_transform(survey)
 
     if cov:
-        # NEVs = [
-        #     np.dot(np.dot(t.T, HLA.T[i]), t) for i, t in enumerate(trans)
-        # ]
-        # NEVs = np.vstack(NEVs).reshape(-1, 3, 3).T
-
-        NEVs = np.einsum(
+        nev = np.einsum(
             '...ik,jk...',
             np.einsum(
-                '...ki,...jk', trans, HLA.T
+                '...ki,...jk', trans, hla.T
             ),
             trans.T
         ).T
 
     else:
-        # NEVs = [
-        #     np.dot(hla, t) for hla, t in zip(HLA, trans)
-        # ]
-
-        NEVs = np.einsum(
-            'k...,jk...', HLA.T, trans.T
+        nev = np.einsum(
+            'k...,jk...', hla.T, trans.T
         )
 
-    # return np.vstack(NEVs).reshape(HLA.shape)
-
-    return np.swapaxes(NEVs, 0, 1)
+    return np.swapaxes(nev, 0, 1)
 
 
-def get_sigmas(cov, long=False):
+def get_sigmas(cov: NDArray, long: bool = False):
     """
     Extracts the sigma values of a covariance matrix along the principle axii.
 
     Parameters
     ----------
-        cov: (n,3,3) array of floats
+    cov : ndarray
+        An (n, 3 ,3) array of covariance matrices.
 
     Returns
     -------
-        arr: (n,3) array of floats
+    sigmas : ndarray
+        An (n, 3) array of sigma values.
     """
 
     assert cov.shape[-2:] == (3, 3), "Cov is the wrong shape"
@@ -418,20 +486,27 @@ def get_sigmas(cov, long=False):
     ac, bc, cc = cov[:, :, 2].T
 
     if long:
-        return (aa, bb, cc, ab, ac, bc)
+        sigmas = (aa, bb, cc, ab, ac, bc)
     else:
-        return (np.sqrt(aa), np.sqrt(bb), np.sqrt(cc))
+        sigmas = (np.sqrt(aa), np.sqrt(bb), np.sqrt(cc))
 
-    # a, b, c = np.array([
-    #     np.sqrt(cov[:, 0, 0]),
-    #     np.sqrt(cov[:, 1, 1]),
-    #     np.sqrt(cov[:, 2, 2])
-    # ])
-
-    # return (a, b, c)
+    return sigmas
 
 
-def get_unit_vec(vec):
+def get_unit_vec(vec: ArrayLike) -> NDArray:
+    """
+    Returns the unit vector of a vector.
+
+    Parameters
+    ----------
+    vec : array_like
+        A vector or an array of vectors.
+
+    Returns
+    -------
+    unit_vector : ndarray
+        A vector or array of 3D vectors.
+    """
     vec = vec / np.linalg.norm(vec)
 
     return vec
@@ -449,10 +524,15 @@ def linear_convert(data, factor):
         return converted
 
 
-def make_cov(a, b, c, long=False):
+def make_cov(
+        a: Union[float, NDArray],
+        b: Union[float, NDArray],
+        c: Union[float, NDArray],
+        long: bool = False
+    ) -> NDArray:
     """
-    Generates a covariance matrix from orthogonal error magnitudes in the
-    HLA or NEV coordinate systems.
+    Generates a covariance matrix from orthogonal error magnitudes (sigmas) in
+    the HLA or NEV coordinate systems.
 
     Parameters
     ----------
@@ -470,6 +550,10 @@ def make_cov(a, b, c, long=False):
     -------
     cov : ndarray
         An [n, 3, 3] array of covariance matrices.
+
+    See Also
+    --------
+    welleng.utils.get_sigmas
     """
     # a, b, c = np.sqrt(np.array([a, b, c]))
     if long:
@@ -489,9 +573,23 @@ def make_cov(a, b, c, long=False):
     return cov.T
 
 
-def dls_from_radius(radius):
+def dls_from_radius(radius: Union[float, ArrayLike]) -> Union[float, NDArray]:
     """
     Returns the dls in degrees from a radius.
+
+    Parameters
+    ----------
+    radius : float | array_like
+        A float or list or array of the radius of curvature in meters.
+
+    Returns
+    -------
+    dls : float | ndarray
+        The equivalent Dog Leg Severity (DLS) in degrees / 30m.
+
+    See Also
+    --------
+    welleng.utils.radius_from_dls
     """
     if isinstance(radius, np.ndarray):
         circumference = np.full_like(radius, np.inf)
@@ -509,9 +607,23 @@ def dls_from_radius(radius):
     return dls
 
 
-def radius_from_dls(dls):
+def radius_from_dls(dls: Union[float, NDArray]) -> Union[float, NDArray]:
     """
-    Returns the radius in meters from a DLS in deg/30m.
+    Returns the radius in meters from a DLS in degrees / 30m.
+
+    Parameters
+    ----------
+    dls : float | ndarray
+        A float or array of Dog Leg Severity (DLS) in degrees / 30m.
+
+    Returns
+    -------
+    radius : float | ndarray
+        A float or array of radius of curvature in meters.
+
+    See Also
+    --------
+    welleng.utils.dls_from_radius
     """
     if isinstance(dls, np.ndarray):
         circumference = np.full_like(dls, np.inf)
@@ -529,14 +641,23 @@ def radius_from_dls(dls):
     return radius
 
 
-def errors_from_cov(cov, data=False):
+def errors_from_cov(cov: NDArray, data: bool = False) -> Union[dict, NDArray]:
     """
+    Extracts one half of a covariance matrix (along the lead diagonal). Since
+    a covariance matrix is reflected along the lead diagonal, it can be
+    more efficient to only save half the values.
+
     Parameters
     ----------
-    cov: (n, 3, 3) array
-        The error covariance matrices.
-    data: bool (default: False)
-        If True returns a dictionary, else returns a list.
+    cov : ndarray
+        The (n, 3, 3) array of error covariance matrices.
+    data : bool, optional
+        If ``True`` returns a dictionary, else returns an array (default).
+
+    Returns
+    -------
+    data : dict | ndarray
+        A dict or (n, 6) ndarray of covariance matrix values.
     """
     nn, ne, nv, _, ee, ev, _, _, vv = (
         cov.reshape(-1, 9).T
@@ -556,7 +677,7 @@ def errors_from_cov(cov, data=False):
 
 
 class Arc:
-    def __init__(self, dogleg, radius):
+    def __init__(self, dogleg: float, radius: float):
         """
         Generates a generic arc that can be transformed with a specific pos
         and vec via a transform method. The arc is initialized at a local
@@ -569,10 +690,6 @@ class Arc:
             The sweep angle of the arc in radians.
         radius: float
             The radius of the arc in meters.
-
-        Returns
-        -------
-        arc: Arc object
         """
         self.dogleg = dogleg
         self.radius = radius
@@ -597,11 +714,11 @@ class Arc:
 
         Parameters
         ----------
-        pos: (,3) array
+        pos: (3) array
         The desired position to transform the arc.
-        vec: (,3) array
+        vec: (3) array
             The orientation unit vector to transform the arc.
-        target: bool
+        target: bool, optional
             If true, returned arc vector is reversed.
 
         Returns

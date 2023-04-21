@@ -16,7 +16,7 @@ from scipy.spatial.distance import cdist
 
 from .mesh import WellMesh
 from .survey import Survey, _interpolate_survey, slice_survey
-from .utils import NEV_to_HLA
+from .utils import nev_to_hla
 
 
 class Clearance:
@@ -748,13 +748,13 @@ class IscwsaClearance(Clearance):
 
     def _get_delta_hla_vectors(self):
         self.ref_delta_hlas = np.vstack([
-            NEV_to_HLA(s, nev, cov=False)
+            nev_to_hla(s, nev, cov=False)
             for s, nev in zip(
                 self.ref.survey_rad, self.ref_delta_nevs
             )
         ])
         self.off_delta_hlas = np.vstack([
-            NEV_to_HLA(s, nev, cov=False)
+            nev_to_hla(s, nev, cov=False)
             for s, nev in zip(
                 self.off.survey_rad, self.off_delta_nevs
             )

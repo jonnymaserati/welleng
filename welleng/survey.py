@@ -20,7 +20,7 @@ from .connector import Connector, interpolate_well
 from .error import ERROR_MODELS, ErrorModel
 from .node import Node
 from .units import ureg
-from .utils import (HLA_to_NEV, MinCurve, NEV_to_HLA, get_angles, get_arc,
+from .utils import (hla_to_nev, MinCurve, nev_to_hla, get_angles, get_arc,
                     get_nev, get_vec, get_xyz, radius_from_dls)
 from .version import __version__
 from .visual import figure
@@ -571,9 +571,9 @@ class Survey:
             self.cov_nev = self.err.errors.cov_NEVs.T
         else:
             if self.cov_nev is not None and self.cov_hla is None:
-                self.cov_hla = NEV_to_HLA(self.survey_rad, self.cov_nev.T).T
+                self.cov_hla = nev_to_hla(self.survey_rad, self.cov_nev.T).T
             elif self.cov_nev is None and self.cov_hla is not None:
-                self.cov_nev = HLA_to_NEV(self.survey_rad, self.cov_hla.T).T
+                self.cov_nev = hla_to_nev(self.survey_rad, self.cov_hla.T).T
             else:
                 pass
 
@@ -582,7 +582,7 @@ class Survey:
             and self.cov_nev is not None
         ):
             self.cov_nev += self.start_cov_nev
-            self.cov_hla = NEV_to_HLA(self.survey_rad, self.cov_nev.T).T
+            self.cov_hla = nev_to_hla(self.survey_rad, self.cov_nev.T).T
 
     def _curvature_to_rate(self, curvature):
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -2277,7 +2277,7 @@ def interpolate_survey(survey, step=30, dls=1e-8):
     survey_interpolated.radius = np.array(radii)
     if bool(cov_nev):
         survey_interpolated.cov_nev = np.array(cov_nev)
-        survey_interpolated.cov_hla = NEV_to_HLA(
+        survey_interpolated.cov_hla = nev_to_hla(
             survey_interpolated.survey_rad,
             survey_interpolated.cov_nev.T
         ).T

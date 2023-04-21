@@ -13,6 +13,7 @@ import numpy as np
 try:
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
+    from plotly.graph_objects import Figure
     PLOTLY = True
 except ImportError:
     PLOTLY = False
@@ -26,7 +27,6 @@ from vtkmodules.vtkRenderingCore import (
 
 from .version import __version__ as VERSION
 
-# VEDO = False
 
 class Plotter(vtkRenderer):
     def __init__(self, data=None, **kwargs):
@@ -133,11 +133,11 @@ class Plotter(vtkRenderer):
         self.colors['background'] = kwargs.get('background', 'LightGrey')
         self.colors['background2'] = kwargs.get('background', 'Lavender')
 
-    def add_axes(self, **kwargs):
+    def _add_axes(self, **kwargs):
         axes = CubeAxes(self, **kwargs)
         self.AddActor(axes)
 
-    def get_center(self):
+    def _get_center(self):
         min, max = np.array(self.ComputeVisiblePropBounds()).reshape(-1, 3)
         center = min + (max - min) / 2
 
@@ -148,13 +148,12 @@ class Plotter(vtkRenderer):
         Convenient method for opening a window to view the rendered scene.
         """
         if add_axes:
-            self.add_axes(**kwargs)
+            self._add_axes(**kwargs)
 
         self.GetActiveCamera().Azimuth(kwargs.get('azimuth', 30))
         self.GetActiveCamera().Elevation(kwargs.get('elevation', 30))
         self.GetActiveCamera().SetViewUp(0, 0, -1)
-        # self.GetActiveCamera().SetPosition(tuple(pos_new))
-        self.GetActiveCamera().SetFocalPoint(self.get_center())
+        self.GetActiveCamera().SetFocalPoint(self._get_center())
 
         self.ResetCamera()
         self.SetBackground(
@@ -297,12 +296,13 @@ def get_lines(clearance):
 
     Parameters
     ----------
-        clearance: welleng.clearance object
+    clearance : Clearance
+        A :class:`Clearance` instance.
 
     Returns
     -------
-        lines: vedo.Lines object
-            A vedo.Lines object colored by the object's SF values.
+    lines: vedo.Lines object
+        A vedo.Lines object colored by the object's SF values.
     """
     assert VEDO, "ImportError: try pip install welleng[easy]"
     c = clearance.SF
@@ -313,14 +313,32 @@ def get_lines(clearance):
     return lines
 
 
-def figure(obj, type='scatter3d', **kwargs):
+def figure(survey, type='scatter3d', **kwargs):
+    """
+    Creates a ``plotly`` figure of a ``Survey`` instance.
+
+    Parameters
+    ----------
+    survey : Survey
+        A :class:`Survey` instance.
+
+    Returns
+    -------
+    fig : Figure
+        A :class:`Figure` instance.
+
+    See Also
+    --------
+    welleng.survey.Survey
+    """
     assert PLOTLY, "ImportError: try pip install plotly"
     func = {
         'scatter3d': _scatter3d,
         'mesh3d': _mesh3d,
         'panel': _panel
     }
-    fig = func[type](obj, **kwargs)
+    fig = func[type](survey, **kwargs)
+
     return fig
 
 

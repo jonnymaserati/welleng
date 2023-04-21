@@ -9,8 +9,7 @@ except ImportError:
     NUMBA = False
 
 from .utils import (
-    get_vec, _get_angles, get_angles, get_nev, get_xyz, get_unit_vec,
-    NEV_to_HLA, dls_from_radius
+    get_vec, _get_angles, get_angles, dls_from_radius
 )
 from .node import Node, get_node_params
 

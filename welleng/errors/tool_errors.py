@@ -7,7 +7,7 @@ from collections import OrderedDict
 # import imp
 
 # import welleng.error
-from ..utils import NEV_to_HLA
+from ..utils import nev_to_hla
 
 # since this is running on different OS flavors
 PATH = os.path.dirname(__file__)
@@ -115,7 +115,7 @@ class ToolError:
         for _, value in self.errors.items():
             self.cov_NEVs += value.cov_NEV
 
-        self.cov_HLAs = NEV_to_HLA(self.e.survey_rad, self.cov_NEVs)
+        self.cov_HLAs = nev_to_hla(self.e.survey_rad, self.cov_NEVs)
 
     def _get_the_func_out(self, err):
         if err in self.exceptional_funcs:
