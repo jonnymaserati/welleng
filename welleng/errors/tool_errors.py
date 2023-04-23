@@ -111,11 +111,11 @@ class ToolError:
                 )
             )
 
-        self.cov_NEVs = np.zeros((3, 3, len(self.e.survey_rad)))
+        self.cov_nevs = np.zeros((3, 3, len(self.e.survey_rad)))
         for _, value in self.errors.items():
-            self.cov_NEVs += value.cov_NEV
+            self.cov_nevs += value.cov_nev
 
-        self.cov_HLAs = nev_to_hla(self.e.survey_rad, self.cov_NEVs)
+        self.cov_hlas = nev_to_hla(self.e.survey_rad, self.cov_nevs)
 
     def _get_the_func_out(self, err):
         if err in self.exceptional_funcs:
@@ -345,7 +345,7 @@ def ABIXY_TI2(
     if len(sing[0]) < 1:
         return error._generate_error(code, e_DIA, propagation, NEV)
     else:
-        e_NEV = error._e_NEV(e_DIA)
+        e_nev = error._e_nev(e_DIA)
         n = np.array(
             0.5 * error.drdp_sing['double_delta_md']
             * -sin(error.drdp_sing['azi2']) * mag
@@ -355,7 +355,7 @@ def ABIXY_TI2(
                 * cos(error.drdp_sing['azi2']) * mag
             ) / error.survey.header.G
         v = np.zeros_like(n)
-        e_NEV_sing = np.vstack(
+        e_nev_sing = np.vstack(
             (
                 np.zeros((1, 3)),
                 np.stack((n, e, v), axis=-1),
@@ -363,7 +363,7 @@ def ABIXY_TI2(
             )
         )
 
-        e_NEV_sing[1, 1] = (
+        e_nev_sing[1, 1] = (
             (
                 error.survey.md[2]
                 + error.survey.md[1]
@@ -372,9 +372,9 @@ def ABIXY_TI2(
             * mag * cos(error.survey.azi_true_rad[1])
             / error.survey.header.G
         )
-        e_NEV[sing] = e_NEV_sing[sing]
+        e_nev[sing] = e_nev_sing[sing]
 
-        e_NEV_star = error._e_NEV_star(e_DIA)
+        e_nev_star = error._e_nev_star(e_DIA)
         n = np.array(
             0.5 * error.drdp_sing['delta_md']
                 * -sin(error.drdp_sing['azi2']) * mag
@@ -384,7 +384,7 @@ def ABIXY_TI2(
                 * cos(error.drdp_sing['azi2']) * mag
             ) / error.survey.header.G
         v = np.zeros_like(n)
-        e_NEV_star_sing = np.vstack(
+        e_nev_star_sing = np.vstack(
             (
                 np.zeros((1, 3)),
                 np.stack((n, e, v), axis=-1),
@@ -392,7 +392,7 @@ def ABIXY_TI2(
             )
         )
 
-        e_NEV_star_sing[1, 1] = (
+        e_nev_star_sing[1, 1] = (
             (error.survey.md[1] - error.survey.md[0])
             * mag
             * (
@@ -400,10 +400,10 @@ def ABIXY_TI2(
                 / error.survey.header.G
             )
         )
-        e_NEV_star[sing] = e_NEV_star_sing[sing]
+        e_nev_star[sing] = e_nev_star_sing[sing]
 
         return error._generate_error(
-            code, e_DIA, propagation, NEV, e_NEV, e_NEV_star
+            code, e_DIA, propagation, NEV, e_nev, e_nev_star
         )
 
 
@@ -431,7 +431,7 @@ def ABXY_TI2(
     if len(sing[0]) < 1:
         return error._generate_error(code, e_DIA, propagation, NEV)
     else:
-        e_NEV = error._e_NEV(e_DIA)
+        e_nev = error._e_nev(e_DIA)
         n = np.array(
             0.5 * error.drdp_sing['double_delta_md']
             * -sin(error.drdp_sing['azi2']) * mag
@@ -441,7 +441,7 @@ def ABXY_TI2(
                 * cos(error.drdp_sing['azi2']) * mag
             ) / error.survey.header.G
         v = np.zeros_like(n)
-        e_NEV_sing = np.vstack(
+        e_nev_sing = np.vstack(
             (
                 np.zeros((1, 3)),
                 np.stack((n, e, v), axis=-1),
@@ -449,7 +449,7 @@ def ABXY_TI2(
             )
         )
         if error.error_model.lower().split(' ')[-1] != 'rev4':
-            e_NEV_sing[1, 1] = (
+            e_nev_sing[1, 1] = (
                 (
                     error.survey.md[2]
                     + error.survey.md[1]
@@ -458,9 +458,9 @@ def ABXY_TI2(
                 * mag * cos(error.survey.azi_true_rad[1])
                 / error.survey.header.G
             )
-        e_NEV[sing] = e_NEV_sing[sing]
+        e_nev[sing] = e_nev_sing[sing]
 
-        e_NEV_star = error._e_NEV_star(e_DIA)
+        e_nev_star = error._e_nev_star(e_DIA)
         n = np.array(
             0.5 * error.drdp_sing['delta_md']
                 * -sin(error.drdp_sing['azi2']) * mag
@@ -470,7 +470,7 @@ def ABXY_TI2(
                 * cos(error.drdp_sing['azi2']) * mag
             ) / error.survey.header.G
         v = np.zeros_like(n)
-        e_NEV_star_sing = np.vstack(
+        e_nev_star_sing = np.vstack(
             (
                 np.zeros((1, 3)),
                 np.stack((n, e, v), axis=-1),
@@ -478,7 +478,7 @@ def ABXY_TI2(
             )
         )
         if error.error_model.lower().split(' ')[-1] != 'rev4':
-            e_NEV_star_sing[1, 1] = (
+            e_nev_star_sing[1, 1] = (
                 (error.survey.md[1] - error.survey.md[0])
                 * mag
                 * (
@@ -486,10 +486,10 @@ def ABXY_TI2(
                     / error.survey.header.G
                 )
             )
-        e_NEV_star[sing] = e_NEV_star_sing[sing]
+        e_nev_star[sing] = e_nev_star_sing[sing]
 
         return error._generate_error(
-            code, e_DIA, propagation, NEV, e_NEV, e_NEV_star
+            code, e_DIA, propagation, NEV, e_nev, e_nev_star
         )
 
 
@@ -770,7 +770,7 @@ def CNA(
     if len(sing[0]) < 1:
         return error._generate_error(code, e_DIA, propagation, NEV)
     else:
-        e_NEV = error._e_NEV(e_DIA)
+        e_nev = error._e_nev(e_DIA)
         n = (
             np.array(0.5 * error.drdp_sing['double_delta_md'])
             * -sin(getattr(
@@ -786,16 +786,16 @@ def CNA(
             * mag
         )
         v = np.zeros_like(n)
-        e_NEV_sing = np.vstack(
+        e_nev_sing = np.vstack(
             (
                 np.zeros((1, 3)),
                 np.stack((n, e, v), axis=-1),
                 np.zeros((1, 3))
             )
         )
-        e_NEV[sing] = e_NEV_sing[sing]
+        e_nev[sing] = e_nev_sing[sing]
 
-        e_NEV_star = error._e_NEV_star(e_DIA)
+        e_nev_star = error._e_nev_star(e_DIA)
         n = (
             np.array(0.5 * error.drdp_sing['delta_md'])
             * -sin(getattr(
@@ -810,17 +810,17 @@ def CNA(
             )[1: -1])
             * mag
         )
-        e_NEV_star_sing = np.vstack(
+        e_nev_star_sing = np.vstack(
             (
                 np.zeros((1, 3)),
                 np.stack((n, e, v), axis=-1),
                 np.zeros((1, 3))
             )
         )
-        e_NEV_star[sing] = e_NEV_star_sing[sing]
+        e_nev_star[sing] = e_nev_star_sing[sing]
 
         return error._generate_error(
-            code, e_DIA, propagation, NEV, e_NEV, e_NEV_star
+            code, e_DIA, propagation, NEV, e_nev, e_nev_star
         )
 
     # result = error._generate_error(code, e_DIA, propagation, NEV)
@@ -1005,7 +1005,7 @@ def GXY_RN(
 
     result = error._generate_error(code, e_DIA, propagation, NEV)
 
-    result.cov_NEV += result_systematic.cov_NEV
+    result.cov_nev += result_systematic.cov_nev
 
     return result
 
@@ -1510,34 +1510,34 @@ def XYM3(
     if len(sing[0]) < 1:
         return error._generate_error(code, e_DIA, propagation, NEV)
     else:
-        e_NEV = error._e_NEV(e_DIA)
+        e_nev = error._e_nev(e_DIA)
         n = np.array(0.5 * error.drdp_sing['double_delta_md'] * mag)
         e = np.zeros(len(error.drdp_sing['double_delta_md']))
         v = np.zeros_like(n)
-        e_NEV_sing = np.vstack(
+        e_nev_sing = np.vstack(
             (
                 np.zeros((1, 3)),
                 np.stack((n, e, v), axis=-1),
                 np.zeros((1, 3))
             )
         )
-        e_NEV[sing] = e_NEV_sing[sing]
+        e_nev[sing] = e_nev_sing[sing]
 
-        e_NEV_star = error._e_NEV_star(e_DIA)
+        e_nev_star = error._e_nev_star(e_DIA)
         n = np.array(0.5 * error.drdp_sing['delta_md'] * mag)
         e = np.zeros(len(error.drdp_sing['delta_md']))
         v = np.zeros_like(n)
-        e_NEV_star_sing = np.vstack(
+        e_nev_star_sing = np.vstack(
             (
                 np.zeros((1, 3)),
                 np.stack((n, e, v), axis=-1),
                 np.zeros((1, 3))
             )
         )
-        e_NEV_star[sing] = e_NEV_star_sing[sing]
+        e_nev_star[sing] = e_nev_star_sing[sing]
 
         return error._generate_error(
-            code, e_DIA, propagation, NEV, e_NEV, e_NEV_star
+            code, e_DIA, propagation, NEV, e_nev, e_nev_star
         )
 
 
@@ -1586,18 +1586,18 @@ def XYM3E(code, error, mag=0.00524, propagation='random', NEV=True, **kwargs):
     if len(sing[0]) < 1:
         return error._generate_error(code, e_DIA, propagation, NEV)
     else:
-        e_NEV = error._e_NEV(e_DIA)
-        e_NEV_sing = np.zeros_like(e_NEV)
-        e_NEV_sing[:, 0] = e_NEV[:, 0]
-        e_NEV[sing] = e_NEV_sing[sing]
+        e_nev = error._e_nev(e_DIA)
+        e_nev_sing = np.zeros_like(e_nev)
+        e_nev_sing[:, 0] = e_nev[:, 0]
+        e_nev[sing] = e_nev_sing[sing]
 
-        e_NEV_star = error._e_NEV_star(e_DIA)
-        e_NEV_star_sing = np.zeros_like(e_NEV_star)
-        e_NEV_star_sing[:, 0] = e_NEV_star[:, 0]
-        e_NEV_star[sing] = e_NEV_star_sing[sing]
+        e_nev_star = error._e_nev_star(e_DIA)
+        e_nev_star_sing = np.zeros_like(e_nev_star)
+        e_nev_star_sing[:, 0] = e_nev_star[:, 0]
+        e_nev_star[sing] = e_nev_star_sing[sing]
 
         return error._generate_error(
-            code, e_DIA, propagation, NEV, e_NEV, e_NEV_star
+            code, e_DIA, propagation, NEV, e_nev, e_nev_star
         )
 
     return error._generate_error(code, e_DIA, propagation, NEV)
@@ -1628,34 +1628,34 @@ def XYM4(
     if len(sing[0]) < 1:
         return error._generate_error(code, e_DIA, propagation, NEV)
     else:
-        e_NEV = error._e_NEV(e_DIA)
+        e_nev = error._e_nev(e_DIA)
         n = np.zeros(len(error.drdp_sing['double_delta_md']))
         e = np.array(0.5 * error.drdp_sing['double_delta_md'] * mag)
         v = np.zeros_like(n)
-        e_NEV_sing = np.vstack(
+        e_nev_sing = np.vstack(
             (
                 np.zeros((1, 3)),
                 np.stack((n, e, v), axis=-1),
                 np.zeros((1, 3))
             )
         )
-        e_NEV[sing] = e_NEV_sing[sing]
+        e_nev[sing] = e_nev_sing[sing]
 
-        e_NEV_star = error._e_NEV_star(e_DIA)
+        e_nev_star = error._e_nev_star(e_DIA)
         n = np.zeros(len(error.drdp_sing['delta_md']))
         e = np.array(0.5 * error.drdp_sing['delta_md'] * mag)
         v = np.zeros_like(n)
-        e_NEV_star_sing = np.vstack(
+        e_nev_star_sing = np.vstack(
             (
                 np.zeros((1, 3)),
                 np.stack((n, e, v), axis=-1),
                 np.zeros((1, 3))
             )
         )
-        e_NEV_star[sing] = e_NEV_star_sing[sing]
+        e_nev_star[sing] = e_nev_star_sing[sing]
 
         return error._generate_error(
-            code, e_DIA, propagation, NEV, e_NEV, e_NEV_star
+            code, e_DIA, propagation, NEV, e_nev, e_nev_star
         )
 
 
@@ -1708,18 +1708,18 @@ def XYM4E(code, error, mag=0.00524, propagation='random', NEV=True, **kwargs):
         xym3e = XYM3E(
             code, error, mag=mag, propagation=propagation, NEV=NEV
         )
-        e_NEV = error._e_NEV(e_DIA)
-        e_NEV_sing = np.zeros_like(e_NEV)
-        e_NEV_sing[:, 1] = xym3e.e_NEV[:, 0]
-        e_NEV[sing] = e_NEV_sing[sing]
+        e_nev = error._e_nev(e_DIA)
+        e_nev_sing = np.zeros_like(e_nev)
+        e_nev_sing[:, 1] = xym3e.e_nev[:, 0]
+        e_nev[sing] = e_nev_sing[sing]
 
-        e_NEV_star = error._e_NEV_star(e_DIA)
-        e_NEV_star_sing = np.zeros_like(e_NEV_star)
-        e_NEV_star_sing[:, 1] = xym3e.e_NEV_star[:, 0]
-        e_NEV_star[sing] = e_NEV_star_sing[sing]
+        e_nev_star = error._e_nev_star(e_DIA)
+        e_nev_star_sing = np.zeros_like(e_nev_star)
+        e_nev_star_sing[:, 1] = xym3e.e_nev_star[:, 0]
+        e_nev_star[sing] = e_nev_star_sing[sing]
 
         return error._generate_error(
-            code, e_DIA, propagation, NEV, e_NEV, e_NEV_star
+            code, e_DIA, propagation, NEV, e_nev, e_nev_star
         )
 
 
@@ -1785,7 +1785,7 @@ def XCLA(code, error, mag=0.167, propagation='random', NEV=True, **kwargs):
     e_DIA = dpde * mag
 
     return error._generate_error(
-        code, e_DIA, propagation, NEV, e_NEV=e_DIA, e_NEV_star=e_DIA
+        code, e_DIA, propagation, NEV, e_nev=e_DIA, e_nev_star=e_DIA
     )
 
 
@@ -1838,7 +1838,7 @@ def XCLH(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
     e_DIA = dpde * mag
 
     return error._generate_error(
-        code, e_DIA, propagation, NEV, e_NEV=e_DIA, e_NEV_star=e_DIA
+        code, e_DIA, propagation, NEV, e_nev=e_DIA, e_nev_star=e_DIA
     )
 
 
@@ -1885,9 +1885,9 @@ def XYM3L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
     if len(sing[0]) < 1:
         return error._generate_error(code, e_DIA, propagation, NEV)
     else:
-        e_NEV = error._e_NEV(e_DIA)
-        e_NEV_sing = np.zeros_like(e_NEV)
-        e_NEV_sing[1:-1, 0] = (
+        e_nev = error._e_nev(e_DIA)
+        e_nev_sing = np.zeros_like(e_nev)
+        e_nev_sing[1:-1, 0] = (
             coeff[:-1]
             * (
                 error.survey.md[2:]
@@ -1895,7 +1895,7 @@ def XYM3L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
             ) / 2
             * mag
         )
-        e_NEV_sing[1, 0] = (
+        e_nev_sing[1, 0] = (
             coeff[1]
             * (
                 error.survey.md[2] + error.survey.md[1]
@@ -1903,7 +1903,7 @@ def XYM3L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
             ) / 2
             * mag
         )
-        e_NEV_sing[-1, 0] = (
+        e_nev_sing[-1, 0] = (
             coeff[-1]
             * (
                 error.survey.md[-1]
@@ -1912,11 +1912,11 @@ def XYM3L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
             * mag
         )
 
-        e_NEV[sing] = e_NEV_sing[sing]
+        e_nev[sing] = e_nev_sing[sing]
 
-        e_NEV_star = error._e_NEV_star(e_DIA)
-        e_NEV_star_sing = np.zeros_like(e_NEV)
-        e_NEV_star_sing[1:, 0] = (
+        e_nev_star = error._e_nev_star(e_DIA)
+        e_nev_star_sing = np.zeros_like(e_nev)
+        e_nev_star_sing[1:, 0] = (
             (
                 error.survey.md[1:]
                 - error.survey.md[:-1]
@@ -1924,10 +1924,10 @@ def XYM3L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
             * mag
         )
 
-        e_NEV_star[sing] = e_NEV_star_sing[sing]
+        e_nev_star[sing] = e_nev_star_sing[sing]
 
         return error._generate_error(
-            code, e_DIA, propagation, NEV, e_NEV, e_NEV_star
+            code, e_DIA, propagation, NEV, e_nev, e_nev_star
         )
 
 
@@ -1972,9 +1972,9 @@ def XYM4L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
     if len(sing[0]) < 1:
         return error._generate_error(code, e_DIA, propagation, NEV)
     else:
-        e_NEV = error._e_NEV(e_DIA)
-        e_NEV_sing = np.zeros_like(e_NEV)
-        e_NEV_sing[1:-1, 1] = (
+        e_nev = error._e_nev(e_DIA)
+        e_nev_sing = np.zeros_like(e_nev)
+        e_nev_sing[1:-1, 1] = (
             coeff[1:-1]
             * (
                 error.survey.md[2:]
@@ -1982,7 +1982,7 @@ def XYM4L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
             ) / 2
             * mag
         )
-        e_NEV_sing[1, 1] = (
+        e_nev_sing[1, 1] = (
             coeff[1]
             * (
                 error.survey.md[2] + error.survey.md[1]
@@ -1990,7 +1990,7 @@ def XYM4L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
             ) / 2
             * mag
         )
-        e_NEV_sing[-1, 1] = (
+        e_nev_sing[-1, 1] = (
             coeff[-1]
             * (
                 error.survey.md[-1]
@@ -1999,18 +1999,18 @@ def XYM4L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
             * mag
         )
 
-        e_NEV[sing] = e_NEV_sing[sing]
+        e_nev[sing] = e_nev_sing[sing]
 
-        e_NEV_star = error._e_NEV_star(e_DIA)
-        e_NEV_star_sing = np.zeros_like(e_NEV)
-        e_NEV_star_sing[1:, 1] = (
+        e_nev_star = error._e_nev_star(e_DIA)
+        e_nev_star_sing = np.zeros_like(e_nev)
+        e_nev_star_sing[1:, 1] = (
             (
                 error.survey.md[1:]
                 - error.survey.md[:-1]
             ) / 2
             * mag
         )
-        e_NEV_star_sing[1, 1] = (
+        e_nev_star_sing[1, 1] = (
             (
                 error.survey.md[1]
                 - error.survey.md[0]
@@ -2018,8 +2018,8 @@ def XYM4L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
             * mag
         )
 
-        e_NEV_star[sing] = e_NEV_star_sing[sing]
+        e_nev_star[sing] = e_nev_star_sing[sing]
 
         return error._generate_error(
-            code, e_DIA, propagation, NEV, e_NEV, e_NEV_star
+            code, e_DIA, propagation, NEV, e_nev, e_nev_star
         )

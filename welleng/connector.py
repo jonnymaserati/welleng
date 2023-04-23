@@ -13,32 +13,35 @@ from .utils import (
 )
 from .node import Node, get_node_params
 
+from numpy.typing import ArrayLike
+from typing import Union, List
+
 
 class Connector:
     def __init__(
         self,
-        node1=None,
-        node2=None,
-        pos1=[0., 0., 0.],
-        vec1=None,
-        inc1=None,
-        azi1=None,
-        md1=0,
-        dls_design=3.0,
-        dls_design2=None,
-        md2=None,
-        pos2=None,
-        vec2=None,
-        inc2=None,
-        azi2=None,
-        degrees=True,
-        dls_denominator=30,
-        min_error=1e-5,
-        delta_dls=0.1,
-        min_tangent=0.,
-        max_iterations=1_000,
-        force_min_curve=False,
-        closest_approach=False
+        node1: Union[None, Node] = None,
+        node2: Union[None, Node] = None,
+        pos1: Union[None, ArrayLike] = None,
+        vec1: Union[None, ArrayLike] = None,
+        inc1: Union[None, float] = None,
+        azi1: Union[None, float] = None,
+        md1: Union[None, float] = None,
+        dls_design: Union[None, float] = None,
+        dls_design2: Union[None, float] = None,
+        md2: Union[None, float] = None,
+        pos2: Union[None, ArrayLike] = None,
+        vec2: Union[None, ArrayLike] = None,
+        inc2: Union[None, float] = None,
+        azi2: Union[None, float] = None,
+        degrees: bool = True,
+        dls_denominator: float = 30,
+        min_error: float = 1e-5,
+        delta_dls: float = 0.1,
+        min_tangent: float = 0.,
+        max_iterations: float = 1_000,
+        force_min_curve: bool = False,
+        closest_approach: bool = False
     ):
 
         """
@@ -57,39 +60,47 @@ class Connector:
 
         Parameters
         ----------
-        pos1: (3) list or array of floats (default: [0,0,0])
-            Start position in NEV coordinates.
-        vec1: (3) list or array of floats or None (default: None)
-            Start position unit vector in NEV coordinates.
-        inc1: float or None (default: None)
+        node1 : None | Node, optional
+            A :class:`Node` instance representing the start point.
+        node2 : None | Node, optional
+            A :class:`Node` instance representing the end point.
+        pos1 : None | array_like, optional
+            A list or array of the Start position in NEV coordinates, e.g.
+            the default [0, 0, 0].
+        vec1 : None | array_like, optional
+            A list or array of floats or default None. The start position unit
+            vector in NEV coordinates.
+        inc1 : None | float, optional
             Start position inclination.
-        azi2: float or None (default: None)
+        azi2 : None | float, optional
             Start position azimuth.
-        md1: float or None (default: None)
+        md1: None | float, optional
             Start position measured depth.
-        dls_design: float (default: 3.0)
+        dls_design : None | float, optional
             The desired Dog Leg Severity (DLS) for the (first) curved
-            section in degrees per 30 meters or 100 feet.
-        dls_design2: float or None (default: None)
+            section in degrees per 30 meters.
+        dls_design2 : None | float, optional
             The desired DLS for the second curve section in degrees per
-            30 meters or 100 feet. If set to None then `dls_design` will
-            be the default value.
-        md2: float or None (default: None)
-            The measured depth of the target position.
-        pos2: (3) list or array of floats or None (default: None)
-            The position of the target in NEV coordinates.
-        vec2: (3) list or array of floats or None (default: None)
-            The target unit vector in NEV coordinates.
-        inc1: float or None (default: None)
+            30 meters. If set to None then ``dls_design`` will be the default
+            value.
+        md2 : None | float, optional
+            The measured depth of the target position in meters.
+        pos2 : None | array_like, optional
+            A list or array of floats representing the position of the target
+            in NEV coordinates, e.g. [0, 0, 0].
+        vec2 : None | array_like, optional
+            A list or array of floats representing the target unit vector in
+            NEV coordinates, e.g. [0, 0, 1].
+        inc1 : None | float, optional
             The inclination at the target position.
-        azi2: float or None (default: None)
+        azi2 : None | float, optional
             The azimuth at the target position.
-        degrees: boolean (default: True)
-            Indicates whether the input angles (inc, azi) are in degrees
-            (True) or radians (False).
-        dls_denominator: float
+        degrees: bool = True, optional
+            Indicates whether the input angles (inc, azi) are in default
+            degrees (True) or radians (False).
+        dls_denominator: float = 30, optional
             The denominator for determining the DLS - default is 30.
-        min_error: float (default: 1e-5)
+        min_error: float = 1e-5, optional
             Infers the error tolerance of the results and is used to set
             iteration stops when the desired error tolerance is met. Value
             must be less than 1. Use with caution as the code may
@@ -100,32 +111,24 @@ class Connector:
             delta radius yielded from `dls_design` and `dls_design2` is
             larger than `delta_radius`, then `delta_radius` defaults to
             the former.
-        delta_dls: float (default: 0.1)
+        delta_dls: float = 0.1, optional
             The delta dls (first curve and second curve sections) used as an
             iteration stop when balancing radii, i.e. if the dls of the second
             section is within 0.1 deg/30m of the first curve section then the
             section is considered balanced and no further iterations are
             performed. Setting this value too low will likely result in hitting
             the recursion limit.
-        min_tangent: float (default: 10)
+        min_tangent: float = 10, optional
             The minimum tangent length in the `curve_hold_curve` method
             used to mitigate instability during iterations (where the
             tangent section approaches or equals 0).
-        max_iterations: int (default: 1000)
+        max_iterations: int = 1000, optional
             The maximum number of iterations before giving up trying to
             fit a `curve_hold_curve`. This number is limited by Python's
             depth of recursion, but if you're hitting the default stop
             then consider changing `delta_radius` and `min_tangent` as
             your expectations may be unrealistic (this is open source
             software after all!)
-
-        Results
-        -------
-        connector: welleng.connector.Connector object
-
-        References
-        ----------
-
         """
         if node1 is not None:
             pos1, vec1, md1 = get_node_params(
@@ -135,6 +138,10 @@ class Connector:
             pos2, vec2, md2 = get_node_params(
                 node2
             )
+
+        pos1 = [0., 0., 0.] if pos1 is None else pos1
+        md1 = 0 if md1 is None else md1
+        dls_design = 3.0 if dls_design is None else dls_design
 
         # Set up a lookup dictionary to use with the logic to determine
         # what connector method to deploy. Use a binary string to
@@ -319,7 +326,7 @@ class Connector:
                 self.vec_target,
                 self.inc_target,
                 self.azi_target
-            ) = mod_vec(self.vec_target, self.min_error)
+            ) = _mod_vec(self.vec_target, self.min_error)
 
         # properly figure out the method
         self._get_method()
@@ -346,7 +353,7 @@ class Connector:
             self.tangent_length,
             self.dogleg
         ) = min_dist_to_target(self.radius_design, self.distances)
-        self.dogleg = check_dogleg(self.dogleg)
+        self.dogleg = _check_dogleg(self.dogleg)
         self.dist_curve, self.func_dogleg = get_curve_hold_data(
             self.radius_design, self.dogleg
         )
@@ -375,7 +382,7 @@ class Connector:
             self.radius_critical,
             self.dogleg
         ) = min_curve_to_target(self.distances)
-        self.dogleg = check_dogleg(self.dogleg)
+        self.dogleg = _check_dogleg(self.dogleg)
         self.dist_curve, self.func_dogleg = get_curve_hold_data(
             min(self.radius_design, self.radius_critical), self.dogleg
         )
@@ -516,7 +523,7 @@ class Connector:
             self.inc1, self.azi1, self.inc_target, self.azi_target
         )
 
-        self.dogleg = check_dogleg(self.dogleg)
+        self.dogleg = _check_dogleg(self.dogleg)
         if self.md_target is None:
             self.md2 = None
             self.dist_curve, self.func_dogleg = get_curve_hold_data(
@@ -622,7 +629,7 @@ class Connector:
             distances
         )
 
-        dogleg = check_dogleg(dogleg)
+        dogleg = _check_dogleg(dogleg)
 
         dist_curve, func_dogleg = get_curve_hold_data(
                     radius_temp,
@@ -661,7 +668,7 @@ class Connector:
         parameter.
         """
         args = (self, None, [0., 0., 0.])
-        minimize_target_pos_and_vec_defined(
+        _minimize_target_pos_and_vec_defined(
             *(
                 ([
                     self.radius_design,
@@ -683,7 +690,7 @@ class Connector:
                 assert self.radius_critical >= 0
                 self.radius_critical2 = self.radius_critical
                 args = (self, deepcopy(self.pos3), deepcopy(self.vec23[-1]))
-                minimize_target_pos_and_vec_defined(
+                _minimize_target_pos_and_vec_defined(
                     *(
                         ([
                             self.radius_design,
@@ -750,9 +757,24 @@ class Connector:
 
         self.md_target = self.md3 + abs(self.dist_curve2)
 
-    def interpolate(self, step=30):
-        return interpolate_well([self], step)
+    def interpolate(self, step: int = 30) -> List:
+        """
+        Convenience method to interpolated the between connection control
+        points.
 
+        Parameters
+        ----------
+        step : int = 30
+            The step length in meters.
+
+        Returns
+        -------
+        data: List
+            A list of interpolated ``Connector`` instances.
+        """
+        data = interpolate_well([self], step)
+
+        return data
 
     def _get_tangent_temp(self, tangent_length):
         if np.isnan(tangent_length):
@@ -806,7 +828,7 @@ class Connector:
             )
 
 
-def minimize_target_pos_and_vec_defined(
+def _minimize_target_pos_and_vec_defined(
     x, c, pos3=None, vec_old=[0., 0., 0.], result=False
 ):
     radius1, radius2 = x
@@ -839,7 +861,7 @@ def minimize_target_pos_and_vec_defined(
         c.distances1
     )
 
-    c.dogleg = check_dogleg(c.dogleg)
+    c.dogleg = _check_dogleg(c.dogleg)
 
     c.dist_curve, c.func_dogleg = get_curve_hold_data(
                 radius_effective1,
@@ -887,7 +909,7 @@ def minimize_target_pos_and_vec_defined(
         c.distances2
     )
 
-    c.dogleg2 = check_dogleg(c.dogleg2)
+    c.dogleg2 = _check_dogleg(c.dogleg2)
 
     c.dist_curve2, c.func_dogleg2 = get_curve_hold_data(
                 radius_effective2,
@@ -953,12 +975,12 @@ def minimize_target_pos_and_vec_defined(
         return result
     else:
         c.iterations += 1
-        return minimize_target_pos_and_vec_defined(
+        return _minimize_target_pos_and_vec_defined(
             x, c, c.pos3, c.vec23[-1], result
         )
 
 
-def check_dogleg(dogleg):
+def _check_dogleg(dogleg):
     # the code assumes angles are positive and clockwise
     if dogleg < 0:
         dogleg_new = dogleg + 2 * np.pi
@@ -967,7 +989,7 @@ def check_dogleg(dogleg):
         return dogleg
 
 
-def mod_vec(vec, error=1e-5):
+def _mod_vec(vec, error=1e-5):
     # if it's not working then twat it with a hammer
     vec_mod = vec * np.array([1, 1, 1 - error])
     vec_mod /= np.linalg.norm(vec_mod)

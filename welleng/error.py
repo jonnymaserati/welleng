@@ -35,45 +35,85 @@ TOOL_INDEX = get_tool_index()
 ERROR_MODELS = get_error_models(TOOL_INDEX)
 
 
+class Error:
+    """
+    Standard well bore survey error.
+    """
+    def __init__(
+        self,
+        code,
+        propagation,
+        e_dia,
+        cov_dia,
+        e_nev,
+        e_nev_star,
+        sigma_e_nev,
+        cov_nev
+    ):
+        """
+        Container for the calculated data for a given survey error.
+
+        Parameters
+        ----------
+        code : str
+            The error code.
+        propagation : str {'systematic', 'random', 'global'}
+            The method for propagating the tool error.
+        e_dia : ndarray
+            An (n, 3) array of errors in the Depth, Inclination and Azimuth
+            (DIA) domain.
+        cov_dia : ndarray
+            An (3, 3, n) array of the covariance matrix of errors in the DIA
+            domain.
+        e_nev : ndarray
+            An (n, 3) array of errors in the North, East and Vertical (NEV)
+            domain.
+        e_nev_star : ndarray
+            An (n, 3) array of processed errors in the NEV domain.
+        sigma_e_nev : ndarray
+            An (n, 3) or (n, 6) array (systematic or global/random
+            respectively) of sigma values in the NEV domain.
+        cov_nev : ndarray
+            An (3, 3, n) array of the covariance matrix of errors in the NEV
+            domain.
+        """
+
+        self.code = code
+        self.propagation = propagation
+        self.e_dia = e_dia
+        self.cov_dia = cov_dia
+        self.e_nev = e_nev
+        self.e_nev_star = e_nev_star
+        self.sigma_e_nev = sigma_e_nev
+        self.cov_nev = cov_nev
+
+
 class ErrorModel:
     """
     A class to initiate the field parameters and error magnitudes
     for subsequent error calculations.
     """
-
-    class Error:
-        '''
-        Standard components of a well bore survey error.
-        '''
-        def __init__(
-            self,
-            code,
-            propagation,
-            e_DIA,
-            cov_DIA,
-            e_NEV,
-            e_NEV_star,
-            sigma_e_NEV,
-            cov_NEV
-        ):
-
-            self.code = code
-            self.propagation = propagation
-            self.e_DIA = e_DIA
-            self.cov_DIA = cov_DIA
-            self.e_NEV = e_NEV
-            self.e_NEV_star = e_NEV_star
-            self.sigma_e_NEV = sigma_e_NEV
-            self.cov_NEV = cov_NEV
-
     def __init__(
         self,
         survey,
-        error_model="ISCWSA MWD Rev5",
+        error_model=None,
     ):
         """
+        Generate errors for a pre-defined ISCWSA error model.
 
+        Parameters
+        ----------
+        survey : Survey
+            A :class:`Survey` instance.
+        error_model : None | str, optional
+            Name of the standard error model. If ``None`` is provided will
+            default to ``ISCWSA MWD Rev5``.
+
+        See Also
+        --------
+        welleng.survey.Survey
         """
+        error_model = "ISCWSA MWD Rev5" if error_model is None else error_model
 
         # error_models = ERROR_MODELS
         assert error_model in ERROR_MODELS, "Unrecognized error model"
@@ -106,8 +146,8 @@ class ErrorModel:
             model=model
         )
 
-    def _e_NEV(self, e_DIA):
-        D, I, A = e_DIA.T
+    def _e_nev(self, e_dia):
+        D, I, A = e_dia.T
         arr = np.array([
             (self.drdp[:, 0] + self.drdp[:, 9]) * D
             + (self.drdp[:, 3] + self.drdp[:, 12]) * I
@@ -126,8 +166,8 @@ class ErrorModel:
 
         return arr
 
-    def _e_NEV_star(self, e_DIA):
-        D, I, A = e_DIA.T
+    def _e_nev_star(self, e_dia):
+        D, I, A = e_dia.T
         arr = np.array([
             self.drdp[:, 0] * D
             + self.drdp[:, 3] * I
@@ -167,55 +207,55 @@ class ErrorModel:
 
         return result
 
-    def _sigma_e_NEV_systematic(self, e_NEV, e_NEV_star):
-        return e_NEV_star + np.vstack(
+    def _sigma_e_nev_systematic(self, e_nev, e_nev_star):
+        return e_nev_star + np.vstack(
             (
-                e_NEV[0],
-                np.cumsum(e_NEV, axis=0)[:-1]
+                e_nev[0],
+                np.cumsum(e_nev, axis=0)[:-1]
             )
         )
 
     def _generate_error(
         self,
         code,
-        e_DIA,
+        e_dia,
         propagation='systematic',
-        NEV=True,
-        e_NEV=None,
-        e_NEV_star=None
+        nev=True,
+        e_nev=None,
+        e_nev_star=None
     ):
-        if not NEV:
-            return e_DIA
+        if not nev:
+            return e_dia
         else:
-            cov_DIA = self._cov(e_DIA)
-            if e_NEV is None:
-                e_NEV = self._e_NEV(e_DIA)
-                e_NEV_star = self._e_NEV_star(e_DIA)
+            cov_dia = self._cov(e_dia)
+            if e_nev is None:
+                e_nev = self._e_nev(e_dia)
+                e_nev_star = self._e_nev_star(e_dia)
             if propagation == 'systematic':
-                sigma_e_NEV = self._sigma_e_NEV_systematic(e_NEV, e_NEV_star)
-                cov_NEV = self._cov(sigma_e_NEV)
+                sigma_e_nev = self._sigma_e_nev_systematic(e_nev, e_nev_star)
+                cov_nev = self._cov(sigma_e_nev)
             elif propagation == 'random':
-                sigma_e_NEV = np.cumsum(self._cov(e_NEV), axis=-1)
-                cov_NEV = np.add(
-                    self._cov(e_NEV_star),
+                sigma_e_nev = np.cumsum(self._cov(e_nev), axis=-1)
+                cov_nev = np.add(
+                    self._cov(e_nev_star),
                     np.concatenate(
                         (
                             np.array(np.zeros((3, 3, 1))),
-                            np.array(sigma_e_NEV[:, :, :-1])
+                            np.array(sigma_e_nev[:, :, :-1])
                         ), axis=-1)
                     )
             else:
                 return
 
-            return ErrorModel.Error(
+            return Error(
                 code,
                 propagation,
-                e_DIA,
-                cov_DIA,
-                e_NEV,
-                e_NEV_star,
-                sigma_e_NEV,
-                cov_NEV
+                e_dia,
+                cov_dia,
+                e_nev,
+                e_nev_star,
+                sigma_e_nev,
+                cov_nev
             )
 
     def drk_dDepth(self, survey):
@@ -396,7 +436,7 @@ def make_diagnostic_data(survey):
         diagnostic[d] = {}
         total = []
         for k, v in survey.err.errors.errors.items():
-            diagnostic[d][k] = get_errors(v.cov_NEV.T[i])
+            diagnostic[d][k] = get_errors(v.cov_nev.T[i])
             total.extend(diagnostic[d][k])
         diagnostic[d]['TOTAL'] = np.sum((np.array(
             total

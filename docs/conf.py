@@ -15,6 +15,7 @@
 import os
 import inspect
 import sys
+from datetime import datetime
 
 sys.path.insert(0, os.path.abspath(''))
 
@@ -47,7 +48,7 @@ def abspath(rel):
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'welleng'
-copyright = '2023, Jonathan Corcutt'
+copyright = f'{datetime.now().year}, Jonathan Corcutt'
 author = 'Jonathan Corcutt'
 
 # -- General configuration ---------------------------------------------------
@@ -91,14 +92,14 @@ html_static_path = ['_static']
 
 # options for rtd-theme
 html_theme_options = {
-    'analytics_id': 'UA-186225449-3',
+    'analytics_id': 'G-Y1J4SN1G8S',
     'display_version': True,
     'prev_next_buttons_location': 'bottom',
     'style_external_links': False,
     # toc options
     'collapse_navigation': True,
     'sticky_navigation': True,
-    'navigation_depth': 5,
+    'navigation_depth': 4,
     'includehidden': True,
     'titles_only': False,
 }

@@ -18,3 +18,15 @@ Indices and tables
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
+
+Links
+==========
+.. toctree::
+   Github <http://github.com/jonnymaserati/welleng>
+
+Install
+==========
+.. toctree::
+   :maxdepth: 2
+	      
+   install.md

@@ -1,8 +1,10 @@
 import json
+
 import numpy as np
 import pandas as pd
-from welleng.utils import get_sigmas
+
 from welleng.survey import Survey, SurveyHeader
+from welleng.utils import get_sigmas
 
 """
 Test that the ISCWSA MWD Rev5 error model is working within a defined
@@ -70,9 +72,9 @@ def test_iscwsa_error_models(input_files=input_files):
             i = get_md_index(err, row['md'])
             s = row['source']
             if s in ["Totals", "TOTAL"]:
-                source_cov = err.errors.cov_NEVs.T[i]
+                source_cov = err.errors.cov_nevs.T[i]
             else:
-                source_cov = err.errors.errors[s].cov_NEV.T[i]
+                source_cov = err.errors.errors[s].cov_nev.T[i]
             v = get_sigmas(source_cov, long=True)
             for j, d in enumerate(v):
                 data[j].append(d[0])

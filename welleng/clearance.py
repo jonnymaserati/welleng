@@ -14,6 +14,8 @@ from scipy.signal import argrelmin
 from scipy.spatial import KDTree
 from scipy.spatial.distance import cdist
 
+from types import SimpleNamespace
+
 from .mesh import WellMesh
 from .survey import Survey, _interpolate_survey, slice_survey
 from .utils import nev_to_hla
@@ -23,58 +25,13 @@ class Clearance:
     """
     Initialize a scene on which to perform clearance calculations.
 
-    Refer to Well-Collision-Avoidance Separation Rule [1]_ for more detailed
-    descriptions of parameters.
-
-    Parameters
+    Attributes
     ----------
-    reference : Survey
-        The current well from which other wells are referenced.
-    offset : Survey
-        The other well.
-    k : float, optional
-        The dimensionless scaling factor that determines the probability
-        of well crossing.
-    sigma_pa : float, optional
-        Quantifies the 1-SD uncertainty in the projection ahead of the
-        current survey station. Its value is partially correlated with
-        the projection distance, determined as the current survey depth to
-        the bit plus the next survey interval. The magnitude of the actual
-        uncertainty also depends on the planned curvature and on the actual
-        BHA performance at the wellbore attitude in the formation being
-        drilled. The project-ahead uncertainty is only an approximation,
-        and although it is predominantly oriented normal to the reference
-        well, it is mathematically convenient to define sigma_pa as being
-        the radius of a sphere.
-    Sm : float, optional
-        The surface margin term increases the effective radius of the
-        offset well. It accommodates small, unidentified errors and helps
-        overcome one of the geometric limitations of the separation rule,
-        described in the Separation-Rule Limitations section. It also
-        defines the minimum acceptable slot separation during facility
-        design and ensures that the separation rule will prohibit the
-        activity before nominal contact between the reference and offset
-        wells, even if the position uncertainty is zero.
-    Rr : float, optional
-        The open hole radius of the reference borehole (in meters).
-    Ro : float, optional
-        The open hole radius of the offset borehole (in meters).
-    kop_depth: float, optional
-        The kick-off point (measured) depth along the well bore - the
-        default value assures that the first survey station is utilized.
 
     See Also
     --------
     welleng.clearance.IscwsaClearance
     welleng.clearance.MeshClearance
-
-    References
-    ----------
-    ..  [1] Sawaryn, S. J., Wilson, H.. , Bang, J.. , Nyrnes, E.. , Sentance,
-        A.. , Poedjono, B.. , Lowdon, R.. , Mitchell, I.. , Codling, J.. ,
-        Clark, P. J., and W. T. Allen. "Well-Collision-Avoidance Separation
-        Rule." SPE Drill & Compl 34 (2019): 01–15.
-        doi: https://doi.org/10.2118/187073-PA
     """
     def __init__(
         self,
@@ -87,12 +44,60 @@ class Clearance:
         Ro: float = 0.3048,
         kop_depth: float = -np.inf,
     ):
+        """
+        Refer to Well-Collision-Avoidance Separation Rule [1]_ for more
+        detailed descriptions of parameters.
+
+        Parameters
+        ----------
+        reference : Survey
+            The current well from which other wells are referenced.
+        offset : Survey
+            The other well.
+        k : float, optional
+            The dimensionless scaling factor that determines the probability
+            of well crossing.
+        sigma_pa : float, optional
+            Quantifies the 1-SD uncertainty in the projection ahead of the
+            current survey station. Its value is partially correlated with
+            the projection distance, determined as the current survey depth to
+            the bit plus the next survey interval. The magnitude of the actual
+            uncertainty also depends on the planned curvature and on the actual
+            BHA performance at the wellbore attitude in the formation being
+            drilled. The project-ahead uncertainty is only an approximation,
+            and although it is predominantly oriented normal to the reference
+            well, it is mathematically convenient to define sigma_pa as being
+            the radius of a sphere.
+        Sm : float, optional
+            The surface margin term increases the effective radius of the
+            offset well. It accommodates small, unidentified errors and helps
+            overcome one of the geometric limitations of the separation rule,
+            described in the Separation-Rule Limitations section. It also
+            defines the minimum acceptable slot separation during facility
+            design and ensures that the separation rule will prohibit the
+            activity before nominal contact between the reference and offset
+            wells, even if the position uncertainty is zero.
+        Rr : float, optional
+            The open hole radius of the reference borehole (in meters).
+        Ro : float, optional
+            The open hole radius of the offset borehole (in meters).
+        kop_depth: float, optional
+            The kick-off point (measured) depth along the well bore - the
+            default value assures that the first survey station is utilized.
+
+        References
+        ----------
+        ..  [1] Sawaryn, S. J., Wilson, H.. , Bang, J.. , Nyrnes, E.. ,
+            Sentance, A.. , Poedjono, B.. , Lowdon, R.. , Mitchell, I.. ,
+            Codling, J.. , Clark, P. J., and W. T. Allen.
+            "Well-Collision-Avoidance Separation Rule." SPE Drill & Compl 34
+            (2019): 01–15. doi: https://doi.org/10.2118/187073-PA
+        """
         self.reference = reference
         self.offset = offset
         self.k = k
         self.sigma_pa = sigma_pa
         self.Sm = Sm
-        # self.N_verts = N_verts
 
         self._get_kop_index(kop_depth)
         self._get_ref()
@@ -109,7 +114,8 @@ class Clearance:
 
     def _get_nevs(self, survey):
         # TODO:
-        # - [ ] Take this from the `Survey` where it is already calculated.
+        # - [X] Take this from the `Survey` where it is already calculated.
+        # return survey.pos_nev
         return np.array([
             survey.n,
             survey.e,
@@ -173,17 +179,6 @@ class IscwsaClearance(Clearance):
     """
     Perform clearance calculations between two wellbores using the ISCWSA
     method.
-
-    Parameters
-    ----------
-    clearance_args: List
-        See :class:`Clearance` docstring for args.
-    minimize_sf: bool, optional
-        If ``True`` (default), then the closest points on the reference well
-        are determined and added to the `ref` object as interpolated stations.
-    clearance_kwargs : dict, optional
-         See :class:`Clearance` docstring for kwargs.
-
 
     Attributes
     ----------
@@ -285,10 +280,21 @@ class IscwsaClearance(Clearance):
         minimize_sf: bool = None,
         **clearance_kwargs: dict
     ):
+        """
+        Parameters
+        ----------
+        clearance_args: List
+            See :class:`Clearance` docstring for args.
+        minimize_sf: bool, optional
+            If ``True`` (default), then the closest points on the reference well
+            are determined and added to the `ref` object as interpolated stations.
+        clearance_kwargs : dict, optional
+            See :class:`Clearance` docstring for kwargs.
+        """
         # TODO:
         # - [ ] Can probably remove the `offset` Survey since `off` is a copy.
-        # - [ ] Can probably remover the `_nev*` attrs and instead reference
-        # the onces in the `Survey` instances.
+        # - [ ] Can probably remove the `_nev*` attrs and instead reference
+        # the ones in the `Survey` instances.
 
         super().__init__(*clearance_args, **clearance_kwargs)
 
@@ -582,33 +588,34 @@ class IscwsaClearance(Clearance):
                 bnds = [(0, self.offset.md[i] - self.offset.md[i - 1])]
                 res_1 = optimize.minimize(
                     self._fun,
-                    bnds[0][1],
-                    # method='SLSQP',
-                    method='Powell',
+                    x0=bnds[0][1],
+                    method='SLSQP',
+                    # method='Powell',
                     bounds=bnds,
                     args=(self.offset, i-1, station)
                     )
                 mult = res_1.x[0] / (bnds[0][1] - bnds[0][0])
                 sigma_new_1 = self._interpolate_covs(i, mult)
             else:
-                res_1 = False
+                res_1 = SimpleNamespace(fun=float('inf'))
 
             if i < len(self.offset_nevs) - 1:
                 bnds = [(0, self.offset.md[i + 1] - self.offset.md[i])]
                 res_2 = optimize.minimize(
                     self._fun,
-                    bnds[0][0],
-                    # method='SLSQP',
-                    method='Powell',
+                    x0=bnds[0][0],
+                    method='SLSQP',
+                    # method='Powell',
                     bounds=bnds,
                     args=(self.offset, i, station)
                     )
                 mult = res_2.x[0] / (bnds[0][1] - bnds[0][0])
                 sigma_new_2 = self._interpolate_covs(i + 1, mult)
             else:
-                res_2 = False
+                res_2 = SimpleNamespace(fun=float('inf'))
 
-            if res_1 and res_2 and res_1.fun < res_2.fun or not res_2:
+            # if res_1 and res_2 and res_1.fun < res_2.fun or not res_2:
+            if res_1.fun < res_2.fun:
                 closest.append((
                     station,
                     _interpolate_survey(self.offset, res_1.x[0], i - 1),
@@ -652,22 +659,43 @@ class IscwsaClearance(Clearance):
             for r in self.closest
         ])
 
-        self.off = Survey(
+        # self.off = Survey(
+        #     md=md,
+        #     inc=inc,
+        #     azi=azi,
+        #     n=n,
+        #     e=e,
+        #     tvd=tvd,
+        #     header=self.offset.header,
+        #     error_model=None,
+        #     cov_hla=cov_hla,
+        #     cov_nev=cov_nev,
+        #     # start_xyz=[x[0], y[0], z[0]],
+        #     # start_nev=[n[0], e[0], tvd[0]],
+        #     deg=False,
+        #     # unit=self.offset.unit
+        # )
+
+        # Make a fake survey for calculating clearance properties.
+        self.off = SimpleNamespace(
             md=md,
             inc=inc,
             azi=azi,
             n=n,
             e=e,
             tvd=tvd,
+            x=x,
+            y=y,
+            z=z,
             header=self.offset.header,
-            error_model=None,
+            # error_model=None,
             cov_hla=cov_hla,
             cov_nev=cov_nev,
-            start_xyz=[x[0], y[0], z[0]],
-            start_nev=[n[0], e[0], tvd[0]],
+            survey_rad=np.array([md, inc, azi]).T,
             deg=False,
-            unit=self.offset.unit
         )
+
+        pass
 
     def _interpolate_covs(self, i, mult):
         """
@@ -724,7 +752,7 @@ class IscwsaClearance(Clearance):
             self.ref_delta_nevs[:, 1], self.ref_delta_nevs[:, 0]
         )
         self.hoz_bearing = (
-            (np.around(self.hoz_bearing, 6) + np.pi * 2) % (np.pi * 2)
+            (self.hoz_bearing + (np.pi * 2)) % (np.pi * 2)
         )
 
         self.hoz_bearing_deg = (np.degrees(self.hoz_bearing) + 360) % 360
@@ -735,7 +763,7 @@ class IscwsaClearance(Clearance):
             self.ref_delta_hlas[:, 1], self.ref_delta_hlas[:, 0]
         )
         self.toolface_bearing = (
-            (np.around(self.toolface_bearing, 6) + np.pi * 2) % (np.pi * 2)
+            ((self.toolface_bearing) + np.pi * 2) % (np.pi * 2)
         )
 
         self.toolface_bearing_deg = (
@@ -793,35 +821,9 @@ class MeshClearance(Clearance):
     """
     Class to calculate the clearance between two well bores using a novel
     mesh clearance method.
-    
+
     This method is experimental and was developed to provide a fast method for
     determining if well bores are potentially colliding.
-
-    Parameters
-    ----------
-    clearance_args: List
-        See :class:`Clearance` docstring for args.
-    n_verts : int
-        The number of points (vertices) used to generate the uncertainty
-        ellipses which are used to generate a ``trimesh`` representation of
-        the well bores. The default is 12 which is a good balance between
-        accuracy and speed.
-    sigma : float
-        The required/desired sigma value representation of the generated
-        mesh. The default value of 2.445 represents about 98.5% confidence
-        of the well bore being located within the volume of the generated
-        mesh.
-    return_data: bool
-        If you're only interested in a go-no-go collision check (i.e. if the
-        meshes/EOU are touching or not), then switching this param from the
-        default ``True`` to ``False`` will only forgo the expensive separation
-        factor calculations - perfect for automated trajectory planning!
-    return_meshes: bool
-        The ``trimesh`` instances generated to determine if there's a collision
-        can be returned (to avoid having to recalculate them) if this is set
-        to ``True`` rather than the default ``False``.
-    clearance_kwargs : dict, optional
-         See :class:`Clearance` docstring for kwargs.
 
     Notes
     -----
@@ -841,6 +843,33 @@ class MeshClearance(Clearance):
         return_meshes: bool = False,
         **clearance_kwargs
     ):
+        """
+        Parameters
+        ----------
+        clearance_args: List
+            See :class:`Clearance` docstring for args.
+        n_verts : int
+            The number of points (vertices) used to generate the uncertainty
+            ellipses which are used to generate a ``trimesh`` representation of
+            the well bores. The default is 12 which is a good balance between
+            accuracy and speed.
+        sigma : float
+            The required/desired sigma value representation of the generated
+            mesh. The default value of 2.445 represents about 98.5% confidence
+            of the well bore being located within the volume of the generated
+            mesh.
+        return_data: bool
+            If you're only interested in a go-no-go collision check (i.e. if the
+            meshes/EOU are touching or not), then switching this param from the
+            default ``True`` to ``False`` will only forgo the expensive separation
+            factor calculations - perfect for automated trajectory planning!
+        return_meshes: bool
+            The ``trimesh`` instances generated to determine if there's a collision
+            can be returned (to avoid having to recalculate them) if this is set
+            to ``True`` rather than the default ``False``.
+        clearance_kwargs : dict, optional
+            See :class:`Clearance` docstring for kwargs.
+        """
         super().__init__(*clearance_args, **clearance_kwargs)
 
         assert MESH_MODE, "ImportError: try pip install welleng[all]"
@@ -1061,14 +1090,14 @@ class MeshClearance(Clearance):
         return (nev, res)
 
 
-# TODO: move this to utils.
-def get_ref_sigma(sigma1, sigma2, sigma3, kop_index):
-    sigma = np.array([sigma1, sigma2, sigma3]).T
-    sigma_diff = np.diff(sigma, axis=0)
+# # TODO: move this to utils.
+# def get_ref_sigma(sigma1, sigma2, sigma3, kop_index):
+#     sigma = np.array([sigma1, sigma2, sigma3]).T
+#     sigma_diff = np.diff(sigma, axis=0)
 
-    sigma_above = np.cumsum(sigma_diff[:kop_index][::-1], axis=0)[::-1]
-    sigma_below = np.cumsum(sigma_diff[kop_index:], axis=0)
+#     sigma_above = np.cumsum(sigma_diff[:kop_index][::-1], axis=0)[::-1]
+#     sigma_below = np.cumsum(sigma_diff[kop_index:], axis=0)
 
-    sigma_new = np.vstack((sigma_above, np.array([0, 0, 0]), sigma_below))
+#     sigma_new = np.vstack((sigma_above, np.array([0, 0, 0]), sigma_below))
 
-    return sigma_new
+#     return sigma_new

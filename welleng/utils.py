@@ -226,7 +226,7 @@ def get_nev(
     --------
     welleng.utils.get_xyz
     """
-    start_xyz, start_nev = _get_start_nev_and_xyz(start_nev, start_xyz)
+    start_nev, start_xyz = _get_start_nev_and_xyz(start_nev, start_xyz)
 
     e, n, v = (
         np.array([pos]).reshape(-1, 3) - np.array([start_xyz])

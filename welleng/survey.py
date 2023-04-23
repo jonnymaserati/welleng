@@ -366,9 +366,9 @@ class Survey:
             [self.md, self.inc_rad, self.azi_grid_rad]
         ).T
 
-        self.n = np.array(n) if n is not None else n
-        self.e = np.array(e) if e is not None else e
-        self.tvd = np.array(tvd) if tvd is not None else tvd
+        self.n = None if n is None else np.array(n)
+        self.e = None if e is None else np.array(e)
+        self.tvd = None if tvd is None else np.array(tvd)
 
         # start_nev will be overwritten if n, e, tvd data provided
         if not all((self.n is None, self.e is None, self.tvd is None)):
@@ -378,9 +378,9 @@ class Survey:
         else:
             self.start_nev = np.array(self.start_nev)
 
-        self.x = np.array(x) if x is not None else x
-        self.y = np.array(y) if y is not None else y
-        self.z = np.array(z) if z is not None else z
+        self.x = None if x is None else np.array(x)
+        self.y = None if y is None else np.array(y)
+        self.z = None if z is None else np.array(z)
         if vec is not None:
             if nev:
                 self.vec_nev = vec
@@ -507,7 +507,7 @@ class Survey:
         self.pos_xyz = mc.poss
         self.pos_nev = get_nev(self.pos_xyz) + self.start_nev
 
-        if self.x is None:
+        if any(getattr(self, attr) is None for attr in ('x', 'y', 'z')):
             # self.x, self.y, self.z = (mc.poss + self.start_xyz).T
             self.x, self.y, self.z = (mc.poss).T
         if self.n is None:
@@ -567,8 +567,8 @@ class Survey:
                 self,
                 error_model=self.error_model
             )
-            self.cov_hla = self.err.errors.cov_HLAs.T
-            self.cov_nev = self.err.errors.cov_NEVs.T
+            self.cov_hla = self.err.errors.cov_hlas.T
+            self.cov_nev = self.err.errors.cov_nevs.T
         else:
             if self.cov_nev is not None and self.cov_hla is None:
                 self.cov_hla = nev_to_hla(self.survey_rad, self.cov_nev.T).T
@@ -1458,8 +1458,10 @@ def _interpolate_survey(survey, x=0, index=0):
             None if cov_nev is None
             else np.array([survey.cov_nev[index], cov_nev])
         ),
-        start_xyz=np.array([survey.x, survey.y, survey.z]).T[index],
-        start_nev=np.array([survey.n, survey.e, survey.tvd]).T[index],
+        # start_xyz=np.array([survey.x, survey.y, survey.z]).T[index],
+        start_xyz=survey.pos_xyz[index],
+        # start_nev=np.array([survey.n, survey.e, survey.tvd]).T[index],
+        start_nev=survey.pos_nev[index],
         header=sh,
         deg=False,
     )

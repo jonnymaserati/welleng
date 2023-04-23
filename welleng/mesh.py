@@ -13,7 +13,7 @@ from .survey import slice_survey, Survey
 from .visual import figure
 
 
-class WellMesh:
+class WellMesh():
     """
     Create a WellMesh object from a welleng Survey object and a
     welleng Clearance object.
