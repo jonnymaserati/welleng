@@ -2063,7 +2063,8 @@ def from_connections(
     if survey_header is None:
         survey_header = SurveyHeader(
             depth_unit=depth_unit,
-            surface_unit=surface_unit
+            surface_unit=surface_unit,
+            azi_reference="grid"  # since connections are typcially derived from pos
         )
 
     interpolated = np.array([False if m in mds_ref else True for m in md])
