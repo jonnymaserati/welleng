@@ -106,7 +106,7 @@ class Plotter(vtkRenderer):
                     m_vedo.c(colors[i])
                 if names is not None:
                     m_vedo.name = names[i]
-                    m_vedo.flag()
+                    # m_vedo.flag()
                 meshes_vedo.append(m_vedo)
 
                 for mesh in meshes_vedo:
@@ -136,7 +136,7 @@ class Plotter(vtkRenderer):
     def add_axes(self, **kwargs):
         axes = CubeAxes(self, **kwargs)
         self.AddActor(axes)
-    
+
     def get_center(self):
         min, max = np.array(self.ComputeVisiblePropBounds()).reshape(-1, 3)
         center = min + (max - min) / 2
@@ -149,7 +149,7 @@ class Plotter(vtkRenderer):
         """
         if add_axes:
             self.add_axes(**kwargs)
-        
+
         self.GetActiveCamera().Azimuth(kwargs.get('azimuth', 30))
         self.GetActiveCamera().Elevation(kwargs.get('elevation', 30))
         self.GetActiveCamera().SetViewUp(0, 0, -1)
@@ -305,7 +305,7 @@ def get_lines(clearance):
             A vedo.Lines object colored by the object's SF values.
     """
     assert VEDO, "ImportError: try pip install welleng[easy]"
-    c = clearance.SF
+    c = clearance.sf
     start_points, end_points = clearance.get_lines()
     lines = Lines(start_points, end_points).cmap('hot_r', c, on='cells')
     lines.addScalarBar(title='SF')
