@@ -1343,6 +1343,9 @@ def _interpolate_survey(survey, x=0, index=0):
             2), with the interpolated station between them (index 1)
 
     """
+    if isinstance(index, np.ndarray):
+        index = index[0]
+
     index = int(index)
 
     assert index < len(survey.md) - 1, "Index is out of range"
