@@ -9,6 +9,7 @@ offset well for each point on the reference well.
 author: Jonny Corcutt
 email: jonnycorcutt@gmail.com
 date: 29-09-2021
+updated: 12-11-2023
 '''
 import welleng as we
 from tabulate import tabulate
@@ -85,16 +86,20 @@ c = we.clearance.Clearance(
 )
 
 print("Calculating ISCWSA clearance...")
-clearance_ISCWSA = we.clearance.ISCWSA(c)
+clearance_ISCWSA = we.clearance.IscwsaClearance(
+    survey_reference, survey_offset
+)
 
 print("Calculating mesh clearance...")
-clearance_mesh = we.clearance.MeshClearance(c, sigma=2.445)
+clearance_mesh = we.clearance.MeshClearance(
+    survey_reference, survey_offset, sigma=2.445
+)
 
 # tabulate the Separation Factor results and print them
 results = [
     [md, sf0, sf1]
     for md, sf0, sf1
-    in zip(c.reference.md, clearance_ISCWSA.SF, clearance_mesh.SF)
+    in zip(c.reference.md, clearance_ISCWSA.sf, clearance_mesh.sf)
 ]
 
 print("RESULTS\n-------")

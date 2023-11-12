@@ -140,8 +140,8 @@ if section.pos3 is not None:
         ([section.pos2], [section.pos3], [section.pos_target])
     )
 lines = Lines(
-    startPoints=start_points,
-    endPoints=end_points,
+    start_pts=start_points,
+    end_pts=end_points,
     c='green',
     lw=5
 )
@@ -149,11 +149,11 @@ lines = Lines(
 # Add some arrows to represent the vectors at the start and end positions
 scalar = 150
 arrows = Arrows(
-    startPoints=np.array([
+    start_pts=np.array([
         section.pos1,
         section.pos_target
     ]),
-    endPoints=np.array([
+    end_pts=np.array([
         section.pos1 + scalar * section.vec1,
         section.pos_target + scalar * section.vec_target
     ]),

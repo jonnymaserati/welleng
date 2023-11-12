@@ -1343,6 +1343,9 @@ def _interpolate_survey(survey, x=0, index=0):
             2), with the interpolated station between them (index 1)
 
     """
+    if isinstance(index, np.ndarray):
+        index = index[0]
+
     index = int(index)
 
     assert index < len(survey.md) - 1, "Index is out of range"
@@ -2060,7 +2063,8 @@ def from_connections(
     if survey_header is None:
         survey_header = SurveyHeader(
             depth_unit=depth_unit,
-            surface_unit=surface_unit
+            surface_unit=surface_unit,
+            azi_reference="grid"  # since connections are typcially derived from pos
         )
 
     interpolated = np.array([False if m in mds_ref else True for m in md])
