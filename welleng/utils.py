@@ -815,7 +815,7 @@ def annular_volume(od: float, id: float = None, length: float = None):
     """
     length = 1 if length is None else length
     id = 0 if id is None else id
-    annular_unit_volume = np.pi * ((od - id)**2) / 4
+    annular_unit_volume = np.pi * ((od ** 2 - id ** 2)) / 4
     annular_volume = annular_unit_volume * length
 
     return annular_volume

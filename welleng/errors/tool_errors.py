@@ -111,9 +111,15 @@ class ToolError:
                 )
             )
 
-        self.cov_nevs = np.zeros((3, 3, len(self.e.survey_rad)))
-        for _, value in self.errors.items():
-            self.cov_nevs += value.cov_nev
+        # self.cov_nevs = np.zeros((3, 3, len(self.e.survey_rad)))
+        # for _, value in self.errors.items():
+        #     self.cov_nevs += value.cov_nev
+
+        self.cov_nevs = np.sum(
+            np.array(
+                [error.cov_nev for error in self.errors.values()]
+            ), axis=0
+        )
 
         self.cov_hlas = nev_to_hla(self.e.survey_rad, self.cov_nevs)
 
