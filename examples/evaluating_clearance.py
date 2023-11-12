@@ -123,10 +123,14 @@ if multiprocessing:
                 c = we.clearance.Clearance(reference, offset)
 
             print(f"Calculating ISCWSA clearance for {well}...")
-            result_iscwsa = we.clearance.ISCWSA(c)
+            result_iscwsa = we.clearance.IscwsaClearance(
+                c.reference, c.offset
+            )
 
             print(f"Calculating mesh clearance for {well}...")
-            rm = we.clearance.MeshClearance(c, sigma=2.445)
+            rm = we.clearance.MeshClearance(
+                c.reference, c.offset, sigma=2.445
+            )
 
             color = 'blue'
 
@@ -138,11 +142,11 @@ if multiprocessing:
             R.nev = rm.nev
             R.off_md = rm.off_md
             R.hoz_bearing_deg = rm.hoz_bearing_deg
-            R.distance_CC = rm.distance_CC
-            R.ref_PCR = rm.ref_PCR
-            R.off_PCR = rm.off_PCR
+            R.distance_cc = rm.distance_cc
+            R.ref_pcr = rm.ref_pcr
+            R.off_pcr = rm.off_pcr
             R.calc_hole = rm.calc_hole
-            R.SF = rm.SF
+            R.sf = rm.sf
 
         m = WellMesh(
             survey=surveys[well],
@@ -186,10 +190,14 @@ else:
                 c = we.clearance.Clearance(reference, offset)
 
             print(f"Calculating ISCWSA clearance for {well}...")
-            result_iscwsa = we.clearance.ISCWSA(c)
+            result_iscwsa = we.clearance.IscwsaClearance(
+                c.reference, c.offset
+            )
 
             print(f"Calculating mesh clearance for {well}...")
-            result_mesh = we.clearance.MeshClearance(c, sigma=2.445)
+            result_mesh = we.clearance.MeshClearance(
+                c.reference, c.offset, sigma=2.445
+            )
 
             colors.append('blue')
 
@@ -246,20 +254,20 @@ with pd.ExcelWriter(f'data/output/output.xlsx') as writer:
         if well == "Reference well": continue
         r = results[well]['iscwsa']
         data = {
-            "REF_MD (m)": r.c.ref.md,
-            "REF_TVD (m)": r.c.ref.tvd,
-            "REF_N (m)": r.c.ref.n,
-            "REF_E (m)": r.c.ref.e,
+            "REF_MD (m)": r.ref.md,
+            "REF_TVD (m)": r.ref.tvd,
+            "REF_N (m)": r.ref.n,
+            "REF_E (m)": r.ref.e,
             "Offset_MD (m)": r.off.md,
             "Offset_TVD (m)": r.off.tvd,
             "Offset_N (m)": r.off.n,
             "Offset_E (m)": r.off.e,
             "Hoz_Bearing (deg)": r.hoz_bearing_deg,
-            "C-C Clr Dist (m)": r.dist_CC_Clr,
-            "Ref_PCR (m 1sigma)": r.ref_PCR,
-            "Offset_PCR (m 1 sigma)": r.off_PCR,
+            "C-C Clr Dist (m)": r.distance_cc,
+            "Ref_PCR (m 1sigma)": r.ref_pcr,
+            "Offset_PCR (m 1 sigma)": r.off_pcr,
             "Calc hole": r.calc_hole,
-            "ISCWSA ACR": r.SF
+            "ISCWSA ACR": r.sf
         }
         df = pd.DataFrame(data=data)
         df.to_excel(writer, sheet_name=f'{well} - iscwsa')
@@ -275,11 +283,11 @@ with pd.ExcelWriter(f'data/output/output.xlsx') as writer:
             "Offset_N (m)": [n[1][0][0] for n in r.nev],
             "Offset_E (m)": [e[1][0][1] for e in r.nev],
             "Hoz_Bearing (deg)": r.hoz_bearing_deg,
-            "C-C Clr Dist (m)": r.distance_CC,
-            "Ref_PCR (m 1sigma)": r.ref_PCR,
-            "Offset_PCR (m 1 sigma)": r.off_PCR,
+            "C-C Clr Dist (m)": r.distance_cc,
+            "Ref_PCR (m 1sigma)": r.ref_pcr,
+            "Offset_PCR (m 1 sigma)": r.off_pcr,
             "Calc hole": r.calc_hole,
-            "SF": r.SF
+            "SF": r.sf
         }
         df = pd.DataFrame(data=data)
         df.to_excel(writer, sheet_name=f'{well} - mesh')
