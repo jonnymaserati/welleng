@@ -667,6 +667,9 @@ def annular_volume(od: float, id: float = None, length: float = None):
 
     Example
     -------
+    In the following example we calculate annular volume along a 1,000 meter
+    section length of 9 5/8" casing inside 12 1/4" hole.
+
     ```python
     >>> from welleng.utils import annular_volume
     >>> from welleng.units import ureg
@@ -677,6 +680,7 @@ def annular_volume(od: float, id: float = None, length: float = None):
     ... )
     >>> print(av)
     ... 3.491531223156194 meter ** 3
+    ```
     """
     length = 1 if length is None else length
     id = 0 if id is None else id

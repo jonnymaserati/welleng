@@ -116,6 +116,34 @@ class SurveyParameters(Proj):
                 The dip angle at the provided coordinates and time.
             date:
                 The date used for determining the magnetic parameters.
+
+        Example
+        -------
+        In the following example, the parameters for Den Haag in The
+        Netherlands are looked up with the reference map ED50 UTM Zone 31N.
+
+        ```python
+        >>> import pprint
+        >>> from welleng.survey import SurveyParameters
+        >>> calculator = SurveyParameters('EPSG:23031')
+        >>> survey_parameters = calculator.get_factors_from_x_y(
+        ...     x=588319.02, y=5770571.03
+        ... )
+        >>> pprint(survey_parameters)
+        ... {'convergence': 1.01664403471959,
+        ... 'date': '2023-12-16',
+        ... 'declination': 2.213,
+        ... 'dip': -67.199,
+        ... 'easting': 588319.02,
+        ... 'latitude': 52.077583926214494,
+        ... 'longitude': 4.288694821453205,
+        ... 'magnetic_field_intensity': 49381,
+        ... 'northing': 5770571.03,
+        ... 'scale_factor': 0.9996957469340414,
+        ... 'srs': 'EPSG:23031',
+        ... 'x': 588319.02,
+        ... 'y': 5770571.03}
+        ```
         """
         longitude, latitude = self(x, y, inverse=True)
         result = self.get_factors(longitude, latitude)

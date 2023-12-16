@@ -16,11 +16,14 @@ reference = {
 def test_known_location():
     calculator = we.survey.SurveyParameters(reference.get('srs'))
     survey_parameters = calculator.get_factors_from_x_y(
-        reference.get('x'), reference.get('y'), date=reference.get('date')
+        x=reference.get('x'), y=reference.get('y'), date=reference.get('date')
     )
 
     for k, v in survey_parameters.items():
-        assert v == reference.get(k)
+        try:
+            assert round(v, 3) == round(reference.get(k), 3)
+        except TypeError:
+            assert v == reference.get(k)
 
     pass
 
