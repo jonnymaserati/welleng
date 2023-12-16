@@ -7,11 +7,7 @@ try:
 except ImportError:
     MAG_CALC = False
 from datetime import datetime
-try:
-    from pyproj import CRS, Proj
-    GRID_CALC = True
-except ImportError:
-    GRID_CALC = False
+from pyproj import CRS, Proj
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 
@@ -70,8 +66,6 @@ class SurveyParameters(Proj):
         ---------
         For codes refer to [EPSG](https://epsg.io).
         """
-        if not GRID_CALC:
-            raise ImportError('pyproj dependency required, try ``pip install pyproj``.')
         self.crs = CRS(projection)
         super().__init__(self.crs)
 
