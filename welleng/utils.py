@@ -665,12 +665,11 @@ def annular_volume(od: float, id: float = None, length: float = None):
     annular_volume: float
         The (unit) volume of the annulus or cylinder.
 
-    Example
+    Examples
     -------
     In the following example we calculate annular volume along a 1,000 meter
     section length of 9 5/8" casing inside 12 1/4" hole.
 
-    ```python
     >>> from welleng.utils import annular_volume
     >>> from welleng.units import ureg
     >>> av = annular_volume(
@@ -679,8 +678,7 @@ def annular_volume(od: float, id: float = None, length: float = None):
     ...     length=ureg('1000 meter')
     ... )
     >>> print(av)
-    ... 3.491531223156194 meter ** 3
-    ```
+    3.491531223156194 meter ** 3
     """
     length = 1 if length is None else length
     id = 0 if id is None else id
