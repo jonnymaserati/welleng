@@ -28,6 +28,7 @@ download_url = f'https://github.com/jonnymaserati/welleng/archive/v{__version__}
 requirements_default = set([
     'numpy',
     'scipy',
+    'openpyxl',
     'pint',
     'pyproj',  # required for getting survey parameters
     'PyYAML',
@@ -39,7 +40,6 @@ requirements_default = set([
 requirements_easy = set([
     'magnetic_field_calculator',    # used to get default mag data for survey
     'networkx',
-    'openpyxl',
     'pandas',
     'tabulate',
     'trimesh',
