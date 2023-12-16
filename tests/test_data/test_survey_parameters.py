@@ -1,7 +1,7 @@
-import welleng as we
 import inspect
 import sys
 
+import welleng as we
 
 reference = {
     'x': 588319.02, 'y': 5770571.03, 'northing': 5770571.03,

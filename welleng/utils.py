@@ -1,8 +1,8 @@
-import numpy as np
-from scipy.spatial.transform import Rotation as R
+from typing import Annotated, Literal, Union
 
-from numpy.typing import ArrayLike, NDArray
-from typing import Any, Annotated, Literal, Union, Tuple
+import numpy as np
+from numpy.typing import NDArray
+from scipy.spatial.transform import Rotation as R
 
 try:
     from numba import njit
