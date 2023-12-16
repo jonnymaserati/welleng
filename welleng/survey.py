@@ -7,6 +7,7 @@ try:
 except ImportError:
     MAG_CALC = False
 from datetime import datetime
+from pyproj import CRS, Proj
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 
@@ -33,6 +34,161 @@ from numpy.typing import NDArray
 
 
 AZI_REF = ["true", "magnetic", "grid"]
+
+
+class SurveyParameters(Proj):
+    """Class for calculating survey parameters for input to a Survey Header.
+
+    This is a wrapper of pyproj that tries to simplify the process of getting
+    convergence, declination and dip values for a survey header.
+
+    Notes
+    -----
+    Requires ``pyproj`` and ``magnetic_field_calculator`` to be installed and
+    access to the internet.
+
+    References
+    ----------
+    For more info on transformations between maps, refer to the pyproj project
+    [here](https://pypi.org/project/pyproj/).
+    """
+    def __init__(self, projection: str = "EPSG:23031") -> None:
+        """Initiates a SurveyParameters object for conversion of map
+        coordinates to WGS84 lat/lon for calculating magnetic field properties.
+
+        Parameters
+        ----------
+        projection: str (default: "EPSG:23031")
+            The EPSG code of the map of interest. The default represents
+            ED50/UTM zone 31N.
+
+        Reference
+        ---------
+        For codes refer to [EPSG](https://epsg.io).
+        """
+        self.crs = CRS(projection)
+        super().__init__(self.crs)
+
+    def get_factors_from_x_y(
+        self, x: float, y: float, altitude: float = None,
+        date: str = None
+    ) -> dict:
+        """Calculates the survey header parameters for a given map coordinate.
+
+        Parameters
+        ----------
+        x: float
+            The x or East/West coordinate.
+        y: float
+            The y or North/South coordinate.
+        altitude: float (default: None)
+            The altitude or z value coordinate. If none is provided this will
+            default to zero (sea level).
+        date: str (default: None)
+            The date of the survey, used when calculating the magnetic
+            parameters. Will default to the current date.
+
+        Returns
+        -------
+        data: dict
+            x: float
+                The x coordinate.
+            y: float
+                The y coordinate.
+            northing: float
+                The Northing (negative values are South).
+            easting: float
+                The Easting (negative values are West).
+            latitude: float
+                The WGS84 latitude.
+            longitude: float
+                The WGS84 longitude.
+            convergence: float
+                Te grid convergence for the provided coordinates.
+            scale_factor: float
+                The scale factor for the provided coordinates.
+            magnetic_field_intensity: float
+                The total field intensity for the provided coordinates and
+                time.
+            declination: float
+                The declination at the provided coordinates and time.
+            dip: float
+                The dip angle at the provided coordinates and time.
+            date:
+                The date used for determining the magnetic parameters.
+
+        Example
+        -------
+        In the following example, the parameters for Den Haag in The
+        Netherlands are looked up with the reference map ED50 UTM Zone 31N.
+
+        ```python
+        >>> import pprint
+        >>> from welleng.survey import SurveyParameters
+        >>> calculator = SurveyParameters('EPSG:23031')
+        >>> survey_parameters = calculator.get_factors_from_x_y(
+        ...     x=588319.02, y=5770571.03
+        ... )
+        >>> pprint(survey_parameters)
+        ... {'convergence': 1.01664403471959,
+        ... 'date': '2023-12-16',
+        ... 'declination': 2.213,
+        ... 'dip': -67.199,
+        ... 'easting': 588319.02,
+        ... 'latitude': 52.077583926214494,
+        ... 'longitude': 4.288694821453205,
+        ... 'magnetic_field_intensity': 49381,
+        ... 'northing': 5770571.03,
+        ... 'scale_factor': 0.9996957469340414,
+        ... 'srs': 'EPSG:23031',
+        ... 'x': 588319.02,
+        ... 'y': 5770571.03}
+        ```
+        """
+        longitude, latitude = self(x, y, inverse=True)
+        result = self.get_factors(longitude, latitude)
+
+        date = (
+            datetime.today().strftime('%Y-%m-%d') if date is None
+            else date
+        )
+        if MAG_CALC:
+            magnetic_calculator = MagneticFieldCalculator()
+            result_magnetic = magnetic_calculator.calculate(
+                latitude=latitude, longitude=longitude,
+                altitude=0 if altitude is None else altitude,
+                date=date
+            )
+        else:
+            result_magnetic = None
+
+        data = dict(
+            x=x,
+            y=y,
+            northing=y,
+            easting=x,
+            latitude=latitude,
+            longitude=longitude,
+            convergence=result.meridian_convergence,
+            scale_factor=result.meridional_scale,
+            magnetic_field_intensity=(
+                result_magnetic.get('field-value').get('total-intensity').get('value')
+            ),
+            declination=(
+                result_magnetic.get('field-value').get('declination').get('value')
+            ),
+            dip=(
+                result_magnetic.get('field-value').get('inclination').get('value')
+                * (
+                    -1 if "down" in result_magnetic.get('field-value').get('inclination').get('units')
+                    else 1
+                )
+            ),
+            date=date,
+            srs=self.crs.srs
+        )
+
+        return data
 
 
 class SurveyHeader:

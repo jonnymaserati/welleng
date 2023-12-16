@@ -1,8 +1,8 @@
-import numpy as np
-from scipy.spatial.transform import Rotation as R
+from typing import Annotated, Literal, Union
 
-from numpy.typing import ArrayLike, NDArray
-from typing import Any, Annotated, Literal, Union, Tuple
+import numpy as np
+from numpy.typing import NDArray
+from scipy.spatial.transform import Rotation as R
 
 try:
     from numba import njit
@@ -638,3 +638,53 @@ def get_arc(dogleg, radius, toolface, pos=None, vec=None, target=False):
     pos_new, vec_new = arc.transform(toolface, pos, vec, target)
 
     return (pos_new, vec_new, arc.delta_md)
+
+
+def annular_volume(od: float, id: float = None, length: float = None):
+    """
+    Calculate an annular volume.
+
+    If no ``id`` is provided then circular volume is calculated. If no
+    ``length`` is provided, then the unit volume is calculated (i.e. the
+    area).
+
+    Units are assumed consistent across input parameters, i.e. the
+    calculation is dimensionless.
+
+    Parameters
+    ----------
+    od: float
+        The outer diameter.
+    id: float | None, optional
+        The inner diameter, default is 0.
+    length : float | None, optional
+        The length of the annulus.
+
+    Returns
+    -------
+    annular_volume: float
+        The (unit) volume of the annulus or cylinder.
+
+    Example
+    -------
+    In the following example we calculate annular volume along a 1,000 meter
+    section length of 9 5/8" casing inside 12 1/4" hole.
+
+    ```python
+    >>> from welleng.utils import annular_volume
+    >>> from welleng.units import ureg
+    >>> av = annular_volume(
+    ...     od=ureg('12.25 inch').to('meters),
+    ...     id=ureg(f'{9+5/8} inch').to('meter'),
+    ...     length=ureg('1000 meter')
+    ... )
+    >>> print(av)
+    ... 3.491531223156194 meter ** 3
+    ```
+    """
+    length = 1 if length is None else length
+    id = 0 if id is None else id
+    annular_unit_volume = (np.pi * (od - id)**2) / 4
+    annular_volume = annular_unit_volume * length
+
+    return annular_volume

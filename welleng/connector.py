@@ -1,18 +1,18 @@
-import numpy as np
 from copy import copy, deepcopy
+
+import numpy as np
+# from scipy.optimize import minimize
 from scipy.spatial import distance
-from scipy.optimize import minimize
+
 try:
     from numba import njit
     NUMBA = True
 except ImportError:
     NUMBA = False
 
-from .utils import (
-    get_vec, _get_angles, get_angles, get_nev, get_xyz, get_unit_vec,
-    NEV_to_HLA, dls_from_radius
-)
 from .node import Node, get_node_params
+from .utils import (NEV_to_HLA, _get_angles, dls_from_radius, get_angles,
+                    get_nev, get_unit_vec, get_vec, get_xyz)
 
 
 class Connector:
@@ -751,7 +751,6 @@ class Connector:
     def interpolate(self, step=30):
         return interpolate_well([self], step)
 
-
     def _get_tangent_temp(self, tangent_length):
         if np.isnan(tangent_length):
             tangent_temp = self.min_tangent
@@ -975,8 +974,8 @@ def mod_vec(vec, error=1e-5):
 
 
 def _get_xyz(pos):
-        n, e, v = pos
-        return np.array([e, n, v]).reshape(-1, 3)
+    n, e, v = pos
+    return np.array([e, n, v]).reshape(-1, 3)
 
 
 def get_pos(pos1, vec1, vec2, dist_curve, func_dogleg):
@@ -1540,7 +1539,7 @@ def survey_to_plan(survey, tolerance=0.2, dls_design=1., step=30.):
             break
         node = section.node_end
 
-    data = interpolate_well(sections, step=30)
+    # data = interpolate_well(sections, step=step)
 
     return sections
 
