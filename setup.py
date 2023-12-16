@@ -29,6 +29,7 @@ requirements_default = set([
     'numpy',
     'scipy',
     'pint',
+    'pyproj',  # required for getting survey parameters
     'PyYAML',
     'setuptools',
     'vtk'
@@ -43,7 +44,7 @@ requirements_easy = set([
     'tabulate',
     'trimesh',
     'utm',
-    'vedo',
+    'vedo'
 ])
 
 # this is the troublesome requirement that needs C dependencies
