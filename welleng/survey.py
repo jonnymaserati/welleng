@@ -90,7 +90,7 @@ class SurveyParameters(Proj):
 
         Returns
         -------
-        data: dict
+        dict:
             x: float
                 The x coordinate.
             y: float
