@@ -44,6 +44,7 @@ requirements_easy = set([
     'trimesh',
     'utm',
     'vedo',
+    'pyproj'  # required for getting survey parameters
 ])
 
 # this is the troublesome requirement that needs C dependencies
