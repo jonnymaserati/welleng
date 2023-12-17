@@ -690,9 +690,13 @@ class Connector:
                         + args + (True,)
                     )
                 )
-                if abs(
-                    self.dls - self.dls2
-                ) < self.delta_dls:
+                if any((
+                    abs(
+                        self.dls - self.dls2
+                    ) < self.delta_dls,
+                    np.allclose(self.pos1, self.pos2),
+                    np.allclose(self.pos3, self.pos_target)
+                )):
                     break
             self._happy_finish()
             return
