@@ -23,6 +23,10 @@ from vtk import (
 from vtkmodules.vtkRenderingCore import (
     vtkRenderWindow, vtkRenderWindowInteractor, vtkRenderer
 )
+from vtkmodules.vtkInteractionWidgets import (
+    vtkCameraOrientationWidget,
+    vtkOrientationMarkerWidget
+)
 
 from .version import __version__ as VERSION
 
@@ -143,7 +147,7 @@ class Plotter(vtkRenderer):
 
         return tuple(center)
 
-    def show(self, add_axes=True, **kwargs):
+    def show(self, add_axes=True, orientation_marker=False, **kwargs):
         """
         Convenient method for opening a window to view the rendered scene.
         """
@@ -180,6 +184,15 @@ class Plotter(vtkRenderer):
         self.GetActiveCamera().Zoom(0.8)
 
         interactive = kwargs.get('interactive', True)
+
+        if orientation_marker:
+            cow = vtkCameraOrientationWidget()
+            cow.SetParentRenderer(self)
+            # cow.SetDefaultRenderer(self)
+
+            cow.Off()
+            cow.EnabledOn()
+
         if interactive:
             renderWindowInteractor.Start()
 
