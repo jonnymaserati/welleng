@@ -29,6 +29,7 @@ requirements_default = set([
     'numpy',
     'scipy',
     'openpyxl',
+    'pandas',
     'pint',
     'pyproj',  # required for getting survey parameters
     'PyYAML',
@@ -40,7 +41,6 @@ requirements_default = set([
 requirements_easy = set([
     'magnetic_field_calculator',    # used to get default mag data for survey
     'networkx',
-    'pandas',
     'tabulate',
     'trimesh',
     'utm',
