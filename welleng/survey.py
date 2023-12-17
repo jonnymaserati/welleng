@@ -1,5 +1,6 @@
 import numpy as np
 import math
+import pandas as pd
 from copy import copy
 try:
     from magnetic_field_calculator import MagneticFieldCalculator
@@ -2023,6 +2024,29 @@ def make_survey_header(data):
 #     Saves the survey header and survey to a text file.
 #     """
 #     export_csv(survey, filename)
+
+
+def survey_to_df(survey: Survey) -> pd.DataFrame:
+    data = {
+        'MD (m)': survey.md,
+        'INC (deg)': survey.inc_deg,
+        'AZI_GN (deg)': survey.azi_grid_deg,
+        'AZI_TN (deg)': survey.azi_true_deg,
+        'NORTHING (m)': survey.pos_nev[:, 0],
+        'EASTING (m)': survey.pos_nev[:, 1],
+        'TVDSS (m)': survey.pos_nev[:, 2],
+        'X (m)': survey.pos_xyz[:, 0],
+        'Y (m)': survey.pos_xyz[:, 1],
+        'Z (m)': survey.pos_xyz[:, 2],
+        'DLS (deg/30m)': survey.dls,
+        'TOOLFACE (deg)': np.degrees(survey.toolface + 2 * np.pi) % 360,
+        'BUILD RATE (deg)': np.nan_to_num(survey.build_rate, nan=0.0),
+        'TURN RATE (deg)': np.nan_to_num(survey.turn_rate, nan=0.0)
+    }
+
+    df = pd.DataFrame(data)
+
+    return df
 
 
 def export_csv(
