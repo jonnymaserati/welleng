@@ -1,6 +1,7 @@
 from typing import Annotated, Literal, Union
 
 import numpy as np
+from numpy.exceptions import AxisError
 from numpy.typing import NDArray
 from scipy.spatial.transform import Rotation as R
 
@@ -686,3 +687,84 @@ def annular_volume(od: float, id: float = None, length: float = None):
     annular_volume = annular_unit_volume * length
 
     return annular_volume
+
+
+@np.vectorize(signature='()->(n)')
+def _decimal2dms(decimal: float) -> tuple:
+    minutes, seconds = divmod(abs(decimal) * 3600, 60)
+    _, minutes = divmod(minutes, 60)
+    return np.array([int(decimal), minutes, seconds])
+
+
+def decimal2dms(decimal: float | tuple) -> tuple | NDArray:
+    """Converts a decimal lat, lon to degrees, minutes and seconds.
+
+    Parameters
+    ----------
+    decimal : float | arraylike
+        A decimal lat or lon or arraylike of lat, lon coordinates.
+
+    Returns
+    -------
+    dms: tuple | arraylike
+        A tuple or array of (degrees, minutes, seconds).
+
+    Examples
+    --------
+    If you want to convert the lat/lon coordinates for Den Haag from decimals
+    to degrees, minutes and seconds:
+
+    >>> LAT, LON = [52.078663000000006, 4.288788]
+    >>> dms = decimal2dms((LAT, LON))
+    >>> print(dms)
+    [[52.      4.     43.1868]
+    [ 4.     17.     19.6368]]
+    """
+    dms = _decimal2dms(decimal)
+
+    if dms.shape == (3,):
+        return tuple(dms)
+    else:
+        return dms
+
+
+def _dms2decimal(dms: tuple) -> float:
+    degrees, minutes, seconds = dms
+    result = abs(degrees) + minutes / 60 + seconds / 3600
+
+    if degrees == 0:  # avoid divide by zero errors
+        return result
+    else:
+        return result * abs(degrees) / degrees
+
+
+def dms2decimal(dms: tuple | NDArray) -> float | NDArray:
+    """Converts a degrees, minutes and seconds lat, lon to decimals.
+
+    Parameters
+    ----------
+    dms : tuple | arraylike
+        A tuple or arraylike of (degrees, minutes, seconds) lat and/or lon or
+        arraylike of lat, lon coordinates.
+
+    Returns
+    -------
+    degrees: tuple | arraylike
+        A tuple or array of lats and/or longs in decimals.
+
+    Examples
+    --------
+    If you want to convert the lat/lon coordinates for Den Haag from degrees,
+    minutes and seconds to decimals:
+
+    >>> LAT, LON = (52, 4, 43.1868), (4, 17, 19.6368)
+    >>> decimal = dms2decimal((LAT, LON))
+    >>> print(decimal)
+    [52.078663  4.288788]
+    """
+    result = np.apply_along_axis(_dms2decimal, -1, np.array(dms))
+
+    if result.shape == ():
+        return float(result)
+    else:
+        return result
