@@ -1,11 +1,11 @@
 import inspect
+import sys
+
 import numpy as np
 from numpy.typing import NDArray
-import sys
 
 from welleng.units import ureg
 from welleng.utils import annular_volume, decimal2dms, dms2decimal
-
 
 LAT, LON = (52, 4, 43.1868), (4, 17, 19.6368)
 
