@@ -1,7 +1,6 @@
 from typing import Annotated, Literal, Union
 
 import numpy as np
-from numpy.exceptions import AxisError
 from numpy.typing import NDArray
 from scipy.spatial.transform import Rotation as R
 
@@ -29,7 +28,7 @@ class MinCurve:
         md: list or 1d array of floats
             Measured depth along well path from a datum.
         inc: list or 1d array of floats
-            Well path inclincation (relative to z/tvd axis where 0
+            Well path inclination (relative to z/tvd axis where 0
             indicates down), in radians.
         azi: list or 1d array of floats
             Well path azimuth (relative to y/North axis),
@@ -152,15 +151,18 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
     """
     Convert inc and azi into a vector.
 
-    Params:
-        inc: array of n floats
-            Inclination relative to the z-axis (up)
-        azi: array of n floats
-            Azimuth relative to the y-axis
-        r: float or array of n floats
-            Scalar to return a scaled vector
+    Parameters
+    ----------
+    inc: array of n floats
+        Inclination relative to the z-axis (up)
+    azi: array of n floats
+        Azimuth relative to the y-axis
+    r: float or array of n floats
+        Scalar to return a scaled vector
 
-    Returns:
+    Returns
+    -------
+    vec: arraylike
         An (n,3) array of vectors
     """
     if deg:
@@ -186,15 +188,17 @@ def get_nev(
     """
     Convert [x, y, z] coordinates to [n, e, tvd] coordinates.
 
-    Params:
-        pos: (n,3) array of floats
-            Array of [x, y, z] coordinates
-        start_xyz: (,3) array of floats
-            The datum of the [x, y, z] cooardinates
-        start_nev: (,3) array of floats
-            The datum of the [n, e, tvd] coordinates
+    Parameters
+    ----------
+    pos: (n,3) array of floats
+        Array of [x, y, z] coordinates
+    start_xyz: (,3) array of floats
+        The datum of the [x, y, z] cooardinates
+    start_nev: (,3) array of floats
+        The datum of the [n, e, tvd] coordinates
 
-    Returns:
+    Returns
+    -------
         An (n,3) array of [n, e, tvd] coordinates.
     """
     # e, n, v = (
@@ -274,26 +278,20 @@ def get_transform(
     Determine the transform for transforming between NEV and HLA coordinate
     systems.
 
-    Params:
-        survey: (n,3) array of floats
+    Parameters
+    ----------
+    survey: (n,3) array of floats
         The [md, inc, azi] survey listing array.
 
-    Returns:
-        transform: (n,3,3) array of floats
+    Returns
+    -------
+    transform: (n,3,3) array of floats
     """
     survey = survey.reshape(-1, 3)
     inc = np.array(survey[:, 1])
     azi = np.array(survey[:, 2])
 
     return _get_transform(inc, azi)
-
-    # trans = np.array([
-    #     [np.cos(inc) * np.cos(azi), -np.sin(azi), np.sin(inc) * np.cos(azi)],
-    #     [np.cos(inc) * np.sin(azi), np.cos(azi), np.sin(inc) * np.sin(azi)],
-    #     [-np.sin(inc), np.zeros_like(inc), np.cos(inc)]
-    # ]).T
-
-    # return trans
 
 
 def NEV_to_HLA(
@@ -310,8 +308,8 @@ def NEV_to_HLA(
     """
     Transform from NEV to HLA coordinate system.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     survey: (n,3) array of floats
         The [md, inc, azi] survey listing array.
     NEV: (d,3) or (3,3,d) array of floats
@@ -320,8 +318,8 @@ def NEV_to_HLA(
         If cov is True then a (3,3,d) array of covariance matrices
         is expected, else a (d,3) array of coordinates.
 
-    Returns:
-    --------
+    Returns
+    -------
     HLAs: NDArray
         Either a transformed (n,3) array of HLA coordinates or an
         (3,3,n) array of HLA covariance matrices.
@@ -330,11 +328,6 @@ def NEV_to_HLA(
     trans = get_transform(survey)
 
     if cov:
-        # HLAs = [
-        #     np.dot(np.dot(t, NEV.T[i]), t.T) for i, t in enumerate(trans)
-        # ]
-        # HLAs = np.vstack(HLAs).reshape(-1, 3, 3).T
-
         HLAs = np.einsum(
             '...ik,...jk',
             np.einsum(
@@ -345,10 +338,6 @@ def NEV_to_HLA(
 
     else:
         NEV = NEV.reshape(-1, 3)
-        # HLAs = [
-        #     np.dot(NEV[i], t.T) for i, t in enumerate(trans)
-        # ]
-
         HLAs = np.einsum(
             '...k,...jk', NEV, trans
         )
@@ -361,11 +350,6 @@ def HLA_to_NEV(survey, HLA, cov=True, trans=None):
         trans = get_transform(survey)
 
     if cov:
-        # NEVs = [
-        #     np.dot(np.dot(t.T, HLA.T[i]), t) for i, t in enumerate(trans)
-        # ]
-        # NEVs = np.vstack(NEVs).reshape(-1, 3, 3).T
-
         NEVs = np.einsum(
             '...ik,jk...',
             np.einsum(
@@ -375,15 +359,9 @@ def HLA_to_NEV(survey, HLA, cov=True, trans=None):
         ).T
 
     else:
-        # NEVs = [
-        #     np.dot(hla, t) for hla, t in zip(HLA, trans)
-        # ]
-
         NEVs = np.einsum(
             'k...,jk...', HLA.T, trans.T
         )
-
-    # return np.vstack(NEVs).reshape(HLA.shape)
 
     return np.swapaxes(NEVs, 0, 1)
 
@@ -394,11 +372,11 @@ def get_sigmas(cov, long=False):
 
     Parameters
     ----------
-        cov: (n,3,3) array of floats
+    cov: (n,3,3) array of floats
 
     Returns
     -------
-        arr: (n,3) array of floats
+    arr: (n,3) array of floats
     """
 
     assert cov.shape[-2:] == (3, 3), "Cov is the wrong shape"
@@ -413,14 +391,6 @@ def get_sigmas(cov, long=False):
         return (aa, bb, cc, ab, ac, bc)
     else:
         return (np.sqrt(aa), np.sqrt(bb), np.sqrt(cc))
-
-    # a, b, c = np.array([
-    #     np.sqrt(cov[:, 0, 0]),
-    #     np.sqrt(cov[:, 1, 1]),
-    #     np.sqrt(cov[:, 2, 2])
-    # ])
-
-    # return (a, b, c)
 
 
 def get_unit_vec(vec):
@@ -689,67 +659,84 @@ def annular_volume(od: float, id: float = None, length: float = None):
     return annular_volume
 
 
-@np.vectorize(signature='()->(n)')
-def _decimal2dms(decimal: float) -> tuple:
-    minutes, seconds = divmod(abs(decimal) * 3600, 60)
+def _decimal2dms(decimal: tuple, ndigits: int = None) -> tuple:
+    _decimal, direction = decimal
+    _decimal = float(_decimal)
+    minutes, seconds = divmod(abs(_decimal) * 3600, 60)
     _, minutes = divmod(minutes, 60)
-    return np.array([int(decimal), minutes, seconds])
+
+    return np.array([
+        int(_decimal),
+        int(minutes),
+        seconds if ndigits is None else round(seconds, ndigits),
+        direction],
+        dtype=object
+    )
 
 
-def decimal2dms(decimal: float | tuple) -> tuple | NDArray:
+def decimal2dms(decimal: tuple | NDArray, ndigits: int = None) -> tuple | NDArray:
     """Converts a decimal lat, lon to degrees, minutes and seconds.
 
     Parameters
     ----------
-    decimal : float | arraylike
-        A decimal lat or lon or arraylike of lat, lon coordinates.
+    decimal : tuple | arraylike
+        A tuple of (lat, direction) or (lon, direction) or arraylike of 
+        ((lat, direction), (lon, direction)) coordinates.
+    ndigits: int (default is None)
+        If specified, rounds the seconds decimal to the desired number of
+        digits.
 
     Returns
     -------
-    dms: tuple | arraylike
-        A tuple or array of (degrees, minutes, seconds).
+    dms: arraylike
+        An array of (degrees, minutes, seconds, direction).
 
     Examples
     --------
     If you want to convert the lat/lon coordinates for Den Haag from decimals
     to degrees, minutes and seconds:
 
-    >>> LAT, LON = [52.078663000000006, 4.288788]
-    >>> dms = decimal2dms((LAT, LON))
+    >>> LAT, LON = [(52.078663, 'N'), (4.288788, 'E')]
+    >>> dms = decimal2dms((LAT, LON), ndigits=6)
     >>> print(dms)
-    [[52.      4.     43.1868]
-    [ 4.     17.     19.6368]]
+    [[52 4 43.1868 'N']
+     [4 17 19.6368 'E']]
     """
-    dms = _decimal2dms(decimal)
+    dms = np.apply_along_axis(_decimal2dms, -1, decimal, ndigits)
 
-    if dms.shape == (3,):
+    if dms.shape == (4,):
         return tuple(dms)
     else:
         return dms
 
 
-def _dms2decimal(dms: tuple) -> float:
-    degrees, minutes, seconds = dms
-    result = abs(degrees) + minutes / 60 + seconds / 3600
+def _dms2decimal(dms: NDArray, ndigits: int = None) -> NDArray:
+    degrees, minutes, seconds, direction = dms
+    decimal = abs(degrees) + minutes / 60 + seconds / 3600
 
-    if degrees == 0:  # avoid divide by zero errors
-        return result
-    else:
-        return result * abs(degrees) / degrees
+    return np.array([
+        np.copysign(
+            decimal if ndigits is None else round(decimal, ndigits),
+            degrees
+        ),
+        direction
+    ], dtype=object)
 
 
-def dms2decimal(dms: tuple | NDArray) -> float | NDArray:
+def dms2decimal(dms: tuple | NDArray, ndigits: int = None) -> NDArray:
     """Converts a degrees, minutes and seconds lat, lon to decimals.
 
     Parameters
     ----------
     dms : tuple | arraylike
-        A tuple or arraylike of (degrees, minutes, seconds) lat and/or lon or
-        arraylike of lat, lon coordinates.
+        A tuple or arraylike of (degrees, minutes, seconds, direction) lat
+        and/or lon or arraylike of lat, lon coordinates.
+    ndigits: int (default is None)
+        If specified, rounds the decimal to the desired number of digits.
 
     Returns
     -------
-    degrees: tuple | arraylike
+    degrees: arraylike
         A tuple or array of lats and/or longs in decimals.
 
     Examples
@@ -757,12 +744,15 @@ def dms2decimal(dms: tuple | NDArray) -> float | NDArray:
     If you want to convert the lat/lon coordinates for Den Haag from degrees,
     minutes and seconds to decimals:
 
-    >>> LAT, LON = (52, 4, 43.1868), (4, 17, 19.6368)
-    >>> decimal = dms2decimal((LAT, LON))
+    >>> LAT, LON = (52, 4, 43.1868, 'N'), (4, 17, 19.6368, 'E')
+    >>> decimal = dms2decimal((LAT, LON), ndigits=6)
     >>> print(decimal)
-    [52.078663  4.288788]
+    [[52.078663 'N']
+     [4.288788 'E']]
     """
-    result = np.apply_along_axis(_dms2decimal, -1, np.array(dms))
+    result = np.apply_along_axis(
+        _dms2decimal, -1, np.array(dms, dtype=object), ndigits
+    )
 
     if result.shape == ():
         return float(result)
