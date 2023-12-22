@@ -7,17 +7,38 @@ from numpy.typing import NDArray
 from welleng.units import ureg
 from welleng.utils import annular_volume, decimal2dms, dms2decimal
 
-LAT, LON = (52, 4, 43.1868), (4, 17, 19.6368)
+LAT, LON = (52, 4, 43.1868, 'N'), (4, 17, 19.6368, 'E')
 
 
-def _generate_random_dms(n: int) -> NDArray:
+def _generate_random_dms(n: int, ndigits: int = None) -> NDArray:
     """Generates a bunch of lat, lon coordinates.
     """
-    deg = np.random.randint(-180, 180, n)
+    assert n % 2 == 0, "n must be an even int"
+    deg = np.random.randint(0, 180, n)
     min = np.random.randint(0, 60, n)
     sec = np.random.uniform(0, 60, n)
 
-    return np.stack((deg, min, sec), axis=-1).reshape((-1, 2, 3))
+    if ndigits is not None:
+        sec = np.around(sec, ndigits)
+
+    data = {
+        0: 'N', 1: 'S', 2: 'E', 3: 'W'
+    }
+
+    direction = np.array([
+        data.get(d)
+        for d in np.ravel(np.stack((
+            np.random.randint(0, 2, int(n/2)),
+            np.random.randint(2, 4, int(n/2))
+        ), axis=1
+        ))
+    ])
+
+    return np.stack(
+        (deg, min, sec, direction),
+        axis=-1,
+        dtype=object
+    ).reshape((-1, 2, 4))
 
 
 def test_annular_volume():
@@ -34,42 +55,53 @@ def test_annular_volume():
 
 
 def test_decimal2dms():
-    degrees, minutes, seconds = decimal2dms(LAT[0] + LAT[1] / 60 + LAT[2] / 3600)
-    assert (degrees, minutes, round(seconds, 4)) == LAT
+    degrees, minutes, seconds, direction = decimal2dms(
+        (LAT[0] + LAT[1] / 60 + LAT[2] / 3600, LAT[3])
+    )
+    assert (degrees, minutes, round(seconds, 4), direction) == LAT
 
     dms = decimal2dms(np.array([
-        -(LAT[0] + LAT[1] / 60 + LAT[2] / 3600),
-        LON[0] + LON[1] / 60 + LON[2] / 3600
-    ]))
-    assert np.allclose(
+        (LAT[0] + LAT[1] / 60 + LAT[2] / 3600, LAT[3]),
+        (LON[0] + LON[1] / 60 + LON[2] / 3600, LON[3])
+    ]), ndigits=4)
+    assert np.all(np.equal(
         dms,
-        np.array((np.array(LAT) * np.array((-1, 1, 1)), np.array(LON)))
-    )
+        np.array((np.array(LAT, dtype=object), np.array(LON, dtype=object)))
+    ))
 
 
-def test_deg2decimal():
-    decimal = dms2decimal((-LAT[0], LAT[1], LAT[2]))  # check it handles westerly
-    assert decimal == -(LAT[0] + LAT[1] / 60 + LAT[2] / 3600)
+def test_dms2decimal():
+    decimal = dms2decimal((-LAT[0], LAT[1], LAT[2], LAT[3]))  # check it handles westerly
+    assert np.all(np.equal(
+        decimal,
+        np.array([
+            -(LAT[0] + LAT[1] / 60 + LAT[2] / 3600),
+            LAT[3]
+        ], dtype=object)
+    ))
 
     decimals = dms2decimal((LAT, LON))
-    assert np.allclose(decimals, np.array((dms2decimal(LAT), dms2decimal(LON))))
+    assert np.all(np.equal(
+        decimals,
+        np.array((dms2decimal(LAT), dms2decimal(LON)))
+    ))
 
     decimals = dms2decimal(((LAT, LON), (LON, LAT)))
-    assert np.allclose(
+    assert np.all(np.equal(
         decimals,
         np.array((
             (dms2decimal(LAT), dms2decimal(LON)),
             (dms2decimal(LON), dms2decimal(LAT))
         ))
-    )
+    ))
 
 
 def test_dms2decimal2dms():
-    _dms = _generate_random_dms(int(1e3))
+    _dms = _generate_random_dms(int(1e3), 8)
     decimal = dms2decimal(_dms)
-    dms = decimal2dms(decimal)
+    dms = decimal2dms(decimal, 8)
 
-    assert np.allclose(_dms, dms)
+    assert np.all(np.equal(_dms, dms))
 
 
 def one_function_to_run_them_all():
