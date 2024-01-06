@@ -92,8 +92,12 @@ for i, well in enumerate(tqdm(wells)):
 
 # create a trimesh scene and plot with welleng plotter
 print("Making a scene and plotting...")
-scene = we.mesh.make_trimesh_scene(data)
-we.visual.plot(scene)
+plt = we.visual.Plotter()
+for well in data.values():
+    plt.add(well)
+plt.show()
+# scene = we.mesh.make_trimesh_scene(data)
+# we.visual.plot(scene)
 
 ##########################################################################
 # if you wanted to export a transformed scene so that you can, for example

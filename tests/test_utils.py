@@ -1,5 +1,6 @@
 import inspect
 import sys
+import unittest
 
 import numpy as np
 from numpy.typing import NDArray
@@ -41,89 +42,88 @@ def _generate_random_dms(n: int, ndigits: int = None) -> NDArray:
     ).reshape((-1, 2, 4))
 
 
-def test_annular_volume():
-    av = annular_volume(
-        od=ureg('12.25 inch').to('meter'),
-        id=ureg(f'{9+5/8} inch').to('meter'),
-        length=ureg('1000 meter')
-    )
+class UtilsTest(unittest.TestCase):
+    def test_annular_volume(self):
+        av = annular_volume(
+            od=ureg('12.25 inch').to('meter'),
+            id=ureg(f'{9+5/8} inch').to('meter'),
+            length=ureg('1000 meter')
+        )
 
-    assert av.m == 3.491531223156194
-    assert str(av.u) == 'meter ** 3'
-
-    pass
-
-
-def test_decimal2dms():
-    degrees, minutes, seconds, direction = decimal2dms(
-        (LAT[0] + LAT[1] / 60 + LAT[2] / 3600, LAT[3])
-    )
-    assert (degrees, minutes, round(seconds, 4), direction) == LAT
-
-    dms = decimal2dms(np.array([
-        (LAT[0] + LAT[1] / 60 + LAT[2] / 3600, LAT[3]),
-        (LON[0] + LON[1] / 60 + LON[2] / 3600, LON[3])
-    ]), ndigits=4)
-    assert np.all(np.equal(
-        dms,
-        np.array((np.array(LAT, dtype=object), np.array(LON, dtype=object)))
-    ))
-
-
-def test_dms2decimal():
-    decimal = dms2decimal((-LAT[0], LAT[1], LAT[2], LAT[3]))  # check it handles westerly
-    assert np.all(np.equal(
-        decimal,
-        np.array([
-            -(LAT[0] + LAT[1] / 60 + LAT[2] / 3600),
-            LAT[3]
-        ], dtype=object)
-    ))
-
-    decimals = dms2decimal((LAT, LON))
-    assert np.all(np.equal(
-        decimals,
-        np.array((dms2decimal(LAT), dms2decimal(LON)))
-    ))
-
-    decimals = dms2decimal(((LAT, LON), (LON, LAT)))
-    assert np.all(np.equal(
-        decimals,
-        np.array((
-            (dms2decimal(LAT), dms2decimal(LON)),
-            (dms2decimal(LON), dms2decimal(LAT))
-        ))
-    ))
-
-
-def test_dms2decimal2dms():
-    _dms = _generate_random_dms(int(1e3), 8)
-    decimal = dms2decimal(_dms)
-    dms = decimal2dms(decimal, 8)
-
-    assert np.all(np.equal(_dms, dms))
-
-
-def one_function_to_run_them_all():
-    """
-    Function to gather the test functions so that they can be tested by
-    running this module.
-
-    https://stackoverflow.com/questions/18907712/python-get-list-of-all-
-    functions-in-current-module-inspecting-current-module
-    """
-    test_functions = [
-        obj for name, obj in inspect.getmembers(sys.modules[__name__])
-        if (inspect.isfunction(obj)
-            and name.startswith('test')
-            and name != 'all')
-    ]
-
-    for f in test_functions:
-        f()
+        assert av.m == 3.491531223156194
+        assert str(av.u) == 'meter ** 3'
 
         pass
 
+    def test_decimal2dms(self):
+        degrees, minutes, seconds, direction = decimal2dms(
+            (LAT[0] + LAT[1] / 60 + LAT[2] / 3600, LAT[3])
+        )
+        assert (degrees, minutes, round(seconds, 4), direction) == LAT
+
+        dms = decimal2dms(np.array([
+            (LAT[0] + LAT[1] / 60 + LAT[2] / 3600, LAT[3]),
+            (LON[0] + LON[1] / 60 + LON[2] / 3600, LON[3])
+        ]), ndigits=4)
+        assert np.all(np.equal(
+            dms,
+            np.array((np.array(LAT, dtype=object), np.array(LON, dtype=object)))
+        ))
+
+    def test_dms2decimal(self):
+        decimal = dms2decimal((-LAT[0], LAT[1], LAT[2], LAT[3]))  # check it handles westerly
+        assert np.all(np.equal(
+            decimal,
+            np.array([
+                -(LAT[0] + LAT[1] / 60 + LAT[2] / 3600),
+                LAT[3]
+            ], dtype=object)
+        ))
+
+        decimals = dms2decimal((LAT, LON))
+        assert np.all(np.equal(
+            decimals,
+            np.array((dms2decimal(LAT), dms2decimal(LON)))
+        ))
+
+        decimals = dms2decimal(((LAT, LON), (LON, LAT)))
+        assert np.all(np.equal(
+            decimals,
+            np.array((
+                (dms2decimal(LAT), dms2decimal(LON)),
+                (dms2decimal(LON), dms2decimal(LAT))
+            ))
+        ))
+
+    def test_dms2decimal2dms(self):
+        _dms = _generate_random_dms(int(1e3), 8)
+        decimal = dms2decimal(_dms)
+        dms = decimal2dms(decimal, 8)
+
+        assert np.all(np.equal(_dms, dms))
+
+
+# def one_function_to_run_them_all():
+#     """
+#     Function to gather the test functions so that they can be tested by
+#     running this module.
+
+#     https://stackoverflow.com/questions/18907712/python-get-list-of-all-
+#     functions-in-current-module-inspecting-current-module
+#     """
+#     test_functions = [
+#         obj for name, obj in inspect.getmembers(sys.modules[__name__])
+#         if (inspect.isfunction(obj)
+#             and name.startswith('test')
+#             and name != 'all')
+#     ]
+
+#     for f in test_functions:
+#         f()
+
+#         pass
+
 
 if __name__ == '__main__':
-    one_function_to_run_them_all()
+    unittest.main()
+    # one_function_to_run_them_all()

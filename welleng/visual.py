@@ -4,11 +4,17 @@ try:
 except ImportError:
     TRIMESH = False
 try:
-    from vedo import trimesh2vedo, Lines, Sphere
+    import vedo
+    from vedo import Lines, Mesh
+    from vedo import Plotter as VedoPlotter
+    from vedo import Point, Text2D, mag, plotter_instance
+    from vedo.addons import Icon, compute_visible_bounds
+    from vedo.utils import buildPolyData
     VEDO = True
 except ImportError:
     VEDO = False
 import numpy as np
+from scipy.spatial import KDTree
 
 try:
     import plotly.graph_objects as go
@@ -17,220 +23,226 @@ try:
 except ImportError:
     PLOTLY = False
 
-from vtk import (
-        vtkCubeAxesActor, vtkNamedColors, vtkInteractorStyleTerrain
-)
-from vtkmodules.vtkRenderingCore import (
-    vtkRenderWindow, vtkRenderWindowInteractor, vtkRenderer
-)
-from vtkmodules.vtkInteractionWidgets import (
-    vtkCameraOrientationWidget,
-    vtkOrientationMarkerWidget
-)
+from vtk import vtkAxesActor, vtkCubeAxesActor, vtkNamedColors
 
+from . import mesh
 from .version import __version__ as VERSION
 
 # VEDO = False
 
-class Plotter(vtkRenderer):
-    def __init__(self, data=None, **kwargs):
-        super().__init__()
 
+class Plotter(VedoPlotter):
+    def __init__(self, *args, **kwargs):
         """
-        A vtk wrapper for quickly visualizing well trajectories for QAQC
-        purposes. Initiates a vtkRenderer instance and populates it with
-        mesh data and a suitable axes for viewing well trajectory data.
-
-        Parameters
-        ----------
-        data: obj or list(obj)
-            A trimesh.Trimesh object or a list of trimesh.Trimesh
-            objects or a trimesh.scene object
-        names: list of strings (default: None)
-            A list of names, index aligned to the list of well meshes.
-        colors: list of strings (default: None)
-            A list of color or colors. If a single color is listed then this is
-            applied to all meshes in data, otherwise the list of colors is
-            indexed to the list of meshes.
+        Notes
+        -----
+        On account of Z or TVD pointing down in the drilling world, the
+        coordinate system is right handed. In order to map coordinates in the
+        NEV (or North, East, Vertical) reference correctly, North coordinates
+        are plotted on the X axis and East on the Y axis. Be mindful of this
+        adding objects to a scene.
         """
-        assert all((VEDO, TRIMESH)), \
-            "ImportError: try pip install welleng[easy]"
+        super().__init__(*args, **kwargs)
 
-        if data is not None:
-            names = kwargs.get('names')
+        self.wells = []
 
-            if isinstance(data, trimesh.scene.scene.Scene):
-                meshes = [v for k, v in data.geometry.items()]
-                if names is None:
-                    names = list(data.geometry.keys())
+        pass
 
-            # handle a single mesh being passed
-            elif isinstance(data, trimesh.Trimesh):
-                meshes = [data]
+    def add(self, obj, *args, **kwargs) -> None:
+        """Modified method to support direct plotting of
+        ``welleng.mesh.WellMesh`` instances and for processing the callback
+        to print well data when the pointer is hovered of a well trajectory.
 
-            else:
-                meshes = data
-                if names is not None:
-                    assert len(names) == len(data), \
-                        "Names must be length of meshes list else None"
+        If the ``obj`` is a ``welleng.mesh.WellMesh`` instance, then the args
+        and kwargs will be passed to the `vedo.Mesh` instance to facilate e.g.
+        color options etc.
 
-            colors = kwargs.get('colors')
-            if colors is not None:
-                if len(colors) == 1:
-                    colors = colors * len(meshes)
-                else:
-                    assert len(colors) == len(meshes), \
-                        "Colors must be length of meshes list, 1 else None"
+        Notes
+        -----
+        ``welleng.mesh.WellMesh`` creates ``trimesh.Mesh`` instances, a legacy
+        of using the ``trimesh`` library for detecting mesh collisions when
+        developing automated well trajectory planning. Therefore, to visualize
+        the meshes with ``vedo`` and ``vtk``, the meshes need to be converted.
 
-            points = kwargs.get('points')
-            if points is not None:
-                points = [
-                    Sphere(p, r=30, c='grey')
-                    for p in points
-                ]
-
-            meshes_vedo = []
-            for i, mesh in enumerate(meshes):
-                if i == 0:
-                    vertices = np.array(mesh.vertices)
-                    start_locations = np.array([mesh.vertices[0]])
-                else:
-                    vertices = np.concatenate(
-                        (vertices, np.array(mesh.vertices)),
-                        axis=0
-                    )
-                    start_locations = np.concatenate(
-                        (start_locations, np.array([mesh.vertices[0]])),
-                        axis=0
-                    )
-
-                # convert to vedo mesh
-                m_vedo = trimesh2vedo(mesh)
-                if colors is not None:
-                    m_vedo.c(colors[i])
-                if names is not None:
-                    m_vedo.name = names[i]
-                    # m_vedo.flag()
-                meshes_vedo.append(m_vedo)
-
-                for mesh in meshes_vedo:
-                    if mesh is None:
-                        continue
-                    self.AddActor(mesh)
-
-                for obj in kwargs.values():
-                    if isinstance(obj, list):
-                        for item in obj:
-                            try:
-                                self.AddActor(item)
-                            except TypeError:
-                                pass
-                    else:
-                        try:
-                            self.AddActor(obj)
-                        except TypeError:
-                            pass
-
-        self.namedColors = vtkNamedColors()
-
-        self.colors = {}
-        self.colors['background'] = kwargs.get('background', 'LightGrey')
-        self.colors['background2'] = kwargs.get('background', 'Lavender')
-
-    def add_axes(self, **kwargs):
-        axes = CubeAxes(self, **kwargs)
-        self.AddActor(axes)
-
-    def get_center(self):
-        min, max = np.array(self.ComputeVisiblePropBounds()).reshape(-1, 3)
-        center = min + (max - min) / 2
-
-        return tuple(center)
-
-    def show(self, add_axes=True, orientation_marker=False, **kwargs):
+        Meshes in ``welleng`` typically reference an 'NEV' coordinate system,
+        which is [North, East, Vertical]. To map correctly to ``vtk``, North
+        needs to be mapped to X and East to Y on account of Z pointing down.
         """
-        Convenient method for opening a window to view the rendered scene.
-        """
-        if add_axes:
-            self.add_axes(**kwargs)
+        if isinstance(obj, mesh.WellMesh):
+            poly = buildPolyData(obj.mesh.vertices, obj.mesh.faces)
+            vedo_mesh = Mesh(poly, *args, *kwargs)
+            setattr(obj, 'vedo_mesh', vedo_mesh)
+            self.wells.append(obj)
+            super().add(obj.vedo_mesh)
+        else:
+            super().add(obj)
 
-        self.GetActiveCamera().Azimuth(kwargs.get('azimuth', 30))
-        self.GetActiveCamera().Elevation(kwargs.get('elevation', 30))
-        self.GetActiveCamera().SetViewUp(0, 0, -1)
-        # self.GetActiveCamera().SetPosition(tuple(pos_new))
-        self.GetActiveCamera().SetFocalPoint(self.get_center())
+        pass
 
-        self.ResetCamera()
-        self.SetBackground(
-            self.namedColors.GetColor3d(self.colors['background'])
+    def _initiate_axes_actor(self):
+        plt = vedo.plotter_instance
+        r = plt.renderers.index(plt.renderer)
+
+        axact = vtkAxesActor()
+        axact.SetShaftTypeToCylinder()
+        axact.SetCylinderRadius(0.03)
+        axact.SetXAxisLabelText("N")
+        axact.SetYAxisLabelText("E")
+        axact.SetZAxisLabelText("V")
+        axact.GetXAxisShaftProperty().SetColor(1, 0, 0)
+        axact.GetYAxisShaftProperty().SetColor(0, 1, 0)
+        axact.GetZAxisShaftProperty().SetColor(0, 0, 1)
+        axact.GetXAxisTipProperty().SetColor(1, 0, 0)
+        axact.GetYAxisTipProperty().SetColor(0, 1, 0)
+        axact.GetZAxisTipProperty().SetColor(0, 0, 1)
+        bc = np.array(plt.renderer.GetBackground())
+        if np.sum(bc) < 1.5:
+            lc = (1, 1, 1)
+        else:
+            lc = (0, 0, 0)
+        axact.GetXAxisCaptionActor2D().GetCaptionTextProperty().BoldOff()
+        axact.GetYAxisCaptionActor2D().GetCaptionTextProperty().BoldOff()
+        axact.GetZAxisCaptionActor2D().GetCaptionTextProperty().BoldOff()
+        axact.GetXAxisCaptionActor2D().GetCaptionTextProperty().ItalicOff()
+        axact.GetYAxisCaptionActor2D().GetCaptionTextProperty().ItalicOff()
+        axact.GetZAxisCaptionActor2D().GetCaptionTextProperty().ItalicOff()
+        axact.GetXAxisCaptionActor2D().GetCaptionTextProperty().ShadowOff()
+        axact.GetYAxisCaptionActor2D().GetCaptionTextProperty().ShadowOff()
+        axact.GetZAxisCaptionActor2D().GetCaptionTextProperty().ShadowOff()
+        axact.GetXAxisCaptionActor2D().GetCaptionTextProperty().SetColor(lc)
+        axact.GetYAxisCaptionActor2D().GetCaptionTextProperty().SetColor(lc)
+        axact.GetZAxisCaptionActor2D().GetCaptionTextProperty().SetColor(lc)
+        axact.PickableOff()
+        icn = Icon(axact, size=0.1)
+        plt.axes_instances[r] = icn
+        icn.SetInteractor(plt.interactor)
+        icn.EnabledOn()
+        icn.InteractiveOff()
+        plt.widgets.append(icn)
+
+    def _pointer_callback(self, event):
+        i = event.at
+        pt2d = event.picked2d
+        objs = self.at(i).objects
+        pt3d = self.at(i).compute_world_coordinate(pt2d, objs=objs)
+        if mag(pt3d) < 0.01:
+            if self.pointer is None:
+                return
+            # if self.pointer in self.at(i).actors:
+            self.at(i).remove(self.pointer)
+            self.pointer = None
+            self.pointer_text.text('')
+            self.render()
+            return
+        if self.pointer is None:
+            self.pointer = Point().color('red').pos(pt3d)
+        else:
+            self.pointer.pos(pt3d)
+        self.at(i).add(self.pointer)
+
+        well_data = self._get_closest_well(pt3d, objs)
+        if well_data is None:
+            self.pointer_text.text(f'point coordinates: {np.round(pt3d, 3)}')
+        else:
+            survey = well_data.get('well').s
+            idx = well_data.get('idx_survey')
+            name = survey.header.name
+            md = survey.md[idx]
+            inc = survey.inc_deg[idx]
+            azi_grid = survey.azi_grid_deg[idx]
+            self.pointer_text.text(f'''
+                well name: {name}\n
+                md: {md:.2f}\t inc: {inc:.2f}\t azi: {azi_grid:.2f}\n
+                point coordinates: {np.round(pt3d, 3)}
+            ''')
+        self.render()
+
+    def _well_vedo_meshes(self):
+        return [well.vedo_mesh for well in self.wells]
+
+    def _get_closest_well(self, pos, objs) -> dict:
+        wells = [
+            well for well in self.wells
+            if well.vedo_mesh in objs
+        ]
+        if not bool(wells):
+            return
+
+        results = np.zeros((len(wells), 3))
+        for i, well in enumerate(wells):
+            tree = KDTree(well.vertices.reshape(-1, 3))
+            distance, idx_vertices = tree.query(pos)
+            results[i] = np.array([distance, idx_vertices, well.n_verts])
+
+        winner = np.argmin(results[:, 0])
+        distance, idx_vertices, n_verts = results[winner]
+
+        return {
+            'well': wells[winner],
+            'distance': distance,
+            'idx_vertices': int(idx_vertices),
+            'n_verts': int(n_verts),
+            'idx_survey': int(idx_vertices // n_verts)
+        }
+
+    def show(self, axes=None, *args, **kwargs):
+        # check if there's an axes and if so remove them
+        if self.axes is not None:
+            self.remove(self.axes)
+
+        self._initiate_axes_actor()
+
+        self.add_callback('mouse move', self._pointer_callback)
+        self.pointer_text = Text2D("", pos='bottom-right', s=0.5, c='black')
+        self.add(self.pointer_text)
+        self.pointer = None
+
+        self = super().show(
+            viewup=[0, 0, -1], mode=8,
+            axes=CubeAxes() if axes is None else axes,
+            title=f'welleng {VERSION}',
+            *args, **kwargs
         )
-        self.SetBackground2(
-            self.namedColors.GetColor3d(self.colors['background2'])
-        )
 
-        setSize = kwargs.get('setSize', (1200, 900))
-
-        renderWindow = vtkRenderWindow()
-
-        renderWindow.AddRenderer(self)
-        renderWindow.SetSize(*(setSize))
-        renderWindow.SetWindowName(f'welleng {VERSION}')
-
-        renderWindowInteractor = vtkRenderWindowInteractor()
-        renderWindowInteractor.SetRenderWindow(renderWindow)
-        renderWindowInteractor.SetInteractorStyle(vtkInteractorStyleTerrain())
-
-        renderWindow.Render()
-        self.GetActiveCamera().Zoom(0.8)
-
-        interactive = kwargs.get('interactive', True)
-
-        if orientation_marker:
-            cow = vtkCameraOrientationWidget()
-            cow.SetParentRenderer(self)
-            # cow.SetDefaultRenderer(self)
-
-            cow.Off()
-            cow.EnabledOn()
-
-        if interactive:
-            renderWindowInteractor.Start()
+        return self
 
 
 class CubeAxes(vtkCubeAxesActor):
-    def __init__(self, renderer, **kwargs):
+    def __init__(
+        self,
+        **kwargs
+    ):
         super().__init__()
 
-        # Determine the bounds from the meshes/actors being plotted rounded
-        # up to the nearest 100 units.
-        bounds = np.array(renderer.ComputeVisiblePropBounds())
+        # # Determine the bounds from the meshes/actors being plotted rounded
+        # # up to the nearest 100 units.
+        # bounds = np.array(renderer.ComputeVisiblePropBounds())
 
-        with np.errstate(divide='ignore', invalid='ignore'):
-            self.bounds = tuple(np.nan_to_num(
-                (
-                    np.ceil(np.abs(bounds) / 100) * 100
-                ) * (bounds / np.abs(bounds))
-            ))
+        # with np.errstate(divide='ignore', invalid='ignore'):
+        #     self.bounds = tuple(np.nan_to_num(
+        #         (
+        #             np.ceil(np.abs(bounds) / 100) * 100
+        #         ) * (bounds / np.abs(bounds))
+        #     ))
+
+        plt = vedo.plotter_instance
+        r = plt.renderers.index(plt.renderer)
+        vbb = compute_visible_bounds()[0]
+        self.SetBounds(vbb)
+        self.SetCamera(plt.renderer.GetActiveCamera())
 
         namedColors = vtkNamedColors()
         self.colors = {}
 
         for n in range(1, 4):
             self.colors[f'axis{n}Color'] = namedColors.GetColor3d(
-                kwargs.get('axis1Color', 'DarkGrey')
+                kwargs.get(f'axis{n}Color', 'Black')
             )
 
-        self.SetLabelScaling(0, 0, 0, 0)
+        # self.SetUseTextActor3D(1)
 
-        # Try and prevent scientific numbering on axes
-        self.SetXLabelFormat("%.0f")
-        self.SetYLabelFormat("%.0f")
-        self.SetZLabelFormat("%.0f")
-
-        self.SetUseTextActor3D(1)
-
-        self.SetBounds(self.bounds)
-        self.SetCamera(renderer.GetActiveCamera())
+        # self.SetBounds(self.bounds)
+        # self.SetCamera(renderer.GetActiveCamera())
 
         self.GetTitleTextProperty(0).SetColor(self.colors['axis1Color'])
         self.GetLabelTextProperty(0).SetColor(self.colors['axis1Color'])
@@ -244,26 +256,45 @@ class CubeAxes(vtkCubeAxesActor):
         self.GetLabelTextProperty(2).SetColor(self.colors['axis3Color'])
         self.GetLabelTextProperty(2).SetOrientation(45.0)
 
-        self.DrawXGridlinesOn()
-        self.DrawYGridlinesOn()
-        self.DrawZGridlinesOn()
         self.SetGridLineLocation(self.VTK_GRID_LINES_FURTHEST)
+        for a in ('X', 'Y', 'Z'):
+            getattr(self, f'Get{a}AxesLinesProperty')().SetColor(
+                namedColors.GetColor3d('Black')
+            )
+            getattr(self, f'SetDraw{a}Gridlines')(1)
+            getattr(self, f'Get{a}AxesGridlinesProperty')().SetColor(
+                namedColors.GetColor3d('Grey')
+            )
+            getattr(self, f'{a}AxisMinorTickVisibilityOff')()
 
-        self.XAxisMinorTickVisibilityOff()
-        self.YAxisMinorTickVisibilityOff()
-        self.ZAxisMinorTickVisibilityOff()
+        # self.DrawXGridlinesOn()
+        # self.DrawYGridlinesOn()
+        # self.DrawZGridlinesOn()
+        # self.SetGridLineLocation(self.VTK_GRID_LINES_FURTHEST)
 
-        units = kwargs.get('units', 'meters')
-        self.SetXTitle('East')
+        # self.XAxisMinorTickVisibilityOff()
+        # self.YAxisMinorTickVisibilityOff()
+        # self.ZAxisMinorTickVisibilityOff()
+
+        units = kwargs.get('units', None)
+        self.SetXTitle('N')
         self.SetXUnits(units)
-        self.SetYTitle('North')
+        self.SetYTitle('E')
         self.SetYUnits(units)
         self.SetZTitle('TVD')
         self.SetZUnits(units)
+        # self.SetTickLocation(self.VTK_GRID_LINES_FURTHEST)
 
+        # self.ForceOpaqueOff()
         self.SetFlyModeToClosestTriad()
+        # Try and prevent scientific numbering on axes
+        self.SetLabelScaling(0, 0, 0, 0)
+        self.SetXLabelFormat("%.0f")
+        self.SetYLabelFormat("%.0f")
+        self.SetZLabelFormat("%.0f")
 
-        self.ForceOpaqueOff()
+        plt.axes_instances[r] = self
+        plt.renderer.AddActor(self)
 
 
 def plot(
