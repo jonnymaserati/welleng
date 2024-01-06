@@ -1,5 +1,3 @@
-import inspect
-import sys
 import unittest
 
 import numpy as np
@@ -73,6 +71,15 @@ class UtilsTest(unittest.TestCase):
             (LAT[0] + LAT[1] / 60 + LAT[2] / 3600),
             (LON[0] + LON[1] / 60 + LON[2] / 3600)
         ]).reshape((-1, 1)), ndigits=4)
+        assert np.all(np.equal(
+            dms,
+            np.array((np.array(LAT[:3]), np.array(LON[:3])))
+        ))
+
+        dms = decimal2dms(np.array([
+            (LAT[0] + LAT[1] / 60 + LAT[2] / 3600),
+            (LON[0] + LON[1] / 60 + LON[2] / 3600)
+        ]), ndigits=4)
         assert np.all(np.equal(
             dms,
             np.array((np.array(LAT[:3]), np.array(LON[:3])))

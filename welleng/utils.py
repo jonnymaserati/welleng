@@ -710,15 +710,20 @@ def decimal2dms(decimal: tuple | NDArray, ndigits: int = None) -> tuple | NDArra
     [[52 4 43.1868 'N']
      [4 17 19.6368 'E']]
     """
+    flag = False
+    _decimal = np.array(decimal)
+    if _decimal.dtype == np.float64:
+        _decimal = _decimal.reshape((-1, 1))
+        flag = True
     try:
-        dms = np.apply_along_axis(_decimal2dms, -1, decimal, ndigits)
+        dms = np.apply_along_axis(_decimal2dms, -1, _decimal, ndigits)
     except np.exceptions.AxisError:
-        dms = _decimal2dms(decimal, ndigits)
+        dms = _decimal2dms(_decimal, ndigits)
 
     if dms.shape == (4,):
         return tuple(dms)
     else:
-        return dms
+        return dms.reshape((-1, 3)) if flag else dms
 
 
 def _dms2decimal(dms: NDArray, ndigits: int = None) -> NDArray:
