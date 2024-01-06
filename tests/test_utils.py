@@ -61,6 +61,23 @@ class UtilsTest(unittest.TestCase):
         )
         assert (degrees, minutes, round(seconds, 4), direction) == LAT
 
+        dms = decimal2dms(
+            (LAT[0] + LAT[1] / 60 + LAT[2] / 3600), ndigits=4
+        )
+        assert np.all(np.equal(
+            dms,
+            np.array((np.array(LAT[:3])))
+        ))
+
+        dms = decimal2dms(np.array([
+            (LAT[0] + LAT[1] / 60 + LAT[2] / 3600),
+            (LON[0] + LON[1] / 60 + LON[2] / 3600)
+        ]).reshape((-1, 1)), ndigits=4)
+        assert np.all(np.equal(
+            dms,
+            np.array((np.array(LAT[:3]), np.array(LON[:3])))
+        ))
+
         dms = decimal2dms(np.array([
             (LAT[0] + LAT[1] / 60 + LAT[2] / 3600, LAT[3]),
             (LON[0] + LON[1] / 60 + LON[2] / 3600, LON[3])
@@ -80,10 +97,19 @@ class UtilsTest(unittest.TestCase):
             ], dtype=object)
         ))
 
+        decimal = dms2decimal((LAT[:3]))
+        assert decimal == LAT[0] + LAT[1] / 60 + LAT[2] / 3600
+
+        decimals = dms2decimal((LAT[:3], LON[:3]))
+        assert np.all(np.equal(
+            decimals,
+            np.array((dms2decimal(LAT[:3]), dms2decimal(LON[:3])))
+        ))
+
         decimals = dms2decimal((LAT, LON))
         assert np.all(np.equal(
             decimals,
-            np.array((dms2decimal(LAT), dms2decimal(LON)))
+            np.array((dms2decimal(LAT), dms2decimal(LON))).reshape(decimals.shape)
         ))
 
         decimals = dms2decimal(((LAT, LON), (LON, LAT)))
