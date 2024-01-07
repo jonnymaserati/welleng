@@ -486,7 +486,8 @@ def errors_from_cov(cov, data=False):
     if data:
         return {
             i: {
-                'nn': _nn, 'ne': _ne, 'nv': _nv, 'ee': _ee, 'ev': _ev, 'vv': _vv
+                'nn': _nn, 'ne': _ne, 'nv': _nv,
+                'ee': _ee, 'ev': _ev, 'vv': _vv
             }
             for i, (_nn, _ne, _nv, _ee, _ev, _vv)
             in enumerate(zip(nn, ne, nv, ee, ev, vv))
@@ -660,7 +661,11 @@ def annular_volume(od: float, id: float = None, length: float = None):
 
 
 def _decimal2dms(decimal: tuple, ndigits: int = None) -> tuple:
-    _decimal, direction = decimal
+    try:
+        _decimal, direction = decimal
+    except (TypeError, ValueError):
+        _decimal = decimal[0] if isinstance(decimal, np.ndarray) else decimal
+        direction = None
     _decimal = float(_decimal)
     minutes, seconds = divmod(abs(_decimal) * 3600, 60)
     _, minutes = divmod(minutes, 60)
@@ -668,10 +673,13 @@ def _decimal2dms(decimal: tuple, ndigits: int = None) -> tuple:
     return np.array([
         int(_decimal),
         int(minutes),
+        seconds if ndigits is None else round(seconds, ndigits)
+    ]) if direction is None else np.array([
+        int(_decimal),
+        int(minutes),
         seconds if ndigits is None else round(seconds, ndigits),
-        direction],
-        dtype=object
-    )
+        direction
+    ], dtype=object)
 
 
 def decimal2dms(decimal: tuple | NDArray, ndigits: int = None) -> tuple | NDArray:
@@ -680,7 +688,7 @@ def decimal2dms(decimal: tuple | NDArray, ndigits: int = None) -> tuple | NDArra
     Parameters
     ----------
     decimal : tuple | arraylike
-        A tuple of (lat, direction) or (lon, direction) or arraylike of 
+        A tuple of (lat, direction) or (lon, direction) or arraylike of
         ((lat, direction), (lon, direction)) coordinates.
     ndigits: int (default is None)
         If specified, rounds the seconds decimal to the desired number of
@@ -702,19 +710,37 @@ def decimal2dms(decimal: tuple | NDArray, ndigits: int = None) -> tuple | NDArra
     [[52 4 43.1868 'N']
      [4 17 19.6368 'E']]
     """
-    dms = np.apply_along_axis(_decimal2dms, -1, decimal, ndigits)
+    flag = False
+    _decimal = np.array(decimal)
+    if _decimal.dtype == np.float64:
+        _decimal = _decimal.reshape((-1, 1))
+        flag = True
+    try:
+        dms = np.apply_along_axis(_decimal2dms, -1, _decimal, ndigits)
+    except np.exceptions.AxisError:
+        dms = _decimal2dms(_decimal, ndigits)
 
     if dms.shape == (4,):
         return tuple(dms)
     else:
-        return dms
+        return dms.reshape((-1, 3)) if flag else dms
 
 
 def _dms2decimal(dms: NDArray, ndigits: int = None) -> NDArray:
-    degrees, minutes, seconds, direction = dms
+    try:
+        degrees, minutes, seconds, direction = dms
+    except ValueError:
+        degrees, minutes, seconds = dms
+        direction = None
+
     decimal = abs(degrees) + minutes / 60 + seconds / 3600
 
     return np.array([
+        np.copysign(
+            decimal if ndigits is None else round(decimal, ndigits),
+            degrees
+        )
+    ]) if direction is None else np.array([
         np.copysign(
             decimal if ndigits is None else round(decimal, ndigits),
             degrees
@@ -756,5 +782,9 @@ def dms2decimal(dms: tuple | NDArray, ndigits: int = None) -> NDArray:
 
     if result.shape == ():
         return float(result)
+    elif result.shape == (1,):
+        return float(result[0])
+    elif result.shape[-1] == 1:
+        return result.reshape(-1)
     else:
         return result
