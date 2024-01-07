@@ -1,3 +1,4 @@
+import re
 from typing import Annotated, Literal, Union
 
 import numpy as np
@@ -788,3 +789,57 @@ def dms2decimal(dms: tuple | NDArray, ndigits: int = None) -> NDArray:
         return result.reshape(-1)
     else:
         return result
+
+
+def pprint_dms(dms, symbols: bool = True, return_data: bool = False):
+    """Pretty prints a (decimal, minutes, seconds) tuple or list.
+
+    Parameters
+    ----------
+    dms: tuple | list
+        An x or y or northing or easting (degree, minute, second).
+    symbols: bool (default: True)
+        Whether to print symbols for (deg, min, sec).
+    return_data: bool (default: False)
+        If True then will return the string rather than print it.
+    """
+    if symbols:
+        try:
+            deg, min, sec = dms
+            text = f"{deg}\N{DEGREE SIGN}, {min}', {sec}\""
+        except ValueError:
+            deg, min, sec, _ = dms
+            text = f"{deg}\N{DEGREE SIGN}, {min}', {sec}\" {_}"
+
+    else:
+        try:
+            deg, min, sec = dms
+            text = f"{deg} deg, {min} min, {sec} sec"
+        except ValueError:
+            deg, min, sec, _ = dms
+            text = f"{deg} deg, {min} min, {sec} sec {_}"
+
+    if return_data:
+        return text
+    else:
+        print(text)
+
+
+def dms_from_string(text):
+    """Extracts the values from a string dms x or y or northing or easting.
+    """
+    pattern = re.compile(r'(\d+)\s*(?:°|deg)?,\s*(\d+)\s*(?:\'|min)?,\s*(\d+(?:\.\d+)?)\s*(sec)?\s*.*?(\S+)?$', re.IGNORECASE)
+    matches = pattern.findall(text)
+
+    if matches:
+        deg, min, sec_str = matches[0][:3]
+        sec = float(sec_str)
+        final_data = matches[0][-1] if matches[0][-1] else None
+
+        if final_data:
+            return (int(deg), int(min), sec, final_data)
+        else:
+            return (int(deg), int(min), sec)
+
+    else:
+        return

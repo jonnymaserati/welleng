@@ -8,7 +8,8 @@ try:
 except ImportError:
     MAG_CALC = False
 from datetime import datetime
-from pyproj import CRS, Proj
+from pyproj import CRS, Proj, Transformer
+from pyproj.enums import TransformDirection
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 
@@ -31,7 +32,7 @@ from .visual import figure
 from .units import ureg
 
 from typing import List, Union
-from numpy.typing import NDArray
+from numpy.typing import NDArray, ArrayLike
 
 
 AZI_REF = ["true", "magnetic", "grid"]
@@ -47,6 +48,19 @@ class SurveyParameters(Proj):
     -----
     Requires ``pyproj`` and ``magnetic_field_calculator`` to be installed and
     access to the internet.
+
+    For reference, here's some EPSG codes:
+    {
+        'UTM31_ED50': 'EPSG:23031',
+        'UTM31_WGS84': 'EPSG:32631',
+        'RD': 'EPSG:28992',
+        'ED50-UTM31': 'EPSG:23031',
+        'ED50-NEDTM': 'EPSG:23095',  # assume same as ED50-UTM31
+        'ETRS89-UTM31': 'EPSG:25831',
+        'ED50-UTM32': 'EPSG:23032',
+        'ED50-GEOGR': 'EPSG:4230',
+        'WGS84-UTM31': 'EPSG:32631'
+    }
 
     References
     ----------
@@ -188,6 +202,53 @@ class SurveyParameters(Proj):
         )
 
         return data
+
+    def transform_coordinates(
+        self, coords: ArrayLike, to_projection: str, altitude: float = None,
+        *args, **kwargs
+    ) -> ArrayLike:
+        """Transforms coordinates from instance's projection to another
+        projection.
+
+        Parameters
+        ----------
+        coords: arraylike
+            A list of decimal coordinates to transform from the instance
+            projection to the specified projection system. Can be 2D or 3D in
+            (x, y, z) format, where x is East/West and y is North/South.
+        to_projection: str
+            The EPSG code of the desired coordinates.
+
+        Returns
+        -------
+        result: ArrayLike
+            An array of transformed coordinates in the desired projection.
+
+        Examples
+        --------
+        Convert the coordinates of Den Haag from ED50-UTM31 to WGS84-UTM31:
+
+        >>> from welleng.survey import SurveyParameters
+        >>> calculator = SurveyParameters('EPSG:23031')
+        >>> result = calculator.transform_coordinates(
+        ...     coords=[(588319.02, 5770571.03)], to_projection='EPSG:32631'
+        ... )
+        >>> print(result)
+        [[ 588225.93417027 5770360.56500115]]
+        """
+        transformer = Transformer.from_crs(
+            self.crs, CRS(to_projection)
+        )
+        _coords = np.array(coords)
+        result = list(transformer.itransform(
+            (
+                _coords.tolist() if len(_coords.shape) > 1
+                else _coords.reshape((1, -1)).tolist()
+            ),
+            direction=TransformDirection('FORWARD'), *args, **kwargs
+        ))
+
+        return np.array(result)
 
 
 class SurveyHeader:

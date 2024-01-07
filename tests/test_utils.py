@@ -4,7 +4,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 from welleng.units import ureg
-from welleng.utils import annular_volume, decimal2dms, dms2decimal
+from welleng.utils import (
+    annular_volume, decimal2dms, dms2decimal, pprint_dms, dms_from_string
+)
 
 LAT, LON = (52, 4, 43.1868, 'N'), (4, 17, 19.6368, 'E')
 
@@ -38,6 +40,10 @@ def _generate_random_dms(n: int, ndigits: int = None) -> NDArray:
         axis=-1,
         dtype=object
     ).reshape((-1, 2, 4))
+
+
+def are_tuples_identical(tuple1, tuple2):
+    return all(x == y for x, y in zip(tuple1, tuple2))
 
 
 class UtilsTest(unittest.TestCase):
@@ -134,6 +140,29 @@ class UtilsTest(unittest.TestCase):
         dms = decimal2dms(decimal, 8)
 
         assert np.all(np.equal(_dms, dms))
+
+    def test_pprint_dms(self):
+        result = pprint_dms(LAT, return_data=True)
+        data = dms_from_string(result)
+
+        assert are_tuples_identical(LAT, data)
+
+        result = pprint_dms(LAT, return_data=True, symbols=False)
+        data = dms_from_string(result)
+
+        assert are_tuples_identical(LAT, data)
+
+        result = pprint_dms(LAT[:3], return_data=True)
+        data = dms_from_string(result)
+
+        assert are_tuples_identical(LAT[:3], data)
+
+        result = pprint_dms(LAT[:3], return_data=True, symbols=False)
+        data = dms_from_string(result)
+
+        assert are_tuples_identical(LAT[:3], data)
+
+        pass
 
 
 # def one_function_to_run_them_all():
