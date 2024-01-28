@@ -17,4 +17,4 @@ def test_survey():
         ),
         step=30.
     )
-    return survey
+    assert isinstance(survey, we.survey.Survey)
