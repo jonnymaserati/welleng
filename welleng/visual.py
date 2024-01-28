@@ -70,7 +70,7 @@ class Plotter(VedoPlotter):
         """
         if isinstance(obj, mesh.WellMesh):
             poly = buildPolyData(obj.mesh.vertices, obj.mesh.faces)
-            vedo_mesh = Mesh(poly, *args, *kwargs)
+            vedo_mesh = Mesh(poly, *args, **kwargs)
             setattr(obj, 'vedo_mesh', vedo_mesh)
             self.wells.append(obj)
             super().add(obj.vedo_mesh)
@@ -150,9 +150,10 @@ class Plotter(VedoPlotter):
             md = survey.md[idx]
             inc = survey.inc_deg[idx]
             azi_grid = survey.azi_grid_deg[idx]
+            dls = survey.dls[idx]
             self.pointer_text.text(f'''
                 well name: {name}\n
-                md: {md:.2f}\t inc: {inc:.2f}\t azi: {azi_grid:.2f}\n
+                md: {md:.2f}\t inc: {inc:.2f}\t azi: {azi_grid:.2f}\t dls: {dls:.2f}\n
                 point coordinates: {np.round(pt3d, 3)}
             ''')
         self.render()

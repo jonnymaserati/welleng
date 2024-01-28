@@ -367,6 +367,7 @@ class Connector:
         self.md2 = self.md1 + abs(self.dist_curve)
         self.md_target = self.md2 + self.tangent_length
         self.vec2 = self.vec_target
+        self.dls = np.degrees(self.dogleg) / abs(self.dist_curve) * 30
 
     def _min_curve_to_target(self):
         (
@@ -388,6 +389,7 @@ class Connector:
         )
         self._get_angles_target()
         self._get_md_target()
+        self.dls = np.degrees(self.dogleg) / self.dist_curve * 30
 
     def _use_method(self):
         if self.method == 'hold':
@@ -695,7 +697,15 @@ class Connector:
                         self.dls - self.dls2
                     ) < self.delta_dls,
                     np.allclose(self.pos1, self.pos2),
-                    np.allclose(self.pos3, self.pos_target)
+                    np.allclose(self.pos3, self.pos_target),
+                    all((
+                        np.allclose(self.pos3, self.pos3_list[-5:]),
+                        np.allclose(self.pos2, self.pos2_list[-5:])
+                    )),
+                    all((
+                        self.dls == self.dls_design,
+                        self.dls2 == self.dls_design2
+                    ))
                 )):
                     break
             self._happy_finish()
@@ -751,6 +761,8 @@ class Connector:
         self.md3 = self.md2 + tangent_length
 
         self.md_target = self.md3 + abs(self.dist_curve2)
+
+        return self
 
     def interpolate(self, step=30):
         return interpolate_well([self], step)
@@ -819,6 +831,8 @@ def minimize_target_pos_and_vec_defined(
         c.pos3 = pos2_init + (
             pos3_init - pos2_init
         ) / 2
+    # else:
+    #     c.pos3 = c.pos2 + (c.pos3 - c.pos2) / 2
     c.distances1 = c._get_distances(c.pos1, c.vec1, c.pos3)
 
     radius_temp1 = get_radius_critical(
@@ -935,12 +949,12 @@ def minimize_target_pos_and_vec_defined(
         abs(c.radius_critical - c.radius_critical2)
     )
     c.dls = max(
-        dls_from_radius(c.radius_design),
-        dls_from_radius(c.radius_critical)
+        np.radians(dls_from_radius(c.radius_design)),
+        np.radians(dls_from_radius(c.radius_critical))
     )
     c.dls2 = max(
-        dls_from_radius(c.radius_design2),
-        dls_from_radius(c.radius_critical2)
+        np.radians(dls_from_radius(c.radius_design2)),
+        np.radians(dls_from_radius(c.radius_critical2))
     )
 
     if c.error:
@@ -1111,7 +1125,10 @@ def min_curve_to_target(distances):
                 2 * dist_norm_to_target
             )
         )
-    assert radius_critical > 0
+        if np.isnan(radius_critical):
+            radius_critical = np.nan
+        else:
+            assert radius_critical > 0
 
     dogleg = (
         2 * np.arctan2(
@@ -1145,7 +1162,10 @@ def get_radius_critical(radius, distances, min_error):
         )
     ) * (1 - min_error)
 
-    assert radius_critical > 0
+    if np.isnan(radius_critical):
+        radius_critical = np.nan
+    else:
+        assert radius_critical > 0
 
     return radius_critical
 
@@ -1225,7 +1245,7 @@ def interpolate_curve(
 ):
     # sometimes the curve section has no length
     # this if statement handles this event
-    if dist_curve == 0:
+    if any((dist_curve == 0, np.isnan(dist_curve))):
         inc, azi = get_angles(vec1, nev=True).T
         data = dict(
             md=np.array([md1]),
@@ -1627,6 +1647,7 @@ if NUMBA:
         min_dist_to_target,
         get_radius_critical,
         angle,
-        get_dogleg
+        get_dogleg,
+        check_dogleg
     )
     numbafy(NUMBAFY)
