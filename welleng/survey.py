@@ -185,13 +185,16 @@ class SurveyParameters(Proj):
             convergence=result.meridian_convergence,
             scale_factor=result.meridional_scale,
             magnetic_field_intensity=(
-                result_magnetic.get('field-value').get('total-intensity').get('value')
+                None if result_magnetic is None
+                else result_magnetic.get('field-value').get('total-intensity').get('value')
             ),
             declination=(
-                result_magnetic.get('field-value').get('declination').get('value')
+                None if result_magnetic is None
+                else result_magnetic.get('field-value').get('declination').get('value')
             ),
             dip=(
-                result_magnetic.get('field-value').get('inclination').get('value')
+                None if result_magnetic is None
+                else result_magnetic.get('field-value').get('inclination').get('value')
                 * (
                     -1 if "down" in result_magnetic.get('field-value').get('inclination').get('units')
                     else 1
@@ -1559,10 +1562,8 @@ def _interpolate_survey(survey, x=0, index=0):
             2), with the interpolated station between them (index 1)
 
     """
-    if isinstance(index, np.ndarray):
-        index = index[0]
-
-    index = int(index)
+    index = _ensure_int_or_float(index, int)
+    x = _ensure_int_or_float(x, float)
 
     assert index < len(survey.md) - 1, "Index is out of range"
 
@@ -1605,8 +1606,8 @@ def _interpolate_survey(survey, x=0, index=0):
     s = Survey(
         md=np.array(
             [survey.md[index], survey.md[index] + x],
-            dtype='object'
-        ).astype(np.float64),  # this is to prevent VisibleDeprecationWarning
+            dtype='float64'
+        ),
         inc=np.array([survey.inc_rad[index], inc]),
         azi=np.array([survey.azi_grid_rad[index], azi]),
         cov_nev=(
@@ -1833,6 +1834,13 @@ def make_long_cov(arr):
     ]).T
 
     return cov
+
+
+def _ensure_int_or_float(val, required_type) -> int | float:
+    if isinstance(val, np.ndarray):
+        val = val[0]
+
+    return required_type(val)
 
 
 class SplitSurvey:
