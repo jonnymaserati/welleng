@@ -568,6 +568,9 @@ class Arc:
 
         pos_new, vec_new = r.apply(np.vstack((self.pos, self.vec)))
 
+        # make sure vec_new is a unit vector:
+        vec_new = get_unit_vec(vec_new)
+
         if pos is not None:
             pos_new += pos
         if target:
@@ -843,3 +846,29 @@ def dms_from_string(text):
 
     else:
         return
+
+
+def get_toolface(pos1: NDArray, vec1: NDArray, pos2: NDArray) -> float:
+    """Returns the toolface of an offset position relative to a reference
+    position and vector.
+
+    Parameters
+    ----------
+    pos1: ndarray
+        The reference NEV coordinate, e.g. current location.
+    vec1: ndarray
+        The reference NEV unit vector, e.g. current vector heading.
+    pos2: ndarray
+        The offset NEV coordinate, e.g. a target position.
+
+    Returns
+    -------
+    toolface: float
+        The toolface (bearing or required heading) in radians to pos2 from pos1
+        with vec1.
+    """
+    inc, azi = get_angles(vec1, nev=True)[0]
+    r = R.from_euler('zy', [-azi, -inc], degrees=False)
+    pos = r.apply(pos2 - pos1)
+
+    return np.arctan2(*(np.flip(pos[:2])))
