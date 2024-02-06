@@ -579,7 +579,7 @@ class Arc:
         return (pos_new, vec_new)
 
 
-def get_arc(dogleg, radius, toolface, pos=None, vec=None, target=False):
+def get_arc(dogleg, radius, toolface, pos=None, vec=None, target=False) -> tuple:
     """
     Creates an Arc instance and transforms it to the desired position and
     orientation.

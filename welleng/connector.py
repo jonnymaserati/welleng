@@ -1,7 +1,7 @@
 from copy import copy, deepcopy
 
 import numpy as np
-# from scipy.optimize import minimize
+from scipy.optimize import minimize
 from scipy.spatial import distance
 
 try:
@@ -11,8 +11,10 @@ except ImportError:
     NUMBA = False
 
 from .node import Node, get_node_params
-from .utils import (NEV_to_HLA, _get_angles, dls_from_radius, get_angles,
-                    get_nev, get_unit_vec, get_vec, get_xyz)
+from .utils import (
+    NEV_to_HLA, _get_angles, dls_from_radius, get_angles, get_nev, get_unit_vec,
+    get_vec, get_xyz, radius_from_dls, get_arc, get_toolface
+)
 
 
 class Connector:
@@ -124,6 +126,8 @@ class Connector:
         -------
         connector: welleng.connector.Connector object
         """
+        unit = 'meters'
+
         if node1 is not None:
             pos1, vec1, md1 = get_node_params(
                 node1
@@ -289,8 +293,11 @@ class Connector:
         if not dls_design2:
             self.dls_design2 = self.dls_design
 
-        self.radius_design = self.denom / self.dls_design
-        self.radius_design2 = self.denom / self.dls_design2
+        # self.radius_design = self.denom / self.dls_design
+        # self.radius_design2 = self.denom / self.dls_design2
+            
+        self.radius_design = dls_from_radius(np.degrees(self.dls_design))
+        self.radius_design2 = radius_from_dls(np.degrees(self.dls_design2))
 
         self.delta_dls = delta_dls
 
@@ -692,6 +699,8 @@ class Connector:
                         + args + (True,)
                     )
                 )
+                if self.method == 'arc':
+                    break
                 if any((
                     abs(
                         self.dls - self.dls2
@@ -714,6 +723,8 @@ class Connector:
         self._happy_finish()
 
     def _happy_finish(self):
+        if self.method == 'arc':
+            return self
         # get pos1 to pos2 curve data
         self.dist_curve, self.func_dogleg = get_curve_hold_data(
             min(self.radius_critical, self.radius_design),
@@ -902,6 +913,17 @@ def minimize_target_pos_and_vec_defined(
         c.distances2
     )
 
+    if abs(radius_effective1 / radius_effective2 - (
+        c.radius_design / c.radius_design2
+    )) > 1e-5:
+        r1 = (radius_effective1 + radius_effective2) / 2
+        x = (r1, r1 * c.radius_design2 / c.radius_design)
+        c.iterations += 1
+        return minimize_target_pos_and_vec_defined(
+            x, c, c.pos3, c.vec23[-1], result
+        )
+
+
     c.dogleg2 = check_dogleg(c.dogleg2)
 
     c.dist_curve2, c.func_dogleg2 = get_curve_hold_data(
@@ -957,6 +979,71 @@ def minimize_target_pos_and_vec_defined(
         np.radians(dls_from_radius(c.radius_critical2))
     )
 
+    if all((
+        radius_effective1 < c.radius_design,
+        c.tangent_length > 0,
+        np.allclose(
+            np.cross(c.vec1, c.vec3), np.cross(c.vec3, c.vec_target)
+        )
+    )):
+        # all along same plane, solve with single arc
+        args = (c.pos1, c.vec1, c.pos_target)
+        arc = minimize(
+            arc_function,
+            x0 = np.array([1e-5, max((radius_effective1, radius_effective2)), 0]),
+            bounds=[
+                [1e-8, 2 * np.pi],
+                [1e-8, max((c.radius_design, c.radius_design2))],
+                [-np.pi, np.pi]
+            ],
+            args=args,
+            method='Powell'
+            # options=dict(
+            #     ftol=1e-20, ctol=1e-20
+            # )
+        )
+        dogleg, radius, toolface, pos_target, vec_target, delta_md_target = (
+            arc_function(arc.x, *args, return_data=True)
+        )
+        assert np.allclose(vec_target, c.vec_target, rtol=1e-5, atol=1e-5)
+
+        setattr(c, 'method', 'arc')
+        c.radius_critical = radius
+        c.radius_critical2 = radius
+        c.dogleg = dogleg
+        c.md_target = c.md1 + delta_md_target
+        c.pos_target = pos_target
+        c.vec_target = vec_target
+        c.dls = np.radians(dls_from_radius(radius))
+        c.dist_curve = delta_md_target
+        c.inc_target, c.azi_target = get_angles(vec_target, nev=True)[0]
+
+        dogleg, radius, toolface = arc.x
+        dogleg_int, radius_int, toolface_int, pos2, vec2, delta_md_int = (
+            arc_function(
+                np.array([dogleg / 2, radius, toolface]),
+                *args, return_data=True
+            )
+        )
+        c.dogleg, c.dogleg2 = (dogleg_int, dogleg - dogleg_int)
+        c.func_dogleg = shape_factor(c.dogleg)
+        c.func_dogleg2 = shape_factor(c.dogleg2)
+        c.dist_curve, c.dist_curve2 = (
+            delta_md_int, delta_md_target - delta_md_int
+        )
+        c.pos2 = pos2
+        c.vec2 = vec2
+        c.md2 = c.md1 + delta_md_int
+        c.dls2 = np.radians(dls_from_radius(radius))
+        c.inc2, c.azi2 = get_angles(vec2, nev=True)[0]
+
+        c.pos3 = c.pos2
+        c.vec3 = c.vec2
+        c.md3 = c.md2
+        c.tangent_length, c.tangent_length2 = (0.0, 0.0)
+
+        return c
+
     if c.error:
         if result:
             return c
@@ -971,6 +1058,19 @@ def minimize_target_pos_and_vec_defined(
         return minimize_target_pos_and_vec_defined(
             x, c, c.pos3, c.vec23[-1], result
         )
+    
+
+def arc_function(x, pos1, vec1, pos_target, return_data=False):
+    dogleg, radius, toolface = x
+    pos2, vec2, delta_md = get_arc(
+        dogleg, radius, toolface, pos=pos1, vec=vec1
+    )
+
+    if return_data:
+        return (dogleg, radius, toolface, pos2, vec2, delta_md)
+    else:
+        return np.linalg.norm(pos_target - pos2)
+
 
 
 def check_dogleg(dogleg):
@@ -997,8 +1097,8 @@ def _get_xyz(pos):
 
 
 def get_pos(pos1, vec1, vec2, dist_curve, func_dogleg):
-    inc1, azi1 = _get_angles(_get_xyz(vec1)).reshape(2)
-    inc2, azi2 = _get_angles(_get_xyz(vec2)).reshape(2)
+    inc1, azi1 = get_angles(_get_xyz(vec1)).reshape(2)
+    inc2, azi2 = get_angles(_get_xyz(vec2)).reshape(2)
 
     pos2 = pos1 + (
         (
@@ -1012,7 +1112,9 @@ def get_pos(pos1, vec1, vec2, dist_curve, func_dogleg):
         ]).T
     )
 
-    return pos2
+    x, y, z = pos2
+
+    return np.array([y, x, z])
 
 
 def get_vec_target(
@@ -1220,7 +1322,8 @@ def interpolate_well(sections, step=30):
         'min_dist_to_target': get_interpolate_min_dist_to_target,
         'min_curve_to_target': get_interpolate_min_curve_to_target,
         'curve_hold_curve': get_interpololate_curve_hold_curve,
-        'min_curve': get_min_curve
+        'min_curve': get_min_curve,
+        'arc': get_interpololate_curve_hold_curve
     }
 
     data = []
@@ -1236,7 +1339,9 @@ def interpolate_curve(
     md1,
     pos1,
     vec1,
+    pos2,
     vec2,
+    radius,
     dist_curve,
     dogleg,
     func_dogleg,
@@ -1266,18 +1371,26 @@ def interpolate_curve(
         md = np.concatenate(([0.], md))
     if endpoint:
         md = np.concatenate((md, [end_md]))
-    dogleg_interp = (dogleg / dist_curve * md).reshape(-1, 1)
+    # dogleg_interp = (dogleg / dist_curve * md).reshape(-1, 1)
+    dogleg_interp = dogleg / dist_curve * md
 
-    vec = (
-        (
-            np.sin(dogleg - dogleg_interp) / np.sin(dogleg) * vec1
-        )
-        +
-        (
-            np.sin(dogleg_interp) / np.sin(dogleg) * vec2
-        )
-    )
-    vec = vec / np.linalg.norm(vec, axis=1).reshape(-1, 1)
+    toolface = get_toolface(pos1, vec1, pos2)
+
+    vec = np.array([
+        get_arc(dl, radius, toolface, pos1, vec1)[1]
+        for dl in dogleg_interp
+    ])
+
+    # vec = (
+    #     (
+    #         np.sin(dogleg - dogleg_interp) / np.sin(dogleg) * vec1
+    #     )
+    #     +
+    #     (
+    #         np.sin(dogleg_interp) / np.sin(dogleg) * vec2
+    #     )
+    # )
+    # vec = vec / np.linalg.norm(vec, axis=1).reshape(-1, 1)
     inc, azi = get_angles(vec, nev=True).T
 
     data = dict(
@@ -1286,7 +1399,8 @@ def interpolate_curve(
         inc=inc,
         azi=azi,
         dogleg=np.concatenate((
-            np.array([0.]), np.diff(dogleg_interp.reshape(-1))
+            # np.array([0.]), np.diff(dogleg_interp.reshape(-1))
+            np.array([0.]), np.diff(dogleg_interp)
         )),
     )
 
@@ -1358,7 +1472,11 @@ def get_interpolate_min_curve_to_target(section, step=30, data=None):
         md1=section.md1,
         pos1=section.pos1,
         vec1=section.vec1,
+        pos2=section.pos_target,
         vec2=section.vec_target,
+        radius=radius_from_dls(
+            np.degrees(section.dogleg / section.dist_curve * 30)
+        ),
         dist_curve=section.dist_curve,
         dogleg=section.dogleg,
         func_dogleg=section.func_dogleg,
@@ -1378,7 +1496,11 @@ def get_interpolate_min_dist_to_target(section, step=30, data=None):
         md1=section.md1,
         pos1=section.pos1,
         vec1=section.vec1,
+        pos2=section.pos2,
         vec2=section.vec2,
+        radius=radius_from_dls(
+            np.degrees(section.dogleg / section.dist_curve * 30)
+        ),
         dist_curve=section.dist_curve,
         dogleg=section.dogleg,
         func_dogleg=section.func_dogleg,
@@ -1407,7 +1529,11 @@ def get_interpololate_curve_hold_curve(section, step=30, data=None):
         md1=section.md1,
         pos1=section.pos1,
         vec1=section.vec1,
+        pos2=section.pos2,
         vec2=section.vec2,
+        radius=radius_from_dls(
+            np.degrees(section.dogleg / section.dist_curve * 30)
+        ),
         dist_curve=section.dist_curve,
         dogleg=section.dogleg,
         func_dogleg=section.func_dogleg,
@@ -1428,7 +1554,11 @@ def get_interpololate_curve_hold_curve(section, step=30, data=None):
         md1=section.md3,
         pos1=section.pos3,
         vec1=section.vec3,
+        pos2=section.pos_target,
         vec2=section.vec_target,
+        radius=radius_from_dls(
+            np.degrees(section.dogleg2 / section.dist_curve2 * 30)
+        ),
         dist_curve=section.dist_curve2,
         dogleg=section.dogleg2,
         func_dogleg=section.func_dogleg2,
