@@ -497,6 +497,26 @@ def errors_from_cov(cov, data=False):
     return np.array([nn, ne, nv, ee, ev, vv]).T
 
 
+def _get_arc_pos_and_vec(dogleg, radius):
+    pos = np.array([
+        np.cos(dogleg),
+        0.,
+        np.sin(dogleg)
+    ]) * radius
+    pos[0] = radius - pos[0]
+
+    vec = np.array([
+        np.sin(dogleg),
+        0.,
+        np.cos(dogleg)
+    ])
+    return (pos, vec)
+
+
+if NUMBA:
+    _get_arc_pos_and_vec = njit(_get_arc_pos_and_vec)
+
+
 class Arc:
     def __init__(self, dogleg, radius):
         """
@@ -520,18 +540,20 @@ class Arc:
         self.radius = radius
         self.delta_md = dogleg * radius
 
-        self.pos = np.array([
-            np.cos(dogleg),
-            0.,
-            np.sin(dogleg)
-        ]) * radius
-        self.pos[0] = radius - self.pos[0]
+        self.pos, self.vec = _get_arc_pos_and_vec(dogleg, radius)
 
-        self.vec = np.array([
-            np.sin(dogleg),
-            0.,
-            np.cos(dogleg)
-        ])
+        # self.pos = np.array([
+        #     np.cos(dogleg),
+        #     0.,
+        #     np.sin(dogleg)
+        # ]) * radius
+        # self.pos[0] = radius - self.pos[0]
+
+        # self.vec = np.array([
+        #     np.sin(dogleg),
+        #     0.,
+        #     np.cos(dogleg)
+        # ])
 
     def transform(self, toolface, pos=None, vec=None, target=False):
         """
@@ -579,10 +601,11 @@ class Arc:
         return (pos_new, vec_new)
 
 
-def get_arc(dogleg, radius, toolface, pos=None, vec=None, target=False):
-    """
-    Creates an Arc instance and transforms it to the desired position and
-    orientation.
+def get_arc(
+    dogleg, radius, toolface, pos=None, vec=None, target=False
+) -> tuple:
+    """Creates an Arc instance and transforms it to the desired position
+    and orientation.
 
     Parameters
     ----------

@@ -2247,14 +2247,14 @@ def func(x0, survey, dls_cont, tolerance):
     return diff
 
 
-def _remove_duplicates(md, inc, azi):
+def _remove_duplicates(md, inc, azi, decimals=4):
     arr = np.array([md, inc, azi]).T
     upper = arr[:-1]
     lower = arr[1:]
 
     temp = np.vstack((
         upper[0],
-        lower[lower[:, 0] != upper[:, 0]]
+        lower[lower[:, 0].round(decimals) != upper[:, 0].round(decimals)]
     ))
 
     return temp.T
@@ -2266,26 +2266,32 @@ def from_connections(
     start_xyz=[0., 0., 0.],
     start_cov_nev=None,
     radius=10, deg=False, error_model=None,
-    depth_unit='meters', surface_unit='meters'
+    depth_unit='meters', surface_unit='meters',
+    decimals: int | None = None
 ):
     """
     Constructs a well survey from a list of sections of control points.
 
     Parameters
     ----------
-        section_data: list of dicts with section data
-        start_nev: (3) array of floats (default: [0,0,0])
-            The starting position in NEV coordinates.
-        radius: float (default: 10)
-            The radius is passed to the `welleng.survey.Survey` object
-            and represents the radius of the wellbore. It is also used
-            when visualizing the results, so can be used to make the
-            wellbore *thicker* in the plot.
+    section_data: list of dicts with section data
+    start_nev: (3) array of floats (default: [0,0,0])
+        The starting position in NEV coordinates.
+    radius: float (default: 10)
+        The radius is passed to the `welleng.survey.Survey` object
+        and represents the radius of the wellbore. It is also used
+        when visualizing the results, so can be used to make the
+        wellbore *thicker* in the plot.
+    decimals: int (default=6)
+        Round the md decimal when checking for duplicate surveys.
 
     Results
     -------
         survey: `welleng.survey.Survey` object
     """
+    decimals = 6 if decimals is None else decimals
+    assert isinstance(decimals, int), "decimals must be an int"
+
     if type(section_data) is not list:
         section_data = [section_data]
 
