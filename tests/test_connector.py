@@ -1,7 +1,8 @@
 import numpy as np
 
-from welleng.connector import Connector
+from welleng.connector import Connector, drop_off, extend_to_tvd
 from welleng.survey import Survey, from_connections
+from welleng.node import Node
 
 
 def test_md_hold():
@@ -111,3 +112,65 @@ def test_radius_critical_with_min_curve():
         azi2=0,
     )
     assert c.radius_critical < c.radius_design
+
+def test_drop_off(tol=1e-4):
+    node = Node(
+        pos=[0, 0, 3000], inc=30, azi=135, md=4000
+    )
+    nodes = drop_off(
+        target_inc=0, dls=3, node=node
+    )
+    assert len(nodes) == 1, "Unexpected tangent section."
+    assert abs(nodes[0].inc_deg - 0) < tol
+
+    nodes = drop_off(
+        target_inc=0, dls=3, node=node, delta_md=1000
+    )
+    assert len(nodes) == 2, "Unexpected number of nodes."
+    assert nodes[-1].md - 1000 - node.md < tol, "Unexpected delta md."
+    assert nodes[0].inc_deg - nodes[1].inc_deg < tol, "Unexpected tangent inc."
+
+def test_extend_to_tvd(tol=1e-4):
+    node = Node(
+        pos=[0, 0, 3000], inc=30, azi=135, md=4000
+    )
+    nodes = drop_off(
+        target_inc=0, dls=3, node=node
+    )
+    connectors = extend_to_tvd(
+        target_tvd=3500, node=node, target_inc=0, dls=3
+    )
+    assert len(connectors) == 2, "Unexpected number of connectors."
+    assert connectors[0].node_end.md - nodes[0].md < tol, "Unexpected md."
+    assert np.allclose(
+        connectors[0].node_end.pos_nev,
+        nodes[0].pos_nev
+    ), "Unexpected pos_nev."
+    assert np.allclose(
+        connectors[0].node_end.vec_nev,
+        nodes[0].vec_nev, rtol=tol, atol=tol
+    ), "Unexpected vec_nev."
+    assert np.allclose(
+        connectors[0].node_end.vec_nev,
+        connectors[1].node_end.vec_nev, rtol=tol, atol=tol
+    ), "Unexpected tangent section."
+    assert connectors[1].node_end.pos_nev[2] - 3500 < tol, "Unexpected tvd."
+    
+    connectors = extend_to_tvd(
+        target_tvd=3500, node=node
+    )
+    assert connectors[-1].node_end.pos_nev[2] - 3500 < tol, "Unexpected tvd."
+    assert np.allclose(
+        connectors[-1].node_start.vec_nev,
+        connectors[-1].node_end.vec_nev, rtol=tol, atol=tol
+    ), "Unexpected tangent section."
+    pass
+
+
+def main():
+    test_drop_off()
+    test_extend_to_tvd()
+
+
+if __name__ == "__main__":
+    main()

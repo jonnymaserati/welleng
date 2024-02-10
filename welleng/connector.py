@@ -1,7 +1,7 @@
 from copy import copy, deepcopy
 
 import numpy as np
-# from scipy.optimize import minimize
+from scipy.optimize import minimize
 from scipy.spatial import distance
 
 try:
@@ -11,8 +11,11 @@ except ImportError:
     NUMBA = False
 
 from .node import Node, get_node_params
-from .utils import (NEV_to_HLA, _get_angles, dls_from_radius, get_angles,
-                    get_nev, get_unit_vec, get_vec, get_xyz)
+from .utils import (
+    NEV_to_HLA, _get_angles, dls_from_radius, get_angles,
+    get_nev, get_unit_vec, get_vec, get_xyz, radius_from_dls,
+    get_arc
+)
 
 
 class Connector:
@@ -1630,6 +1633,237 @@ def _get_section(
         c_old,
         idx + i - 1 if idx + i != len(nev) - 1 else idx + i
     )
+
+
+def drop_off(
+    target_inc: float, dls: float, delta_md: float | None = None,
+    node: Node | None = None, tol: float = 1e-5
+) -> list:
+    """Determines the sections necessary to drop off (or build) towards a
+    target inclination, constrained by the section length and dls.
+
+    Recommended to use the ``extend_to_tvd`` function if a specific tvd
+    target is required.
+
+    Parameters
+    ----------
+    target_inc: float
+        The target trajectory inclination in degrees.
+    dls: float
+        The design dls in deg/30m.
+    delta_md: float
+        The section length in meters.
+    node: ``Node``
+        The ``Node`` of the current location.
+
+    Returns
+    -------
+    nodes: list
+        A list of ``Connectors`` that describe the required trajectory changes.
+        The list contains at least one value (describing the arc or curve) and
+        a second value if the target inclination was achieved, to maintain a
+        tangent section.
+    """
+    def _drop_off(
+            x: tuple,
+            node,
+            return_data: bool = False
+    ) -> tuple:
+        dogleg, toolface = x
+        pos2, vec2, arc_length = get_arc(
+            dogleg, radius,
+            0 if -np.pi / 2 <= toolface <= np.pi / 2 else np.pi,
+            node.pos_nev, node.vec_nev
+        )
+        if return_data:
+            return (pos2, vec2, arc_length)
+        else:
+            inc, _ = np.degrees(
+                get_angles(vec2, nev=True)[0]
+            )
+            return abs(inc - target_inc)
+
+    node = Node() if node is None else node
+    node.md = 0 if node.md is None else node.md
+    radius = radius_from_dls(dls)
+    if isinstance(delta_md, np.ndarray):
+        delta_md = delta_md[0]
+    max_dogleg = (
+        2 * np.pi if delta_md is None
+        else delta_md / radius
+    )
+
+    args = (node,)
+    bounds = [
+        [0, min(2 * np.pi, max_dogleg)],
+        [-np.pi, np.pi]
+    ]
+    x0 = [bounds[0][1] / 2, np.pi]
+    result = minimize(
+        _drop_off, x0, args=args, bounds=bounds,
+        method="SLSQP"
+    )
+    pos2, vec2, arc_length = _drop_off(
+        result.x, *args, return_data=True
+    )
+    tangent_length = (
+        0 if delta_md is None
+        else delta_md - arc_length
+    )
+    node2 = Node(
+        pos=pos2, vec=vec2, md=node.md + arc_length
+    )
+    if tangent_length > tol:
+        pos3 = pos2 + tangent_length * vec2
+        node3 = Node(
+            pos=pos3, vec=vec2, md=node2.md + tangent_length
+        )
+        return [node2, node3]
+    else:
+        return [node2]
+
+
+def extend_to_tvd(
+    target_tvd: float, node: Node | None = None,
+    delta_md: float | None = None,
+    target_inc: float | None = None, dls: float | None = None
+) -> list:
+    """Determines a list of ``Connector`` sections required to drop off (or
+    build) to achieve a target tvd.
+
+    Parameters
+    ----------
+    target_tvd: float
+        The target true vertical depth in meters.
+    node: ``Node`` | None (default=None)
+        The ``Node`` describing the current well position. If not provided,
+        defaults to surface and pointing down.
+    delta_md: float | None (default=None)
+        Will limit the section length to the value provided in meters.
+    target_inc: float | None (default=None)
+        The target inclination at the target tvd in degrees. If provided,
+        will get as close to this value as feasible with the provided dls
+        constraint. If the target inclination can be achieved, a tangent
+        section will be held until the target tvd is achieved.
+    dls: float | None (default=None)
+        The design dls in deg/30m. If none provided, defaults to 2.3 deg/30m.
+
+    Returns
+    -------
+    nodes: list
+        A list of ``Connector`` that describe the required trajectory changes.
+        The list contains at least one value (describing the arc or curve) and
+        a second value if the target inclination was achieved, to maintain a
+        tangent section.
+
+    Examples
+    --------
+    A well has landed at the top reservoir with an inclination of 30 degrees
+    and the Wells Engineer wants to drop this angle to 0 degrees while drilling
+    the reservoir section.
+
+    >>> import welleng as we
+    >>> from pprint import pprint
+    >>> node = we.node.Node(pos=[0, 0, 3000], md=4000, inc=30, azi=135)
+    >>> connectors = we.connector.extend_to_tvd(target_tvd=3200, node=node, target_inc=0, dls=3)
+    >>> len(connectors)
+    ... 1
+
+    Since there's only one ``Connector`` in ``connectors`` then likely the
+    target inclination has not been met, else there would also be a tangent
+    section in this case.
+
+    >>> pprint(connectors[-1].node_end.__dict__)
+    ... {'azi_deg': 134.99999999999994,
+        'azi_rad': 2.356194490192344,
+        'cov_nev': array([[[0., 0., 0.],
+                [0., 0., 0.],
+                [0., 0., 0.]]]),
+        'inc_deg': 8.681065764308594,
+        'inc_rad': 0.151513180169343,
+        'md': 4213.189342356914,
+        'pos_nev': [-49.63739779370637, 49.63739779370647, 3199.9999999980705],
+        'pos_xyz': [49.63739779370647, -49.63739779370637, 3199.9999999980705],
+        'unit': 'meters',
+        'vec_nev': [-0.10672656069796796, 0.1067265606979681, 0.9885438192023488],
+        'vec_xyz': [0.1067265606979681, -0.10672656069796796, 0.9885438192023488]}
+
+    Indeed, the ``inc_deg`` attribute shows the inclination dropped to just
+    below 9 degrees and the z coordinate in ``pos_nev`` shows that the target
+    tvd was met.
+    """
+    if node is None:
+        node = Node()
+    node.md = 0 if node.md is None else node.md  # default value is None which complicates things
+    _delta_md = 1e-8 if delta_md is None else delta_md
+    connections = []
+    if target_inc is None:
+        def _extend_tvd(
+            delta_md, pos, vec, target_tvd, return_data=False
+        ):
+            pos2 = np.array(pos) + delta_md * np.array(vec)
+            if return_data:
+                return pos2
+            else:
+                return abs(pos2[2] - target_tvd)
+
+        args = (node.pos_nev, node.vec_nev, target_tvd)
+        bounds = [[0, None]]
+        result = minimize(
+            _extend_tvd,
+            _delta_md,
+            args=args,
+            bounds=bounds,
+            method="Powell"
+        )
+        pos2 = _extend_tvd(result.x, *args, return_data=True)
+        connections.append(Connector(
+            pos1=node.pos_nev, vec1=node.vec_nev,
+            md1=0 if node.md is None else node.md,
+            pos2=pos2,
+            dls_design=dls, force_min_curve=True
+        ))
+    else:
+        def _drop_off(
+            delta_md, target_inc, target_tvd, dls, node,
+            return_data=False
+        ):
+            nodes = drop_off(
+                target_inc, dls, delta_md, node
+            )
+            if return_data:
+                return nodes
+            else:
+                return abs(nodes[-1].pos_nev[2] - target_tvd)
+
+        dls = 2.5 if dls is None else dls
+        args = (target_inc, target_tvd, dls, node)
+        bounds = [
+            [min(target_tvd - node.pos_nev[2], _delta_md), None]
+        ]
+        x0 = _delta_md
+        result = minimize(
+            _drop_off,
+            x0,
+            args=args,
+            bounds=bounds,
+            method='Powell'
+        )
+        nodes = _drop_off(
+            result.x, *args, return_data=True
+        )
+        connections.append(Connector(
+            node1=node,
+            pos2=nodes[0].pos_nev, vec2=nodes[0].vec_nev,
+            dls_design=dls, force_min_curve=True
+        ))
+        if len(nodes) > 1:
+            connections.append(Connector(
+                node1=connections[-1].node_end,
+                pos2=nodes[-1].pos_nev,
+                dls_design=dls, force_min_curve=True
+            ))
+    return connections
 
 
 def numbafy(functions):
