@@ -42,7 +42,7 @@ def _generate_random_dms(n: int, ndigits: int = None) -> NDArray:
         ]
     )
 
-    return np.stack((deg, min, sec, direction), axis=-1, dtype=object).reshape(
+    return np.stack((deg, min, sec, direction), axis=-1, dtype='object').reshape(
         (-1, 2, 4)
     )
 
@@ -232,3 +232,12 @@ def test_get_toolface():
     pos2 = pos1 + np.array([radius, 0, radius])
     toolface = get_toolface(pos1, vec1, pos2)
     assert np.isclose(toolface, 0)
+
+
+def main():
+    test_dms2decimal2dms()
+    pass
+
+
+if __name__ == "__main__":
+    main()
