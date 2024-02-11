@@ -11,9 +11,39 @@ from welleng.utils import (
     radius_from_dls,
     get_toolface,
     get_arc,
+    MinCurve
 )
+import json
 
 LAT, LON = (52, 4, 43.1868, "N"), (4, 17, 19.6368, "E")
+
+
+def test_mincurve(decimals=2):
+    with open("tests/test_data/clearance_iscwsa_well_data.json") as f:
+        data = json.load(f)
+
+    for well, survey in data.get('wells').items():
+        def _get_start_xyz(survey):
+            return np.array([
+                survey.get('E')[0],
+                survey.get('N')[0],
+                survey.get('TVD')[0]
+            ])
+
+        mc = MinCurve(
+            md=survey.get('MD'),
+            inc=np.radians(survey.get('IncDeg')),
+            azi=np.radians(survey.get('AziDeg')),
+            start_xyz=_get_start_xyz(survey)
+        )
+
+        assert np.allclose(
+            np.round(mc.poss, decimals), np.round(np.array([
+                survey.get('E'), survey.get('N'), survey.get('TVD')
+            ]).T, decimals)
+        ), "Unexpected position."
+    
+    pass
 
 
 def _generate_random_dms(n: int, ndigits: int = None) -> NDArray:
@@ -235,6 +265,7 @@ def test_get_toolface():
 
 
 def main():
+    test_mincurve()
     test_dms2decimal2dms()
     pass
 
