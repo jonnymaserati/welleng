@@ -1,16 +1,1 @@
-numpy
-scipy
-openpyxl
-pandas
-pint
-pyproj
-PyYAML
-setuptools
-vedo
-vtk
-magnetic_field_calculator
-networkx
-tabulate
-trimesh
-utm
-python-fcl
+.
