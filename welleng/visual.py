@@ -34,182 +34,182 @@ from .version import __version__ as VERSION
 
 # VEDO = False
 
+if VEDO:
+    class Plotter(VedoPlotter):
+        def __init__(self, *args, **kwargs):
+            """
+            Notes
+            -----
+            On account of Z or TVD pointing down in the drilling world, the
+            coordinate system is right handed. In order to map coordinates in the
+            NEV (or North, East, Vertical) reference correctly, North coordinates
+            are plotted on the X axis and East on the Y axis. Be mindful of this
+            adding objects to a scene.
+            """
+            super().__init__(*args, **kwargs)
 
-class Plotter(VedoPlotter):
-    def __init__(self, *args, **kwargs):
-        """
-        Notes
-        -----
-        On account of Z or TVD pointing down in the drilling world, the
-        coordinate system is right handed. In order to map coordinates in the
-        NEV (or North, East, Vertical) reference correctly, North coordinates
-        are plotted on the X axis and East on the Y axis. Be mindful of this
-        adding objects to a scene.
-        """
-        super().__init__(*args, **kwargs)
+            self.wells = []
 
-        self.wells = []
+            pass
 
-        pass
+        def add(self, obj, *args, **kwargs) -> None:
+            """Modified method to support direct plotting of
+            ``welleng.mesh.WellMesh`` instances and for processing the callback
+            to print well data when the pointer is hovered of a well trajectory.
 
-    def add(self, obj, *args, **kwargs) -> None:
-        """Modified method to support direct plotting of
-        ``welleng.mesh.WellMesh`` instances and for processing the callback
-        to print well data when the pointer is hovered of a well trajectory.
+            If the ``obj`` is a ``welleng.mesh.WellMesh`` instance, then the args
+            and kwargs will be passed to the `vedo.Mesh` instance to facilate e.g.
+            color options etc.
 
-        If the ``obj`` is a ``welleng.mesh.WellMesh`` instance, then the args
-        and kwargs will be passed to the `vedo.Mesh` instance to facilate e.g.
-        color options etc.
+            Notes
+            -----
+            ``welleng.mesh.WellMesh`` creates ``trimesh.Mesh`` instances, a legacy
+            of using the ``trimesh`` library for detecting mesh collisions when
+            developing automated well trajectory planning. Therefore, to visualize
+            the meshes with ``vedo`` and ``vtk``, the meshes need to be converted.
 
-        Notes
-        -----
-        ``welleng.mesh.WellMesh`` creates ``trimesh.Mesh`` instances, a legacy
-        of using the ``trimesh`` library for detecting mesh collisions when
-        developing automated well trajectory planning. Therefore, to visualize
-        the meshes with ``vedo`` and ``vtk``, the meshes need to be converted.
+            Meshes in ``welleng`` typically reference an 'NEV' coordinate system,
+            which is [North, East, Vertical]. To map correctly to ``vtk``, North
+            needs to be mapped to X and East to Y on account of Z pointing down.
+            """
+            if isinstance(obj, mesh.WellMesh):
+                poly = buildPolyData(obj.mesh.vertices, obj.mesh.faces)
+                vedo_mesh = Mesh(poly, *args, **kwargs)
+                setattr(obj, 'vedo_mesh', vedo_mesh)
+                self.wells.append(obj)
+                super().add(obj.vedo_mesh)
+            else:
+                super().add(obj)
 
-        Meshes in ``welleng`` typically reference an 'NEV' coordinate system,
-        which is [North, East, Vertical]. To map correctly to ``vtk``, North
-        needs to be mapped to X and East to Y on account of Z pointing down.
-        """
-        if isinstance(obj, mesh.WellMesh):
-            poly = buildPolyData(obj.mesh.vertices, obj.mesh.faces)
-            vedo_mesh = Mesh(poly, *args, **kwargs)
-            setattr(obj, 'vedo_mesh', vedo_mesh)
-            self.wells.append(obj)
-            super().add(obj.vedo_mesh)
-        else:
-            super().add(obj)
+            pass
 
-        pass
+        def _initiate_axes_actor(self):
+            plt = vedo.plotter_instance
+            r = plt.renderers.index(plt.renderer)
 
-    def _initiate_axes_actor(self):
-        plt = vedo.plotter_instance
-        r = plt.renderers.index(plt.renderer)
+            axact = vtkAxesActor()
+            axact.SetShaftTypeToCylinder()
+            axact.SetCylinderRadius(0.03)
+            axact.SetXAxisLabelText("N")
+            axact.SetYAxisLabelText("E")
+            axact.SetZAxisLabelText("V")
+            axact.GetXAxisShaftProperty().SetColor(1, 0, 0)
+            axact.GetYAxisShaftProperty().SetColor(0, 1, 0)
+            axact.GetZAxisShaftProperty().SetColor(0, 0, 1)
+            axact.GetXAxisTipProperty().SetColor(1, 0, 0)
+            axact.GetYAxisTipProperty().SetColor(0, 1, 0)
+            axact.GetZAxisTipProperty().SetColor(0, 0, 1)
+            bc = np.array(plt.renderer.GetBackground())
+            if np.sum(bc) < 1.5:
+                lc = (1, 1, 1)
+            else:
+                lc = (0, 0, 0)
+            axact.GetXAxisCaptionActor2D().GetCaptionTextProperty().BoldOff()
+            axact.GetYAxisCaptionActor2D().GetCaptionTextProperty().BoldOff()
+            axact.GetZAxisCaptionActor2D().GetCaptionTextProperty().BoldOff()
+            axact.GetXAxisCaptionActor2D().GetCaptionTextProperty().ItalicOff()
+            axact.GetYAxisCaptionActor2D().GetCaptionTextProperty().ItalicOff()
+            axact.GetZAxisCaptionActor2D().GetCaptionTextProperty().ItalicOff()
+            axact.GetXAxisCaptionActor2D().GetCaptionTextProperty().ShadowOff()
+            axact.GetYAxisCaptionActor2D().GetCaptionTextProperty().ShadowOff()
+            axact.GetZAxisCaptionActor2D().GetCaptionTextProperty().ShadowOff()
+            axact.GetXAxisCaptionActor2D().GetCaptionTextProperty().SetColor(lc)
+            axact.GetYAxisCaptionActor2D().GetCaptionTextProperty().SetColor(lc)
+            axact.GetZAxisCaptionActor2D().GetCaptionTextProperty().SetColor(lc)
+            axact.PickableOff()
+            icn = Icon(axact, size=0.1)
+            plt.axes_instances[r] = icn
+            icn.SetInteractor(plt.interactor)
+            icn.EnabledOn()
+            icn.InteractiveOff()
+            plt.widgets.append(icn)
 
-        axact = vtkAxesActor()
-        axact.SetShaftTypeToCylinder()
-        axact.SetCylinderRadius(0.03)
-        axact.SetXAxisLabelText("N")
-        axact.SetYAxisLabelText("E")
-        axact.SetZAxisLabelText("V")
-        axact.GetXAxisShaftProperty().SetColor(1, 0, 0)
-        axact.GetYAxisShaftProperty().SetColor(0, 1, 0)
-        axact.GetZAxisShaftProperty().SetColor(0, 0, 1)
-        axact.GetXAxisTipProperty().SetColor(1, 0, 0)
-        axact.GetYAxisTipProperty().SetColor(0, 1, 0)
-        axact.GetZAxisTipProperty().SetColor(0, 0, 1)
-        bc = np.array(plt.renderer.GetBackground())
-        if np.sum(bc) < 1.5:
-            lc = (1, 1, 1)
-        else:
-            lc = (0, 0, 0)
-        axact.GetXAxisCaptionActor2D().GetCaptionTextProperty().BoldOff()
-        axact.GetYAxisCaptionActor2D().GetCaptionTextProperty().BoldOff()
-        axact.GetZAxisCaptionActor2D().GetCaptionTextProperty().BoldOff()
-        axact.GetXAxisCaptionActor2D().GetCaptionTextProperty().ItalicOff()
-        axact.GetYAxisCaptionActor2D().GetCaptionTextProperty().ItalicOff()
-        axact.GetZAxisCaptionActor2D().GetCaptionTextProperty().ItalicOff()
-        axact.GetXAxisCaptionActor2D().GetCaptionTextProperty().ShadowOff()
-        axact.GetYAxisCaptionActor2D().GetCaptionTextProperty().ShadowOff()
-        axact.GetZAxisCaptionActor2D().GetCaptionTextProperty().ShadowOff()
-        axact.GetXAxisCaptionActor2D().GetCaptionTextProperty().SetColor(lc)
-        axact.GetYAxisCaptionActor2D().GetCaptionTextProperty().SetColor(lc)
-        axact.GetZAxisCaptionActor2D().GetCaptionTextProperty().SetColor(lc)
-        axact.PickableOff()
-        icn = Icon(axact, size=0.1)
-        plt.axes_instances[r] = icn
-        icn.SetInteractor(plt.interactor)
-        icn.EnabledOn()
-        icn.InteractiveOff()
-        plt.widgets.append(icn)
-
-    def _pointer_callback(self, event):
-        i = event.at
-        pt2d = event.picked2d
-        objs = self.at(i).objects
-        pt3d = self.at(i).compute_world_coordinate(pt2d, objs=objs)
-        if mag(pt3d) < 0.01:
-            if self.pointer is None:
+        def _pointer_callback(self, event):
+            i = event.at
+            pt2d = event.picked2d
+            objs = self.at(i).objects
+            pt3d = self.at(i).compute_world_coordinate(pt2d, objs=objs)
+            if mag(pt3d) < 0.01:
+                if self.pointer is None:
+                    return
+                # if self.pointer in self.at(i).actors:
+                self.at(i).remove(self.pointer)
+                self.pointer = None
+                self.pointer_text.text('')
+                self.render()
                 return
-            # if self.pointer in self.at(i).actors:
-            self.at(i).remove(self.pointer)
-            self.pointer = None
-            self.pointer_text.text('')
+            if self.pointer is None:
+                self.pointer = Point().color('red').pos(pt3d)
+            else:
+                self.pointer.pos(pt3d)
+            self.at(i).add(self.pointer)
+
+            well_data = self._get_closest_well(pt3d, objs)
+            if well_data is None:
+                self.pointer_text.text(f'point coordinates: {np.round(pt3d, 3)}')
+            else:
+                survey = well_data.get('well').s
+                idx = well_data.get('idx_survey')
+                name = survey.header.name
+                md = survey.md[idx]
+                inc = survey.inc_deg[idx]
+                azi_grid = survey.azi_grid_deg[idx]
+                dls = survey.dls[idx]
+                self.pointer_text.text(f'''
+                    well name: {name}\n
+                    md: {md:.2f}\t inc: {inc:.2f}\t azi: {azi_grid:.2f}\t dls: {dls:.2f}\n
+                    point coordinates: {np.round(pt3d, 3)}
+                ''')
             self.render()
-            return
-        if self.pointer is None:
-            self.pointer = Point().color('red').pos(pt3d)
-        else:
-            self.pointer.pos(pt3d)
-        self.at(i).add(self.pointer)
 
-        well_data = self._get_closest_well(pt3d, objs)
-        if well_data is None:
-            self.pointer_text.text(f'point coordinates: {np.round(pt3d, 3)}')
-        else:
-            survey = well_data.get('well').s
-            idx = well_data.get('idx_survey')
-            name = survey.header.name
-            md = survey.md[idx]
-            inc = survey.inc_deg[idx]
-            azi_grid = survey.azi_grid_deg[idx]
-            dls = survey.dls[idx]
-            self.pointer_text.text(f'''
-                well name: {name}\n
-                md: {md:.2f}\t inc: {inc:.2f}\t azi: {azi_grid:.2f}\t dls: {dls:.2f}\n
-                point coordinates: {np.round(pt3d, 3)}
-            ''')
-        self.render()
+        def _well_vedo_meshes(self):
+            return [well.vedo_mesh for well in self.wells]
 
-    def _well_vedo_meshes(self):
-        return [well.vedo_mesh for well in self.wells]
+        def _get_closest_well(self, pos, objs) -> dict:
+            wells = [
+                well for well in self.wells
+                if well.vedo_mesh in objs
+            ]
+            if not bool(wells):
+                return
 
-    def _get_closest_well(self, pos, objs) -> dict:
-        wells = [
-            well for well in self.wells
-            if well.vedo_mesh in objs
-        ]
-        if not bool(wells):
-            return
+            results = np.zeros((len(wells), 3))
+            for i, well in enumerate(wells):
+                tree = KDTree(well.vertices.reshape(-1, 3))
+                distance, idx_vertices = tree.query(pos)
+                results[i] = np.array([distance, idx_vertices, well.n_verts])
 
-        results = np.zeros((len(wells), 3))
-        for i, well in enumerate(wells):
-            tree = KDTree(well.vertices.reshape(-1, 3))
-            distance, idx_vertices = tree.query(pos)
-            results[i] = np.array([distance, idx_vertices, well.n_verts])
+            winner = np.argmin(results[:, 0])
+            distance, idx_vertices, n_verts = results[winner]
 
-        winner = np.argmin(results[:, 0])
-        distance, idx_vertices, n_verts = results[winner]
+            return {
+                'well': wells[winner],
+                'distance': distance,
+                'idx_vertices': int(idx_vertices),
+                'n_verts': int(n_verts),
+                'idx_survey': int(idx_vertices // n_verts)
+            }
 
-        return {
-            'well': wells[winner],
-            'distance': distance,
-            'idx_vertices': int(idx_vertices),
-            'n_verts': int(n_verts),
-            'idx_survey': int(idx_vertices // n_verts)
-        }
+        def show(self, axes=None, *args, **kwargs):
+            # check if there's an axes and if so remove them
+            if self.axes is not None:
+                self.remove(self.axes)
 
-    def show(self, axes=None, *args, **kwargs):
-        # check if there's an axes and if so remove them
-        if self.axes is not None:
-            self.remove(self.axes)
+            self._initiate_axes_actor()
 
-        self._initiate_axes_actor()
+            self.add_callback('mouse move', self._pointer_callback)
+            self.pointer_text = Text2D("", pos='bottom-right', s=0.5, c='black')
+            self.add(self.pointer_text)
+            self.pointer = None
 
-        self.add_callback('mouse move', self._pointer_callback)
-        self.pointer_text = Text2D("", pos='bottom-right', s=0.5, c='black')
-        self.add(self.pointer_text)
-        self.pointer = None
+            self = super().show(
+                viewup=[0, 0, -1], mode=8,
+                axes=CubeAxes() if axes is None else axes,
+                title=f'welleng {VERSION}',
+                *args, **kwargs
+            )
 
-        self = super().show(
-            viewup=[0, 0, -1], mode=8,
-            axes=CubeAxes() if axes is None else axes,
-            title=f'welleng {VERSION}',
-            *args, **kwargs
-        )
-
-        return self
+            return self
 
 
 class CubeAxes(vtkCubeAxesActor):
