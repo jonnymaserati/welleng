@@ -305,8 +305,6 @@ else:
         def __init__(self):
             raise ImportError("ImportError: vtk not installed")
 
-raise NameError("Raise error to stop execution of the script.")
-
 
 def plot(
     data,
@@ -608,3 +606,5 @@ def _update_fig(fig, kwargs):
             continue
 
     return fig
+
+raise NameError("Raise error to stop execution of the script.")
