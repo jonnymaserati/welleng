@@ -211,8 +211,6 @@ if VEDO:
 
             return self
 
-raise NameError("Raise error to stop execution of the script.")
-
 if VTK:
     class CubeAxes(vtkCubeAxesActor):
         def __init__(
@@ -306,6 +304,9 @@ else:
     class CubeAxes:
         def __init__(self):
             raise ImportError("ImportError: vtk not installed")
+
+raise NameError("Raise error to stop execution of the script.")
+
 
 def plot(
     data,
