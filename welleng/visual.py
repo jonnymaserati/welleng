@@ -303,7 +303,7 @@ if VTK:
 else:
     class CubeAxes:
         def __init__(self):
-            pass
+            raise ImportError("ImportError: vtk not installed")
 
 def plot(
     data,
