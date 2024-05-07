@@ -300,8 +300,10 @@ if VTK:
 
             plt.axes_instances[r] = self
             plt.renderer.AddActor(self)
-
-
+else:
+    class CubeAxes:
+        def __init__(self):
+            pass
 
 def plot(
     data,
