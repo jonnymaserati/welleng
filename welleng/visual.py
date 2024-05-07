@@ -211,95 +211,96 @@ if VEDO:
 
             return self
 
+if VTK:
+    class CubeAxes(vtkCubeAxesActor):
+        def __init__(
+            self,
+            **kwargs
+        ):
+            super().__init__()
 
-class CubeAxes(vtkCubeAxesActor):
-    def __init__(
-        self,
-        **kwargs
-    ):
-        super().__init__()
+            # # Determine the bounds from the meshes/actors being plotted rounded
+            # # up to the nearest 100 units.
+            # bounds = np.array(renderer.ComputeVisiblePropBounds())
 
-        # # Determine the bounds from the meshes/actors being plotted rounded
-        # # up to the nearest 100 units.
-        # bounds = np.array(renderer.ComputeVisiblePropBounds())
+            # with np.errstate(divide='ignore', invalid='ignore'):
+            #     self.bounds = tuple(np.nan_to_num(
+            #         (
+            #             np.ceil(np.abs(bounds) / 100) * 100
+            #         ) * (bounds / np.abs(bounds))
+            #     ))
 
-        # with np.errstate(divide='ignore', invalid='ignore'):
-        #     self.bounds = tuple(np.nan_to_num(
-        #         (
-        #             np.ceil(np.abs(bounds) / 100) * 100
-        #         ) * (bounds / np.abs(bounds))
-        #     ))
+            plt = vedo.plotter_instance
+            r = plt.renderers.index(plt.renderer)
+            vbb = compute_visible_bounds()[0]
+            self.SetBounds(vbb)
+            self.SetCamera(plt.renderer.GetActiveCamera())
 
-        plt = vedo.plotter_instance
-        r = plt.renderers.index(plt.renderer)
-        vbb = compute_visible_bounds()[0]
-        self.SetBounds(vbb)
-        self.SetCamera(plt.renderer.GetActiveCamera())
+            namedColors = vtkNamedColors()
+            self.colors = {}
 
-        namedColors = vtkNamedColors()
-        self.colors = {}
+            for n in range(1, 4):
+                self.colors[f'axis{n}Color'] = namedColors.GetColor3d(
+                    kwargs.get(f'axis{n}Color', 'Black')
+                )
 
-        for n in range(1, 4):
-            self.colors[f'axis{n}Color'] = namedColors.GetColor3d(
-                kwargs.get(f'axis{n}Color', 'Black')
-            )
+            # self.SetUseTextActor3D(1)
 
-        # self.SetUseTextActor3D(1)
+            # self.SetBounds(self.bounds)
+            # self.SetCamera(renderer.GetActiveCamera())
 
-        # self.SetBounds(self.bounds)
-        # self.SetCamera(renderer.GetActiveCamera())
+            self.GetTitleTextProperty(0).SetColor(self.colors['axis1Color'])
+            self.GetLabelTextProperty(0).SetColor(self.colors['axis1Color'])
+            self.GetLabelTextProperty(0).SetOrientation(45.0)
 
-        self.GetTitleTextProperty(0).SetColor(self.colors['axis1Color'])
-        self.GetLabelTextProperty(0).SetColor(self.colors['axis1Color'])
-        self.GetLabelTextProperty(0).SetOrientation(45.0)
+            self.GetTitleTextProperty(1).SetColor(self.colors['axis2Color'])
+            self.GetLabelTextProperty(1).SetColor(self.colors['axis2Color'])
+            self.GetLabelTextProperty(1).SetOrientation(45.0)
 
-        self.GetTitleTextProperty(1).SetColor(self.colors['axis2Color'])
-        self.GetLabelTextProperty(1).SetColor(self.colors['axis2Color'])
-        self.GetLabelTextProperty(1).SetOrientation(45.0)
+            self.GetTitleTextProperty(2).SetColor(self.colors['axis3Color'])
+            self.GetLabelTextProperty(2).SetColor(self.colors['axis3Color'])
+            self.GetLabelTextProperty(2).SetOrientation(45.0)
 
-        self.GetTitleTextProperty(2).SetColor(self.colors['axis3Color'])
-        self.GetLabelTextProperty(2).SetColor(self.colors['axis3Color'])
-        self.GetLabelTextProperty(2).SetOrientation(45.0)
+            self.SetGridLineLocation(self.VTK_GRID_LINES_FURTHEST)
+            for a in ('X', 'Y', 'Z'):
+                getattr(self, f'Get{a}AxesLinesProperty')().SetColor(
+                    namedColors.GetColor3d('Black')
+                )
+                getattr(self, f'SetDraw{a}Gridlines')(1)
+                getattr(self, f'Get{a}AxesGridlinesProperty')().SetColor(
+                    namedColors.GetColor3d('Grey')
+                )
+                getattr(self, f'{a}AxisMinorTickVisibilityOff')()
 
-        self.SetGridLineLocation(self.VTK_GRID_LINES_FURTHEST)
-        for a in ('X', 'Y', 'Z'):
-            getattr(self, f'Get{a}AxesLinesProperty')().SetColor(
-                namedColors.GetColor3d('Black')
-            )
-            getattr(self, f'SetDraw{a}Gridlines')(1)
-            getattr(self, f'Get{a}AxesGridlinesProperty')().SetColor(
-                namedColors.GetColor3d('Grey')
-            )
-            getattr(self, f'{a}AxisMinorTickVisibilityOff')()
+            # self.DrawXGridlinesOn()
+            # self.DrawYGridlinesOn()
+            # self.DrawZGridlinesOn()
+            # self.SetGridLineLocation(self.VTK_GRID_LINES_FURTHEST)
 
-        # self.DrawXGridlinesOn()
-        # self.DrawYGridlinesOn()
-        # self.DrawZGridlinesOn()
-        # self.SetGridLineLocation(self.VTK_GRID_LINES_FURTHEST)
+            # self.XAxisMinorTickVisibilityOff()
+            # self.YAxisMinorTickVisibilityOff()
+            # self.ZAxisMinorTickVisibilityOff()
 
-        # self.XAxisMinorTickVisibilityOff()
-        # self.YAxisMinorTickVisibilityOff()
-        # self.ZAxisMinorTickVisibilityOff()
+            units = kwargs.get('units', None)
+            self.SetXTitle('N')
+            self.SetXUnits(units)
+            self.SetYTitle('E')
+            self.SetYUnits(units)
+            self.SetZTitle('TVD')
+            self.SetZUnits(units)
+            # self.SetTickLocation(self.VTK_GRID_LINES_FURTHEST)
 
-        units = kwargs.get('units', None)
-        self.SetXTitle('N')
-        self.SetXUnits(units)
-        self.SetYTitle('E')
-        self.SetYUnits(units)
-        self.SetZTitle('TVD')
-        self.SetZUnits(units)
-        # self.SetTickLocation(self.VTK_GRID_LINES_FURTHEST)
+            # self.ForceOpaqueOff()
+            self.SetFlyModeToClosestTriad()
+            # Try and prevent scientific numbering on axes
+            self.SetLabelScaling(0, 0, 0, 0)
+            self.SetXLabelFormat("%.0f")
+            self.SetYLabelFormat("%.0f")
+            self.SetZLabelFormat("%.0f")
 
-        # self.ForceOpaqueOff()
-        self.SetFlyModeToClosestTriad()
-        # Try and prevent scientific numbering on axes
-        self.SetLabelScaling(0, 0, 0, 0)
-        self.SetXLabelFormat("%.0f")
-        self.SetYLabelFormat("%.0f")
-        self.SetZLabelFormat("%.0f")
+            plt.axes_instances[r] = self
+            plt.renderer.AddActor(self)
 
-        plt.axes_instances[r] = self
-        plt.renderer.AddActor(self)
 
 
 def plot(
