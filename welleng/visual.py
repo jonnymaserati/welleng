@@ -211,6 +211,8 @@ if VEDO:
 
             return self
 
+raise NameError("Raise error to stop execution of the script.")
+
 if VTK:
     class CubeAxes(vtkCubeAxesActor):
         def __init__(
