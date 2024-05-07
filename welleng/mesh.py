@@ -10,7 +10,6 @@ from scipy.spatial import KDTree
 
 from .utils import HLA_to_NEV, get_sigmas
 from .survey import slice_survey, Survey
-from .visual import figure
 
 
 class WellMesh:
@@ -245,6 +244,7 @@ class WellMesh:
         self.mesh = mesh
 
     def figure(self, type='mesh3d', **kwargs):
+        from .visual import figure
         fig = figure(self, type, **kwargs)
         return fig
 
