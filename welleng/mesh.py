@@ -244,9 +244,11 @@ class WellMesh:
         self.mesh = mesh
 
     def figure(self, type='mesh3d', **kwargs):
-        from .visual import figure
-        fig = figure(self, type, **kwargs)
-        return fig
+        from .visual import PLOTLY, figure
+        if PLOTLY:
+            return figure(self, type, **kwargs)
+        else:
+            return None
 
 
 def make_trimesh_scene(data):
