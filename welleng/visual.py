@@ -211,6 +211,9 @@ if VEDO:
             )
 
             return self
+else: 
+    raise ImportError("ImportError: vedo is not installed.")
+
 
 if VTK:
     class CubeAxes(vtkCubeAxesActor):
@@ -301,11 +304,8 @@ if VTK:
 
             plt.axes_instances[r] = self
             plt.renderer.AddActor(self)
-else:
-    class CubeAxes:
-        def __init__(self):
-            pass
-
+else: 
+    raise ImportError("ImportError: vtk is not installed.")
 
 def plot(
     data,
