@@ -964,7 +964,7 @@ class Survey:
         return survey_interpolated
 
     def figure(self, type='scatter3d', **kwargs):
-        from .visual import figure, PLOTLY
+        from .visual import PLOTLY, figure
         if PLOTLY:
             return figure(self, type, **kwargs)
         else:
