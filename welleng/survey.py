@@ -964,10 +964,11 @@ class Survey:
         return survey_interpolated
 
     def figure(self, type='scatter3d', **kwargs):
-        from .visual import figure
-
-        fig = figure(self, type, **kwargs)
-        return fig
+        from .visual import figure, PLOTLY
+        if PLOTLY:
+            return figure(self, type, **kwargs)
+        else:
+            return None
 
     def project_to_bit(self, delta_md, dls=None, toolface=None):
         """
