@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 try:
     import trimesh
     TRIMESH = True
@@ -22,6 +24,7 @@ try:
     PLOTLY = True
 except ImportError:
     PLOTLY = False
+    logger.info("Please pip install plotly to enable figures.")
 
 from vtk import vtkAxesActor, vtkCubeAxesActor, vtkNamedColors
 
