@@ -35,8 +35,6 @@ except ImportError:
 from . import mesh
 from .version import __version__ as VERSION
 
-# VEDO = False
-
 if VEDO:
     class Plotter(VedoPlotter):
         def __init__(self, *args, **kwargs):
