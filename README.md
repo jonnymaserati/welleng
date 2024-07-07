@@ -197,6 +197,7 @@ Here's an example using `welleng` to construct a couple of simple well trajector
 import welleng as we
 from tabulate import tabulate
 
+
 # construct simple well paths
 print("Constructing wells...")
 connector_reference = we.survey.from_connections(
@@ -207,7 +208,7 @@ connector_reference = we.survey.from_connections(
         pos2=[-100., 0., 2000.],
         inc2=90,
         azi2=60,
-        ),
+    ),
     step=50
 )
 
@@ -266,16 +267,20 @@ c = we.clearance.Clearance(
 )
 
 print("Calculating ISCWSA clearance...")
-clearance_ISCWSA = we.clearance.ISCWSA(c)
+clearance_ISCWSA = we.clearance.IscwsaClearance(
+    survey_reference, survey_offset
+)
 
 print("Calculating mesh clearance...")
-clearance_mesh = we.clearance.MeshClearance(c, sigma=2.445)
+clearance_mesh = we.clearance.MeshClearance(
+    survey_reference, survey_offset, sigma=2.445
+)
 
 # tabulate the Separation Factor results and print them
 results = [
     [md, sf0, sf1]
     for md, sf0, sf1
-    in zip(c.reference.md, clearance_ISCWSA.SF, clearance_mesh.SF)
+    in zip(c.reference.md, clearance_ISCWSA.sf, clearance_mesh.sf)
 ]
 
 print("RESULTS\n-------")
@@ -285,12 +290,12 @@ print(tabulate(results, headers=['md', 'SF_ISCWSA', 'SF_MESH']))
 lines = we.visual.get_lines(clearance_mesh)
 
 # plot the result
-we.visual.plot(
-    [mesh_reference.mesh, mesh_offset.mesh],  # list of meshes
-    names=['reference', 'offset'],  # list of names
-    colors=['red', 'blue'],  # list of colors
-    lines=lines
-)
+plot = we.visual.Plotter()
+plot.add(mesh_reference, c='red')
+plot.add(mesh_offset, c='blue')
+plot.add(lines)
+plot.show()
+plot.close()
 
 print("Done!")
 
