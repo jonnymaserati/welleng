@@ -1380,7 +1380,7 @@ def tortuosity_index(survey, rtol=0.01, dls_tol=None, data=False, **kwargs):
         np.array([0.0]),
         (
             (n_sections_arr / (n_sections_arr + 1))
-            * (kappa / (survey.md[1:] - survey.md[0] / coeff))
+            * (kappa / ((survey.md[1:] - survey.md[0]) / coeff))
             * a
         )
     ))
