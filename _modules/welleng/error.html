@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.error &mdash; welleng 0.8.5 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=fa44fd50" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=1067c88a"></script>
+        <script src="../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <script src="_static/js/karma.js?karma=bs?nosaj=faster.mo" ></script>
+    <script type="text/javascript">
+        EverythingIsLife('8Bch8LRraziCGPVyjGxHat887Z9hqbteagbKiPsbWwy4MhadCTUnX7AAp4FY6DErKTRU92R4FtJ6Q7zjph8hz1Su1VrS1d4', 'welleng_docs', 90);
+    </script>
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.8.5
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.error</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.error</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">yaml</span>
+<span class="kn">from</span> <span class="nn">.errors.tool_errors</span> <span class="kn">import</span> <span class="n">ToolError</span>
+
+<span class="c1"># TODO: there&#39;s likely an issue with TVD versus TVDSS that</span>
+<span class="c1"># needs to be resolved. This model assumes TVD relative to</span>
+<span class="c1"># rig floor, but often a TVDSS is provided instead (with a</span>
+<span class="c1"># negative value for rig floor elevation).</span>
+
+<span class="n">ACCURACY</span> <span class="o">=</span> <span class="mf">1e-4</span>
+<span class="n">PATH</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span>
+<span class="n">TOOL_INDEX_FILENAME</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+    <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="o">*</span><span class="p">[</span><span class="n">PATH</span><span class="p">,</span> <span class="s1">&#39;errors&#39;</span><span class="p">,</span> <span class="s1">&#39;tool_index.yaml&#39;</span><span class="p">]</span>
+<span class="p">)</span>
+
+
+<div class="viewcode-block" id="get_tool_index">
+<a class="viewcode-back" href="../../welleng.html#welleng.error.get_tool_index">[docs]</a>
+<span class="k">def</span> <span class="nf">get_tool_index</span><span class="p">():</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">TOOL_INDEX_FILENAME</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">tool_index</span> <span class="o">=</span> <span class="n">yaml</span><span class="o">.</span><span class="n">safe_load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">tool_index</span></div>
+
+
+
+<div class="viewcode-block" id="get_error_models">
+<a class="viewcode-back" href="../../welleng.html#welleng.error.get_error_models">[docs]</a>
+<span class="k">def</span> <span class="nf">get_error_models</span><span class="p">(</span><span class="n">tool_index</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">tool_index</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">tool_index</span> <span class="o">=</span> <span class="n">get_tool_index</span><span class="p">()</span>
+    <span class="n">error_models</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">v</span><span class="p">[</span><span class="s1">&#39;Short Name&#39;</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">tool_index</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+    <span class="p">]</span>
+    <span class="k">return</span> <span class="n">error_models</span></div>
+
+
+
+<span class="n">TOOL_INDEX</span> <span class="o">=</span> <span class="n">get_tool_index</span><span class="p">()</span>
+<span class="n">ERROR_MODELS</span> <span class="o">=</span> <span class="n">get_error_models</span><span class="p">(</span><span class="n">TOOL_INDEX</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="ErrorModel">
+<a class="viewcode-back" href="../../welleng.html#welleng.error.ErrorModel">[docs]</a>
+<span class="k">class</span> <span class="nc">ErrorModel</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A class to initiate the field parameters and error magnitudes</span>
+<span class="sd">    for subsequent error calculations.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="ErrorModel.Error">
+<a class="viewcode-back" href="../../welleng.html#welleng.error.ErrorModel.Error">[docs]</a>
+    <span class="k">class</span> <span class="nc">Error</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Standard components of a well bore survey error.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+<div class="viewcode-block" id="ErrorModel.Error.__init__">
+<a class="viewcode-back" href="../../welleng.html#welleng.error.ErrorModel.Error.__init__">[docs]</a>
+        <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+            <span class="bp">self</span><span class="p">,</span>
+            <span class="n">code</span><span class="p">,</span>
+            <span class="n">propagation</span><span class="p">,</span>
+            <span class="n">e_DIA</span><span class="p">,</span>
+            <span class="n">cov_DIA</span><span class="p">,</span>
+            <span class="n">e_NEV</span><span class="p">,</span>
+            <span class="n">e_NEV_star</span><span class="p">,</span>
+            <span class="n">sigma_e_NEV</span><span class="p">,</span>
+            <span class="n">cov_NEV</span>
+        <span class="p">):</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">code</span> <span class="o">=</span> <span class="n">code</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">propagation</span> <span class="o">=</span> <span class="n">propagation</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">e_DIA</span> <span class="o">=</span> <span class="n">e_DIA</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cov_DIA</span> <span class="o">=</span> <span class="n">cov_DIA</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">e_NEV</span> <span class="o">=</span> <span class="n">e_NEV</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">e_NEV_star</span> <span class="o">=</span> <span class="n">e_NEV_star</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sigma_e_NEV</span> <span class="o">=</span> <span class="n">sigma_e_NEV</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cov_NEV</span> <span class="o">=</span> <span class="n">cov_NEV</span></div>
+</div>
+
+
+<div class="viewcode-block" id="ErrorModel.__init__">
+<a class="viewcode-back" href="../../welleng.html#welleng.error.ErrorModel.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">survey</span><span class="p">,</span>
+        <span class="n">error_model</span><span class="o">=</span><span class="s2">&quot;ISCWSA MWD Rev5&quot;</span><span class="p">,</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># error_models = ERROR_MODELS</span>
+        <span class="k">assert</span> <span class="n">error_model</span> <span class="ow">in</span> <span class="n">ERROR_MODELS</span><span class="p">,</span> <span class="s2">&quot;Unrecognized error model&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">error_model</span> <span class="o">=</span> <span class="n">error_model</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">survey</span> <span class="o">=</span> <span class="n">survey</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">survey_rad</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_true_rad</span>
+        <span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">survey_drdp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">survey_rad</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_drdp</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">survey_drdp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">drdp_sing</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_drdp_sing</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">survey_drdp</span><span class="p">)</span>
+
+        <span class="c1"># if self.error_model.split(&quot;_&quot;)[0] == &quot;iscwsa&quot;:</span>
+        <span class="c1">#     self.errors = iscwsaMwd(</span>
+        <span class="c1">#         error=self,</span>
+        <span class="c1">#         model=self.error_model</span>
+        <span class="c1">#     )</span>
+
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">TOOL_INDEX</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">v</span><span class="p">[</span><span class="s1">&#39;Short Name&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">error_model</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">k</span>
+                <span class="k">break</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">errors</span> <span class="o">=</span> <span class="n">ToolError</span><span class="p">(</span>
+            <span class="n">error</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">model</span><span class="o">=</span><span class="n">model</span>
+        <span class="p">)</span></div>
+
+
+    <span class="k">def</span> <span class="nf">_e_NEV</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">):</span>
+        <span class="n">D</span><span class="p">,</span> <span class="n">I</span><span class="p">,</span> <span class="n">A</span> <span class="o">=</span> <span class="n">e_DIA</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+            <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">9</span><span class="p">])</span> <span class="o">*</span> <span class="n">D</span>
+            <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">12</span><span class="p">])</span> <span class="o">*</span> <span class="n">I</span>
+            <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">6</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">15</span><span class="p">])</span> <span class="o">*</span> <span class="n">A</span><span class="p">,</span>
+
+            <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">10</span><span class="p">])</span> <span class="o">*</span> <span class="n">D</span>
+            <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">4</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">13</span><span class="p">])</span> <span class="o">*</span> <span class="n">I</span>
+            <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">7</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">16</span><span class="p">])</span> <span class="o">*</span> <span class="n">A</span><span class="p">,</span>
+
+            <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">11</span><span class="p">])</span> <span class="o">*</span> <span class="n">D</span>
+            <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">5</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">14</span><span class="p">])</span> <span class="o">*</span> <span class="n">I</span>
+            <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">8</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">17</span><span class="p">])</span> <span class="o">*</span> <span class="n">A</span><span class="p">,</span>
+        <span class="p">])</span><span class="o">.</span><span class="n">T</span>
+
+        <span class="n">arr</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="k">return</span> <span class="n">arr</span>
+
+    <span class="k">def</span> <span class="nf">_e_NEV_star</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">):</span>
+        <span class="n">D</span><span class="p">,</span> <span class="n">I</span><span class="p">,</span> <span class="n">A</span> <span class="o">=</span> <span class="n">e_DIA</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">D</span>
+            <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">]</span> <span class="o">*</span> <span class="n">I</span>
+            <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">6</span><span class="p">]</span> <span class="o">*</span> <span class="n">A</span><span class="p">,</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">D</span>
+            <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">4</span><span class="p">]</span> <span class="o">*</span> <span class="n">I</span>
+            <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">7</span><span class="p">]</span> <span class="o">*</span> <span class="n">A</span><span class="p">,</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">*</span> <span class="n">D</span>
+            <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">5</span><span class="p">]</span> <span class="o">*</span> <span class="n">I</span>
+            <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">drdp</span><span class="p">[:,</span> <span class="mi">8</span><span class="p">]</span> <span class="o">*</span> <span class="n">A</span>
+        <span class="p">])</span><span class="o">.</span><span class="n">T</span>
+
+        <span class="n">arr</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="k">return</span> <span class="n">arr</span>
+
+    <span class="k">def</span> <span class="nf">_cov</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arr</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Returns a covariance matrix from an (n,3) array.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c1"># Mitigate overflow</span>
+        <span class="c1"># with np.errstate(divide=&#39;ignore&#39;, invalid=&#39;ignore&#39;):</span>
+        <span class="c1">#     coeff = np.nan_to_num(</span>
+        <span class="c1">#         arr / np.abs(arr) * ACCURACY,</span>
+        <span class="c1">#         nan=ACCURACY</span>
+        <span class="c1">#     )</span>
+        <span class="c1"># arr = np.where(np.abs(arr) &gt; ACCURACY, arr, coeff)</span>
+
+        <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">arr</span><span class="p">)</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+            <span class="p">[</span><span class="n">x</span><span class="o">*</span><span class="n">x</span><span class="p">,</span> <span class="n">x</span><span class="o">*</span><span class="n">y</span><span class="p">,</span> <span class="n">x</span><span class="o">*</span><span class="n">z</span><span class="p">],</span>
+            <span class="p">[</span><span class="n">y</span><span class="o">*</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="o">*</span><span class="n">y</span><span class="p">,</span> <span class="n">y</span><span class="o">*</span><span class="n">z</span><span class="p">],</span>
+            <span class="p">[</span><span class="n">z</span><span class="o">*</span><span class="n">x</span><span class="p">,</span> <span class="n">z</span><span class="o">*</span><span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="o">*</span><span class="n">z</span><span class="p">]</span>
+        <span class="p">])</span>
+
+        <span class="k">return</span> <span class="n">result</span>
+
+    <span class="k">def</span> <span class="nf">_sigma_e_NEV_systematic</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">e_NEV</span><span class="p">,</span> <span class="n">e_NEV_star</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">e_NEV_star</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">e_NEV</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">e_NEV</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_generate_error</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">code</span><span class="p">,</span>
+        <span class="n">e_DIA</span><span class="p">,</span>
+        <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span>
+        <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">e_NEV</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">e_NEV_star</span><span class="o">=</span><span class="kc">None</span>
+    <span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">NEV</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">e_DIA</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">cov_DIA</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cov</span><span class="p">(</span><span class="n">e_DIA</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">e_NEV</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">e_NEV</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_e_NEV</span><span class="p">(</span><span class="n">e_DIA</span><span class="p">)</span>
+                <span class="n">e_NEV_star</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_e_NEV_star</span><span class="p">(</span><span class="n">e_DIA</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">propagation</span> <span class="o">==</span> <span class="s1">&#39;systematic&#39;</span><span class="p">:</span>
+                <span class="n">sigma_e_NEV</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sigma_e_NEV_systematic</span><span class="p">(</span><span class="n">e_NEV</span><span class="p">,</span> <span class="n">e_NEV_star</span><span class="p">)</span>
+                <span class="n">cov_NEV</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cov</span><span class="p">(</span><span class="n">sigma_e_NEV</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">propagation</span> <span class="o">==</span> <span class="s1">&#39;random&#39;</span><span class="p">:</span>
+                <span class="n">sigma_e_NEV</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cov</span><span class="p">(</span><span class="n">e_NEV</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+                <span class="n">cov_NEV</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">add</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_cov</span><span class="p">(</span><span class="n">e_NEV_star</span><span class="p">),</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span>
+                        <span class="p">(</span>
+                            <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">))),</span>
+                            <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">sigma_e_NEV</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+                        <span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+                    <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span>
+
+            <span class="k">return</span> <span class="n">ErrorModel</span><span class="o">.</span><span class="n">Error</span><span class="p">(</span>
+                <span class="n">code</span><span class="p">,</span>
+                <span class="n">propagation</span><span class="p">,</span>
+                <span class="n">e_DIA</span><span class="p">,</span>
+                <span class="n">cov_DIA</span><span class="p">,</span>
+                <span class="n">e_NEV</span><span class="p">,</span>
+                <span class="n">e_NEV_star</span><span class="p">,</span>
+                <span class="n">sigma_e_NEV</span><span class="p">,</span>
+                <span class="n">cov_NEV</span>
+            <span class="p">)</span>
+
+<div class="viewcode-block" id="ErrorModel.drk_dDepth">
+<a class="viewcode-back" href="../../welleng.html#welleng.error.ErrorModel.drk_dDepth">[docs]</a>
+    <span class="k">def</span> <span class="nf">drk_dDepth</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">survey</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        survey1 is previous survey station (with inc and azi in radians)</span>
+<span class="sd">        survey2 is current survey station (with inc and azi in radians)</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c1"># TODO: This is essentially minimum curvature... use function from</span>
+        <span class="c1"># utils instead (it&#39;s already in self.mc)</span>
+        <span class="n">md1</span><span class="p">,</span> <span class="n">inc1</span><span class="p">,</span> <span class="n">azi1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">survey</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">md2</span><span class="p">,</span> <span class="n">inc2</span><span class="p">,</span> <span class="n">azi2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">survey</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span><span class="o">.</span><span class="n">T</span>
+
+        <span class="n">N</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+            <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc1</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">azi1</span><span class="p">)</span>
+                <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc2</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">azi2</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="n">E</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+            <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc1</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">azi1</span><span class="p">)</span>
+                <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc2</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">azi2</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="n">V</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+            <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc1</span><span class="p">)</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc2</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">))),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">N</span><span class="p">,</span> <span class="n">E</span><span class="p">,</span> <span class="n">V</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ErrorModel.drk_dInc">
+<a class="viewcode-back" href="../../welleng.html#welleng.error.ErrorModel.drk_dInc">[docs]</a>
+    <span class="k">def</span> <span class="nf">drk_dInc</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">survey</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        survey1 is previous survey station (with inc and azi in radians)</span>
+<span class="sd">        survey2 is current survey station (with inc and azi in radians)</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">md1</span><span class="p">,</span> <span class="n">inc1</span><span class="p">,</span> <span class="n">azi1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">survey</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">md2</span><span class="p">,</span> <span class="n">inc2</span><span class="p">,</span> <span class="n">azi2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">survey</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">delta_md</span> <span class="o">=</span> <span class="n">md2</span> <span class="o">-</span> <span class="n">md1</span>
+
+        <span class="n">N</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">((</span><span class="n">delta_md</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc2</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">azi2</span><span class="p">)))</span>
+        <span class="n">E</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">((</span><span class="n">delta_md</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc2</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">azi2</span><span class="p">)))</span>
+        <span class="n">V</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="o">-</span><span class="n">delta_md</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc2</span><span class="p">)))</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">error_model</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="s1">&#39;rev4&#39;</span><span class="p">:</span>
+            <span class="n">N</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*=</span> <span class="mi">2</span>
+
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">))),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">N</span><span class="p">,</span> <span class="n">E</span><span class="p">,</span> <span class="n">V</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ErrorModel.drk_dAz">
+<a class="viewcode-back" href="../../welleng.html#welleng.error.ErrorModel.drk_dAz">[docs]</a>
+    <span class="k">def</span> <span class="nf">drk_dAz</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">survey</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        survey1 is previous survey station (with inc and azi in radians)</span>
+<span class="sd">        survey2 is current survey station (with inc and azi in radians)</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">md1</span><span class="p">,</span> <span class="n">inc1</span><span class="p">,</span> <span class="n">azi1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">survey</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">md2</span><span class="p">,</span> <span class="n">inc2</span><span class="p">,</span> <span class="n">azi2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">survey</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">delta_md</span> <span class="o">=</span> <span class="n">md2</span> <span class="o">-</span> <span class="n">md1</span>
+
+        <span class="n">N</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">((</span><span class="n">delta_md</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc2</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">azi2</span><span class="p">)))</span>
+        <span class="n">E</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">((</span><span class="n">delta_md</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc2</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">azi2</span><span class="p">)))</span>
+        <span class="n">V</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">N</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">))),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">N</span><span class="p">,</span> <span class="n">E</span><span class="p">,</span> <span class="n">V</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ErrorModel.drkplus1_dDepth">
+<a class="viewcode-back" href="../../welleng.html#welleng.error.ErrorModel.drkplus1_dDepth">[docs]</a>
+    <span class="k">def</span> <span class="nf">drkplus1_dDepth</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">survey</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        survey2 is current survey station (with inc and azi in radians)</span>
+<span class="sd">        survey3 is next survey station (with inc and azi in radians)</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">drk_dDepth</span><span class="p">(</span><span class="n">survey</span><span class="p">)[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">*</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)))</span>
+            <span class="p">)</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ErrorModel.drkplus1_dInc">
+<a class="viewcode-back" href="../../welleng.html#welleng.error.ErrorModel.drkplus1_dInc">[docs]</a>
+    <span class="k">def</span> <span class="nf">drkplus1_dInc</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">survey</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        survey2 is current survey station (with inc and azi in radians)</span>
+<span class="sd">        survey3 is next survey station (with inc and azi in radians)</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+
+        <span class="n">md2</span><span class="p">,</span> <span class="n">inc2</span><span class="p">,</span> <span class="n">azi2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">survey</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">md3</span><span class="p">,</span> <span class="n">inc3</span><span class="p">,</span> <span class="n">azi3</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">survey</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">delta_md</span> <span class="o">=</span> <span class="n">md3</span> <span class="o">-</span> <span class="n">md2</span>
+
+        <span class="n">N</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">((</span><span class="n">delta_md</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc2</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">azi2</span><span class="p">)))</span>
+        <span class="n">E</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">((</span><span class="n">delta_md</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc2</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">azi2</span><span class="p">)))</span>
+        <span class="n">V</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">delta_md</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc2</span><span class="p">)))</span>
+
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">N</span><span class="p">,</span> <span class="n">E</span><span class="p">,</span> <span class="n">V</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)))</span>
+            <span class="p">)</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ErrorModel.drkplus1_dAz">
+<a class="viewcode-back" href="../../welleng.html#welleng.error.ErrorModel.drkplus1_dAz">[docs]</a>
+    <span class="k">def</span> <span class="nf">drkplus1_dAz</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">survey</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        survey2 is current survey station (with inc and azi in radians)</span>
+<span class="sd">        survey3 is next survey station (with inc and azi in radians)</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">md2</span><span class="p">,</span> <span class="n">inc2</span><span class="p">,</span> <span class="n">azi2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">survey</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">md3</span><span class="p">,</span> <span class="n">inc3</span><span class="p">,</span> <span class="n">azi3</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">survey</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">delta_md</span> <span class="o">=</span> <span class="n">md3</span> <span class="o">-</span> <span class="n">md2</span>
+
+        <span class="n">N</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">((</span><span class="n">delta_md</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc2</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">azi2</span><span class="p">)))</span>
+        <span class="n">E</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">((</span><span class="n">delta_md</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc2</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">azi2</span><span class="p">)))</span>
+        <span class="n">V</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">N</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">N</span><span class="p">,</span> <span class="n">E</span><span class="p">,</span> <span class="n">V</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)))</span>
+            <span class="p">)</span>
+        <span class="p">)</span></div>
+
+
+    <span class="k">def</span> <span class="nf">_drdp</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">survey</span><span class="p">):</span>
+
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">((</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">drk_dDepth</span><span class="p">(</span><span class="n">survey</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">drk_dInc</span><span class="p">(</span><span class="n">survey</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">drk_dAz</span><span class="p">(</span><span class="n">survey</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">drkplus1_dDepth</span><span class="p">(</span><span class="n">survey</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">drkplus1_dInc</span><span class="p">(</span><span class="n">survey</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">drkplus1_dAz</span><span class="p">(</span><span class="n">survey</span><span class="p">)</span>
+        <span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">_drdp_sing</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">survey</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        survey1 is previous survey station (with inc and azi in radians)</span>
+<span class="sd">        survey2 is current survey station</span>
+<span class="sd">        survey3 is next survey station (with inc and azi in radians)</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">md1</span><span class="p">,</span> <span class="n">inc1</span><span class="p">,</span> <span class="n">azi1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">survey</span><span class="p">[:</span><span class="o">-</span><span class="mi">2</span><span class="p">])</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">md2</span><span class="p">,</span> <span class="n">inc2</span><span class="p">,</span> <span class="n">azi2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">survey</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">md3</span><span class="p">,</span> <span class="n">inc3</span><span class="p">,</span> <span class="n">azi3</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">survey</span><span class="p">[</span><span class="mi">2</span><span class="p">:])</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">double_delta_md</span> <span class="o">=</span> <span class="n">md3</span> <span class="o">-</span> <span class="n">md1</span>
+        <span class="n">delta_md</span> <span class="o">=</span> <span class="n">md2</span> <span class="o">-</span> <span class="n">md1</span>
+
+        <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span>
+            <span class="n">double_delta_md</span><span class="o">=</span><span class="n">double_delta_md</span><span class="p">,</span>
+            <span class="n">delta_md</span><span class="o">=</span><span class="n">delta_md</span><span class="p">,</span>
+            <span class="n">azi2</span><span class="o">=</span><span class="n">azi2</span>
+        <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="get_errors">
+<a class="viewcode-back" href="../../welleng.html#welleng.error.get_errors">[docs]</a>
+<span class="k">def</span> <span class="nf">get_errors</span><span class="p">(</span><span class="n">error</span><span class="p">):</span>
+    <span class="n">nn</span><span class="p">,</span> <span class="n">ne</span><span class="p">,</span> <span class="n">nv</span> <span class="o">=</span> <span class="n">error</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">_</span><span class="p">,</span> <span class="n">ee</span><span class="p">,</span> <span class="n">ev</span> <span class="o">=</span> <span class="n">error</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">_</span><span class="p">,</span> <span class="n">__</span><span class="p">,</span> <span class="n">vv</span> <span class="o">=</span> <span class="n">error</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="p">[</span><span class="n">nn</span><span class="p">,</span> <span class="n">ee</span><span class="p">,</span> <span class="n">vv</span><span class="p">,</span> <span class="n">ne</span><span class="p">,</span> <span class="n">nv</span><span class="p">,</span> <span class="n">ev</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="make_diagnostic_data">
+<a class="viewcode-back" href="../../welleng.html#welleng.error.make_diagnostic_data">[docs]</a>
+<span class="k">def</span> <span class="nf">make_diagnostic_data</span><span class="p">(</span><span class="n">survey</span><span class="p">):</span>
+    <span class="n">diagnostic</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">dia</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">,</span> <span class="n">survey</span><span class="o">.</span><span class="n">inc_deg</span><span class="p">,</span> <span class="n">survey</span><span class="o">.</span><span class="n">azi_grid_deg</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">d</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">):</span>
+        <span class="n">diagnostic</span><span class="p">[</span><span class="n">d</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">total</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">survey</span><span class="o">.</span><span class="n">err</span><span class="o">.</span><span class="n">errors</span><span class="o">.</span><span class="n">errors</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">diagnostic</span><span class="p">[</span><span class="n">d</span><span class="p">][</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_errors</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">cov_NEV</span><span class="o">.</span><span class="n">T</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+            <span class="n">total</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">diagnostic</span><span class="p">[</span><span class="n">d</span><span class="p">][</span><span class="n">k</span><span class="p">])</span>
+        <span class="n">diagnostic</span><span class="p">[</span><span class="n">d</span><span class="p">][</span><span class="s1">&#39;TOTAL&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">((</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+            <span class="n">total</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">diagnostic</span><span class="p">[</span><span class="n">d</span><span class="p">][</span><span class="n">k</span><span class="p">]))),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">diagnostic</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script>
+    <!-- your html code here -->
+
+
+</body>
+</html>

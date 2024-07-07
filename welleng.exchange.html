@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.exchange package &mdash; welleng 0.8.5 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=fa44fd50" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="_static/documentation_options.js?v=1067c88a"></script>
+        <script src="_static/doctools.js?v=9a2dae69"></script>
+        <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="welleng.errors package" href="welleng.errors.html" />
+    <script src="_static/js/karma.js?karma=bs?nosaj=faster.mo" ></script>
+    <script type="text/javascript">
+        EverythingIsLife('8Bch8LRraziCGPVyjGxHat887Z9hqbteagbKiPsbWwy4MhadCTUnX7AAp4FY6DErKTRU92R4FtJ6Q7zjph8hz1Su1VrS1d4', 'welleng_docs', 90);
+    </script>
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.8.5
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">welleng</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="welleng.html">welleng package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="welleng.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="welleng.errors.html">welleng.errors package</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">welleng.exchange package</a><ul>
+<li class="toctree-l5"><a class="reference internal" href="#submodules">Submodules</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-welleng.exchange.csv">welleng.exchange.csv module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-welleng.exchange.edm">welleng.exchange.edm module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-welleng.exchange.wbp">welleng.exchange.wbp module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-welleng.exchange">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#submodules">Submodules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.architecture">welleng.architecture module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.clearance">welleng.clearance module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.connector">welleng.connector module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.error">welleng.error module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.fluid">welleng.fluid module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.io">welleng.io module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.mesh">welleng.mesh module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.node">welleng.node module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.survey">welleng.survey module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.target">welleng.target module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.torque_drag">welleng.torque_drag module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.units">welleng.units module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.utils">welleng.utils module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.version">welleng.version module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.visual">welleng.visual module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="modules.html">welleng</a></li>
+          <li class="breadcrumb-item"><a href="welleng.html">welleng package</a></li>
+      <li class="breadcrumb-item active">welleng.exchange package</li>
+      <li class="wy-breadcrumbs-aside">
+              <a href="https://github.com/jonnymaserati/welleng/blob/main/docs/welleng.exchange.rst" class="fa fa-github"> Edit on GitHub</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="welleng-exchange-package">
+<h1>welleng.exchange package<a class="headerlink" href="#welleng-exchange-package" title="Link to this heading"></a></h1>
+<section id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading"></a></h2>
+</section>
+<section id="module-welleng.exchange.csv">
+<span id="welleng-exchange-csv-module"></span><h2>welleng.exchange.csv module<a class="headerlink" href="#module-welleng.exchange.csv" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.exchange.csv.export_csv">
+<span class="sig-prename descclassname"><span class="pre">welleng.exchange.csv.</span></span><span class="sig-name descname"><span class="pre">export_csv</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">survey</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filename</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dls_cont</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">decimals</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/csv.html#export_csv"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.csv.export_csv" title="Link to this definition"></a></dt>
+<dd><p>Wrapper for survey.export_csv</p>
+<p>Function to export a minimalist (only the control points - i.e. the
+begining and end points of hold and/or turn sections) survey to input into third
+party trajectory planning software.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>survey</strong> (<em>welleng.survey.Survey object</em>)</p></li>
+<li><p><strong>filename</strong> (<em>str</em>) – The path and filename for saving the text file.</p></li>
+<li><p><strong>tolerance</strong> (<em>float</em><em> (</em><em>default: 0.1</em><em>)</em>) – How close the the final N, E, TVD position of the minimalist survey
+should be to the original survey point (e.g. within 1 meter)</p></li>
+<li><p><strong>dls_cont</strong> (<em>bool</em>) – Whether to explicitly check for dls continuity. May result in a
+larger number of control points but a trajectory that is a closer
+fit to the survey.</p></li>
+<li><p><strong>decimals</strong> (<em>int</em><em> (</em><em>default: 3</em><em>)</em>) – Number of decimal places provided in the output file listing</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-welleng.exchange.edm">
+<span id="welleng-exchange-edm-module"></span><h2>welleng.exchange.edm module<a class="headerlink" href="#module-welleng.exchange.edm" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="welleng.exchange.edm.Case">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">welleng.exchange.edm.</span></span><span class="sig-name descname"><span class="pre">Case</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">case</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#Case"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.Case" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.Case.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">case</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#Case.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.Case.__init__" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="welleng.exchange.edm.EDM">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">welleng.exchange.edm.</span></span><span class="sig-name descname"><span class="pre">EDM</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filename</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#EDM"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.EDM" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.EDM.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filename</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#EDM.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.EDM.__init__" title="Link to this definition"></a></dt>
+<dd><p>Initiate an instance of an EDM object.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>filename</strong> (<em>str</em>) – The path and filename of the EDM file to be imported.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.EDM.add_attributes">
+<span class="sig-name descname"><span class="pre">add_attributes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">attributes</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">additional</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#EDM.add_attributes"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.EDM.add_attributes" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.EDM.get_attributes">
+<span class="sig-name descname"><span class="pre">get_attributes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tags</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">attributes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">logic</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'AND'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#EDM.get_attributes"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.EDM.get_attributes" title="Link to this definition"></a></dt>
+<dd><p>Get the attributes for the given tags in an EDM instance.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>tags</strong> (<em>str</em><em> or </em><em>list</em><em> of </em><em>str</em><em> (</em><em>default: None</em><em>)</em>) – The tag or list of tags you wish to return. The default will
+return all the tags that satisfy the given attributes.</p></li>
+<li><p><strong>attributes</strong> (<em>dict</em>) – A dictionary of attribute keys and values to satisfy in the
+search of tags.</p></li>
+<li><p><strong>logic</strong> (<em>str</em><em> (</em><em>default: 'AND'</em><em>)</em>) – Indicates whether the attributes should be all be satisfied
+(‘AND’) or if only one needs to be satisfied (‘OR’).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>data</strong> – A dictionary of a list of dictionaries of tags and their
+attributes.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.EDM.get_case_name_from_id">
+<span class="sig-name descname"><span class="pre">get_case_name_from_id</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">case_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#EDM.get_case_name_from_id"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.EDM.get_case_name_from_id" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.EDM.get_parents">
+<span class="sig-name descname"><span class="pre">get_parents</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">wellbore_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">predecessors</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[]</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#EDM.get_parents"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.EDM.get_parents" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.EDM.get_sites">
+<span class="sig-name descname"><span class="pre">get_sites</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#EDM.get_sites"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.EDM.get_sites" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.EDM.get_tags">
+<span class="sig-name descname"><span class="pre">get_tags</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sort</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#EDM.get_tags"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.EDM.get_tags" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.EDM.get_wellbore">
+<span class="sig-name descname"><span class="pre">get_wellbore</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">wellbore</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#EDM.get_wellbore"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.EDM.get_wellbore" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.EDM.get_wellbore_data">
+<span class="sig-name descname"><span class="pre">get_wellbore_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">wellbore_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#EDM.get_wellbore_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.EDM.get_wellbore_data" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.EDM.get_wellbore_graph">
+<span class="sig-name descname"><span class="pre">get_wellbore_graph</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#EDM.get_wellbore_graph"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.EDM.get_wellbore_graph" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.EDM.get_wellbore_ids">
+<span class="sig-name descname"><span class="pre">get_wellbore_ids</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#EDM.get_wellbore_ids"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.EDM.get_wellbore_ids" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.EDM.get_wells">
+<span class="sig-name descname"><span class="pre">get_wells</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#EDM.get_wells"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.EDM.get_wells" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="welleng.exchange.edm.Well">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">welleng.exchange.edm.</span></span><span class="sig-name descname"><span class="pre">Well</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">wellbore_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wellbore_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">well_data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#Well"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.Well" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.Well.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">wellbore_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wellbore_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">well_data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#Well.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.Well.__init__" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.Well.get_data">
+<span class="sig-name descname"><span class="pre">get_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">label_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">label</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tag_label</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'CD'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">suffix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'id'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#Well.get_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.Well.get_data" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.Well.get_hole_section_data">
+<span class="sig-name descname"><span class="pre">get_hole_section_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hole_sections</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#Well.get_hole_section_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.Well.get_hole_section_data" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>hole_sections</strong> (<em>list</em><em> of </em><em>str</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.Well.get_hole_sections">
+<span class="sig-name descname"><span class="pre">get_hole_sections</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#Well.get_hole_sections"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.Well.get_hole_sections" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.Well.get_parent_surveys">
+<span class="sig-name descname"><span class="pre">get_parent_surveys</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">survey_header_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{}</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#Well.get_parent_surveys"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.Well.get_parent_surveys" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.Well.get_ppfpt_data">
+<span class="sig-name descname"><span class="pre">get_ppfpt_data</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#Well.get_ppfpt_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.Well.get_ppfpt_data" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.edm.Well.make_case">
+<span class="sig-name descname"><span class="pre">make_case</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">case_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/edm.html#Well.make_case"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.edm.Well.make_case" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-welleng.exchange.wbp">
+<span id="welleng-exchange-wbp-module"></span><h2>welleng.exchange.wbp module<a class="headerlink" href="#module-welleng.exchange.wbp" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.SurveyPoint">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">SurveyPoint</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">md</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">azi</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cov_xx</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cov_xy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cov_xz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cov_yy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cov_yz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cov_zz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">x_bias</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y_bias</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">z_bias</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tool</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">location</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#SurveyPoint"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.SurveyPoint" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.SurveyPoint.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">md</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">azi</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cov_xx</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cov_xy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cov_xz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cov_yy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cov_yz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cov_zz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">x_bias</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y_bias</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">z_bias</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tool</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">location</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#SurveyPoint.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.SurveyPoint.__init__" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.Target">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">Target</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">location</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">geometry</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{'azimuth':</span> <span class="pre">None,</span> <span class="pre">'category':</span> <span class="pre">None,</span> <span class="pre">'color':</span> <span class="pre">{'application':</span> <span class="pre">None,</span> <span class="pre">'color':</span> <span class="pre">None,</span> <span class="pre">'feature':</span> <span class="pre">None,</span> <span class="pre">'interpreter':</span> <span class="pre">None},</span> <span class="pre">'dip':</span> <span class="pre">None,</span> <span class="pre">'locked':</span> <span class="pre">None,</span> <span class="pre">'offset':</span> <span class="pre">None,</span> <span class="pre">'orientation':</span> <span class="pre">None,</span> <span class="pre">'radius_1':</span> <span class="pre">None,</span> <span class="pre">'radius_2':</span> <span class="pre">None,</span> <span class="pre">'thickness_down':</span> <span class="pre">None,</span> <span class="pre">'thickness_up':</span> <span class="pre">None,</span> <span class="pre">'type':</span> <span class="pre">None,</span> <span class="pre">'vertices':</span> <span class="pre">[]}</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#Target"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.Target" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.Target.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">location</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">geometry</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{'azimuth':</span> <span class="pre">None,</span> <span class="pre">'category':</span> <span class="pre">None,</span> <span class="pre">'color':</span> <span class="pre">{'application':</span> <span class="pre">None,</span> <span class="pre">'color':</span> <span class="pre">None,</span> <span class="pre">'feature':</span> <span class="pre">None,</span> <span class="pre">'interpreter':</span> <span class="pre">None},</span> <span class="pre">'dip':</span> <span class="pre">None,</span> <span class="pre">'locked':</span> <span class="pre">None,</span> <span class="pre">'offset':</span> <span class="pre">None,</span> <span class="pre">'orientation':</span> <span class="pre">None,</span> <span class="pre">'radius_1':</span> <span class="pre">None,</span> <span class="pre">'radius_2':</span> <span class="pre">None,</span> <span class="pre">'thickness_down':</span> <span class="pre">None,</span> <span class="pre">'thickness_up':</span> <span class="pre">None,</span> <span class="pre">'type':</span> <span class="pre">None,</span> <span class="pre">'vertices':</span> <span class="pre">[]}</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#Target.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.Target.__init__" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.WellPlan">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">WellPlan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">depth_unit</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'meters'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">surface_unit</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'meters'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">survey</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plan_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">location_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plan_method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'curve_only'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dirty_flag</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sidetrack_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dls</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">extension</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wbp_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">line</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent_wbp_file</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#WellPlan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.WellPlan" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.WellPlan.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">depth_unit</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'meters'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">surface_unit</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'meters'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">survey</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plan_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">location_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plan_method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'curve_only'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dirty_flag</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sidetrack_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dls</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">extension</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wbp_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">line</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent_wbp_file</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#WellPlan.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.WellPlan.__init__" title="Link to this definition"></a></dt>
+<dd><p>An object for storing data extracted from or for writing to a .wbp
+file. As such, the following parameters are driven by those
+required by Landmark’s .wbp format.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>depth_unit</strong> (<em>string</em><em> (</em><em>default: 'meters'</em><em>)</em>) – The units used for expressing depth (z axis or tvd) in either
+‘meters’ or ‘feet’.</p></li>
+<li><p><strong>surface_unit</strong> (<em>string</em><em> (</em><em>default: 'meters'</em><em>)</em>) – The units used for expressing lateral distances (x, y, N, E)
+in either ‘meters’ or ‘feet’.</p></li>
+<li><p><strong>survey</strong> (<em>welleng.survey.Survey object</em><em> (</em><em>default: None</em><em>)</em>)</p></li>
+<li><p><strong>plan_name</strong> (<em>string</em><em> (</em><em>default: None</em><em>)</em>) – The name of the well bore plan.</p></li>
+<li><p><strong>parent_name</strong> (<em>string</em><em> (</em><em>default: None</em><em>)</em>) – The name of the parent well bore plan (in the event that
+the planned well is a sidetrack or lateral).</p></li>
+<li><p><strong>location_type</strong> (<em>string</em><em> (</em><em>default: None</em><em>)</em>) – Best to review the wbp.yaml file for options.</p></li>
+<li><p><strong>plan_method</strong> (<em>string</em><em> (</em><em>default: 'curve_only'</em><em>)</em>) – The method used for joining the plan points in the .wbp file.
+Options can be reviewed in the wbp.yaml file but won’t
+currently effect how the code runs, so just leave default.</p></li>
+<li><p><strong>dirt_flag</strong> (<em>string</em><em> (</em><em>default: None</em><em>)</em>) – Again, review the wbp.yaml file for options, but this is
+not currently used in this code.</p></li>
+<li><p><strong>sidetrack_id</strong> (<em>string</em><em> (</em><em>default: None</em><em>)</em>) – Leave default, not used.</p></li>
+<li><p><strong>dls</strong> (<em>float</em><em> (</em><em>default: 0</em><em>)</em>) – Suggests that this sets the design dls for planning, but
+doesn’t appear to matter so leave as default.</p></li>
+<li><p><strong>extension</strong> (<em>float</em><em> (</em><em>default: 0</em><em>)</em>) – Not really sure what this does.</p></li>
+<li><p><strong>wbp_data</strong> (<em>list</em><em> of </em><em>strings</em><em> (</em><em>default: None</em><em>)</em>) – A list of strings with each string representing a line from
+of text loaded from a .wbp file. Used for importing .wbp
+data.</p></li>
+<li><p><strong>targets</strong> (<em>list</em><em> of </em><em>welleng.exchange.wbp.Target objects</em><em> (</em><em>default:</em><em> [</em><em>]</em><em>)</em>) – A list of target objects, but more of a future function.</p></li>
+<li><p><strong>line</strong> (<em>int</em><em> (</em><em>default: None</em><em>)</em>) – Used for processing .wbp files that contain multiple well
+bores.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>A welleng.exchange.wbp.WellPlan object representing a well bore.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.add_comments">
+<span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">add_comments</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">doc</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">comments</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#add_comments"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.add_comments" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.add_header">
+<span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">add_header</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">doc</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#add_header"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.add_header" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.add_location">
+<span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">add_location</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">doc</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">location</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#add_location"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.add_location" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.add_step">
+<span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">add_step</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">doc</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">step</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#add_step"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.add_step" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.add_survey_point">
+<span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">add_survey_point</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">doc</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">step</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#add_survey_point"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.add_survey_point" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.add_targets">
+<span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">add_targets</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">doc</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#add_targets"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.add_targets" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.add_turn_point">
+<span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">add_turn_point</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">doc</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">step</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#add_turn_point"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.add_turn_point" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.export">
+<span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">export</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filename</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">comments</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#export"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.export" title="Link to this definition"></a></dt>
+<dd><p>Export a WellPlan object to .wbp format.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>welleng.exchange.wbp.WellPlan object</em><em> or </em><em>a list</em><em> of </em><em>objects</em>)</p></li>
+<li><p><strong>filename</strong> (<em>string</em><em> (</em><em>default: None</em><em>)</em>) – The filename to save the .wbp file to. If None then the
+output is returned as data.</p></li>
+<li><p><strong>comments</strong> (<em>list</em><em> of </em><em>strings</em><em> (</em><em>default: None</em><em>)</em>) – A list of comments to be printed in the header of the .wbp
+file.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>doc</strong></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list of strings</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.get_key">
+<span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">get_key</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">d</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#get_key"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.get_key" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.get_parent_survey">
+<span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">get_parent_survey</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filename</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#get_parent_survey"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.get_parent_survey" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.get_unit_key">
+<span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">get_unit_key</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#get_unit_key"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.get_unit_key" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.load">
+<span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">load</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filename</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#load"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.load" title="Link to this definition"></a></dt>
+<dd><p>Loads data line by line from a .wbp file, initiates a WellPlan object
+and populates it with data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>filename</strong> (<em>string</em>) – The location and filename of the .wbp file to load.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>A welleng.exchange.wbp.WellPlan object</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.save_to_file">
+<span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">save_to_file</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">doc</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filename</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#save_to_file"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.save_to_file" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.string_strip">
+<span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">string_strip</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">string</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">is_float</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#string_strip"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.string_strip" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.strip_duplicates">
+<span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">strip_duplicates</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">survey</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#strip_duplicates"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.strip_duplicates" title="Link to this definition"></a></dt>
+<dd><p>Function to strip out identical successive survey stations from a Survey
+object.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>survey</strong> (<em>welleng.survey.Survey object</em>)</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>survey_stripped</strong> – A survey object with repeating survey stations removed.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>welleng.survey.Survey object</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.exchange.wbp.wbp_to_survey">
+<span class="sig-prename descclassname"><span class="pre">welleng.exchange.wbp.</span></span><span class="sig-name descname"><span class="pre">wbp_to_survey</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">step</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">radius</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">azi_reference</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'true'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">convergence</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">utm_zone</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">31</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">utm_north</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/exchange/wbp.html#wbp_to_survey"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.exchange.wbp.wbp_to_survey" title="Link to this definition"></a></dt>
+<dd><p>Converts a WellPlan object created from a .wbp file into a Survey object.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>wellend.exchange.wbp.WellPlan object</em>)</p></li>
+<li><p><strong>step</strong> (<em>float</em>) – The desired step interval used to create the Survey object.
+e.g. step=30 would create a survey station every 30 meters.</p></li>
+<li><p><strong>radius</strong> (<em>float</em><em> (</em><em>default: 10</em><em>)</em>) – The radius of the well bore generated in the survey. The
+default is used assuming that the well will be rendered with
+welleng.visual.plot.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>survey</strong></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>welleng.survey.Survey object</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-welleng.exchange">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-welleng.exchange" title="Link to this heading"></a></h2>
+<section id="welleng-exchange">
+<h3>welleng/exchange<a class="headerlink" href="#welleng-exchange" title="Link to this heading"></a></h3>
+<p>Contains the importers and exporters for various survey formats.</p>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="welleng.errors.html" class="btn btn-neutral float-left" title="welleng.errors package" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script>
+    <!-- your html code here -->
+
+
+</body>
+</html>

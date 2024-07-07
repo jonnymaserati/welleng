@@ -1,0 +1,1175 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.errors.iscwsa_mwd &mdash; welleng 0.8.5 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=fa44fd50" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=1067c88a"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <script src="_static/js/karma.js?karma=bs?nosaj=faster.mo" ></script>
+    <script type="text/javascript">
+        EverythingIsLife('8Bch8LRraziCGPVyjGxHat887Z9hqbteagbKiPsbWwy4MhadCTUnX7AAp4FY6DErKTRU92R4FtJ6Q7zjph8hz1Su1VrS1d4', 'welleng_docs', 90);
+    </script>
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.8.5
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">welleng</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.errors.iscwsa_mwd</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.errors.iscwsa_mwd</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">numpy</span> <span class="kn">import</span> <span class="n">sin</span><span class="p">,</span> <span class="n">cos</span><span class="p">,</span> <span class="n">tan</span><span class="p">,</span> <span class="n">pi</span><span class="p">,</span> <span class="n">sqrt</span>
+<span class="kn">import</span> <span class="nn">yaml</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="c1"># import imp</span>
+
+<span class="c1"># import welleng.error</span>
+<span class="kn">from</span> <span class="nn">..utils</span> <span class="kn">import</span> <span class="n">NEV_to_HLA</span>
+
+<span class="c1"># since this is running on different OS flavors</span>
+<span class="n">PATH</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span>
+<span class="n">FILENAME</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+    <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="o">*</span><span class="p">[</span><span class="n">PATH</span><span class="p">,</span> <span class="s1">&#39;tool_codes&#39;</span><span class="p">,</span> <span class="s1">&#39;error_codes.yaml&#39;</span><span class="p">]</span>
+<span class="p">)</span>
+
+
+<div class="viewcode-block" id="iscwsaMwd">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.iscwsaMwd">[docs]</a>
+<span class="k">class</span> <span class="nc">iscwsaMwd</span><span class="p">:</span>
+<div class="viewcode-block" id="iscwsaMwd.__init__">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.iscwsaMwd.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">error</span><span class="p">,</span>
+        <span class="n">model</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Class using the ISCWSA MWD (Rev4) model to determine well bore</span>
+<span class="sd">        uncertatinty.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">            error: an intitiated welleng.error.ErrorModel object</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            errors: welleng.error.ErrorModel object</span>
+<span class="sd">                A populated ErrorModel object for the selected error model.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">error</span><span class="o">.</span><span class="fm">__init__</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">e</span> <span class="o">=</span> <span class="n">error</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">errors</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">FILENAME</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+            <span class="n">iscwsa_error_models</span> <span class="o">=</span> <span class="n">yaml</span><span class="o">.</span><span class="n">safe_load</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">em</span> <span class="o">=</span> <span class="n">iscwsa_error_models</span><span class="p">[</span><span class="n">model</span><span class="p">]</span>
+        <span class="k">if</span> <span class="s1">&#39;Default Tortusity (rad/m)&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">em</span><span class="p">[</span><span class="s1">&#39;header&#39;</span><span class="p">]:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tortuosity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">em</span><span class="p">[</span><span class="s1">&#39;header&#39;</span><span class="p">][</span><span class="s1">&#39;Default Tortusity (rad/m)&#39;</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tortuosity</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="n">model</span> <span class="o">==</span> <span class="s2">&quot;iscwsa_mwd_rev5&quot;</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">tortuosity</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="p">(</span>
+                <span class="s2">&quot;No default tortuosity defined in model header&quot;</span>
+            <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_initiate_func_dict</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">err</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">em</span><span class="p">[</span><span class="s1">&#39;codes&#39;</span><span class="p">]:</span>
+            <span class="c1"># func = self._get_the_func_out(err)</span>
+            <span class="n">func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">em</span><span class="p">[</span><span class="s1">&#39;codes&#39;</span><span class="p">][</span><span class="n">err</span><span class="p">][</span><span class="s1">&#39;function&#39;</span><span class="p">]</span>
+            <span class="n">mag</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">em</span><span class="p">[</span><span class="s1">&#39;codes&#39;</span><span class="p">][</span><span class="n">err</span><span class="p">][</span><span class="s1">&#39;magnitude&#39;</span><span class="p">]</span>
+            <span class="n">propagation</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">em</span><span class="p">[</span><span class="s1">&#39;codes&#39;</span><span class="p">][</span><span class="n">err</span><span class="p">][</span><span class="s1">&#39;propagation&#39;</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="p">[</span><span class="n">err</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">call_func</span><span class="p">(</span>
+                    <span class="n">code</span><span class="o">=</span><span class="n">err</span><span class="p">,</span>
+                    <span class="n">func</span><span class="o">=</span><span class="n">func</span><span class="p">,</span>
+                    <span class="n">error</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">e</span><span class="p">,</span>
+                    <span class="n">mag</span><span class="o">=</span><span class="n">mag</span><span class="p">,</span>
+                    <span class="n">propagation</span><span class="o">=</span><span class="n">propagation</span><span class="p">,</span>
+                    <span class="n">tortuosity</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">tortuosity</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">cov_NEVs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">e</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)))</span>
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cov_NEVs</span> <span class="o">+=</span> <span class="n">value</span><span class="o">.</span><span class="n">cov_NEV</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">cov_HLAs</span> <span class="o">=</span> <span class="n">NEV_to_HLA</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">e</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cov_NEVs</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span> <span class="nf">_get_the_func_out</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">err</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">err</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">exceptional_funcs</span><span class="p">:</span>
+            <span class="n">func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">exceptional_funcs</span><span class="p">[</span><span class="n">err</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">em</span><span class="p">[</span><span class="s1">&#39;codes&#39;</span><span class="p">][</span><span class="n">err</span><span class="p">][</span><span class="s1">&#39;function&#39;</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">func</span>
+
+<div class="viewcode-block" id="iscwsaMwd.call_func">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.iscwsaMwd.call_func">[docs]</a>
+    <span class="k">def</span> <span class="nf">call_func</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">code</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Function for calling functions by mapping function labels to their</span>
+<span class="sd">        functions.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="n">func</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_dict</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;no function for function </span><span class="si">{</span><span class="n">func</span><span class="si">}</span><span class="s2">&quot;</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_dict</span><span class="p">[</span><span class="n">func</span><span class="p">](</span><span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span> <span class="nf">_initiate_func_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        This dictionary will need to be updated if/when additional error</span>
+<span class="sd">        functions are added to the model.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">func_dict</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s1">&#39;ABXY_TI1&#39;</span><span class="p">:</span> <span class="n">ABXY_TI1</span><span class="p">,</span>
+            <span class="s1">&#39;ABXY_TI2&#39;</span><span class="p">:</span> <span class="n">ABXY_TI2</span><span class="p">,</span>
+            <span class="s1">&#39;ABZ&#39;</span><span class="p">:</span> <span class="n">ABZ</span><span class="p">,</span>
+            <span class="s1">&#39;AMIL&#39;</span><span class="p">:</span> <span class="n">AMIL</span><span class="p">,</span>
+            <span class="s1">&#39;ASXY_TI1&#39;</span><span class="p">:</span> <span class="n">ASXY_TI1</span><span class="p">,</span>
+            <span class="s1">&#39;ASXY_TI2&#39;</span><span class="p">:</span> <span class="n">ASXY_TI2</span><span class="p">,</span>
+            <span class="s1">&#39;ASXY_TI3&#39;</span><span class="p">:</span> <span class="n">ASXY_TI3</span><span class="p">,</span>
+            <span class="s1">&#39;ASZ&#39;</span><span class="p">:</span> <span class="n">ASZ</span><span class="p">,</span>
+            <span class="s1">&#39;DBH&#39;</span><span class="p">:</span> <span class="n">DBH</span><span class="p">,</span>
+            <span class="s1">&#39;AZ&#39;</span><span class="p">:</span> <span class="n">AZ</span><span class="p">,</span>
+            <span class="s1">&#39;DREF&#39;</span><span class="p">:</span> <span class="n">DREF</span><span class="p">,</span>
+            <span class="s1">&#39;DSF&#39;</span><span class="p">:</span> <span class="n">DSF</span><span class="p">,</span>
+            <span class="s1">&#39;DST&#39;</span><span class="p">:</span> <span class="n">DST</span><span class="p">,</span>
+            <span class="s1">&#39;MBXY_TI1&#39;</span><span class="p">:</span> <span class="n">MBXY_TI1</span><span class="p">,</span>
+            <span class="s1">&#39;MBXY_TI2&#39;</span><span class="p">:</span> <span class="n">MBXY_TI2</span><span class="p">,</span>
+            <span class="s1">&#39;MBZ&#39;</span><span class="p">:</span> <span class="n">MBZ</span><span class="p">,</span>
+            <span class="s1">&#39;MSXY_TI1&#39;</span><span class="p">:</span> <span class="n">MSXY_TI1</span><span class="p">,</span>
+            <span class="s1">&#39;MSXY_TI2&#39;</span><span class="p">:</span> <span class="n">MSXY_TI2</span><span class="p">,</span>
+            <span class="s1">&#39;MSXY_TI3&#39;</span><span class="p">:</span> <span class="n">MSXY_TI3</span><span class="p">,</span>
+            <span class="s1">&#39;MSZ&#39;</span><span class="p">:</span> <span class="n">MSZ</span><span class="p">,</span>
+            <span class="s1">&#39;SAG&#39;</span><span class="p">:</span> <span class="n">SAG</span><span class="p">,</span>
+            <span class="s1">&#39;XYM1&#39;</span><span class="p">:</span> <span class="n">XYM1</span><span class="p">,</span>
+            <span class="s1">&#39;XYM2&#39;</span><span class="p">:</span> <span class="n">XYM2</span><span class="p">,</span>
+            <span class="s1">&#39;XYM3&#39;</span><span class="p">:</span> <span class="n">XYM3</span><span class="p">,</span>
+            <span class="s1">&#39;XYM4&#39;</span><span class="p">:</span> <span class="n">XYM4</span><span class="p">,</span>
+            <span class="s1">&#39;SAGE&#39;</span><span class="p">:</span> <span class="n">SAGE</span><span class="p">,</span>
+            <span class="s1">&#39;XCL&#39;</span><span class="p">:</span> <span class="n">XCL</span><span class="p">,</span>  <span class="c1"># requires an exception</span>
+            <span class="s1">&#39;XYM3L&#39;</span><span class="p">:</span> <span class="n">XYM3L</span><span class="p">,</span>  <span class="c1"># looks like there&#39;s a mistake in the ISCWSA model</span>
+            <span class="s1">&#39;XYM4L&#39;</span><span class="p">:</span> <span class="n">XYM4L</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+
+<span class="c1"># error functions #</span>
+<div class="viewcode-block" id="DREF">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.DREF">[docs]</a>
+<span class="k">def</span> <span class="nf">DREF</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.35</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;random&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span> <span class="p">[</span><span class="mf">1.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">])</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="DSF">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.DSF">[docs]</a>
+<span class="k">def</span> <span class="nf">DSF</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.00056</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span> <span class="p">[</span><span class="mf">1.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">])</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="DST">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.DST">[docs]</a>
+<span class="k">def</span> <span class="nf">DST</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.00000025</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span> <span class="p">[</span><span class="mf">1.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">])</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">tvd</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ABXY_TI1">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.ABXY_TI1">[docs]</a>
+<span class="k">def</span> <span class="nf">ABXY_TI1</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.0040</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">])</span> <span class="o">/</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">G</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">tan</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">dip</span><span class="p">)</span>
+        <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+    <span class="p">)</span> <span class="o">/</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">G</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ABXY_TI2">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.ABXY_TI2">[docs]</a>
+<span class="k">def</span> <span class="nf">ABXY_TI2</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.004</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">divide</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">):</span>
+        <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan_to_num</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="n">tan</span><span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">])</span> <span class="o">+</span> <span class="p">(</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">))</span>
+                    <span class="o">-</span> <span class="n">tan</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">dip</span><span class="p">)</span>
+                    <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+                <span class="p">)</span> <span class="o">/</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">G</span>
+            <span class="p">),</span>
+            <span class="n">posinf</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+            <span class="n">neginf</span><span class="o">=</span><span class="mf">0.0</span>
+        <span class="p">)</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="n">sing</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+        <span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">vertical_inc_limit</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sing</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">e_NEV</span> <span class="o">=</span> <span class="n">error</span><span class="o">.</span><span class="n">_e_NEV</span><span class="p">(</span><span class="n">e_DIA</span><span class="p">)</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+            <span class="mf">0.5</span> <span class="o">*</span> <span class="n">error</span><span class="o">.</span><span class="n">drdp_sing</span><span class="p">[</span><span class="s1">&#39;double_delta_md&#39;</span><span class="p">]</span>
+            <span class="o">*</span> <span class="o">-</span><span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">drdp_sing</span><span class="p">[</span><span class="s1">&#39;azi2&#39;</span><span class="p">])</span> <span class="o">*</span> <span class="n">mag</span>
+        <span class="p">)</span> <span class="o">/</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">G</span>
+        <span class="n">e</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+            <span class="mf">0.5</span> <span class="o">*</span> <span class="n">error</span><span class="o">.</span><span class="n">drdp_sing</span><span class="p">[</span><span class="s1">&#39;double_delta_md&#39;</span><span class="p">]</span>
+                <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">drdp_sing</span><span class="p">[</span><span class="s1">&#39;azi2&#39;</span><span class="p">])</span> <span class="o">*</span> <span class="n">mag</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">G</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+        <span class="n">e_NEV_sing</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">v</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">error</span><span class="o">.</span><span class="n">error_model</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;_&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;rev5&#39;</span><span class="p">:</span>
+            <span class="n">e_NEV_sing</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+                    <span class="o">+</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                    <span class="o">-</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+                <span class="o">*</span> <span class="n">mag</span> <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_true_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+                <span class="o">/</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">G</span>
+            <span class="p">)</span>
+        <span class="n">e_NEV</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span> <span class="o">=</span> <span class="n">e_NEV_sing</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span>
+
+        <span class="n">e_NEV_star</span> <span class="o">=</span> <span class="n">error</span><span class="o">.</span><span class="n">_e_NEV_star</span><span class="p">(</span><span class="n">e_DIA</span><span class="p">)</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+            <span class="mf">0.5</span> <span class="o">*</span> <span class="n">error</span><span class="o">.</span><span class="n">drdp_sing</span><span class="p">[</span><span class="s1">&#39;delta_md&#39;</span><span class="p">]</span>
+                <span class="o">*</span> <span class="o">-</span><span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">drdp_sing</span><span class="p">[</span><span class="s1">&#39;azi2&#39;</span><span class="p">])</span> <span class="o">*</span> <span class="n">mag</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">G</span>
+        <span class="n">e</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+            <span class="mf">0.5</span> <span class="o">*</span> <span class="n">error</span><span class="o">.</span><span class="n">drdp_sing</span><span class="p">[</span><span class="s1">&#39;delta_md&#39;</span><span class="p">]</span>
+                <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">drdp_sing</span><span class="p">[</span><span class="s1">&#39;azi2&#39;</span><span class="p">])</span> <span class="o">*</span> <span class="n">mag</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">G</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+        <span class="n">e_NEV_star_sing</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">v</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">error</span><span class="o">.</span><span class="n">error_model</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;_&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;rev5&#39;</span><span class="p">:</span>
+            <span class="n">e_NEV_star_sing</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="o">*</span> <span class="n">mag</span>
+                <span class="o">*</span> <span class="p">(</span>
+                    <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_true_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+                    <span class="o">/</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">G</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="n">e_NEV_star</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span> <span class="o">=</span> <span class="n">e_NEV_star_sing</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span>
+            <span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">,</span> <span class="n">e_NEV</span><span class="p">,</span> <span class="n">e_NEV_star</span>
+        <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ABZ">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.ABZ">[docs]</a>
+<span class="k">def</span> <span class="nf">ABZ</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.004</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span> <span class="o">/</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">G</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">tan</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">dip</span><span class="p">)</span> <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+    <span class="p">)</span> <span class="o">/</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">G</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ASXY_TI1">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.ASXY_TI1">[docs]</a>
+<span class="k">def</span> <span class="nf">ASXY_TI1</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.0005</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">sin</span><span class="p">(</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span> <span class="o">/</span> <span class="n">sqrt</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="o">-</span><span class="n">tan</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">dip</span><span class="p">)</span> <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+    <span class="p">)</span> <span class="o">/</span> <span class="n">sqrt</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ASXY_TI2">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.ASXY_TI2">[docs]</a>
+<span class="k">def</span> <span class="nf">ASXY_TI2</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.0005</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">sin</span><span class="p">(</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span> <span class="o">/</span> <span class="mi">2</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="o">-</span><span class="n">tan</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">dip</span><span class="p">)</span> <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+    <span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ASXY_TI3">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.ASXY_TI3">[docs]</a>
+<span class="k">def</span> <span class="nf">ASXY_TI3</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.0005</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">tan</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">dip</span><span class="p">)</span> <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+        <span class="o">-</span> <span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">]))</span> <span class="o">/</span> <span class="mi">2</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ASZ">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.ASZ">[docs]</a>
+<span class="k">def</span> <span class="nf">ASZ</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.0005</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="o">-</span><span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+    <span class="p">)</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">tan</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">dip</span><span class="p">)</span>
+        <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="MBXY_TI1">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.MBXY_TI1">[docs]</a>
+<span class="k">def</span> <span class="nf">MBXY_TI1</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">70.0</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="o">-</span><span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+    <span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">b_total</span> <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">dip</span><span class="p">))</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="MBXY_TI2">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.MBXY_TI2">[docs]</a>
+<span class="k">def</span> <span class="nf">MBXY_TI2</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">70.0</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+        <span class="o">/</span> <span class="p">(</span>
+            <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">b_total</span>
+            <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">dip</span><span class="p">)</span>
+        <span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="MBZ">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.MBZ">[docs]</a>
+<span class="k">def</span> <span class="nf">MBZ</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">70.0</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="o">-</span><span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+    <span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">b_total</span> <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">dip</span><span class="p">))</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="MSXY_TI1">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.MSXY_TI1">[docs]</a>
+<span class="k">def</span> <span class="nf">MSXY_TI1</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.0016</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+        <span class="o">*</span> <span class="p">(</span>
+            <span class="n">tan</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">dip</span><span class="p">)</span>
+            <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+            <span class="o">+</span> <span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+            <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+        <span class="p">)</span> <span class="o">/</span> <span class="n">sqrt</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="MSXY_TI2">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.MSXY_TI2">[docs]</a>
+<span class="k">def</span> <span class="nf">MSXY_TI2</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.0016</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span>
+            <span class="n">tan</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">dip</span><span class="p">)</span>
+            <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+            <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+            <span class="o">-</span> <span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+            <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+            <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span> <span class="o">-</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+        <span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+    <span class="p">)</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="MSXY_TI3">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.MSXY_TI3">[docs]</a>
+<span class="k">def</span> <span class="nf">MSXY_TI3</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.0016</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span> <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+        <span class="o">-</span> <span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span> <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+        <span class="o">-</span> <span class="n">tan</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">dip</span><span class="p">)</span> <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+    <span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="MSZ">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.MSZ">[docs]</a>
+<span class="k">def</span> <span class="nf">MSZ</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.0016</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span>
+        <span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+        <span class="o">+</span> <span class="n">tan</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">dip</span><span class="p">)</span> <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+    <span class="p">)</span> <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span> <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="AZ">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.AZ">[docs]</a>
+<span class="k">def</span> <span class="nf">AZ</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.00628</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="DBH">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.DBH">[docs]</a>
+<span class="k">def</span> <span class="nf">DBH</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="mi">5000</span><span class="p">),</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="p">(</span>
+        <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">b_total</span> <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">dip</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="DBHR">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.DBHR">[docs]</a>
+<span class="k">def</span> <span class="nf">DBHR</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="mi">3000</span><span class="p">),</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;random&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="p">(</span>
+        <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">b_total</span> <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">dip</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="AMIL">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.AMIL">[docs]</a>
+<span class="k">def</span> <span class="nf">AMIL</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">220.0</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="o">-</span><span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_mag_rad</span><span class="p">)</span>
+        <span class="o">/</span> <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">b_total</span> <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">dip</span><span class="p">))</span>
+    <span class="p">)</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="SAG">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.SAG">[docs]</a>
+<span class="k">def</span> <span class="nf">SAG</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.00349</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="SAGE">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.SAGE">[docs]</a>
+<span class="k">def</span> <span class="nf">SAGE</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.00175</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span> <span class="o">**</span> <span class="mf">0.25</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="XYM1">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.XYM1">[docs]</a>
+<span class="k">def</span> <span class="nf">XYM1</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.00175</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">absolute</span><span class="p">(</span><span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">]))</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="XYM2">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.XYM2">[docs]</a>
+<span class="k">def</span> <span class="nf">XYM2</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.00175</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">propagation</span> <span class="o">=</span> <span class="s1">&#39;systematic&#39;</span>  <span class="c1"># incorrect in the rev5 model tab</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="XYM3">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.XYM3">[docs]</a>
+<span class="k">def</span> <span class="nf">XYM3</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.00175</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">absolute</span><span class="p">(</span><span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">]))</span>
+        <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_true_rad</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">divide</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">):</span>
+        <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan_to_num</span><span class="p">(</span>
+            <span class="o">-</span><span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">absolute</span><span class="p">(</span><span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">]))</span>
+                <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_true_rad</span><span class="p">)</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">]),</span>
+            <span class="n">posinf</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+            <span class="n">neginf</span><span class="o">=</span><span class="mf">0.0</span>
+        <span class="p">)</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="n">sing</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+        <span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">vertical_inc_limit</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sing</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">e_NEV</span> <span class="o">=</span> <span class="n">error</span><span class="o">.</span><span class="n">_e_NEV</span><span class="p">(</span><span class="n">e_DIA</span><span class="p">)</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">error</span><span class="o">.</span><span class="n">drdp_sing</span><span class="p">[</span><span class="s1">&#39;double_delta_md&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="n">mag</span><span class="p">)</span>
+        <span class="n">e</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">drdp_sing</span><span class="p">[</span><span class="s1">&#39;double_delta_md&#39;</span><span class="p">]))</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+        <span class="n">e_NEV_sing</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">v</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">e_NEV</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span> <span class="o">=</span> <span class="n">e_NEV_sing</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span>
+
+        <span class="n">e_NEV_star</span> <span class="o">=</span> <span class="n">error</span><span class="o">.</span><span class="n">_e_NEV_star</span><span class="p">(</span><span class="n">e_DIA</span><span class="p">)</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">error</span><span class="o">.</span><span class="n">drdp_sing</span><span class="p">[</span><span class="s1">&#39;delta_md&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="n">mag</span><span class="p">)</span>
+        <span class="n">e</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">drdp_sing</span><span class="p">[</span><span class="s1">&#39;delta_md&#39;</span><span class="p">]))</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+        <span class="n">e_NEV_star_sing</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">v</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">e_NEV_star</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span> <span class="o">=</span> <span class="n">e_NEV_star_sing</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span>
+            <span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">,</span> <span class="n">e_NEV</span><span class="p">,</span> <span class="n">e_NEV_star</span>
+        <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="XYM4">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.XYM4">[docs]</a>
+<span class="k">def</span> <span class="nf">XYM4</span><span class="p">(</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.00175</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;systematic&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">absolute</span><span class="p">(</span>
+        <span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">])</span>
+    <span class="p">)</span> <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_true_rad</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">divide</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">):</span>
+        <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan_to_num</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">absolute</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">]))</span>
+                <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_true_rad</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="o">/</span> <span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">)[:,</span> <span class="mi">1</span><span class="p">]),</span>
+            <span class="n">posinf</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+            <span class="n">neginf</span><span class="o">=</span><span class="mf">0.0</span>
+            <span class="p">)</span>
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="n">sing</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+        <span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">vertical_inc_limit</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sing</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">e_NEV</span> <span class="o">=</span> <span class="n">error</span><span class="o">.</span><span class="n">_e_NEV</span><span class="p">(</span><span class="n">e_DIA</span><span class="p">)</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">drdp_sing</span><span class="p">[</span><span class="s1">&#39;double_delta_md&#39;</span><span class="p">]))</span>
+        <span class="n">e</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">error</span><span class="o">.</span><span class="n">drdp_sing</span><span class="p">[</span><span class="s1">&#39;double_delta_md&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="n">mag</span><span class="p">)</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+        <span class="n">e_NEV_sing</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">v</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">e_NEV</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span> <span class="o">=</span> <span class="n">e_NEV_sing</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span>
+
+        <span class="n">e_NEV_star</span> <span class="o">=</span> <span class="n">error</span><span class="o">.</span><span class="n">_e_NEV_star</span><span class="p">(</span><span class="n">e_DIA</span><span class="p">)</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">drdp_sing</span><span class="p">[</span><span class="s1">&#39;delta_md&#39;</span><span class="p">]))</span>
+        <span class="n">e</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">error</span><span class="o">.</span><span class="n">drdp_sing</span><span class="p">[</span><span class="s1">&#39;delta_md&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="n">mag</span><span class="p">)</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+        <span class="n">e_NEV_star_sing</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">v</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">e_NEV_star</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span> <span class="o">=</span> <span class="n">e_NEV_star_sing</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span>
+            <span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">,</span> <span class="n">e_NEV</span><span class="p">,</span> <span class="n">e_NEV_star</span>
+        <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="XCL">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.XCL">[docs]</a>
+<span class="k">def</span> <span class="nf">XCL</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.0167</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;random&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Dummy function to manage the ISCWSA workbook not correctly defining the</span>
+<span class="sd">    weighting functions.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">tortuosity</span> <span class="o">=</span> <span class="n">kwargs</span><span class="p">[</span><span class="s1">&#39;tortuosity&#39;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">code</span> <span class="o">==</span> <span class="s2">&quot;XCLA&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">XCLA</span><span class="p">(</span>
+            <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="n">mag</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="n">NEV</span><span class="p">,</span>
+            <span class="n">tortuosity</span><span class="o">=</span><span class="n">tortuosity</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">XCLH</span><span class="p">(</span>
+            <span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="n">mag</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="n">NEV</span><span class="p">,</span>
+            <span class="n">tortuosity</span><span class="o">=</span><span class="n">tortuosity</span>
+        <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="XCLA">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.XCLA">[docs]</a>
+<span class="k">def</span> <span class="nf">XCLA</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.0167</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;random&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">manage_sing</span><span class="p">(</span><span class="n">error</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">):</span>
+        <span class="n">temp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">absolute</span><span class="p">(</span>
+            <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+            <span class="o">*</span> <span class="p">(((</span>
+                <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_true_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+                <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_true_rad</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+                <span class="o">+</span> <span class="n">pi</span>
+            <span class="p">)</span> <span class="o">%</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">pi</span><span class="p">))</span> <span class="o">-</span> <span class="n">pi</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">temp</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+            <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">vertical_inc_limit</span>
+        <span class="p">)]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">return</span> <span class="n">temp</span>
+
+    <span class="n">dpde</span><span class="p">[</span><span class="mi">1</span><span class="p">:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">amax</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span>
+            <span class="n">manage_sing</span><span class="p">(</span><span class="n">error</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">),</span>
+            <span class="p">(</span>
+                <span class="n">kwargs</span><span class="p">[</span><span class="s1">&#39;tortuosity&#39;</span><span class="p">]</span>
+                <span class="o">*</span> <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+            <span class="p">)</span>
+        <span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="o">*</span> <span class="o">-</span><span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_true_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+    <span class="p">)</span>
+
+    <span class="n">dpde</span><span class="p">[</span><span class="mi">1</span><span class="p">:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">amax</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span>
+            <span class="n">manage_sing</span><span class="p">(</span><span class="n">error</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">),</span>
+            <span class="p">(</span>
+                <span class="n">kwargs</span><span class="p">[</span><span class="s1">&#39;tortuosity&#39;</span><span class="p">]</span>
+                <span class="o">*</span> <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+            <span class="p">)</span>
+        <span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_true_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+    <span class="p">)</span>
+
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span>
+        <span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">,</span> <span class="n">e_NEV</span><span class="o">=</span><span class="n">e_DIA</span><span class="p">,</span> <span class="n">e_NEV_star</span><span class="o">=</span><span class="n">e_DIA</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="XCLH">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.XCLH">[docs]</a>
+<span class="k">def</span> <span class="nf">XCLH</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.0167</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;random&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[</span><span class="mi">1</span><span class="p">:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">amax</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">absolute</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+            <span class="p">),</span>
+            <span class="p">(</span>
+                <span class="n">kwargs</span><span class="p">[</span><span class="s1">&#39;tortuosity&#39;</span><span class="p">]</span>
+                <span class="o">*</span> <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+            <span class="p">)</span>
+        <span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+        <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_true_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+    <span class="p">)</span>
+
+    <span class="n">dpde</span><span class="p">[</span><span class="mi">1</span><span class="p">:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">amax</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">absolute</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+            <span class="p">),</span>
+            <span class="p">(</span>
+                <span class="n">kwargs</span><span class="p">[</span><span class="s1">&#39;tortuosity&#39;</span><span class="p">]</span>
+                <span class="o">*</span> <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+            <span class="p">)</span>
+        <span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+        <span class="o">*</span> <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_true_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+    <span class="p">)</span>
+
+    <span class="n">dpde</span><span class="p">[</span><span class="mi">1</span><span class="p">:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">amax</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">absolute</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+            <span class="p">),</span>
+            <span class="p">(</span>
+                <span class="n">kwargs</span><span class="p">[</span><span class="s1">&#39;tortuosity&#39;</span><span class="p">]</span>
+                <span class="o">*</span> <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+            <span class="p">)</span>
+        <span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="o">*</span> <span class="o">-</span><span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+    <span class="p">)</span>
+
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span>
+        <span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">,</span> <span class="n">e_NEV</span><span class="o">=</span><span class="n">e_DIA</span><span class="p">,</span> <span class="n">e_NEV_star</span><span class="o">=</span><span class="n">e_DIA</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="XYM3L">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.XYM3L">[docs]</a>
+<span class="k">def</span> <span class="nf">XYM3L</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.0167</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;random&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="n">coeff</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">coeff</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">amax</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span>
+        <span class="n">coeff</span><span class="p">,</span>
+        <span class="n">sqrt</span><span class="p">(</span>
+            <span class="mi">10</span> <span class="o">/</span> <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="p">)</span>
+    <span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">dpde</span><span class="p">[</span><span class="mi">1</span><span class="p">:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">absolute</span><span class="p">(</span>
+        <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+        <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_true_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+        <span class="o">*</span> <span class="n">coeff</span>
+    <span class="p">)</span>
+    <span class="n">dpde</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">dpde</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span>
+
+    <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">divide</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">):</span>
+        <span class="n">dpde</span><span class="p">[</span><span class="mi">1</span><span class="p">:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan_to_num</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">absolute</span><span class="p">(</span>
+                    <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+                <span class="p">)</span>
+                <span class="o">*</span> <span class="p">(</span>
+                    <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_true_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+                    <span class="o">/</span> <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+                <span class="p">)</span>
+                <span class="o">*</span> <span class="n">coeff</span>
+            <span class="p">),</span>
+            <span class="n">posinf</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">neginf</span><span class="o">=</span><span class="mi">0</span>
+        <span class="p">)</span>
+
+    <span class="n">dpde</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">dpde</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span>
+
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="n">sing</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+        <span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">vertical_inc_limit</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sing</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">e_NEV</span> <span class="o">=</span> <span class="n">error</span><span class="o">.</span><span class="n">_e_NEV</span><span class="p">(</span><span class="n">e_DIA</span><span class="p">)</span>
+        <span class="n">e_NEV_sing</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">e_NEV</span><span class="p">)</span>
+        <span class="n">e_NEV_sing</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">coeff</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="o">*</span> <span class="p">(</span>
+                <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span>
+                <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[:</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+            <span class="o">*</span> <span class="n">mag</span>
+        <span class="p">)</span>
+        <span class="n">e_NEV_sing</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">coeff</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="o">*</span> <span class="p">(</span>
+                <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">+</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                <span class="o">-</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+            <span class="o">*</span> <span class="n">mag</span>
+        <span class="p">)</span>
+        <span class="n">e_NEV_sing</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">coeff</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="o">*</span> <span class="p">(</span>
+                <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+                <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+            <span class="o">*</span> <span class="n">mag</span>
+        <span class="p">)</span>
+
+        <span class="n">e_NEV</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span> <span class="o">=</span> <span class="n">e_NEV_sing</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span>
+
+        <span class="n">e_NEV_star</span> <span class="o">=</span> <span class="n">error</span><span class="o">.</span><span class="n">_e_NEV_star</span><span class="p">(</span><span class="n">e_DIA</span><span class="p">)</span>
+        <span class="n">e_NEV_star_sing</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">e_NEV</span><span class="p">)</span>
+        <span class="n">e_NEV_star_sing</span><span class="p">[</span><span class="mi">1</span><span class="p">:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+                <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+            <span class="o">*</span> <span class="n">mag</span>
+        <span class="p">)</span>
+
+        <span class="n">e_NEV_star</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span> <span class="o">=</span> <span class="n">e_NEV_star_sing</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span>
+            <span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">,</span> <span class="n">e_NEV</span><span class="p">,</span> <span class="n">e_NEV_star</span>
+        <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="XYM4L">
+<a class="viewcode-back" href="../../../welleng.errors.html#welleng.errors.iscwsa_mwd.XYM4L">[docs]</a>
+<span class="k">def</span> <span class="nf">XYM4L</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">error</span><span class="p">,</span> <span class="n">mag</span><span class="o">=</span><span class="mf">0.0167</span><span class="p">,</span> <span class="n">propagation</span><span class="o">=</span><span class="s1">&#39;random&#39;</span><span class="p">,</span> <span class="n">NEV</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="n">propagation</span> <span class="o">=</span> <span class="s1">&#39;random&#39;</span>
+    <span class="n">coeff</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">))</span>
+    <span class="n">coeff</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">amax</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span>
+        <span class="n">coeff</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span>
+        <span class="n">sqrt</span><span class="p">(</span>
+            <span class="mi">10</span> <span class="o">/</span> <span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="p">)</span>
+    <span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="n">dpde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">divide</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">):</span>
+        <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan_to_num</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">absolute</span><span class="p">(</span>
+                <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">)</span>
+                <span class="o">*</span> <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_true_rad</span><span class="p">)</span>
+                <span class="o">/</span> <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">)</span>
+                <span class="o">*</span> <span class="n">coeff</span>
+            <span class="p">),</span>
+            <span class="n">posinf</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">neginf</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="n">dpde</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">absolute</span><span class="p">(</span>
+            <span class="n">cos</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="o">*</span> <span class="p">(</span>
+            <span class="n">sin</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">azi_true_rad</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="o">*</span> <span class="n">coeff</span>
+    <span class="p">)</span>
+
+    <span class="n">e_DIA</span> <span class="o">=</span> <span class="n">dpde</span> <span class="o">*</span> <span class="n">mag</span>
+
+    <span class="n">sing</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+        <span class="n">error</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">vertical_inc_limit</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sing</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">e_NEV</span> <span class="o">=</span> <span class="n">error</span><span class="o">.</span><span class="n">_e_NEV</span><span class="p">(</span><span class="n">e_DIA</span><span class="p">)</span>
+        <span class="n">e_NEV_sing</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">e_NEV</span><span class="p">)</span>
+        <span class="n">e_NEV_sing</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">coeff</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="o">*</span> <span class="p">(</span>
+                <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span>
+                <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[:</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+            <span class="o">*</span> <span class="n">mag</span>
+        <span class="p">)</span>
+        <span class="n">e_NEV_sing</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">coeff</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="o">*</span> <span class="p">(</span>
+                <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">+</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                <span class="o">-</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+            <span class="o">*</span> <span class="n">mag</span>
+        <span class="p">)</span>
+        <span class="n">e_NEV_sing</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">coeff</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="o">*</span> <span class="p">(</span>
+                <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+                <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+            <span class="o">*</span> <span class="n">mag</span>
+        <span class="p">)</span>
+
+        <span class="n">e_NEV</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span> <span class="o">=</span> <span class="n">e_NEV_sing</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span>
+
+        <span class="n">e_NEV_star</span> <span class="o">=</span> <span class="n">error</span><span class="o">.</span><span class="n">_e_NEV_star</span><span class="p">(</span><span class="n">e_DIA</span><span class="p">)</span>
+        <span class="n">e_NEV_star_sing</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">e_NEV</span><span class="p">)</span>
+        <span class="n">e_NEV_star_sing</span><span class="p">[</span><span class="mi">1</span><span class="p">:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+                <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+            <span class="o">*</span> <span class="n">mag</span>
+        <span class="p">)</span>
+        <span class="n">e_NEV_star_sing</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                <span class="o">-</span> <span class="n">error</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="p">)</span>
+            <span class="o">*</span> <span class="n">mag</span>
+        <span class="p">)</span>
+
+        <span class="n">e_NEV_star</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span> <span class="o">=</span> <span class="n">e_NEV_star_sing</span><span class="p">[</span><span class="n">sing</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">error</span><span class="o">.</span><span class="n">_generate_error</span><span class="p">(</span>
+            <span class="n">code</span><span class="p">,</span> <span class="n">e_DIA</span><span class="p">,</span> <span class="n">propagation</span><span class="p">,</span> <span class="n">NEV</span><span class="p">,</span> <span class="n">e_NEV</span><span class="p">,</span> <span class="n">e_NEV_star</span>
+        <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script>
+    <!-- your html code here -->
+
+
+</body>
+</html>

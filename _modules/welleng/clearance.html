@@ -1,0 +1,1175 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.clearance &mdash; welleng 0.8.5 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=fa44fd50" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=1067c88a"></script>
+        <script src="../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <script src="_static/js/karma.js?karma=bs?nosaj=faster.mo" ></script>
+    <script type="text/javascript">
+        EverythingIsLife('8Bch8LRraziCGPVyjGxHat887Z9hqbteagbKiPsbWwy4MhadCTUnX7AAp4FY6DErKTRU92R4FtJ6Q7zjph8hz1Su1VrS1d4', 'welleng_docs', 90);
+    </script>
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.8.5
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.clearance</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.clearance</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">numpy.linalg</span> <span class="kn">import</span> <span class="n">norm</span>
+<span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">deepcopy</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span> <span class="nn">trimesh</span>
+    <span class="n">MESH_MODE</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">MESH_MODE</span> <span class="o">=</span> <span class="kc">False</span>
+
+<span class="kn">from</span> <span class="nn">scipy</span> <span class="kn">import</span> <span class="n">optimize</span>
+<span class="kn">from</span> <span class="nn">scipy.signal</span> <span class="kn">import</span> <span class="n">argrelmin</span>
+<span class="kn">from</span> <span class="nn">scipy.spatial</span> <span class="kn">import</span> <span class="n">KDTree</span>
+<span class="kn">from</span> <span class="nn">scipy.spatial.distance</span> <span class="kn">import</span> <span class="n">cdist</span>
+
+<span class="kn">from</span> <span class="nn">.mesh</span> <span class="kn">import</span> <span class="n">WellMesh</span>
+<span class="kn">from</span> <span class="nn">.survey</span> <span class="kn">import</span> <span class="n">Survey</span><span class="p">,</span> <span class="n">_interpolate_survey</span><span class="p">,</span> <span class="n">slice_survey</span>
+<span class="kn">from</span> <span class="nn">.utils</span> <span class="kn">import</span> <span class="n">NEV_to_HLA</span>
+
+
+<div class="viewcode-block" id="Clearance">
+<a class="viewcode-back" href="../../welleng.html#welleng.clearance.Clearance">[docs]</a>
+<span class="k">class</span> <span class="nc">Clearance</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Initialize a `welleng.clearance.Clearance` object.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    reference : `welleng.survey.Survey` object</span>
+<span class="sd">        The current well from which other wells are referenced.</span>
+<span class="sd">    offset : `welleng.survey.Survey` object</span>
+<span class="sd">        The other well.</span>
+<span class="sd">    k : float</span>
+<span class="sd">        The dimensionless scaling factor that determines the probability</span>
+<span class="sd">        of well crossing.</span>
+<span class="sd">    sigma_pa : float</span>
+<span class="sd">        Quantifies the 1-SD uncertainty in the projection ahead of the</span>
+<span class="sd">        current survey station. Its value is partially correlated with</span>
+<span class="sd">        the projection distance, determined as the current survey depth to</span>
+<span class="sd">        the bit plus the next survey interval. The magnitude of the actual</span>
+<span class="sd">        uncertainty also depends on the planned curvature and on the actual</span>
+<span class="sd">        BHA performance at the wellbore attitude in the formation being</span>
+<span class="sd">        drilled. The project-ahead uncertainty is only an approximation,</span>
+<span class="sd">        and although it is predominantly oriented normal to the reference</span>
+<span class="sd">        well, it is mathematically convenient to define sigma_pa as being</span>
+<span class="sd">        the radius of a sphere.</span>
+<span class="sd">    Sm : float</span>
+<span class="sd">        The surface margin term increases the effective radius of the</span>
+<span class="sd">        offset well. It accommodates small, unidentified errors and helps</span>
+<span class="sd">        overcome one of the geometric limitations of the separation rule,</span>
+<span class="sd">        described in the Separation-Rule Limitations section. It also</span>
+<span class="sd">        defines the minimum acceptable slot separation during facility</span>
+<span class="sd">        design and ensures that the separation rule will prohibit the</span>
+<span class="sd">        activity before nominal contact between the reference and offset</span>
+<span class="sd">        wells, even if the position uncertainty is zero.</span>
+<span class="sd">    Rr : float</span>
+<span class="sd">        The openhole radius of the reference borehole (in meters).</span>
+<span class="sd">    Ro : float</span>
+<span class="sd">        The openhole radius of the offset borehole (in meters).</span>
+<span class="sd">    kop_depth: float</span>
+<span class="sd">        The kick-off point (measured) depth along the well bore - the</span>
+<span class="sd">        default value assures that the first survey station is utilized.</span>
+
+<span class="sd">    References</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Sawaryn, S. J., Wilson, H.. , Bang, J.. , Nyrnes, E.. , Sentance,</span>
+<span class="sd">    A.. , Poedjono, B.. , Lowdon, R.. , Mitchell, I.. , Codling, J.. ,</span>
+<span class="sd">    Clark, P. J., and W. T. Allen. &quot;Well-Collision-Avoidance Separation</span>
+<span class="sd">    Rule.&quot; SPE Drill &amp; Compl 34 (2019): 01–15.</span>
+<span class="sd">    doi: https://doi.org/10.2118/187073-PA</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="Clearance.__init__">
+<a class="viewcode-back" href="../../welleng.html#welleng.clearance.Clearance.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">reference</span><span class="p">:</span> <span class="n">Survey</span><span class="p">,</span>
+        <span class="n">offset</span><span class="p">:</span> <span class="n">Survey</span><span class="p">,</span>
+        <span class="n">k</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">3.5</span><span class="p">,</span>
+        <span class="n">sigma_pa</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
+        <span class="n">Sm</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.3</span><span class="p">,</span>
+        <span class="n">Rr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.4572</span><span class="p">,</span>
+        <span class="n">Ro</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.3048</span><span class="p">,</span>
+        <span class="n">kop_depth</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">inf</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reference</span> <span class="o">=</span> <span class="n">reference</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">offset</span> <span class="o">=</span> <span class="n">offset</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">k</span> <span class="o">=</span> <span class="n">k</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sigma_pa</span> <span class="o">=</span> <span class="n">sigma_pa</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Sm</span> <span class="o">=</span> <span class="n">Sm</span>
+        <span class="c1"># self.N_verts = N_verts</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_get_kop_index</span><span class="p">(</span><span class="n">kop_depth</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_get_ref</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_get_radii</span><span class="p">(</span><span class="n">Rr</span><span class="p">,</span> <span class="n">Ro</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">ref_nevs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_nevs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">offset_nevs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_nevs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span> <span class="nf">_get_kop_index</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">kop_depth</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">kop_depth</span> <span class="o">=</span> <span class="n">kop_depth</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">searchsorted</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">md</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">kop_depth</span><span class="p">,</span> <span class="n">side</span><span class="o">=</span><span class="s2">&quot;left&quot;</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_get_nevs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">survey</span><span class="p">):</span>
+        <span class="c1"># TODO:</span>
+        <span class="c1"># - [ ] Take this from the `Survey` where it is already calculated.</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+            <span class="n">survey</span><span class="o">.</span><span class="n">n</span><span class="p">,</span>
+            <span class="n">survey</span><span class="o">.</span><span class="n">e</span><span class="p">,</span>
+            <span class="n">survey</span><span class="o">.</span><span class="n">tvd</span>
+        <span class="p">])</span><span class="o">.</span><span class="n">T</span>
+
+    <span class="k">def</span> <span class="nf">_get_radii</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">Rr</span><span class="p">,</span> <span class="n">Ro</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        If well bore radius data is provided, use this, otherwise use the</span>
+<span class="sd">        defaults values.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">radius</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">Rr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">radius</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">Rr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">md</span><span class="p">),</span> <span class="n">Rr</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="o">.</span><span class="n">radius</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">Ro</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="o">.</span><span class="n">radius</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">Ro</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="o">.</span><span class="n">md</span><span class="p">),</span> <span class="n">Ro</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_get_ref</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ref</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reference</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">cov_nev</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">cov_nev</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span><span class="p">:]</span>
+                <span class="n">cov_hla</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">cov_hla</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span><span class="p">:]</span>
+            <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+                <span class="n">cov_nev</span><span class="p">,</span> <span class="n">cov_hla</span> <span class="o">=</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ref</span> <span class="o">=</span> <span class="n">Survey</span><span class="p">(</span>
+                <span class="n">md</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span><span class="p">:],</span>
+                <span class="n">inc</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span><span class="p">:],</span>
+                <span class="n">azi</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">azi_grid_rad</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span><span class="p">:],</span>
+                <span class="n">n</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">n</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span><span class="p">:],</span>
+                <span class="n">e</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">e</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span><span class="p">:],</span>
+                <span class="n">tvd</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">tvd</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span><span class="p">:],</span>
+                <span class="n">vec</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">vec_nev</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span><span class="p">:],</span>
+                <span class="n">radius</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">radius</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span><span class="p">:],</span>
+                <span class="n">header</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">header</span><span class="p">,</span>
+                <span class="n">cov_nev</span><span class="o">=</span><span class="n">cov_nev</span><span class="p">,</span>
+                <span class="n">cov_hla</span><span class="o">=</span><span class="n">cov_hla</span><span class="p">,</span>
+                <span class="n">error_model</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">error_model</span><span class="p">,</span>
+                <span class="n">start_xyz</span><span class="o">=</span><span class="p">[</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span><span class="p">],</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">y</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span><span class="p">],</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">z</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span><span class="p">],</span>
+                    <span class="p">],</span>
+                <span class="n">start_nev</span><span class="o">=</span><span class="p">[</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">n</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span><span class="p">],</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">e</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span><span class="p">],</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">tvd</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span><span class="p">],</span>
+                    <span class="p">],</span>
+                <span class="n">deg</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">deg</span><span class="p">,</span>
+                <span class="n">unit</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">unit</span><span class="p">,</span>
+                <span class="n">nev</span><span class="o">=</span><span class="kc">True</span>
+            <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="IscwsaClearance">
+<a class="viewcode-back" href="../../welleng.html#welleng.clearance.IscwsaClearance">[docs]</a>
+<span class="k">class</span> <span class="nc">IscwsaClearance</span><span class="p">(</span><span class="n">Clearance</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Parameters:</span>
+<span class="sd">    -----------</span>
+<span class="sd">    clearance_args: List</span>
+<span class="sd">        See &#39;welleng.clearance.Clearance` for args.</span>
+<span class="sd">    minimize_sf: bool</span>
+<span class="sd">        If `True` (default), then the closest points on the reference well</span>
+<span class="sd">        are determined and added to the `ref` object as interpolated stations.</span>
+<span class="sd">    clearance_kwargs: dict</span>
+<span class="sd">         See &#39;welleng.clearance.Clearance` for kwargs.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">    -----------</span>
+<span class="sd">    Ro : array of floats</span>
+<span class="sd">        The radius of the offset well at each station of the off well.</span>
+<span class="sd">    Rr : array</span>
+<span class="sd">        The radius of the reference well at each station on the ref well.</span>
+<span class="sd">    sf : array of floats</span>
+<span class="sd">        The calculated Separation Factor to the closest point on the offset</span>
+<span class="sd">        well for each station on the reference well.</span>
+<span class="sd">    Sm : float</span>
+<span class="sd">        The surface margin term increases the effective radius of the</span>
+<span class="sd">        offset well. It accommodates small, unidentified errors and helps</span>
+<span class="sd">        overcome one of the geometric limitations of the separation rule,</span>
+<span class="sd">        described in the Separation-Rule Limitations section. It also</span>
+<span class="sd">        defines the minimum acceptable slot separation during facility</span>
+<span class="sd">        design and ensures that the separation rule will prohibit the</span>
+<span class="sd">        activity before nominal contact between the reference and offset</span>
+<span class="sd">        wells, even if the position uncertainty is zero.</span>
+<span class="sd">    calc_hole: array of floats</span>
+<span class="sd">        The calculated combined equivalent radius of the two well bores, i.e.</span>
+<span class="sd">        the sum or their radii plus margins.</span>
+<span class="sd">    closest:</span>
+<span class="sd">        The closest point on the `off` well from each station on the ref well.</span>
+<span class="sd">    distance_cc:</span>
+<span class="sd">        The closest center to center distance for each station on the `ref`</span>
+<span class="sd">        well to the `off` well.</span>
+<span class="sd">    eou_boundary:</span>
+<span class="sd">        The sum of the ellipse of uncertainty radii of the `ref` and `off`</span>
+<span class="sd">        wells.</span>
+<span class="sd">    eou_separation:</span>
+<span class="sd">        The distance between the ellipses of uncertainty of the `ref` and `off`</span>
+<span class="sd">        wells.</span>
+<span class="sd">    hoz_bearing:</span>
+<span class="sd">        The horizontal bearing between the closest points in radians.</span>
+<span class="sd">    hoz_bearing_deg:</span>
+<span class="sd">        The horizontal bearing between the closest points in degrees.</span>
+<span class="sd">    idx: int</span>
+<span class="sd">        The index of the closest point on the `off` well for each station on</span>
+<span class="sd">        the `ref` well.</span>
+<span class="sd">    masd:</span>
+<span class="sd">        The Minimum Allowable Separation Distance from the `ref` well.</span>
+<span class="sd">    off: Survey</span>
+<span class="sd">        The offset well `Survey`.</span>
+<span class="sd">    off_pcr:</span>
+<span class="sd">        The Pedal Curve Radii for each station on the `off` well.</span>
+<span class="sd">    off_cov_hla:</span>
+<span class="sd">        The covariance matrix in the HLA domain for each station of the `off`</span>
+<span class="sd">        well.</span>
+<span class="sd">    off_cov_nev:</span>
+<span class="sd">        The covariance matrix in the NEV domain for each station of the `off`</span>
+<span class="sd">        well.</span>
+<span class="sd">    off_nevs:</span>
+<span class="sd">        The NEV coordinates of the `off` well.</span>
+<span class="sd">    offset: Survey</span>
+<span class="sd">        The initial `offset` well `Survey`.</span>
+<span class="sd">    offset_nevs:</span>
+<span class="sd">        The initial NEV coordinates of the `offset` well.</span>
+<span class="sd">    ref: Survey</span>
+<span class="sd">        The `ref` well `Survey`.</span>
+<span class="sd">    ref_pcr:</span>
+<span class="sd">        The Pedal Curve Radii for each station on the `ref` well.</span>
+<span class="sd">    ref_cov_hla:</span>
+<span class="sd">        The covariance matrix in the HLA domain for each station of the `ref`</span>
+<span class="sd">        well.</span>
+<span class="sd">    ref_cov_nev:</span>
+<span class="sd">        The covariance matrix in the NEV domain for each station of the `ref`</span>
+<span class="sd">        well.</span>
+<span class="sd">    ref_nevs:</span>
+<span class="sd">        The NEV coordinates of the `ref` well.</span>
+<span class="sd">    reference: Survey</span>
+<span class="sd">        The initial `reference` well `Survey`.</span>
+<span class="sd">    reference_nevs:</span>
+<span class="sd">        The initial NEV coordinates of the `reference` well.</span>
+<span class="sd">    sf:</span>
+<span class="sd">        The Separation Factor between the closest point on the `off` well for</span>
+<span class="sd">        each station on the `ref` well.</span>
+<span class="sd">    toolface_bearing:</span>
+<span class="sd">        The toolface bearing in radians from each station on the `ref` well to</span>
+<span class="sd">        the closest point on the `off` well.</span>
+<span class="sd">    trav_cyl_azi_deg:</span>
+<span class="sd">        The heading in degrees from each station on teh `ref` well to the</span>
+<span class="sd">        closest point on the `off` well.</span>
+<span class="sd">    wellbore_separation:</span>
+<span class="sd">        The distance between the edge of the wellbore for each station on the</span>
+<span class="sd">        `ref` well to the closest point on the `off` well.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="IscwsaClearance.__init__">
+<a class="viewcode-back" href="../../welleng.html#welleng.clearance.IscwsaClearance.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="o">*</span><span class="n">clearance_args</span><span class="p">,</span>
+        <span class="n">minimize_sf</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">clearance_kwargs</span>
+    <span class="p">):</span>
+        <span class="c1"># TODO:</span>
+        <span class="c1"># - [ ] Can probably remove the `offset` Survey since `off` is a copy.</span>
+        <span class="c1"># - [ ] Can probably remover the `_nev*` attrs and instead reference</span>
+        <span class="c1"># the onces in the `Survey` instances.</span>
+
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">clearance_args</span><span class="p">,</span> <span class="o">**</span><span class="n">clearance_kwargs</span><span class="p">)</span>
+
+        <span class="n">minimize_sf</span> <span class="o">=</span> <span class="kc">True</span> <span class="k">if</span> <span class="n">minimize_sf</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">minimize_sf</span>
+
+        <span class="c1"># get closest survey station in offset well for each survey</span>
+        <span class="c1"># station in the reference well</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span>
+            <span class="n">cdist</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ref_nevs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset_nevs</span>
+            <span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span>
+        <span class="p">)</span>
+
+        <span class="c1"># iterate to find closest point on offset well between</span>
+        <span class="c1"># survey stations</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_get_closest_points</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">off_nevs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_nevs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">off</span><span class="p">)</span>
+
+        <span class="c1"># get the unit vectors and horizontal bearing between the wells</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_get_delta_nev_vectors</span><span class="p">()</span>
+
+        <span class="c1"># transform to HLA coordinates</span>
+        <span class="c1"># self._get_delta_hla_vectors()</span>
+
+        <span class="c1"># make the covariance matrices</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_get_covs</span><span class="p">()</span>
+
+        <span class="c1"># get the PCRs</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_get_PCRs</span><span class="p">()</span>
+
+        <span class="c1"># calculate sigmaS</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sigmaS</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ref_pcr</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">off_pcr</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+
+        <span class="c1"># calculate combined hole radii</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_get_calc_hole</span><span class="p">()</span>
+
+        <span class="c1"># calculate Ellipse of Uncertainty Boundary</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">eou_boundary</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">k</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sigmaS</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma_pa</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="c1"># calculate distance between well bores</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wellbore_separation</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">distance_cc</span><span class="o">.</span><span class="n">T</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">calc_hole</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">Sm</span>
+        <span class="p">)</span>
+
+        <span class="c1"># calculate the Ellipse of Uncertainty Separation</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">eou_separation</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">wellbore_separation</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">eou_boundary</span>
+        <span class="p">)</span>
+
+        <span class="c1"># calculate the Minimum Allowable Separation Distance</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">masd</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">eou_boundary</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">calc_hole</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">Sm</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">sf</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">wellbore_separation</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">eou_boundary</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># check for minima</span>
+        <span class="k">if</span> <span class="n">minimize_sf</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">get_sf_mins</span><span class="p">()</span></div>
+
+
+        <span class="c1"># for debugging</span>
+        <span class="c1"># self.pc_method()</span>
+
+    <span class="k">def</span> <span class="nf">_get_sf_min</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">delta_md</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">x</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">sf</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">x</span> <span class="o">==</span> <span class="o">-</span><span class="n">delta_md</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">sf</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">x</span> <span class="o">==</span> <span class="n">delta_md</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">sf</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">x</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">ii</span> <span class="o">=</span> <span class="n">i</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="n">xx</span> <span class="o">=</span> <span class="n">delta_md</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">x</span>
+            <span class="n">mult</span> <span class="o">=</span> <span class="n">xx</span> <span class="o">/</span> <span class="n">delta_md</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ii</span> <span class="o">=</span> <span class="n">i</span>
+            <span class="n">xx</span> <span class="o">=</span> <span class="n">x</span>
+            <span class="n">mult</span> <span class="o">=</span> <span class="n">xx</span> <span class="o">/</span> <span class="n">delta_md</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="n">node</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">interpolate_md</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="n">ii</span><span class="p">]</span> <span class="o">+</span> <span class="n">xx</span>
+        <span class="p">)</span>
+
+        <span class="n">cov_nev</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">cov_nev</span><span class="p">[</span><span class="n">ii</span><span class="p">]</span>
+            <span class="o">+</span> <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">fill_value</span><span class="o">=</span><span class="n">mult</span><span class="p">)</span>
+                <span class="o">*</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">cov_nev</span><span class="p">[</span><span class="n">ii</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">cov_nev</span><span class="p">[</span><span class="n">ii</span><span class="p">])</span>
+            <span class="p">)</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+
+        <span class="n">sh</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">header</span>
+        <span class="n">sh</span><span class="o">.</span><span class="n">azi_reference</span> <span class="o">=</span> <span class="s1">&#39;grid&#39;</span>
+
+        <span class="n">survey</span> <span class="o">=</span> <span class="n">Survey</span><span class="p">(</span>
+            <span class="n">md</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="n">ii</span><span class="p">:</span> <span class="n">ii</span><span class="o">+</span><span class="mi">2</span><span class="p">],</span> <span class="mi">1</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">md</span>
+            <span class="p">),</span>
+            <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="n">ii</span><span class="p">:</span> <span class="n">ii</span><span class="o">+</span><span class="mi">2</span><span class="p">],</span> <span class="mi">1</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">inc_rad</span>
+            <span class="p">),</span>
+            <span class="n">azi</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">azi_grid_rad</span><span class="p">[</span><span class="n">ii</span><span class="p">:</span> <span class="n">ii</span><span class="o">+</span><span class="mi">2</span><span class="p">],</span> <span class="mi">1</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">azi_rad</span>
+            <span class="p">),</span>
+            <span class="n">cov_nev</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">cov_nev</span><span class="p">[</span><span class="n">ii</span><span class="p">:</span> <span class="n">ii</span><span class="o">+</span><span class="mi">2</span><span class="p">],</span> <span class="mi">1</span><span class="p">,</span> <span class="n">cov_nev</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span>
+            <span class="p">),</span>
+            <span class="n">start_nev</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">pos_nev</span><span class="p">[</span><span class="n">ii</span><span class="p">],</span>
+            <span class="n">deg</span><span class="o">=</span><span class="kc">False</span>
+        <span class="p">)</span>
+
+        <span class="n">clearance_args</span> <span class="o">=</span> <span class="p">(</span><span class="n">survey</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="p">)</span>
+        <span class="n">clearance_kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+            <span class="n">k</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">k</span><span class="p">,</span>
+            <span class="n">sigma_pa</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">sigma_pa</span><span class="p">,</span>
+            <span class="n">Sm</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+            <span class="n">Rr</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">Rr</span><span class="p">[</span><span class="n">ii</span><span class="p">:</span> <span class="n">ii</span><span class="o">+</span><span class="mi">2</span><span class="p">],</span> <span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">Rr</span><span class="p">[</span><span class="n">ii</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+            <span class="p">),</span>
+            <span class="n">Ro</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">Ro</span><span class="p">,</span>
+            <span class="n">kop_depth</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_depth</span>
+        <span class="p">)</span>
+
+        <span class="n">sf_interpolated</span> <span class="o">=</span> <span class="n">IscwsaClearance</span><span class="p">(</span>
+            <span class="o">*</span><span class="n">clearance_args</span><span class="p">,</span> <span class="o">**</span><span class="n">clearance_kwargs</span><span class="p">,</span> <span class="n">minimize_sf</span><span class="o">=</span><span class="kc">False</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">sf</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">sf_interpolated</span>
+
+<div class="viewcode-block" id="IscwsaClearance.get_sf_mins">
+<a class="viewcode-back" href="../../welleng.html#welleng.clearance.IscwsaClearance.get_sf_mins">[docs]</a>
+    <span class="k">def</span> <span class="nf">get_sf_mins</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Method for assessing whether a minima has occurred between survey</span>
+<span class="sd">        station SF values on the reference well and if so calculates the</span>
+<span class="sd">        minimum SF value between stations (between the previous and next</span>
+<span class="sd">        station relative to the identified station).</span>
+
+<span class="sd">        Modifies the `sf` attribute to include the interpolated minimum `sf`</span>
+<span class="sd">        values.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">minimas</span> <span class="o">=</span> <span class="n">argrelmin</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sf</span><span class="p">)</span>
+
+        <span class="n">sf_interpolated</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">minima</span> <span class="ow">in</span> <span class="n">minimas</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">():</span>
+            <span class="n">delta_md</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">delta_md</span><span class="p">[</span><span class="n">minima</span><span class="p">:</span> <span class="n">minima</span> <span class="o">+</span> <span class="mi">2</span><span class="p">]</span>
+            <span class="n">bounds</span> <span class="o">=</span> <span class="p">[[</span><span class="o">-</span><span class="n">delta_md</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">delta_md</span><span class="p">[</span><span class="mi">1</span><span class="p">]]]</span>
+            <span class="c1"># x0 = (np.diff(bounds) / 2)</span>
+            <span class="n">x0</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="n">minima</span><span class="p">,</span> <span class="n">delta_md</span><span class="p">)</span>
+            <span class="c1"># options = {</span>
+            <span class="c1">#     &#39;eps&#39;: np.sum(delta_md) / 10</span>
+            <span class="c1"># }</span>
+
+            <span class="c1"># SLSQP and L-BFGS-B don&#39;t work when using neg to pos ranges in</span>
+            <span class="c1"># this example, but Powell seems to do the job.</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">optimize</span><span class="o">.</span><span class="n">minimize</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_get_sf_min</span><span class="p">,</span>
+                <span class="n">x0</span><span class="p">,</span>
+                <span class="n">method</span><span class="o">=</span><span class="s1">&#39;Powell&#39;</span><span class="p">,</span>
+                <span class="n">bounds</span><span class="o">=</span><span class="n">bounds</span><span class="p">,</span>
+                <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span>
+            <span class="p">)</span>
+
+            <span class="k">if</span> <span class="nb">any</span><span class="p">((</span>
+                <span class="n">result</span><span class="o">.</span><span class="n">x</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span>
+                <span class="n">result</span><span class="o">.</span><span class="n">x</span> <span class="ow">in</span> <span class="n">delta_md</span>
+            <span class="p">)):</span>
+                <span class="k">continue</span>
+
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">sf_interpolated</span><span class="o">.</span><span class="n">append</span><span class="p">((</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="n">minima</span><span class="p">]</span> <span class="o">+</span> <span class="n">result</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">result</span><span class="o">.</span><span class="n">fun</span>
+                <span class="p">))</span>
+
+        <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">sf_interpolated</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">md</span><span class="p">,</span> <span class="n">sf</span> <span class="ow">in</span> <span class="n">sf_interpolated</span><span class="p">:</span>
+                <span class="c1"># i = np.searchsorted(self.sf[:, 0], md, side=&#39;right&#39;)</span>
+                <span class="n">i</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">searchsorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">md</span><span class="p">,</span> <span class="n">md</span><span class="p">,</span> <span class="n">side</span><span class="o">=</span><span class="s1">&#39;right&#39;</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">sf</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">sf</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">md</span><span class="p">,</span> <span class="n">sf</span><span class="p">,</span> <span class="mi">1</span><span class="p">]),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span>
+                <span class="p">)</span>
+
+                <span class="n">node</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">interpolate_md</span><span class="p">(</span><span class="n">md</span><span class="p">)</span>
+
+                <span class="n">sh</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">header</span>
+                <span class="n">sh</span><span class="o">.</span><span class="n">azi_reference</span> <span class="o">=</span> <span class="s1">&#39;grid&#39;</span>
+
+                <span class="n">survey</span> <span class="o">=</span> <span class="n">Survey</span><span class="p">(</span>
+                    <span class="n">md</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">md</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">md</span>
+                    <span class="p">),</span>
+                    <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">inc_rad</span>
+                    <span class="p">),</span>
+                    <span class="n">azi</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">azi_grid_rad</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">azi_rad</span>
+                    <span class="p">),</span>
+                    <span class="n">cov_nev</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">cov_nev</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">cov_nev</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span>
+                    <span class="p">),</span>
+                    <span class="n">start_nev</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">start_nev</span><span class="p">,</span>
+                    <span class="n">start_xyz</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">start_xyz</span><span class="p">,</span>
+                    <span class="n">deg</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                    <span class="n">interpolated</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">interpolated</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="kc">True</span>
+                    <span class="p">),</span>
+                    <span class="n">radius</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">radius</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">radius</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+                    <span class="p">),</span>
+                    <span class="n">header</span><span class="o">=</span><span class="n">sh</span>
+                <span class="p">)</span>
+
+                <span class="bp">self</span><span class="o">.</span><span class="n">ref</span> <span class="o">=</span> <span class="n">survey</span>
+
+                <span class="k">pass</span>
+
+            <span class="n">clearance_args</span> <span class="o">=</span> <span class="p">(</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="p">)</span>
+            <span class="n">clearance_kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+                <span class="n">k</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">k</span><span class="p">,</span>
+                <span class="n">sigma_pa</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">sigma_pa</span><span class="p">,</span>
+                <span class="n">Sm</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">Sm</span><span class="p">,</span>
+                <span class="n">Rr</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">Rr</span><span class="p">,</span>
+                <span class="n">Ro</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">Ro</span><span class="p">,</span>
+                <span class="n">kop_depth</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_depth</span>
+            <span class="p">)</span>
+
+            <span class="c1"># Recalculate all the class lists for the interpolated results</span>
+            <span class="n">clearance</span> <span class="o">=</span> <span class="n">IscwsaClearance</span><span class="p">(</span>
+                <span class="o">*</span><span class="n">clearance_args</span><span class="p">,</span> <span class="o">**</span><span class="n">clearance_kwargs</span><span class="p">,</span> <span class="n">minimize_sf</span><span class="o">=</span><span class="kc">False</span>
+            <span class="p">)</span>
+
+            <span class="c1"># Set self vars to clearance vars</span>
+            <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">clearance</span><span class="o">.</span><span class="vm">__dict__</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+
+            <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="IscwsaClearance.get_lines">
+<a class="viewcode-back" href="../../welleng.html#welleng.clearance.IscwsaClearance.get_lines">[docs]</a>
+    <span class="k">def</span> <span class="nf">get_lines</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Extracts the closest points between wells for each survey section.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">points</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">[</span>
+                <span class="n">c</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                <span class="p">[</span>
+                    <span class="n">c</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">n</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                    <span class="n">c</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">e</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                    <span class="n">c</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">tvd</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                <span class="p">]</span>
+            <span class="p">]</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">closest</span>
+        <span class="p">]</span>
+
+        <span class="n">start_points</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">end_points</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="p">[(</span><span class="n">start_points</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">end_points</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">points</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span><span class="n">start_points</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span><span class="n">end_points</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="p">])</span></div>
+
+
+    <span class="k">def</span> <span class="nf">_get_closest_points</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Determines the point between pairs of subsequent survey stations on</span>
+<span class="sd">        the offset well that is closest to each survey stations on the</span>
+<span class="sd">        reference well.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">closest</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">j</span><span class="p">,</span> <span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">station</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">idx</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref_nevs</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="p">)):</span>
+            <span class="k">if</span> <span class="n">i</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">bnds</span> <span class="o">=</span> <span class="p">[(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">])]</span>
+                <span class="n">res_1</span> <span class="o">=</span> <span class="n">optimize</span><span class="o">.</span><span class="n">minimize</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_fun</span><span class="p">,</span>
+                    <span class="n">bnds</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">],</span>
+                    <span class="c1"># method=&#39;SLSQP&#39;,</span>
+                    <span class="n">method</span><span class="o">=</span><span class="s1">&#39;Powell&#39;</span><span class="p">,</span>
+                    <span class="n">bounds</span><span class="o">=</span><span class="n">bnds</span><span class="p">,</span>
+                    <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span> <span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">station</span><span class="p">)</span>
+                    <span class="p">)</span>
+                <span class="n">mult</span> <span class="o">=</span> <span class="n">res_1</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span><span class="n">bnds</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">bnds</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+                <span class="n">sigma_new_1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interpolate_covs</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">mult</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">res_1</span> <span class="o">=</span> <span class="kc">False</span>
+
+            <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offset_nevs</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">bnds</span> <span class="o">=</span> <span class="p">[(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="n">i</span><span class="p">])]</span>
+                <span class="n">res_2</span> <span class="o">=</span> <span class="n">optimize</span><span class="o">.</span><span class="n">minimize</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_fun</span><span class="p">,</span>
+                    <span class="n">bnds</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
+                    <span class="c1"># method=&#39;SLSQP&#39;,</span>
+                    <span class="n">method</span><span class="o">=</span><span class="s1">&#39;Powell&#39;</span><span class="p">,</span>
+                    <span class="n">bounds</span><span class="o">=</span><span class="n">bnds</span><span class="p">,</span>
+                    <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">station</span><span class="p">)</span>
+                    <span class="p">)</span>
+                <span class="n">mult</span> <span class="o">=</span> <span class="n">res_2</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span><span class="n">bnds</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">bnds</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+                <span class="n">sigma_new_2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interpolate_covs</span><span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">mult</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">res_2</span> <span class="o">=</span> <span class="kc">False</span>
+
+            <span class="k">if</span> <span class="n">res_1</span> <span class="ow">and</span> <span class="n">res_2</span> <span class="ow">and</span> <span class="n">res_1</span><span class="o">.</span><span class="n">fun</span> <span class="o">&lt;</span> <span class="n">res_2</span><span class="o">.</span><span class="n">fun</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">res_2</span><span class="p">:</span>
+                <span class="n">closest</span><span class="o">.</span><span class="n">append</span><span class="p">((</span>
+                    <span class="n">station</span><span class="p">,</span>
+                    <span class="n">_interpolate_survey</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span> <span class="n">res_1</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),</span>
+                    <span class="n">res_1</span><span class="p">,</span> <span class="n">sigma_new_1</span>
+                <span class="p">))</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">closest</span><span class="o">.</span><span class="n">append</span><span class="p">((</span>
+                    <span class="n">station</span><span class="p">,</span>
+                    <span class="n">_interpolate_survey</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span> <span class="n">res_2</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">i</span><span class="p">),</span>
+                    <span class="n">res_2</span><span class="p">,</span>
+                    <span class="n">sigma_new_2</span>
+                <span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">closest</span> <span class="o">=</span> <span class="n">closest</span>
+        <span class="n">md</span><span class="p">,</span> <span class="n">inc</span><span class="p">,</span> <span class="n">azi</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">tvd</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="p">,</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+            <span class="p">[</span>
+                <span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                <span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                <span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">azi_grid_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                <span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">n</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                <span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">e</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                <span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">tvd</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                <span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                <span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">y</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                <span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">z</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+            <span class="p">]</span>
+            <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">closest</span>
+        <span class="p">])</span><span class="o">.</span><span class="n">T</span>
+
+        <span class="n">cov_hla</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+            <span class="p">[</span>
+                <span class="n">r</span><span class="p">[</span><span class="mi">3</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
+            <span class="p">]</span>
+            <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">closest</span>
+        <span class="p">])</span>
+
+        <span class="n">cov_nev</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+            <span class="p">[</span>
+                <span class="n">r</span><span class="p">[</span><span class="mi">3</span><span class="p">][</span><span class="mi">1</span><span class="p">],</span>
+            <span class="p">]</span>
+            <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">closest</span>
+        <span class="p">])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">off</span> <span class="o">=</span> <span class="n">Survey</span><span class="p">(</span>
+            <span class="n">md</span><span class="o">=</span><span class="n">md</span><span class="p">,</span>
+            <span class="n">inc</span><span class="o">=</span><span class="n">inc</span><span class="p">,</span>
+            <span class="n">azi</span><span class="o">=</span><span class="n">azi</span><span class="p">,</span>
+            <span class="n">n</span><span class="o">=</span><span class="n">n</span><span class="p">,</span>
+            <span class="n">e</span><span class="o">=</span><span class="n">e</span><span class="p">,</span>
+            <span class="n">tvd</span><span class="o">=</span><span class="n">tvd</span><span class="p">,</span>
+            <span class="n">header</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="o">.</span><span class="n">header</span><span class="p">,</span>
+            <span class="n">error_model</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">cov_hla</span><span class="o">=</span><span class="n">cov_hla</span><span class="p">,</span>
+            <span class="n">cov_nev</span><span class="o">=</span><span class="n">cov_nev</span><span class="p">,</span>
+            <span class="n">start_xyz</span><span class="o">=</span><span class="p">[</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">y</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">z</span><span class="p">[</span><span class="mi">0</span><span class="p">]],</span>
+            <span class="n">start_nev</span><span class="o">=</span><span class="p">[</span><span class="n">n</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">e</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">tvd</span><span class="p">[</span><span class="mi">0</span><span class="p">]],</span>
+            <span class="n">deg</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">unit</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="o">.</span><span class="n">unit</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_interpolate_covs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">mult</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the interpolated covariance matrices for the interpolated</span>
+<span class="sd">        survey points representing the closest points on the offset well</span>
+<span class="sd">        relative to each reference well survey station.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cov_hla_new</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="o">.</span><span class="n">cov_hla</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span>
+            <span class="o">+</span> <span class="n">mult</span> <span class="o">*</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="o">.</span><span class="n">cov_hla</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="o">.</span><span class="n">cov_hla</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="p">)</span>
+
+        <span class="n">cov_nev_new</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="o">.</span><span class="n">cov_nev</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span>
+            <span class="o">+</span> <span class="n">mult</span> <span class="o">*</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="o">.</span><span class="n">cov_nev</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="o">.</span><span class="n">cov_nev</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">(</span><span class="n">cov_hla_new</span><span class="p">,</span> <span class="n">cov_nev_new</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_fun</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">survey</span><span class="p">,</span> <span class="n">index</span><span class="p">,</span> <span class="n">station</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Optimization function used to find the closest point between pairs of</span>
+<span class="sd">        offset well survey stations.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">_interpolate_survey</span><span class="p">(</span><span class="n">survey</span><span class="p">,</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">index</span><span class="p">)</span>
+        <span class="n">new_pos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">s</span><span class="o">.</span><span class="n">n</span><span class="p">,</span> <span class="n">s</span><span class="o">.</span><span class="n">e</span><span class="p">,</span> <span class="n">s</span><span class="o">.</span><span class="n">tvd</span><span class="p">])</span><span class="o">.</span><span class="n">T</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">dist</span> <span class="o">=</span> <span class="n">norm</span><span class="p">(</span><span class="n">new_pos</span> <span class="o">-</span> <span class="n">station</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">dist</span>
+
+    <span class="k">def</span> <span class="nf">_get_delta_nev_vectors</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">temp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">off_nevs</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref_nevs</span>
+
+        <span class="c1"># Center to Center distance between reference survey station and</span>
+        <span class="c1"># closest point in the offset well</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">distance_cc</span> <span class="o">=</span> <span class="n">norm</span><span class="p">(</span><span class="n">temp</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">divide</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ref_delta_nevs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan_to_num</span><span class="p">(</span>
+                <span class="n">temp</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">distance_cc</span><span class="p">,</span>
+                <span class="n">posinf</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+                <span class="n">neginf</span><span class="o">=</span><span class="mf">0.0</span>
+            <span class="p">)</span>
+
+        <span class="n">temp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref_nevs</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">off_nevs</span>
+        <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">divide</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">off_delta_nevs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan_to_num</span><span class="p">(</span>
+                <span class="n">temp</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">distance_cc</span><span class="p">,</span>
+                <span class="n">posinf</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+                <span class="n">neginf</span><span class="o">=</span><span class="mf">0.0</span>
+            <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">hoz_bearing</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ref_delta_nevs</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref_delta_nevs</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">hoz_bearing</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">around</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hoz_bearing</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="mi">2</span><span class="p">)</span> <span class="o">%</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">hoz_bearing_deg</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hoz_bearing</span><span class="p">)</span> <span class="o">+</span> <span class="mi">360</span><span class="p">)</span> <span class="o">%</span> <span class="mi">360</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_get_delta_hla_vectors</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">toolface_bearing</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ref_delta_hlas</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref_delta_hlas</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">toolface_bearing</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">around</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">toolface_bearing</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="mi">2</span><span class="p">)</span> <span class="o">%</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">toolface_bearing_deg</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">toolface_bearing</span><span class="p">)</span> <span class="o">+</span> <span class="mi">360</span>
+        <span class="p">)</span> <span class="o">%</span> <span class="mi">360</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_traveling_cylinder</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">distance_cc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">distance_cc</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_get_delta_hla_vectors</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ref_delta_hlas</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">([</span>
+            <span class="n">NEV_to_HLA</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">nev</span><span class="p">,</span> <span class="n">cov</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">nev</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref_delta_nevs</span>
+            <span class="p">)</span>
+        <span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">off_delta_hlas</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">([</span>
+            <span class="n">NEV_to_HLA</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">nev</span><span class="p">,</span> <span class="n">cov</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">nev</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">off</span><span class="o">.</span><span class="n">survey_rad</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">off_delta_nevs</span>
+            <span class="p">)</span>
+        <span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">_get_covs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ref_cov_hla</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">cov_hla</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ref_cov_nev</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">cov_nev</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">off_cov_hla</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">off</span><span class="o">.</span><span class="n">cov_hla</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">off_cov_nev</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">off</span><span class="o">.</span><span class="n">cov_nev</span>
+
+    <span class="k">def</span> <span class="nf">_get_PCRs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ref_pcr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">([</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">vec</span><span class="p">,</span> <span class="n">cov</span><span class="p">),</span> <span class="n">vec</span><span class="o">.</span><span class="n">T</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">vec</span><span class="p">,</span> <span class="n">cov</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ref_delta_nevs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref_cov_nev</span><span class="p">)</span>
+        <span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">off_pcr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">([</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">vec</span><span class="p">,</span> <span class="n">cov</span><span class="p">),</span> <span class="n">vec</span><span class="o">.</span><span class="n">T</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">vec</span><span class="p">,</span> <span class="n">cov</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">off_delta_nevs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">off_cov_nev</span><span class="p">)</span>
+        <span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">_get_calc_hole</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">calc_hole</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">Rr</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">Ro</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">idx</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">_traveling_cylinder</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Calculates the azimuthal data for a traveling cylinder plot.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">trav_cyl_azi_deg</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">azi_grid_deg</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">kop_index</span><span class="p">:]</span>
+            <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">toolface_bearing_deg</span> <span class="o">+</span> <span class="mi">360</span>
+        <span class="p">)</span> <span class="o">%</span> <span class="mi">360</span></div>
+
+
+
+<div class="viewcode-block" id="MeshClearance">
+<a class="viewcode-back" href="../../welleng.html#welleng.clearance.MeshClearance">[docs]</a>
+<span class="k">class</span> <span class="nc">MeshClearance</span><span class="p">(</span><span class="n">Clearance</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Class to calculate the clearance between two well bores using a novel</span>
+<span class="sd">    mesh clearance method. This method is experimental and was developed</span>
+<span class="sd">    to provide a fast method for determining if well bores are potentially</span>
+<span class="sd">    colliding.</span>
+
+<span class="sd">    This class requires that `trimesh` is installed along with</span>
+<span class="sd">    `python-fcl`.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    n_verts : int</span>
+<span class="sd">        The number of points (vertices) used to generate the uncertainty</span>
+<span class="sd">        ellipses which are used to generate a `trimesh` representation of</span>
+<span class="sd">        the well bores. The default is 12 which is a good balance between</span>
+<span class="sd">        accuracy and speed.</span>
+<span class="sd">    sigma : float</span>
+<span class="sd">        The required/desired sigma value representation of the generated</span>
+<span class="sd">        mesh. The default value of 2.445 represents about 98.5% confidence</span>
+<span class="sd">        of the well bore being located within the volume of the generated</span>
+<span class="sd">        mesh.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="MeshClearance.__init__">
+<a class="viewcode-back" href="../../welleng.html#welleng.clearance.MeshClearance.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="o">*</span><span class="n">clearance_args</span><span class="p">,</span>
+        <span class="n">n_verts</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">12</span><span class="p">,</span>
+        <span class="n">sigma</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">2.445</span><span class="p">,</span>
+        <span class="n">return_data</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">return_meshes</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">clearance_kwargs</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">clearance_args</span><span class="p">,</span> <span class="o">**</span><span class="n">clearance_kwargs</span><span class="p">)</span>
+
+        <span class="k">assert</span> <span class="n">MESH_MODE</span><span class="p">,</span> <span class="s2">&quot;ImportError: try pip install welleng[all]&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_verts</span> <span class="o">=</span> <span class="n">n_verts</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span> <span class="o">=</span> <span class="n">sigma</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Rr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="o">.</span><span class="n">radius</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Ro</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="o">.</span><span class="n">radius</span>
+
+        <span class="c1"># if you&#39;re only interesting in a binary &quot;go/no-go&quot; decision</span>
+        <span class="c1"># then you can forfeit the expensive ISCWSA calculations by</span>
+        <span class="c1"># setting return_data to False.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">return_data</span> <span class="o">=</span> <span class="n">return_data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">collision</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">return_data</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">distance_cc</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">distance</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">off_index</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sf</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">nev</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">hoz_bearing_deg</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ref_pcr</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">off_pcr</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">calc_hole</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ref_md</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">off_md</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">return_meshes</span> <span class="o">=</span> <span class="n">return_meshes</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">return_meshes</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">meshes</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># generate mesh for offset well</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">off_mesh</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_mesh</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">mesh</span>
+
+        <span class="c1"># make a CollisionManager object and add the offset well mesh</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cm</span> <span class="o">=</span> <span class="n">trimesh</span><span class="o">.</span><span class="n">collision</span><span class="o">.</span><span class="n">CollisionManager</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">cm</span><span class="o">.</span><span class="n">add_object</span><span class="p">(</span><span class="s2">&quot;offset&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">off_mesh</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_process_well</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="MeshClearance.get_lines">
+<a class="viewcode-back" href="../../welleng.html#welleng.clearance.MeshClearance.get_lines">[docs]</a>
+    <span class="k">def</span> <span class="nf">get_lines</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Extracts the closest points between wells for each survey section.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">points</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">d</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">_points</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+            <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">distance</span>
+        <span class="p">]</span>
+
+        <span class="n">start_points</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">end_points</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="p">[(</span><span class="n">start_points</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">end_points</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">points</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span><span class="n">start_points</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span><span class="n">end_points</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="p">])</span></div>
+
+
+    <span class="k">def</span> <span class="nf">_get_mesh</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">survey</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Generates a mesh object from the survey object.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">offset</span><span class="p">:</span>
+            <span class="n">Sm</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">Sm</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">Sm</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="n">mesh</span> <span class="o">=</span> <span class="n">WellMesh</span><span class="p">(</span>
+            <span class="n">survey</span><span class="o">=</span><span class="n">survey</span><span class="p">,</span>
+            <span class="n">n_verts</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">n_verts</span><span class="p">,</span>
+            <span class="n">sigma</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">sigma</span><span class="p">,</span>
+            <span class="n">Sm</span><span class="o">=</span><span class="n">Sm</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">mesh</span>
+
+    <span class="k">def</span> <span class="nf">_process_well</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Iterates through the reference well survey, determining for</span>
+<span class="sd">        each section whether a collision has occurred with the offset</span>
+<span class="sd">        well and optionally calculates separation data.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">ref</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref</span>
+        <span class="n">off</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span>
+        <span class="n">off_nevs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset_nevs</span>
+
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ref</span><span class="o">.</span><span class="n">md</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="c1"># slice a well section and create section survey</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="n">slice_survey</span><span class="p">(</span><span class="n">ref</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">2</span><span class="p">)</span>
+
+            <span class="c1"># generate a mesh for the section slice</span>
+            <span class="n">m</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_mesh</span><span class="p">(</span><span class="n">s</span><span class="p">)</span><span class="o">.</span><span class="n">mesh</span>
+
+            <span class="c1"># see if there&#39;s a collision</span>
+            <span class="n">collision</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cm</span><span class="o">.</span><span class="n">in_collision_single</span><span class="p">(</span>
+                <span class="n">m</span><span class="p">,</span> <span class="n">return_names</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">return_data</span><span class="p">,</span> <span class="n">return_data</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">return_data</span>
+            <span class="p">)</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">return_data</span><span class="p">:</span>
+                <span class="n">distance</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cm</span><span class="o">.</span><span class="n">min_distance_single</span><span class="p">(</span>
+                    <span class="n">m</span><span class="p">,</span> <span class="n">return_name</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">return_data</span><span class="o">=</span><span class="kc">True</span>
+                <span class="p">)</span>
+                <span class="n">closest_point_reference</span> <span class="o">=</span> <span class="n">distance</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">point</span><span class="p">(</span><span class="s2">&quot;__external&quot;</span><span class="p">)</span>
+                <span class="n">name_offset_absolute</span> <span class="o">=</span> <span class="n">distance</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                <span class="n">closest_point_offset</span> <span class="o">=</span> <span class="n">distance</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">point</span><span class="p">(</span><span class="n">name_offset_absolute</span><span class="p">)</span>
+
+                <span class="n">ref_nev</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_closest_nev</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">closest_point_reference</span><span class="p">)</span>
+                <span class="n">ref_md</span> <span class="o">=</span> <span class="n">ref</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">ref_nev</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+                <span class="c1"># find the closest point on the well trajectory to the closest</span>
+                <span class="c1"># points on the mesh surface</span>
+                <span class="n">off_index</span> <span class="o">=</span> <span class="n">KDTree</span><span class="p">(</span><span class="n">off_nevs</span><span class="p">)</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">closest_point_offset</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">off_index</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">off</span><span class="o">.</span><span class="n">md</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="n">s</span> <span class="o">=</span> <span class="n">slice_survey</span><span class="p">(</span><span class="n">off</span><span class="p">,</span> <span class="n">off_index</span><span class="p">)</span>
+                    <span class="n">off_nev_1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_closest_nev</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">closest_point_offset</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">off_nev_1</span> <span class="o">=</span> <span class="kc">False</span>
+
+                <span class="k">if</span> <span class="n">off_index</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">s</span> <span class="o">=</span> <span class="n">slice_survey</span><span class="p">(</span><span class="n">off</span><span class="p">,</span> <span class="n">off_index</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+                    <span class="n">off_nev_0</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_closest_nev</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">closest_point_offset</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">off_nev_0</span> <span class="o">=</span> <span class="kc">False</span>
+
+                <span class="k">if</span> <span class="n">off_nev_0</span> <span class="ow">and</span> <span class="n">off_nev_1</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">off_nev_0</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">fun</span> <span class="o">&lt;</span> <span class="n">off_nev_1</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">fun</span><span class="p">:</span>
+                        <span class="n">off_nev</span> <span class="o">=</span> <span class="n">off_nev_0</span>
+                        <span class="n">off_md</span> <span class="o">=</span> <span class="n">off</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="n">off_index</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">off_nev_0</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">off_nev</span> <span class="o">=</span> <span class="n">off_nev_1</span>
+                        <span class="n">off_md</span> <span class="o">=</span> <span class="n">off</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="n">off_index</span><span class="p">]</span> <span class="o">+</span> <span class="n">off_nev_1</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="k">elif</span> <span class="n">off_nev_0</span><span class="p">:</span>
+                    <span class="n">off_nev</span> <span class="o">=</span> <span class="n">off_nev_0</span>
+                    <span class="n">off_md</span> <span class="o">=</span> <span class="n">off</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="n">off_index</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">off_nev_0</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">off_nev</span> <span class="o">=</span> <span class="n">off_nev_1</span>
+                    <span class="n">off_md</span> <span class="o">=</span> <span class="n">off</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="n">off_index</span><span class="p">]</span> <span class="o">+</span> <span class="n">off_nev_1</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+                <span class="n">vec</span> <span class="o">=</span> <span class="n">off_nev</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="n">ref_nev</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="n">distance_cc</span> <span class="o">=</span> <span class="n">norm</span><span class="p">(</span><span class="n">vec</span><span class="p">)</span>
+                <span class="n">hoz_bearing_deg</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span><span class="n">vec</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">vec</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span> <span class="o">+</span> <span class="mi">360</span>
+                <span class="p">)</span> <span class="o">%</span> <span class="mi">360</span>
+
+                <span class="k">if</span> <span class="n">collision</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">True</span><span class="p">:</span>
+                    <span class="n">depth</span> <span class="o">=</span> <span class="n">norm</span><span class="p">(</span>
+                        <span class="n">closest_point_offset</span> <span class="o">-</span> <span class="n">closest_point_reference</span>
+                    <span class="p">)</span>
+                    <span class="c1"># prevent divide by zero</span>
+                    <span class="k">if</span> <span class="n">distance_cc</span> <span class="o">!=</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">depth</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+                        <span class="n">sf</span> <span class="o">=</span> <span class="n">distance_cc</span> <span class="o">/</span> <span class="p">(</span><span class="n">distance_cc</span> <span class="o">+</span> <span class="n">depth</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">sf</span> <span class="o">=</span> <span class="mi">0</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">sf</span> <span class="o">=</span> <span class="n">distance_cc</span> <span class="o">/</span> <span class="p">(</span><span class="n">distance_cc</span> <span class="o">-</span> <span class="n">distance</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+                <span class="c1"># data for ISCWSA method comparison</span>
+                <span class="c1"># self.collision.append(collision)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">off_index</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">off_index</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">distance</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">distance</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">distance_cc</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">distance_cc</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">sf</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">round</span><span class="p">(</span><span class="n">sf</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">nev</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">ref_nev</span><span class="p">,</span> <span class="n">off_nev</span><span class="p">))</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">hoz_bearing_deg</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">hoz_bearing_deg</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ref_pcr</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="p">(</span><span class="n">ref_nev</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">fun</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma_pa</span> <span class="o">/</span> <span class="mi">2</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">Rr</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+                    <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span>
+                <span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">off_pcr</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="p">(</span>
+                        <span class="n">off_nev</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">fun</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma_pa</span> <span class="o">/</span> <span class="mi">2</span>
+                        <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">Ro</span><span class="p">[</span><span class="n">off_index</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">Sm</span>
+                    <span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span>
+                <span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">calc_hole</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ref</span><span class="o">.</span><span class="n">radius</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">off</span><span class="o">.</span><span class="n">radius</span><span class="p">[</span><span class="n">off_index</span><span class="p">])</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ref_md</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ref_md</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">off_md</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">off_md</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">return_meshes</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">meshes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">m</span><span class="p">)</span>
+
+            <span class="c1"># else:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">collision</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">collision</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_fun</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">survey</span><span class="p">,</span> <span class="n">pos</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Interpolates a point on a well trajectory and returns</span>
+<span class="sd">        the distance between the interpolated point and the</span>
+<span class="sd">        position provided.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">_interpolate_survey</span><span class="p">(</span><span class="n">survey</span><span class="p">,</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">new_pos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">s</span><span class="o">.</span><span class="n">n</span><span class="p">,</span> <span class="n">s</span><span class="o">.</span><span class="n">e</span><span class="p">,</span> <span class="n">s</span><span class="o">.</span><span class="n">tvd</span><span class="p">])</span><span class="o">.</span><span class="n">T</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">dist</span> <span class="o">=</span> <span class="n">norm</span><span class="p">(</span><span class="n">new_pos</span> <span class="o">-</span> <span class="n">pos</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">dist</span>
+
+    <span class="k">def</span> <span class="nf">_get_closest_nev</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">survey</span><span class="p">,</span> <span class="n">pos</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Using an optimization function to determine the closest</span>
+<span class="sd">        point along a well trajectory to the position provided.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">bnds</span> <span class="o">=</span> <span class="p">[(</span><span class="mi">0</span><span class="p">,</span> <span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">])]</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">optimize</span><span class="o">.</span><span class="n">minimize</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_fun</span><span class="p">,</span>
+            <span class="n">bnds</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span>
+            <span class="c1"># method=&#39;SLSQP&#39;,</span>
+            <span class="n">method</span><span class="o">=</span><span class="s1">&#39;Powell&#39;</span><span class="p">,</span>
+            <span class="n">bounds</span><span class="o">=</span><span class="n">bnds</span><span class="p">,</span>
+            <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">survey</span><span class="p">,</span> <span class="n">pos</span><span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="n">s</span> <span class="o">=</span> <span class="n">_interpolate_survey</span><span class="p">(</span><span class="n">survey</span><span class="p">,</span> <span class="n">res</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+        <span class="n">nev</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">s</span><span class="o">.</span><span class="n">n</span><span class="p">,</span> <span class="n">s</span><span class="o">.</span><span class="n">e</span><span class="p">,</span> <span class="n">s</span><span class="o">.</span><span class="n">tvd</span><span class="p">])</span><span class="o">.</span><span class="n">T</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="p">(</span><span class="n">nev</span><span class="p">,</span> <span class="n">res</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="get_ref_sigma">
+<a class="viewcode-back" href="../../welleng.html#welleng.clearance.get_ref_sigma">[docs]</a>
+<span class="k">def</span> <span class="nf">get_ref_sigma</span><span class="p">(</span><span class="n">sigma1</span><span class="p">,</span> <span class="n">sigma2</span><span class="p">,</span> <span class="n">sigma3</span><span class="p">,</span> <span class="n">kop_index</span><span class="p">):</span>
+    <span class="n">sigma</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">sigma1</span><span class="p">,</span> <span class="n">sigma2</span><span class="p">,</span> <span class="n">sigma3</span><span class="p">])</span><span class="o">.</span><span class="n">T</span>
+    <span class="n">sigma_diff</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">sigma</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="n">sigma_above</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">sigma_diff</span><span class="p">[:</span><span class="n">kop_index</span><span class="p">][::</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">sigma_below</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">sigma_diff</span><span class="p">[</span><span class="n">kop_index</span><span class="p">:],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="n">sigma_new</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">((</span><span class="n">sigma_above</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]),</span> <span class="n">sigma_below</span><span class="p">))</span>
+
+    <span class="k">return</span> <span class="n">sigma_new</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script>
+    <!-- your html code here -->
+
+
+</body>
+</html>
