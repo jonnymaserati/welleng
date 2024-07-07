@@ -1295,6 +1295,16 @@ class Survey:
         survey.interpolated[::2] = self.interpolated
 
         return survey
+    
+    def to_df(self) -> pd.DataFrame:
+        """Returns a ``pandas.DataFrame`` of useful survey parameters."""
+        return survey_to_df(self)
+    
+    def to_excel(self, filename: str) -> None:
+        """Exports a survey listing to an MS Excel file."""
+        df = self.survey_to_df()
+        with pd.ExcelWriter(f'{filename}.xlsx') as writer:
+            df.to_excel(writer, sheet_name="pilot", index=False)
 
 
 def modified_tortuosity_index(
@@ -1859,6 +1869,20 @@ def _ensure_int_or_float(val, required_type) -> int | float:
         val = val[0]
 
     return required_type(val)
+
+
+def surveys_to_excel(surveys: list, filename: str) -> None:
+    """Exports a list of surveys to sheets in an MS Excel file, using the
+    name of the well in the ``survey.header.name`` variable as the sheet name if
+    available and saving the file at the provided filename.
+
+    Useful for saving several iterations of a design or sidetrack surveys in a
+    single file.
+    """
+    with pd.ExcelWriter(f'{filename}.xlsx') as writer:
+        for survey in surveys:
+            df = survey.to_df()
+            df.to_excel(writer, sheet_name=survey.header.name, index=False)
 
 
 class SplitSurvey:
