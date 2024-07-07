@@ -353,7 +353,7 @@ def get_lines(clearance):
     c = clearance.sf
     start_points, end_points = clearance.get_lines()
     lines = Lines(start_points, end_points).cmap('hot_r', c, on='cells')
-    lines.addScalarBar(title='SF')
+    lines.add_scalarbar(title='SF')
 
     return lines
 

@@ -13,9 +13,7 @@ updated: 12-11-2023
 '''
 import welleng as we
 from tabulate import tabulate
-# import os
 
-# os.environ['DISPLAY'] = ':1'
 
 # construct simple well paths
 print("Constructing wells...")
@@ -109,11 +107,11 @@ print(tabulate(results, headers=['md', 'SF_ISCWSA', 'SF_MESH']))
 lines = we.visual.get_lines(clearance_mesh)
 
 # plot the result
-we.visual.plot(
-    [mesh_reference.mesh, mesh_offset.mesh],  # list of meshes
-    names=['reference', 'offset'],  # list of names
-    colors=['red', 'blue'],  # list of colors
-    lines=lines
-)
+plot = we.visual.Plotter()
+plot.add(mesh_reference, c='red')
+plot.add(mesh_offset, c='blue')
+plot.add(lines)
+plot.show()
+plot.close()
 
 print("Done!")
