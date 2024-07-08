@@ -28,7 +28,6 @@ from .utils import (
 from .error import ErrorModel, ERROR_MODELS
 from .node import Node
 from .connector import Connector, interpolate_well
-from .visual import figure
 from .units import ureg
 
 from typing import List, Union
@@ -983,8 +982,11 @@ class Survey:
         return survey_interpolated
 
     def figure(self, type='scatter3d', **kwargs):
-        fig = figure(self, type, **kwargs)
-        return fig
+        from .visual import PLOTLY, figure
+        if PLOTLY:
+            return figure(self, type, **kwargs)
+        else:
+            return None
 
     def project_to_bit(self, delta_md, dls=None, toolface=None):
         """
