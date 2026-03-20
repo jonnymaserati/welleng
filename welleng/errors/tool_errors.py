@@ -195,8 +195,9 @@ class ToolError:
             'GXY_GRW': GXY_GRW,  # Needs QAQC
             'MFI': MFI,  # Needs QAQC
             'MSIXY_TI1': MSIXY_TI1,  # Needs QAQC
-            'MSIXY_TI2': MSIXY_TI1,  # Needs QAQC
-            'MSIXY_TI3': MSIXY_TI1,  # Needs QAQC
+            'MSIXY_TI2': MSIXY_TI2,  # Needs QAQC
+            'MSIXY_TI3': MSIXY_TI3,  # Needs QAQC
+            'DBHR': DBHR,  # Needs QAQC
             'AMID': AMID,  # Needs QAQC
             'CNA': CNA,  # Needs QAQC
             'CNI': CNI,  # Needs QAQC
