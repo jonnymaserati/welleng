@@ -1639,6 +1639,7 @@ def _interpolate_survey(survey, x=0, index=0):
         start_nev=np.array([survey.n, survey.e, survey.tvd]).T[index],
         header=sh,
         deg=False,
+        unit=sh.depth_unit,
     )
 
     interpolated = False if any((

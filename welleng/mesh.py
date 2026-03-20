@@ -96,6 +96,30 @@ class WellMesh:
             h = self.s.radius.reshape(-1, 1)
             l = h
 
+        elif self.method == "ellipse":
+            # Use eigenvalue decomposition of the 2x2 H-L covariance submatrix
+            # to correctly represent the uncertainty ellipse orientation and
+            # magnitude, rather than assuming alignment with h and l axes.
+            cov_hl = self.s.cov_hla[:, :2, :2]  # shape (n, 2, 2)
+            eigenvalues, eigenvectors = np.linalg.eigh(cov_hl)
+            # eigh returns eigenvalues in ascending order; clip for numerical safety
+            sigma_major = np.sqrt(np.maximum(eigenvalues[:, 1], 0))
+            sigma_minor = np.sqrt(np.maximum(eigenvalues[:, 0], 0))
+            h = (
+                sigma_major * self.sigma
+                + self.radius + self.Sm
+                + self.sigma_pa / 2
+            ).reshape(-1, 1)
+            l = (
+                sigma_minor * self.sigma
+                + self.radius + self.Sm
+                + self.sigma_pa / 2
+            ).reshape(-1, 1)
+            # Rotation angle of the major axis in the H-L plane
+            ellipse_theta = np.arctan2(
+                eigenvectors[:, 1, 1], eigenvectors[:, 0, 1]
+            ).reshape(-1, 1)
+
         else:
             h = (
                 np.array(self.sigmaH) * self.sigma
@@ -116,13 +140,19 @@ class WellMesh:
 
             temp = np.broadcast_to(temp, (len(self.s.md), len(temp)))
             lam = deepcopy(temp)
-            # lam[1:] = (
-            #     (temp[1:] + self.s.azi_grid_rad[1:].reshape(-1, 1)) % (2 * np.pi)
-            # )
-            # theta = np.zeros_like(lam)
 
-            x = h * cos(lam)
-            y = l * sin(lam)
+            x_ell = h * cos(lam)
+            y_ell = l * sin(lam)
+
+            if self.method == "ellipse":
+                cos_t = np.cos(ellipse_theta)
+                sin_t = np.sin(ellipse_theta)
+                x = x_ell * cos_t - y_ell * sin_t
+                y = x_ell * sin_t + y_ell * cos_t
+            else:
+                x = x_ell
+                y = y_ell
+
             z = np.zeros_like(x)
             vertices = np.stack((x, y, z), axis=-1)
 
