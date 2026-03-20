@@ -167,11 +167,14 @@ class SurveyParameters(Proj):
         )
         if MAG_CALC:
             magnetic_calculator = MagneticFieldCalculator()
-            result_magnetic = magnetic_calculator.calculate(
-                latitude=latitude, longitude=longitude,
-                altitude=0 if altitude is None else altitude,
-                date=date
-            )
+            try:
+                result_magnetic = magnetic_calculator.calculate(
+                    latitude=latitude, longitude=longitude,
+                    altitude=0 if altitude is None else altitude,
+                    date=date
+                )
+            except Exception:
+                result_magnetic = None
         else:
             result_magnetic = None
 

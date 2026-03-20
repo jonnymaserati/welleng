@@ -1,6 +1,6 @@
 import numpy as np
 from numpy import sin, cos, tan, pi, sqrt
-from numpy.core.defchararray import index
+from numpy.char import index
 import yaml
 import os
 from collections import OrderedDict
