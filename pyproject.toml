@@ -99,4 +99,6 @@ include = [
 dev-dependencies = [
     "pytest>=9.0",
     "magnetic_field_calculator",
+    "networkx",
+    "trimesh",
 ]
