@@ -32,7 +32,7 @@ codes:
   DSTG:
     function: DST
     magnitude: 2.5e-07
-    propagation: systematic
+    propagation: global
     unit: 1/m
 header:
   A026Ua: BLIND

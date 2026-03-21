@@ -42,17 +42,17 @@ codes:
   DBH-CI:
     function: DBH
     magnitude: 12.426744274199626
-    propagation: systematic
+    propagation: global
     unit: rad.nT
   DBH-OI:
     function: DBH
     magnitude: 6.213372137099813
-    propagation: systematic
+    propagation: global
     unit: rad.nT
   DBH-U:
     function: DBH
     magnitude: 22.183134792847927
-    propagation: systematic
+    propagation: within_pad
     unit: rad.nT
   DBHR:
     function: DBH
@@ -62,17 +62,17 @@ codes:
   DEC-CI:
     function: AZ
     magnitude: 0.0015707963267948964
-    propagation: systematic
+    propagation: global
     unit: rad
   DEC-OI:
     function: AZ
     magnitude: 0.0008726646259971648
-    propagation: systematic
+    propagation: global
     unit: rad
   DEC-U:
     function: AZ
     magnitude: 0.0019198621771937625
-    propagation: systematic
+    propagation: within_pad
     unit: rad
   DECR:
     function: AZ
@@ -97,7 +97,7 @@ codes:
   DSTG:
     function: DST
     magnitude: 2.5e-07
-    propagation: systematic
+    propagation: global
     unit: 1/m
   MBXY-TI1S:
     function: MBXY_TI1

@@ -108,7 +108,10 @@ def make_error_dict(data):
             function=f.replace('-', '_'),
             magnitude=m if 'deg' not in u else radians(m),
             unit=u.replace("deg", "rad"),
-            propagation='random' if p == 'R' else 'systematic'
+            propagation={
+                'R': 'random', 'S': 'systematic',
+                'G': 'global', 'W': 'within_pad'
+            }.get(p, 'systematic')
         )
 
     return e

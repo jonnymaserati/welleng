@@ -12,12 +12,12 @@ codes:
   DSFW:
     function: DSF
     magnitude: 0.0006
-    propagation: systematic
+    propagation: within_pad
     unit: '-'
   DSTG:
     function: DST
     magnitude: 2.0e-07
-    propagation: systematic
+    propagation: global
     unit: 1/m
   EXT-REF:
     function: EXT_REF

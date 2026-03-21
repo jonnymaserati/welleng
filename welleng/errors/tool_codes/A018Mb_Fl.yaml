@@ -17,12 +17,12 @@ codes:
   DBHG:
     function: DBH
     magnitude: 87.26646259971648
-    propagation: systematic
+    propagation: global
     unit: rad.nT
   DECG:
     function: AZ
     magnitude: 0.006283185307179586
-    propagation: systematic
+    propagation: global
     unit: rad
   DRFR:
     function: DREF
@@ -37,12 +37,12 @@ codes:
   DSFW:
     function: DSF
     magnitude: 0.0006
-    propagation: systematic
+    propagation: within_pad
     unit: '-'
   DSTG:
     function: DST
     magnitude: 2.0e-07
-    propagation: systematic
+    propagation: global
     unit: 1/m
   SAG:
     function: SAG

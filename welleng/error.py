@@ -191,7 +191,7 @@ class ErrorModel():
             if e_NEV is None:
                 e_NEV = self._e_NEV(e_DIA)
                 e_NEV_star = self._e_NEV_star(e_DIA)
-            if propagation == 'systematic':
+            if propagation in ('systematic', 'global', 'within_pad'):
                 sigma_e_NEV = self._sigma_e_NEV_systematic(e_NEV, e_NEV_star)
                 cov_NEV = self._cov(sigma_e_NEV)
             elif propagation == 'random':
