@@ -379,9 +379,8 @@ def HLA_to_NEV(survey, HLA, cov=True, trans=None):
         ).T
 
     else:
-        NEVs = np.einsum(
-            'k...,jk...', HLA.T, trans.T
-        )
+        shape = HLA.shape
+        return (HLA.reshape(shape[0], -1, 3) @ trans).reshape(shape)
 
     return np.swapaxes(NEVs, 0, 1)
 
