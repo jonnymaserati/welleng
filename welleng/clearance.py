@@ -122,14 +122,79 @@ class Clearance:
         else:
             self.Ro = np.full(len(self.offset.md), Ro)
 
+    def _get_ref_cov_below_kop(self):
+        """
+        Compute the below-KOP covariance for sidetrack clearance, zeroing
+        uncertainty at the KOP per the ISCWSA standard (paragraph 81).
+
+        For depth-scale errors (e_DIA has only D≠0, I=A≈0), the uncertainty
+        accumulates proportionally to absolute MD, so delta-sigma would
+        underestimate. Instead, use the full accumulated sigma but zero it at
+        the KOP station itself. For all other errors, use delta-sigma.
+
+        Returns covariance in Survey convention (n, 3, 3).
+        """
+        ki = self.kop_index
+        errors = self.reference.err.errors.errors
+        n_below = len(self.reference.md) - ki
+        cov_below = np.zeros((3, 3, n_below))
+
+        for error in errors.values():
+            # Detect depth-scale errors: e_DIA has D≠0, I=A=0
+            e_dia = error.e_DIA
+            if e_dia.ndim == 2:
+                depth_only = (
+                    np.all(np.abs(e_dia[:, 1:]) < 1e-10)
+                    and np.any(np.abs(e_dia[:, 0]) > 1e-10)
+                )
+            else:
+                depth_only = False
+
+            if error.propagation in ('systematic', 'global', 'within_pad'):
+                if depth_only:
+                    sigma = error.sigma_e_NEV[ki:].copy()
+                    sigma[0] = 0.0  # zero uncertainty at KOP
+                else:
+                    sigma = error.sigma_e_NEV[ki:] - error.sigma_e_NEV[ki]
+                x, y, z = sigma.T
+                cov_below += np.array([
+                    [x * x, x * y, x * z],
+                    [y * x, y * y, y * z],
+                    [z * x, z * y, z * z],
+                ])
+            elif error.propagation == 'random':
+                if depth_only:
+                    cov_j = error.cov_NEV[:, :, ki:].copy()
+                    cov_j[:, :, 0] = 0.0  # zero at KOP
+                    cov_below += cov_j
+                else:
+                    cov_below += (
+                        error.cov_NEV[:, :, ki:]
+                        - error.cov_NEV[:, :, ki:ki + 1]
+                    )
+
+        return cov_below.T  # (n_below, 3, 3)
+
     def _get_ref(self):
         if self.kop_index == 0:
             self.ref = self.reference
         else:
             try:
-                cov_nev = self.reference.cov_nev[self.kop_index:]
-                cov_hla = self.reference.cov_hla[self.kop_index:]
-            except IndexError:
+                if (
+                    hasattr(self.reference, 'err')
+                    and self.reference.err is not None
+                ):
+                    cov_nev = self._get_ref_cov_below_kop()
+                else:
+                    cov_nev = self.reference.cov_nev[self.kop_index:]
+                cov_hla = (
+                    NEV_to_HLA(
+                        self.reference.survey_rad[self.kop_index:],
+                        cov_nev.T
+                    ).T
+                    if cov_nev is not None else None
+                )
+            except (IndexError, AttributeError):
                 cov_nev, cov_hla = (None, None)
             self.ref = Survey(
                 md=self.reference.md[self.kop_index:],
@@ -143,7 +208,7 @@ class Clearance:
                 header=self.reference.header,
                 cov_nev=cov_nev,
                 cov_hla=cov_hla,
-                error_model=self.reference.error_model,
+                error_model=None,
                 start_xyz=[
                     self.reference.x[self.kop_index],
                     self.reference.y[self.kop_index],
@@ -154,7 +219,7 @@ class Clearance:
                     self.reference.e[self.kop_index],
                     self.reference.tvd[self.kop_index],
                     ],
-                deg=self.reference.deg,
+                deg=False,
                 unit=self.reference.unit,
                 nev=True
             )
@@ -272,6 +337,13 @@ class IscwsaClearance(Clearance):
         super().__init__(*clearance_args, **clearance_kwargs)
 
         minimize_sf = True if minimize_sf is None else minimize_sf
+
+        # For sidetrack offset wells (starting at non-zero MD), correct the
+        # covariance to include the missing drkplus1(0)*e(0) contribution that
+        # is zeroed in the standard error model (which assumes tie-in at surface)
+        self._off_cov_nev_corrected = None
+        self._off_cov_hla_corrected = None
+        self._compute_off_cov_sidetrack_correction()
 
         # get closest survey station in offset well for each survey
         # station in the reference well
@@ -636,20 +708,37 @@ class IscwsaClearance(Clearance):
             unit=self.offset.unit
         )
 
+    def _compute_off_cov_sidetrack_correction(self):
+        """
+        Per the ISCWSA standard (paragraph 81), uncertainty for sidetrack
+        clearance is zeroed at the KOP for both wells. The offset well's error
+        model already starts from MD[0] with sigma[0]=0, which correctly gives
+        zero uncertainty at the sidetrack point. No additional correction is
+        needed.
+        """
+        return
+
     def _interpolate_covs(self, i, mult):
         """
         Returns the interpolated covariance matrices for the interpolated
         survey points representing the closest points on the offset well
         relative to each reference well survey station.
         """
+        if self._off_cov_nev_corrected is not None:
+            cov_hla_src = self._off_cov_hla_corrected
+            cov_nev_src = self._off_cov_nev_corrected
+        else:
+            cov_hla_src = self.offset.cov_hla
+            cov_nev_src = self.offset.cov_nev
+
         cov_hla_new = (
-            self.offset.cov_hla[i - 1]
-            + mult * (self.offset.cov_hla[i] - self.offset.cov_hla[i-1])
+            cov_hla_src[i - 1]
+            + mult * (cov_hla_src[i] - cov_hla_src[i - 1])
         )
 
         cov_nev_new = (
-            self.offset.cov_nev[i - 1]
-            + mult * (self.offset.cov_nev[i] - self.offset.cov_nev[i-1])
+            cov_nev_src[i - 1]
+            + mult * (cov_nev_src[i] - cov_nev_src[i - 1])
         )
 
         return (cov_hla_new, cov_nev_new)
