@@ -1700,7 +1700,10 @@ easy = [
 [package.dev-dependencies]
 dev = [
     { name = "magnetic-field-calculator" },
+    { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pytest" },
+    { name = "trimesh" },
 ]
 
 [package.metadata]
@@ -1732,5 +1735,7 @@ provides-extras = ["easy", "all"]
 [package.metadata.requires-dev]
 dev = [
     { name = "magnetic-field-calculator" },
+    { name = "networkx" },
     { name = "pytest", specifier = ">=9.0" },
+    { name = "trimesh" },
 ]
