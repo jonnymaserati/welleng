@@ -4,6 +4,7 @@ from numpy.typing import NDArray
 from welleng.units import ureg
 from welleng.utils import (
     annular_volume,
+    cov_from_vec,
     decimal2dms,
     dms2decimal,
     pprint_dms,
@@ -389,6 +390,18 @@ def test_make_cov_long_symmetric():
     cov = cov.reshape(-1, 3, 3)
     for m in cov:
         assert np.allclose(m, m.T)
+
+
+def test_cov_from_vec():
+    """cov_from_vec should return the outer product of each row with itself."""
+    arr = np.array([[1., 2., 3.], [4., 0., 1.]])
+    cov = cov_from_vec(arr)
+    assert cov.shape == (2, 3, 3)
+    # each (3,3) slice should equal the outer product v @ v.T
+    for i, v in enumerate(arr):
+        assert np.allclose(cov[i], np.outer(v, v))
+    # result must be symmetric
+    assert np.allclose(cov, cov.swapaxes(-1, -2))
 
 
 def test_errors_from_cov():

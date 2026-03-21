@@ -463,6 +463,23 @@ def radius_from_dls(dls):
     return radius
 
 
+def cov_from_vec(arr):
+    """
+    Returns a (n, 3, 3) covariance matrix from an (n, 3) array via outer product.
+
+    Parameters
+    ----------
+    arr: (n, 3) array
+        Array of vector components.
+
+    Returns
+    -------
+    (n, 3, 3) array
+    """
+    arr = np.array(arr)
+    return arr[:, :, None] * arr[:, None, :]
+
+
 def errors_from_cov(cov, data=False):
     """
     Parameters

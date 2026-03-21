@@ -2,6 +2,7 @@ import os
 import numpy as np
 import yaml
 from .errors.tool_errors import ToolError
+from .utils import cov_from_vec
 
 # TODO: there's likely an issue with TVD versus TVDSS that
 # needs to be resolved. This model assumes TVD relative to
@@ -146,13 +147,6 @@ class ErrorModel():
 
         return arr
 
-    def _cov(self, arr):
-        '''
-        Returns a (n,3,3) covariance matrix from an (n,3) array.
-        '''
-        arr = np.array(arr)
-        return arr[:, :, None] * arr[:, None, :]
-
     def _sigma_e_NEV_systematic(self, e_NEV, e_NEV_star):
         return e_NEV_star + np.vstack(
             (
@@ -173,17 +167,17 @@ class ErrorModel():
         if not NEV:
             return e_DIA
         else:
-            cov_DIA = self._cov(e_DIA)
+            cov_DIA = cov_from_vec(e_DIA)
             if e_NEV is None:
                 e_NEV = self._e_NEV(e_DIA)
                 e_NEV_star = self._e_NEV_star(e_DIA)
             if propagation in ('systematic', 'global', 'within_pad'):
                 sigma_e_NEV = self._sigma_e_NEV_systematic(e_NEV, e_NEV_star)
-                cov_NEV = self._cov(sigma_e_NEV)
+                cov_NEV = cov_from_vec(sigma_e_NEV)
             elif propagation == 'random':
-                sigma_e_NEV = np.cumsum(self._cov(e_NEV), axis=0)
+                sigma_e_NEV = np.cumsum(cov_from_vec(e_NEV), axis=0)
                 cov_NEV = np.add(
-                    self._cov(e_NEV_star),
+                    cov_from_vec(e_NEV_star),
                     np.concatenate(
                         (
                             np.zeros((1, 3, 3)),
