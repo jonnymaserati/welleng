@@ -111,9 +111,22 @@ class ToolError:
                 )
             )
 
-        self.cov_NEVs = np.zeros((3, 3, len(self.e.survey_rad)))
+        shape = (3, 3, len(self.e.survey_rad))
+        self.cov_NEVs = np.zeros(shape)
+        self.cov_NEVs_random = np.zeros(shape)
+        self.cov_NEVs_systematic = np.zeros(shape)
+        self.cov_NEVs_global = np.zeros(shape)
+        self.cov_NEVs_within_pad = np.zeros(shape)
         for _, value in self.errors.items():
             self.cov_NEVs += value.cov_NEV
+            if value.propagation == 'random':
+                self.cov_NEVs_random += value.cov_NEV
+            elif value.propagation == 'systematic':
+                self.cov_NEVs_systematic += value.cov_NEV
+            elif value.propagation == 'global':
+                self.cov_NEVs_global += value.cov_NEV
+            elif value.propagation == 'within_pad':
+                self.cov_NEVs_within_pad += value.cov_NEV
 
         self.cov_HLAs = NEV_to_HLA(self.e.survey_rad, self.cov_NEVs)
 

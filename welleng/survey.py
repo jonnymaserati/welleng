@@ -625,6 +625,10 @@ class Survey:
 
         self.cov_hla = cov_hla
         self.cov_nev = cov_nev
+        self.cov_nev_random = None
+        self.cov_nev_systematic = None
+        self.cov_nev_global = None
+        self.cov_nev_within_pad = None
 
         self._get_errors()
 
@@ -801,6 +805,10 @@ class Survey:
             )
             self.cov_hla = self.err.errors.cov_HLAs.T
             self.cov_nev = self.err.errors.cov_NEVs.T
+            self.cov_nev_random = self.err.errors.cov_NEVs_random.T
+            self.cov_nev_systematic = self.err.errors.cov_NEVs_systematic.T
+            self.cov_nev_global = self.err.errors.cov_NEVs_global.T
+            self.cov_nev_within_pad = self.err.errors.cov_NEVs_within_pad.T
         else:
             if self.cov_nev is not None and self.cov_hla is None:
                 self.cov_hla = NEV_to_HLA(self.survey_rad, self.cov_nev.T).T
