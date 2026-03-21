@@ -4,17 +4,11 @@ import numpy as np
 from scipy.optimize import minimize
 from scipy.spatial import distance
 
-try:
-    from numba import njit
-    NUMBA = True
-except ImportError:
-    NUMBA = False
-
 from .node import Node, get_node_params
 from .utils import (
     NEV_to_HLA, _get_angles, dls_from_radius, get_angles,
-    get_nev, get_unit_vec, get_vec, get_xyz, radius_from_dls,
-    get_arc
+    get_dogleg, get_nev, get_rf, get_unit_vec, get_vec, get_xyz,
+    radius_from_dls, get_arc
 )
 
 
@@ -984,22 +978,14 @@ def _get_xyz(pos):
 
 
 def get_pos(pos1, vec1, vec2, dist_curve, func_dogleg):
-    inc1, azi1 = _get_angles(_get_xyz(vec1)).reshape(2)
-    inc2, azi2 = _get_angles(_get_xyz(vec2)).reshape(2)
+    """
+    Compute the end position of a minimum-curvature arc.
 
-    pos2 = pos1 + (
-        (
-            dist_curve * func_dogleg / 2
-        )
-        *
-        np.array([
-            np.sin(inc1) * np.cos(azi1) + np.sin(inc2) * np.cos(azi2),
-            np.sin(inc1) * np.sin(azi1) + np.sin(inc2) * np.sin(azi2),
-            np.cos(inc1) + np.cos(inc2)
-        ]).T
-    )
-
-    return pos2
+    vec1 and vec2 are unit direction vectors in NEV coordinates.  The minimum-
+    curvature position step reduces to (dist_curve * func_dogleg / 2) * (v1 + v2)
+    so no angle conversion is needed.
+    """
+    return pos1 + (dist_curve * func_dogleg / 2) * (vec1 + vec2)
 
 
 def get_vec_target(
@@ -1045,17 +1031,16 @@ def get_curve_hold_data(radius, dogleg):
 
 def shape_factor(dogleg):
     """
-    Function to determine the shape factor of a dogleg.
+    Shape factor (ratio factor) for a curve section dogleg angle.
+
+    Delegates to utils.get_rf which handles the dogleg=0 limit correctly.
 
     Parameters
     ----------
-        dogleg: float
-            The dogleg angle in radians of a curve section.
+    dogleg: float
+        The dogleg angle in radians of a curve section.
     """
-    if dogleg == 0:
-        return 0
-    else:
-        return np.tan(dogleg / 2) / (dogleg / 2)
+    return get_rf(dogleg)
 
 
 def min_dist_to_target(radius, distances):
@@ -1173,18 +1158,6 @@ def angle(vec1, vec2, acute=True):
         return 2 * np.pi - angle
 
 
-def get_dogleg(inc1, azi1, inc2, azi2):
-    dogleg = (
-        2 * np.arcsin(
-            (
-                np.sin((inc2 - inc1) / 2) ** 2
-                + np.sin(inc1) * np.sin(inc2)
-                * np.sin((azi2 - azi1) / 2) ** 2
-            ) ** 0.5
-        )
-    )
-
-    return dogleg
 
 
 def interpolate_well(sections, step=30):
@@ -1850,22 +1823,3 @@ def extend_to_tvd(
     return connections
 
 
-def numbafy(functions):
-    for f in functions:
-        f = njit(f)
-
-
-if NUMBA:
-    NUMBAFY = (
-        _get_xyz,
-        get_pos,
-        get_vec_target,
-        get_curve_hold_data,
-        shape_factor,
-        min_dist_to_target,
-        get_radius_critical,
-        angle,
-        get_dogleg,
-        check_dogleg
-    )
-    numbafy(NUMBAFY)

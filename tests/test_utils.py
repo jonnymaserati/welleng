@@ -9,6 +9,9 @@ from welleng.utils import (
     dms2decimal,
     pprint_dms,
     dms_from_string,
+    get_dogleg,
+    get_rf,
+    min_curve_step,
     radius_from_dls,
     dls_from_radius,
     get_toolface,
@@ -272,6 +275,91 @@ def test_get_toolface():
     pos2 = pos1 + np.array([radius, 0, radius])
     toolface = get_toolface(pos1, vec1, pos2)
     assert np.isclose(toolface, 0)
+
+
+def test_get_dogleg_known_values():
+    """get_dogleg should return 0 for identical stations and pi/2 for quarter turn."""
+    # identical stations → dogleg = 0
+    assert get_dogleg(0.0, 0.0, 0.0, 0.0) == 0.0
+    # vertical → horizontal (90° inc change, no azi change)
+    assert np.isclose(get_dogleg(0.0, 0.0, np.pi / 2, 0.0), np.pi / 2)
+    # vectorised
+    inc1 = np.array([0.0, 0.0, np.pi / 4])
+    azi1 = np.array([0.0, 0.0, 0.0])
+    inc2 = np.array([0.0, np.pi / 2, np.pi / 4])
+    azi2 = np.array([0.0, 0.0, np.pi / 2])
+    dl = get_dogleg(inc1, azi1, inc2, azi2)
+    assert dl[0] == 0.0
+    assert np.isclose(dl[1], np.pi / 2)
+    assert dl[2] > 0.0
+
+
+def test_get_dogleg_matches_mincurve():
+    """get_dogleg must agree with the MinCurve internal calculation."""
+    rng = np.random.default_rng(0)
+    inc1 = rng.uniform(0, np.pi, 50)
+    azi1 = rng.uniform(0, 2 * np.pi, 50)
+    inc2 = rng.uniform(0, np.pi, 50)
+    azi2 = rng.uniform(0, 2 * np.pi, 50)
+    dl_new = get_dogleg(inc1, azi1, inc2, azi2)
+    # compare against arccos formula used previously
+    dl_old = np.arccos(np.clip(
+        np.cos(inc2 - inc1) - np.sin(inc1) * np.sin(inc2) * (1 - np.cos(azi2 - azi1)),
+        -1.0, 1.0
+    ))
+    assert np.allclose(dl_new, dl_old, atol=1e-10)
+
+
+def test_get_rf_limits():
+    """get_rf should return 1 at dogleg=0 and approach 1 for small angles."""
+    assert get_rf(0.0) == 1.0
+    assert np.isclose(get_rf(1e-9), 1.0, atol=1e-6)
+    # vectorised
+    dogleg = np.array([0.0, np.pi / 4, np.pi / 2, np.pi])
+    rf = get_rf(dogleg)
+    assert rf[0] == 1.0
+    assert np.all(rf > 0)
+    # RF is always >= 1 (curve is longer than chord)
+    assert np.all(rf >= 1.0)
+
+
+def test_min_curve_step_straight():
+    """A tangent section (dogleg=0) should give a straight-line position step."""
+    inc = np.array([np.pi / 4])
+    azi = np.array([np.pi / 3])
+    delta_md = np.array([100.0])
+    step = min_curve_step(delta_md, inc, azi, inc, azi)
+    assert step.shape == (1, 3)
+    # for a straight section both stations have the same direction vector
+    vec = get_vec(np.degrees(inc), np.degrees(azi), nev=True)
+    expected = 100.0 * vec
+    assert np.allclose(step[0], expected[0], atol=1e-10)
+
+
+def test_min_curve_step_nev_order():
+    """min_curve_step returns columns in [N, E, V] order."""
+    # vertical well inc=0 → delta_N=0, delta_E=0, delta_V=delta_md
+    step = min_curve_step(
+        np.array([50.0]), np.array([0.0]), np.array([0.0]),
+        np.array([0.0]), np.array([0.0])
+    )
+    assert np.isclose(step[0, 0], 0.0, atol=1e-10)  # N
+    assert np.isclose(step[0, 1], 0.0, atol=1e-10)  # E
+    assert np.isclose(step[0, 2], 50.0, atol=1e-10)  # V
+
+
+def test_min_curve_step_matches_mincurve():
+    """min_curve_step must reproduce MinCurve position increments."""
+    md = np.array([0., 100., 250., 500.])
+    inc = np.radians([0., 15., 45., 90.])
+    azi = np.radians([0., 30., 60., 90.])
+    mc = MinCurve(md, inc, azi)
+    # mc.delta_y = N, mc.delta_x = E, mc.delta_z = V
+    expected = np.stack((mc.delta_y[1:], mc.delta_x[1:], mc.delta_z[1:]), axis=-1)
+    result = min_curve_step(
+        mc.delta_md[1:], inc[:-1], azi[:-1], inc[1:], azi[1:], mc.rf[1:]
+    )
+    assert np.allclose(result, expected, atol=1e-10)
 
 
 def test_dls_radius_inverse():

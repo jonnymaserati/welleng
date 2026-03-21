@@ -200,40 +200,23 @@ class ErrorModel():
 
     def drk_dDepth(self, survey):
         '''
-        survey1 is previous survey station (with inc and azi in radians)
-        survey2 is current survey station (with inc and azi in radians)
+        Derivative of position with respect to measured depth at each station.
+
+        Equal to 0.5 * (unit_vec[i] + unit_vec[i+1]) in NEV coordinates —
+        the direction-cosine part of minimum curvature without the RF or delta_md.
+        All trig is computed once and shared across N, E and V components.
         '''
-        # TODO: This is essentially minimum curvature... use function from
-        # utils instead (it's already in self.mc)
-        md1, inc1, azi1 = np.array(survey[:-1]).T
-        md2, inc2, azi2 = np.array(survey[1:]).T
-
-        N = np.array(
-            0.5 * (
-                np.sin(inc1) * np.cos(azi1)
-                + np.sin(inc2) * np.cos(azi2)
-            )
-        )
-
-        E = np.array(
-            0.5 * (
-                np.sin(inc1) * np.sin(azi1)
-                + np.sin(inc2) * np.sin(azi2)
-            )
-        )
-
-        V = np.array(
-            0.5 * (
-                np.cos(inc1) + np.cos(inc2)
-            )
-        )
-
-        return np.vstack(
-            (
-                np.array(np.zeros((1, 3))),
-                np.stack((N, E, V), axis=-1)
-            )
-        )
+        _, inc1, azi1 = np.array(survey[:-1]).T
+        _, inc2, azi2 = np.array(survey[1:]).T
+        si1, si2 = np.sin(inc1), np.sin(inc2)
+        ca1, ca2 = np.cos(azi1), np.cos(azi2)
+        sa1, sa2 = np.sin(azi1), np.sin(azi2)
+        NEV = 0.5 * np.stack((
+            si1 * ca1 + si2 * ca2,       # N
+            si1 * sa1 + si2 * sa2,       # E
+            np.cos(inc1) + np.cos(inc2), # V
+        ), axis=-1)
+        return np.vstack((np.zeros((1, 3)), NEV))
 
     def drk_dInc(self, survey):
         '''
