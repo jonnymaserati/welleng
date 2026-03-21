@@ -44,7 +44,7 @@ def make_diagnostic_data(survey):
         diagnostic[d] = {}
         total = []
         for k, v in survey.err.errors.errors.items():
-            diagnostic[d][k] = get_errors(v.cov_NEV.T[i])
+            diagnostic[d][k] = get_errors(v.cov_NEV[i])
             total.extend(diagnostic[d][k])
         diagnostic[d]['TOTAL'] = np.sum((np.array(
             total
