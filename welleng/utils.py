@@ -161,7 +161,7 @@ class MinCurve:
         dls = np.zeros(survey_length)
         with np.errstate(divide='ignore', invalid='ignore'):
             temp = np.degrees(dogleg[1:]) / delta_md[1:]
-        mask = np.where(temp != np.nan)
+        mask = np.where(~np.isnan(temp))
         dls[1:][mask] = temp[mask]
 
         if unit == "meters":
@@ -680,11 +680,11 @@ def annular_volume(od: float, id: float = None, length: float = None):
     ...     length=ureg('1000 meter')
     ... )
     >>> print(av)
-    3.491531223156194 meter ** 3
+    29.096093526301622 meter ** 3
     """
     length = 1 if length is None else length
     id = 0 if id is None else id
-    annular_unit_volume = (np.pi * (od - id)**2) / 4
+    annular_unit_volume = (np.pi * (od**2 - id**2)) / 4
     annular_volume = annular_unit_volume * length
 
     return annular_volume

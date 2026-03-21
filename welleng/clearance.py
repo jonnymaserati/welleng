@@ -944,7 +944,8 @@ class MeshClearance(Clearance):
                     else:
                         sf = 0
                 else:
-                    sf = distance_cc / (distance_cc - distance[0])
+                    denom = distance_cc - distance[0]
+                    sf = distance_cc / denom if denom != 0 else np.inf
 
                 # data for ISCWSA method comparison
                 # self.collision.append(collision)

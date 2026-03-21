@@ -88,7 +88,7 @@ def are_tuples_identical(tuple1, tuple2):
             ureg("12.25 inch").to("meter"),
             ureg(f"{9+5/8} inch").to("meter"),
             ureg("1000 meter"),
-            3.491531223156194,
+            29.096093526301622,
         ),
         # Add more test cases as needed
     ],

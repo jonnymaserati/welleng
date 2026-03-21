@@ -1546,7 +1546,7 @@ def interpolate_md(survey, md):
     # get the closest survey stations
     idx = np.searchsorted(survey.md, md, side="left") - 1
 
-    assert idx < len(survey.md), "The md is beyond the survey"
+    assert idx < len(survey.md) - 1, "The md is beyond the survey"
 
     if idx < 0:
         idx = 0
