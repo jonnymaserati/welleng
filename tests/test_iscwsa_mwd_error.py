@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from welleng.survey import Survey, SurveyHeader
+from welleng.error import ErrorModel
 from welleng.utils import get_sigmas
 
 """
@@ -119,3 +120,30 @@ def test_iscwsa_error_models(input_files=input_files):
         # df_r.to_excel(
         #     "tests/test_data/error_mwdrev5_iscwsa_validation_results.xlsx"
         # )
+
+
+def test_drdp_single_pass_matches_column_methods():
+    """
+    _drdp single-pass implementation must produce identical output to
+    assembling the result from the 6 individual drk_d* column methods.
+    """
+    s = Survey(
+        md=[0, 500, 1000, 2000, 3000],
+        inc=[0, 15, 45, 60, 80],
+        azi=[0, 30, 90, 150, 270],
+        unit='meters',
+    )
+    for model in ('ISCWSA MWD Rev4', 'ISCWSA MWD Rev5'):
+        em = ErrorModel(s, error_model=model)
+        expected = np.hstack((
+            em.drk_dDepth(em.survey_drdp),
+            em.drk_dInc(em.survey_drdp),
+            em.drk_dAz(em.survey_drdp),
+            em.drkplus1_dDepth(em.survey_drdp),
+            em.drkplus1_dInc(em.survey_drdp),
+            em.drkplus1_dAz(em.survey_drdp),
+        ))
+        assert em.drdp.shape == (len(s.md), 18), f"{model}: unexpected shape"
+        assert np.allclose(em.drdp, expected, atol=1e-14), (
+            f"{model}: max diff {np.max(np.abs(em.drdp - expected))}"
+        )
