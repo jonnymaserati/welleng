@@ -315,15 +315,55 @@ class ErrorModel():
         )
 
     def _drdp(self, survey):
+        '''
+        Jacobian of position wrt survey parameters, computed in a single trig
+        pass.  Returns array of shape (n, 18): columns 0-2 drk_dDepth,
+        3-5 drk_dInc, 6-8 drk_dAz, 9-11 drkplus1_dDepth,
+        12-14 drkplus1_dInc, 15-17 drkplus1_dAz.
+        '''
+        survey = np.array(survey)
+        n = len(survey)
+        md, inc, azi = survey.T
+        si, ci = np.sin(inc), np.cos(inc)
+        sa, ca = np.sin(azi), np.cos(azi)
+        half_dmd = 0.5 * np.diff(md)          # shape (n-1,)
 
-        return np.hstack((
-            self.drk_dDepth(survey),
-            self.drk_dInc(survey),
-            self.drk_dAz(survey),
-            self.drkplus1_dDepth(survey),
-            self.drkplus1_dInc(survey),
-            self.drkplus1_dAz(survey)
-        ))
+        result = np.zeros((n, 18))
+
+        # drk_dDepth: rows 1..n-1
+        dc_N = 0.5 * (si[:-1] * ca[:-1] + si[1:] * ca[1:])
+        dc_E = 0.5 * (si[:-1] * sa[:-1] + si[1:] * sa[1:])
+        dc_V = 0.5 * (ci[:-1] + ci[1:])
+        result[1:, 0] = dc_N
+        result[1:, 1] = dc_E
+        result[1:, 2] = dc_V
+
+        # drk_dInc: rows 1..n-1 (wrt inc at station i+1)
+        result[1:, 3] = half_dmd * ci[1:] * ca[1:]
+        result[1:, 4] = half_dmd * ci[1:] * sa[1:]
+        result[1:, 5] = -half_dmd * si[1:]
+        if self.error_model.lower().split()[-1] != 'rev4':
+            result[1, 3] *= 2
+
+        # drk_dAz: rows 1..n-1 (wrt azi at station i+1)
+        result[1:, 6] = -half_dmd * si[1:] * sa[1:]
+        result[1:, 7] = half_dmd * si[1:] * ca[1:]
+
+        # drkplus1_dDepth: rows 0..n-2 (negated dc)
+        result[:-1, 9]  = -dc_N
+        result[:-1, 10] = -dc_E
+        result[:-1, 11] = -dc_V
+
+        # drkplus1_dInc: rows 0..n-2 (wrt inc at station i)
+        result[:-1, 12] = half_dmd * ci[:-1] * ca[:-1]
+        result[:-1, 13] = half_dmd * ci[:-1] * sa[:-1]
+        result[:-1, 14] = -half_dmd * si[:-1]
+
+        # drkplus1_dAz: rows 0..n-2 (wrt azi at station i)
+        result[:-1, 15] = -half_dmd * si[:-1] * sa[:-1]
+        result[:-1, 16] = half_dmd * si[:-1] * ca[:-1]
+
+        return result
 
     def _drdp_sing(self, survey):
         '''
