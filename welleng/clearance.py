@@ -14,7 +14,7 @@ from scipy.spatial import KDTree
 from scipy.spatial.distance import cdist
 
 from .mesh import WellMesh
-from .survey import Survey, _interpolate_survey, slice_survey
+from .survey import Survey, _interpolate_survey, _interpolate_pos_nev, slice_survey
 from .utils import NEV_to_HLA
 
 
@@ -744,11 +744,8 @@ class IscwsaClearance(Clearance):
         Optimization function used to find the closest point between pairs of
         offset well survey stations.
         """
-        s = _interpolate_survey(survey, x[0], index)
-        new_pos = np.array([s.n, s.e, s.tvd]).T[1]
-        dist = norm(new_pos - station, axis=-1)
-
-        return dist
+        new_pos = _interpolate_pos_nev(survey, x[0], index)
+        return norm(new_pos - station, axis=-1)
 
     def _get_delta_nev_vectors(self):
         temp = self.off_nevs - self.ref_nevs

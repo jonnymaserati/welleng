@@ -23,6 +23,7 @@ from .utils import (
     NEV_to_HLA,
     get_xyz,
     make_long_cov,
+    min_curve_step,
     radius_from_dls,
     get_arc
 )
@@ -1658,6 +1659,33 @@ def _interpolate_survey(survey, x=0, index=0):
     s.interpolated = [False, interpolated]
 
     return s
+
+
+def _interpolate_pos_nev(survey, x, index):
+    """
+    Lightweight position-only interpolation: returns the NEV [N, E, TVD]
+    position at distance ``x`` from ``survey[index]`` without constructing
+    a Survey object.  Used as the inner cost function for closest-point
+    optimisations in clearance calculations.
+    """
+    if survey.dogleg[index + 1] == 0:
+        inc2 = survey.inc_rad[index]
+        azi2 = survey.azi_grid_rad[index]
+    else:
+        t1 = survey.vec_xyz[index]
+        t2 = survey.vec_xyz[index + 1]
+        total_dogleg = survey.dogleg[index + 1]
+        dogleg = x * (total_dogleg / survey.delta_md[index + 1])
+        t = (
+            (math.sin(total_dogleg - dogleg) / math.sin(total_dogleg)) * t1
+            + (math.sin(dogleg) / math.sin(total_dogleg)) * t2
+        )
+        t /= np.linalg.norm(t)
+        inc2, azi2 = get_angles(t)[0]
+
+    pos = np.array([survey.n[index], survey.e[index], survey.tvd[index]])
+    step = min_curve_step(x, survey.inc_rad[index], survey.azi_grid_rad[index], inc2, azi2)
+    return pos + step
 
 
 def interpolate_tvd(survey, tvd, **kwargs):
