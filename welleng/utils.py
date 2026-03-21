@@ -318,12 +318,12 @@ def NEV_to_HLA(
     survey: Annotated[NDArray, Literal["N", 3]],
     NEV: Union[
         Annotated[NDArray, Literal["N", 3]],
-        Annotated[NDArray, Literal[3, 3, "N"]]
+        Annotated[NDArray, Literal["N", 3, 3]]
     ],
     cov: bool = True
 ) -> Union[
-        Annotated[NDArray, Literal['..., 3']],
-        Annotated[NDArray, Literal['3, 3, ...']]
+        Annotated[NDArray, Literal['N, 3']],
+        Annotated[NDArray, Literal['N, 3, 3']]
 ]:
     """
     Transform from NEV to HLA coordinate system.
@@ -332,37 +332,28 @@ def NEV_to_HLA(
     ----------
     survey: (n,3) array of floats
         The [md, inc, azi] survey listing array.
-    NEV: (d,3) or (3,3,d) array of floats
+    NEV: (n,3) or (n,3,3) array of floats
         The NEV coordinates or covariance matrices.
     cov: boolean
-        If cov is True then a (3,3,d) array of covariance matrices
-        is expected, else a (d,3) array of coordinates.
+        If cov is True then a (n,3,3) array of covariance matrices
+        is expected, else a (n,3) array of coordinates.
 
     Returns
     -------
     HLAs: NDArray
         Either a transformed (n,3) array of HLA coordinates or an
-        (3,3,n) array of HLA covariance matrices.
+        (n,3,3) array of HLA covariance matrices.
     """
 
     trans = get_transform(survey)
 
     if cov:
-        HLAs = np.einsum(
-            '...ik,...jk',
-            np.einsum(
-                '...ik,...jk', trans, NEV.T
-            ),
-            trans
-        ).T
+        # HLA_cov = trans @ NEV_cov @ trans.T  (batched over n stations)
+        return trans @ NEV @ trans.swapaxes(-1, -2)
 
     else:
         NEV = NEV.reshape(-1, 3)
-        HLAs = np.einsum(
-            '...k,...jk', NEV, trans
-        )
-
-    return HLAs
+        return np.einsum('...k,...jk', NEV, trans)
 
 
 def HLA_to_NEV(survey, HLA, cov=True, trans=None):
@@ -370,19 +361,12 @@ def HLA_to_NEV(survey, HLA, cov=True, trans=None):
         trans = get_transform(survey)
 
     if cov:
-        NEVs = np.einsum(
-            '...ik,jk...',
-            np.einsum(
-                '...ki,...jk', trans, HLA.T
-            ),
-            trans.T
-        ).T
+        # NEV_cov = trans.T @ HLA_cov @ trans  (batched over n stations)
+        return trans.swapaxes(-1, -2) @ HLA @ trans
 
     else:
         shape = HLA.shape
         return (HLA.reshape(shape[0], -1, 3) @ trans).reshape(shape)
-
-    return np.swapaxes(NEVs, 0, 1)
 
 
 def get_sigmas(cov, long=False):

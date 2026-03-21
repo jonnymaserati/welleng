@@ -111,7 +111,7 @@ class ToolError:
                 )
             )
 
-        shape = (3, 3, len(self.e.survey_rad))
+        shape = (len(self.e.survey_rad), 3, 3)
         self.cov_NEVs = np.zeros(shape)
         self.cov_NEVs_random = np.zeros(shape)
         self.cov_NEVs_systematic = np.zeros(shape)
