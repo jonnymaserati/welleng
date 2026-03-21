@@ -137,7 +137,7 @@ class Clearance:
         ki = self.kop_index
         errors = self.reference.err.errors.errors
         n_below = len(self.reference.md) - ki
-        cov_below = np.zeros((3, 3, n_below))
+        cov_below = np.zeros((n_below, 3, 3))
 
         for error in errors.values():
             # Detect depth-scale errors: e_DIA has D≠0, I=A=0
@@ -156,24 +156,20 @@ class Clearance:
                     sigma[0] = 0.0  # zero uncertainty at KOP
                 else:
                     sigma = error.sigma_e_NEV[ki:] - error.sigma_e_NEV[ki]
-                x, y, z = sigma.T
-                cov_below += np.array([
-                    [x * x, x * y, x * z],
-                    [y * x, y * y, y * z],
-                    [z * x, z * y, z * z],
-                ])
+                # outer product: (n,3) -> (n,3,3)
+                cov_below += sigma[:, :, None] * sigma[:, None, :]
             elif error.propagation == 'random':
                 if depth_only:
-                    cov_j = error.cov_NEV[:, :, ki:].copy()
-                    cov_j[:, :, 0] = 0.0  # zero at KOP
+                    cov_j = error.cov_NEV[ki:].copy()
+                    cov_j[0] = 0.0  # zero at KOP
                     cov_below += cov_j
                 else:
                     cov_below += (
-                        error.cov_NEV[:, :, ki:]
-                        - error.cov_NEV[:, :, ki:ki + 1]
+                        error.cov_NEV[ki:]
+                        - error.cov_NEV[ki:ki + 1]
                     )
 
-        return cov_below.T  # (n_below, 3, 3)
+        return cov_below  # (n_below, 3, 3)
 
     def _get_ref(self):
         if self.kop_index == 0:
@@ -190,8 +186,8 @@ class Clearance:
                 cov_hla = (
                     NEV_to_HLA(
                         self.reference.survey_rad[self.kop_index:],
-                        cov_nev.T
-                    ).T
+                        cov_nev
+                    )
                     if cov_nev is not None else None
                 )
             except (IndexError, AttributeError):

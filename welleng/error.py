@@ -148,24 +148,10 @@ class ErrorModel():
 
     def _cov(self, arr):
         '''
-        Returns a covariance matrix from an (n,3) array.
+        Returns a (n,3,3) covariance matrix from an (n,3) array.
         '''
-        # Mitigate overflow
-        # with np.errstate(divide='ignore', invalid='ignore'):
-        #     coeff = np.nan_to_num(
-        #         arr / np.abs(arr) * ACCURACY,
-        #         nan=ACCURACY
-        #     )
-        # arr = np.where(np.abs(arr) > ACCURACY, arr, coeff)
-
-        x, y, z = np.array(arr).T
-        result = np.array([
-            [x*x, x*y, x*z],
-            [y*x, y*y, y*z],
-            [z*x, z*y, z*z]
-        ])
-
-        return result
+        arr = np.array(arr)
+        return arr[:, :, None] * arr[:, None, :]
 
     def _sigma_e_NEV_systematic(self, e_NEV, e_NEV_star):
         return e_NEV_star + np.vstack(
@@ -195,14 +181,14 @@ class ErrorModel():
                 sigma_e_NEV = self._sigma_e_NEV_systematic(e_NEV, e_NEV_star)
                 cov_NEV = self._cov(sigma_e_NEV)
             elif propagation == 'random':
-                sigma_e_NEV = np.cumsum(self._cov(e_NEV), axis=-1)
+                sigma_e_NEV = np.cumsum(self._cov(e_NEV), axis=0)
                 cov_NEV = np.add(
                     self._cov(e_NEV_star),
                     np.concatenate(
                         (
-                            np.array(np.zeros((3, 3, 1))),
-                            np.array(sigma_e_NEV[:, :, :-1])
-                        ), axis=-1)
+                            np.zeros((1, 3, 3)),
+                            sigma_e_NEV[:-1]
+                        ), axis=0)
                     )
             else:
                 return
@@ -396,7 +382,7 @@ def make_diagnostic_data(survey):
         diagnostic[d] = {}
         total = []
         for k, v in survey.err.errors.errors.items():
-            diagnostic[d][k] = get_errors(v.cov_NEV.T[i])
+            diagnostic[d][k] = get_errors(v.cov_NEV[i])
             total.extend(diagnostic[d][k])
         diagnostic[d]['TOTAL'] = np.sum((np.array(
             total

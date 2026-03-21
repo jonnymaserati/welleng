@@ -69,7 +69,7 @@ class iscwsaMwd:
                 )
             )
 
-        self.cov_NEVs = np.zeros((3, 3, len(self.e.survey_rad)))
+        self.cov_NEVs = np.zeros((len(self.e.survey_rad), 3, 3))
         for _, value in self.errors.items():
             self.cov_NEVs += value.cov_NEV
 

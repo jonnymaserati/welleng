@@ -803,17 +803,17 @@ class Survey:
                 self,
                 error_model=self.error_model
             )
-            self.cov_hla = self.err.errors.cov_HLAs.T
-            self.cov_nev = self.err.errors.cov_NEVs.T
-            self.cov_nev_random = self.err.errors.cov_NEVs_random.T
-            self.cov_nev_systematic = self.err.errors.cov_NEVs_systematic.T
-            self.cov_nev_global = self.err.errors.cov_NEVs_global.T
-            self.cov_nev_within_pad = self.err.errors.cov_NEVs_within_pad.T
+            self.cov_hla = self.err.errors.cov_HLAs
+            self.cov_nev = self.err.errors.cov_NEVs
+            self.cov_nev_random = self.err.errors.cov_NEVs_random
+            self.cov_nev_systematic = self.err.errors.cov_NEVs_systematic
+            self.cov_nev_global = self.err.errors.cov_NEVs_global
+            self.cov_nev_within_pad = self.err.errors.cov_NEVs_within_pad
         else:
             if self.cov_nev is not None and self.cov_hla is None:
-                self.cov_hla = NEV_to_HLA(self.survey_rad, self.cov_nev.T).T
+                self.cov_hla = NEV_to_HLA(self.survey_rad, self.cov_nev)
             elif self.cov_nev is None and self.cov_hla is not None:
-                self.cov_nev = HLA_to_NEV(self.survey_rad, self.cov_hla.T).T
+                self.cov_nev = HLA_to_NEV(self.survey_rad, self.cov_hla)
             else:
                 pass
 
@@ -822,7 +822,7 @@ class Survey:
             and self.cov_nev is not None
         ):
             self.cov_nev += self.start_cov_nev
-            self.cov_hla = NEV_to_HLA(self.survey_rad, self.cov_nev.T).T
+            self.cov_hla = NEV_to_HLA(self.survey_rad, self.cov_nev)
 
     def _curvature_to_rate(self, curvature):
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -2480,8 +2480,8 @@ def interpolate_survey(survey, step=30, dls=1e-8):
         survey_interpolated.cov_nev = np.array(cov_nev)
         survey_interpolated.cov_hla = NEV_to_HLA(
             survey_interpolated.survey_rad,
-            survey_interpolated.cov_nev.T
-        ).T
+            survey_interpolated.cov_nev
+        )
 
     return survey_interpolated
 

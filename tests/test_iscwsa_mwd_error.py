@@ -72,9 +72,9 @@ def test_iscwsa_error_models(input_files=input_files):
             i = get_md_index(err, row['md'])
             s = row['source']
             if s in ["Totals", "TOTAL"]:
-                source_cov = err.errors.cov_NEVs.T[i]
+                source_cov = err.errors.cov_NEVs[i]
             else:
-                source_cov = err.errors.errors[s].cov_NEV.T[i]
+                source_cov = err.errors.errors[s].cov_NEV[i]
             v = get_sigmas(source_cov, long=True)
             for j, d in enumerate(v):
                 data[j].append(d[0])
