@@ -6,6 +6,80 @@ from numpy.typing import NDArray
 from scipy.spatial.transform import Rotation as R
 
 
+def get_dogleg(inc1, azi1, inc2, azi2):
+    """
+    Compute the dogleg angle between two survey stations (vectorised).
+
+    Uses the numerically stable Haversine form to avoid arccos precision loss
+    at small angles.
+
+    Parameters
+    ----------
+    inc1, azi1: float or array — inclination / azimuth at station 1 (radians)
+    inc2, azi2: float or array — inclination / azimuth at station 2 (radians)
+
+    Returns
+    -------
+    dogleg: float or array — dogleg angle in radians
+    """
+    return 2.0 * np.arcsin(np.sqrt(
+        np.sin((inc2 - inc1) / 2) ** 2
+        + np.sin(inc1) * np.sin(inc2) * np.sin((azi2 - azi1) / 2) ** 2
+    ))
+
+
+def get_rf(dogleg):
+    """
+    Compute the ratio factor (RF) for minimum curvature (vectorised).
+
+    Returns 1.0 where dogleg is 0 (limit of the function as dogleg → 0).
+
+    Parameters
+    ----------
+    dogleg: float or array — dogleg angle(s) in radians
+
+    Returns
+    -------
+    rf: float or array — ratio factor(s)
+    """
+    dogleg = np.asarray(dogleg, dtype=float)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        rf = np.where(dogleg == 0.0, 1.0, 2.0 / dogleg * np.tan(dogleg / 2))
+    return float(rf) if rf.ndim == 0 else rf
+
+
+def min_curve_step(delta_md, inc1, azi1, inc2, azi2, rf=None):
+    """
+    Compute position increments using minimum curvature (vectorised).
+
+    All trigonometric values are computed once and shared across the three
+    coordinate directions for efficiency.
+
+    Parameters
+    ----------
+    delta_md: (n,) array — measured-depth increments
+    inc1, azi1: (n,) arrays — start inclination / azimuth (radians)
+    inc2, azi2: (n,) arrays — end inclination / azimuth (radians)
+    rf: (n,) array or None — ratio factors; computed if not supplied
+
+    Returns
+    -------
+    deltas: (n, 3) array — position increments in [N, E, V] order
+    """
+    if rf is None:
+        rf = get_rf(get_dogleg(inc1, azi1, inc2, azi2))
+    si1, ci1 = np.sin(inc1), np.cos(inc1)
+    si2, ci2 = np.sin(inc2), np.cos(inc2)
+    ca1, sa1 = np.cos(azi1), np.sin(azi1)
+    ca2, sa2 = np.cos(azi2), np.sin(azi2)
+    scale = delta_md * rf / 2
+    return np.stack((
+        scale * (si1 * ca1 + si2 * ca2),  # N
+        scale * (si1 * sa1 + si2 * sa2),  # E
+        scale * (ci1 + ci2),               # V
+    ), axis=-1)
+
+
 class MinCurve:
     def __init__(
         self,
@@ -47,37 +121,33 @@ class MinCurve:
         self.start_xyz = start_xyz
         self.unit = unit
 
-        # make two slices with a difference or 1 index to enable array
-        # calculations
-        md_1, md_2 = self._split_arr(np.array(md))
-        inc_1, inc_2 = self._split_arr(np.array(inc))
-        azi_1, azi_2 = self._split_arr(np.array(azi))
+        inc = np.array(inc)
+        azi = np.array(azi)
+        inc_1, inc_2 = inc[:-1], inc[1:]
+        azi_1, azi_2 = azi[:-1], azi[1:]
 
-        self.dogleg = self._get_dogleg(survey_length, inc_1, azi_1, inc_2, azi_2)
-
-        # calculate rf and assume rf is 1 where dogleg is 0
-        self.rf = self._get_rf(survey_length, self.dogleg)
-
-        # calculate the change in md between survey stations
         self.delta_md = np.diff(self.md, prepend=0)
 
-        args = (
-            self.delta_md, inc_1, azi_1, inc_2, azi_2, self.rf, survey_length
+        self.dogleg = np.zeros(survey_length)
+        self.dogleg[1:] = get_dogleg(inc_1, azi_1, inc_2, azi_2)
+
+        self.rf = np.ones(survey_length)
+        self.rf[1:] = get_rf(self.dogleg[1:])
+
+        # compute all three coordinate deltas in a single trig pass
+        deltas = min_curve_step(
+            self.delta_md[1:], inc_1, azi_1, inc_2, azi_2, self.rf[1:]
         )
-
-        # calculate change in y direction (north)
-        self.delta_y = self._get_delta_y(*args)
-
-        # calculate change in x direction (east)
-        self.delta_x = self._get_delta_x(*args)
-
-        # calculate change in z direction
-        self.delta_z = self._get_delta_z(*args)
+        self.delta_y = np.zeros(survey_length); self.delta_y[1:] = deltas[:, 0]
+        self.delta_x = np.zeros(survey_length); self.delta_x[1:] = deltas[:, 1]
+        self.delta_z = np.zeros(survey_length); self.delta_z[1:] = deltas[:, 2]
 
         # calculate the dog leg severity
-        self.dls = self._get_dls(
-            self.dogleg, self.delta_md, survey_length, unit
-        )
+        coeff = 30 if unit == "meters" else 100
+        self.dls = np.zeros(survey_length)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            raw = np.degrees(self.dogleg[1:]) / self.delta_md[1:]
+        self.dls[1:] = np.where(np.isnan(raw), 0.0, raw) * coeff
 
         # cumulate the coordinates and add surface coordinates
         self.poss = np.vstack(
@@ -85,80 +155,6 @@ class MinCurve:
                 np.array([self.delta_x, self.delta_y, self.delta_z]).T, axis=0
             ) + self.start_xyz
         )
-
-    @staticmethod
-    def _get_dogleg(survey_length, inc1, azi1, inc2, azi2):
-        dogleg = np.zeros(survey_length)
-        dogleg[1:] = np.arccos(
-            np.cos(inc2 - inc1)
-            - (np.sin(inc1) * np.sin(inc2))
-            * (1 - np.cos(azi2 - azi1))
-        )
-        return dogleg
-
-    @staticmethod
-    def _split_arr(arr):
-        return (arr[:-1], arr[1:])
-
-    @staticmethod
-    def _get_rf(survey_length, dogleg):
-        rf = np.ones(survey_length)
-        idx = np.where(dogleg != 0)
-        rf[idx] = 2 / dogleg[idx] * np.tan(dogleg[idx] / 2)
-        return rf
-
-    @staticmethod
-    def _get_delta_y(delta_md, inc_1, azi_1, inc_2, azi_2, rf, survey_length):
-        delta_y = np.zeros(survey_length)
-        delta_y[1:] = (
-            delta_md[1:]
-            / 2
-            * (
-                np.sin(inc_1) * np.cos(azi_1)
-                + np.sin(inc_2) * np.cos(azi_2)
-            )
-            * rf[1:]
-        )
-        return delta_y
-
-    @staticmethod
-    def _get_delta_x(delta_md, inc_1, azi_1, inc_2, azi_2, rf, survey_length):
-        delta_x = np.zeros(survey_length)
-        delta_x[1:] = (
-            delta_md[1:]
-            / 2
-            * (
-                np.sin(inc_1) * np.sin(azi_1)
-                + np.sin(inc_2) * np.sin(azi_2)
-            )
-            * rf[1:]
-        )
-        return delta_x
-
-    @staticmethod
-    def _get_delta_z(delta_md, inc_1, azi_1, inc_2, azi_2, rf, survey_length):
-        delta_z = np.zeros(survey_length)
-        delta_z[1:] = (
-            delta_md[1:]
-            / 2
-            * (np.cos(inc_1) + np.cos(inc_2))
-            * rf[1:]
-        )
-        return delta_z
-    
-    @staticmethod
-    def _get_dls(dogleg, delta_md, survey_length, unit):
-        dls = np.zeros(survey_length)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            temp = np.degrees(dogleg[1:]) / delta_md[1:]
-        mask = np.where(~np.isnan(temp))
-        dls[1:][mask] = temp[mask]
-
-        if unit == "meters":
-            dls *= 30
-        else:
-            dls *= 100
-        return dls
 
 
 def get_vec(inc, azi, nev=False, r=1, deg=True):
