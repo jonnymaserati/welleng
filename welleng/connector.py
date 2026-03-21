@@ -1137,24 +1137,6 @@ def get_radius_critical(radius, distances, min_error):
     return radius_critical
 
 
-def angle(vec1, vec2, acute=True):
-    angle = np.arccos(
-        np.dot(vec1, vec2)
-        /
-        (
-            np.linalg.norm(vec1) * np.linalg.norm(vec2)
-        )
-    )
-
-    if acute:
-        return angle
-
-    else:
-        return 2 * np.pi - angle
-
-
-
-
 def interpolate_well(sections, step=30):
     """
     Constructs a well survey from a list of sections of control points.
