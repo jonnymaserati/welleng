@@ -419,6 +419,27 @@ def make_cov(a, b, c, long=False):
     return cov.T
 
 
+def make_long_cov(arr):
+    """
+    Build a (n, 3, 3) covariance matrix from the 6 unique upper-triangle
+    elements per station.
+
+    Parameters
+    ----------
+    arr: (n, 6) array — columns [aa, ab, ac, bb, bc, cc]
+
+    Returns
+    -------
+    cov: (n, 3, 3) array
+    """
+    aa, ab, ac, bb, bc, cc = np.array(arr).T
+    return np.array([
+        [aa, ab, ac],
+        [ab, bb, bc],
+        [ac, bc, cc]
+    ]).T
+
+
 def dls_from_radius(radius):
     """
     Returns the dls in degrees from a radius.

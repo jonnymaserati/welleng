@@ -22,6 +22,7 @@ from .utils import (
     HLA_to_NEV,
     NEV_to_HLA,
     get_xyz,
+    make_long_cov,
     radius_from_dls,
     get_arc
 )
@@ -1812,58 +1813,6 @@ def slice_survey(survey: Survey, start: int, stop: int = None):
     s.error_model = survey.error_model
 
     return s
-
-
-def make_cov(a, b, c, diag=False):
-    """
-    Make a covariance matrix from the 1-sigma errors.
-
-    Parameters
-    ----------
-        a: (,n) list or array of floats
-            Errors in H or N/y axis.
-        b: (,n) list or array of floats
-            Errors in L or E/x axis.
-        c: (,n) list or array of floats
-            Errors in A or V/TVD axis.
-        diag: boolean (default=False)
-            If true, only the lead diagonal is calculated
-            with zeros filling the remainder of the matrix.
-
-    Returns
-    -------
-        cov: (n,3,3) np.array
-    """
-
-    if diag:
-        z = np.zeros_like(np.array([a]).reshape(-1))
-        cov = np.array([
-            [a * a, z, z],
-            [z, b * b, z],
-            [z, z, c * c]
-        ]).T
-    else:
-        cov = np.array([
-            [a * a, a * b, a * c],
-            [a * b, b * b, b * c],
-            [a * c, b * c, c * c]
-        ]).T
-
-    return cov
-
-
-def make_long_cov(arr):
-    """
-    Make a covariance matrix from the half covariance 1sigma data.
-    """
-    aa, ab, ac, bb, bc, cc = np.array(arr).T
-    cov = np.array([
-        [aa, ab, ac],
-        [ab, bb, bc],
-        [ac, bc, cc]
-    ]).T
-
-    return cov
 
 
 def _ensure_int_or_float(val, required_type) -> int | float:
