@@ -23,7 +23,11 @@ try:
 except ImportError:
     PLOTLY = False
 
-from vtk import vtkAxesActor, vtkCubeAxesActor, vtkNamedColors
+try:
+    from vtk import vtkAxesActor, vtkCubeAxesActor, vtkNamedColors
+    VTK = True
+except ImportError:
+    VTK = False
 
 from . import mesh
 from .version import __version__ as VERSION
