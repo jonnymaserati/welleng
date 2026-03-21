@@ -1894,11 +1894,8 @@ def get_circle_radius(survey, **targets):
     # TODO: add target data to sections
     ss = SplitSurvey(survey)
 
-    y1, x1, z1 = np.cross(ss.vec1_nev, survey.normals).T
-    y2, x2, z2 = np.cross(ss.vec2_nev, survey.normals).T
-
-    b1 = np.array([y1, x1, z1]).T
-    b2 = np.array([y2, x2, z2]).T
+    b1 = np.cross(ss.vec1_nev, survey.normals)
+    b2 = np.cross(ss.vec2_nev, survey.normals)
     nev = np.array([survey.n, survey.e, survey.tvd]).T
 
     cc1 = (

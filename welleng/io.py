@@ -1,6 +1,7 @@
 import numbers
 import numpy as np
 from .survey import Survey
+from .utils import get_xyz
 
 try:
     from openpyxl import load_workbook
@@ -83,8 +84,7 @@ def acr_setup(sheet, data):
 
 def make_survey(data, well):
     start_nev = data["wells"]["offset"]["mesh"].NEVs[0]
-    y, x, z = start_nev
-    start_xyz = np.array([x, y, z])
+    start_xyz = get_xyz(start_nev).ravel()
     return Survey(
         md=data["wells"][well]["MD"],
         inc=data["wells"][well]["IncDeg"],

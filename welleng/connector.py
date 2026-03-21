@@ -1419,11 +1419,9 @@ def connect_points(
         vec_nev = np.zeros_like(pos_nev)
         vec_nev[0] = np.array(vec_start).reshape(-1, 3)
     else:
-        e, n, tvd = np.array(cartesians).reshape(-1, 3).T
-        pos_nev = np.array([n, e, tvd]).T
+        pos_nev = get_nev(cartesians)
         vec_nev = np.zeros_like(pos_nev)
-        e, n, tvd = np.array(vec_start).reshape(-1, 3).T
-        vec_nev[0] = np.array([n, e, tvd]).T
+        vec_nev[0] = get_nev(vec_start)
 
     if type(dls_design) is float:
         dls = np.full(len(pos_nev), dls_design)
