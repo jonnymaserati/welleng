@@ -5,16 +5,6 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial.transform import Rotation as R
 
-try:
-    from numba import njit
-    NUMBA = True
-except ImportError:
-    NUMBA = False
-
-
-def numbafy(func):
-    func = njit(func)
-
 
 class MinCurve:
     def __init__(
@@ -883,9 +873,3 @@ def get_toolface(pos1: NDArray, vec1: NDArray, pos2: NDArray) -> float:
     return np.arctan2(*(np.flip(pos[:2])))
 
 
-if NUMBA:
-    NUMBA_FUNCS = (
-        _get_angles, _get_arc_pos_and_vec
-    )
-    for func in NUMBA_FUNCS:
-        numbafy(func)
