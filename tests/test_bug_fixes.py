@@ -195,3 +195,124 @@ def test_func_dict_dbhr_present():
 
     assert 'DBHR' in te.func_dict, "DBHR is missing from func_dict"
     assert te.func_dict['DBHR'] is DBHR
+
+
+# ---------------------------------------------------------------------------
+# Connector: curve_hold_curve (circle-line-circle) improvements
+# ---------------------------------------------------------------------------
+
+def test_connector_dls_design_none_uses_radius_critical():
+    """
+    Issue #28: dls_design=None should use the minimum curvature required by
+    geometry (radius_critical) rather than silently defaulting to 3 deg/30m.
+    """
+    c = we.connector.Connector(
+        pos1=[0., 0., 0.],
+        inc1=0., azi1=0.,
+        md1=0., md2=500.,
+        inc2=45., azi2=45.,
+        dls_design=None,
+        degrees=True,
+    )
+    assert np.isinf(c.radius_design), (
+        "radius_design should be inf when dls_design=None"
+    )
+    # The actual radius used must equal radius_critical (finite, > 0)
+    assert np.isfinite(c.radius_critical) and c.radius_critical > 0
+
+    # Build the equivalent connector with dls fixed at 3 deg/30m
+    c_fixed = we.connector.Connector(
+        pos1=[0., 0., 0.],
+        inc1=0., azi1=0.,
+        md1=0., md2=500.,
+        inc2=45., azi2=45.,
+        dls_design=3.0,
+        degrees=True,
+    )
+    # The None connector should give a different (gentler) curve
+    assert not np.isclose(c.radius_critical, c_fixed.radius_design), (
+        "dls_design=None should produce a different path from dls_design=3.0"
+    )
+
+
+def test_connector_dls_design_none_raises_without_target():
+    """
+    Issue #28: dls_design=None without a target position or measured depth
+    is indeterminate and should raise a clear ValueError.
+    """
+    with pytest.raises(ValueError, match="dls_design must be specified"):
+        we.connector.Connector(
+            pos1=[0., 0., 0.],
+            inc1=0., azi1=0.,
+            inc2=45., azi2=45.,
+            dls_design=None,
+            degrees=True,
+        )
+
+
+def test_connector_curve_hold_curve_close_target_converges():
+    """
+    The curve_hold_curve solver previously oscillated (never converged) when
+    the target was close relative to the radius of curvature.  The damped
+    update should resolve this without hitting max_iterations.
+    """
+    c = we.connector.Connector(
+        pos1=[0., 0., 0.],
+        vec1=[0., 0., 1.],   # pointing straight down
+        pos2=[20., 20., 100.],
+        vec2=[0., 0., 1.],
+        dls_design=3.0,
+        degrees=True,
+    )
+    assert c.method == 'curve_hold_curve'
+    assert c.error, "Solver should have converged (c.error should be True)"
+    assert c.iterations < c.max_iterations, (
+        "Solver hit max_iterations — likely stuck in an oscillation loop"
+    )
+
+
+def test_connector_curve_hold_curve_balanced_dls():
+    """
+    After convergence the two arc sections should have approximately equal
+    DLS (the solver's balancing objective).
+    """
+    c = we.connector.Connector(
+        pos1=[0., 0., 0.],
+        vec1=[0., 0., 1.],
+        pos2=[50., 30., 300.],
+        vec2=[0.3, 0., 0.954],   # ~17-deg inclination, 0 azimuth
+        dls_design=3.0,
+        degrees=True,
+    )
+    assert c.method == 'curve_hold_curve'
+    # DLS values should be balanced within delta_dls
+    assert abs(np.degrees(c.dls) - np.degrees(c.dls2)) < c.delta_dls + 0.5, (
+        f"DLS not balanced: dls={np.degrees(c.dls):.3f}, "
+        f"dls2={np.degrees(c.dls2):.3f} deg/30m"
+    )
+
+
+def test_connector_curve_hold_curve_no_recursion_error():
+    """
+    The old recursive implementation would crash with RecursionError for
+    cases requiring many inner iterations.  The iterative version must not
+    raise RecursionError regardless of max_iterations.
+    """
+    import sys
+    old_limit = sys.getrecursionlimit()
+    # Lower the recursion limit enough to catch the old recursive
+    # implementation (which needed ~max_iterations stack frames) but keep
+    # it high enough for numpy and basic Python internals to function.
+    sys.setrecursionlimit(200)
+    try:
+        c = we.connector.Connector(
+            pos1=[0., 0., 0.],
+            vec1=[0., 0., 1.],
+            pos2=[15., 15., 80.],
+            vec2=[0., 0., 1.],
+            dls_design=3.0,
+            degrees=True,
+        )
+        assert c.method == 'curve_hold_curve'
+    finally:
+        sys.setrecursionlimit(old_limit)
