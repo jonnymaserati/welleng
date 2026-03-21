@@ -69,12 +69,6 @@ class Node:
             self.pos_xyz = np.array(pos).reshape(3).tolist()
             self.pos_nev = get_nev(pos).reshape(3).tolist()
 
-    @staticmethod
-    def get_unit_vec(vec):
-        vec = vec / np.linalg.norm(vec)
-
-        return vec
-
     def properties(self):
         return vars(self)
 
