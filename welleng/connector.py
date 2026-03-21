@@ -6,7 +6,7 @@ from scipy.spatial import distance
 
 from .node import Node, get_node_params
 from .utils import (
-    NEV_to_HLA, _get_angles, dls_from_radius, get_angles,
+    NEV_to_HLA, dls_from_radius, get_angles,
     get_dogleg, get_nev, get_rf, get_unit_vec, get_vec, get_xyz,
     radius_from_dls, get_arc
 )
@@ -970,11 +970,6 @@ def mod_vec(vec, error=1e-5):
     inc_mod, azi_mod = get_angles(vec_mod, nev=True).T
 
     return vec_mod, inc_mod, azi_mod
-
-
-def _get_xyz(pos):
-    n, e, v = pos
-    return np.array([e, n, v]).reshape(-1, 3)
 
 
 def get_pos(pos1, vec1, vec2, dist_curve, func_dogleg):
