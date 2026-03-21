@@ -803,18 +803,12 @@ class IscwsaClearance(Clearance):
         self.distance_cc = self.distance_cc.reshape(-1)
 
     def _get_delta_hla_vectors(self):
-        self.ref_delta_hlas = np.vstack([
-            NEV_to_HLA(s, nev, cov=False)
-            for s, nev in zip(
-                self.ref.survey_rad, self.ref_delta_nevs
-            )
-        ])
-        self.off_delta_hlas = np.vstack([
-            NEV_to_HLA(s, nev, cov=False)
-            for s, nev in zip(
-                self.off.survey_rad, self.off_delta_nevs
-            )
-        ])
+        self.ref_delta_hlas = NEV_to_HLA(
+            self.ref.survey_rad, self.ref_delta_nevs, cov=False
+        )
+        self.off_delta_hlas = NEV_to_HLA(
+            self.off.survey_rad, self.off_delta_nevs, cov=False
+        )
 
     def _get_covs(self):
         self.ref_cov_hla = self.ref.cov_hla
@@ -823,14 +817,14 @@ class IscwsaClearance(Clearance):
         self.off_cov_nev = self.off.cov_nev
 
     def _get_PCRs(self):
-        self.ref_pcr = np.hstack([
-            np.sqrt(np.dot(np.dot(vec, cov), vec.T))
-            for vec, cov in zip(self.ref_delta_nevs, self.ref_cov_nev)
-        ])
-        self.off_pcr = np.hstack([
-            np.sqrt(np.dot(np.dot(vec, cov), vec.T))
-            for vec, cov in zip(self.off_delta_nevs, self.off_cov_nev)
-        ])
+        ref_cov = self.ref_cov_nev.reshape(-1, 3, 3)
+        off_cov = self.off_cov_nev.reshape(-1, 3, 3)
+        self.ref_pcr = np.sqrt(np.einsum(
+            'ni,nij,nj->n', self.ref_delta_nevs, ref_cov, self.ref_delta_nevs
+        ))
+        self.off_pcr = np.sqrt(np.einsum(
+            'ni,nij,nj->n', self.off_delta_nevs, off_cov, self.off_delta_nevs
+        ))
 
     def _get_calc_hole(self):
         self.calc_hole = self.Rr + self.Ro[self.idx]

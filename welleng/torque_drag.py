@@ -145,48 +145,31 @@ class TorqueDrag:
             return self.string.sections[section]['od']
 
     def get_weight_buoyed_and_radius(self):
-        section = 0
-        weights = [0]
-        diameter = [self.get_characteristic_od(section)]
-        for md, delta_md in zip(self.survey.md[1:], self.survey.delta_md[1:]):
-            if md > self.string.bottom:
-                break
-            while 1:
-                if (
-                    self.string.sections[section]['top']
-                    < md <= self.string.sections[section]['bottom']
-                ):
-                    weights.append(
-                        self.string.sections[section]['unit_weight'] * delta_md
-                        * self.string.sections[section]['buoyancy_factor']
-                    )
-                    diameter.append(
-                        self.get_characteristic_od(section)
-                    )
-                    break
-                else:
-                    section += 1
-        self.weight_buoyed = np.array(weights)
-        self.radius = np.array(diameter) / 2
+        sections = self.string.sections
+        bottoms = np.array([s['bottom'] for s in sections])
+        mds = self.survey.md[1:]
+        delta_mds = self.survey.delta_md[1:]
+        mask = mds <= self.string.bottom
+        mds = mds[mask]
+        delta_mds = delta_mds[mask]
+        idx = np.clip(np.searchsorted(bottoms, mds, side='left'), 0, len(sections) - 1)
+        unit_weights = np.array([sections[i]['unit_weight'] for i in idx])
+        buoyancy = np.array([sections[i]['buoyancy_factor'] for i in idx])
+        diameters = np.array([self.get_characteristic_od(i) for i in idx])
+        self.weight_buoyed = np.concatenate([[0], unit_weights * delta_mds * buoyancy])
+        self.radius = np.concatenate([[self.get_characteristic_od(0)], diameters]) / 2
 
     def get_coeff_friction_sliding(self):
-        section = 0
-        friction = [self.wellbore.sections[section]['coeff_friction_sliding']]
-        for md, delta_md in zip(self.survey.md[1:], self.survey.delta_md[1:]):
-            if md > self.wellbore.bottom:
-                break
-            while 1:
-                if (
-                    self.wellbore.sections[section]['top']
-                    < md <= self.wellbore.sections[section]['bottom']
-                ):
-                    friction.append(
-                        self.wellbore.sections[section]['coeff_friction_sliding']  # noqa: E501
-                    )
-                    break
-                else:
-                    section += 1
-        self.coeff_friction_sliding = np.array(friction)
+        sections = self.wellbore.sections
+        bottoms = np.array([s['bottom'] for s in sections])
+        mds = self.survey.md[1:]
+        mask = mds <= self.wellbore.bottom
+        mds = mds[mask]
+        idx = np.clip(np.searchsorted(bottoms, mds, side='left'), 0, len(sections) - 1)
+        friction = np.array([sections[i]['coeff_friction_sliding'] for i in idx])
+        self.coeff_friction_sliding = np.concatenate(
+            [[sections[0]['coeff_friction_sliding']], friction]
+        )
 
     def get_forces_and_torsion(self, wob=False, tob=False, overpull=False):
         if any((wob, tob)):
