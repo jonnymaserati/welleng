@@ -404,12 +404,14 @@ class IscwsaClearance(Clearance):
         # self.pc_method()
 
     def _get_sf_min(self, x, i, delta_md):
+        # scipy.optimize.minimize passes x as a 1-element array; extract scalar
+        x = float(np.asarray(x).ravel()[0])
         if x == 0.0:
             return self.sf[i]
         if x == -delta_md[0]:
-            return self.sf[i-1]
+            return self.sf[i - 1]
         if x == delta_md[1]:
-            return self.sf[i+1]
+            return self.sf[i + 1]
 
         if x < 0:
             ii = i - 1
@@ -420,55 +422,56 @@ class IscwsaClearance(Clearance):
             xx = x
             mult = xx / delta_md[1]
 
-        node = self.ref.interpolate_md(
-            self.ref.md[ii] + xx
-        )
-
-        cov_nev = (
+        # Interpolated reference position and covariance — no Survey needed
+        ref_pos = _interpolate_pos_nev(self.ref, xx, ii)
+        ref_cov = (
             self.ref.cov_nev[ii]
-            + (
-                np.full(shape=(1, 3, 3), fill_value=mult)
-                * (self.ref.cov_nev[ii+1] - self.ref.cov_nev[ii])
+            + mult * (self.ref.cov_nev[ii + 1] - self.ref.cov_nev[ii])
+        ).reshape(3, 3)
+        ref_r = self.Rr[ii + 1]
+
+        # Find closest point on offset in the two intervals around self.idx[i]
+        off_cov_src = self.offset.cov_nev
+        off_idx = self.idx[i]
+        n_off = len(self.offset.md)
+
+        best_dist = np.inf
+        best_u = None
+        best_off_cov = None
+        best_off_r = None
+
+        for oi in range(max(0, off_idx - 1), min(off_idx + 1, n_off - 2) + 1):
+            bound = self.offset.md[oi + 1] - self.offset.md[oi]
+            res = optimize.minimize(
+                lambda t, _oi=oi: norm(
+                    _interpolate_pos_nev(self.offset, t[0], _oi) - ref_pos
+                ),
+                [bound / 2],
+                method='Powell',
+                bounds=[(0, bound)],
             )
-        ).reshape(-1, 3, 3)
+            if res.fun < best_dist:
+                best_dist = res.fun
+                off_pos = _interpolate_pos_nev(self.offset, res.x[0], oi)
+                t_mult = res.x[0] / bound if bound > 0 else 0.0
+                best_u = off_pos - ref_pos
+                best_off_cov = (
+                    off_cov_src[oi]
+                    + t_mult * (off_cov_src[oi + 1] - off_cov_src[oi])
+                ).reshape(3, 3)
+                best_off_r = self.Ro[oi] + t_mult * (self.Ro[oi + 1] - self.Ro[oi])
 
-        sh = self.ref.header
-        sh.azi_reference = 'grid'
+        dist = best_dist
+        if dist < 1e-10:
+            return np.inf
 
-        survey = Survey(
-            md=np.insert(
-                self.ref.md[ii: ii+2], 1, node.md
-            ),
-            inc=np.insert(
-                self.ref.inc_rad[ii: ii+2], 1, node.inc_rad
-            ),
-            azi=np.insert(
-                self.ref.azi_grid_rad[ii: ii+2], 1, node.azi_rad
-            ),
-            cov_nev=np.insert(
-                self.ref.cov_nev[ii: ii+2], 1, cov_nev, axis=0
-            ),
-            start_nev=self.ref.pos_nev[ii],
-            deg=False
-        )
-
-        clearance_args = (survey, self.offset)
-        clearance_kwargs = dict(
-            k=self.k,
-            sigma_pa=self.sigma_pa,
-            Sm=0.0,
-            Rr=np.insert(
-                self.Rr[ii: ii+2], 1, self.Rr[ii+1]
-            ),
-            Ro=self.Ro,
-            kop_depth=self.kop_depth
-        )
-
-        sf_interpolated = IscwsaClearance(
-            *clearance_args, **clearance_kwargs, minimize_sf=False
-        ).sf[1]
-
-        return sf_interpolated
+        u = best_u / dist
+        ref_pcr = np.sqrt(max(0.0, float(u @ ref_cov @ u)))
+        off_pcr = np.sqrt(max(0.0, float(u @ best_off_cov @ u)))
+        sigma_s = np.sqrt(ref_pcr ** 2 + off_pcr ** 2)
+        eou = self.k * np.sqrt(sigma_s ** 2 + self.sigma_pa ** 2)
+        # Sm=0.0 matches the original (using Sm=0 for min-finding)
+        return float((dist - ref_r - best_off_r) / eou)
 
     def get_sf_mins(self):
         """
