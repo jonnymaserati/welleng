@@ -109,7 +109,7 @@ class ErrorModel():
 
     def _e_NEV(self, e_DIA):
         D, I, A = e_DIA.T
-        arr = np.array([
+        arr = np.column_stack([
             (self.drdp[:, 0] + self.drdp[:, 9]) * D
             + (self.drdp[:, 3] + self.drdp[:, 12]) * I
             + (self.drdp[:, 6] + self.drdp[:, 15]) * A,
@@ -121,7 +121,7 @@ class ErrorModel():
             (self.drdp[:, 2] + self.drdp[:, 11]) * D
             + (self.drdp[:, 5] + self.drdp[:, 14]) * I
             + (self.drdp[:, 8] + self.drdp[:, 17]) * A,
-        ]).T
+        ])
 
         arr[0] = 0
 
@@ -129,7 +129,7 @@ class ErrorModel():
 
     def _e_NEV_star(self, e_DIA):
         D, I, A = e_DIA.T
-        arr = np.array([
+        arr = np.column_stack([
             self.drdp[:, 0] * D
             + self.drdp[:, 3] * I
             + self.drdp[:, 6] * A,
@@ -141,7 +141,7 @@ class ErrorModel():
             self.drdp[:, 2] * D
             + self.drdp[:, 5] * I
             + self.drdp[:, 8] * A
-        ]).T
+        ])
 
         arr[0] = 0
 

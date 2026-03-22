@@ -185,9 +185,9 @@ def get_vec(inc, azi, nev=False, r=1, deg=True):
     z = r * np.cos(inc_rad)
 
     if nev:
-        vec = np.array([y, x, z]).T
+        vec = np.column_stack([y, x, z])
     else:
-        vec = np.array([x, y, z]).T
+        vec = np.column_stack([x, y, z])
 
     return vec / np.linalg.norm(vec, axis=-1).reshape(-1, 1)
 
@@ -262,17 +262,20 @@ def get_angles(
     # if it's nev then need to do the shuffle
     if nev:
         y, x, z = vec.T
-        vec = np.array([x, y, z]).T
+        vec = np.column_stack([x, y, z])
 
     return _get_angles(vec)
 
 
 def _get_transform(inc, azi):
-    trans = np.array([
-        [np.cos(inc) * np.cos(azi), -np.sin(azi), np.sin(inc) * np.cos(azi)],
-        [np.cos(inc) * np.sin(azi), np.cos(azi), np.sin(inc) * np.sin(azi)],
-        [-np.sin(inc), np.zeros_like(inc), np.cos(inc)]
-    ]).T
+    ci, si = np.cos(inc), np.sin(inc)
+    ca, sa = np.cos(azi), np.sin(azi)
+    z = np.zeros_like(inc)
+    trans = np.stack([
+        np.stack([ci * ca,  ci * sa, -si], axis=-1),
+        np.stack([-sa,       ca,      z  ], axis=-1),
+        np.stack([si * ca,  si * sa,  ci ], axis=-1),
+    ], axis=1)
 
     return trans
 
@@ -433,11 +436,11 @@ def make_long_cov(arr):
     cov: (n, 3, 3) array
     """
     aa, ab, ac, bb, bc, cc = np.array(arr).T
-    return np.array([
-        [aa, ab, ac],
-        [ab, bb, bc],
-        [ac, bc, cc]
-    ]).T
+    return np.stack([
+        np.stack([aa, ab, ac], axis=-1),
+        np.stack([ab, bb, bc], axis=-1),
+        np.stack([ac, bc, cc], axis=-1),
+    ], axis=1)
 
 
 def dls_from_radius(radius):

@@ -583,12 +583,8 @@ class Survey:
 
         self._get_radius(radius)
 
-        self.survey_deg = np.array(
-            [self.md, self.inc_deg, self.azi_grid_deg]
-        ).T
-        self.survey_rad = np.array(
-            [self.md, self.inc_rad, self.azi_grid_rad]
-        ).T
+        self.survey_deg = np.column_stack([self.md, self.inc_deg, self.azi_grid_deg])
+        self.survey_rad = np.column_stack([self.md, self.inc_rad, self.azi_grid_rad])
 
         self.n = np.array(n) if n is not None else n
         self.e = np.array(e) if e is not None else e

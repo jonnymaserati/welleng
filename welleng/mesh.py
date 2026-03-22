@@ -493,10 +493,10 @@ def get_faces(n_verts, rows):
     lower = lower[:-1]
 
 
-    faces = np.array([
+    faces = np.column_stack([
         A + lower, A + upper, B + upper,
         A + lower, B + lower, B + upper
-    ]).T.reshape(-1, 3)
+    ]).reshape(-1, 3)
 
     top, bottom = get_ends(n_verts, rows)
 
