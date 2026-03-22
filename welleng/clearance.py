@@ -101,11 +101,7 @@ class Clearance:
     def _get_nevs(self, survey):
         # TODO:
         # - [ ] Take this from the `Survey` where it is already calculated.
-        return np.array([
-            survey.n,
-            survey.e,
-            survey.tvd
-        ]).T
+        return np.column_stack([survey.n, survey.e, survey.tvd])
 
     def _get_radii(self, Rr, Ro):
         """
