@@ -176,11 +176,16 @@ def test_clc_connector(n=1000, seed=42, radius=1.0, tol=1e-3):
     The Connector is then given only the start and end pos/vec and must find
     its way back.  Since the Connector always finds the minimum-MD CLC path,
     its internal decomposition may differ from the one we constructed.
-    The test verifies:
+    Doglegs up to π (180°) are tested — large doglegs may yield a different
+    decomposition but the endpoint constraint still uniquely determines whether
+    the Connector succeeded.
 
+    The test verifies:
     1. Method is 'curve_hold_curve'.
     2. Connector reaches the correct endpoint within tolerance.
-    3. Connector's total MD ≤ constructed path MD (it found the min-MD solution).
+    3. Connector's total MD ≤ constructed path MD (minimum-MD solution).
+    4. Connector did not cheat by using a tighter DLS than designed
+       (radius_critical must not be less than radius_design).
     """
     rng = np.random.default_rng(seed)
 
@@ -220,7 +225,20 @@ def test_clc_connector(n=1000, seed=42, radius=1.0, tol=1e-3):
         elif not np.allclose(c.vec_target, path['vec3'], atol=tol):
             failures.append((i, 'vec_target', c.vec_target.tolist(), path['vec3'].tolist()))
         elif c.md_target - c.md1 > constructed_md + tol:
+            # Connector found a longer path than the one we proved exists
             failures.append((i, 'md', c.md_target - c.md1, constructed_md))
+        else:
+            # Check that the Connector did not exceed the design DLS.
+            # make_clc_path proved a valid path exists at exactly `radius`, so
+            # the Connector must be able to reach the target without bending
+            # tighter.  Historically the Connector has traded straight-section
+            # length for tighter curvature to shorten total MD — this violates
+            # the dls_design constraint and is the bug this test is designed to
+            # catch.  Both arc radii must be >= design radius within tolerance.
+            actual_r1 = c.dist_curve / c.dogleg if c.dogleg > 1e-10 else radius
+            actual_r2 = c.dist_curve2 / c.dogleg2 if c.dogleg2 > 1e-10 else radius
+            if min(actual_r1, actual_r2) < radius * (1 - tol):
+                failures.append((i, 'dls_exceeded', min(actual_r1, actual_r2), radius))
 
     assert not failures, (
         f"{len(failures)}/{n} CLC cases failed:\n"
