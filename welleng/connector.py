@@ -670,11 +670,63 @@ class Connector:
             [self.radius_design, self.radius_design2],
             self, None, None, True
         )
-        if not all((
-            self.radius_critical > self.radius_design,
-            self.radius_critical2 > self.radius_design2
-        )):
-            # The design DLS cannot be achieved; iterate to balance curvature
+        # Re-evaluate whether the outer loop is needed using the FINAL
+        # converged geometry (not the running minimum radius_critical, which
+        # may have been locked too low by transient tight iteration states).
+        if hasattr(self, 'distances1') and self.distances1 is not None:
+            _rc1 = get_radius_critical(
+                self.radius_design, self.distances1, self.min_error
+            )
+            _rc2 = get_radius_critical(
+                self.radius_design2, self.distances2, self.min_error
+            )
+            _outer_needed = not all((_rc1 >= self.radius_design, _rc2 >= self.radius_design2))
+        else:
+            _outer_needed = not all((
+                self.radius_critical > self.radius_design,
+                self.radius_critical2 > self.radius_design2
+            ))
+        if _outer_needed:
+            # Try the r_safe seeding approach first: solve at r_safe=dist/4
+            # (guaranteed to converge for any geometry), then use the result
+            # as seed for a design-radius re-solve.  This can escape the tight
+            # fixed point that the initial call converged to.
+            dist_to_target = np.linalg.norm(self.pos_target - self.pos1)
+            r_safe = dist_to_target / 4.0
+            if 0 < r_safe < min(self.radius_design, self.radius_design2):
+                minimize_target_pos_and_vec_defined(
+                    [r_safe, r_safe], self, None, None, True
+                )
+                pos3_seed = deepcopy(self.pos3)
+                vec_seed = (
+                    deepcopy(self.vec23[-1]) if len(self.vec23) > 0 else None
+                )
+                # Reset running minima (r_safe call left them at small value).
+                self.radius_critical = np.inf
+                self.radius_critical2 = np.inf
+                minimize_target_pos_and_vec_defined(
+                    [self.radius_design, self.radius_design2],
+                    self, pos3_seed, vec_seed, True
+                )
+                # Re-check with final geometry
+                if hasattr(self, 'distances1') and self.distances1 is not None:
+                    _rc1 = get_radius_critical(
+                        self.radius_design, self.distances1, self.min_error
+                    )
+                    _rc2 = get_radius_critical(
+                        self.radius_design2, self.distances2, self.min_error
+                    )
+                    _outer_needed = not all(
+                        (_rc1 >= self.radius_design, _rc2 >= self.radius_design2)
+                    )
+                else:
+                    _outer_needed = not all((
+                        self.radius_critical > self.radius_design,
+                        self.radius_critical2 > self.radius_design2
+                    ))
+
+        if _outer_needed:
+            # Design DLS still cannot be achieved; iterate to balance curvature
             # across both arcs.  Use a *separate* counter so that the inner
             # convergence iterations (tracked via self.iterations) do not
             # prematurely exhaust the outer balancing budget.
@@ -683,7 +735,8 @@ class Connector:
                     (self.md_target - self.md1)
                     / (abs(self.dogleg) + abs(self.dogleg2))
                 )
-                assert self.radius_critical >= 0
+                if not (self.radius_critical >= 0):
+                    break
                 self.radius_critical2 = self.radius_critical
                 minimize_target_pos_and_vec_defined(
                     [self.radius_design, self.radius_design2],
@@ -718,9 +771,21 @@ class Connector:
         self._happy_finish()
 
     def _happy_finish(self):
+        # Use the critical radius at the FINAL converged geometry rather than the
+        # running-minimum radius_critical, which may have been locked too low by
+        # transient tight iteration states.  This ensures dist_curve is computed
+        # with the same effective radius that was used to derive self.dogleg in
+        # the last iteration step, keeping the arc geometry self-consistent.
+        if hasattr(self, 'distances1') and self.distances1 is not None:
+            rc1_final = get_radius_critical(
+                self.radius_design, self.distances1, self.min_error
+            )
+            r1 = min(rc1_final, self.radius_design)
+        else:
+            r1 = min(self.radius_critical, self.radius_design)
         # get pos1 to pos2 curve data
         self.dist_curve, self.func_dogleg = get_curve_hold_data(
-            min(self.radius_critical, self.radius_design),
+            r1,
             self.dogleg
         )
 
@@ -745,8 +810,15 @@ class Connector:
 
         self.md2 = self.md1 + abs(self.dist_curve)
 
+        if hasattr(self, 'distances2') and self.distances2 is not None:
+            rc2_final = get_radius_critical(
+                self.radius_design2, self.distances2, self.min_error
+            )
+            r2 = min(rc2_final, self.radius_design2)
+        else:
+            r2 = min(self.radius_critical2, self.radius_design2)
         self.dist_curve2, self.func_dogleg2 = get_curve_hold_data(
-            min(self.radius_critical2, self.radius_design2),
+            r2,
             self.dogleg2
         )
 
@@ -846,7 +918,62 @@ def minimize_target_pos_and_vec_defined(
         pos3_init = c._get_pos2(
             c.pos_target, c.vec_target * -1, c.pos1, radius2
         )
-        c.pos3 = pos2_init + (pos3_init - pos2_init) / 2
+        pos3_mid = pos2_init + (pos3_init - pos2_init) / 2
+
+        # Check whether the midpoint is inside the critical circle of either
+        # endpoint at the design DLS.  If so, the running minimum would lock
+        # in a tight radius from step 1.  Fall back to a point directly ahead
+        # of pos1 along vec1 (dist_norm = 0 → radius_critical = ∞), which is
+        # guaranteed to be in the design-DLS basin.
+        d1 = c._get_distances(c.pos1, c.vec1, pos3_mid)
+        d2 = c._get_distances(c.pos_target, c.vec_target * -1, pos3_mid)
+        rc1 = get_radius_critical(radius1, d1, c.min_error)
+        rc2 = get_radius_critical(radius2, d2, c.min_error)
+        if rc1 >= radius1 and rc2 >= radius2:
+            c.pos3 = pos3_mid
+        else:
+            # Midpoint is inside a critical circle.  Find a fallback pos3
+            # that is guaranteed to be in the design-DLS basin:
+            #   pos1 + R*vec1 + 2R*perp
+            # gives dist_norm = 2R → rc = 5R²/(4R) = 1.25R ≥ R.
+            # perp points in the component of (pos_target - pos1)
+            # perpendicular to vec1 so the guess is biased toward the target.
+            chord = c.pos_target - c.pos1
+            d_perp = chord - np.dot(chord, c.vec1) * c.vec1
+            d_perp_norm = np.linalg.norm(d_perp)
+            if d_perp_norm > 1e-10:
+                d_perp_hat = d_perp / d_perp_norm
+            else:
+                # Target is directly ahead/behind: pick any perpendicular
+                arb = np.array([1., 0., 0.])
+                if abs(np.dot(c.vec1, arb)) > 0.9:
+                    arb = np.array([0., 1., 0.])
+                d_perp_hat = np.cross(c.vec1, arb)
+                d_perp_hat /= np.linalg.norm(d_perp_hat)
+            # Try four candidate positions: ±d_perp and ±d_perp_cross
+            # (the 90°-rotated perpendicular).  Pick the first that is
+            # also outside the critical circle of pos_target.
+            d_perp_cross = np.cross(c.vec1, d_perp_hat)
+            d_perp_cross_norm = np.linalg.norm(d_perp_cross)
+            if d_perp_cross_norm > 1e-10:
+                d_perp_cross /= d_perp_cross_norm
+            else:
+                d_perp_cross = d_perp_hat  # degenerate: fallback
+            chosen = None
+            best_min_rc = -np.inf
+            best_candidate = c.pos1 + radius1 * c.vec1 + 2.0 * radius1 * d_perp_hat
+            for perp in (d_perp_hat, -d_perp_hat, d_perp_cross, -d_perp_cross):
+                candidate = c.pos1 + radius1 * c.vec1 + 2.0 * radius1 * perp
+                dd2 = c._get_distances(c.pos_target, c.vec_target * -1, candidate)
+                rc2_cand = get_radius_critical(radius2, dd2, c.min_error)
+                if rc2_cand >= radius2:
+                    chosen = candidate
+                    break
+                # Track the candidate with the highest minimum rc
+                if rc2_cand > best_min_rc:
+                    best_min_rc = rc2_cand
+                    best_candidate = candidate
+            c.pos3 = chosen if chosen is not None else best_candidate
     else:
         c.pos3 = pos3
 
@@ -859,11 +986,14 @@ def minimize_target_pos_and_vec_defined(
         c.distances1 = c._get_distances(c.pos1, c.vec1, c.pos3)
 
         radius_temp1 = get_radius_critical(radius1, c.distances1, c.min_error)
-        if radius_temp1 < c.radius_critical:
+        # Use the current geometry's critical radius directly — avoids NaN in
+        # min_dist_to_target and prevents the running minimum from permanently
+        # locking in tight values from transient intermediate states.
+        radius_effective1 = min(radius1, radius_temp1)
+        # Update the running minimum only for genuine violations (not noise).
+        if radius_temp1 < min(c.radius_critical, radius1 * (1.0 - c.min_error * 100)):
             c.radius_critical = radius_temp1
             assert c.radius_critical >= 0
-
-        radius_effective1 = min(radius1, c.radius_critical)
 
         c.tangent_length, c.dogleg = min_dist_to_target(
             radius_effective1, c.distances1
@@ -886,11 +1016,12 @@ def minimize_target_pos_and_vec_defined(
         )
 
         radius_temp2 = get_radius_critical(radius2, c.distances2, c.min_error)
-        if radius_temp2 < c.radius_critical2:
+        # Use current geometry's critical radius directly (same rationale as arc1).
+        radius_effective2 = min(radius2, radius_temp2)
+        # Update running minimum only for genuine violations.
+        if radius_temp2 < min(c.radius_critical2, radius2 * (1.0 - c.min_error * 100)):
             c.radius_critical2 = radius_temp2
             assert c.radius_critical2 >= 0
-
-        radius_effective2 = min(radius2, c.radius_critical2)
 
         c.tangent_length2, c.dogleg2 = min_dist_to_target(
             radius_effective2, c.distances2
