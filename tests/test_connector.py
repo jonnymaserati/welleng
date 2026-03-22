@@ -3,6 +3,7 @@ import numpy as np
 from welleng.connector import Connector, drop_off, extend_to_tvd
 from welleng.survey import Survey, from_connections
 from welleng.node import Node
+from welleng.utils import make_clc_path, dls_from_radius
 
 
 def test_md_hold():
@@ -165,6 +166,66 @@ def test_extend_to_tvd(tol=1e-4):
         connectors[-1].node_end.vec_nev, rtol=tol, atol=tol
     ), "Unexpected tangent section."
     pass
+
+
+def test_clc_connector(n=1000, seed=42, radius=1.0, tol=1e-3):
+    """Round-trip test for the CLC connector using make_clc_path.
+
+    make_clc_path builds a known CLC path from (toolface1, dogleg1, distance,
+    toolface2, dogleg2), proving a valid solution exists at the given DLS.
+    The Connector is then given only the start and end pos/vec and must find
+    its way back.  Since the Connector always finds the minimum-MD CLC path,
+    its internal decomposition may differ from the one we constructed.
+    The test verifies:
+
+    1. Method is 'curve_hold_curve'.
+    2. Connector reaches the correct endpoint within tolerance.
+    3. Connector's total MD ≤ constructed path MD (it found the min-MD solution).
+    """
+    rng = np.random.default_rng(seed)
+
+    toolface1 = rng.uniform(-np.pi, np.pi, n)
+    dogleg1   = rng.uniform(1e-2, np.pi, n)
+    distance  = rng.uniform(0.01, radius, n)
+    toolface2 = rng.uniform(-np.pi, np.pi, n)
+    dogleg2   = rng.uniform(1e-2, np.pi, n)
+
+    dls = dls_from_radius(radius)
+    pos0 = np.array([0., 0., 0.])
+    vec0 = np.array([0., 0., 1.])
+
+    failures = []
+
+    for i in range(n):
+        path = make_clc_path(
+            toolface1[i], dogleg1[i], distance[i], toolface2[i], dogleg2[i],
+            pos0=pos0, vec0=vec0, radius=radius,
+        )
+        constructed_md = path['dist_curve1'] + distance[i] + path['dist_curve2']
+
+        c = Connector(
+            pos1=pos0,
+            vec1=vec0,
+            pos2=path['pos3'],
+            vec2=path['vec3'],
+            dls_design=dls,
+        )
+
+        if c.method != 'curve_hold_curve':
+            failures.append((i, 'method', c.method))
+            continue
+
+        if not np.allclose(c.pos_target, path['pos3'], atol=tol):
+            failures.append((i, 'pos_target', c.pos_target.tolist(), path['pos3'].tolist()))
+        elif not np.allclose(c.vec_target, path['vec3'], atol=tol):
+            failures.append((i, 'vec_target', c.vec_target.tolist(), path['vec3'].tolist()))
+        elif c.md_target - c.md1 > constructed_md + tol:
+            failures.append((i, 'md', c.md_target - c.md1, constructed_md))
+
+    assert not failures, (
+        f"{len(failures)}/{n} CLC cases failed:\n"
+        + "\n".join(str(f) for f in failures[:10])
+    )
 
 
 def main():
