@@ -344,7 +344,7 @@ def transform_trimesh_scene(scene, origin=None, scale=100, redux=0.25):
 
         # change axis convention for visualisation #
         x, y, z = mesh_new.vertices.T
-        mesh_new.vertices = (np.array([x, z * -1, y]) / scale).T
+        mesh_new.vertices = np.column_stack([x, -z, y]) / scale
         scene_transformed.add_geometry(
             mesh_new, node_name=name, geom_name=name
         )

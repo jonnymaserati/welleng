@@ -1089,7 +1089,7 @@ class MeshClearance(Clearance):
 
 
 def get_ref_sigma(sigma1, sigma2, sigma3, kop_index):
-    sigma = np.array([sigma1, sigma2, sigma3]).T
+    sigma = np.column_stack([sigma1, sigma2, sigma3])
     sigma_diff = np.diff(sigma, axis=0)
 
     sigma_above = np.cumsum(sigma_diff[:kop_index][::-1], axis=0)[::-1]

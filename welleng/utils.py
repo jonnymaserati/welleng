@@ -218,7 +218,7 @@ def get_nev(
         np.array([pos]).reshape(-1, 3) - np.array([start_xyz])
     ).T
 
-    return (np.array([n, e, v]).T + np.array([start_nev]))
+    return np.column_stack([n, e, v]) + np.array([start_nev])
 
 
 def get_xyz(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
@@ -226,7 +226,7 @@ def get_xyz(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
         np.array([pos]).reshape(-1, 3) - np.array([start_nev])
     ).T
 
-    return (np.array([x, y, z]).T + np.array([start_xyz]))
+    return np.column_stack([x, y, z]) + np.array([start_xyz])
 
 
 def _get_angles(vec):

@@ -1873,7 +1873,7 @@ def get_circle_radius(survey, **targets):
 
     b1 = np.cross(ss.vec1_nev, survey.normals)
     b2 = np.cross(ss.vec2_nev, survey.normals)
-    nev = np.array([survey.n, survey.e, survey.tvd]).T
+    nev = np.column_stack([survey.n, survey.e, survey.tvd])
 
     cc1 = (
         nev[:-1] - b1
@@ -2232,7 +2232,7 @@ def func(x0, survey, dls_cont, tolerance):
     data = get_data(x0, survey, dls_cont)
 
     md, inc, azi, n, e, tvd, dls, tf, br, tr = data.T
-    nev = np.array([survey.n, survey.e, survey.tvd]).T
+    nev = np.column_stack([survey.n, survey.e, survey.tvd])
 
     s = Survey(
         md=md,
@@ -2242,7 +2242,7 @@ def func(x0, survey, dls_cont, tolerance):
         header=survey.header
     )
 
-    s_nev = np.array([s.n, s.e, s.tvd]).T
+    s_nev = np.column_stack([s.n, s.e, s.tvd])
 
     diff = abs(
         tolerance - np.amax(np.absolute(s_nev[-1] - nev[-1]))
@@ -2252,7 +2252,7 @@ def func(x0, survey, dls_cont, tolerance):
 
 
 def _remove_duplicates(md, inc, azi, decimals=4):
-    arr = np.array([md, inc, azi]).T
+    arr = np.column_stack([md, inc, azi])
     upper = arr[:-1]
     lower = arr[1:]
 
@@ -2372,7 +2372,7 @@ def interpolate_survey(survey, step=30, dls=1e-8):
     else:
         azi = survey.azi_mag_rad
 
-    s = np.array([survey.md, survey.inc_rad, azi]).T
+    s = np.column_stack([survey.md, survey.inc_rad, azi])
 
     s_upper = s[:-1]
     s_lower = s[1:]
