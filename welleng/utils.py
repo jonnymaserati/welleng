@@ -884,6 +884,59 @@ def dms_from_string(text):
         return
 
 
+def make_clc_path(
+    toolface1, dogleg1, distance, toolface2, dogleg2,
+    pos0=None, vec0=None, radius=1.0
+):
+    """Generate a curve-hold-curve (CLC) path from arc parameters.
+
+    Builds the path in three steps: first arc, straight hold, second arc.
+    Useful for constructing known-geometry test cases and for quickly
+    prototyping CLC trajectories.
+
+    Parameters
+    ----------
+    toolface1: float
+        Toolface angle for the first curve in radians.
+    dogleg1: float
+        Sweep angle (dogleg) for the first curve in radians.
+    distance: float
+        Length of the straight hold section (same units as radius).
+    toolface2: float
+        Toolface angle for the second curve in radians.
+    dogleg2: float
+        Sweep angle (dogleg) for the second curve in radians.
+    pos0: (3,) array-like, optional
+        Start position [N, E, V]. Defaults to [0, 0, 0].
+    vec0: (3,) array-like, optional
+        Start direction unit vector. Defaults to [0, 0, 1] (pointing down).
+    radius: float, optional
+        Arc radius for both curves. Defaults to 1.0.
+
+    Returns
+    -------
+    dict with keys:
+        pos1, vec1  – end of first arc
+        dist_curve1 – arc length of first curve
+        pos2, vec2  – end of hold section / start of second arc
+        pos3, vec3  – end of second arc
+        dist_curve2 – arc length of second curve
+    """
+    pos0 = np.array([0., 0., 0.]) if pos0 is None else np.asarray(pos0, dtype=float)
+    vec0 = np.array([0., 0., 1.]) if vec0 is None else np.asarray(vec0, dtype=float)
+
+    pos1, vec1, dist_curve1 = get_arc(dogleg1, radius, toolface1, pos=pos0, vec=vec0)
+    pos2 = pos1 + vec1 * distance
+    vec2 = vec1.copy()
+    pos3, vec3, dist_curve2 = get_arc(dogleg2, radius, toolface2, pos=pos2, vec=vec2)
+
+    return dict(
+        pos1=pos1, vec1=vec1, dist_curve1=dist_curve1,
+        pos2=pos2, vec2=vec2,
+        pos3=pos3, vec3=vec3, dist_curve2=dist_curve2,
+    )
+
+
 def get_toolface(pos1: NDArray, vec1: NDArray, pos2: NDArray) -> float:
     """Returns the toolface of an offset position relative to a reference
     position and vector.
