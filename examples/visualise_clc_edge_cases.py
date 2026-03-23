@@ -146,7 +146,7 @@ def collect_edge_cases(n=1000, seed=42, radius=1.0, tol=1e-3):
 
 def main():
     radius  = 1.0
-    well_r  = 0.07   # rendered wellbore radius (m)
+    well_r  = 0.15   # rendered wellbore radius (m) — large enough to see around the blue reference line
     step    = 0.02   # survey interpolation step (m)
     pos0    = np.array([0., 0., 0.])
     vec0    = np.array([0., 0., 1.])
