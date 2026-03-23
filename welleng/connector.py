@@ -821,6 +821,16 @@ class Connector:
             r2 = min(rc2_final, self.radius_design2)
         else:
             r2 = min(self.radius_critical2, self.radius_design2)
+
+        # Recompute dogleg2 from the actual directional change between vec3 and
+        # vec_target.  The iteration stores dogleg2 = min_dist_to_target result
+        # (a geometric parameter), which can differ from arccos(dot(vec3,
+        # vec_target)) after _happy_finish re-derives vec3 from arc1.  Using the
+        # wrong angle in the SLERP formula inside interpolate_curve produces
+        # incorrect (spiralling) visualisation paths.
+        self.dogleg2 = float(np.arccos(
+            np.clip(np.dot(self.vec3, self.vec_target), -1.0, 1.0)
+        ))
         self.dist_curve2, self.func_dogleg2 = get_curve_hold_data(
             r2,
             self.dogleg2
