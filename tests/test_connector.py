@@ -294,12 +294,14 @@ def test_clc_connector(n=1000, seed=42, radius=1.0, tol=1e-3):
     # --- Regression guard: MD suboptimality ---
     # Cases that pass the DLS check but where the solver converges to a valid,
     # DLS-compliant path that is not the globally shortest (local minimum).
-    # These are not correctness failures.  Threshold is set with headroom above
-    # the known baseline (4/1000 after DLS violations are excluded).
-    MD_SUBOPTIMAL_THRESHOLD = 20  # baseline 4; alert if count grows significantly
+    # _project_tangent eliminated all previously known suboptimal cases by
+    # replacing the raw ‖pos3-pos2‖ tangent length with the along-vec3
+    # projection, removing the perpendicular-error inflation from md_target.
+    # Baseline is now 0/1000.  Threshold kept with headroom for noise.
+    MD_SUBOPTIMAL_THRESHOLD = 10  # baseline 0; alert if count grows significantly
     assert len(md_suboptimal) <= MD_SUBOPTIMAL_THRESHOLD, (
         f"{len(md_suboptimal)}/{n} CLC cases returned a non-optimal MD path "
-        f"(local-minimum baseline 4; threshold {MD_SUBOPTIMAL_THRESHOLD}):\n"
+        f"(local-minimum baseline 0; threshold {MD_SUBOPTIMAL_THRESHOLD}):\n"
         + "\n".join(str(f) for f in md_suboptimal[:10])
     )
 

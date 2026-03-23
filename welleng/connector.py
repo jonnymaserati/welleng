@@ -767,10 +767,12 @@ class Connector:
                     break
             self._happy_finish()
             self._delta_pos3_rescue()
+            self._project_tangent()
             return
 
         self._happy_finish()
         self._delta_pos3_rescue()
+        self._project_tangent()
 
     def _happy_finish(self):
         # Use the critical radius at the FINAL converged geometry rather than the
@@ -890,6 +892,35 @@ class Connector:
         # Rescue did not improve things — restore the saved state
         for k, v in _saved.items():
             setattr(self, k, v)
+
+    def _project_tangent(self):
+        """Project pos3 onto the tangent ray from pos2 along vec3.
+
+        _happy_finish computes pos2 (arc1 end) and pos3 (arc2 start) via
+        independent minimum-curvature traces.  When the iteration has not
+        fully converged — or when dogleg2 is near π so the minimum-curvature
+        ratio-factor blows up — pos3 may lie far off the tangent ray
+        pos2 + t*vec3.  The survey reconstruction (interpolate_hold) advances
+        strictly along vec3, so the hold section ends at pos2 + t*vec3 while
+        arc2 still starts at the raw pos3.  That geometric gap produces the
+        visually anomalous ~90° phase difference seen in the edge-case viewer.
+
+        Fix: replace pos3 with its projection onto the tangent ray.  The
+        projected tangent length is dot(pos3-pos2, vec3), clamped to ≥ 0.
+        This eliminates the hold→arc2 discontinuity.  Arc2 dogleg and arc
+        length are unchanged (they depend only on vec3, vec_target, and the
+        radius), so the path is geometrically self-consistent.
+
+        Called after _delta_pos3_rescue so that rescue still operates on the
+        un-projected geometry (its backward-tangent trigger requires the raw
+        dot-product, which is <= 0 before projection).
+        """
+        tangent_length = max(
+            0.0, float(np.dot(self.pos3 - self.pos2, self.vec3))
+        )
+        self.pos3 = self.pos2 + tangent_length * self.vec3
+        self.md3 = self.md2 + tangent_length
+        self.md_target = self.md3 + abs(self.dist_curve2)
 
     def interpolate(self, step=30):
         return interpolate_well([self], step)
