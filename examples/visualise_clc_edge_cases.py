@@ -78,7 +78,7 @@ def start_end_arrows(case, offset, scale=0.4):
         c.pos1      + scale * c.vec1,
         c.pos_target + scale * c.vec_target,
     ]) + offset
-    return Arrows(starts, ends, c='yellow', s=0.3, res=8)
+    return Arrows(starts, ends, c='magenta', s=0.3, res=8)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -169,13 +169,14 @@ def main():
     print("  RED mesh      — connector path (DLS violated)")
     print("  ORANGE mesh   — connector path (MD suboptimal but DLS compliant)")
     print("  BLUE lines    — reference path from make_clc_path")
-    print("  YELLOW arrows — start / end direction vectors")
+    print("  MAGENTA arrows — start / end direction vectors")
     print()
     print("Controls: Space / → / N — next    ← / B / P — previous    Q — quit")
     print()
 
     idx = [0]
     plt = we.visual.Plotter()
+    plt.background('lightgrey')
 
     def _caption(k):
         case, ctype = all_cases[k]
