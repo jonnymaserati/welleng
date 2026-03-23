@@ -121,6 +121,10 @@ def collect_edge_cases(n=1000, seed=42, radius=1.0, tol=1e-3):
         if not np.allclose(c.vec_target, path['vec3'], atol=tol):
             continue
 
+        # delta_pos3: connector junction vs reference junction
+        delta_pos3 = np.linalg.norm(c.pos3 - path['pos2'])
+        tangent_proj = float(np.dot(c.pos3 - c.pos2, c.vec3))
+
         actual_r1 = c.dist_curve  / c.dogleg  if c.dogleg  > 1e-10 else radius
         actual_r2 = c.dist_curve2 / c.dogleg2 if c.dogleg2 > 1e-10 else radius
         min_r = min(actual_r1, actual_r2)
@@ -130,6 +134,8 @@ def collect_edge_cases(n=1000, seed=42, radius=1.0, tol=1e-3):
             tf1=tf1[i], dl1=dl1[i], d=d[i], tf2=tf2[i], dl2=dl2[i],
             connector_md=c.md_target - c.md1,
             constructed_md=constructed_md,
+            delta_pos3=delta_pos3,
+            tangent_proj=tangent_proj,
         )
 
         if min_r < radius * (1 - tol):
@@ -190,8 +196,11 @@ def main():
             detail = f"excess MD = {excess:.4f} m"
             kind   = "MD SUBOPTIMAL"
             col    = 'orange'
+        delta_pos3 = case.get('delta_pos3', float('nan'))
+        tp = case.get('tangent_proj', float('nan'))
         text = (
-            f"Case {k + 1}/{n}  [{kind}]  test #{case['idx']}  {detail}\n"
+            f"Case {k + 1}/{n}  [{kind}]  test #{case['idx']}  {detail}"
+            f"  Δpos3={delta_pos3:.3f}m  t·v3={tp:.3f}m\n"
             f"Space / → : next          ← / B : previous"
         )
         return Text2D(text, pos='top-left', s=0.75, c=col, bg='k8', alpha=0.85)
