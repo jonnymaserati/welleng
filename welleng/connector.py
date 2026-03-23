@@ -806,6 +806,23 @@ class Connector:
             self.func_dogleg
         )
 
+        # Resync dogleg and arc-1 length from the just-computed vec3.
+        # _happy_finish may be called after _enforce_planarity changes vec3 or
+        # after any iteration that updates pos3.  The stored self.dogleg may
+        # therefore differ from the actual angle between vec1 and vec3, making
+        # dist_curve (= r1 * old_dogleg) inconsistent with the SLERP geometry.
+        # from_connections reconstructs pos2 via minimum-curvature using the
+        # actual inc/azi of vec3, so it needs dist_curve to match the true arc
+        # length for vec1→vec3 at radius r1.
+        actual_dogleg = float(np.arccos(
+            np.clip(np.dot(self.vec1, self.vec3), -1.0, 1.0)
+        ))
+        if abs(actual_dogleg - self.dogleg) > 1e-9:
+            self.dogleg = actual_dogleg
+            self.dist_curve, self.func_dogleg = get_curve_hold_data(
+                r1, self.dogleg
+            )
+
         self.vec2 = self.vec3
 
         self.pos2 = get_pos(
