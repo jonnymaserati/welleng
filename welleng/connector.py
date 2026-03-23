@@ -768,11 +768,15 @@ class Connector:
             self._happy_finish()
             self._delta_pos3_rescue()
             self._project_tangent()
+            self._endpoint_rescue()
+            self._enforce_planarity()
             return
 
         self._happy_finish()
         self._delta_pos3_rescue()
         self._project_tangent()
+        self._endpoint_rescue()
+        self._enforce_planarity()
 
     def _happy_finish(self):
         # Use the critical radius at the FINAL converged geometry rather than the
@@ -836,24 +840,61 @@ class Connector:
             self.dogleg2
         )
 
-        self.pos3 = get_pos(
+        # ── Endpoint-consistency fix ──────────────────────────────────────────
+        # The rendered path (from_connections / minimum-curvature integration)
+        # starts arc2 from hold_end = pos2 + T·vec3, NOT from the backward-
+        # traced pos3.  If pos3 is off the tangent ray the rendered endpoint
+        # misses pos_target by exactly the perpendicular component of
+        # (pos3_backward − pos2) w.r.t. vec3.
+        #
+        # For well-converged cases (perp < 1 mm) this is negligible and we
+        # preserve the backward-trace geometry to avoid touching dist_curve2.
+        #
+        # For DLS-violation cases the iteration may leave a large perpendicular
+        # residual.  The 2×2 projection finds T and dist_curve2 that solve:
+        #   pos2 + T·vec3 + (dist_curve2·RF/2)·(vec3+vec_target) = pos_target
+        # in the plane of {vec3, vec_target}, eliminating the in-plane part
+        # of the endpoint error.  The remaining (out-of-plane) residual can
+        # only be removed by finding a better vec3 via a tighter-radius retry.
+
+        # Step 1: backward trace to locate pos3 (guarantees arc2 → pos_target)
+        pos3_bt   = get_pos(
             self.pos_target,
             self.vec_target * -1,
             self.vec3 * -1,
             self.dist_curve2,
             self.func_dogleg2
         ).reshape(3)
+        t_along   = float(np.dot(pos3_bt - self.pos2, self.vec3))
+        perp_vec  = pos3_bt - self.pos2 - t_along * self.vec3
+        perp_norm = float(np.linalg.norm(perp_vec))
 
-        # Use the along-vec3 projection of (pos3-pos2) for the hold MD, not the
-        # raw ‖pos3-pos2‖ which includes any perpendicular residual.  This keeps
-        # md_target optimal without moving pos3 away from its backward-traced
-        # location (which ensures arc2 reaches pos_target exactly).
-        tangent_length = max(
-            0.0, float(np.dot(self.pos3 - self.pos2, self.vec3))
-        )
+        # Step 2: 2×2 projection only when perpendicular drift is significant
+        _PERP_THRESHOLD = 1e-3   # 1 mm — noise floor for well-converged cases
+        _applied_2x2 = False
+        if perp_norm > _PERP_THRESHOLD:
+            delta  = self.pos_target - self.pos2
+            p_comp = float(np.dot(delta, self.vec3))
+            q_comp = float(np.dot(delta, self.vec_target))
+            c_dot  = float(np.dot(self.vec3, self.vec_target))
+            sin2   = 1.0 - c_dot * c_dot
+            if sin2 > 1e-6 and abs(self.func_dogleg2) > 1e-10:
+                a_coef = (p_comp - c_dot * q_comp) / sin2
+                b_coef = (q_comp - c_dot * p_comp) / sin2
+                if b_coef >= 0.0:
+                    tangent_length   = float(max(0.0, a_coef - b_coef))
+                    self.dist_curve2 = float(
+                        max(0.0, 2.0 * b_coef / self.func_dogleg2)
+                    )
+                    self.pos3        = self.pos2 + tangent_length * self.vec3
+                    _applied_2x2 = True
 
-        self.md3 = self.md2 + tangent_length
+        if not _applied_2x2:
+            # Well-converged (or 2×2 degenerate): tangent-project only
+            tangent_length = max(0.0, t_along)
+            self.pos3      = self.pos2 + tangent_length * self.vec3
 
+        self.md3       = self.md2 + tangent_length
         self.md_target = self.md3 + abs(self.dist_curve2)
 
         return self
@@ -938,6 +979,172 @@ class Connector:
         )
         self.md3 = self.md2 + tangent_length
         self.md_target = self.md3 + abs(self.dist_curve2)
+
+    def _rendered_endpoint_error(self):
+        """Return the distance from the rendered arc2 endpoint to pos_target.
+
+        The rendered path integrates continuously from pos1, so arc2 starts
+        from hold_end = pos2 + T·vec3 (not from pos3 directly).  Any gap
+        between hold_end and pos3 translates directly into an endpoint error.
+        """
+        t = max(0.0, float(np.dot(self.pos3 - self.pos2, self.vec3)))
+        hold_end = self.pos2 + t * self.vec3
+        rendered = (
+            hold_end
+            + (self.dist_curve2 * self.func_dogleg2 / 2)
+            * (self.vec3 + self.vec_target)
+        )
+        return float(np.linalg.norm(self.pos_target - rendered))
+
+    def _endpoint_rescue(self):
+        """Retry with progressively tighter radii when the rendered endpoint
+        still misses pos_target by more than 1 mm after _happy_finish.
+
+        The fixed-point iterator can converge to a spurious local minimum for
+        DLS-violation geometries, leaving a large out-of-plane residual that
+        the 2×2 in-plane projection cannot eliminate.  Using a tighter design
+        radius enlarges the set of reachable vec3 directions and typically
+        allows the iterator to escape the bad basin.
+
+        Each retry uses a fresh geometric seed (pos3=None) and keeps whichever
+        result achieves the smallest rendered endpoint error.
+        """
+        _THRESHOLD = 1e-3   # 1 mm
+        err0 = self._rendered_endpoint_error()
+        if err0 <= _THRESHOLD:
+            return
+
+        _save_keys = (
+            'pos2', 'pos3', 'vec2', 'vec3',
+            'dist_curve', 'dist_curve2', 'func_dogleg', 'func_dogleg2',
+            'dogleg', 'dogleg2', 'md2', 'md3', 'md_target',
+        )
+        best_err   = err0
+        best_state = {k: deepcopy(getattr(self, k)) for k in _save_keys}
+
+        r_base = min(self.radius_design, self.radius_design2)
+        for shrink in [0.5, 0.25, 0.125]:
+            r_try = r_base * shrink
+            self.radius_critical  = np.inf
+            self.radius_critical2 = np.inf
+            minimize_target_pos_and_vec_defined(
+                [r_try, r_try], self, None, None, True
+            )
+            self._happy_finish()
+            err_new = self._rendered_endpoint_error()
+            if err_new < best_err:
+                best_err   = err_new
+                best_state = {k: deepcopy(getattr(self, k)) for k in _save_keys}
+            if best_err <= _THRESHOLD:
+                break
+
+        # Restore the geometry that achieved the smallest endpoint error
+        for k, v in best_state.items():
+            setattr(self, k, v)
+
+    def _enforce_planarity(self, max_iters=8, tol=1e-3):
+        """Adjust vec3 to lie in the {pos_target−pos2, vec_target} plane.
+
+        After _endpoint_rescue, an out-of-plane residual may remain because the
+        fixed-point iterator converged to a vec3 that is not coplanar with
+        (pos_target − pos2) and vec_target.  The 2×2 projection in _happy_finish
+        can only correct the in-plane part; the out-of-plane part can only be
+        removed by rotating vec3 itself.
+
+        Strategy: project the current vec3 onto span{delta, vec_target} (where
+        delta = pos_target − pos2) and re-seed _happy_finish so it recovers the
+        corrected direction.  Iterate until the rendered endpoint error drops
+        below tol (1 mm) or max_iters is exhausted.
+        """
+        if self._rendered_endpoint_error() <= tol:
+            return
+
+        # Determine the effective arc-1 radius from the post-rescue state.
+        if hasattr(self, 'distances1') and self.distances1 is not None:
+            r1 = min(
+                get_radius_critical(self.radius_design, self.distances1, self.min_error),
+                self.radius_design
+            )
+        elif np.isfinite(self.radius_critical) and self.radius_critical > 0:
+            r1 = min(self.radius_critical, self.radius_design)
+        else:
+            r1 = self.radius_design
+
+        _save_keys = (
+            'pos2', 'pos3', 'vec2', 'vec3',
+            'dist_curve', 'dist_curve2', 'func_dogleg', 'func_dogleg2',
+            'dogleg', 'dogleg2', 'md2', 'md3', 'md_target',
+            'radius_critical', 'radius_critical2',
+        )
+        best_err = self._rendered_endpoint_error()
+        best_state = {k: deepcopy(getattr(self, k)) for k in _save_keys}
+
+        for _ in range(max_iters):
+            # Compute arc-1 endpoint (pos2) from the current vec3 at r1
+            dc1, fd1 = get_curve_hold_data(r1, self.dogleg)
+            pos2 = get_pos(
+                self.pos1, self.vec1, self.vec3, dc1, fd1
+            ).reshape(3)
+            delta = self.pos_target - pos2
+
+            # Build an ONB for span{delta, vec_target}
+            d_norm = float(np.linalg.norm(delta))
+            if d_norm < 1e-10:
+                break  # pos_target ≈ pos2 — degenerate
+            d_hat = delta / d_norm
+
+            vt_comp = float(np.dot(self.vec_target, d_hat))
+            v_perp = self.vec_target - vt_comp * d_hat
+            v_perp_norm = float(np.linalg.norm(v_perp))
+            if v_perp_norm < 1e-8:
+                break  # vec_target ∥ delta — unconstrained direction
+
+            v_hat = v_perp / v_perp_norm
+
+            # Project vec3 onto the {d_hat, v_hat} plane
+            proj = (
+                float(np.dot(self.vec3, d_hat)) * d_hat
+                + float(np.dot(self.vec3, v_hat)) * v_hat
+            )
+            proj_norm = float(np.linalg.norm(proj))
+            if proj_norm < 1e-10:
+                break  # vec3 ⊥ plane — cannot project
+
+            new_vec3 = proj / proj_norm
+            if np.allclose(new_vec3, self.vec3, atol=1e-9):
+                break  # already in-plane — nothing to do
+
+            new_dogleg = float(np.arccos(np.clip(
+                np.dot(self.vec1, new_vec3), -1.0, 1.0
+            )))
+
+            # Compute pos2 seed so that _happy_finish recovers new_vec3:
+            #   get_vec_target(pos1, vec1, pos2_new, 0, dc1_new, fd1_new) = new_vec3
+            dc1_new, fd1_new = get_curve_hold_data(r1, new_dogleg)
+            pos2_new = get_pos(
+                self.pos1, self.vec1, new_vec3, dc1_new, fd1_new
+            ).reshape(3)
+
+            # Seed _happy_finish with the planarity-corrected direction
+            self.dogleg = new_dogleg
+            self.vec3 = new_vec3
+            self.pos3 = pos2_new        # tangent_length = 0 seed
+            self.tangent_length = 0.0
+            self.distances1 = None      # force _happy_finish to use radius_critical
+            self.radius_critical = r1
+            self.radius_critical2 = np.inf
+            self._happy_finish()
+
+            err_new = self._rendered_endpoint_error()
+            if err_new < best_err:
+                best_err = err_new
+                best_state = {k: deepcopy(getattr(self, k)) for k in _save_keys}
+            if best_err <= tol:
+                break
+
+        # Always restore the state that achieved the smallest endpoint error
+        for k, v in best_state.items():
+            setattr(self, k, v)
 
     def interpolate(self, step=30):
         return interpolate_well([self], step)
