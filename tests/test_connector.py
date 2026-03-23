@@ -195,10 +195,10 @@ def test_clc_connector(n=1000, seed=42, radius=1.0, tol=1e-3):
         DLS exceeded  — solver converged to an intermediate geometry that
                         requires tighter curvature than the design radius.
                         Valid paths exist at the design DLS but the fixed-point
-                        iterator settled in a local minimum.  Baseline ~22/1000.
-        MD suboptimal — solver found a valid, DLS-compliant path that is
-                        longer than the known-constructible path.  Another
-                        local-minimum effect.  Baseline ~26/1000.
+                        iterator settled in a local minimum.  Baseline 22/1000.
+        MD suboptimal — among DLS-compliant results, solver found a valid path
+                        longer than the known-constructible reference path.
+                        Another local-minimum effect.  Baseline 4/1000.
 
     Both regression guards use a threshold well above the current baseline so
     that genuine regressions (counts that jump significantly) are caught while
@@ -280,24 +280,24 @@ def test_clc_connector(n=1000, seed=42, radius=1.0, tol=1e-3):
     # The fixed-point solver can converge to an intermediate point that forces
     # slightly tighter curvature than the design radius for extreme geometries
     # (radius=1 m ≈ 1700 deg/30m — physically unrealistic).  The r_safe
-    # seeding fix reduced this from ~125 to ~22/1000.  The threshold is set
+    # seeding fix reduced this from ~125 to 22/1000.  The threshold is set
     # with headroom to catch genuine regressions without blocking CI.
-    DLS_VIOLATION_THRESHOLD = 40  # baseline ~22; alert if count grows significantly
+    DLS_VIOLATION_THRESHOLD = 40  # baseline 22; alert if count grows significantly
     assert len(dls_violations) <= DLS_VIOLATION_THRESHOLD, (
         f"{len(dls_violations)}/{n} CLC cases exceeded the design DLS "
-        f"(baseline ~22; threshold {DLS_VIOLATION_THRESHOLD}):\n"
+        f"(baseline 22; threshold {DLS_VIOLATION_THRESHOLD}):\n"
         + "\n".join(str(f) for f in dls_violations[:10])
     )
 
     # --- Regression guard: MD suboptimality ---
-    # The solver occasionally converges to a valid, DLS-compliant path that is
-    # not the globally shortest (local minimum in the fixed-point iteration).
+    # Cases that pass the DLS check but where the solver converges to a valid,
+    # DLS-compliant path that is not the globally shortest (local minimum).
     # These are not correctness failures.  Threshold is set with headroom above
-    # the known baseline (~26/1000).
-    MD_SUBOPTIMAL_THRESHOLD = 50  # baseline ~26; alert if count grows significantly
+    # the known baseline (4/1000 after DLS violations are excluded).
+    MD_SUBOPTIMAL_THRESHOLD = 20  # baseline 4; alert if count grows significantly
     assert len(md_suboptimal) <= MD_SUBOPTIMAL_THRESHOLD, (
         f"{len(md_suboptimal)}/{n} CLC cases returned a non-optimal MD path "
-        f"(local-minimum baseline ~26; threshold {MD_SUBOPTIMAL_THRESHOLD}):\n"
+        f"(local-minimum baseline 4; threshold {MD_SUBOPTIMAL_THRESHOLD}):\n"
         + "\n".join(str(f) for f in md_suboptimal[:10])
     )
 
