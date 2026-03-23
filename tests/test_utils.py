@@ -259,7 +259,7 @@ def test_get_toolface():
 
     pos2 = pos1 + np.array([radius, -radius, 0])
     toolface = get_toolface(pos1, vec1, pos2)
-    assert np.isclose(toolface, -np.pi / 2)
+    assert np.isclose(toolface, 3 * np.pi / 2)  # [0, 2π) convention; was -π/2
 
     pos2 = pos1 + np.array([radius, 0, radius])
     toolface = get_toolface(pos1, vec1, pos2)
