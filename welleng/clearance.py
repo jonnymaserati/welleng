@@ -13,7 +13,7 @@ from scipy.signal import argrelmin
 from scipy.spatial import KDTree
 from scipy.spatial.distance import cdist
 
-from .mesh import WellMesh
+from .mesh import WellMesh, to_trimesh
 from .survey import Survey, _interpolate_survey, _interpolate_pos_nev, slice_survey
 from .utils import NEV_to_HLA
 
@@ -895,7 +895,7 @@ class MeshClearance(Clearance):
             self.meshes = []
 
         # generate mesh for offset well
-        self.off_mesh = self._get_mesh(self.offset, offset=True).mesh
+        self.off_mesh = to_trimesh(self._get_mesh(self.offset, offset=True))
 
         # make a CollisionManager object and add the offset well mesh
         self.cm = trimesh.collision.CollisionManager()
@@ -956,7 +956,7 @@ class MeshClearance(Clearance):
             s = slice_survey(ref, i, i + 2)
 
             # generate a mesh for the section slice
-            m = self._get_mesh(s).mesh
+            m = to_trimesh(self._get_mesh(s))
 
             # see if there's a collision
             collision = self.cm.in_collision_single(

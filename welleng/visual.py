@@ -1,10 +1,4 @@
 try:
-    import trimesh
-    TRIMESH = True
-except ImportError:
-    TRIMESH = False
-
-try:
     import vedo
     from vedo import Lines, Mesh
     from vedo import Plotter as VedoPlotter
@@ -61,10 +55,9 @@ if VEDO:
 
             Notes
             -----
-            ``welleng.mesh.WellMesh`` creates ``trimesh.Mesh`` instances, a legacy
-            of using the ``trimesh`` library for detecting mesh collisions when
-            developing automated well trajectory planning. Therefore, to visualize
-            the meshes with ``vedo`` and ``vtk``, the meshes need to be converted.
+            ``welleng.mesh.WellMesh`` stores geometry as a lightweight namespace
+            with ``.vertices`` and ``.faces`` arrays.  These are converted to a
+            vedo/VTK polydata representation here for rendering.
 
             Meshes in ``welleng`` typically reference an 'NEV' coordinate system,
             which is [North, East, Vertical]. To map correctly to ``vtk``, North
@@ -268,7 +261,7 @@ def plot(data, **kwargs):
 
     Parameters
     ----------
-    data: trimesh.Trimesh or list of trimesh.Trimesh
+    data: WellMesh or list of WellMesh
     """
     assert VEDO, "ImportError: try pip install welleng[easy]"
     plt = Plotter()
