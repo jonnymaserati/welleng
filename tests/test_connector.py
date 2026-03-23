@@ -280,12 +280,14 @@ def test_clc_connector(n=1000, seed=42, radius=1.0, tol=1e-3):
     # The fixed-point solver can converge to an intermediate point that forces
     # slightly tighter curvature than the design radius for extreme geometries
     # (radius=1 m ≈ 1700 deg/30m — physically unrealistic).  The r_safe
-    # seeding fix reduced this from ~125 to 22/1000.  The threshold is set
-    # with headroom to catch genuine regressions without blocking CI.
-    DLS_VIOLATION_THRESHOLD = 40  # baseline 22; alert if count grows significantly
+    # seeding fix reduced this from ~125 to 22/1000; the backward-tangent
+    # rescue (_delta_pos3_rescue) further reduced it to 20/1000.  The
+    # threshold is set with headroom to catch genuine regressions without
+    # blocking CI.
+    DLS_VIOLATION_THRESHOLD = 40  # baseline 20; alert if count grows significantly
     assert len(dls_violations) <= DLS_VIOLATION_THRESHOLD, (
         f"{len(dls_violations)}/{n} CLC cases exceeded the design DLS "
-        f"(baseline 22; threshold {DLS_VIOLATION_THRESHOLD}):\n"
+        f"(baseline 20; threshold {DLS_VIOLATION_THRESHOLD}):\n"
         + "\n".join(str(f) for f in dls_violations[:10])
     )
 
