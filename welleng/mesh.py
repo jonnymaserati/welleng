@@ -4,6 +4,7 @@ try:
 except ImportError:
     TRIMESH = False
 from copy import deepcopy
+from types import SimpleNamespace
 import numpy as np
 from numpy import sin, cos, pi
 from scipy.spatial import KDTree
@@ -50,7 +51,6 @@ class WellMesh:
                 The method for constructing the uncertainty edge.
                 Either "ellipse", "pedal_curve" or "circle".
         """
-        assert TRIMESH, "ImportError: try pip install welleng[easy]"
         self.s = survey
         # self.c = clearance
         self.n_verts = int(n_verts)
@@ -261,22 +261,43 @@ class WellMesh:
 
     def _make_trimesh(self):
         '''
-        Consturct a trimesh.Trimesh object from the well vertices and faces.
+        Store well vertices and faces as a lightweight mesh namespace.
+
+        A plain SimpleNamespace is used so that WellMesh has no trimesh
+        dependency.  Code that needs a trimesh.Trimesh (e.g. MeshClearance)
+        should call ``welleng.mesh.to_trimesh(well_mesh)`` explicitly.
         '''
         vertices = self.vertices.reshape(-1, 3)
-        mesh = trimesh.Trimesh(
-            vertices=vertices,
-            faces=self.faces,
-            process=False,
-            validate=True,
-        )
-
-        # self.mesh = fix_mesh(mesh)
-        self.mesh = mesh
+        self.mesh = SimpleNamespace(vertices=vertices, faces=self.faces)
 
     def figure(self, type='mesh3d', **kwargs):
         fig = figure(self, type, **kwargs)
         return fig
+
+
+def to_trimesh(well_mesh):
+    """
+    Convert a :class:`WellMesh` to a ``trimesh.Trimesh`` object.
+
+    This is the single point where trimesh is constructed from the stored
+    geometry arrays.  Call this explicitly wherever a true trimesh object is
+    required (e.g. collision detection in :class:`~welleng.clearance.MeshClearance`).
+
+    Parameters
+    ----------
+    well_mesh : WellMesh
+
+    Returns
+    -------
+    trimesh.Trimesh
+    """
+    assert TRIMESH, "ImportError: try pip install welleng[easy]"
+    return trimesh.Trimesh(
+        vertices=well_mesh.mesh.vertices,
+        faces=well_mesh.mesh.faces,
+        process=False,
+        validate=True,
+    )
 
 
 def make_trimesh_scene(data):
@@ -295,7 +316,7 @@ def make_trimesh_scene(data):
     assert TRIMESH, "ImportError: try pip install welleng[easy]"
     scene = trimesh.scene.scene.Scene()
     for well in data:
-        mesh = data[well].mesh
+        mesh = to_trimesh(data[well])
         scene.add_geometry(
             mesh, node_name=well, geom_name=well, parent_node_name=None
         )
