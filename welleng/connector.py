@@ -844,8 +844,12 @@ class Connector:
             self.func_dogleg2
         ).reshape(3)
 
-        tangent_length = np.linalg.norm(
-            self.pos3 - self.pos2
+        # Use the along-vec3 projection of (pos3-pos2) for the hold MD, not the
+        # raw ‖pos3-pos2‖ which includes any perpendicular residual.  This keeps
+        # md_target optimal without moving pos3 away from its backward-traced
+        # location (which ensures arc2 reaches pos_target exactly).
+        tangent_length = max(
+            0.0, float(np.dot(self.pos3 - self.pos2, self.vec3))
         )
 
         self.md3 = self.md2 + tangent_length
@@ -925,10 +929,13 @@ class Connector:
         un-projected geometry (its backward-tangent trigger requires the raw
         dot-product, which is <= 0 before projection).
         """
+        # _happy_finish now projects tangent_length inline and places pos3 via
+        # the backward arc2 trace (keeping arc2 geometrically consistent with
+        # pos_target).  This method is retained as a safety net to update MD
+        # whenever pos3 has been changed by _delta_pos3_rescue.
         tangent_length = max(
             0.0, float(np.dot(self.pos3 - self.pos2, self.vec3))
         )
-        self.pos3 = self.pos2 + tangent_length * self.vec3
         self.md3 = self.md2 + tangent_length
         self.md_target = self.md3 + abs(self.dist_curve2)
 
@@ -1428,15 +1435,28 @@ def interpolate_curve(
         md = np.concatenate((md, [end_md]))
     dogleg_interp = (dogleg / dist_curve * md).reshape(-1, 1)
 
-    vec = (
-        (
-            np.sin(dogleg - dogleg_interp) / np.sin(dogleg) * vec1
+    # Rodrigues' rotation formula is numerically superior to SLERP when dogleg
+    # is near π.  SLERP weights contain 1/sin(dogleg) which amplifies errors
+    # by ~1/sin(π-ε) ≈ 1/ε for near-180° arcs (e.g. case #492 with dogleg≈179°
+    # amplifies errors 44×, producing spiralling visualisation paths).
+    #
+    # Rodrigues: vec(t) = cos(t)*vec1 + sin(t)*in_plane
+    # where in_plane is the unit vector in the arc plane, perpendicular to vec1.
+    # The formula never divides by sin(dogleg) during evaluation — only during
+    # the one-time setup of in_plane — so numerical errors do not accumulate.
+    cross = np.cross(vec1, vec2)
+    cross_norm = float(np.linalg.norm(cross))
+    if cross_norm < 1e-10:
+        # vec1 ≈ vec2 (zero dogleg) or exactly antiparallel (degenerate arc):
+        # return the start direction for all points.
+        vec = np.tile(vec1, (len(md), 1))
+    else:
+        rot_axis = cross / cross_norm          # unit rotation axis ⊥ arc plane
+        in_plane = np.cross(rot_axis, vec1)    # unit vector in arc plane, ⊥ vec1
+        vec = (
+            np.cos(dogleg_interp) * vec1
+            + np.sin(dogleg_interp) * in_plane
         )
-        +
-        (
-            np.sin(dogleg_interp) / np.sin(dogleg) * vec2
-        )
-    )
     vec = vec / np.linalg.norm(vec, axis=1).reshape(-1, 1)
     inc, azi = get_angles(vec, nev=True).T
 
