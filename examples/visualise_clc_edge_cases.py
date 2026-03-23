@@ -28,7 +28,7 @@ Usage
 """
 
 import numpy as np
-from vedo import Lines, Arrows, Text3D, Text2D
+from vedo import Lines, Arrows, Text3D, Text2D, Tube
 
 import welleng as we
 from welleng.connector import Connector
@@ -166,8 +166,8 @@ def main():
 
     print()
     print("Legend:")
-    print("  RED mesh      — connector path (DLS violated)")
-    print("  ORANGE mesh   — connector path (MD suboptimal but DLS compliant)")
+    print("  RED tube      — connector path (DLS violated)")
+    print("  ORANGE tube   — connector path (MD suboptimal but DLS compliant)")
     print("  BLUE lines    — reference path from make_clc_path")
     print("  MAGENTA arrows — start / end direction vectors")
     print()
@@ -204,13 +204,13 @@ def main():
         color = 'red' if ctype == 'dls' else 'orange'
         try:
             s = from_connections(
-                case['connector'], step=step, radius=well_r,
+                case['connector'], step=step,
                 start_nev=list(offset),
             )
-            m = we.mesh.WellMesh(s, method='circle', n_verts=12)
-            plt.add(m, c=color, alpha=0.8)
+            pts = np.column_stack([s.n, s.e, s.tvd])
+            plt.add(Tube(pts, r=well_r, c=color, alpha=0.8))
         except Exception as exc:
-            print(f"  Mesh failed for case #{case['idx']}: {exc}")
+            print(f"  Tube failed for case #{case['idx']}: {exc}")
 
         plt.add(reference_path_lines(case, radius, pos0, vec0, offset))
         plt.add(start_end_arrows(case, offset))
