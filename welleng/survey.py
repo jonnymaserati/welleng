@@ -967,6 +967,8 @@ class Survey:
         }
         """
         s = interpolate_md(self, md)
+        if s is None:
+            return None
         node = get_node(s, -1, s.interpolated[-1])
 
         return node
@@ -1552,7 +1554,8 @@ def interpolate_md(survey, md):
     # get the closest survey stations
     idx = np.searchsorted(survey.md, md, side="left") - 1
 
-    assert idx < len(survey.md) - 1, "The md is beyond the survey"
+    if idx >= len(survey.md) - 1:
+        return None  # md is at or beyond the end of the survey
 
     if idx < 0:
         idx = 0
