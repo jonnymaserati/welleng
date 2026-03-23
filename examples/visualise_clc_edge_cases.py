@@ -28,7 +28,7 @@ Usage
 """
 
 import numpy as np
-from vedo import Lines, Arrows, Text3D
+from vedo import Lines, Arrows, Text3D, Text2D
 
 import welleng as we
 from welleng.connector import Connector
@@ -145,90 +145,89 @@ def collect_edge_cases(n=1000, seed=42, radius=1.0, tol=1e-3):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
-    radius   = 1.0
-    well_r   = 0.07   # rendered wellbore radius (m)
-    step     = 0.02   # survey interpolation step (m)
-    spacing  = 8.0    # grid spacing between cases (m)
-    cols     = 8      # cases per row
-    pos0     = np.array([0., 0., 0.])
-    vec0     = np.array([0., 0., 1.])
+    radius  = 1.0
+    well_r  = 0.07   # rendered wellbore radius (m)
+    step    = 0.02   # survey interpolation step (m)
+    pos0    = np.array([0., 0., 0.])
+    vec0    = np.array([0., 0., 1.])
 
     print("Collecting edge cases (runs the 1000-sample CLC test, ~18 s)...")
     dls_v, md_sub = collect_edge_cases(radius=radius)
     print(f"  DLS violations : {len(dls_v)}")
     print(f"  MD suboptimal  : {len(md_sub)}")
 
-    # Row-group 0 = DLS violations, row-group 1 = MD suboptimal.
-    # Within each group: columns → case index, rows → overflow.
-    n_dls_rows = max(1, (len(dls_v) - 1) // cols + 1)
-    group_row_gap = n_dls_rows + 2   # blank rows between the two groups
-
-    def grid_offset(k, group):
-        row = k // cols
-        col = k % cols
-        n_row = (group * group_row_gap + row) * spacing
-        e_col = col * spacing
-        return np.array([n_row, e_col, 0.])
-
-    plt = we.visual.Plotter()
-
-    # ── DLS violations ────────────────────────────────────────────────────────
-    for k, case in enumerate(dls_v):
-        offset = grid_offset(k, group=0)
-
-        try:
-            s = from_connections(
-                case['connector'], step=step, radius=well_r,
-                start_nev=list(offset),
-            )
-            m = we.mesh.WellMesh(s, method='circle', n_verts=12)
-            plt.add(m, c='red', alpha=0.8)
-        except Exception as exc:
-            print(f"  DLS case #{case['idx']}: mesh failed ({exc})")
-
-        plt.add(reference_path_lines(case, radius, pos0, vec0, offset))
-        plt.add(start_end_arrows(case, offset))
-
-        lbl_pos = offset + np.array([0., 0., -0.6])
-        plt.add(Text3D(
-            f"#{case['idx']}\nr={case['min_r']:.3f}",
-            pos=lbl_pos, s=0.18, c='red', depth=0,
-        ))
-
-    # ── MD suboptimal ─────────────────────────────────────────────────────────
-    for k, case in enumerate(md_sub):
-        offset = grid_offset(k, group=1)
-
-        try:
-            s = from_connections(
-                case['connector'], step=step, radius=well_r,
-                start_nev=list(offset),
-            )
-            m = we.mesh.WellMesh(s, method='circle', n_verts=12)
-            plt.add(m, c='orange', alpha=0.8)
-        except Exception as exc:
-            print(f"  MD case #{case['idx']}: mesh failed ({exc})")
-
-        plt.add(reference_path_lines(case, radius, pos0, vec0, offset))
-        plt.add(start_end_arrows(case, offset))
-
-        excess = case['connector_md'] - case['constructed_md']
-        lbl_pos = offset + np.array([0., 0., -0.6])
-        plt.add(Text3D(
-            f"#{case['idx']}\n+{excess:.3f}m",
-            pos=lbl_pos, s=0.18, c='darkorange', depth=0,
-        ))
+    all_cases = (
+        [(c, 'dls') for c in dls_v] +
+        [(c, 'md')  for c in md_sub]
+    )
+    if not all_cases:
+        print("No edge cases found.")
+        return
 
     print()
     print("Legend:")
     print("  RED mesh      — connector path (DLS violated)")
     print("  ORANGE mesh   — connector path (MD suboptimal but DLS compliant)")
     print("  BLUE lines    — reference path from make_clc_path")
-    print("  YELLOW arrows — start and end direction vectors")
+    print("  YELLOW arrows — start / end direction vectors")
     print()
-    print("Labels: #<test_index>  r=<min arc radius>  or  +<excess MD in metres>")
+    print("Controls: Space / → / N — next    ← / B / P — previous    Q — quit")
     print()
-    print("Launching VTK viewer...")
+
+    idx = [0]
+    plt = we.visual.Plotter()
+
+    def _caption(k):
+        case, ctype = all_cases[k]
+        n = len(all_cases)
+        if ctype == 'dls':
+            detail = f"min_r = {case['min_r']:.4f} m"
+            kind   = "DLS VIOLATION"
+            col    = 'red'
+        else:
+            excess = case['connector_md'] - case['constructed_md']
+            detail = f"excess MD = {excess:.4f} m"
+            kind   = "MD SUBOPTIMAL"
+            col    = 'orange'
+        text = (
+            f"Case {k + 1}/{n}  [{kind}]  test #{case['idx']}  {detail}\n"
+            f"Space / → : next          ← / B : previous"
+        )
+        return Text2D(text, pos='top-left', s=0.75, c=col, bg='k8', alpha=0.85)
+
+    def render(k):
+        plt.clear()
+        case, ctype = all_cases[k]
+        offset = np.array([0., 0., 0.])
+
+        color = 'red' if ctype == 'dls' else 'orange'
+        try:
+            s = from_connections(
+                case['connector'], step=step, radius=well_r,
+                start_nev=list(offset),
+            )
+            m = we.mesh.WellMesh(s, method='circle', n_verts=12)
+            plt.add(m, c=color, alpha=0.8)
+        except Exception as exc:
+            print(f"  Mesh failed for case #{case['idx']}: {exc}")
+
+        plt.add(reference_path_lines(case, radius, pos0, vec0, offset))
+        plt.add(start_end_arrows(case, offset))
+        plt.add(_caption(k))
+        plt.reset_camera()
+        plt.render()
+
+    def on_keypress(evt):
+        k = idx[0]
+        if evt.keypress in ('space', 'n', 'Right'):
+            idx[0] = (k + 1) % len(all_cases)
+            render(idx[0])
+        elif evt.keypress in ('b', 'p', 'Left'):
+            idx[0] = (k - 1) % len(all_cases)
+            render(idx[0])
+
+    plt.add_callback('KeyPress', on_keypress)
+    render(0)
     plt.show(axes=1)
 
 
