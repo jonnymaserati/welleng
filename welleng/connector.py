@@ -766,9 +766,11 @@ class Connector:
                 )):
                     break
             self._happy_finish()
+            self._delta_pos3_rescue()
             return
 
         self._happy_finish()
+        self._delta_pos3_rescue()
 
     def _happy_finish(self):
         # Use the critical radius at the FINAL converged geometry rather than the
@@ -839,6 +841,55 @@ class Connector:
         self.md_target = self.md3 + abs(self.dist_curve2)
 
         return self
+
+    def _delta_pos3_rescue(self):
+        """
+        Final geometric-consistency check after _happy_finish.
+
+        If the tangent section is backward (dot(pos3-pos2, vec3) < 0) the
+        path doubles back on itself.  Re-seed with pos3 = pos2 (zero tangent)
+        to force the iteration to find a forward path, then only keep the
+        rescue result if it has a strictly better (higher) minimum arc radius.
+        """
+        _tangent_proj = float(np.dot(self.pos3 - self.pos2, self.vec3))
+        if _tangent_proj >= -self.min_error:
+            return  # tangent is already forward — nothing to fix
+
+        # Snapshot the current _happy_finish outputs before attempting rescue
+        _state_keys = (
+            'pos2', 'pos3', 'vec2', 'vec3',
+            'dist_curve', 'dist_curve2', 'func_dogleg', 'func_dogleg2',
+            'dogleg', 'dogleg2', 'md2', 'md3', 'md_target',
+        )
+        _saved = {k: deepcopy(getattr(self, k)) for k in _state_keys}
+
+        _r_before = min(
+            self.dist_curve / self.dogleg if self.dogleg > 1e-10 else self.radius_design,
+            self.dist_curve2 / self.dogleg2 if self.dogleg2 > 1e-10 else self.radius_design,
+        )
+
+        for _seed in (
+            deepcopy(self.pos2),                  # zero-tangent seed
+            0.5 * (self.pos2 + self.pos_target),  # midpoint fallback
+        ):
+            self.radius_critical = np.inf
+            self.radius_critical2 = np.inf
+            minimize_target_pos_and_vec_defined(
+                [self.radius_design, self.radius_design2],
+                self, _seed, None, True
+            )
+            self._happy_finish()
+            _tp = float(np.dot(self.pos3 - self.pos2, self.vec3))
+            _r_after = min(
+                self.dist_curve / self.dogleg if self.dogleg > 1e-10 else self.radius_design,
+                self.dist_curve2 / self.dogleg2 if self.dogleg2 > 1e-10 else self.radius_design,
+            )
+            if _tp >= -self.min_error and _r_after >= _r_before - self.min_error:
+                return  # rescue improved or matched — keep it
+
+        # Rescue did not improve things — restore the saved state
+        for k, v in _saved.items():
+            setattr(self, k, v)
 
     def interpolate(self, step=30):
         return interpolate_well([self], step)
