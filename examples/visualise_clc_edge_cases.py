@@ -7,18 +7,18 @@ tests/test_connector.py::test_clc_connector.
 Runs the identical 1000-sample random sweep (seed=42, radius=1 m) and
 separates the results into:
 
-  DLS violations  (red mesh)
+  DLS violations  (red tube)
       The solver converged to a geometry where at least one arc uses a
       radius smaller than the design radius.  A valid path at the design
-      radius exists (proved by the blue reference lines) but the fixed-point
+      radius exists (proved by the blue reference tube) but the fixed-point
       iterator settled in a tighter local minimum.
 
-  MD-suboptimal   (orange mesh)
+  MD-suboptimal   (orange tube)
       The solver produced a valid, DLS-compliant path but one that is longer
       than the reference path.  Another local-minimum effect.
 
 Both groups are shown alongside their blue reference paths from
-make_clc_path, laid out in a grid so every case can be inspected at once.
+make_clc_path.
 Cases are labelled with their test-index and the key metric (min arc radius
 for DLS violations, excess MD for suboptimal cases).
 
@@ -51,8 +51,8 @@ def _sample_arc(dogleg_total, radius, toolface, pos_start, vec_start, n=40):
     return np.array(pts)
 
 
-def reference_path_lines(case, radius, pos0, vec0, offset, n=40):
-    """Vedo Lines tracing the reference CLC path, shifted by *offset*."""
+def reference_path_lines(case, radius, pos0, vec0, offset, well_r, n=40):
+    """Vedo Tube tracing the reference CLC path, shifted by *offset*."""
     path = case['path']
 
     arc1 = _sample_arc(
@@ -67,7 +67,7 @@ def reference_path_lines(case, radius, pos0, vec0, offset, n=40):
     )
 
     pts = np.vstack([arc1, hold[1:], arc2[1:]]) + offset
-    return Lines(pts[:-1], pts[1:], c='deepskyblue', lw=2)
+    return Tube(pts, r=well_r, c='deepskyblue', alpha=0.8)
 
 
 def start_end_arrows(case, offset, scale=0.4):
@@ -146,7 +146,7 @@ def collect_edge_cases(n=1000, seed=42, radius=1.0, tol=1e-3):
 
 def main():
     radius  = 1.0
-    well_r  = 0.15   # rendered wellbore radius (m) — large enough to see around the blue reference line
+    well_r  = 0.03   # rendered wellbore radius (m)
     step    = 0.02   # survey interpolation step (m)
     pos0    = np.array([0., 0., 0.])
     vec0    = np.array([0., 0., 1.])
@@ -212,7 +212,7 @@ def main():
         except Exception as exc:
             print(f"  Tube failed for case #{case['idx']}: {exc}")
 
-        plt.add(reference_path_lines(case, radius, pos0, vec0, offset))
+        plt.add(reference_path_lines(case, radius, pos0, vec0, offset, well_r))
         plt.add(start_end_arrows(case, offset))
         plt.add(_caption(k))
         plt.reset_camera()
