@@ -6,6 +6,8 @@ listing.
 author: Jonny Corcutt
 email: jonnycorcutt@gmail.com
 date: 29-09-2021
+
+Requirements: pip install welleng[easy]
 '''
 
 from welleng.connector import Connector
@@ -87,6 +89,6 @@ survey = from_connections(well, step=30)
 mesh = WellMesh(survey, method='circle')
 
 # finally, plot it
-plot([mesh.mesh], interactive=False)
+plot([mesh], interactive=True)
 
 print("Done!")

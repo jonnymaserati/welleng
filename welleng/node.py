@@ -1,3 +1,5 @@
+"""Wellbore survey node representing a position and direction in a well trajectory."""
+
 import numpy as np
 from .utils import (
     get_unit_vec, get_vec, get_angles, get_nev, get_xyz,
@@ -6,6 +8,38 @@ from .utils import (
 
 
 class Node:
+    """A survey station in a wellbore trajectory.
+
+    Stores position, direction vector, measured depth, and covariance
+    for a single point along a well path. Coordinates can be specified
+    in either NEV (north-east-vertical) or XYZ convention.
+
+    Attributes
+    ----------
+    pos_nev : list
+        Position as [north, east, vertical].
+    pos_xyz : list
+        Position as [x, y, z].
+    vec_nev : list
+        Unit direction vector in NEV.
+    vec_xyz : list
+        Unit direction vector in XYZ.
+    inc_rad : float
+        Inclination in radians.
+    inc_deg : float
+        Inclination in degrees.
+    azi_rad : float
+        Azimuth in radians.
+    azi_deg : float
+        Azimuth in degrees.
+    md : float
+        Measured depth along the wellbore.
+    unit : str
+        Unit of measurement (default 'meters').
+    cov_nev : ndarray
+        3x3 covariance matrix in NEV coordinates.
+    """
+
     def __init__(
         self,
         pos=None,
@@ -19,6 +53,34 @@ class Node:
         cov_nev=None,
         **kwargs
     ):
+        """Initialize a Node with position and direction.
+
+        Parameters
+        ----------
+        pos : array_like, optional
+            Position as a 3-element array. Interpreted as NEV or XYZ
+            depending on the ``nev`` flag.
+        vec : array_like, optional
+            Unit direction vector (3-element). If provided, ``inc``
+            and ``azi`` are ignored.
+        md : float, optional
+            Measured depth along the wellbore.
+        inc : float, optional
+            Inclination angle.
+        azi : float, optional
+            Azimuth angle.
+        unit : str
+            Length unit, default ``'meters'``.
+        degrees : bool
+            If True, ``inc`` and ``azi`` are in degrees.
+        nev : bool
+            If True, ``pos`` and ``vec`` are in NEV coordinates;
+            otherwise XYZ.
+        cov_nev : ndarray, optional
+            Covariance matrix (1, 3, 3). Defaults to zeros.
+        **kwargs
+            Additional attributes set on the instance.
+        """
         self.check_angle_inputs(inc, azi, vec, nev, degrees)
         self.get_pos(pos, nev)
         self.md = md
@@ -70,10 +132,29 @@ class Node:
             self.pos_nev = get_nev(pos).reshape(3).tolist()
 
     def properties(self):
+        """Return all instance attributes as a dictionary.
+
+        Returns
+        -------
+        dict
+            Mapping of attribute names to their values.
+        """
         return vars(self)
 
 
 def get_node_params(node):
+    """Extract position, direction, and measured depth from a Node.
+
+    Parameters
+    ----------
+    node : Node
+        A Node instance.
+
+    Returns
+    -------
+    tuple
+        A tuple of (pos_nev, vec_nev, md).
+    """
     pos = node.pos_nev
     vec = node.vec_nev
     md = node.md

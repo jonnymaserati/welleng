@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "welleng"
-version = "0.8.5"
+dynamic = ["version"]
 description = "A collection of Well Engineering tools"
 readme = "README.md"
 license = { text = "Apache 2.0" }
@@ -54,8 +54,6 @@ dependencies = [
     "pyproj",
     "PyYAML",
     "setuptools",
-    "vedo",
-    "vtk",
 ]
 
 [project.optional-dependencies]
@@ -65,6 +63,8 @@ easy = [
     "tabulate",
     "trimesh",
     "utm",
+    "vedo",
+    "vtk",
 ]
 all = [
     "magnetic_field_calculator",
@@ -77,7 +77,10 @@ all = [
 
 [project.urls]
 Homepage = "https://github.com/jonnymaserati/welleng"
-Download = "https://github.com/jonnymaserati/welleng/archive/v0.8.5.tar.gz"
+Download = "https://github.com/jonnymaserati/welleng/releases"
+
+[tool.hatch.version]
+path = "welleng/version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["welleng"]
@@ -95,8 +98,8 @@ include = [
     "LICENSE",
 ]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest>=9.0",
     "magnetic_field_calculator",
     "networkx",

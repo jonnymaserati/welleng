@@ -6,6 +6,8 @@ village.
 author: Jonny Corcutt
 email: jonnycorcutt@gmail.com
 date: 29-09-2021
+
+Requirements: pip install welleng
 '''
 from welleng.exchange.edm import EDM
 import pandas as pd

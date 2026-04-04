@@ -314,6 +314,13 @@ class IscwsaClearance(Clearance):
     wellbore_separation:
         The distance between the edge of the wellbore for each station on the
         `ref` well to the closest point on the `off` well.
+
+    Methods
+    -------
+    get_lines()
+        Generate line data for visualizing clearance between wells.
+    get_sf_mins()
+        Compute minimum separation factor indices and values.
     """
     def __init__(
         self,
@@ -853,6 +860,11 @@ class MeshClearance(Clearance):
         mesh. The default value of 2.445 represents about 98.5% confidence
         of the well bore being located within the volume of the generated
         mesh.
+
+    Methods
+    -------
+    get_lines()
+        Generate line data for visualizing clearance between wells.
     """
     def __init__(
         self,

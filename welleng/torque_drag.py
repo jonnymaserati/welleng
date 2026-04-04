@@ -1,3 +1,5 @@
+"""Wellbore torque and drag calculations based on Johancsik et al. (SPE 11380-PA)."""
+
 from copy import deepcopy
 import numpy as np
 
@@ -13,6 +15,36 @@ from .units import ureg
 
 
 class TorqueDrag:
+    """Torque and drag model for a string in a wellbore.
+
+    Computes axial tension and torsion profiles along a drillstring or
+    casing string for pickup, slackoff, rotating, and drilling scenarios
+    using the soft-string (Johancsik) method.
+
+    Methods
+    -------
+    add_survey_points_from_strings(strings)
+        Add string section boundaries as survey station points.
+    get_buoyancy_factors()
+        Calculate buoyancy factors for each survey interval.
+    get_inc_average()
+        Calculate average inclination per interval.
+    get_inc_delta()
+        Calculate inclination change per interval.
+    get_azi_delta()
+        Calculate azimuth change per interval.
+    get_characteristic_od(strings)
+        Determine effective OD for each survey interval from string data.
+    get_weight_buoyed_and_radius(strings)
+        Calculate buoyed weight and bend radius per interval.
+    get_coeff_friction_sliding(strings)
+        Get sliding friction coefficients per interval from string data.
+    get_forces_and_torsion(mode, friction)
+        Calculate axial forces and torque along the wellbore.
+    figure()
+        Create a plotly figure of string tension and torque.
+    """
+
     def __init__(
         self, survey, wellbore, string, fluid_density, name=None,
         wob=None, tob=None, overpull=None,
@@ -122,6 +154,7 @@ class TorqueDrag:
             )
 
     def get_inc_average(self):
+        """Calculate the average inclination between consecutive survey stations."""
         self.inc_average = np.zeros_like(self.survey.inc_rad)
         self.inc_average[1:] = np.average(
             (self.survey.inc_rad[1:], self.survey.inc_rad[:-1]),
@@ -129,22 +162,39 @@ class TorqueDrag:
         )
 
     def get_inc_delta(self):
+        """Calculate the inclination change between consecutive survey stations."""
         self.inc_delta = np.zeros_like(self.survey.inc_rad)
         self.inc_delta[1:] = self.survey.inc_rad[1:] - self.survey.inc_rad[:-1]
 
     def get_azi_delta(self):
+        """Calculate the azimuth change between consecutive survey stations."""
         self.azi_delta = np.zeros_like(self.survey.azi_grid_rad)
         self.azi_delta[1:] = (
             self.survey.azi_grid_rad[1:] - self.survey.azi_grid_rad[:-1]
         )
 
     def get_characteristic_od(self, section):
+        """Return the effective outer diameter for a string section.
+
+        Uses the tooljoint OD if available, otherwise the pipe body OD.
+
+        Parameters
+        ----------
+        section : int
+            Index of the string section.
+
+        Returns
+        -------
+        float
+            The characteristic outer diameter in meters.
+        """
         if bool(self.string.sections[section].get('tooljoint_od')):
             return self.string.sections[section]['tooljoint_od']
         else:
             return self.string.sections[section]['od']
 
     def get_weight_buoyed_and_radius(self):
+        """Calculate buoyed weight and contact radius for each survey interval."""
         sections = self.string.sections
         bottoms = np.array([s['bottom'] for s in sections])
         mds = self.survey.md[1:]
@@ -160,6 +210,7 @@ class TorqueDrag:
         self.radius = np.concatenate([[self.get_characteristic_od(0)], diameters]) / 2
 
     def get_coeff_friction_sliding(self):
+        """Build an array of sliding friction coefficients mapped to survey stations."""
         sections = self.wellbore.sections
         bottoms = np.array([s['bottom'] for s in sections])
         mds = self.survey.md[1:]
@@ -172,6 +223,21 @@ class TorqueDrag:
         )
 
     def get_forces_and_torsion(self, wob=False, tob=False, overpull=False):
+        """Compute tension and torque profiles along the string.
+
+        Iterates from bit to surface, accumulating normal force, axial
+        tension, and torsion at each survey station. Results are stored
+        in ``self.tension`` and ``self.torque`` dicts keyed by load case.
+
+        Parameters
+        ----------
+        wob : float, optional
+            Weight on bit in Newtons. Must be provided with tob.
+        tob : float, optional
+            Torque on bit in N*m. Must be provided with wob.
+        overpull : float, optional
+            Additional tension at the bit in Newtons.
+        """
         if any((wob, tob)):
             assert tob, "Can't have WOB without TOB"
             assert wob, "Can't have TOB wihtouh WOB"
@@ -230,6 +296,13 @@ class TorqueDrag:
         self.wob, self.tob, self.overpull = wob, tob, overpull
 
     def figure(self):
+        """Generate a plotly figure of tension and torque vs depth.
+
+        Returns
+        -------
+        plotly.graph_objects.Figure
+            Figure with tension (left) and torque (right) subplots.
+        """
         return figure_string_tension_and_torque(self)
 
 
@@ -240,6 +313,26 @@ def force_normal(
     azi_delta,
     weight_buoyed,
 ):
+    """Calculate the normal contact force between string and wellbore.
+
+    Parameters
+    ----------
+    force_tension : numpy.ndarray
+        Axial tension array (pickup, slackoff, rotating) in N.
+    inc_average : float
+        Average inclination of the interval in radians.
+    inc_delta : float
+        Inclination change over the interval in radians.
+    azi_delta : float
+        Azimuth change over the interval in radians.
+    weight_buoyed : float
+        Buoyed weight of the string element in N.
+
+    Returns
+    -------
+    numpy.ndarray
+        Normal force array for each load case in N.
+    """
     result = np.sqrt(
         (force_tension * azi_delta * np.sin(inc_average)) ** 2
         + (
@@ -257,6 +350,24 @@ def force_tension_delta(
     coeff_friction_sliding,
     force_normal
 ):
+    """Calculate the incremental tension change over one survey interval.
+
+    Parameters
+    ----------
+    weight_buoyed : float
+        Buoyed weight of the string element in N.
+    inc_average : float
+        Average inclination of the interval in radians.
+    coeff_friction_sliding : float
+        Sliding friction coefficient for the interval.
+    force_normal : numpy.ndarray
+        Normal contact force for each load case in N.
+
+    Returns
+    -------
+    tuple of float
+        Tension increments for (pickup, slackoff, rotating) in N.
+    """
     A = weight_buoyed * np.cos(inc_average)
     B = coeff_friction_sliding * force_normal
 
@@ -270,6 +381,22 @@ def torsion_delta(
     force_normal,
     radius
 ):
+    """Calculate the incremental torsion change over one survey interval.
+
+    Parameters
+    ----------
+    coeff_friction_sliding : float
+        Sliding friction coefficient for the interval.
+    force_normal : float
+        Normal contact force for the rotating load case in N.
+    radius : float
+        Contact radius of the string element in meters.
+
+    Returns
+    -------
+    float
+        Torsion increment in N*m.
+    """
     result = coeff_friction_sliding * force_normal * radius
 
     return result
@@ -296,6 +423,18 @@ def buoyancy_factor(fluid_density, string_density=7.85):
 
 
 class HookLoad:
+    """Hookload (broomstick) plot model for running or pulling a string.
+
+    Methods
+    -------
+    get_ff_range(ff_range)
+        Compute hookloads across a range of friction factors.
+    get_data()
+        Retrieve computed hookload data.
+    figure()
+        Create a plotly broomstick plot of hookload vs friction factor.
+    """
+
     def __init__(
         self, survey, wellbore, string, fluid_density, step=30, name=None,
         ff_range=(0.1, 0.4, 0.1)
@@ -334,10 +473,18 @@ class HookLoad:
         self.get_data()
 
     def get_ff_range(self, ff_range):
+        """Expand the friction factor range into a list of values.
+
+        Parameters
+        ----------
+        ff_range : tuple of float
+            ``(start, stop, step)`` for the friction factor range.
+        """
         self.ff_range = np.arange(*ff_range).tolist()
         self.ff_range.append(ff_range[1])
 
     def get_data(self):
+        """Run torque-drag calculations for each friction factor and depth step."""
         self.data = {}
         self.md_range = np.arange(
             self.string.top + self.step, self.string.bottom, self.step
@@ -368,6 +515,13 @@ class HookLoad:
                 ]
 
     def figure(self):
+        """Generate a plotly hookload (broomstick) figure.
+
+        Returns
+        -------
+        plotly.graph_objects.Figure
+            Hookload plot with pickup, slackoff, and rotating traces.
+        """
         return figure_hookload(self)
 
 
@@ -379,6 +533,20 @@ def figure_string_tension_and_torque(
         torque='ft_lbf'
     )
 ):
+    """Create a plotly figure showing string tension and torque vs depth.
+
+    Parameters
+    ----------
+    td : TorqueDrag
+        Completed torque-drag model instance.
+    units : dict, optional
+        Unit keys for ``depth``, ``tension``, and ``torque``.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+        Figure with tension (left) and torque (right) subplots.
+    """
     assert PLOTLY, "Please install plotly"
 
     fig = make_subplots(rows=1, cols=2)
@@ -437,6 +605,20 @@ def figure_hookload(
         torque='ft_lbf'
     )
 ):
+    """Create a plotly hookload (broomstick) figure.
+
+    Parameters
+    ----------
+    hl : HookLoad
+        Completed hookload model instance.
+    units : dict, optional
+        Unit keys for ``depth``, ``tension``, and ``torque``.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+        Hookload plot with pickup, slackoff, and rotating traces.
+    """
     assert PLOTLY, "Please install plotly"
 
     fig = go.Figure()

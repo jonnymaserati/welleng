@@ -1,3 +1,5 @@
+"""Visualization utilities for wellbore trajectories using vedo/VTK and plotly."""
+
 try:
     import vedo
     from vedo import Lines, Mesh
@@ -10,6 +12,7 @@ except ImportError:
     VEDO = False
 
 import numpy as np
+from types import SimpleNamespace
 from scipy.spatial import KDTree
 
 try:
@@ -31,6 +34,8 @@ from .version import __version__ as VERSION
 
 if VEDO:
     class Plotter(VedoPlotter):
+        """Interactive 3D well trajectory viewer built on vedo/VTK."""
+
         def __init__(self, *args, **kwargs):
             """
             Notes
@@ -45,13 +50,20 @@ if VEDO:
             self.wells = []
 
         def add(self, obj, *args, **kwargs) -> None:
-            """Modified method to support direct plotting of
-            ``welleng.mesh.WellMesh`` instances and for processing the callback
-            to print well data when the pointer is hovered over a well trajectory.
+            """Add an object to the scene, with special handling for WellMesh.
 
-            If the ``obj`` is a ``welleng.mesh.WellMesh`` instance, then the args
-            and kwargs will be passed to the `vedo.Mesh` instance to facilitate e.g.
-            color options etc.
+            If ``obj`` is a ``welleng.mesh.WellMesh`` instance, it is
+            converted to a vedo Mesh for rendering and the args/kwargs are
+            forwarded to the ``vedo.Mesh`` constructor (e.g. color options).
+
+            Parameters
+            ----------
+            obj : object
+                A vedo object or a ``welleng.mesh.WellMesh`` instance.
+            *args
+                Passed to ``vedo.Mesh`` when obj is a WellMesh.
+            **kwargs
+                Passed to ``vedo.Mesh`` when obj is a WellMesh.
 
             Notes
             -----
@@ -64,11 +76,14 @@ if VEDO:
             needs to be mapped to X and East to Y on account of Z pointing down.
             """
             if isinstance(obj, mesh.WellMesh):
-                poly = buildPolyData(obj.mesh.vertices, obj.mesh.faces)
-                vedo_mesh = Mesh(poly, *args, **kwargs)
+                vedo_mesh = Mesh([obj.mesh.vertices, obj.mesh.faces],
+                                 *args, **kwargs)
                 setattr(obj, 'vedo_mesh', vedo_mesh)
                 self.wells.append(obj)
                 super().add(obj.vedo_mesh)
+            elif isinstance(obj, SimpleNamespace):
+                vedo_mesh = Mesh([obj.vertices, obj.faces], *args, **kwargs)
+                super().add(vedo_mesh)
             else:
                 super().add(obj)
 
@@ -110,7 +125,7 @@ if VEDO:
         def _pointer_callback(self, event):
             i = event.at
             pt2d = event.picked2d
-            objs = self.at(i).objects
+            objs = [o for o in self.at(i).objects if hasattr(o, 'actor')]
             pt3d = self.at(i).compute_world_coordinate(pt2d, objs=objs)
             if mag(pt3d) < 0.01:
                 if self.pointer is None:
@@ -174,6 +189,23 @@ if VEDO:
             }
 
         def show(self, axes=None, *args, **kwargs):
+            """Display the scene with NEV axes, hover callback, and cube axes.
+
+            Parameters
+            ----------
+            axes : object, optional
+                Custom axes actor. Defaults to CubeAxes if VTK is
+                available, otherwise uses vedo's default axes style 0.
+            *args
+                Passed to the parent vedo Plotter.show().
+            **kwargs
+                Passed to the parent vedo Plotter.show().
+
+            Returns
+            -------
+            vedo.Plotter
+                The vedo Plotter instance.
+            """
             if self.axes is not None:
                 self.remove(self.axes)
 
@@ -197,7 +229,18 @@ if VEDO:
 
 if VTK:
     class CubeAxes(vtkCubeAxesActor):
+        """VTK cube axes actor configured for NEV (North, East, TVD) labels."""
+
         def __init__(self, **kwargs):
+            """Initialize cube axes with NEV labels and grid styling.
+
+            Parameters
+            ----------
+            **kwargs
+                Optional overrides including ``axis1Color``, ``axis2Color``,
+                ``axis3Color`` (VTK named colors) and ``units`` (axis unit
+                label string).
+            """
             super().__init__()
 
             plt = vedo.plotter_instance
@@ -254,23 +297,42 @@ if VTK:
             plt.renderer.AddActor(self)
 
 
-def plot(data, **kwargs):
+def plot(data, colors=None, names=None, lines=None, arrows=None,
+         interactive=True, **kwargs):
     """
-    Deprecated wrapper for the Plotter class, maintained only for
-    compatibility with older versions.
+    Convenience function for quick visualization of well meshes.
 
     Parameters
     ----------
-    data: WellMesh or list of WellMesh
+    data : WellMesh or list of WellMesh
+        The well mesh(es) to plot.
+    colors : list of str, optional
+        Per-item colors when data is a list.
+    names : list of str, optional
+        Per-item names (currently unused, reserved for legends).
+    lines : vedo object, optional
+        Lines to add to the scene.
+    arrows : vedo object, optional
+        Arrows to add to the scene.
+    interactive : bool
+        Whether to show an interactive window.
     """
     assert VEDO, "ImportError: try pip install welleng[easy]"
     plt = Plotter()
     if isinstance(data, (list, tuple)):
-        for item in data:
-            plt.add(item, **kwargs)
+        for i, item in enumerate(data):
+            c = colors[i] if colors and i < len(colors) else None
+            add_kwargs = {'c': c} if c else {}
+            plt.add(item, **add_kwargs)
     else:
-        plt.add(data, **kwargs)
-    plt.show()
+        c = colors[0] if colors else None
+        add_kwargs = {'c': c} if c else {}
+        plt.add(data, **add_kwargs)
+    if lines is not None:
+        VedoPlotter.add(plt, lines)
+    if arrows is not None:
+        VedoPlotter.add(plt, arrows)
+    plt.show(interactive=interactive)
 
 
 def get_lines(clearance):
@@ -281,12 +343,13 @@ def get_lines(clearance):
 
     Parameters
     ----------
-        clearance: welleng.clearance object
+    clearance : welleng.clearance.Clearance
+        A welleng clearance object.
 
     Returns
     -------
-        lines: vedo.Lines object
-            A vedo.Lines object colored by the object's SF values.
+    vedo.Lines
+        A vedo.Lines object colored by the object's SF values.
     """
     assert VEDO, "ImportError: try pip install welleng[easy]"
     c = clearance.sf
@@ -298,6 +361,22 @@ def get_lines(clearance):
 
 
 def figure(obj, type='scatter3d', **kwargs):
+    """Create a plotly figure from a survey or mesh object.
+
+    Parameters
+    ----------
+    obj : Survey or WellMesh
+        A welleng Survey (for scatter3d/panel) or WellMesh (for mesh3d).
+    type : str, optional
+        One of 'scatter3d', 'mesh3d', or 'panel'.
+    **kwargs
+        Passed to the underlying plotly figure builder.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+        A plotly Figure instance.
+    """
     assert PLOTLY, "ImportError: try pip install plotly"
     func = {
         'scatter3d': _scatter3d,

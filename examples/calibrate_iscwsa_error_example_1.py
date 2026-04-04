@@ -7,6 +7,8 @@ by ISCWSA.
 author: Jonny Corcutt
 email: jonnycorcutt@gmail.com
 date: 29-09-2021
+
+Requirements: pip install welleng
 '''
 
 import welleng as we
