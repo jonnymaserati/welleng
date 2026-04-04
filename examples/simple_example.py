@@ -10,6 +10,8 @@ author: Jonny Corcutt
 email: jonnycorcutt@gmail.com
 date: 29-09-2021
 updated: 12-11-2023
+
+Requirements: pip install welleng[easy]
 '''
 import welleng as we
 from tabulate import tabulate

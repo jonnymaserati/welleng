@@ -7,10 +7,11 @@ the results can be compared.
 author: Jonny Corcutt
 email: jonnycorcutt@gmail.com
 date: 29-09-2021
+
+Requirements: pip install welleng[all] (includes python-fcl for mesh collision)
 '''
 
 import pandas as pd
-import trimesh
 
 import welleng as we
 from welleng.survey import Survey, SurveyHeader
@@ -105,7 +106,7 @@ for well in data["wells"]:
 # Add clearance data to dictionary
 results = {}
 reference = surveys["Reference well"]
-scene = trimesh.scene.scene.Scene()
+meshes = []
 names = []
 colors = []
 
@@ -169,9 +170,7 @@ if multiprocessing:
                 "iscwsa": data[i][0],
                 "mesh": data[i][1]
             }
-        scene.add_geometry(
-            data[i][2].mesh, node_name=well, geom_name=well, parent_node_name=None
-        )
+        meshes.append(data[i][2])
         colors.append(data[i][4])
         names.append(data[i][3])
 
@@ -206,14 +205,15 @@ else:
                 "mesh": result_mesh
             }
 
-        # make a well mesh and add it to the scene for visualizing the wells
+        # make a well mesh and add it to the list for visualization
         m = WellMesh(
             survey=surveys[well],
             n_verts=12,
             sigma=2.445,
         )
+        meshes.append(m)
 
-we.visual.plot(scene, names=names, colors=colors)
+we.visual.plot(meshes, names=names, colors=colors)
 
 # if you want to export the scene, say to blender, then do something like this
 # save the scene (make sure the blender directory exists else change the

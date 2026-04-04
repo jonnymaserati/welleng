@@ -101,22 +101,19 @@ def test_clearance_iscwsa(data=data, rtol=1e-02, atol=1e-03):
 
     # Perform clearance checks for each survey
     for well in surveys:
-        if well != "09 - well":
-            continue
         if well == "Reference well":
             continue
         else:
             offset = surveys[well]
-            # skip well 10
-            if well in ["10 - well"]:
-                continue
-            else:
-                for b in [False, True]:
-                    result = IscwsaClearance(reference, offset, minimize_sf=b)
-                    assert np.allclose(
-                        result.sf[np.where(result.ref.interpolated == False)],  # noqa E712
-                        np.array(data["wells"][well]["SF"]),
-                        rtol=rtol, atol=atol
-                    )
+            kop_depth = 900.0 if well == "10 - well" else -np.inf
+            for b in [False, True]:
+                result = IscwsaClearance(
+                    reference, offset, minimize_sf=b, kop_depth=kop_depth
+                )
+                assert np.allclose(
+                    result.sf[np.where(result.ref.interpolated == False)],  # noqa E712
+                    np.array(data["wells"][well]["SF"]),
+                    rtol=rtol, atol=atol
+                )
 
     pass

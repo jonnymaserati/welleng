@@ -5,8 +5,8 @@ REFERENCE = {
     'x': 588319.02, 'y': 5770571.03, 'northing': 5770571.03,
     'easting': 588319.02, 'latitude': 52.077583926214494,
     'longitude': 4.288694821453205, 'convergence': 1.0166440347220762,
-    'scale_factor': 0.9996957469340422, 'magnetic_field_intensity': 49381,
-    'declination': 2.213, 'dip': -67.199, 'date': '2023-12-16',
+    'scale_factor': 0.9996957469340422, 'magnetic_field_intensity': 49421,
+    'declination': 2.356, 'dip': -67.224, 'date': '2025-06-01',
     'srs': 'EPSG:23031',
     'wgs84-utm31': [588225.162, 5770360.512]
 }

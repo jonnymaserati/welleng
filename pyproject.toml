@@ -1,0 +1,107 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "welleng"
+dynamic = ["version"]
+description = "A collection of Well Engineering tools"
+readme = "README.md"
+license = { text = "Apache 2.0" }
+authors = [
+    { name = "Jonathan Corcutt", email = "jonnycorcutt@gmail.com" }
+]
+keywords = [
+    "well",
+    "trajectory",
+    "wellpath",
+    "wellbore",
+    "drilling",
+    "drill",
+    "error",
+    "separation",
+    "minimum curvature",
+    "iscwsa",
+    "owsg",
+    "well engineering",
+    "wells",
+    "drilling engineering",
+    "directional drilling",
+    "mwd",
+    "survey",
+    "covariance",
+    "digitalization",
+    "automation",
+    "volve",
+    "witsml",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Natural Language :: English",
+    "Topic :: Scientific/Engineering",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "scipy",
+    "openpyxl",
+    "pandas",
+    "pint",
+    "pyproj",
+    "PyYAML",
+    "setuptools",
+]
+
+[project.optional-dependencies]
+easy = [
+    "magnetic_field_calculator",
+    "networkx",
+    "tabulate",
+    "trimesh",
+    "utm",
+    "vedo",
+    "vtk",
+]
+all = [
+    "magnetic_field_calculator",
+    "networkx",
+    "tabulate",
+    "trimesh",
+    "utm",
+    "python-fcl",
+]
+
+[project.urls]
+Homepage = "https://github.com/jonnymaserati/welleng"
+Download = "https://github.com/jonnymaserati/welleng/releases"
+
+[tool.hatch.version]
+path = "welleng/version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["welleng"]
+
+[tool.hatch.build.targets.wheel.sources]
+"welleng" = "welleng"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "welleng/**/*.py",
+    "welleng/errors/*.yaml",
+    "welleng/errors/tool_codes/*.yaml",
+    "welleng/exchange/*.yaml",
+    "README.md",
+    "LICENSE",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0",
+    "magnetic_field_calculator",
+    "networkx",
+    "trimesh",
+]

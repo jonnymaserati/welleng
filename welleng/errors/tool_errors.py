@@ -1,6 +1,6 @@
 import numpy as np
 from numpy import sin, cos, tan, pi, sqrt
-from numpy.core.defchararray import index
+from numpy.char import index
 import yaml
 import os
 from collections import OrderedDict
@@ -111,9 +111,22 @@ class ToolError:
                 )
             )
 
-        self.cov_NEVs = np.zeros((3, 3, len(self.e.survey_rad)))
+        shape = (len(self.e.survey_rad), 3, 3)
+        self.cov_NEVs = np.zeros(shape)
+        self.cov_NEVs_random = np.zeros(shape)
+        self.cov_NEVs_systematic = np.zeros(shape)
+        self.cov_NEVs_global = np.zeros(shape)
+        self.cov_NEVs_within_pad = np.zeros(shape)
         for _, value in self.errors.items():
             self.cov_NEVs += value.cov_NEV
+            if value.propagation == 'random':
+                self.cov_NEVs_random += value.cov_NEV
+            elif value.propagation == 'systematic':
+                self.cov_NEVs_systematic += value.cov_NEV
+            elif value.propagation == 'global':
+                self.cov_NEVs_global += value.cov_NEV
+            elif value.propagation == 'within_pad':
+                self.cov_NEVs_within_pad += value.cov_NEV
 
         self.cov_HLAs = NEV_to_HLA(self.e.survey_rad, self.cov_NEVs)
 
@@ -195,8 +208,9 @@ class ToolError:
             'GXY_GRW': GXY_GRW,  # Needs QAQC
             'MFI': MFI,  # Needs QAQC
             'MSIXY_TI1': MSIXY_TI1,  # Needs QAQC
-            'MSIXY_TI2': MSIXY_TI1,  # Needs QAQC
-            'MSIXY_TI3': MSIXY_TI1,  # Needs QAQC
+            'MSIXY_TI2': MSIXY_TI2,  # Needs QAQC
+            'MSIXY_TI3': MSIXY_TI3,  # Needs QAQC
+            'DBHR': DBHR,  # Needs QAQC
             'AMID': AMID,  # Needs QAQC
             'CNA': CNA,  # Needs QAQC
             'CNI': CNI,  # Needs QAQC

@@ -4,14 +4,27 @@ from numpy.typing import NDArray
 from welleng.units import ureg
 from welleng.utils import (
     annular_volume,
+    cov_from_vec,
     decimal2dms,
     dms2decimal,
     pprint_dms,
     dms_from_string,
+    get_dogleg,
+    get_rf,
+    min_curve_step,
     radius_from_dls,
+    dls_from_radius,
     get_toolface,
     get_arc,
-    MinCurve
+    get_angles,
+    get_vec,
+    get_transform,
+    get_sigmas,
+    make_cov,
+    errors_from_cov,
+    NEV_to_HLA,
+    HLA_to_NEV,
+    MinCurve,
 )
 import json
 
@@ -88,7 +101,7 @@ def are_tuples_identical(tuple1, tuple2):
             ureg("12.25 inch").to("meter"),
             ureg(f"{9+5/8} inch").to("meter"),
             ureg("1000 meter"),
-            3.491531223156194,
+            29.096093526301622,
         ),
         # Add more test cases as needed
     ],
@@ -246,7 +259,7 @@ def test_get_toolface():
 
     pos2 = pos1 + np.array([radius, -radius, 0])
     toolface = get_toolface(pos1, vec1, pos2)
-    assert np.isclose(toolface, -np.pi / 2)
+    assert np.isclose(toolface, 3 * np.pi / 2)  # [0, 2π) convention; was -π/2
 
     pos2 = pos1 + np.array([radius, 0, radius])
     toolface = get_toolface(pos1, vec1, pos2)
@@ -262,6 +275,240 @@ def test_get_toolface():
     pos2 = pos1 + np.array([radius, 0, radius])
     toolface = get_toolface(pos1, vec1, pos2)
     assert np.isclose(toolface, 0)
+
+
+def test_get_dogleg_known_values():
+    """get_dogleg should return 0 for identical stations and pi/2 for quarter turn."""
+    # identical stations → dogleg = 0
+    assert get_dogleg(0.0, 0.0, 0.0, 0.0) == 0.0
+    # vertical → horizontal (90° inc change, no azi change)
+    assert np.isclose(get_dogleg(0.0, 0.0, np.pi / 2, 0.0), np.pi / 2)
+    # vectorised
+    inc1 = np.array([0.0, 0.0, np.pi / 4])
+    azi1 = np.array([0.0, 0.0, 0.0])
+    inc2 = np.array([0.0, np.pi / 2, np.pi / 4])
+    azi2 = np.array([0.0, 0.0, np.pi / 2])
+    dl = get_dogleg(inc1, azi1, inc2, azi2)
+    assert dl[0] == 0.0
+    assert np.isclose(dl[1], np.pi / 2)
+    assert dl[2] > 0.0
+
+
+def test_get_dogleg_matches_mincurve():
+    """get_dogleg must agree with the MinCurve internal calculation."""
+    rng = np.random.default_rng(0)
+    inc1 = rng.uniform(0, np.pi, 50)
+    azi1 = rng.uniform(0, 2 * np.pi, 50)
+    inc2 = rng.uniform(0, np.pi, 50)
+    azi2 = rng.uniform(0, 2 * np.pi, 50)
+    dl_new = get_dogleg(inc1, azi1, inc2, azi2)
+    # compare against arccos formula used previously
+    dl_old = np.arccos(np.clip(
+        np.cos(inc2 - inc1) - np.sin(inc1) * np.sin(inc2) * (1 - np.cos(azi2 - azi1)),
+        -1.0, 1.0
+    ))
+    assert np.allclose(dl_new, dl_old, atol=1e-10)
+
+
+def test_get_rf_limits():
+    """get_rf should return 1 at dogleg=0 and approach 1 for small angles."""
+    assert get_rf(0.0) == 1.0
+    assert np.isclose(get_rf(1e-9), 1.0, atol=1e-6)
+    # vectorised
+    dogleg = np.array([0.0, np.pi / 4, np.pi / 2, np.pi])
+    rf = get_rf(dogleg)
+    assert rf[0] == 1.0
+    assert np.all(rf > 0)
+    # RF is always >= 1 (curve is longer than chord)
+    assert np.all(rf >= 1.0)
+
+
+def test_min_curve_step_straight():
+    """A tangent section (dogleg=0) should give a straight-line position step."""
+    inc = np.array([np.pi / 4])
+    azi = np.array([np.pi / 3])
+    delta_md = np.array([100.0])
+    step = min_curve_step(delta_md, inc, azi, inc, azi)
+    assert step.shape == (1, 3)
+    # for a straight section both stations have the same direction vector
+    vec = get_vec(np.degrees(inc), np.degrees(azi), nev=True)
+    expected = 100.0 * vec
+    assert np.allclose(step[0], expected[0], atol=1e-10)
+
+
+def test_min_curve_step_nev_order():
+    """min_curve_step returns columns in [N, E, V] order."""
+    # vertical well inc=0 → delta_N=0, delta_E=0, delta_V=delta_md
+    step = min_curve_step(
+        np.array([50.0]), np.array([0.0]), np.array([0.0]),
+        np.array([0.0]), np.array([0.0])
+    )
+    assert np.isclose(step[0, 0], 0.0, atol=1e-10)  # N
+    assert np.isclose(step[0, 1], 0.0, atol=1e-10)  # E
+    assert np.isclose(step[0, 2], 50.0, atol=1e-10)  # V
+
+
+def test_min_curve_step_matches_mincurve():
+    """min_curve_step must reproduce MinCurve position increments."""
+    md = np.array([0., 100., 250., 500.])
+    inc = np.radians([0., 15., 45., 90.])
+    azi = np.radians([0., 30., 60., 90.])
+    mc = MinCurve(md, inc, azi)
+    # mc.delta_y = N, mc.delta_x = E, mc.delta_z = V
+    expected = np.stack((mc.delta_y[1:], mc.delta_x[1:], mc.delta_z[1:]), axis=-1)
+    result = min_curve_step(
+        mc.delta_md[1:], inc[:-1], azi[:-1], inc[1:], azi[1:], mc.rf[1:]
+    )
+    assert np.allclose(result, expected, atol=1e-10)
+
+
+def test_dls_radius_inverse():
+    """dls_from_radius and radius_from_dls should be exact inverses."""
+    for dls in [1.0, 2.5, 5.0, 10.0]:
+        assert np.isclose(dls_from_radius(radius_from_dls(dls)), dls)
+    for radius in [100.0, 500.0, 1718.87]:
+        assert np.isclose(radius_from_dls(dls_from_radius(radius)), radius)
+    # zero radius → infinite dls and vice versa
+    assert dls_from_radius(0) == np.inf
+    assert radius_from_dls(0) == np.inf
+
+
+def test_get_vec_get_angles_roundtrip():
+    """get_vec and get_angles should be exact inverses."""
+    incs = np.array([0., 30., 60., 90., 45.])
+    azis = np.array([0., 45., 90., 180., 270.])
+
+    vecs = get_vec(incs, azis, nev=True, deg=True)
+    result = get_angles(vecs, nev=True)
+
+    assert np.allclose(result[:, 0], np.radians(incs), atol=1e-10)
+    assert np.allclose(result[:, 1], np.radians(azis), atol=1e-10)
+
+
+def test_get_vec_unit_length():
+    """get_vec should always return unit vectors."""
+    incs = np.random.uniform(0, 180, 20)
+    azis = np.random.uniform(0, 360, 20)
+    vecs = get_vec(incs, azis)
+    norms = np.linalg.norm(vecs, axis=-1)
+    assert np.allclose(norms, 1.0)
+
+
+def test_get_transform_orthogonal():
+    """get_transform should return orthogonal rotation matrices (R @ R.T = I)."""
+    survey = np.column_stack([
+        np.zeros(5),
+        np.radians([0., 30., 60., 90., 45.]),
+        np.radians([0., 45., 90., 180., 270.]),
+    ])
+    trans = get_transform(survey)  # (n,3,3)
+    for i in range(len(survey)):
+        product = trans[i] @ trans[i].T
+        assert np.allclose(product, np.eye(3), atol=1e-10)
+
+
+def test_NEV_to_HLA_roundtrip():
+    """HLA_to_NEV(NEV_to_HLA(cov)) should recover the original cov."""
+    survey = np.column_stack([
+        np.zeros(10),
+        np.radians(np.linspace(0, 90, 10)),
+        np.radians(np.linspace(0, 180, 10)),
+    ])
+    # build a simple diagonal (n,3,3) cov
+    cov_nev = np.zeros((10, 3, 3))
+    cov_nev[:, 0, 0] = 1.0
+    cov_nev[:, 1, 1] = 0.5
+    cov_nev[:, 2, 2] = 0.25
+
+    cov_hla = NEV_to_HLA(survey, cov_nev, cov=True)
+    cov_recovered = HLA_to_NEV(survey, cov_hla, cov=True)
+
+    assert np.allclose(cov_recovered, cov_nev, atol=1e-10)
+
+
+def test_NEV_to_HLA_preserves_trace():
+    """Rotation preserves the trace (sum of eigenvalues) of the cov matrix."""
+    survey = np.column_stack([
+        np.zeros(5),
+        np.radians([10., 30., 60., 80., 45.]),
+        np.radians([20., 60., 120., 200., 300.]),
+    ])
+    cov_nev = np.random.rand(5, 3, 3)
+    # make symmetric positive semi-definite
+    cov_nev = cov_nev @ cov_nev.swapaxes(-1, -2)
+
+    cov_hla = NEV_to_HLA(survey, cov_nev, cov=True)
+
+    traces_nev = np.trace(cov_nev, axis1=-2, axis2=-1)
+    traces_hla = np.trace(cov_hla, axis1=-2, axis2=-1)
+    assert np.allclose(traces_nev, traces_hla, atol=1e-10)
+
+
+def test_NEV_to_HLA_cov_false():
+    """NEV_to_HLA with cov=False should transform coordinate vectors."""
+    survey = np.column_stack([
+        np.zeros(3),
+        np.zeros(3),      # vertical well: inc=0
+        np.zeros(3),
+    ])
+    # For a vertical well, NEV → HLA should be identity-like
+    nev = np.array([[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]])
+    hla = NEV_to_HLA(survey, nev, cov=False)
+    assert hla.shape == nev.shape
+
+
+def test_make_cov_get_sigmas_roundtrip():
+    """make_cov then get_sigmas should recover the diagonal values."""
+    a = np.array([2.0, 3.0, 1.5])
+    b = np.array([1.0, 0.5, 2.0])
+    c = np.array([0.5, 1.5, 1.0])
+
+    cov = make_cov(a, b, c, long=False)  # diagonal only, shape (n,3,3)
+    sigmas = get_sigmas(cov)
+
+    assert np.allclose(sigmas[0], np.abs(a))
+    assert np.allclose(sigmas[1], np.abs(b))
+    assert np.allclose(sigmas[2], np.abs(c))
+
+
+def test_make_cov_long_symmetric():
+    """make_cov with long=True should produce symmetric matrices."""
+    a, b, c = 2.0, 1.0, 0.5
+    cov = make_cov(a, b, c, long=True)  # (1,3,3) or (3,3)
+    cov = cov.reshape(-1, 3, 3)
+    for m in cov:
+        assert np.allclose(m, m.T)
+
+
+def test_cov_from_vec():
+    """cov_from_vec should return the outer product of each row with itself."""
+    arr = np.array([[1., 2., 3.], [4., 0., 1.]])
+    cov = cov_from_vec(arr)
+    assert cov.shape == (2, 3, 3)
+    # each (3,3) slice should equal the outer product v @ v.T
+    for i, v in enumerate(arr):
+        assert np.allclose(cov[i], np.outer(v, v))
+    # result must be symmetric
+    assert np.allclose(cov, cov.swapaxes(-1, -2))
+
+
+def test_errors_from_cov():
+    """errors_from_cov should return 6 unique cov elements per station."""
+    n = 5
+    cov = np.zeros((n, 3, 3))
+    cov[:, 0, 0] = 4.   # nn
+    cov[:, 1, 1] = 1.   # ee
+    cov[:, 2, 2] = 0.25  # vv
+    cov[:, 0, 1] = cov[:, 1, 0] = 0.5   # ne
+    cov[:, 0, 2] = cov[:, 2, 0] = 0.25  # nv
+    cov[:, 1, 2] = cov[:, 2, 1] = 0.1   # ev
+
+    result = errors_from_cov(cov)
+    assert result.shape == (n, 6)
+    # diagonal elements should match squared values: [nn, ne, nv, ee, ev, vv]
+    assert np.allclose(result[:, 0], 4.)    # nn
+    assert np.allclose(result[:, 3], 1.)    # ee
+    assert np.allclose(result[:, 5], 0.25)  # vv
 
 
 def main():

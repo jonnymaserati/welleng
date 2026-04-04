@@ -1,8 +1,5 @@
-try:
-    import trimesh
-    TRIMESH = True
-except ImportError:
-    TRIMESH = False
+"""Visualization utilities for wellbore trajectories using vedo/VTK and plotly."""
+
 try:
     import vedo
     from vedo import Lines, Mesh
@@ -13,7 +10,9 @@ try:
     VEDO = True
 except ImportError:
     VEDO = False
+
 import numpy as np
+from types import SimpleNamespace
 from scipy.spatial import KDTree
 
 try:
@@ -23,315 +22,317 @@ try:
 except ImportError:
     PLOTLY = False
 
-from vtk import vtkAxesActor, vtkCubeAxesActor, vtkNamedColors
+try:
+    from vtk import vtkAxesActor, vtkCubeAxesActor, vtkNamedColors
+    VTK = True
+except ImportError:
+    VTK = False
 
 from . import mesh
 from .version import __version__ as VERSION
 
-# VEDO = False
 
+if VEDO:
+    class Plotter(VedoPlotter):
+        """Interactive 3D well trajectory viewer built on vedo/VTK."""
 
-class Plotter(VedoPlotter):
-    def __init__(self, *args, **kwargs):
-        """
-        Notes
-        -----
-        On account of Z or TVD pointing down in the drilling world, the
-        coordinate system is right handed. In order to map coordinates in the
-        NEV (or North, East, Vertical) reference correctly, North coordinates
-        are plotted on the X axis and East on the Y axis. Be mindful of this
-        adding objects to a scene.
-        """
-        super().__init__(*args, **kwargs)
+        def __init__(self, *args, **kwargs):
+            """
+            Notes
+            -----
+            On account of Z or TVD pointing down in the drilling world, the
+            coordinate system is right handed. In order to map coordinates in the
+            NEV (or North, East, Vertical) reference correctly, North coordinates
+            are plotted on the X axis and East on the Y axis. Be mindful of this
+            when adding objects to a scene.
+            """
+            super().__init__(*args, **kwargs)
+            self.wells = []
 
-        self.wells = []
+        def add(self, obj, *args, **kwargs) -> None:
+            """Add an object to the scene, with special handling for WellMesh.
 
-        pass
+            If ``obj`` is a ``welleng.mesh.WellMesh`` instance, it is
+            converted to a vedo Mesh for rendering and the args/kwargs are
+            forwarded to the ``vedo.Mesh`` constructor (e.g. color options).
 
-    def add(self, obj, *args, **kwargs) -> None:
-        """Modified method to support direct plotting of
-        ``welleng.mesh.WellMesh`` instances and for processing the callback
-        to print well data when the pointer is hovered of a well trajectory.
+            Parameters
+            ----------
+            obj : object
+                A vedo object or a ``welleng.mesh.WellMesh`` instance.
+            *args
+                Passed to ``vedo.Mesh`` when obj is a WellMesh.
+            **kwargs
+                Passed to ``vedo.Mesh`` when obj is a WellMesh.
 
-        If the ``obj`` is a ``welleng.mesh.WellMesh`` instance, then the args
-        and kwargs will be passed to the `vedo.Mesh` instance to facilate e.g.
-        color options etc.
+            Notes
+            -----
+            ``welleng.mesh.WellMesh`` stores geometry as a lightweight namespace
+            with ``.vertices`` and ``.faces`` arrays.  These are converted to a
+            vedo/VTK polydata representation here for rendering.
 
-        Notes
-        -----
-        ``welleng.mesh.WellMesh`` creates ``trimesh.Mesh`` instances, a legacy
-        of using the ``trimesh`` library for detecting mesh collisions when
-        developing automated well trajectory planning. Therefore, to visualize
-        the meshes with ``vedo`` and ``vtk``, the meshes need to be converted.
+            Meshes in ``welleng`` typically reference an 'NEV' coordinate system,
+            which is [North, East, Vertical]. To map correctly to ``vtk``, North
+            needs to be mapped to X and East to Y on account of Z pointing down.
+            """
+            if isinstance(obj, mesh.WellMesh):
+                vedo_mesh = Mesh([obj.mesh.vertices, obj.mesh.faces],
+                                 *args, **kwargs)
+                setattr(obj, 'vedo_mesh', vedo_mesh)
+                self.wells.append(obj)
+                super().add(obj.vedo_mesh)
+            elif isinstance(obj, SimpleNamespace):
+                vedo_mesh = Mesh([obj.vertices, obj.faces], *args, **kwargs)
+                super().add(vedo_mesh)
+            else:
+                super().add(obj)
 
-        Meshes in ``welleng`` typically reference an 'NEV' coordinate system,
-        which is [North, East, Vertical]. To map correctly to ``vtk``, North
-        needs to be mapped to X and East to Y on account of Z pointing down.
-        """
-        if isinstance(obj, mesh.WellMesh):
-            poly = buildPolyData(obj.mesh.vertices, obj.mesh.faces)
-            vedo_mesh = Mesh(poly, *args, **kwargs)
-            setattr(obj, 'vedo_mesh', vedo_mesh)
-            self.wells.append(obj)
-            super().add(obj.vedo_mesh)
-        else:
-            super().add(obj)
-
-        pass
-
-    def _initiate_axes_actor(self):
-        plt = vedo.plotter_instance
-        r = plt.renderers.index(plt.renderer)
-
-        axact = vtkAxesActor()
-        axact.SetShaftTypeToCylinder()
-        axact.SetCylinderRadius(0.03)
-        axact.SetXAxisLabelText("N")
-        axact.SetYAxisLabelText("E")
-        axact.SetZAxisLabelText("V")
-        axact.GetXAxisShaftProperty().SetColor(1, 0, 0)
-        axact.GetYAxisShaftProperty().SetColor(0, 1, 0)
-        axact.GetZAxisShaftProperty().SetColor(0, 0, 1)
-        axact.GetXAxisTipProperty().SetColor(1, 0, 0)
-        axact.GetYAxisTipProperty().SetColor(0, 1, 0)
-        axact.GetZAxisTipProperty().SetColor(0, 0, 1)
-        bc = np.array(plt.renderer.GetBackground())
-        if np.sum(bc) < 1.5:
-            lc = (1, 1, 1)
-        else:
-            lc = (0, 0, 0)
-        axact.GetXAxisCaptionActor2D().GetCaptionTextProperty().BoldOff()
-        axact.GetYAxisCaptionActor2D().GetCaptionTextProperty().BoldOff()
-        axact.GetZAxisCaptionActor2D().GetCaptionTextProperty().BoldOff()
-        axact.GetXAxisCaptionActor2D().GetCaptionTextProperty().ItalicOff()
-        axact.GetYAxisCaptionActor2D().GetCaptionTextProperty().ItalicOff()
-        axact.GetZAxisCaptionActor2D().GetCaptionTextProperty().ItalicOff()
-        axact.GetXAxisCaptionActor2D().GetCaptionTextProperty().ShadowOff()
-        axact.GetYAxisCaptionActor2D().GetCaptionTextProperty().ShadowOff()
-        axact.GetZAxisCaptionActor2D().GetCaptionTextProperty().ShadowOff()
-        axact.GetXAxisCaptionActor2D().GetCaptionTextProperty().SetColor(lc)
-        axact.GetYAxisCaptionActor2D().GetCaptionTextProperty().SetColor(lc)
-        axact.GetZAxisCaptionActor2D().GetCaptionTextProperty().SetColor(lc)
-        axact.PickableOff()
-        icn = Icon(axact, size=0.1)
-        plt.axes_instances[r] = icn
-        icn.SetInteractor(plt.interactor)
-        icn.EnabledOn()
-        icn.InteractiveOff()
-        plt.widgets.append(icn)
-
-    def _pointer_callback(self, event):
-        i = event.at
-        pt2d = event.picked2d
-        objs = self.at(i).objects
-        pt3d = self.at(i).compute_world_coordinate(pt2d, objs=objs)
-        if mag(pt3d) < 0.01:
-            if self.pointer is None:
+        def _initiate_axes_actor(self):
+            if not VTK:
                 return
-            # if self.pointer in self.at(i).actors:
-            self.at(i).remove(self.pointer)
-            self.pointer = None
-            self.pointer_text.text('')
+            plt = vedo.plotter_instance
+            r = plt.renderers.index(plt.renderer)
+
+            axact = vtkAxesActor()
+            axact.SetShaftTypeToCylinder()
+            axact.SetCylinderRadius(0.03)
+            axact.SetXAxisLabelText("N")
+            axact.SetYAxisLabelText("E")
+            axact.SetZAxisLabelText("V")
+            axact.GetXAxisShaftProperty().SetColor(1, 0, 0)
+            axact.GetYAxisShaftProperty().SetColor(0, 1, 0)
+            axact.GetZAxisShaftProperty().SetColor(0, 0, 1)
+            axact.GetXAxisTipProperty().SetColor(1, 0, 0)
+            axact.GetYAxisTipProperty().SetColor(0, 1, 0)
+            axact.GetZAxisTipProperty().SetColor(0, 0, 1)
+            bc = np.array(plt.renderer.GetBackground())
+            lc = (1, 1, 1) if np.sum(bc) < 1.5 else (0, 0, 0)
+            for axis in ('X', 'Y', 'Z'):
+                cap = getattr(axact, f'Get{axis}AxisCaptionActor2D')()
+                prop = cap.GetCaptionTextProperty()
+                prop.BoldOff()
+                prop.ItalicOff()
+                prop.ShadowOff()
+                prop.SetColor(lc)
+            axact.PickableOff()
+            icn = Icon(axact, size=0.1)
+            plt.axes_instances[r] = icn
+            icn.SetInteractor(plt.interactor)
+            icn.EnabledOn()
+            icn.InteractiveOff()
+            plt.widgets.append(icn)
+
+        def _pointer_callback(self, event):
+            i = event.at
+            pt2d = event.picked2d
+            objs = [o for o in self.at(i).objects if hasattr(o, 'actor')]
+            pt3d = self.at(i).compute_world_coordinate(pt2d, objs=objs)
+            if mag(pt3d) < 0.01:
+                if self.pointer is None:
+                    return
+                self.at(i).remove(self.pointer)
+                self.pointer = None
+                self.pointer_text.text('')
+                self.render()
+                return
+            if self.pointer is None:
+                self.pointer = Point().color('red').pos(pt3d)
+            else:
+                self.pointer.pos(pt3d)
+            self.at(i).add(self.pointer)
+
+            well_data = self._get_closest_well(pt3d, objs)
+            if well_data is None:
+                self.pointer_text.text(f'point coordinates: {np.round(pt3d, 3)}')
+            else:
+                survey = well_data.get('well').s
+                idx = well_data.get('idx_survey')
+                name = survey.header.name
+                md = survey.md[idx]
+                inc = survey.inc_deg[idx]
+                azi_grid = survey.azi_grid_deg[idx]
+                dls = survey.dls[idx]
+                self.pointer_text.text(
+                    f'well name: {name}\n'
+                    f'md: {md:.2f}\t inc: {inc:.2f}\t'
+                    f' azi: {azi_grid:.2f}\t dls: {dls:.2f}\n'
+                    f'point coordinates: {np.round(pt3d, 3)}'
+                )
             self.render()
-            return
-        if self.pointer is None:
-            self.pointer = Point().color('red').pos(pt3d)
-        else:
-            self.pointer.pos(pt3d)
-        self.at(i).add(self.pointer)
 
-        well_data = self._get_closest_well(pt3d, objs)
-        if well_data is None:
-            self.pointer_text.text(f'point coordinates: {np.round(pt3d, 3)}')
-        else:
-            survey = well_data.get('well').s
-            idx = well_data.get('idx_survey')
-            name = survey.header.name
-            md = survey.md[idx]
-            inc = survey.inc_deg[idx]
-            azi_grid = survey.azi_grid_deg[idx]
-            dls = survey.dls[idx]
-            self.pointer_text.text(f'''
-                well name: {name}\n
-                md: {md:.2f}\t inc: {inc:.2f}\t azi: {azi_grid:.2f}\t dls: {dls:.2f}\n
-                point coordinates: {np.round(pt3d, 3)}
-            ''')
-        self.render()
+        def _well_vedo_meshes(self):
+            return [well.vedo_mesh for well in self.wells]
 
-    def _well_vedo_meshes(self):
-        return [well.vedo_mesh for well in self.wells]
+        def _get_closest_well(self, pos, objs) -> dict:
+            wells = [
+                well for well in self.wells
+                if well.vedo_mesh in objs
+            ]
+            if not bool(wells):
+                return None
 
-    def _get_closest_well(self, pos, objs) -> dict:
-        wells = [
-            well for well in self.wells
-            if well.vedo_mesh in objs
-        ]
-        if not bool(wells):
-            return
+            results = np.zeros((len(wells), 3))
+            for i, well in enumerate(wells):
+                tree = KDTree(well.vertices.reshape(-1, 3))
+                distance, idx_vertices = tree.query(pos)
+                results[i] = np.array([distance, idx_vertices, well.n_verts])
 
-        results = np.zeros((len(wells), 3))
-        for i, well in enumerate(wells):
-            tree = KDTree(well.vertices.reshape(-1, 3))
-            distance, idx_vertices = tree.query(pos)
-            results[i] = np.array([distance, idx_vertices, well.n_verts])
+            winner = np.argmin(results[:, 0])
+            distance, idx_vertices, n_verts = results[winner]
 
-        winner = np.argmin(results[:, 0])
-        distance, idx_vertices, n_verts = results[winner]
+            return {
+                'well': wells[winner],
+                'distance': distance,
+                'idx_vertices': int(idx_vertices),
+                'n_verts': int(n_verts),
+                'idx_survey': int(idx_vertices // n_verts)
+            }
 
-        return {
-            'well': wells[winner],
-            'distance': distance,
-            'idx_vertices': int(idx_vertices),
-            'n_verts': int(n_verts),
-            'idx_survey': int(idx_vertices // n_verts)
-        }
+        def show(self, axes=None, *args, **kwargs):
+            """Display the scene with NEV axes, hover callback, and cube axes.
 
-    def show(self, axes=None, *args, **kwargs):
-        # check if there's an axes and if so remove them
-        if self.axes is not None:
-            self.remove(self.axes)
+            Parameters
+            ----------
+            axes : object, optional
+                Custom axes actor. Defaults to CubeAxes if VTK is
+                available, otherwise uses vedo's default axes style 0.
+            *args
+                Passed to the parent vedo Plotter.show().
+            **kwargs
+                Passed to the parent vedo Plotter.show().
 
-        self._initiate_axes_actor()
+            Returns
+            -------
+            vedo.Plotter
+                The vedo Plotter instance.
+            """
+            if self.axes is not None:
+                self.remove(self.axes)
 
-        self.add_callback('mouse move', self._pointer_callback)
-        self.pointer_text = Text2D("", pos='bottom-right', s=0.5, c='black')
-        self.add(self.pointer_text)
-        self.pointer = None
+            self._initiate_axes_actor()
 
-        self = super().show(
-            viewup=[0, 0, -1], mode=8,
-            axes=CubeAxes() if axes is None else axes,
-            title=f'welleng {VERSION}',
-            *args, **kwargs
-        )
+            self.add_callback('mouse move', self._pointer_callback)
+            self.pointer_text = Text2D("", pos='bottom-right', s=0.5, c='black')
+            self.add(self.pointer_text)
+            self.pointer = None
 
-        return self
+            if axes is None:
+                axes = CubeAxes() if VTK else 0
 
-
-class CubeAxes(vtkCubeAxesActor):
-    def __init__(
-        self,
-        **kwargs
-    ):
-        super().__init__()
-
-        # # Determine the bounds from the meshes/actors being plotted rounded
-        # # up to the nearest 100 units.
-        # bounds = np.array(renderer.ComputeVisiblePropBounds())
-
-        # with np.errstate(divide='ignore', invalid='ignore'):
-        #     self.bounds = tuple(np.nan_to_num(
-        #         (
-        #             np.ceil(np.abs(bounds) / 100) * 100
-        #         ) * (bounds / np.abs(bounds))
-        #     ))
-
-        plt = vedo.plotter_instance
-        r = plt.renderers.index(plt.renderer)
-        vbb = compute_visible_bounds()[0]
-        self.SetBounds(vbb)
-        self.SetCamera(plt.renderer.GetActiveCamera())
-
-        namedColors = vtkNamedColors()
-        self.colors = {}
-
-        for n in range(1, 4):
-            self.colors[f'axis{n}Color'] = namedColors.GetColor3d(
-                kwargs.get(f'axis{n}Color', 'Black')
+            return super().show(
+                viewup=[0, 0, -1], mode=8,
+                axes=axes,
+                title=f'welleng {VERSION}',
+                *args, **kwargs
             )
 
-        # self.SetUseTextActor3D(1)
 
-        # self.SetBounds(self.bounds)
-        # self.SetCamera(renderer.GetActiveCamera())
+if VTK:
+    class CubeAxes(vtkCubeAxesActor):
+        """VTK cube axes actor configured for NEV (North, East, TVD) labels."""
 
-        self.GetTitleTextProperty(0).SetColor(self.colors['axis1Color'])
-        self.GetLabelTextProperty(0).SetColor(self.colors['axis1Color'])
-        self.GetLabelTextProperty(0).SetOrientation(45.0)
+        def __init__(self, **kwargs):
+            """Initialize cube axes with NEV labels and grid styling.
 
-        self.GetTitleTextProperty(1).SetColor(self.colors['axis2Color'])
-        self.GetLabelTextProperty(1).SetColor(self.colors['axis2Color'])
-        self.GetLabelTextProperty(1).SetOrientation(45.0)
+            Parameters
+            ----------
+            **kwargs
+                Optional overrides including ``axis1Color``, ``axis2Color``,
+                ``axis3Color`` (VTK named colors) and ``units`` (axis unit
+                label string).
+            """
+            super().__init__()
 
-        self.GetTitleTextProperty(2).SetColor(self.colors['axis3Color'])
-        self.GetLabelTextProperty(2).SetColor(self.colors['axis3Color'])
-        self.GetLabelTextProperty(2).SetOrientation(45.0)
+            plt = vedo.plotter_instance
+            r = plt.renderers.index(plt.renderer)
+            vbb = compute_visible_bounds()[0]
+            self.SetBounds(vbb)
+            self.SetCamera(plt.renderer.GetActiveCamera())
 
-        self.SetGridLineLocation(self.VTK_GRID_LINES_FURTHEST)
-        for a in ('X', 'Y', 'Z'):
-            getattr(self, f'Get{a}AxesLinesProperty')().SetColor(
-                namedColors.GetColor3d('Black')
-            )
-            getattr(self, f'SetDraw{a}Gridlines')(1)
-            getattr(self, f'Get{a}AxesGridlinesProperty')().SetColor(
-                namedColors.GetColor3d('Grey')
-            )
-            getattr(self, f'{a}AxisMinorTickVisibilityOff')()
+            namedColors = vtkNamedColors()
+            self.colors = {}
+            for n in range(1, 4):
+                self.colors[f'axis{n}Color'] = namedColors.GetColor3d(
+                    kwargs.get(f'axis{n}Color', 'Black')
+                )
 
-        # self.DrawXGridlinesOn()
-        # self.DrawYGridlinesOn()
-        # self.DrawZGridlinesOn()
-        # self.SetGridLineLocation(self.VTK_GRID_LINES_FURTHEST)
+            self.GetTitleTextProperty(0).SetColor(self.colors['axis1Color'])
+            self.GetLabelTextProperty(0).SetColor(self.colors['axis1Color'])
+            self.GetLabelTextProperty(0).SetOrientation(45.0)
 
-        # self.XAxisMinorTickVisibilityOff()
-        # self.YAxisMinorTickVisibilityOff()
-        # self.ZAxisMinorTickVisibilityOff()
+            self.GetTitleTextProperty(1).SetColor(self.colors['axis2Color'])
+            self.GetLabelTextProperty(1).SetColor(self.colors['axis2Color'])
+            self.GetLabelTextProperty(1).SetOrientation(45.0)
 
-        units = kwargs.get('units', None)
-        self.SetXTitle('N')
-        self.SetXUnits(units)
-        self.SetYTitle('E')
-        self.SetYUnits(units)
-        self.SetZTitle('TVD')
-        self.SetZUnits(units)
-        # self.SetTickLocation(self.VTK_GRID_LINES_FURTHEST)
+            self.GetTitleTextProperty(2).SetColor(self.colors['axis3Color'])
+            self.GetLabelTextProperty(2).SetColor(self.colors['axis3Color'])
+            self.GetLabelTextProperty(2).SetOrientation(45.0)
 
-        # self.ForceOpaqueOff()
-        self.SetFlyModeToClosestTriad()
-        # Try and prevent scientific numbering on axes
-        self.SetLabelScaling(0, 0, 0, 0)
-        self.SetXLabelFormat("%.0f")
-        self.SetYLabelFormat("%.0f")
-        self.SetZLabelFormat("%.0f")
+            self.SetGridLineLocation(self.VTK_GRID_LINES_FURTHEST)
+            for a in ('X', 'Y', 'Z'):
+                getattr(self, f'Get{a}AxesLinesProperty')().SetColor(
+                    namedColors.GetColor3d('Black')
+                )
+                getattr(self, f'SetDraw{a}Gridlines')(1)
+                getattr(self, f'Get{a}AxesGridlinesProperty')().SetColor(
+                    namedColors.GetColor3d('Grey')
+                )
+                getattr(self, f'{a}AxisMinorTickVisibilityOff')()
 
-        plt.axes_instances[r] = self
-        plt.renderer.AddActor(self)
+            units = kwargs.get('units', None)
+            self.SetXTitle('N')
+            self.SetXUnits(units)
+            self.SetYTitle('E')
+            self.SetYUnits(units)
+            self.SetZTitle('TVD')
+            self.SetZUnits(units)
+
+            self.SetFlyModeToClosestTriad()
+            self.SetLabelScaling(0, 0, 0, 0)
+            self.SetXLabelFormat("%.0f")
+            self.SetYLabelFormat("%.0f")
+            self.SetZLabelFormat("%.0f")
+
+            plt.axes_instances[r] = self
+            plt.renderer.AddActor(self)
 
 
-def plot(
-    data,
-    names=None,
-    colors=None,
-    lines=None,
-    targets=None,
-    arrows=None,
-    text=None,
-    boxes=None,
-    points=None,
-    **kwargs
-):
+def plot(data, colors=None, names=None, lines=None, arrows=None,
+         interactive=True, **kwargs):
     """
-    A deprecated wrapper for the Plotter class, maintained only for
-    compatability with older versions.
+    Convenience function for quick visualization of well meshes.
 
     Parameters
     ----------
-    data: a trimesh.Trimesh object or a list of trimesh.Trimesh
-    objects or a trmiesh.scene object
-    names: list of strings (default: None)
-        A list of names, index aligned to the list of well meshes.
-    colors: list of strings (default: None)
-        A list of color or colors. If a single color is listed then this is
-        applied to all meshes in data, otherwise the list of colors is
-        indexed to the list of meshes.
+    data : WellMesh or list of WellMesh
+        The well mesh(es) to plot.
+    colors : list of str, optional
+        Per-item colors when data is a list.
+    names : list of str, optional
+        Per-item names (currently unused, reserved for legends).
+    lines : vedo object, optional
+        Lines to add to the scene.
+    arrows : vedo object, optional
+        Arrows to add to the scene.
+    interactive : bool
+        Whether to show an interactive window.
     """
-    for k, v in locals().items():
-        if k != 'data' and k[0] != '_':
-            kwargs.update({k: v})
-
-    plt = Plotter(data, **kwargs)
-
-    plt.show()
+    assert VEDO, "ImportError: try pip install welleng[easy]"
+    plt = Plotter()
+    if isinstance(data, (list, tuple)):
+        for i, item in enumerate(data):
+            c = colors[i] if colors and i < len(colors) else None
+            add_kwargs = {'c': c} if c else {}
+            plt.add(item, **add_kwargs)
+    else:
+        c = colors[0] if colors else None
+        add_kwargs = {'c': c} if c else {}
+        plt.add(data, **add_kwargs)
+    if lines is not None:
+        VedoPlotter.add(plt, lines)
+    if arrows is not None:
+        VedoPlotter.add(plt, arrows)
+    plt.show(interactive=interactive)
 
 
 def get_lines(clearance):
@@ -342,12 +343,13 @@ def get_lines(clearance):
 
     Parameters
     ----------
-        clearance: welleng.clearance object
+    clearance : welleng.clearance.Clearance
+        A welleng clearance object.
 
     Returns
     -------
-        lines: vedo.Lines object
-            A vedo.Lines object colored by the object's SF values.
+    vedo.Lines
+        A vedo.Lines object colored by the object's SF values.
     """
     assert VEDO, "ImportError: try pip install welleng[easy]"
     c = clearance.sf
@@ -359,6 +361,22 @@ def get_lines(clearance):
 
 
 def figure(obj, type='scatter3d', **kwargs):
+    """Create a plotly figure from a survey or mesh object.
+
+    Parameters
+    ----------
+    obj : Survey or WellMesh
+        A welleng Survey (for scatter3d/panel) or WellMesh (for mesh3d).
+    type : str, optional
+        One of 'scatter3d', 'mesh3d', or 'panel'.
+    **kwargs
+        Passed to the underlying plotly figure builder.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+        A plotly Figure instance.
+    """
     assert PLOTLY, "ImportError: try pip install plotly"
     func = {
         'scatter3d': _scatter3d,
@@ -377,82 +395,38 @@ def _panel(survey, **kwargs):
             f"Vertical Section: {np.degrees(survey.header.vertical_section_azimuth)} deg",
             "WE Section", "NS Section"
         )
-        # shared_xaxes=True, shared_yaxes=True
     )
 
     fig.add_trace(
-        go.Scatter(
-            x=survey.e,
-            y=survey.n,
-            mode='lines',
-            name='NE Plan',
-            showlegend=False
-        ),
+        go.Scatter(x=survey.e, y=survey.n, mode='lines',
+                   name='NE Plan', showlegend=False),
         row=1, col=1
     )
     fig.add_trace(
-        go.Scatter(
-            x=survey.vertical_section,
-            y=survey.tvd,
-            mode='lines',
-            name='Plan',
-            showlegend=False
-        ),
+        go.Scatter(x=survey.vertical_section, y=survey.tvd, mode='lines',
+                   name='Plan', showlegend=False),
         row=1, col=2
     )
     fig.add_trace(
-        go.Scatter(
-            x=survey.n,
-            y=survey.tvd,
-            mode='lines',
-            name='NS Section',
-            showlegend=False,
-        ),
+        go.Scatter(x=survey.n, y=survey.tvd, mode='lines',
+                   name='NS Section', showlegend=False),
         row=2, col=2
     )
     fig.add_trace(
-        go.Scatter(
-            x=survey.e,
-            y=survey.tvd,
-            mode='lines',
-            name='WE Section',
-            showlegend=False
-        ),
+        go.Scatter(x=survey.e, y=survey.tvd, mode='lines',
+                   name='WE Section', showlegend=False),
         row=2, col=1
     )
 
     fig.update_layout(
-        xaxis=dict(
-            title='West-East'
-        ),
-        yaxis=dict(
-            title='North-South'
-        ),
-        xaxis2=dict(
-            title='Outstep'
-        ),
-        yaxis2=dict(
-            title='TVD',
-            autorange="reversed",
-            matches='y3'
-        ),
-        xaxis3=dict(
-            title='West-East',
-            matches='x'
-        ),
-        yaxis3=dict(
-            title='TVD',
-            autorange="reversed"
-        ),
-        xaxis4=dict(
-            title='North-South',
-            matches='y'
-        ),
-        yaxis4=dict(
-            title='TVD',
-            autorange="reversed",
-            matches='y3'
-        ),
+        xaxis=dict(title='West-East'),
+        yaxis=dict(title='North-South'),
+        xaxis2=dict(title='Outstep'),
+        yaxis2=dict(title='TVD', autorange="reversed", matches='y3'),
+        xaxis3=dict(title='West-East', matches='x'),
+        yaxis3=dict(title='TVD', autorange="reversed"),
+        xaxis4=dict(title='North-South', matches='y'),
+        yaxis4=dict(title='TVD', autorange="reversed", matches='y3'),
     )
 
     return fig
@@ -462,86 +436,45 @@ def _scatter3d(survey, **kwargs):
     fig = go.Figure()
     fig.add_trace(
         go.Scatter3d(
-            x=survey.e,
-            y=survey.n,
-            z=survey.tvd,
-            name='survey',
-            mode='lines',
-            hoverinfo='skip'
+            x=survey.e, y=survey.n, z=survey.tvd,
+            name='survey', mode='lines', hoverinfo='skip'
         )
     )
-    if not hasattr(survey, "interpolated"):
+
+    if not hasattr(survey, "interpolated") or survey.interpolated is None:
         survey.interpolated = [False] * len(survey.md)
-    if survey.interpolated is None:
-        survey.interpolated = [False] * len(survey.md)
-    try:
-        n, e, v, md, inc, azi = np.array([
-            [n, e, v, md, inc, azi]
-            for n, e, v, i, md, inc, azi in zip(
-                survey.n, survey.e, survey.tvd, survey.interpolated,
-                survey.md, survey.inc_deg, survey.azi_grid_deg
-            )
-            if bool(i) is True
-        ]).T
-        if n.size:
-            text = [
-                f"N: {n:.2f}m<br>E: {e:.2f}m<br>TVD: {v:.2f}m<br>"
-                + f"MD: {md:.2f}m<br>INC: {inc:.2f}\xb0<br>AZI: {azi:.2f}\xb0"
-                for n, e, v, md, inc, azi in zip(n, e, v, md, inc, azi)
-            ]
-            fig.add_trace(
-                go.Scatter3d(
-                    x=e,
-                    y=n,
-                    z=v,
-                    name='interpolated',
-                    mode='markers',
-                    marker=dict(
-                        size=5,
-                        color='blue',
-                    ),
-                    text=text,
-                    hoverinfo='text'
+
+    for is_interpolated, trace_name, color in (
+        (True, 'interpolated', 'blue'),
+        (False, 'survey_point', 'red'),
+    ):
+        try:
+            n, e, v, md, inc, azi = np.array([
+                [n, e, v, md, inc, azi]
+                for n, e, v, i, md, inc, azi in zip(
+                    survey.n, survey.e, survey.tvd, survey.interpolated,
+                    survey.md, survey.inc_deg, survey.azi_grid_deg
                 )
-            )
-    except ValueError:
-        pass
+                if bool(i) is is_interpolated
+            ]).T
+            if n.size:
+                text = [
+                    f"N: {n:.2f}m<br>E: {e:.2f}m<br>TVD: {v:.2f}m<br>"
+                    + f"MD: {md:.2f}m<br>INC: {inc:.2f}\xb0<br>AZI: {azi:.2f}\xb0"
+                    for n, e, v, md, inc, azi in zip(n, e, v, md, inc, azi)
+                ]
+                fig.add_trace(
+                    go.Scatter3d(
+                        x=e, y=n, z=v,
+                        name=trace_name, mode='markers',
+                        marker=dict(size=5, color=color),
+                        text=text, hoverinfo='text'
+                    )
+                )
+        except ValueError:
+            pass
 
-    try:
-        n, e, v, md, inc, azi = np.array([
-            [n, e, v, md, inc, azi]
-            for n, e, v, i, md, inc, azi in zip(
-                survey.n, survey.e, survey.tvd, survey.interpolated,
-                survey.md, survey.inc_deg, survey.azi_grid_deg
-            )
-            if bool(i) is False
-        ]).T
-        text = [
-            f"N: {n:.2f}m<br>E: {e:.2f}m<br>TVD: {v:.2f}m<br>"
-            + f"MD: {md:.2f}m<br>INC: {inc:.2f}\xb0<br>AZI: {azi:.2f}\xb0"
-            for n, e, v, md, inc, azi in zip(n, e, v, md, inc, azi)
-        ]
-        fig.add_trace(
-            go.Scatter3d(
-                x=e,
-                y=n,
-                z=v,
-                name='survey_point',
-                mode='markers',
-                marker=dict(
-                    size=5,
-                    color='red',
-                ),
-                text=text,
-                hoverinfo='text'
-            )
-        )
-    except ValueError:
-        pass
-
-    fig = _update_fig(fig, kwargs)
-
-    return fig
+    return _update_fig(fig, kwargs)
 
 
 def _mesh3d(mesh, **kwargs):
@@ -550,51 +483,25 @@ def _mesh3d(mesh, **kwargs):
     faces = np.array(mesh.faces)
     n, e, v = vertices.T
     i, j, k = faces.T
-    fig.add_trace(
-        go.Mesh3d(
-            x=e, y=n, z=v,
-            i=i, j=j, k=k,
-        )
-    )
+    fig.add_trace(go.Mesh3d(x=e, y=n, z=v, i=i, j=j, k=k))
     if kwargs.get('edges'):
-        tri_points = np.array([
-            vertices[i] for i in faces.reshape(-1)
-        ])
+        tri_points = vertices[faces.reshape(-1)]
         n, e, v = tri_points.T
-        fig.add_trace(
-            go.Scatter3d(
-                x=e, y=n, z=v,
-                mode='lines',
-            )
-        )
-    fig = _update_fig(fig, kwargs)
-
-    return fig
+        fig.add_trace(go.Scatter3d(x=e, y=n, z=v, mode='lines'))
+    return _update_fig(fig, kwargs)
 
 
 def _update_fig(fig, kwargs):
-    """
-    Update the fig axis along with any user defined kwargs.
-    """
+    """Update figure axes and apply any user-defined layout/trace overrides."""
     fig.update_scenes(
         zaxis_autorange="reversed",
         aspectmode='data',
-        xaxis=dict(
-            title='East (m)'
-        ),
-        yaxis=dict(
-            title='North (m)',
-        ),
-        zaxis=dict(
-            title="TVD (m)"
-        )
+        xaxis=dict(title='East (m)'),
+        yaxis=dict(title='North (m)'),
+        zaxis=dict(title='TVD (m)')
     )
-    for k, v in kwargs.items():
-        if k == "layout":
-            fig.update_layout(v)
-        elif k == "traces":
-            fig.update_traces(v)
-        else:
-            continue
-
+    if "layout" in kwargs:
+        fig.update_layout(kwargs["layout"])
+    if "traces" in kwargs:
+        fig.update_traces(kwargs["traces"])
     return fig

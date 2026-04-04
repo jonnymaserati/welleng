@@ -32,7 +32,7 @@ codes:
   DSTG:
     function: DST
     magnitude: 2.5e-07
-    propagation: systematic
+    propagation: global
     unit: 1/m
   GXY-B1S:
     function: GXY_B1

@@ -7,6 +7,8 @@ by ISCWSA.
 author: Jonny Corcutt
 email: jonnycorcutt@gmail.com
 date: 29-09-2021
+
+Requirements: pip install welleng
 '''
 
 import welleng as we
@@ -69,13 +71,13 @@ s = we.survey.Survey(
 
 err0 = s.err
 
-cov_nev0 = err0.errors.cov_NEVs.T
+cov_nev0 = err0.errors.cov_NEVs
 
 # print final covariance matrix for each tool
 print("Tool errors at well TD:")
 for tool, e in err0.errors.errors.items():
     print(
-        f'{tool}:\n{e.cov_NEV.T[-1]}'
+        f'{tool}:\n{e.cov_NEV[-1]}'
     )
 print(
         f'TOTAL:\n{cov_nev0[-1]}'
