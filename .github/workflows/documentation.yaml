@@ -17,7 +17,7 @@ jobs:
       - name: Install dependencies                        
         run: |
           uv venv
-          uv pip install sphinx sphinx_rtd_theme myst-parser
+          uv pip install sphinx "sphinx_rtd_theme<3" myst-parser
           uv pip install -e .
       - name: Sphinx build
         run: |                                                                
