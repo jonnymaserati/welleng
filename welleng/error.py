@@ -1,3 +1,5 @@
+"""ISCWSA error models for computing wellbore positional uncertainty."""
+
 import os
 import numpy as np
 import yaml
@@ -17,12 +19,31 @@ TOOL_INDEX_FILENAME = os.path.join(
 
 
 def get_tool_index():
+    """Load the tool error model index from the bundled YAML file.
+
+    Returns
+    -------
+    dict
+        Mapping of tool model names to their configuration parameters.
+    """
     with open(TOOL_INDEX_FILENAME, 'r') as f:
         tool_index = yaml.safe_load(f)
     return tool_index
 
 
 def get_error_models(tool_index=None):
+    """Return a list of available error model short names.
+
+    Parameters
+    ----------
+    tool_index : dict, optional
+        Pre-loaded tool index dict. If None, loads from disk.
+
+    Returns
+    -------
+    list of str
+        Short names of all registered error models.
+    """
     if tool_index is None:
         tool_index = get_tool_index()
     error_models = [
@@ -40,6 +61,24 @@ class ErrorModel():
     """
     A class to initiate the field parameters and error magnitudes
     for subsequent error calculations.
+
+    Attributes
+    ----------
+    error_model : str
+        Name of the error model used (e.g. ``'ISCWSA MWD Rev5'``).
+    survey : welleng.survey.Survey
+        The input Survey object.
+    errors : welleng.errors.tool_errors.ToolError
+        ToolError object containing per-source error magnitudes and
+        covariance data.
+    survey_rad : numpy.ndarray
+        Array of (md, inc_rad, azi_true_rad) per station, shape (n, 3).
+    drdp : numpy.ndarray
+        Jacobian of position with respect to survey parameters (depth,
+        inclination, azimuth) in NEV coordinates.
+    cov_NEVs : numpy.ndarray
+        Summed covariance matrices in NEV coordinates per station, shape
+        (n, 3, 3). Accessible via ``errors.cov_NEVs``.
     """
 
     class Error:
@@ -57,7 +96,28 @@ class ErrorModel():
             sigma_e_NEV,
             cov_NEV
         ):
+            """Initialize an Error with computed error vectors and covariances.
 
+            Parameters
+            ----------
+            code : str
+                The error source code identifier.
+            propagation : str
+                Propagation type ('systematic', 'random', 'global',
+                or 'within_pad').
+            e_DIA : numpy.ndarray
+                Error vectors in Depth-Inclination-Azimuth coordinates.
+            cov_DIA : numpy.ndarray
+                Covariance matrices in DIA coordinates.
+            e_NEV : numpy.ndarray
+                Error vectors in North-East-Vertical coordinates.
+            e_NEV_star : numpy.ndarray
+                Single-station NEV error vectors.
+            sigma_e_NEV : numpy.ndarray
+                Cumulative NEV error vectors.
+            cov_NEV : numpy.ndarray
+                Covariance matrices in NEV coordinates.
+            """
             self.code = code
             self.propagation = propagation
             self.e_DIA = e_DIA
@@ -72,8 +132,14 @@ class ErrorModel():
         survey,
         error_model="ISCWSA MWD Rev5",
     ):
-        """
+        """Initialize the error model for a given survey.
 
+        Parameters
+        ----------
+        survey : welleng.survey.Survey
+            The survey to compute errors for.
+        error_model : str, optional
+            Name of the error model to apply.
         """
 
         # error_models = ERROR_MODELS
@@ -199,13 +265,22 @@ class ErrorModel():
             )
 
     def drk_dDepth(self, survey):
-        '''
-        Derivative of position with respect to measured depth at each station.
+        """Derivative of position with respect to measured depth at each station.
 
-        Equal to 0.5 * (unit_vec[i] + unit_vec[i+1]) in NEV coordinates —
-        the direction-cosine part of minimum curvature without the RF or delta_md.
-        All trig is computed once and shared across N, E and V components.
-        '''
+        Equal to 0.5 * (unit_vec[i] + unit_vec[i+1]) in NEV coordinates --
+        the direction-cosine part of minimum curvature without the RF or
+        delta_md.
+
+        Parameters
+        ----------
+        survey : array_like
+            Survey stations as (md, inc_rad, azi_rad) rows.
+
+        Returns
+        -------
+        numpy.ndarray
+            Shape (n, 3) array of NEV derivatives.
+        """
         _, inc1, azi1 = np.array(survey[:-1]).T
         _, inc2, azi2 = np.array(survey[1:]).T
         si1, si2 = np.sin(inc1), np.sin(inc2)
@@ -219,10 +294,18 @@ class ErrorModel():
         return np.vstack((np.zeros((1, 3)), NEV))
 
     def drk_dInc(self, survey):
-        '''
-        survey1 is previous survey station (with inc and azi in radians)
-        survey2 is current survey station (with inc and azi in radians)
-        '''
+        """Derivative of position with respect to inclination at each station.
+
+        Parameters
+        ----------
+        survey : array_like
+            Survey stations as (md, inc_rad, azi_rad) rows.
+
+        Returns
+        -------
+        numpy.ndarray
+            Shape (n, 3) array of NEV derivatives.
+        """
         md1, inc1, azi1 = np.array(survey[:-1]).T
         md2, inc2, azi2 = np.array(survey[1:]).T
         delta_md = md2 - md1
@@ -242,10 +325,18 @@ class ErrorModel():
         )
 
     def drk_dAz(self, survey):
-        '''
-        survey1 is previous survey station (with inc and azi in radians)
-        survey2 is current survey station (with inc and azi in radians)
-        '''
+        """Derivative of position with respect to azimuth at each station.
+
+        Parameters
+        ----------
+        survey : array_like
+            Survey stations as (md, inc_rad, azi_rad) rows.
+
+        Returns
+        -------
+        numpy.ndarray
+            Shape (n, 3) array of NEV derivatives.
+        """
         md1, inc1, azi1 = np.array(survey[:-1]).T
         md2, inc2, azi2 = np.array(survey[1:]).T
         delta_md = md2 - md1
@@ -262,10 +353,18 @@ class ErrorModel():
         )
 
     def drkplus1_dDepth(self, survey):
-        '''
-        survey2 is current survey station (with inc and azi in radians)
-        survey3 is next survey station (with inc and azi in radians)
-        '''
+        """Derivative of next-station position with respect to measured depth.
+
+        Parameters
+        ----------
+        survey : array_like
+            Survey stations as (md, inc_rad, azi_rad) rows.
+
+        Returns
+        -------
+        numpy.ndarray
+            Shape (n, 3) array of NEV derivatives.
+        """
         return np.vstack(
             (
                 self.drk_dDepth(survey)[1:] * -1,
@@ -274,10 +373,18 @@ class ErrorModel():
         )
 
     def drkplus1_dInc(self, survey):
-        '''
-        survey2 is current survey station (with inc and azi in radians)
-        survey3 is next survey station (with inc and azi in radians)
-        '''
+        """Derivative of next-station position with respect to inclination.
+
+        Parameters
+        ----------
+        survey : array_like
+            Survey stations as (md, inc_rad, azi_rad) rows.
+
+        Returns
+        -------
+        numpy.ndarray
+            Shape (n, 3) array of NEV derivatives.
+        """
 
         md2, inc2, azi2 = np.array(survey[:-1]).T
         md3, inc3, azi3 = np.array(survey[1:]).T
@@ -295,10 +402,18 @@ class ErrorModel():
         )
 
     def drkplus1_dAz(self, survey):
-        '''
-        survey2 is current survey station (with inc and azi in radians)
-        survey3 is next survey station (with inc and azi in radians)
-        '''
+        """Derivative of next-station position with respect to azimuth.
+
+        Parameters
+        ----------
+        survey : array_like
+            Survey stations as (md, inc_rad, azi_rad) rows.
+
+        Returns
+        -------
+        numpy.ndarray
+            Shape (n, 3) array of NEV derivatives.
+        """
         md2, inc2, azi2 = np.array(survey[:-1]).T
         md3, inc3, azi3 = np.array(survey[1:]).T
         delta_md = md3 - md2
@@ -385,6 +500,18 @@ class ErrorModel():
 
 
 def get_errors(error):
+    """Extract the six unique covariance components from a 3x3 NEV matrix.
+
+    Parameters
+    ----------
+    error : numpy.ndarray
+        A 3x3 covariance matrix in NEV coordinates.
+
+    Returns
+    -------
+    list
+        [nn, ee, vv, ne, nv, ev] covariance components.
+    """
     nn, ne, nv = error[0]
     _, ee, ev = error[1]
     _, __, vv = error[2]
@@ -393,6 +520,19 @@ def get_errors(error):
 
 
 def make_diagnostic_data(survey):
+    """Build a per-station diagnostic breakdown of all error model components.
+
+    Parameters
+    ----------
+    survey : welleng.survey.Survey
+        A welleng Survey with an attached ErrorModel (survey.err).
+
+    Returns
+    -------
+    dict
+        Nested dict keyed by MD, then error code, containing the six
+        unique covariance components and a TOTAL row summing all codes.
+    """
     diagnostic = {}
     dia = np.stack((survey.md, survey.inc_deg, survey.azi_grid_deg), axis=1)
     for i, d in enumerate(survey.md):

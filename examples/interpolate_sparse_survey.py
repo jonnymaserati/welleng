@@ -15,6 +15,8 @@ This is also an alternative quick method for creating a well path.
 author: Jonny Corcutt
 email: jonnycorcutt@gmail.com
 date: 29-09-2021
+
+Requirements: pip install welleng[easy]
 """
 
 import welleng as we
@@ -36,7 +38,7 @@ m_ref_interp = we.mesh.WellMesh(s_ref_interp)
 
 # plot the results
 we.visual.plot(
-    [m_ref.mesh, m_ref_interp.mesh],
+    [m_ref, m_ref_interp],
     colors=['red', 'blue'],
     names=['sparse survey', 'interpolated survey']
 )

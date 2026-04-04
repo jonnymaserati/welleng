@@ -1,6 +1,6 @@
 # welleng
 
-[![Open Source Love svg2](https://badges.frapsoft.com/os/v2/open-source.svg?v=103)](https://github.com/pro-well-plan/pwptemp/blob/master/LICENSE.md)
+[![Open Source Love svg2](https://badges.frapsoft.com/os/v2/open-source.svg?v=103)](https://github.com/jonnymaserati/welleng/blob/main/LICENSE)
 [![PyPI version](https://badge.fury.io/py/welleng.svg)](https://badge.fury.io/py/welleng)
 [![Downloads](https://static.pepy.tech/personalized-badge/welleng?period=total&units=international_system&left_color=grey&right_color=orange&left_text=Downloads&kill_cache=1)](https://pepy.tech/project/welleng)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
@@ -16,7 +16,7 @@
 - **Well path creation** — the `connector` module builds trajectories between start/end locations automatically
 - **Vertical section, TVD interpolation, project-ahead** — common survey planning tools
 - **Torque and drag** — simple torque/drag model with architecture module
-- **Visualization** — interactive 3D via [vedo]/VTK or browser-based via plotly
+- **Visualization** — interactive 3D via [vedo]/VTK or browser-based via plotly (requires `easy` install)
 - **Data exchange** — import/export Landmark .wbp files; read EDM datasets
 - **World Magnetic Model** — auto-calculates magnetic field data when not supplied
 
@@ -48,21 +48,21 @@ welleng is fuelled by copious amounts of coffee, so if you wish to supercharge d
 
 ## Installation
 
-A minimal install requires only [numpy] and [scipy], which is sufficient for survey generation and error models. Most functionality is available with the `easy` install. Mesh collision detection requires compiled dependencies (`all`).
+The default install includes core dependencies (numpy, scipy, pandas, etc.) and covers survey generation, error models, and trajectory design. The `easy` extras add 3D visualization (vedo/VTK), magnetic field lookup, network analysis, and mesh import. The `all` extras add mesh-based collision detection, which requires compiled dependencies.
 
 You'll receive an `ImportError` with a suggested install tag if a required optional dependency is missing.
 
-### Minimal install
+### Default install (core functionality, no visualization)
 ```
 pip install welleng
 ```
 
-### Easy install (recommended — no compiled dependencies)
+### Easy install (recommended — adds 3D visualization, magnetic field calculator, trimesh, networkx)
 ```
 pip install welleng[easy]
 ```
 
-### Full install (includes mesh collision detection)
+### Full install (adds mesh collision detection — requires compiled dependencies)
 
 First install the compiled dependencies. On Ubuntu:
 ```terminal
@@ -89,7 +89,7 @@ pip install -e .[all]
 ```
 
 ### Windows
-Detailed instructions for Windows can be found in this [post](https://jonnymaserati.github.io/2021/05/11/install-welleng-windows.html).
+On Windows, `pip install welleng` should work for the default and easy installs. For the full install with mesh collision detection, follow the [FCL install instructions](https://github.com/flexible-collision-library/fcl/blob/master/INSTALL) to set up the compiled dependencies first.
 
 ### Colaboratory
 
@@ -130,7 +130,7 @@ fig.show()
 
 ## Quick Start
 
-Build a pair of well trajectories, compute error ellipses and clearance, and visualize:
+Build a pair of well trajectories, compute error ellipses and clearance, and visualize (requires `pip install welleng[all]` for mesh clearance and visualization):
 
 ```python
 import welleng as we

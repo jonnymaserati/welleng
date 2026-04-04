@@ -25,6 +25,8 @@ for DLS violations, excess MD for suboptimal cases).
 Usage
 -----
     python examples/visualise_clc_edge_cases.py
+
+Requirements: pip install welleng[easy]
 """
 
 import numpy as np
@@ -206,7 +208,11 @@ def main():
         return Text2D(text, pos='top-left', s=0.75, c=col, bg='k8', alpha=0.85)
 
     def render(k):
-        plt.clear()
+        # plt.clear() doesn't remove Text2D actors, so remove them manually
+        for a in plt.get_meshes():
+            plt.remove(a)
+        for a in [a for a in plt.renderer.GetActors2D()]:
+            plt.renderer.RemoveActor2D(a)
         case, ctype = all_cases[k]
         offset = np.array([0., 0., 0.])
 
