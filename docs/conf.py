@@ -47,7 +47,8 @@ def abspath(rel):
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'welleng'
-copyright = '2023, Jonathan Corcutt'
+from datetime import date
+copyright = f'{date.today().year}, Jonathan Corcutt'
 author = 'Jonathan Corcutt'
 
 # -- General configuration ---------------------------------------------------
@@ -74,8 +75,11 @@ source_suffix = {
 # The master toctree document.
 master_doc = 'index'
 
-# grab from welleng without installing
-exec(open(abspath('../welleng/version.py')).read())
+# grab version - try import first (CI), fall back to reading file (local)
+try:
+    from welleng.version import __version__
+except ImportError:
+    exec(open(abspath('../welleng/version.py')).read())
 version = __version__  # noqa: F821
 # The full version, including alpha/beta/rc tags.
 release = __version__  # noqa: F821
