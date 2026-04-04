@@ -31,6 +31,18 @@ welleng is fuelled by copious amounts of coffee, so if you wish to supercharge d
 
 <a href="https://www.buymeacoffee.com/jonnymaserati" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/arial-yellow.png" alt="Buy Me A Coffee" width="217px" ></a>
 
+## Cloud API
+
+A hosted API for 3D well path planning is available at
+[welleng.org](https://api.welleng.org/api/docs). Solve CLC (curve-line-curve)
+paths via simple REST calls — no local install, no GPU required.
+
+- Batch solving (up to 100K pairs)
+- GPU-accelerated
+- Free tier available
+
+See the [interactive docs](https://api.welleng.org/api/docs) to try it out.
+
 ## Documentation
 
 [Documentation] is available, though the library evolves quickly so the examples directory is often the best reference.
