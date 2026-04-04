@@ -14,13 +14,14 @@ jobs:
         uses: astral-sh/setup-uv@v5
       - name: Set up Python
         run: uv python install 3.12
-      - name: Install dependencies
+      - name: Install dependencies                        
         run: |
-          uv pip install --system sphinx sphinx_rtd_theme myst-parser
-          uv pip install --system -e .
+          uv venv
+          uv pip install sphinx sphinx_rtd_theme myst-parser
+          uv pip install -e .
       - name: Sphinx build
-        run: |
-          sphinx-build docs _build
+        run: |                                                                
+          uv run sphinx-build docs _build
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v4
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
