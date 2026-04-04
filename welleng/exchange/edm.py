@@ -6,7 +6,7 @@ try:
     import networkx as nx
     NX = True
 except ImportError:
-    prNX = False
+    NX = False
 
 
 class EDM:

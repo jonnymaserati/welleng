@@ -1,9 +1,12 @@
+"""Wellbore mesh generation from survey data and positional uncertainty."""
+
 try:
     import trimesh
     TRIMESH = True
 except ImportError:
     TRIMESH = False
 from copy import deepcopy
+from types import SimpleNamespace
 import numpy as np
 from numpy import sin, cos, pi
 from scipy.spatial import KDTree
@@ -14,6 +17,32 @@ from .visual import figure
 
 
 class WellMesh:
+    """Triangular mesh representing a wellbore's positional uncertainty envelope.
+
+    Attributes
+    ----------
+    s : welleng.survey.Survey
+        The input Survey object.
+    vertices : numpy.ndarray
+        Vertex positions array, shape (n_stations, n_verts, 3).
+    faces : numpy.ndarray
+        Triangle face index array, shape (n_faces, 3).
+    mesh : types.SimpleNamespace
+        Lightweight mesh container with ``vertices`` and ``faces`` attributes.
+    n_verts : int
+        Number of vertices per station cross-section.
+    sigma : float
+        Sigma multiplier for the uncertainty envelope.
+    radius : numpy.ndarray
+        Wellbore radius at each station.
+    nevs : numpy.ndarray
+        Station positions in NEV coordinates, shape (n_stations, 3).
+
+    Methods
+    -------
+    figure()
+        Create a plotly 3D figure of the well mesh.
+    """
 
     def __init__(
         self,
@@ -24,33 +53,30 @@ class WellMesh:
         Sm: float = 0,
         method: str = "ellipse",
     ):
-        """
-        Create a WellMesh object from a welleng Survey object and a
-        welleng Clearance object.
+        """Create a WellMesh object from a welleng Survey object.
 
         Parameters
         ----------
-            survey: welleng.Survey
-            clearance: welleng.Clearance
-            n_verts: int
-                The number of vertices along the uncertainty ellipse
-                edge from which to construct the mesh. Recommended minimum is
-                12 and that the number is a multiple of 4.
-            sigma: float (default: 3.0)
-                The desired standard deviation sigma value of the well bore
-                uncertainty.
-            sigma_pa: float (default: 0.5)
-                The desired "project ahead" value. A remnant of the ISCWSA
-                method but may be used in the future to accomodate for well
-                bore curvature that is not captured by the mesh.
-            Sm: float
-                From the ISCWSA method, this is an additional factor applied to
-                the well bore radius of the offset well to oversize the hole.
-            method: str (default="ellipse")
-                The method for constructing the uncertainty edge.
-                Either "ellipse", "pedal_curve" or "circle".
+        survey : welleng.survey.Survey
+            The survey from which to build the mesh.
+        n_verts : int, optional
+            The number of vertices along the uncertainty ellipse
+            edge from which to construct the mesh. Recommended minimum is
+            12 and that the number is a multiple of 4.
+        sigma : float, optional
+            The desired standard deviation sigma value of the well bore
+            uncertainty.
+        sigma_pa : float, optional
+            The desired "project ahead" value. A remnant of the ISCWSA
+            method but may be used in the future to accommodate for well
+            bore curvature that is not captured by the mesh.
+        Sm : float, optional
+            From the ISCWSA method, this is an additional factor applied to
+            the well bore radius of the offset well to oversize the hole.
+        method : str, optional
+            The method for constructing the uncertainty edge.
+            Either "ellipse", "pedal_curve" or "circle".
         """
-        assert TRIMESH, "ImportError: try pip install welleng[easy]"
         self.s = survey
         # self.c = clearance
         self.n_verts = int(n_verts)
@@ -96,6 +122,30 @@ class WellMesh:
             h = self.s.radius.reshape(-1, 1)
             l = h
 
+        elif self.method == "ellipse":
+            # Use eigenvalue decomposition of the 2x2 H-L covariance submatrix
+            # to correctly represent the uncertainty ellipse orientation and
+            # magnitude, rather than assuming alignment with h and l axes.
+            cov_hl = self.s.cov_hla[:, :2, :2]  # shape (n, 2, 2)
+            eigenvalues, eigenvectors = np.linalg.eigh(cov_hl)
+            # eigh returns eigenvalues in ascending order; clip for numerical safety
+            sigma_major = np.sqrt(np.maximum(eigenvalues[:, 1], 0))
+            sigma_minor = np.sqrt(np.maximum(eigenvalues[:, 0], 0))
+            h = (
+                sigma_major * self.sigma
+                + self.radius + self.Sm
+                + self.sigma_pa / 2
+            ).reshape(-1, 1)
+            l = (
+                sigma_minor * self.sigma
+                + self.radius + self.Sm
+                + self.sigma_pa / 2
+            ).reshape(-1, 1)
+            # Rotation angle of the major axis in the H-L plane
+            ellipse_theta = np.arctan2(
+                eigenvectors[:, 1, 1], eigenvectors[:, 0, 1]
+            ).reshape(-1, 1)
+
         else:
             h = (
                 np.array(self.sigmaH) * self.sigma
@@ -116,13 +166,19 @@ class WellMesh:
 
             temp = np.broadcast_to(temp, (len(self.s.md), len(temp)))
             lam = deepcopy(temp)
-            # lam[1:] = (
-            #     (temp[1:] + self.s.azi_grid_rad[1:].reshape(-1, 1)) % (2 * np.pi)
-            # )
-            # theta = np.zeros_like(lam)
 
-            x = h * cos(lam)
-            y = l * sin(lam)
+            x_ell = h * cos(lam)
+            y_ell = l * sin(lam)
+
+            if self.method == "ellipse":
+                cos_t = np.cos(ellipse_theta)
+                sin_t = np.sin(ellipse_theta)
+                x = x_ell * cos_t - y_ell * sin_t
+                y = x_ell * sin_t + y_ell * cos_t
+            else:
+                x = x_ell
+                y = y_ell
+
             z = np.zeros_like(x)
             vertices = np.stack((x, y, z), axis=-1)
 
@@ -231,22 +287,64 @@ class WellMesh:
 
     def _make_trimesh(self):
         '''
-        Consturct a trimesh.Trimesh object from the well vertices and faces.
-        '''
-        vertices = self.vertices.reshape(-1, 3)
-        mesh = trimesh.Trimesh(
-            vertices=vertices,
-            faces=self.faces,
-            process=False,
-            validate=True,
-        )
+        Store well vertices and faces as a lightweight mesh namespace.
 
-        # self.mesh = fix_mesh(mesh)
-        self.mesh = mesh
+        A plain SimpleNamespace is used so that WellMesh has no trimesh
+        dependency.  Code that needs a trimesh.Trimesh (e.g. MeshClearance)
+        should call ``welleng.mesh.to_trimesh(well_mesh)`` explicitly.
+
+        Two center vertices (first and last wellpath positions) are appended
+        so that end-cap triangles fan from the wellpath centerline rather
+        than from an arbitrary circumference vertex.
+        '''
+        ring_vertices = self.vertices.reshape(-1, 3)
+        center_top = self.nevs[0:1]       # shape (1, 3)
+        center_bottom = self.nevs[-1:]     # shape (1, 3)
+        vertices = np.vstack([ring_vertices, center_top, center_bottom])
+        self.mesh = SimpleNamespace(vertices=vertices, faces=self.faces)
 
     def figure(self, type='mesh3d', **kwargs):
+        """Create a plotly figure of this mesh.
+
+        Parameters
+        ----------
+        type : str, optional
+            Plotly figure type, default 'mesh3d'.
+        **kwargs
+            Passed to welleng.visual.figure().
+
+        Returns
+        -------
+        plotly.graph_objects.Figure
+            A plotly Figure instance.
+        """
         fig = figure(self, type, **kwargs)
         return fig
+
+
+def to_trimesh(well_mesh):
+    """
+    Convert a :class:`WellMesh` to a ``trimesh.Trimesh`` object.
+
+    This is the single point where trimesh is constructed from the stored
+    geometry arrays.  Call this explicitly wherever a true trimesh object is
+    required (e.g. collision detection in :class:`~welleng.clearance.MeshClearance`).
+
+    Parameters
+    ----------
+    well_mesh : WellMesh
+
+    Returns
+    -------
+    trimesh.Trimesh
+    """
+    assert TRIMESH, "ImportError: try pip install welleng[easy]"
+    return trimesh.Trimesh(
+        vertices=well_mesh.mesh.vertices,
+        faces=well_mesh.mesh.faces,
+        process=False,
+        validate=True,
+    )
 
 
 def make_trimesh_scene(data):
@@ -256,16 +354,18 @@ def make_trimesh_scene(data):
 
     Parameters
     ----------
-        data: list of welleng.mesh.WellEng objects.
+    data : list
+        List of welleng.mesh.WellMesh objects.
 
     Returns
     -------
-        scene: a trimesh.scene.scene.Scene object.
+    trimesh.scene.scene.Scene
+        A trimesh scene containing all well meshes.
     """
     assert TRIMESH, "ImportError: try pip install welleng[easy]"
     scene = trimesh.scene.scene.Scene()
     for well in data:
-        mesh = data[well].mesh
+        mesh = to_trimesh(data[well])
         scene.add_geometry(
             mesh, node_name=well, geom_name=well, parent_node_name=None
         )
@@ -280,21 +380,21 @@ def transform_trimesh_scene(scene, origin=None, scale=100, redux=0.25):
 
     Parameters
     ----------
-        scene: trimesh.scene.scene.Scene object
-            A trimesh scene of well meshes
-        origin: 3d array [x, y, z]
-            The origin of the scene from which the new scene will reset to
-            [0, 0, 0].
-        scale: float
-            A scalar reduction will be performed using this float
-        redux: float
-            The desired reduction ratio for the number of triangles in each
-            mesh.
+    scene : trimesh.scene.scene.Scene
+        A trimesh scene of well meshes.
+    origin : array_like, optional
+        3D array [x, y, z]. The origin of the scene from which the new
+        scene will reset to [0, 0, 0].
+    scale : float, optional
+        A scalar reduction will be performed using this float.
+    redux : float, optional
+        The desired reduction ratio for the number of triangles in each
+        mesh.
 
     Returns
     -------
-        scene_transformed: trimesh.scene.scene.Scene object
-            A transformed, scaled and reprocessed scene.
+    trimesh.scene.scene.Scene
+        A transformed, scaled and reprocessed scene.
     """
     assert TRIMESH, "ImportError: try pip install welleng[easy]"
     i = 0
@@ -314,7 +414,7 @@ def transform_trimesh_scene(scene, origin=None, scale=100, redux=0.25):
 
         # change axis convention for visualisation #
         x, y, z = mesh_new.vertices.T
-        mesh_new.vertices = (np.array([x, z * -1, y]) / scale).T
+        mesh_new.vertices = np.column_stack([x, -z, y]) / scale
         scene_transformed.add_geometry(
             mesh_new, node_name=name, geom_name=name
         )
@@ -338,28 +438,30 @@ def sliced_mesh(
 
     Parameters
     ----------
-        survey: welleng.Survey
-        n_verts: int
-            The number of vertices along the uncertainty ellipse
-            edge from which to construct the mesh. Recommended minimum is
-            12 and that the number is a multiple of 4.
-        sigma: float (default: 3.0)
-            The desired standard deviation sigma value of the well bore
-            uncertainty.
-        sigma_pa: float (default: 0.5)
-            The desired "project ahead" value. A remnant of the ISCWSA method
-            but may be used in the future to accommodate for well bore
-            curvature that is not captured by the mesh.
-        Sm: float
-            From the ISCWSA method, this is an additional factor applied to
-            the well bore radius of the offset well to oversize the hole.
-        method: str (default="ellipse")
-            The method for constructing the uncertainty edge.
-            Either "ellipse" or "pedal_curve".
+    survey : welleng.survey.Survey
+        The survey from which to build the meshes.
+    n_verts : int, optional
+        The number of vertices along the uncertainty ellipse
+        edge from which to construct the mesh. Recommended minimum is
+        12 and that the number is a multiple of 4.
+    sigma : float, optional
+        The desired standard deviation sigma value of the well bore
+        uncertainty.
+    sigma_pa : float, optional
+        The desired "project ahead" value. A remnant of the ISCWSA method
+        but may be used in the future to accommodate for well bore
+        curvature that is not captured by the mesh.
+    Sm : float, optional
+        From the ISCWSA method, this is an additional factor applied to
+        the well bore radius of the offset well to oversize the hole.
+    method : str, optional
+        The method for constructing the uncertainty edge.
+        Either "ellipse" or "pedal_curve".
 
     Returns
     -------
-        list of trimesh.Trimesh mesh objects.
+    list
+        List of mesh namespace objects.
 
     """
     meshes = []
@@ -402,19 +504,19 @@ def sliced_mesh(
 
 
 def fix_mesh(mesh):
-    '''
-    For whatever reason, the first pass meshing often results in a mesh
-    that is not watertight. This function fixes that, as well as
-    repairs the windings and normals.
+    """Fix a non-watertight mesh by removing duplicate and degenerate faces,
+    then repairing windings and normals.
 
     Parameters
     ----------
-        mesh: trimesh object
+    mesh : trimesh.Trimesh
+        The mesh to repair.
 
     Returns
     -------
-        good_mesh: trimesh object
-    '''
+    trimesh.Trimesh
+        A repaired mesh with correct windings and normals.
+    """
     assert TRIMESH, "ImportError: try pip install welleng[easy]"
     # it makes two outputs (unique_idx, inverse)
     unique_indices = trimesh.grouping.unique_rows(mesh.faces)[0]
@@ -438,23 +540,61 @@ def fix_mesh(mesh):
 
 
 def get_ends(n_verts, rows):
-    """
-    Given a number of vertices per station and a number of stations, returns
-    the faces of the trimesh vertices.
-    """
-    B = np.arange(1, n_verts - 1, 1)
-    C = np.arange(2, n_verts, 1)
-    A = np.zeros_like(B)
+    """Build cap faces for the first and last cross-section rings.
 
-    faces = np.array([
-        np.array([A, B, C]) + np.array([0]),
-        np.array([A, B, C]) + np.array([(rows - 1) * (n_verts)])
+    End-cap triangles fan from center vertices (the wellpath positions)
+    appended after all ring vertices, rather than from circumference
+    vertex 0.
+
+    Parameters
+    ----------
+    n_verts : int
+        Number of vertices per cross-section ring.
+    rows : int
+        Number of cross-section rings along the wellbore.
+
+    Returns
+    -------
+    tuple of numpy.ndarray
+        (top_faces, bottom_faces), each of shape (n_verts, 3).
+    """
+    total_ring_verts = rows * n_verts
+    center_top = total_ring_verts       # index of first center vertex
+    center_bottom = total_ring_verts + 1  # index of second center vertex
+
+    # Top cap: fan from center_top to first ring
+    ring_idx = np.arange(n_verts)
+    ring_next = np.roll(ring_idx, -1)
+    top = np.column_stack([
+        np.full(n_verts, center_top), ring_idx, ring_next
     ])
 
-    return faces.transpose((0, 2, 1))
+    # Bottom cap: fan from center_bottom to last ring
+    last_ring_start = (rows - 1) * n_verts
+    ring_idx_bottom = last_ring_start + np.arange(n_verts)
+    ring_next_bottom = last_ring_start + np.roll(np.arange(n_verts), -1)
+    bottom = np.column_stack([
+        np.full(n_verts, center_bottom), ring_next_bottom, ring_idx_bottom
+    ])
+
+    return top, bottom
 
 
 def get_faces(n_verts, rows):
+    """Build triangular face indices for a tubular mesh.
+
+    Parameters
+    ----------
+    n_verts : int
+        Number of vertices per cross-section ring.
+    rows : int
+        Number of cross-section rings along the wellbore.
+
+    Returns
+    -------
+    numpy.ndarray
+        Face index array of shape (n_faces, 3).
+    """
     A = np.arange(n_verts).reshape(-1, 1)
     B = np.roll(A, -1).reshape(-1, 1)
 

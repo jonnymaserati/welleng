@@ -8,6 +8,8 @@ also printing the covariance data at the well TD.
 author: Jonny Corcutt
 email: jonnycorcutt@gmail.com
 date: 29-09-2021
+
+Requirements: pip install welleng[easy]
 '''
 import welleng as we
 import numpy as np
@@ -44,7 +46,7 @@ def make_diagnostic_data(survey):
         diagnostic[d] = {}
         total = []
         for k, v in survey.err.errors.errors.items():
-            diagnostic[d][k] = get_errors(v.cov_NEV.T[i])
+            diagnostic[d][k] = get_errors(v.cov_NEV[i])
             total.extend(diagnostic[d][k])
         diagnostic[d]['TOTAL'] = np.sum((np.array(
             total

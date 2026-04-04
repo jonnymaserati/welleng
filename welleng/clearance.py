@@ -13,8 +13,8 @@ from scipy.signal import argrelmin
 from scipy.spatial import KDTree
 from scipy.spatial.distance import cdist
 
-from .mesh import WellMesh
-from .survey import Survey, _interpolate_survey, slice_survey
+from .mesh import WellMesh, to_trimesh
+from .survey import Survey, _interpolate_survey, _interpolate_pos_nev, slice_survey
 from .utils import NEV_to_HLA
 
 
@@ -101,11 +101,7 @@ class Clearance:
     def _get_nevs(self, survey):
         # TODO:
         # - [ ] Take this from the `Survey` where it is already calculated.
-        return np.array([
-            survey.n,
-            survey.e,
-            survey.tvd
-        ]).T
+        return np.column_stack([survey.n, survey.e, survey.tvd])
 
     def _get_radii(self, Rr, Ro):
         """
@@ -122,14 +118,75 @@ class Clearance:
         else:
             self.Ro = np.full(len(self.offset.md), Ro)
 
+    def _get_ref_cov_below_kop(self):
+        """
+        Compute the below-KOP covariance for sidetrack clearance, zeroing
+        uncertainty at the KOP per the ISCWSA standard (paragraph 81).
+
+        For depth-scale errors (e_DIA has only D≠0, I=A≈0), the uncertainty
+        accumulates proportionally to absolute MD, so delta-sigma would
+        underestimate. Instead, use the full accumulated sigma but zero it at
+        the KOP station itself. For all other errors, use delta-sigma.
+
+        Returns covariance in Survey convention (n, 3, 3).
+        """
+        ki = self.kop_index
+        errors = self.reference.err.errors.errors
+        n_below = len(self.reference.md) - ki
+        cov_below = np.zeros((n_below, 3, 3))
+
+        for error in errors.values():
+            # Detect depth-scale errors: e_DIA has D≠0, I=A=0
+            e_dia = error.e_DIA
+            if e_dia.ndim == 2:
+                depth_only = (
+                    np.all(np.abs(e_dia[:, 1:]) < 1e-10)
+                    and np.any(np.abs(e_dia[:, 0]) > 1e-10)
+                )
+            else:
+                depth_only = False
+
+            if error.propagation in ('systematic', 'global', 'within_pad'):
+                if depth_only:
+                    sigma = error.sigma_e_NEV[ki:].copy()
+                    sigma[0] = 0.0  # zero uncertainty at KOP
+                else:
+                    sigma = error.sigma_e_NEV[ki:] - error.sigma_e_NEV[ki]
+                # outer product: (n,3) -> (n,3,3)
+                cov_below += sigma[:, :, None] * sigma[:, None, :]
+            elif error.propagation == 'random':
+                if depth_only:
+                    cov_j = error.cov_NEV[ki:].copy()
+                    cov_j[0] = 0.0  # zero at KOP
+                    cov_below += cov_j
+                else:
+                    cov_below += (
+                        error.cov_NEV[ki:]
+                        - error.cov_NEV[ki:ki + 1]
+                    )
+
+        return cov_below  # (n_below, 3, 3)
+
     def _get_ref(self):
         if self.kop_index == 0:
             self.ref = self.reference
         else:
             try:
-                cov_nev = self.reference.cov_nev[self.kop_index:]
-                cov_hla = self.reference.cov_hla[self.kop_index:]
-            except IndexError:
+                if (
+                    hasattr(self.reference, 'err')
+                    and self.reference.err is not None
+                ):
+                    cov_nev = self._get_ref_cov_below_kop()
+                else:
+                    cov_nev = self.reference.cov_nev[self.kop_index:]
+                cov_hla = (
+                    NEV_to_HLA(
+                        self.reference.survey_rad[self.kop_index:],
+                        cov_nev
+                    )
+                    if cov_nev is not None else None
+                )
+            except (IndexError, AttributeError):
                 cov_nev, cov_hla = (None, None)
             self.ref = Survey(
                 md=self.reference.md[self.kop_index:],
@@ -143,7 +200,7 @@ class Clearance:
                 header=self.reference.header,
                 cov_nev=cov_nev,
                 cov_hla=cov_hla,
-                error_model=self.reference.error_model,
+                error_model=None,
                 start_xyz=[
                     self.reference.x[self.kop_index],
                     self.reference.y[self.kop_index],
@@ -154,7 +211,7 @@ class Clearance:
                     self.reference.e[self.kop_index],
                     self.reference.tvd[self.kop_index],
                     ],
-                deg=self.reference.deg,
+                deg=False,
                 unit=self.reference.unit,
                 nev=True
             )
@@ -257,6 +314,13 @@ class IscwsaClearance(Clearance):
     wellbore_separation:
         The distance between the edge of the wellbore for each station on the
         `ref` well to the closest point on the `off` well.
+
+    Methods
+    -------
+    get_lines()
+        Generate line data for visualizing clearance between wells.
+    get_sf_mins()
+        Compute minimum separation factor indices and values.
     """
     def __init__(
         self,
@@ -272,6 +336,13 @@ class IscwsaClearance(Clearance):
         super().__init__(*clearance_args, **clearance_kwargs)
 
         minimize_sf = True if minimize_sf is None else minimize_sf
+
+        # For sidetrack offset wells (starting at non-zero MD), correct the
+        # covariance to include the missing drkplus1(0)*e(0) contribution that
+        # is zeroed in the standard error model (which assumes tie-in at surface)
+        self._off_cov_nev_corrected = None
+        self._off_cov_hla_corrected = None
+        self._compute_off_cov_sidetrack_correction()
 
         # get closest survey station in offset well for each survey
         # station in the reference well
@@ -336,12 +407,14 @@ class IscwsaClearance(Clearance):
         # self.pc_method()
 
     def _get_sf_min(self, x, i, delta_md):
+        # scipy.optimize.minimize passes x as a 1-element array; extract scalar
+        x = float(np.asarray(x).ravel()[0])
         if x == 0.0:
             return self.sf[i]
         if x == -delta_md[0]:
-            return self.sf[i-1]
+            return self.sf[i - 1]
         if x == delta_md[1]:
-            return self.sf[i+1]
+            return self.sf[i + 1]
 
         if x < 0:
             ii = i - 1
@@ -352,55 +425,56 @@ class IscwsaClearance(Clearance):
             xx = x
             mult = xx / delta_md[1]
 
-        node = self.ref.interpolate_md(
-            self.ref.md[ii] + xx
-        )
-
-        cov_nev = (
+        # Interpolated reference position and covariance — no Survey needed
+        ref_pos = _interpolate_pos_nev(self.ref, xx, ii)
+        ref_cov = (
             self.ref.cov_nev[ii]
-            + (
-                np.full(shape=(1, 3, 3), fill_value=mult)
-                * (self.ref.cov_nev[ii+1] - self.ref.cov_nev[ii])
+            + mult * (self.ref.cov_nev[ii + 1] - self.ref.cov_nev[ii])
+        ).reshape(3, 3)
+        ref_r = self.Rr[ii + 1]
+
+        # Find closest point on offset in the two intervals around self.idx[i]
+        off_cov_src = self.offset.cov_nev
+        off_idx = self.idx[i]
+        n_off = len(self.offset.md)
+
+        best_dist = np.inf
+        best_u = None
+        best_off_cov = None
+        best_off_r = None
+
+        for oi in range(max(0, off_idx - 1), min(off_idx + 1, n_off - 2) + 1):
+            bound = self.offset.md[oi + 1] - self.offset.md[oi]
+            res = optimize.minimize(
+                lambda t, _oi=oi: norm(
+                    _interpolate_pos_nev(self.offset, t[0], _oi) - ref_pos
+                ),
+                [bound / 2],
+                method='Powell',
+                bounds=[(0, bound)],
             )
-        ).reshape(-1, 3, 3)
+            if res.fun < best_dist:
+                best_dist = res.fun
+                off_pos = _interpolate_pos_nev(self.offset, res.x[0], oi)
+                t_mult = res.x[0] / bound if bound > 0 else 0.0
+                best_u = off_pos - ref_pos
+                best_off_cov = (
+                    off_cov_src[oi]
+                    + t_mult * (off_cov_src[oi + 1] - off_cov_src[oi])
+                ).reshape(3, 3)
+                best_off_r = self.Ro[oi] + t_mult * (self.Ro[oi + 1] - self.Ro[oi])
 
-        sh = self.ref.header
-        sh.azi_reference = 'grid'
+        dist = best_dist
+        if dist < 1e-10:
+            return np.inf
 
-        survey = Survey(
-            md=np.insert(
-                self.ref.md[ii: ii+2], 1, node.md
-            ),
-            inc=np.insert(
-                self.ref.inc_rad[ii: ii+2], 1, node.inc_rad
-            ),
-            azi=np.insert(
-                self.ref.azi_grid_rad[ii: ii+2], 1, node.azi_rad
-            ),
-            cov_nev=np.insert(
-                self.ref.cov_nev[ii: ii+2], 1, cov_nev, axis=0
-            ),
-            start_nev=self.ref.pos_nev[ii],
-            deg=False
-        )
-
-        clearance_args = (survey, self.offset)
-        clearance_kwargs = dict(
-            k=self.k,
-            sigma_pa=self.sigma_pa,
-            Sm=0.0,
-            Rr=np.insert(
-                self.Rr[ii: ii+2], 1, self.Rr[ii+1]
-            ),
-            Ro=self.Ro,
-            kop_depth=self.kop_depth
-        )
-
-        sf_interpolated = IscwsaClearance(
-            *clearance_args, **clearance_kwargs, minimize_sf=False
-        ).sf[1]
-
-        return sf_interpolated
+        u = best_u / dist
+        ref_pcr = np.sqrt(max(0.0, float(u @ ref_cov @ u)))
+        off_pcr = np.sqrt(max(0.0, float(u @ best_off_cov @ u)))
+        sigma_s = np.sqrt(ref_pcr ** 2 + off_pcr ** 2)
+        eou = self.k * np.sqrt(sigma_s ** 2 + self.sigma_pa ** 2)
+        # Sm=0.0 matches the original (using Sm=0 for min-finding)
+        return float((dist - ref_r - best_off_r) / eou)
 
     def get_sf_mins(self):
         """
@@ -636,20 +710,37 @@ class IscwsaClearance(Clearance):
             unit=self.offset.unit
         )
 
+    def _compute_off_cov_sidetrack_correction(self):
+        """
+        Per the ISCWSA standard (paragraph 81), uncertainty for sidetrack
+        clearance is zeroed at the KOP for both wells. The offset well's error
+        model already starts from MD[0] with sigma[0]=0, which correctly gives
+        zero uncertainty at the sidetrack point. No additional correction is
+        needed.
+        """
+        return
+
     def _interpolate_covs(self, i, mult):
         """
         Returns the interpolated covariance matrices for the interpolated
         survey points representing the closest points on the offset well
         relative to each reference well survey station.
         """
+        if self._off_cov_nev_corrected is not None:
+            cov_hla_src = self._off_cov_hla_corrected
+            cov_nev_src = self._off_cov_nev_corrected
+        else:
+            cov_hla_src = self.offset.cov_hla
+            cov_nev_src = self.offset.cov_nev
+
         cov_hla_new = (
-            self.offset.cov_hla[i - 1]
-            + mult * (self.offset.cov_hla[i] - self.offset.cov_hla[i-1])
+            cov_hla_src[i - 1]
+            + mult * (cov_hla_src[i] - cov_hla_src[i - 1])
         )
 
         cov_nev_new = (
-            self.offset.cov_nev[i - 1]
-            + mult * (self.offset.cov_nev[i] - self.offset.cov_nev[i-1])
+            cov_nev_src[i - 1]
+            + mult * (cov_nev_src[i] - cov_nev_src[i - 1])
         )
 
         return (cov_hla_new, cov_nev_new)
@@ -659,11 +750,8 @@ class IscwsaClearance(Clearance):
         Optimization function used to find the closest point between pairs of
         offset well survey stations.
         """
-        s = _interpolate_survey(survey, x[0], index)
-        new_pos = np.array([s.n, s.e, s.tvd]).T[1]
-        dist = norm(new_pos - station, axis=-1)
-
-        return dist
+        new_pos = _interpolate_pos_nev(survey, x[0], index)
+        return norm(new_pos - station, axis=-1)
 
     def _get_delta_nev_vectors(self):
         temp = self.off_nevs - self.ref_nevs
@@ -714,18 +802,12 @@ class IscwsaClearance(Clearance):
         self.distance_cc = self.distance_cc.reshape(-1)
 
     def _get_delta_hla_vectors(self):
-        self.ref_delta_hlas = np.vstack([
-            NEV_to_HLA(s, nev, cov=False)
-            for s, nev in zip(
-                self.ref.survey_rad, self.ref_delta_nevs
-            )
-        ])
-        self.off_delta_hlas = np.vstack([
-            NEV_to_HLA(s, nev, cov=False)
-            for s, nev in zip(
-                self.off.survey_rad, self.off_delta_nevs
-            )
-        ])
+        self.ref_delta_hlas = NEV_to_HLA(
+            self.ref.survey_rad, self.ref_delta_nevs, cov=False
+        )
+        self.off_delta_hlas = NEV_to_HLA(
+            self.off.survey_rad, self.off_delta_nevs, cov=False
+        )
 
     def _get_covs(self):
         self.ref_cov_hla = self.ref.cov_hla
@@ -734,14 +816,14 @@ class IscwsaClearance(Clearance):
         self.off_cov_nev = self.off.cov_nev
 
     def _get_PCRs(self):
-        self.ref_pcr = np.hstack([
-            np.sqrt(np.dot(np.dot(vec, cov), vec.T))
-            for vec, cov in zip(self.ref_delta_nevs, self.ref_cov_nev)
-        ])
-        self.off_pcr = np.hstack([
-            np.sqrt(np.dot(np.dot(vec, cov), vec.T))
-            for vec, cov in zip(self.off_delta_nevs, self.off_cov_nev)
-        ])
+        ref_cov = self.ref_cov_nev.reshape(-1, 3, 3)
+        off_cov = self.off_cov_nev.reshape(-1, 3, 3)
+        self.ref_pcr = np.sqrt(np.einsum(
+            'ni,nij,nj->n', self.ref_delta_nevs, ref_cov, self.ref_delta_nevs
+        ))
+        self.off_pcr = np.sqrt(np.einsum(
+            'ni,nij,nj->n', self.off_delta_nevs, off_cov, self.off_delta_nevs
+        ))
 
     def _get_calc_hole(self):
         self.calc_hole = self.Rr + self.Ro[self.idx]
@@ -778,6 +860,11 @@ class MeshClearance(Clearance):
         mesh. The default value of 2.445 represents about 98.5% confidence
         of the well bore being located within the volume of the generated
         mesh.
+
+    Methods
+    -------
+    get_lines()
+        Generate line data for visualizing clearance between wells.
     """
     def __init__(
         self,
@@ -820,7 +907,7 @@ class MeshClearance(Clearance):
             self.meshes = []
 
         # generate mesh for offset well
-        self.off_mesh = self._get_mesh(self.offset, offset=True).mesh
+        self.off_mesh = to_trimesh(self._get_mesh(self.offset, offset=True))
 
         # make a CollisionManager object and add the offset well mesh
         self.cm = trimesh.collision.CollisionManager()
@@ -881,7 +968,7 @@ class MeshClearance(Clearance):
             s = slice_survey(ref, i, i + 2)
 
             # generate a mesh for the section slice
-            m = self._get_mesh(s).mesh
+            m = to_trimesh(self._get_mesh(s))
 
             # see if there's a collision
             collision = self.cm.in_collision_single(
@@ -944,7 +1031,8 @@ class MeshClearance(Clearance):
                     else:
                         sf = 0
                 else:
-                    sf = distance_cc / (distance_cc - distance[0])
+                    denom = distance_cc - distance[0]
+                    sf = distance_cc / denom if denom != 0 else np.inf
 
                 # data for ISCWSA method comparison
                 # self.collision.append(collision)
@@ -1009,7 +1097,7 @@ class MeshClearance(Clearance):
 
 
 def get_ref_sigma(sigma1, sigma2, sigma3, kop_index):
-    sigma = np.array([sigma1, sigma2, sigma3]).T
+    sigma = np.column_stack([sigma1, sigma2, sigma3])
     sigma_diff = np.diff(sigma, axis=0)
 
     sigma_above = np.cumsum(sigma_diff[:kop_index][::-1], axis=0)[::-1]

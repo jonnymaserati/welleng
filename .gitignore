@@ -22,3 +22,5 @@ key.asc
 VERSION*
 
 test/test_data/*.xlsx
+
+CLAUDE.md

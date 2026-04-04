@@ -1,24 +1,122 @@
+"""Wellbore trajectory connector for computing minimum-MD CLC paths."""
+
 from copy import copy, deepcopy
 
 import numpy as np
 from scipy.optimize import minimize
 from scipy.spatial import distance
 
-try:
-    from numba import njit
-    NUMBA = True
-except ImportError:
-    NUMBA = False
-
 from .node import Node, get_node_params
 from .utils import (
-    NEV_to_HLA, _get_angles, dls_from_radius, get_angles,
-    get_nev, get_unit_vec, get_vec, get_xyz, radius_from_dls,
-    get_arc
+    NEV_to_HLA, dls_from_radius, get_angles,
+    get_dogleg, get_nev, get_rf, get_unit_vec, get_vec, get_xyz,
+    radius_from_dls, get_arc
 )
 
 
 class Connector:
+    """Solves minimum-MD wellbore trajectories between two survey stations.
+
+    Automatically selects the appropriate geometric method (hold, curve-hold,
+    min-curve, or curve-hold-curve) based on the provided start/end constraints
+    and computes control points for the connecting path segment. The solver
+    honours a maximum dog-leg severity (DLS) constraint where geometrically
+    feasible.
+
+    Attributes
+    ----------
+    method : str
+        The geometric method used ('hold', 'min_curve',
+        'curve_hold_curve', 'min_dist_to_target', or
+        'min_curve_to_target').
+    node_start : Node
+        Start survey station as a Node.
+    node_end : Node
+        End survey station as a Node.
+    pos1 : ndarray of shape (3,)
+        Start position in NEV coordinates.
+    vec1 : ndarray of shape (3,)
+        Unit direction vector at the start position.
+    inc1 : float
+        Inclination at the start position (radians).
+    azi1 : float
+        Azimuth at the start position (radians).
+    md1 : float
+        Measured depth at the start position.
+    pos2 : ndarray of shape (3,) or None
+        Position at the end of the first arc section in NEV
+        coordinates. Equal to vec2 direction at this point.
+    vec2 : ndarray of shape (3,) or None
+        Unit direction vector at the end of the first arc.
+        Equals vec3 for curve-hold-curve solutions.
+    inc2 : float or None
+        Inclination at the end of the first arc (radians).
+    azi2 : float or None
+        Azimuth at the end of the first arc (radians).
+    md2 : float or None
+        Measured depth at the end of the first arc.
+    pos3 : ndarray of shape (3,) or None
+        Position at the start of the second arc (end of the
+        hold section) in NEV coordinates. Only set for
+        curve-hold-curve solutions.
+    vec3 : ndarray of shape (3,) or None
+        Unit direction vector at the start of the second arc.
+        Only set for curve-hold-curve solutions.
+    inc3 : float or None
+        Inclination at the start of the second arc (radians).
+    azi3 : float or None
+        Azimuth at the start of the second arc (radians).
+    md3 : float or None
+        Measured depth at the start of the second arc.
+    md_target : float
+        Measured depth at the target position.
+    pos_target : ndarray of shape (3,)
+        Target position in NEV coordinates.
+    vec_target : ndarray of shape (3,)
+        Target unit direction vector in NEV coordinates.
+    inc_target : float
+        Target inclination (radians).
+    azi_target : float
+        Target azimuth (radians).
+    dogleg : float
+        Dogleg angle of the first arc (radians).
+    dogleg2 : float or None
+        Dogleg angle of the second arc (radians). Only set for
+        curve-hold-curve solutions.
+    dist_curve : float
+        Arc length of the first curve section.
+    dist_curve2 : float
+        Arc length of the second curve section.
+    tangent_length : float or None
+        Length of the hold (tangent) section between the two
+        arcs.
+    dls : float
+        Dogleg severity of the first arc (radians per unit
+        length).
+    dls2 : float
+        Dogleg severity of the second arc (radians per unit
+        length).
+    dls_design : float
+        Design DLS constraint for the first arc (radians per
+        unit length).
+    dls_design2 : float
+        Design DLS constraint for the second arc (radians per
+        unit length).
+    radius_design : float
+        Design turn radius derived from dls_design.
+    radius_design2 : float
+        Design turn radius derived from dls_design2.
+    radius_critical : float
+        Critical (minimum geometric) radius for the first arc.
+    radius_critical2 : float
+        Critical radius for the second arc.
+
+    Methods
+    -------
+    interpolate(step=30)
+        Interpolate the solved trajectory at regular MD intervals.
+    """
+
     def __init__(
         self,
         node1=None,
@@ -44,88 +142,71 @@ class Connector:
         force_min_curve=False,
         closest_approach=False
     ):
+        """Initializes the Connector and solves the trajectory.
 
-        """
-        A class to provide a fast, efficient method for determining well
-        bore section geometry using the appropriate method based upon the
-        provided parameters, with the intent of assisting machine learning
-        fitness functions. Interpolation between the returned control points
-        can be performed posthumously - attempts are made to keep processing to
-        a minimum in the event that the Connector is being used for machine
-        learning.
-
-        Only specific combinations of input data are permitted, e.g. if you
-        input both a start vector AND a start inc and azi you'll get an error
-        (which one is correct after all?). Think about what you're trying to
-        achieve and provide the data that will facilitate that outcome.
+        Only specific combinations of input data are permitted. For example,
+        providing both a start vector and start inc/azi raises an error.
+        The solver determines the appropriate method from the provided
+        parameters and computes the connecting path immediately.
 
         Parameters
         ----------
-        pos1: (3) list or array of floats (default: [0,0,0])
-            Start position in NEV coordinates.
-        vec1: (3) list or array of floats or None (default: None)
-            Start position unit vector in NEV coordinates.
-        inc1: float or None (default: None)
-            Start position inclination.
-        azi2: float or None (default: None)
-            Start position azimuth.
-        md1: float or None (default: None)
-            Start position measured depth.
-        dls_design: float (default: 3.0)
-            The desired Dog Leg Severity (DLS) for the (first) curved
-            section in degrees per 30 meters or 100 feet.
-        dls_design2: float or None (default: None)
-            The desired DLS for the second curve section in degrees per
-            30 meters or 100 feet. If set to None then `dls_design` will
-            be the default value.
-        md2: float or None (default: None)
-            The measured depth of the target position.
-        pos2: (3) list or array of floats or None (default: None)
-            The position of the target in NEV coordinates.
-        vec2: (3) list or array of floats or None (default: None)
-            The target unit vector in NEV coordinates.
-        inc1: float or None (default: None)
-            The inclination at the target position.
-        azi2: float or None (default: None)
-            The azimuth at the target position.
-        degrees: boolean (default: True)
-            Indicates whether the input angles (inc, azi) are in degrees
-            (True) or radians (False).
-        unit: string (default: 'meters')
-            Indicates the distance unit, either 'meters' or 'feet'.
-        min_error: float (default: 1e-5):
-            Infers the error tolerance of the results and is used to set
-            iteration stops when the desired error tolerance is met. Value
-            must be less than 1. Use with caution as the code may
-            become unstable if this value is changed.
-        delta_radius: float (default: 20)
-            The delta radius (first curve and second curve sections) used
-            as an iteration stop when balancing radii. If the resulting
-            delta radius yielded from `dls_design` and `dls_design2` is
-            larger than `delta_radius`, then `delta_radius` defaults to
-            the former.
-        delta_dls: float (default: 0.1)
-            The delta dls (first curve and second curve sections) used as an
-            iteration stop when balancing radii, i.e. if the dls of the second
-            section is within 0.1 deg/30m of the first curve section then the
-            section is considered balanced and no further iterations are
-            performed. Setting this value too low will likely result in hitting
-            the recursion limit.
-        min_tangent: float (default: 10)
-            The minimum tangent length in the `curve_hold_curve` method
-            used to mitigate instability during iterations (where the
-            tangent section approaches or equals 0).
-        max_iterations: int (default: 1000)
-            The maximum number of iterations before giving up trying to
-            fit a `curve_hold_curve`. This number is limited by Python's
-            depth of recursion, but if you're hitting the default stop
-            then consider changing `delta_radius` and `min_tangent` as
-            your expectations may be unrealistic (this is open source
-            software after all!)
+        node1 : Node or None
+            Start Node. Overrides pos1, vec1, md1 if provided.
+        node2 : Node or None
+            End Node. Overrides pos2, vec2, md2 if provided.
+        pos1 : list or ndarray
+            Start position as [n, e, v] in NEV coordinates.
+        vec1 : list or ndarray or None
+            Start unit direction vector in NEV coordinates.
+        inc1 : float or None
+            Start inclination angle.
+        azi1 : float or None
+            Start azimuth angle.
+        md1 : float
+            Start measured depth.
+        dls_design : float
+            Design DLS for the first curve section in
+            deg/30m (meters) or deg/100ft (feet).
+        dls_design2 : float or None
+            Design DLS for the second curve section. Defaults
+            to dls_design if None.
+        md2 : float or None
+            Target measured depth. Mutually exclusive with pos2.
+        pos2 : list or ndarray or None
+            Target position in NEV coordinates.
+        vec2 : list or ndarray or None
+            Target unit direction vector in NEV coordinates.
+            Mutually exclusive with inc2/azi2.
+        inc2 : float or None
+            Target inclination angle.
+        azi2 : float or None
+            Target azimuth angle.
+        degrees : bool
+            If True, angles are in degrees; if False, radians.
+        unit : str
+            Distance unit, either 'meters' or 'feet'.
+        min_error : float
+            Error tolerance for iterative convergence. Must be
+            less than 1.
+        delta_dls : float
+            DLS tolerance (deg/30m) for balancing curve sections
+            in curve-hold-curve solutions.
+        min_tangent : float
+            Minimum tangent length to stabilize
+            curve-hold-curve iteration.
+        max_iterations : int
+            Maximum iteration count for curve-hold-curve fitting.
+        force_min_curve : bool
+            If True, forces minimum-curvature method.
+        closest_approach : bool
+            If True, finds the closest-approach trajectory
+            when the target is inside the critical radius.
 
-        Results
-        -------
-        connector: welleng.connector.Connector object
+        Raises
+        ------
+        AssertionError
+            If input parameter combinations are invalid.
         """
         if node1 is not None:
             pos1, vec1, md1 = get_node_params(
@@ -181,9 +262,7 @@ class Connector:
             assert pos2 is None, "Either md2 or pos2"
             assert md2 >= md1, "md2 must be larger than md1"
 
-        if dls_design is None:
-            dls_design = 3.0
-        else:
+        if dls_design is not None:
             assert dls_design > 0, "dls_design must be greater than zero"
         assert min_error < 1, "min_error must be less than 1.0"
 
@@ -281,19 +360,23 @@ class Connector:
         else:
             self.denom = 100
 
-        if degrees:
-            self.dls_design = np.radians(dls_design)
-            if dls_design2:
-                self.dls_design2 = np.radians(dls_design2)
+        # Primary DLS / radius.  dls_design=None means "use minimum curvature
+        # required by geometry" — radius_design is set to inf so that
+        # min(radius_design, radius_critical) always resolves to radius_critical.
+        if dls_design is None:
+            self.dls_design = 0.0
+            self.radius_design = np.inf
         else:
-            self.dls_design = dls_design
-            if dls_design2:
-                self.dls_design2 = dls_design2
-        if not dls_design2:
-            self.dls_design2 = self.dls_design
+            self.dls_design = np.radians(dls_design) if degrees else dls_design
+            self.radius_design = self.denom / self.dls_design
 
-        self.radius_design = self.denom / self.dls_design
-        self.radius_design2 = self.denom / self.dls_design2
+        # Secondary DLS (second arc of curve_hold_curve)
+        if dls_design2:
+            self.dls_design2 = np.radians(dls_design2) if degrees else dls_design2
+            self.radius_design2 = self.denom / self.dls_design2
+        else:
+            self.dls_design2 = self.dls_design
+            self.radius_design2 = self.radius_design
 
         self.delta_dls = delta_dls
 
@@ -522,6 +605,12 @@ class Connector:
 
         self.dogleg = check_dogleg(self.dogleg)
         if self.md_target is None:
+            if not np.isfinite(self.radius_design):
+                raise ValueError(
+                    "dls_design must be specified (not None) when only a "
+                    "target direction is given without a target position or "
+                    "measured depth."
+                )
             self.md2 = None
             self.dist_curve, self.func_dogleg = get_curve_hold_data(
                         self.radius_design, self.dogleg
@@ -664,47 +753,99 @@ class Connector:
         approximately balances (in DLS terms) within the prescribed delta_dls
         parameter.
         """
-        args = (self, None, [0., 0., 0.])
         minimize_target_pos_and_vec_defined(
-            *(
-                ([
-                    self.radius_design,
-                    self.radius_design2
-                ],)
-                + args + (True,)
-            )
+            [self.radius_design, self.radius_design2],
+            self, None, None, True
         )
-        if not all((
-            self.radius_critical > self.radius_design,
-            self.radius_critical2 > self.radius_design2
-        )):
-            while True and self.iterations <= self.max_iterations:
+        # Re-evaluate whether the outer loop is needed using the FINAL
+        # converged geometry (not the running minimum radius_critical, which
+        # may have been locked too low by transient tight iteration states).
+        if hasattr(self, 'distances1') and self.distances1 is not None:
+            _rc1 = get_radius_critical(
+                self.radius_design, self.distances1, self.min_error
+            )
+            _rc2 = get_radius_critical(
+                self.radius_design2, self.distances2, self.min_error
+            )
+            _outer_needed = not all((_rc1 >= self.radius_design, _rc2 >= self.radius_design2))
+        else:
+            _outer_needed = not all((
+                self.radius_critical > self.radius_design,
+                self.radius_critical2 > self.radius_design2
+            ))
+        if _outer_needed:
+            # Try the r_safe seeding approach first: solve at r_safe=dist/4
+            # (guaranteed to converge for any geometry), then use the result
+            # as seed for a design-radius re-solve.  This can escape the tight
+            # fixed point that the initial call converged to.
+            dist_to_target = np.linalg.norm(self.pos_target - self.pos1)
+            r_safe = dist_to_target / 4.0
+            if 0 < r_safe < min(self.radius_design, self.radius_design2):
+                minimize_target_pos_and_vec_defined(
+                    [r_safe, r_safe], self, None, None, True
+                )
+                pos3_seed = deepcopy(self.pos3)
+                vec_seed = (
+                    deepcopy(self.vec23[-1]) if len(self.vec23) > 0 else None
+                )
+                # Reset running minima (r_safe call left them at small value).
+                self.radius_critical = np.inf
+                self.radius_critical2 = np.inf
+                minimize_target_pos_and_vec_defined(
+                    [self.radius_design, self.radius_design2],
+                    self, pos3_seed, vec_seed, True
+                )
+                # Re-check with final geometry
+                if hasattr(self, 'distances1') and self.distances1 is not None:
+                    _rc1 = get_radius_critical(
+                        self.radius_design, self.distances1, self.min_error
+                    )
+                    _rc2 = get_radius_critical(
+                        self.radius_design2, self.distances2, self.min_error
+                    )
+                    _outer_needed = not all(
+                        (_rc1 >= self.radius_design, _rc2 >= self.radius_design2)
+                    )
+                else:
+                    _outer_needed = not all((
+                        self.radius_critical > self.radius_design,
+                        self.radius_critical2 > self.radius_design2
+                    ))
+
+        if _outer_needed:
+            # Design DLS still cannot be achieved; iterate to balance curvature
+            # across both arcs.  Use a *separate* counter so that the inner
+            # convergence iterations (tracked via self.iterations) do not
+            # prematurely exhaust the outer balancing budget.
+            for _outer in range(self.max_iterations):
                 self.radius_critical = (
                     (self.md_target - self.md1)
                     / (abs(self.dogleg) + abs(self.dogleg2))
                 )
-                assert self.radius_critical >= 0
+                if not (self.radius_critical >= 0):
+                    break
                 self.radius_critical2 = self.radius_critical
-                args = (self, deepcopy(self.pos3), deepcopy(self.vec23[-1]))
                 minimize_target_pos_and_vec_defined(
-                    *(
-                        ([
-                            self.radius_design,
-                            self.radius_design2
-                        ],)
-                        + args + (True,)
-                    )
+                    [self.radius_design, self.radius_design2],
+                    self, deepcopy(self.pos3), deepcopy(self.vec23[-1]), True
                 )
+
+                # Position-stability check: compare against last 5 positions
+                # explicitly (avoids ambiguous np.allclose broadcasting with
+                # a list of arrays).
+                n_hist = min(5, len(self.pos3_list))
+                pos3_stable = n_hist >= 5 and all(
+                    np.allclose(self.pos3, p) for p in self.pos3_list[-5:]
+                )
+                pos2_stable = n_hist >= 5 and all(
+                    np.allclose(self.pos2, p) for p in self.pos2_list[-5:]
+                )
+
                 if any((
-                    abs(
-                        self.dls - self.dls2
-                    ) < self.delta_dls,
+                    abs(self.dls - self.dls2) < self.delta_dls,
                     np.allclose(self.pos1, self.pos2),
                     np.allclose(self.pos3, self.pos_target),
-                    all((
-                        np.allclose(self.pos3, self.pos3_list[-5:]),
-                        np.allclose(self.pos2, self.pos2_list[-5:])
-                    )),
+                    pos3_stable and pos2_stable,
                     all((
                         self.dls == self.dls_design,
                         self.dls2 == self.dls_design2
@@ -712,14 +853,34 @@ class Connector:
                 )):
                     break
             self._happy_finish()
+            self._delta_pos3_rescue()
+            self._project_tangent()
+            self._endpoint_rescue()
+            self._enforce_planarity()
             return
 
         self._happy_finish()
+        self._delta_pos3_rescue()
+        self._project_tangent()
+        self._endpoint_rescue()
+        self._enforce_planarity()
 
     def _happy_finish(self):
+        # Use the critical radius at the FINAL converged geometry rather than the
+        # running-minimum radius_critical, which may have been locked too low by
+        # transient tight iteration states.  This ensures dist_curve is computed
+        # with the same effective radius that was used to derive self.dogleg in
+        # the last iteration step, keeping the arc geometry self-consistent.
+        if hasattr(self, 'distances1') and self.distances1 is not None:
+            rc1_final = get_radius_critical(
+                self.radius_design, self.distances1, self.min_error
+            )
+            r1 = min(rc1_final, self.radius_design)
+        else:
+            r1 = min(self.radius_critical, self.radius_design)
         # get pos1 to pos2 curve data
         self.dist_curve, self.func_dogleg = get_curve_hold_data(
-            min(self.radius_critical, self.radius_design),
+            r1,
             self.dogleg
         )
 
@@ -731,6 +892,23 @@ class Connector:
             self.dist_curve,
             self.func_dogleg
         )
+
+        # Resync dogleg and arc-1 length from the just-computed vec3.
+        # _happy_finish may be called after _enforce_planarity changes vec3 or
+        # after any iteration that updates pos3.  The stored self.dogleg may
+        # therefore differ from the actual angle between vec1 and vec3, making
+        # dist_curve (= r1 * old_dogleg) inconsistent with the SLERP geometry.
+        # from_connections reconstructs pos2 via minimum-curvature using the
+        # actual inc/azi of vec3, so it needs dist_curve to match the true arc
+        # length for vec1→vec3 at radius r1.
+        actual_dogleg = float(np.arccos(
+            np.clip(np.dot(self.vec1, self.vec3), -1.0, 1.0)
+        ))
+        if abs(actual_dogleg - self.dogleg) > 1e-9:
+            self.dogleg = actual_dogleg
+            self.dist_curve, self.func_dogleg = get_curve_hold_data(
+                r1, self.dogleg
+            )
 
         self.vec2 = self.vec3
 
@@ -744,30 +922,347 @@ class Connector:
 
         self.md2 = self.md1 + abs(self.dist_curve)
 
+        if hasattr(self, 'distances2') and self.distances2 is not None:
+            rc2_final = get_radius_critical(
+                self.radius_design2, self.distances2, self.min_error
+            )
+            r2 = min(rc2_final, self.radius_design2)
+        else:
+            r2 = min(self.radius_critical2, self.radius_design2)
+
+        # Recompute dogleg2 from the actual directional change between vec3 and
+        # vec_target.  The iteration stores dogleg2 = min_dist_to_target result
+        # (a geometric parameter), which can differ from arccos(dot(vec3,
+        # vec_target)) after _happy_finish re-derives vec3 from arc1.  Using the
+        # wrong angle in the SLERP formula inside interpolate_curve produces
+        # incorrect (spiralling) visualisation paths.
+        self.dogleg2 = float(np.arccos(
+            np.clip(np.dot(self.vec3, self.vec_target), -1.0, 1.0)
+        ))
         self.dist_curve2, self.func_dogleg2 = get_curve_hold_data(
-            min(self.radius_critical2, self.radius_design2),
+            r2,
             self.dogleg2
         )
 
-        self.pos3 = get_pos(
+        # ── Endpoint-consistency fix ──────────────────────────────────────────
+        # The rendered path (from_connections / minimum-curvature integration)
+        # starts arc2 from hold_end = pos2 + T·vec3, NOT from the backward-
+        # traced pos3.  If pos3 is off the tangent ray the rendered endpoint
+        # misses pos_target by exactly the perpendicular component of
+        # (pos3_backward − pos2) w.r.t. vec3.
+        #
+        # For well-converged cases (perp < 1 mm) this is negligible and we
+        # preserve the backward-trace geometry to avoid touching dist_curve2.
+        #
+        # For DLS-violation cases the iteration may leave a large perpendicular
+        # residual.  The 2×2 projection finds T and dist_curve2 that solve:
+        #   pos2 + T·vec3 + (dist_curve2·RF/2)·(vec3+vec_target) = pos_target
+        # in the plane of {vec3, vec_target}, eliminating the in-plane part
+        # of the endpoint error.  The remaining (out-of-plane) residual can
+        # only be removed by finding a better vec3 via a tighter-radius retry.
+
+        # Step 1: backward trace to locate pos3 (guarantees arc2 → pos_target)
+        pos3_bt   = get_pos(
             self.pos_target,
             self.vec_target * -1,
             self.vec3 * -1,
             self.dist_curve2,
             self.func_dogleg2
         ).reshape(3)
+        t_along   = float(np.dot(pos3_bt - self.pos2, self.vec3))
+        perp_vec  = pos3_bt - self.pos2 - t_along * self.vec3
+        perp_norm = float(np.linalg.norm(perp_vec))
 
-        tangent_length = np.linalg.norm(
-            self.pos3 - self.pos2
-        )
+        # Step 2: 2×2 projection only when perpendicular drift is significant
+        _PERP_THRESHOLD = 1e-3   # 1 mm — noise floor for well-converged cases
+        _applied_2x2 = False
+        if perp_norm > _PERP_THRESHOLD:
+            delta  = self.pos_target - self.pos2
+            p_comp = float(np.dot(delta, self.vec3))
+            q_comp = float(np.dot(delta, self.vec_target))
+            c_dot  = float(np.dot(self.vec3, self.vec_target))
+            sin2   = 1.0 - c_dot * c_dot
+            if sin2 > 1e-6 and abs(self.func_dogleg2) > 1e-10:
+                a_coef = (p_comp - c_dot * q_comp) / sin2
+                b_coef = (q_comp - c_dot * p_comp) / sin2
+                if b_coef >= 0.0:
+                    tangent_length   = float(max(0.0, a_coef - b_coef))
+                    self.dist_curve2 = float(
+                        max(0.0, 2.0 * b_coef / self.func_dogleg2)
+                    )
+                    self.pos3        = self.pos2 + tangent_length * self.vec3
+                    _applied_2x2 = True
 
-        self.md3 = self.md2 + tangent_length
+        if not _applied_2x2:
+            # Well-converged (or 2×2 degenerate): tangent-project only
+            tangent_length = max(0.0, t_along)
+            self.pos3      = self.pos2 + tangent_length * self.vec3
 
+        self.md3       = self.md2 + tangent_length
         self.md_target = self.md3 + abs(self.dist_curve2)
 
         return self
 
+    def _delta_pos3_rescue(self):
+        """
+        Final geometric-consistency check after _happy_finish.
+
+        If the tangent section is backward (dot(pos3-pos2, vec3) < 0) the
+        path doubles back on itself.  Re-seed with pos3 = pos2 (zero tangent)
+        to force the iteration to find a forward path, then only keep the
+        rescue result if it has a strictly better (higher) minimum arc radius.
+        """
+        _tangent_proj = float(np.dot(self.pos3 - self.pos2, self.vec3))
+        if _tangent_proj >= -self.min_error:
+            return  # tangent is already forward — nothing to fix
+
+        # Snapshot the current _happy_finish outputs before attempting rescue
+        _state_keys = (
+            'pos2', 'pos3', 'vec2', 'vec3',
+            'dist_curve', 'dist_curve2', 'func_dogleg', 'func_dogleg2',
+            'dogleg', 'dogleg2', 'md2', 'md3', 'md_target',
+        )
+        _saved = {k: deepcopy(getattr(self, k)) for k in _state_keys}
+
+        _r_before = min(
+            self.dist_curve / self.dogleg if self.dogleg > 1e-10 else self.radius_design,
+            self.dist_curve2 / self.dogleg2 if self.dogleg2 > 1e-10 else self.radius_design,
+        )
+
+        for _seed in (
+            deepcopy(self.pos2),                  # zero-tangent seed
+            0.5 * (self.pos2 + self.pos_target),  # midpoint fallback
+        ):
+            self.radius_critical = np.inf
+            self.radius_critical2 = np.inf
+            minimize_target_pos_and_vec_defined(
+                [self.radius_design, self.radius_design2],
+                self, _seed, None, True
+            )
+            self._happy_finish()
+            _tp = float(np.dot(self.pos3 - self.pos2, self.vec3))
+            _r_after = min(
+                self.dist_curve / self.dogleg if self.dogleg > 1e-10 else self.radius_design,
+                self.dist_curve2 / self.dogleg2 if self.dogleg2 > 1e-10 else self.radius_design,
+            )
+            if _tp >= -self.min_error and _r_after >= _r_before - self.min_error:
+                return  # rescue improved or matched — keep it
+
+        # Rescue did not improve things — restore the saved state
+        for k, v in _saved.items():
+            setattr(self, k, v)
+
+    def _project_tangent(self):
+        """Project pos3 onto the tangent ray from pos2 along vec3.
+
+        _happy_finish computes pos2 (arc1 end) and pos3 (arc2 start) via
+        independent minimum-curvature traces.  When the iteration has not
+        fully converged — or when dogleg2 is near π so the minimum-curvature
+        ratio-factor blows up — pos3 may lie far off the tangent ray
+        pos2 + t*vec3.  The survey reconstruction (interpolate_hold) advances
+        strictly along vec3, so the hold section ends at pos2 + t*vec3 while
+        arc2 still starts at the raw pos3.  That geometric gap produces the
+        visually anomalous ~90° phase difference seen in the edge-case viewer.
+
+        Fix: replace pos3 with its projection onto the tangent ray.  The
+        projected tangent length is dot(pos3-pos2, vec3), clamped to ≥ 0.
+        This eliminates the hold→arc2 discontinuity.  Arc2 dogleg and arc
+        length are unchanged (they depend only on vec3, vec_target, and the
+        radius), so the path is geometrically self-consistent.
+
+        Called after _delta_pos3_rescue so that rescue still operates on the
+        un-projected geometry (its backward-tangent trigger requires the raw
+        dot-product, which is <= 0 before projection).
+        """
+        # _happy_finish now projects tangent_length inline and places pos3 via
+        # the backward arc2 trace (keeping arc2 geometrically consistent with
+        # pos_target).  This method is retained as a safety net to update MD
+        # whenever pos3 has been changed by _delta_pos3_rescue.
+        tangent_length = max(
+            0.0, float(np.dot(self.pos3 - self.pos2, self.vec3))
+        )
+        self.md3 = self.md2 + tangent_length
+        self.md_target = self.md3 + abs(self.dist_curve2)
+
+    def _rendered_endpoint_error(self):
+        """Return the distance from the rendered arc2 endpoint to pos_target.
+
+        The rendered path integrates continuously from pos1, so arc2 starts
+        from hold_end = pos2 + T·vec3 (not from pos3 directly).  Any gap
+        between hold_end and pos3 translates directly into an endpoint error.
+        """
+        t = max(0.0, float(np.dot(self.pos3 - self.pos2, self.vec3)))
+        hold_end = self.pos2 + t * self.vec3
+        rendered = (
+            hold_end
+            + (self.dist_curve2 * self.func_dogleg2 / 2)
+            * (self.vec3 + self.vec_target)
+        )
+        return float(np.linalg.norm(self.pos_target - rendered))
+
+    def _endpoint_rescue(self):
+        """Retry with progressively tighter radii when the rendered endpoint
+        still misses pos_target by more than 1 mm after _happy_finish.
+
+        The fixed-point iterator can converge to a spurious local minimum for
+        DLS-violation geometries, leaving a large out-of-plane residual that
+        the 2×2 in-plane projection cannot eliminate.  Using a tighter design
+        radius enlarges the set of reachable vec3 directions and typically
+        allows the iterator to escape the bad basin.
+
+        Each retry uses a fresh geometric seed (pos3=None) and keeps whichever
+        result achieves the smallest rendered endpoint error.
+        """
+        _THRESHOLD = 1e-3   # 1 mm
+        err0 = self._rendered_endpoint_error()
+        if err0 <= _THRESHOLD:
+            return
+
+        _save_keys = (
+            'pos2', 'pos3', 'vec2', 'vec3',
+            'dist_curve', 'dist_curve2', 'func_dogleg', 'func_dogleg2',
+            'dogleg', 'dogleg2', 'md2', 'md3', 'md_target',
+        )
+        best_err   = err0
+        best_state = {k: deepcopy(getattr(self, k)) for k in _save_keys}
+
+        r_base = min(self.radius_design, self.radius_design2)
+        for shrink in [0.5, 0.25, 0.125]:
+            r_try = r_base * shrink
+            self.radius_critical  = np.inf
+            self.radius_critical2 = np.inf
+            minimize_target_pos_and_vec_defined(
+                [r_try, r_try], self, None, None, True
+            )
+            self._happy_finish()
+            err_new = self._rendered_endpoint_error()
+            if err_new < best_err:
+                best_err   = err_new
+                best_state = {k: deepcopy(getattr(self, k)) for k in _save_keys}
+            if best_err <= _THRESHOLD:
+                break
+
+        # Restore the geometry that achieved the smallest endpoint error
+        for k, v in best_state.items():
+            setattr(self, k, v)
+
+    def _enforce_planarity(self, max_iters=8, tol=1e-3):
+        """Adjust vec3 to lie in the {pos_target−pos2, vec_target} plane.
+
+        After _endpoint_rescue, an out-of-plane residual may remain because the
+        fixed-point iterator converged to a vec3 that is not coplanar with
+        (pos_target − pos2) and vec_target.  The 2×2 projection in _happy_finish
+        can only correct the in-plane part; the out-of-plane part can only be
+        removed by rotating vec3 itself.
+
+        Strategy: project the current vec3 onto span{delta, vec_target} (where
+        delta = pos_target − pos2) and re-seed _happy_finish so it recovers the
+        corrected direction.  Iterate until the rendered endpoint error drops
+        below tol (1 mm) or max_iters is exhausted.
+        """
+        if self._rendered_endpoint_error() <= tol:
+            return
+
+        # Determine the effective arc-1 radius from the post-rescue state.
+        if hasattr(self, 'distances1') and self.distances1 is not None:
+            r1 = min(
+                get_radius_critical(self.radius_design, self.distances1, self.min_error),
+                self.radius_design
+            )
+        elif np.isfinite(self.radius_critical) and self.radius_critical > 0:
+            r1 = min(self.radius_critical, self.radius_design)
+        else:
+            r1 = self.radius_design
+
+        _save_keys = (
+            'pos2', 'pos3', 'vec2', 'vec3',
+            'dist_curve', 'dist_curve2', 'func_dogleg', 'func_dogleg2',
+            'dogleg', 'dogleg2', 'md2', 'md3', 'md_target',
+            'radius_critical', 'radius_critical2',
+        )
+        best_err = self._rendered_endpoint_error()
+        best_state = {k: deepcopy(getattr(self, k)) for k in _save_keys}
+
+        for _ in range(max_iters):
+            # Compute arc-1 endpoint (pos2) from the current vec3 at r1
+            dc1, fd1 = get_curve_hold_data(r1, self.dogleg)
+            pos2 = get_pos(
+                self.pos1, self.vec1, self.vec3, dc1, fd1
+            ).reshape(3)
+            delta = self.pos_target - pos2
+
+            # Build an ONB for span{delta, vec_target}
+            d_norm = float(np.linalg.norm(delta))
+            if d_norm < 1e-10:
+                break  # pos_target ≈ pos2 — degenerate
+            d_hat = delta / d_norm
+
+            vt_comp = float(np.dot(self.vec_target, d_hat))
+            v_perp = self.vec_target - vt_comp * d_hat
+            v_perp_norm = float(np.linalg.norm(v_perp))
+            if v_perp_norm < 1e-8:
+                break  # vec_target ∥ delta — unconstrained direction
+
+            v_hat = v_perp / v_perp_norm
+
+            # Project vec3 onto the {d_hat, v_hat} plane
+            proj = (
+                float(np.dot(self.vec3, d_hat)) * d_hat
+                + float(np.dot(self.vec3, v_hat)) * v_hat
+            )
+            proj_norm = float(np.linalg.norm(proj))
+            if proj_norm < 1e-10:
+                break  # vec3 ⊥ plane — cannot project
+
+            new_vec3 = proj / proj_norm
+            if np.allclose(new_vec3, self.vec3, atol=1e-9):
+                break  # already in-plane — nothing to do
+
+            new_dogleg = float(np.arccos(np.clip(
+                np.dot(self.vec1, new_vec3), -1.0, 1.0
+            )))
+
+            # Compute pos2 seed so that _happy_finish recovers new_vec3:
+            #   get_vec_target(pos1, vec1, pos2_new, 0, dc1_new, fd1_new) = new_vec3
+            dc1_new, fd1_new = get_curve_hold_data(r1, new_dogleg)
+            pos2_new = get_pos(
+                self.pos1, self.vec1, new_vec3, dc1_new, fd1_new
+            ).reshape(3)
+
+            # Seed _happy_finish with the planarity-corrected direction
+            self.dogleg = new_dogleg
+            self.vec3 = new_vec3
+            self.pos3 = pos2_new        # tangent_length = 0 seed
+            self.tangent_length = 0.0
+            self.distances1 = None      # force _happy_finish to use radius_critical
+            self.radius_critical = r1
+            self.radius_critical2 = np.inf
+            self._happy_finish()
+
+            err_new = self._rendered_endpoint_error()
+            if err_new < best_err:
+                best_err = err_new
+                best_state = {k: deepcopy(getattr(self, k)) for k in _save_keys}
+            if best_err <= tol:
+                break
+
+        # Always restore the state that achieved the smallest endpoint error
+        for k, v in best_state.items():
+            setattr(self, k, v)
+
     def interpolate(self, step=30):
+        """Interpolates the connector trajectory at regular MD intervals.
+
+        Parameters
+        ----------
+        step : float
+            Desired delta measured depth between survey points.
+
+        Returns
+        -------
+        list
+            A list of interpolated survey data dictionaries.
+        """
         return interpolate_well([self], step)
 
     def _get_tangent_temp(self, tangent_length):
@@ -823,160 +1318,225 @@ class Connector:
 
 
 def minimize_target_pos_and_vec_defined(
-    x, c, pos3=None, vec_old=[0., 0., 0.], result=False
+    x, c, pos3=None, vec_old=None, result=False
 ):
+    """Iteratively solves curve-hold-curve geometry between two nodes.
+
+    Uses a damped fixed-point iteration (alpha=0.5) on the intermediate
+    tangent point to find the curve-hold-curve path connecting the start
+    and target positions/vectors on the Connector.
+
+    Parameters
+    ----------
+    x : list
+        List of [radius1, radius2] for the two curve sections.
+    c : Connector
+        The Connector instance whose state is updated in place.
+    pos3 : ndarray or None
+        Optional initial guess for the intermediate tangent point.
+    vec_old : ndarray or None
+        Optional previous tangent direction for convergence check.
+    result : bool
+        If True, returns the Connector; if False, returns a scalar
+        residual for use with optimizers.
+
+    Returns
+    -------
+    Connector or float
+        The Connector instance if result is True, otherwise a float
+        residual measuring how much the design radii were violated.
+    """
+    if vec_old is None:
+        vec_old = np.array([0., 0., 0.])
+
     radius1, radius2 = x
+
+    # Initialise the intermediate tangent point
     if pos3 is None:
         pos2_init = c._get_pos2(c.pos1, c.vec1, c.pos_target, radius1)
         pos3_init = c._get_pos2(
             c.pos_target, c.vec_target * -1, c.pos1, radius2
         )
-        c.pos3 = pos2_init + (
-            pos3_init - pos2_init
-        ) / 2
-    # else:
-    #     c.pos3 = c.pos2 + (c.pos3 - c.pos2) / 2
-    c.distances1 = c._get_distances(c.pos1, c.vec1, c.pos3)
+        pos3_mid = pos2_init + (pos3_init - pos2_init) / 2
 
-    radius_temp1 = get_radius_critical(
-        radius1,
-        c.distances1,
-        c.min_error
-    )
-    if radius_temp1 < c.radius_critical:
-        c.radius_critical = radius_temp1
-        assert c.radius_critical >= 0
-
-    radius_effective1 = min(radius1, c.radius_critical)
-
-    (
-        c.tangent_length,
-        c.dogleg
-    ) = min_dist_to_target(
-        radius_effective1,
-        c.distances1
-    )
-
-    c.dogleg = check_dogleg(c.dogleg)
-
-    c.dist_curve, c.func_dogleg = get_curve_hold_data(
-                radius_effective1,
-                c.dogleg
-            )
-    c.vec3 = get_vec_target(
-        c.pos1,
-        c.vec1,
-        c.pos3,
-        c.tangent_length,
-        c.dist_curve,
-        c.func_dogleg
-    )
-
-    tangent_temp1 = c._get_tangent_temp(c.tangent_length)
-
-    c.pos2 = (
-        c.pos3 - (
-            tangent_temp1 * c.vec3
-        )
-    )
-
-    c.distances2 = c._get_distances(
-        c.pos_target,
-        c.vec_target * -1,
-        c.pos2
-    )
-
-    radius_temp2 = get_radius_critical(
-        radius2,
-        c.distances2,
-        c.min_error
-    )
-    if radius_temp2 < c.radius_critical2:
-        c.radius_critical2 = radius_temp2
-        assert c.radius_critical2 >= 0
-
-    radius_effective2 = min(radius2, c.radius_critical2)
-
-    (
-        c.tangent_length2,
-        c.dogleg2
-    ) = min_dist_to_target(
-        radius_effective2,
-        c.distances2
-    )
-
-    c.dogleg2 = check_dogleg(c.dogleg2)
-
-    c.dist_curve2, c.func_dogleg2 = get_curve_hold_data(
-                radius_effective2,
-                c.dogleg2
-            )
-    c.vec2 = get_vec_target(
-        c.pos_target,
-        c.vec_target * -1,
-        c.pos2,
-        c.tangent_length2,
-        c.dist_curve2,
-        c.func_dogleg2
-    )
-
-    tangent_temp2 = c._get_tangent_temp(c.tangent_length2)
-
-    c.pos3 = (
-        c.pos2 - (
-            tangent_temp2 * c.vec2
-        )
-    )
-
-    vec23_denom = np.linalg.norm(c.pos3 - c.pos2)
-    if vec23_denom == 0:
-        c.vec23.append(np.array([0., 0., 0.]))
+        # Check whether the midpoint is inside the critical circle of either
+        # endpoint at the design DLS.  If so, the running minimum would lock
+        # in a tight radius from step 1.  Fall back to a point directly ahead
+        # of pos1 along vec1 (dist_norm = 0 → radius_critical = ∞), which is
+        # guaranteed to be in the design-DLS basin.
+        d1 = c._get_distances(c.pos1, c.vec1, pos3_mid)
+        d2 = c._get_distances(c.pos_target, c.vec_target * -1, pos3_mid)
+        rc1 = get_radius_critical(radius1, d1, c.min_error)
+        rc2 = get_radius_critical(radius2, d2, c.min_error)
+        if rc1 >= radius1 and rc2 >= radius2:
+            c.pos3 = pos3_mid
+        else:
+            # Midpoint is inside a critical circle.  Find a fallback pos3
+            # that is guaranteed to be in the design-DLS basin:
+            #   pos1 + R*vec1 + 2R*perp
+            # gives dist_norm = 2R → rc = 5R²/(4R) = 1.25R ≥ R.
+            # perp points in the component of (pos_target - pos1)
+            # perpendicular to vec1 so the guess is biased toward the target.
+            chord = c.pos_target - c.pos1
+            d_perp = chord - np.dot(chord, c.vec1) * c.vec1
+            d_perp_norm = np.linalg.norm(d_perp)
+            if d_perp_norm > 1e-10:
+                d_perp_hat = d_perp / d_perp_norm
+            else:
+                # Target is directly ahead/behind: pick any perpendicular
+                arb = np.array([1., 0., 0.])
+                if abs(np.dot(c.vec1, arb)) > 0.9:
+                    arb = np.array([0., 1., 0.])
+                d_perp_hat = np.cross(c.vec1, arb)
+                d_perp_hat /= np.linalg.norm(d_perp_hat)
+            # Try four candidate positions: ±d_perp and ±d_perp_cross
+            # (the 90°-rotated perpendicular).  Pick the first that is
+            # also outside the critical circle of pos_target.
+            d_perp_cross = np.cross(c.vec1, d_perp_hat)
+            d_perp_cross_norm = np.linalg.norm(d_perp_cross)
+            if d_perp_cross_norm > 1e-10:
+                d_perp_cross /= d_perp_cross_norm
+            else:
+                d_perp_cross = d_perp_hat  # degenerate: fallback
+            chosen = None
+            best_min_rc = -np.inf
+            best_candidate = c.pos1 + radius1 * c.vec1 + 2.0 * radius1 * d_perp_hat
+            for perp in (d_perp_hat, -d_perp_hat, d_perp_cross, -d_perp_cross):
+                candidate = c.pos1 + radius1 * c.vec1 + 2.0 * radius1 * perp
+                dd2 = c._get_distances(c.pos_target, c.vec_target * -1, candidate)
+                rc2_cand = get_radius_critical(radius2, dd2, c.min_error)
+                if rc2_cand >= radius2:
+                    chosen = candidate
+                    break
+                # Track the candidate with the highest minimum rc
+                if rc2_cand > best_min_rc:
+                    best_min_rc = rc2_cand
+                    best_candidate = candidate
+            c.pos3 = chosen if chosen is not None else best_candidate
     else:
-        c.vec23.append((c.pos3 - c.pos2) / vec23_denom)
+        c.pos3 = pos3
 
-    c.error = np.allclose(
-        c.vec23[-1],
-        vec_old,
-        equal_nan=True,
-        rtol=c.min_error * 10,
-        atol=c.min_error * 0.1
-    )
+    radius_temp1, radius_temp2 = radius1, radius2
 
-    c.errors.append(c.error)
-    c.pos3_list.append(c.pos3)
-    c.pos2_list.append(c.pos2)
-    c.md_target = (
-        c.md1 + c.dist_curve + tangent_temp2 + c.dist_curve2
-    )
-    c.delta_radius_list.append(
-        abs(c.radius_critical - c.radius_critical2)
-    )
-    c.dls = max(
-        np.radians(dls_from_radius(c.radius_design)),
-        np.radians(dls_from_radius(c.radius_critical))
-    )
-    c.dls2 = max(
-        np.radians(dls_from_radius(c.radius_design2)),
-        np.radians(dls_from_radius(c.radius_critical2))
-    )
+    for _ in range(c.max_iterations):
+        prev_pos3 = c.pos3.copy()
 
-    if c.error:
-        if result:
-            return c
-        result = 0.
-        if radius_temp2 < c.radius_design2:
-            result += c.radius_design2 - radius_temp2
-        if radius_temp1 < c.radius_design:
-            result += c.radius_design - radius_temp1
-        return result
-    else:
+        # ── Curve 1: pos1 → pos2 ────────────────────────────────────────────
+        c.distances1 = c._get_distances(c.pos1, c.vec1, c.pos3)
+
+        radius_temp1 = get_radius_critical(radius1, c.distances1, c.min_error)
+        # Use the current geometry's critical radius directly — avoids NaN in
+        # min_dist_to_target and prevents the running minimum from permanently
+        # locking in tight values from transient intermediate states.
+        radius_effective1 = min(radius1, radius_temp1)
+        # Update the running minimum only for genuine violations (not noise).
+        if radius_temp1 < min(c.radius_critical, radius1 * (1.0 - c.min_error * 100)):
+            c.radius_critical = radius_temp1
+            assert c.radius_critical >= 0
+
+        c.tangent_length, c.dogleg = min_dist_to_target(
+            radius_effective1, c.distances1
+        )
+        c.dogleg = check_dogleg(c.dogleg)
+        c.dist_curve, c.func_dogleg = get_curve_hold_data(
+            radius_effective1, c.dogleg
+        )
+        c.vec3 = get_vec_target(
+            c.pos1, c.vec1, c.pos3,
+            c.tangent_length, c.dist_curve, c.func_dogleg
+        )
+
+        tangent_temp1 = c._get_tangent_temp(c.tangent_length)
+        c.pos2 = c.pos3 - tangent_temp1 * c.vec3
+
+        # ── Curve 2: pos_target → pos2 (reversed) ───────────────────────────
+        c.distances2 = c._get_distances(
+            c.pos_target, c.vec_target * -1, c.pos2
+        )
+
+        radius_temp2 = get_radius_critical(radius2, c.distances2, c.min_error)
+        # Use current geometry's critical radius directly (same rationale as arc1).
+        radius_effective2 = min(radius2, radius_temp2)
+        # Update running minimum only for genuine violations.
+        if radius_temp2 < min(c.radius_critical2, radius2 * (1.0 - c.min_error * 100)):
+            c.radius_critical2 = radius_temp2
+            assert c.radius_critical2 >= 0
+
+        c.tangent_length2, c.dogleg2 = min_dist_to_target(
+            radius_effective2, c.distances2
+        )
+        c.dogleg2 = check_dogleg(c.dogleg2)
+        c.dist_curve2, c.func_dogleg2 = get_curve_hold_data(
+            radius_effective2, c.dogleg2
+        )
+        c.vec2 = get_vec_target(
+            c.pos_target, c.vec_target * -1, c.pos2,
+            c.tangent_length2, c.dist_curve2, c.func_dogleg2
+        )
+
+        tangent_temp2 = c._get_tangent_temp(c.tangent_length2)
+        pos3_new = c.pos2 - tangent_temp2 * c.vec2
+
+        # Damped update: averaging old and new prevents oscillation when the
+        # target is close relative to the radius of curvature.
+        c.pos3 = 0.5 * pos3_new + 0.5 * prev_pos3
+
+        vec23_denom = np.linalg.norm(c.pos3 - c.pos2)
+        if vec23_denom == 0:
+            c.vec23.append(np.array([0., 0., 0.]))
+        else:
+            c.vec23.append((c.pos3 - c.pos2) / vec23_denom)
+
+        c.error = np.allclose(
+            c.vec23[-1], vec_old,
+            equal_nan=True,
+            rtol=c.min_error * 10,
+            atol=c.min_error * 0.1
+        )
+
+        c.errors.append(c.error)
+        c.pos3_list.append(c.pos3.copy())
+        c.pos2_list.append(c.pos2.copy())
+        c.md_target = c.md1 + c.dist_curve + tangent_temp2 + c.dist_curve2
+        c.delta_radius_list.append(abs(c.radius_critical - c.radius_critical2))
+        c.dls = max(
+            np.radians(dls_from_radius(c.radius_design)),
+            np.radians(dls_from_radius(c.radius_critical))
+        )
+        c.dls2 = max(
+            np.radians(dls_from_radius(c.radius_design2)),
+            np.radians(dls_from_radius(c.radius_critical2))
+        )
+
+        if c.error:
+            break
+
         c.iterations += 1
-        return minimize_target_pos_and_vec_defined(
-            x, c, c.pos3, c.vec23[-1], result
-        )
+        vec_old = c.vec23[-1].copy()
+
+    if result:
+        return c
+    result_val = 0.
+    if radius_temp2 < c.radius_design2:
+        result_val += c.radius_design2 - radius_temp2
+    if radius_temp1 < c.radius_design:
+        result_val += c.radius_design - radius_temp1
+    return result_val
 
 
 def check_dogleg(dogleg):
+    """Ensures the dogleg angle is positive by wrapping negative values.
+
+    Parameters
+    ----------
+    dogleg : float
+        Dogleg angle in radians.
+
+    Returns
+    -------
+    float
+        The dogleg angle normalized to [0, 2*pi).
+    """
     # the code assumes angles are positive and clockwise
     if dogleg < 0:
         dogleg_new = dogleg + 2 * np.pi
@@ -986,6 +1546,20 @@ def check_dogleg(dogleg):
 
 
 def mod_vec(vec, error=1e-5):
+    """Slightly perturbs a direction vector to avoid exact antiparallel degeneracy.
+
+    Parameters
+    ----------
+    vec : ndarray
+        Unit direction vector in NEV coordinates.
+    error : float
+        Perturbation magnitude applied to the vertical component.
+
+    Returns
+    -------
+    tuple
+        A tuple of (perturbed_vec, inclination, azimuth).
+    """
     # if it's not working then twat it with a hammer
     vec_mod = vec * np.array([1, 1, 1 - error])
     vec_mod /= np.linalg.norm(vec_mod)
@@ -994,28 +1568,28 @@ def mod_vec(vec, error=1e-5):
     return vec_mod, inc_mod, azi_mod
 
 
-def _get_xyz(pos):
-    n, e, v = pos
-    return np.array([e, n, v]).reshape(-1, 3)
-
-
 def get_pos(pos1, vec1, vec2, dist_curve, func_dogleg):
-    inc1, azi1 = _get_angles(_get_xyz(vec1)).reshape(2)
-    inc2, azi2 = _get_angles(_get_xyz(vec2)).reshape(2)
+    """Computes the end position of a minimum-curvature arc.
 
-    pos2 = pos1 + (
-        (
-            dist_curve * func_dogleg / 2
-        )
-        *
-        np.array([
-            np.sin(inc1) * np.cos(azi1) + np.sin(inc2) * np.cos(azi2),
-            np.sin(inc1) * np.sin(azi1) + np.sin(inc2) * np.sin(azi2),
-            np.cos(inc1) + np.cos(inc2)
-        ]).T
-    )
+    Parameters
+    ----------
+    pos1 : ndarray
+        Start position in NEV coordinates.
+    vec1 : ndarray
+        Start unit direction vector in NEV coordinates.
+    vec2 : ndarray
+        End unit direction vector in NEV coordinates.
+    dist_curve : float
+        Arc length of the curve section.
+    func_dogleg : float
+        Shape factor (ratio factor) for the curve.
 
-    return pos2
+    Returns
+    -------
+    ndarray
+        End position in NEV coordinates.
+    """
+    return pos1 + (dist_curve * func_dogleg / 2) * (vec1 + vec2)
 
 
 def get_vec_target(
@@ -1026,6 +1600,31 @@ def get_vec_target(
     dist_curve,
     func_dogleg
 ):
+    """Derives the target unit vector from curve geometry and target position.
+
+    Solves for the direction vector at the end of a curve-hold section
+    given the start state, curve parameters, and target position.
+
+    Parameters
+    ----------
+    pos1 : ndarray
+        Start position in NEV coordinates.
+    vec1 : ndarray
+        Start unit direction vector in NEV coordinates.
+    pos_target : ndarray
+        Target position in NEV coordinates.
+    tangent_length : float
+        Length of the tangent (hold) section.
+    dist_curve : float
+        Arc length of the curve section.
+    func_dogleg : float
+        Shape factor (ratio factor) for the curve.
+
+    Returns
+    -------
+    ndarray
+        Target unit direction vector in NEV coordinates.
+    """
     if dist_curve == 0:
         return vec1
 
@@ -1050,6 +1649,21 @@ def get_vec_target(
 
 
 def get_curve_hold_data(radius, dogleg):
+    """Computes arc length and shape factor for a curve section.
+
+    Parameters
+    ----------
+    radius : float
+        Radius of curvature.
+    dogleg : float
+        Dogleg angle in radians.
+
+    Returns
+    -------
+    tuple
+        A tuple of (dist_curve, func_dogleg) where dist_curve is the arc
+        length and func_dogleg is the minimum-curvature shape factor.
+    """
     dist_curve = radius * dogleg
     func_dogleg = shape_factor(dogleg)
 
@@ -1060,24 +1674,38 @@ def get_curve_hold_data(radius, dogleg):
 
 
 def shape_factor(dogleg):
-    """
-    Function to determine the shape factor of a dogleg.
+    """Computes the minimum-curvature shape factor for a dogleg angle.
 
     Parameters
     ----------
-        dogleg: float
-            The dogleg angle in radians of a curve section.
+    dogleg : float
+        Dogleg angle in radians.
+
+    Returns
+    -------
+    float
+        The ratio factor (shape factor) for minimum-curvature interpolation.
     """
-    if dogleg == 0:
-        return 0
-    else:
-        return np.tan(dogleg / 2) / (dogleg / 2)
+    return get_rf(dogleg)
 
 
 def min_dist_to_target(radius, distances):
-    """
-    Calculates the control points for a curve and hold section from the
-    start position and vector to the target position.
+    """Computes tangent length and dogleg for a curve-hold section to a target.
+
+    Parameters
+    ----------
+    radius : float
+        Radius of curvature for the curve section.
+    distances : tuple
+        Tuple of (dist_to_target, dist_perp_to_target,
+        dist_norm_to_target) geometric distances.
+
+    Returns
+    -------
+    tangent_length : float
+        Hold section length.
+    dogleg : float
+        Curve angle in radians.
     """
     (
         dist_to_target,
@@ -1102,10 +1730,25 @@ def min_dist_to_target(radius, distances):
 
 
 def min_curve_to_target(distances):
-    """
-    Calculates the control points for a curve section from the start
-    position and vector to the target position which is not achievable with
-    the provided dls_design.
+    """Computes minimum-curvature parameters when the design DLS is insufficient.
+
+    Used when the target cannot be reached with the design radius, so the
+    curve section uses the minimum radius geometrically required.
+
+    Parameters
+    ----------
+    distances : tuple
+        Tuple of (dist_to_target, dist_perp_to_target,
+        dist_norm_to_target) geometric distances.
+
+    Returns
+    -------
+    tangent_length : float
+        Always 0 (pure curve, no hold).
+    radius_critical : float
+        Minimum required radius of curvature.
+    dogleg : float
+        Curve angle in radians.
     """
     if distances == (0., 0., 0,):
         return (
@@ -1150,6 +1793,27 @@ def min_curve_to_target(distances):
 
 
 def get_radius_critical(radius, distances, min_error):
+    """Computes the critical radius for a given target geometry.
+
+    The critical radius is the minimum curvature radius needed to reach
+    the target with a pure curve (no tangent). Below this radius, a
+    curve-hold path is possible; above it, minimum curvature is needed.
+
+    Parameters
+    ----------
+    radius : float
+        Design radius of curvature.
+    distances : tuple
+        Tuple of (dist_to_target, dist_perp_to_target,
+        dist_norm_to_target) geometric distances.
+    min_error : float
+        Error tolerance factor applied to the result.
+
+    Returns
+    -------
+    float
+        The critical radius. Returns 0 if the normal distance is zero.
+    """
     (
         dist_to_target,
         dist_perp_to_target,
@@ -1173,50 +1837,21 @@ def get_radius_critical(radius, distances, min_error):
     return radius_critical
 
 
-def angle(vec1, vec2, acute=True):
-    angle = np.arccos(
-        np.dot(vec1, vec2)
-        /
-        (
-            np.linalg.norm(vec1) * np.linalg.norm(vec2)
-        )
-    )
-
-    if acute:
-        return angle
-
-    else:
-        return 2 * np.pi - angle
-
-
-def get_dogleg(inc1, azi1, inc2, azi2):
-    dogleg = (
-        2 * np.arcsin(
-            (
-                np.sin((inc2 - inc1) / 2) ** 2
-                + np.sin(inc1) * np.sin(inc2)
-                * np.sin((azi2 - azi1) / 2) ** 2
-            ) ** 0.5
-        )
-    )
-
-    return dogleg
-
-
 def interpolate_well(sections, step=30):
-    """
-    Constructs a well survey from a list of sections of control points.
+    """Constructs interpolated survey data from a list of Connector sections.
 
     Parameters
     ----------
-    sections: list of welleng.connector.Connector objects
-    step: float (default: 30)
-        The desired delta measured depth between survey points, in
-        addition to the control points.
+    sections : Connector or list of Connector
+        Connector objects defining the well trajectory.
+    step : float
+        Desired delta measured depth between interpolated survey
+        points.
 
     Returns
     -------
-    data: list of welleng.connector.Connector objects
+    list
+        A list of interpolated survey data dictionaries.
     """
     method = {
         'hold': get_interpolate_hold,
@@ -1246,6 +1881,38 @@ def interpolate_curve(
     step,
     endpoint=False
 ):
+    """Interpolates survey points along a curve section at regular MD intervals.
+
+    Uses Rodrigues' rotation formula for numerical stability, especially
+    for near-180-degree doglegs where SLERP becomes unstable.
+
+    Parameters
+    ----------
+    md1 : float
+        Measured depth at the start of the curve.
+    pos1 : ndarray
+        Start position in NEV coordinates.
+    vec1 : ndarray
+        Start unit direction vector in NEV coordinates.
+    vec2 : ndarray
+        End unit direction vector in NEV coordinates.
+    dist_curve : float
+        Arc length of the curve section.
+    dogleg : float
+        Total dogleg angle in radians.
+    func_dogleg : float
+        Shape factor (ratio factor) for the curve.
+    step : float
+        Desired delta measured depth between interpolated points.
+    endpoint : bool
+        If True, includes the curve endpoint in the output.
+
+    Returns
+    -------
+    dict
+        Dictionary with keys 'md', 'vec', 'inc', 'azi', 'dogleg'
+        containing numpy arrays of interpolated survey data.
+    """
     # sometimes the curve section has no length
     # this if statement handles this event
     if any((dist_curve == 0, np.isnan(dist_curve))):
@@ -1271,15 +1938,28 @@ def interpolate_curve(
         md = np.concatenate((md, [end_md]))
     dogleg_interp = (dogleg / dist_curve * md).reshape(-1, 1)
 
-    vec = (
-        (
-            np.sin(dogleg - dogleg_interp) / np.sin(dogleg) * vec1
+    # Rodrigues' rotation formula is numerically superior to SLERP when dogleg
+    # is near π.  SLERP weights contain 1/sin(dogleg) which amplifies errors
+    # by ~1/sin(π-ε) ≈ 1/ε for near-180° arcs (e.g. case #492 with dogleg≈179°
+    # amplifies errors 44×, producing spiralling visualisation paths).
+    #
+    # Rodrigues: vec(t) = cos(t)*vec1 + sin(t)*in_plane
+    # where in_plane is the unit vector in the arc plane, perpendicular to vec1.
+    # The formula never divides by sin(dogleg) during evaluation — only during
+    # the one-time setup of in_plane — so numerical errors do not accumulate.
+    cross = np.cross(vec1, vec2)
+    cross_norm = float(np.linalg.norm(cross))
+    if cross_norm < 1e-10:
+        # vec1 ≈ vec2 (zero dogleg) or exactly antiparallel (degenerate arc):
+        # return the start direction for all points.
+        vec = np.tile(vec1, (len(md), 1))
+    else:
+        rot_axis = cross / cross_norm          # unit rotation axis ⊥ arc plane
+        in_plane = np.cross(rot_axis, vec1)    # unit vector in arc plane, ⊥ vec1
+        vec = (
+            np.cos(dogleg_interp) * vec1
+            + np.sin(dogleg_interp) * in_plane
         )
-        +
-        (
-            np.sin(dogleg_interp) / np.sin(dogleg) * vec2
-        )
-    )
     vec = vec / np.linalg.norm(vec, axis=1).reshape(-1, 1)
     inc, azi = get_angles(vec, nev=True).T
 
@@ -1297,6 +1977,29 @@ def interpolate_curve(
 
 
 def interpolate_hold(md1, pos1, vec1, md2, step, endpoint=False):
+    """Interpolates survey points along a hold (tangent) section.
+
+    Parameters
+    ----------
+    md1 : float
+        Measured depth at the start of the hold.
+    pos1 : ndarray
+        Start position in NEV coordinates.
+    vec1 : ndarray
+        Constant unit direction vector during the hold.
+    md2 : float
+        Measured depth at the end of the hold.
+    step : float
+        Desired delta measured depth between interpolated points.
+    endpoint : bool
+        If True, includes the hold endpoint in the output.
+
+    Returns
+    -------
+    dict
+        Dictionary with keys 'md', 'vec', 'inc', 'azi', 'dogleg'
+        containing numpy arrays of interpolated survey data.
+    """
     end_md = md2 - md1
     if step is None:
         md = np.array([0])
@@ -1322,6 +2025,22 @@ def interpolate_hold(md1, pos1, vec1, md2, step, endpoint=False):
 
 
 def get_min_curve(section, step=30, data=None):
+    """Interpolates a minimum-curve section, dispatching by sub-method.
+
+    Parameters
+    ----------
+    section : Connector
+        A Connector object with method 'min_curve'.
+    step : float
+        Desired delta measured depth between interpolated points.
+    data : list or None
+        Optional list to append results to.
+
+    Returns
+    -------
+    list
+        A list of interpolated survey data dictionaries.
+    """
     if section.md2 is None:
         result = (
             get_interpolate_min_curve_to_target(
@@ -1338,6 +2057,22 @@ def get_min_curve(section, step=30, data=None):
 
 
 def get_interpolate_hold(section, step=30, data=None):
+    """Interpolates a hold-method Connector section.
+
+    Parameters
+    ----------
+    section : Connector
+        A Connector object with method 'hold'.
+    step : float
+        Desired delta measured depth between interpolated points.
+    data : list or None
+        Optional list to append results to.
+
+    Returns
+    -------
+    list
+        A list of interpolated survey data dictionaries.
+    """
     if data is None:
         data = []
 
@@ -1354,6 +2089,22 @@ def get_interpolate_hold(section, step=30, data=None):
 
 
 def get_interpolate_min_curve_to_target(section, step=30, data=None):
+    """Interpolates a min-curve-to-target Connector section.
+
+    Parameters
+    ----------
+    section : Connector
+        A Connector object with method 'min_curve_to_target'.
+    step : float
+        Desired delta measured depth between interpolated points.
+    data : list or None
+        Optional list to append results to.
+
+    Returns
+    -------
+    list
+        A list of interpolated survey data dictionaries.
+    """
     if data is None:
         data = []
 
@@ -1373,6 +2124,22 @@ def get_interpolate_min_curve_to_target(section, step=30, data=None):
 
 
 def get_interpolate_min_dist_to_target(section, step=30, data=None):
+    """Interpolates a min-dist-to-target Connector section (curve + hold).
+
+    Parameters
+    ----------
+    section : Connector
+        A Connector object with method 'min_dist_to_target'.
+    step : float
+        Desired delta measured depth between interpolated points.
+    data : list or None
+        Optional list to append results to.
+
+    Returns
+    -------
+    list
+        A list of interpolated survey data dictionaries.
+    """
     if data is None:
         data = []
 
@@ -1402,6 +2169,22 @@ def get_interpolate_min_dist_to_target(section, step=30, data=None):
 
 
 def get_interpololate_curve_hold_curve(section, step=30, data=None):
+    """Interpolates a curve-hold-curve Connector section.
+
+    Parameters
+    ----------
+    section : Connector
+        A Connector object with method 'curve_hold_curve'.
+    step : float
+        Desired delta measured depth between interpolated points.
+    data : list or None
+        Optional list to append results to.
+
+    Returns
+    -------
+    list
+        A list of interpolated survey data dictionaries.
+    """
     if data is None:
         data = []
 
@@ -1443,6 +2226,19 @@ def get_interpololate_curve_hold_curve(section, step=30, data=None):
 
 
 def convert_target_input_to_booleans(*inputs):
+    """Converts target parameters to a binary string for method lookup.
+
+    Parameters
+    ----------
+    *inputs
+        Variable number of target parameters (md2, inc2, azi2,
+        pos2, vec2). Each is mapped to '1' if not None, '0' otherwise.
+
+    Returns
+    -------
+    str
+        A 5-character binary string encoding which parameters were provided.
+    """
     input = [
         "0" if i is None else "1" for i in inputs
     ]
@@ -1455,41 +2251,37 @@ def connect_points(
     # step=30,
     md_start=0.
 ):
-    """
-    Function for connecting a list or array of only Cartesian points.
+    """Connects a sequence of Cartesian points with Connector sections.
 
     Parameters
     ----------
-        cartesians: (n, 3) list or array of floats
-            Either [n, e, tvd] (default) or [x, y, z]
-        vec_start: (3) list or array of floats (default: [0., 0., 1.])
-            Unit start vector (default is pointing down) in the nev or xyz
-            coordinate system.
-        dls_design: float or (n, 1) list or array of floats (default: 3.0)
-            The minimum Dog Leg Severity used when attempting to connect the
-            points (a high DLS will be used if necessary).
-        nev: bool (default: True)
-            Indicates whether the cartesians are referencing the [nev]
-            (default) or [xyz] coordinate system.
-        step: float (default: 30)
-            The desired step interval for the returned Survey object.
-        md_start: float (default: 0)
-            The md at the first cartesian point (in the event of a tie-on).
+    cartesians : list or ndarray
+        Array of shape (n, 3) with positions as [n, e, tvd]
+        (if nev=True) or [x, y, z] (if nev=False).
+    vec_start : list or ndarray
+        Unit start direction vector in the corresponding
+        coordinate system.
+    dls_design : float or list
+        Design DLS in deg/30m (or deg/100ft). Can be a
+        scalar or array of length n.
+    nev : bool
+        If True, cartesians are in NEV coordinates; if False, XYZ.
+    md_start : float
+        Measured depth at the first point.
 
     Returns
     -------
-        data: list of welleng.connector.Connector objects
+    list
+        A list of Connector objects linking consecutive points.
     """
     if nev:
         pos_nev = np.array(cartesians).reshape(-1, 3)
         vec_nev = np.zeros_like(pos_nev)
         vec_nev[0] = np.array(vec_start).reshape(-1, 3)
     else:
-        e, n, tvd = np.array(cartesians).reshape(-1, 3).T
-        pos_nev = np.array([n, e, tvd]).T
+        pos_nev = get_nev(cartesians)
         vec_nev = np.zeros_like(pos_nev)
-        e, n, tvd = np.array(vec_start).reshape(-1, 3).T
-        vec_nev[0] = np.array([n, e, tvd]).T
+        vec_nev[0] = get_nev(vec_start)
 
     if type(dls_design) is float:
         dls = np.full(len(pos_nev), dls_design)
@@ -1522,26 +2314,33 @@ def connect_points(
 
 
 def survey_to_plan(survey, tolerance=0.2, dls_design=1., step=30.):
-    """
-    Prototype function for extracting a plan from a drilled well survey - a
-    minimal number of control points (begining/end points of either hold or
-    build/turn sections) required to express the well given the provided input
-    parameters.
+    """Extracts a minimal well plan from a drilled survey.
+
+    Identifies the minimum number of control points (start/end of hold
+    or build/turn sections) needed to reproduce the survey trajectory
+    within the given tolerance.
 
     Parameters
     ----------
-    survey: welleng.survey.Survey object
-    tolerance: float (default=0.2)
-        Defines how tight to fit the planned well to the survey - a higher
-        number will results in less control points but likely poorer fit.
-    dls_design: float (default=1.0)
-        The minimum DLS used to fit the planned trajectory.
-    step: float (default=30)
-        The desired md step in the plan survey.
+    survey : Survey
+        A welleng Survey object representing the drilled well.
+    tolerance : float
+        Fit tolerance. Higher values produce fewer control
+        points but a looser fit.
+    dls_design : float
+        Minimum design DLS in deg/30m for the planned trajectory.
+    step : float
+        Desired MD step interval for the output survey.
 
     Returns
     -------
-    sections: list of welleng.connector.Connection objects
+    list
+        A list of Connector objects representing the planned sections.
+
+    Raises
+    ------
+    AssertionError
+        If dls_design is not greater than 0.
     """
     assert dls_design > 0., "dls_design must be greater than 0"
 
@@ -1639,30 +2438,31 @@ def drop_off(
     target_inc: float, dls: float, delta_md: float | None = None,
     node: Node | None = None, tol: float = 1e-5
 ) -> list:
-    """Determines the sections necessary to drop off (or build) towards a
-    target inclination, constrained by the section length and dls.
+    """Computes trajectory sections to drop off (or build) to a target inclination.
 
-    Recommended to use the ``extend_to_tvd`` function if a specific tvd
-    target is required.
+    Use ``extend_to_tvd`` if a specific TVD target is also required.
 
     Parameters
     ----------
-    target_inc: float
-        The target trajectory inclination in degrees.
-    dls: float
-        The design dls in deg/30m.
-    delta_md: float
-        The section length in meters.
-    node: ``Node``
-        The ``Node`` of the current location.
+    target_inc : float
+        Target inclination in degrees.
+    dls : float
+        Design DLS in deg/30m.
+    delta_md : float or None
+        Maximum section length in meters. If None, the section
+        is unconstrained.
+    node : Node or None
+        Starting Node. Defaults to surface pointing down.
+    tol : float
+        Tolerance for tangent section length; sections shorter than
+        this are omitted.
 
     Returns
     -------
-    nodes: list
-        A list of ``Connectors`` that describe the required trajectory changes.
-        The list contains at least one value (describing the arc or curve) and
-        a second value if the target inclination was achieved, to maintain a
-        tangent section.
+    list
+        A list of Nodes describing the trajectory. Contains one Node
+        (the arc endpoint) or two (arc endpoint plus tangent endpoint)
+        if the target inclination was achieved within the section.
     """
     def _drop_off(
             x: tuple,
@@ -1728,69 +2528,40 @@ def extend_to_tvd(
     delta_md: float | None = None,
     target_inc: float | None = None, dls: float | None = None
 ) -> list:
-    """Determines a list of ``Connector`` sections required to drop off (or
-    build) to achieve a target tvd.
+    """Computes Connector sections to reach a target TVD with optional inclination change.
 
     Parameters
     ----------
-    target_tvd: float
-        The target true vertical depth in meters.
-    node: ``Node`` | None (default=None)
-        The ``Node`` describing the current well position. If not provided,
-        defaults to surface and pointing down.
-    delta_md: float | None (default=None)
-        Will limit the section length to the value provided in meters.
-    target_inc: float | None (default=None)
-        The target inclination at the target tvd in degrees. If provided,
-        will get as close to this value as feasible with the provided dls
-        constraint. If the target inclination can be achieved, a tangent
-        section will be held until the target tvd is achieved.
-    dls: float | None (default=None)
-        The design dls in deg/30m. If none provided, defaults to 2.3 deg/30m.
+    target_tvd : float
+        Target true vertical depth in meters.
+    node : Node or None
+        Starting Node. Defaults to surface pointing down.
+    delta_md : float or None
+        Maximum section length in meters. If None, unconstrained.
+    target_inc : float or None
+        Target inclination in degrees at the target TVD.
+        If provided, the solver attempts to achieve this inclination
+        and holds tangent to the target TVD.
+    dls : float or None
+        Design DLS in deg/30m. Defaults to 2.5 if None and
+        target_inc is provided.
 
     Returns
     -------
-    nodes: list
-        A list of ``Connector`` that describe the required trajectory changes.
-        The list contains at least one value (describing the arc or curve) and
-        a second value if the target inclination was achieved, to maintain a
-        tangent section.
+    list
+        A list of Connector objects. Contains one Connector (curve only)
+        or two (curve plus tangent hold) if the target inclination was
+        achieved within the section.
 
     Examples
     --------
-    A well has landed at the top reservoir with an inclination of 30 degrees
-    and the Wells Engineer wants to drop this angle to 0 degrees while drilling
-    the reservoir section.
+    A well at 30 degrees inclination dropping to vertical:
 
     >>> import welleng as we
-    >>> from pprint import pprint
     >>> node = we.node.Node(pos=[0, 0, 3000], md=4000, inc=30, azi=135)
-    >>> connectors = we.connector.extend_to_tvd(target_tvd=3200, node=node, target_inc=0, dls=3)
-    >>> len(connectors)
-    ... 1
-
-    Since there's only one ``Connector`` in ``connectors`` then likely the
-    target inclination has not been met, else there would also be a tangent
-    section in this case.
-
-    >>> pprint(connectors[-1].node_end.__dict__)
-    ... {'azi_deg': 134.99999999999994,
-        'azi_rad': 2.356194490192344,
-        'cov_nev': array([[[0., 0., 0.],
-                [0., 0., 0.],
-                [0., 0., 0.]]]),
-        'inc_deg': 8.681065764308594,
-        'inc_rad': 0.151513180169343,
-        'md': 4213.189342356914,
-        'pos_nev': [-49.63739779370637, 49.63739779370647, 3199.9999999980705],
-        'pos_xyz': [49.63739779370647, -49.63739779370637, 3199.9999999980705],
-        'unit': 'meters',
-        'vec_nev': [-0.10672656069796796, 0.1067265606979681, 0.9885438192023488],
-        'vec_xyz': [0.1067265606979681, -0.10672656069796796, 0.9885438192023488]}
-
-    Indeed, the ``inc_deg`` attribute shows the inclination dropped to just
-    below 9 degrees and the z coordinate in ``pos_nev`` shows that the target
-    tvd was met.
+    >>> connectors = we.connector.extend_to_tvd(
+    ...     target_tvd=3200, node=node, target_inc=0, dls=3
+    ... )
     """
     if node is None:
         node = Node()
@@ -1866,22 +2637,3 @@ def extend_to_tvd(
     return connections
 
 
-def numbafy(functions):
-    for f in functions:
-        f = njit(f)
-
-
-if NUMBA:
-    NUMBAFY = (
-        _get_xyz,
-        get_pos,
-        get_vec_target,
-        get_curve_hold_data,
-        shape_factor,
-        min_dist_to_target,
-        get_radius_critical,
-        angle,
-        get_dogleg,
-        check_dogleg
-    )
-    numbafy(NUMBAFY)
