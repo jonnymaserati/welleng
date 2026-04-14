@@ -852,6 +852,15 @@ def XYM3L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
             ) / 2
             * mag
         )
+        # Rev 5.11 "funny stuff" for XYM3E/3L: at SING station 1 the workbook
+        # uses the FULL first interval, not the halved value used at later
+        # SING stations. Mirrors the ABXY SING override pattern in
+        # tool_errors.py:409-416. Only affects cov_NEV[1] because e_NEV_star
+        # is consumed per-station (never in the cumulative).
+        e_NEV_star_sing[1, 0] = (
+            (error.survey.md[1] - error.survey.md[0])
+            * mag
+        )
 
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
@@ -938,6 +947,11 @@ def XYM4L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
                 error.survey.md[1:]
                 - error.survey.md[:-1]
             ) / 2
+            * mag
+        )
+        # Rev 5.11 SING station-1 override — see XYM3L for rationale.
+        e_NEV_star_sing[1, 1] = (
+            (error.survey.md[1] - error.survey.md[0])
             * mag
         )
         e_NEV_star_sing[1, 1] = (
