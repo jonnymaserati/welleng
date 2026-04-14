@@ -9,9 +9,9 @@ from welleng.error import ErrorModel
 from welleng.utils import get_sigmas
 
 """
-Test that the ISCWSA MWD Rev5 error model is working within a defined
+Test that the ISCWSA MWD Rev 5.11 error model is working within a defined
 tolerance (the default has been set to 0.001%), testing against the
-MWD Rev 5 error model example provided by ISCWSA.
+MWD Rev 5.11 error model example provided by ISCWSA.
 """
 
 # Set test tolerance as percentage
@@ -22,7 +22,7 @@ TOLERANCE = 0.001
 # }
 input_files = {
     "ISCWSA MWD Rev4": "tests/test_data/error_mwdrev4_1_iscwsa_data.json",
-    "ISCWSA MWD Rev5": "tests/test_data/error_mwdrev5_1_iscwsa_data.json"
+    "ISCWSA MWD Rev5.11": "tests/test_data/error_mwdrev5_1_iscwsa_data.json"
 }
 
 
@@ -133,7 +133,7 @@ def test_drdp_single_pass_matches_column_methods():
         azi=[0, 30, 90, 150, 270],
         unit='meters',
     )
-    for model in ('ISCWSA MWD Rev4', 'ISCWSA MWD Rev5'):
+    for model in ('ISCWSA MWD Rev4', 'ISCWSA MWD Rev5.11'):
         em = ErrorModel(s, error_model=model)
         expected = np.hstack((
             em.drk_dDepth(em.survey_drdp),

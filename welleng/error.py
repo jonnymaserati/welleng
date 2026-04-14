@@ -1,10 +1,27 @@
-"""ISCWSA error models for computing wellbore positional uncertainty."""
+"""ISCWSA error models for computing wellbore positional uncertainty.
+
+The ``"ISCWSA MWD Rev5"`` string remains a selectable error model, but is now
+a deprecated alias for the Rev 5.11 compliant implementation (`"ISCWSA MWD
+Rev5.11"`). As of welleng 0.10.0 the Rev5 YAML and weight functions were
+corrected against the ISCWSA Rev 5.11 example workbooks, so users who
+previously selected ``"ISCWSA MWD Rev5"`` will get slightly different (and
+correct) covariance output. ``"ISCWSA MWD Rev4"`` is unchanged.
+"""
 
 import os
+import warnings
+
 import numpy as np
 import yaml
 from .errors.tool_errors import ToolError
 from .utils import cov_from_vec
+
+
+# Mapping of deprecated error-model strings → the canonical replacement.
+# Passing the deprecated name still works but emits a ``DeprecationWarning``.
+_DEPRECATED_ERROR_MODEL_ALIASES = {
+    "ISCWSA MWD Rev5": "ISCWSA MWD Rev5.11",
+}
 
 # TODO: there's likely an issue with TVD versus TVDSS that
 # needs to be resolved. This model assumes TVD relative to
@@ -65,7 +82,8 @@ class ErrorModel():
     Attributes
     ----------
     error_model : str
-        Name of the error model used (e.g. ``'ISCWSA MWD Rev5'``).
+        Name of the error model used (e.g. ``'ISCWSA MWD Rev5.11'``, the
+        current default; ``'ISCWSA MWD Rev4'`` for legacy Rev 4 behaviour).
     survey : welleng.survey.Survey
         The input Survey object.
     errors : welleng.errors.tool_errors.ToolError
@@ -130,7 +148,7 @@ class ErrorModel():
     def __init__(
         self,
         survey,
-        error_model="ISCWSA MWD Rev5",
+        error_model="ISCWSA MWD Rev5.11",
     ):
         """Initialize the error model for a given survey.
 
@@ -139,10 +157,23 @@ class ErrorModel():
         survey : welleng.survey.Survey
             The survey to compute errors for.
         error_model : str, optional
-            Name of the error model to apply.
+            Name of the error model to apply. Defaults to the Rev 5.11
+            compliant ``"ISCWSA MWD Rev5.11"``. The legacy name
+            ``"ISCWSA MWD Rev5"`` is accepted as a deprecated alias.
         """
 
-        # error_models = ERROR_MODELS
+        if error_model in _DEPRECATED_ERROR_MODEL_ALIASES:
+            replacement = _DEPRECATED_ERROR_MODEL_ALIASES[error_model]
+            warnings.warn(
+                f"error_model={error_model!r} is deprecated; use "
+                f"{replacement!r} instead. From welleng 0.10.0 onward the "
+                "Rev5 model is Rev 5.11 compliant, so this alias now "
+                "produces Rev 5.11 results (different to pre-0.10.0 output).",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            error_model = replacement
+
         assert error_model in ERROR_MODELS, "Unrecognized error model"
         self.error_model = error_model
         self.survey = survey

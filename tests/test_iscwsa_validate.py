@@ -29,7 +29,7 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.mark.parametrize("path", AVAILABLE, ids=lambda p: p.stem[-1])
 def test_harness_runs_end_to_end(path):
-    report = validate_workbook(path, error_model="ISCWSA MWD Rev5")
+    report = validate_workbook(path, error_model="ISCWSA MWD Rev5.11")
     # Harness produced per-source comparisons for every validation row whose
     # source is modelled by welleng.
     assert report.per_source, "expected at least one comparison row"
@@ -52,7 +52,7 @@ def test_example1_known_passes():
     p = DATA / "error-model-example-mwdrev5-1-iscwsa-1.xlsx"
     if not p.exists():
         pytest.skip("example 1 not present")
-    report = validate_workbook(p, error_model="ISCWSA MWD Rev5",
+    report = validate_workbook(p, error_model="ISCWSA MWD Rev5.11",
                                tolerance_rel=1e-4, tolerance_abs=1e-10)
     pf = report.source_pass_fail()
     # At least 30 of 35 sources should match to float precision on Example #1.

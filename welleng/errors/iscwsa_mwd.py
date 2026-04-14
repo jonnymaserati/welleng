@@ -21,8 +21,10 @@ class iscwsaMwd:
         model
     ):
         """
-        Class using the ISCWSA MWD (Rev4) model to determine well bore
-        uncertatinty.
+        Class using the ISCWSA MWD model (Rev4 or Rev 5.11) to determine
+        well bore uncertainty. See ``welleng/errors/tool_codes/`` for the
+        available model YAMLs (``ISCWSA MWD Rev4`` and ``ISCWSA MWD Rev5.11``;
+        the legacy ``ISCWSA MWD Rev5`` string is a deprecated alias).
 
         Parameters
         ----------
@@ -125,7 +127,7 @@ class iscwsaMwd:
             'XYM4': XYM4,
             'SAGE': SAGE,
             'XCL': XCL,  # requires an exception
-            'XYM3L': XYM3L,  # looks like there's a mistake in the ISCWSA model
+            'XYM3L': XYM3L,
             'XYM4L': XYM4L,
         }
 
@@ -665,13 +667,17 @@ def XCLA(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
     dpde = np.zeros((len(error.survey_rad), 3))
 
     def manage_sing(error, kwargs):
+        # Rev 5.11 XCLA workbook formula: ABS(SIN(inc) * SIN(ABS(wrapped_azi_delta))).
+        # welleng previously used the raw wrapped delta (no SIN), introducing
+        # an O(delta^3/6) drift on sections with finite azimuth turn.
+        azi_delta_wrapped = ((
+            error.survey.azi_true_rad[1:]
+            - error.survey.azi_true_rad[:-1]
+            + pi
+        ) % (2 * pi)) - pi
         temp = np.absolute(
             sin(error.survey.inc_rad[1:])
-            * (((
-                error.survey.azi_true_rad[1:]
-                - error.survey.azi_true_rad[:-1]
-                + pi
-            ) % (2 * pi)) - pi)
+            * sin(np.absolute(azi_delta_wrapped))
         )
         temp[np.where(
             error.survey.inc_rad[:-1] < error.survey.header.vertical_inc_limit
@@ -771,9 +777,12 @@ def XYM3L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
         )
     ), axis=-1), axis=-1)
 
+    # Rev 5.11 XYM3E/XYM3L inc-axis weight per workbook: ABS(COS(inc)) * COS(azi) * coeff.
+    # Only cos(inc) is abs-wrapped — cos(azi) keeps its sign so azi beyond 90°
+    # correctly flips the contribution.
     dpde = np.zeros((len(error.survey_rad), 3))
-    dpde[1:, 1] = np.absolute(
-        cos(error.survey.inc_rad[1:])
+    dpde[1:, 1] = (
+        np.absolute(cos(error.survey.inc_rad[1:]))
         * cos(error.survey.azi_true_rad[1:])
         * coeff
     )
@@ -861,15 +870,16 @@ def XYM4L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
         )
     ), axis=-1), axis=-1)
 
+    # Rev 5.11 XYM4E/XYM4L azi-axis weight per workbook:
+    #   ABS(COS(inc)) * COS(azi) / SIN(inc) * coeff.
+    # Only cos(inc) is abs-wrapped; cos(azi) keeps its sign.
     dpde = np.zeros((len(error.survey_rad), 3))
     with np.errstate(divide='ignore', invalid='ignore'):
         dpde[:, 2] = np.nan_to_num(
-            np.absolute(
-                cos(error.survey.inc_rad)
-                * cos(error.survey.azi_true_rad)
-                / sin(error.survey.inc_rad)
-                * coeff
-            ),
+            np.absolute(cos(error.survey.inc_rad))
+            * cos(error.survey.azi_true_rad)
+            / sin(error.survey.inc_rad)
+            * coeff,
             posinf=0,
             neginf=0,
         )
