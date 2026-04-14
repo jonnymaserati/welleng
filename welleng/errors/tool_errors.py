@@ -1941,6 +1941,12 @@ def XYM3L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
             ) / 2
             * mag
         )
+        # Rev 5.11 "funny stuff": at SING station 1 the workbook uses the full
+        # first interval, not the halved value (see ABXY precedent at line ~409).
+        e_NEV_star_sing[1, 0] = (
+            (error.survey.md[1] - error.survey.md[0])
+            * mag
+        )
 
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
