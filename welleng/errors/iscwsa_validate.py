@@ -124,7 +124,13 @@ def _build_survey(example: ISCWSAExample, error_model: str) -> Any:
         convergence=0.0,
         azi_reference="true",
     )
-    md = wp.stations[:, 0]
+    # welleng's error-term magnitudes are denominated in SI (rad/m for
+    # tortuosity, etc.). The workbook internally converts MD to metres before
+    # computing covariance, so if the sheet declares depth_units='ft' we must
+    # match that conversion before handing the survey to welleng, otherwise
+    # systematic terms come out scaled by (ft/m)^2 = 10.764.
+    scale = wp.ft_to_m if wp.depth_units.startswith("ft") else 1.0
+    md = wp.stations[:, 0] * scale
     inc = wp.stations[:, 1]
     azi = wp.stations[:, 2]
     return Survey(md=md, inc=inc, azi=azi, header=sh, error_model=error_model)
@@ -153,11 +159,16 @@ def validate_workbook(
     workbook_codes = {t.code for t in example.terms}
     missing = sorted(workbook_codes - welleng_codes)
 
+    # Validation/TOTALS MDs are in the workbook's declared depth units;
+    # survey.md has been converted to metres in _build_survey.
+    wp = example.wellpath
+    md_scale = wp.ft_to_m if wp.depth_units.startswith("ft") else 1.0
+
     per_source: list[SourceCompare] = []
     for row in example.validation:
         if row.source not in welleng_codes:
             continue
-        idx_arr = np.where(np.isclose(survey.md, row.md))[0]
+        idx_arr = np.where(np.isclose(survey.md, row.md * md_scale))[0]
         if idx_arr.size == 0:
             continue
         i = int(idx_arr[0])
@@ -198,7 +209,7 @@ def validate_workbook(
         rel_err = _relative_error(wb_row, we_row)
         ok = abs_err <= tolerance_abs or rel_err <= tolerance_rel
         totals.append(TotalsCompare(
-            md=float(md), workbook=wb_row, welleng=we_row,
+            md=float(md) * md_scale, workbook=wb_row, welleng=we_row,
             max_abs_err=abs_err, max_rel_err=rel_err, ok=ok,
         ))
 
@@ -219,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("workbook", help="path to ISCWSA example xlsx")
     ap.add_argument(
-        "--model", default="ISCWSA MWD Rev5",
+        "--model", default="ISCWSA MWD Rev5.11",
         help="welleng error_model string (default: %(default)r)",
     )
     ap.add_argument("--tol-rel", type=float, default=1e-3)

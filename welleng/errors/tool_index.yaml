@@ -471,12 +471,12 @@ ISCWSA MWD Rev4:
   OWSG Prefix: None
   Rev.: 4
   Short Name: ISCWSA MWD Rev4
-ISCWSA MWD Rev5:
+ISCWSA MWD Rev5.11:
   Application: None
-  Long Name: ISCWSA MWD (Fixed Rig) Rev5
+  Long Name: ISCWSA MWD (Fixed Rig) Rev 5.11
   OWSG Prefix: None
-  Rev.: 5
-  Short Name: ISCWSA MWD Rev5
+  Rev.: 5.11
+  Short Name: ISCWSA MWD Rev5.11
 spe-90408-ma_example_table_3:
   Application: None
   Long Name: spe-90408-ma_example_table_3

@@ -130,6 +130,8 @@ class Wellpath:
     dip_deg: float
     declination_deg: float
     stations: np.ndarray  # (n, 5): md, inc_deg, azi_deg, tvd, toolface_deg
+    depth_units: str = "m"         # "m" or "ft" as declared on the Wellpath sheet
+    ft_to_m: float = 0.3048        # workbook's declared ft→m factor
 
 
 @dataclass
@@ -299,12 +301,22 @@ def parse_wellpath_sheet(ws: Worksheet) -> Wellpath:
     # Reference params live in col A (label) / col B (value) of the top rows.
     refs: dict[str, float] = {}
     well_name = ""
-    for row in _rows(ws, max_row=10):
+    depth_units = "m"
+    ft_to_m = 0.3048
+    for row in _rows(ws, max_row=12):
         if not row or row[0] is None:
             continue
         label = str(row[0]).strip()
         if label == "Well":
             well_name = str(row[1]) if row[1] is not None else ""
+            continue
+        if label.lower().startswith("depth units"):
+            if row[1] is not None:
+                depth_units = str(row[1]).strip().lower()
+            continue
+        if label.lower().startswith("feet to metres"):
+            if row[1] is not None and isinstance(row[1], (int, float)):
+                ft_to_m = float(row[1])
             continue
         # Reference params are formatted as "Name (unit)"
         key = label.split("(")[0].strip().lower()
@@ -337,6 +349,8 @@ def parse_wellpath_sheet(ws: Worksheet) -> Wellpath:
         dip_deg=refs.get("dip", float("nan")),
         declination_deg=refs.get("declination", float("nan")),
         stations=np.asarray(stations, dtype=float),
+        depth_units=depth_units,
+        ft_to_m=ft_to_m,
     )
 
 

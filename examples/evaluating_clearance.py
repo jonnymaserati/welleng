@@ -85,7 +85,7 @@ for well in data["wells"]:
         tvd=data["wells"][well]["TVD"],
         radius=radius,
         header=sh,
-        error_model="ISCWSA MWD Rev5",
+        error_model="ISCWSA MWD Rev5.11",
         start_xyz=[
             data["wells"][well]["E"][0],
             data["wells"][well]["N"][0],
