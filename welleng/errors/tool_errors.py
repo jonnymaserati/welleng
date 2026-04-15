@@ -180,7 +180,7 @@ class ToolError:
             'XYM4': XYM4,
             'SAGE': SAGE,
             'XCL': XCL,  # requires an exception
-            'XYM3L': XYM3L,  # looks like there's a mistake in the ISCWSA model
+            'XYM3L': XYM3L,
             'XYM4L': XYM4L,
             'XCLA': XCLA,
             'XCLH': XCLH,
@@ -1759,13 +1759,15 @@ def XCLA(code, error, mag=0.167, propagation='random', NEV=True, **kwargs):
     dpde = np.zeros((len(error.survey_rad), 3))
 
     def manage_sing(error, kwargs):
+        # Rev 5.11 XCLA workbook formula: ABS(SIN(inc) * SIN(ABS(wrapped_azi_delta))).
+        azi_delta_wrapped = ((
+            error.survey.azi_true_rad[1:]
+            - error.survey.azi_true_rad[:-1]
+            + pi
+        ) % (2 * pi)) - pi
         temp = np.absolute(
             sin(error.survey.inc_rad[1:])
-            * (((
-                error.survey.azi_true_rad[1:]
-                - error.survey.azi_true_rad[:-1]
-                + pi
-            ) % (2 * pi)) - pi)
+            * sin(np.absolute(azi_delta_wrapped))
         )
         temp[np.where(
             error.survey.inc_rad[:-1] < error.survey.header.vertical_inc_limit
@@ -1865,9 +1867,11 @@ def XYM3L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
         )
     ), axis=-1), axis=-1)
 
+    # Rev 5.11 XYM3E/XYM3L weights per workbook: ABS(COS(inc)) only, cos(azi)
+    # keeps its sign so azimuths beyond 90° flip contribution correctly.
     dpde = np.zeros((len(error.survey_rad), 3))
-    dpde[1:, 1] = np.absolute(
-        cos(error.survey.inc_rad[1:])
+    dpde[1:, 1] = (
+        np.absolute(cos(error.survey.inc_rad[1:]))
         * cos(error.survey.azi_true_rad[1:])
         * coeff
     )
@@ -1937,6 +1941,12 @@ def XYM3L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
             ) / 2
             * mag
         )
+        # Rev 5.11 "funny stuff": at SING station 1 the workbook uses the full
+        # first interval, not the halved value (see ABXY precedent at line ~409).
+        e_NEV_star_sing[1, 0] = (
+            (error.survey.md[1] - error.survey.md[0])
+            * mag
+        )
 
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
@@ -1955,15 +1965,15 @@ def XYM4L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
         )
     ), axis=-1), axis=-1)
 
+    # Rev 5.11 XYM4E/XYM4L azi-axis weight per workbook:
+    # ABS(COS(inc)) * COS(azi) / SIN(inc) * coeff.
     dpde = np.zeros((len(error.survey_rad), 3))
     with np.errstate(divide='ignore', invalid='ignore'):
         dpde[:, 2] = np.nan_to_num(
-            np.absolute(
-                cos(error.survey.inc_rad)
-                * cos(error.survey.azi_true_rad)
-                / sin(error.survey.inc_rad)
-                * coeff
-            ),
+            np.absolute(cos(error.survey.inc_rad))
+            * cos(error.survey.azi_true_rad)
+            / sin(error.survey.inc_rad)
+            * coeff,
             posinf=0,
             neginf=0,
         )
