@@ -11,7 +11,7 @@
 ## Features
 
 - **Survey listings** — generate and interpolate well trajectories using minimum curvature or maximum curvature methods
-- **Well bore uncertainty** — ISCWSA MWD Rev4/Rev5 error models within 0.001% accuracy of ISCWSA test data; OWSG models also available
+- **Well bore uncertainty** — ISCWSA MWD Rev 5.11 error model (validated 35/35 sources against all three ISCWSA example workbooks) and legacy Rev4 for back-compat; OWSG models also available
 - **Clearance & Separation Factors** — standard ISCWSA method (within 0.5% of ISCWSA test data) and mesh-based method using the [Flexible Collision Library]
 - **Well path creation** — the `connector` module builds trajectories between start/end locations automatically
 - **Vertical section, TVD interpolation, project-ahead** — common survey planning tools
@@ -25,6 +25,15 @@ Available error models:
 import welleng as we
 we.error.get_error_models()
 ```
+
+> **Error model update (welleng 0.10.0).** The MWD Rev 5 model has been brought
+> into compliance with the ISCWSA Rev 5.11 example workbooks. The
+> `"ISCWSA MWD Rev5"` string remains a selectable alias with a
+> `DeprecationWarning` pointing at the new `"ISCWSA MWD Rev5.11"` name, but
+> produces the corrected Rev 5.11 covariance (slightly different numerical
+> output to welleng ≤ 0.9.x). `"ISCWSA MWD Rev4"` is unchanged for users who
+> need to reproduce older results. See `welleng/errors/iscwsa_validate.py` for
+> the validation harness used to audit against each ISCWSA example workbook.
 
 ## Support welleng
 welleng is fuelled by copious amounts of coffee, so if you wish to supercharge development please donate generously:

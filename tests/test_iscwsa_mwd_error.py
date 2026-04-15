@@ -9,20 +9,29 @@ from welleng.error import ErrorModel
 from welleng.utils import get_sigmas
 
 """
-Test that the ISCWSA MWD Rev5 error model is working within a defined
-tolerance (the default has been set to 0.001%), testing against the
-MWD Rev 5 error model example provided by ISCWSA.
+Test that the ISCWSA MWD error models reproduce the example workbook values.
+
+Each model carries its own ``(rtol, atol)`` pair because the reference JSON
+files have different precision:
+
+- Rev 5.11 is regenerated from the Rev 5.11 workbook's full-precision
+  Calculated block, so welleng matches it to ~1e-5 relative / 1e-6 absolute.
+- Rev 4's JSON is extracted from the workbook's Diagnostic block which
+  rounds to 4 decimal places. Cells whose reference value is itself
+  ~1e-4 produce artificially large *relative* errors, so an absolute
+  tolerance of 5e-5 covers the rounding floor while the relative tolerance
+  catches real drift on bigger values.
 """
 
-# Set test tolerance as percentage
-TOLERANCE = 0.001
-# input_files = {
-#     "iscwsa_mwd_rev4": "tests/test_data/error_mwdrev4_1_iscwsa_data.json",
-#     "iscwsa_mwd_rev5": "tests/test_data/error_mwdrev5_1_iscwsa_data.json"
-# }
+# Pass condition per cell: ``abs_err <= atol  OR  rel_err <= rtol``.
+MODEL_TOLERANCES = {
+    "ISCWSA MWD Rev4":    {"rtol": 1e-3, "atol": 5e-5},  # 0.1% / rounding-floor
+    "ISCWSA MWD Rev5.11": {"rtol": 5e-5, "atol": 1e-6},  # atol tightened 50x
+}
+
 input_files = {
     "ISCWSA MWD Rev4": "tests/test_data/error_mwdrev4_1_iscwsa_data.json",
-    "ISCWSA MWD Rev5": "tests/test_data/error_mwdrev5_1_iscwsa_data.json"
+    "ISCWSA MWD Rev5.11": "tests/test_data/error_mwdrev5_1_iscwsa_data.json"
 }
 
 
@@ -63,13 +72,8 @@ def test_iscwsa_error_models(input_files=input_files):
     for error_model, filename in input_files.items():
         df, err = initiate(error_model, filename)
 
-        nn_c, ee_c, vv_c, ne_c, nv_c, ev_c = [], [], [], [], [], []
-        data = [
-            nn_c, ee_c, vv_c, ne_c, nv_c, ev_c
-        ]
-
-        # generate error data
-        for index, row in df.iterrows():
+        data = [[], [], [], [], [], []]
+        for _, row in df.iterrows():
             i = get_md_index(err, row['md'])
             s = row['source']
             if s in ["Totals", "TOTAL"]:
@@ -80,46 +84,31 @@ def test_iscwsa_error_models(input_files=input_files):
             for j, d in enumerate(v):
                 data[j].append(d[0])
 
-        # convert to dictionary
-        ed = {}
-        headers = [
-            'nn_c', 'ee_c', 'vv_c', 'ne_c', 'nv_c', 'ev_c'
-        ]
-        for i, h in enumerate(headers):
-            ed[h] = data[i]
+        computed = np.array(data).T
+        reference = np.array(df.iloc[:, 2:], dtype=float)
 
-        df_c = pd.DataFrame(ed)
-
-        df_r = df.join(df_c)
-
-        headers = [
-            'nn_d', 'ee_d', 'vv_d', 'ne_d', 'nv_d', 'ev_d'
-        ]
-        df_d = pd.DataFrame(
-            np.around(
-                np.array(df_c) - np.array(df.iloc[:, 2:]),
-                decimals=4
-            ),
-            columns=headers
-        )
-
-        df_r = df_r.join(df_d)
-
+        tol = MODEL_TOLERANCES[error_model]
+        abs_err = np.abs(computed - reference)
         with np.errstate(divide='ignore', invalid='ignore'):
-            error = np.nan_to_num(np.absolute(
-                np.array(df_d) / np.array(df.iloc[:, 2:])
-                ) * 100
+            rel_err = np.nan_to_num(abs_err / np.abs(reference))
+        passing = (abs_err <= tol['atol']) | (rel_err <= tol['rtol'])
+
+        if not np.all(passing):
+            # Surface the worst few offending cells for debugging.
+            bad = np.argwhere(~passing)
+            labels = ('NN', 'EE', 'VV', 'NE', 'NV', 'EV')
+            msgs = [
+                f"    md={df.md.iloc[r]} src={df.source.iloc[r]} "
+                f"{labels[c]}: ref={reference[r, c]:.6g} "
+                f"got={computed[r, c]:.6g} abs={abs_err[r, c]:.3e} "
+                f"rel={rel_err[r, c]:.3e}"
+                for r, c in bad[:8]
+            ]
+            raise AssertionError(
+                f"{error_model}: {len(bad)} cells exceed tolerance "
+                f"(rtol={tol['rtol']:g}, atol={tol['atol']:g}):\n"
+                + "\n".join(msgs)
             )
-
-        assert np.all(error < TOLERANCE), (
-            f"failing error {d}"
-        )
-
-        # if you wanted to view the results, this would save then to an Excel
-        # file.
-        # df_r.to_excel(
-        #     "tests/test_data/error_mwdrev5_iscwsa_validation_results.xlsx"
-        # )
 
 
 def test_drdp_single_pass_matches_column_methods():
@@ -133,7 +122,7 @@ def test_drdp_single_pass_matches_column_methods():
         azi=[0, 30, 90, 150, 270],
         unit='meters',
     )
-    for model in ('ISCWSA MWD Rev4', 'ISCWSA MWD Rev5'):
+    for model in ('ISCWSA MWD Rev4', 'ISCWSA MWD Rev5.11'):
         em = ErrorModel(s, error_model=model)
         expected = np.hstack((
             em.drk_dDepth(em.survey_drdp),

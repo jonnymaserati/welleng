@@ -37,7 +37,7 @@ survey = we.survey.Survey(
     inc=[0, 0, 30, 30],
     azi=[0, 0, 90, 90],
     deg=True,
-).interpolate_survey(step=30).get_error('ISCWSA MWD Rev5')
+).interpolate_survey(step=30).get_error('ISCWSA MWD Rev5.11')
 
 # make a plotly figure of the survey
 fig = survey.figure()
