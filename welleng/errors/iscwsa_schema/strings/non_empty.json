@@ -1,0 +1,8 @@
+{
+	"$schema"     : "https://json-schema.org/draft/2020-12/schema",
+	"$id"         : "https://github.com/iscwsa/error-models/blob/main/schemas/strings/non_empty.json",
+	"type"        : "string",
+	"title"       : "Non-Empty String",
+	"description" : "Don't allow empty strings",
+	"minLength"   : 1
+}

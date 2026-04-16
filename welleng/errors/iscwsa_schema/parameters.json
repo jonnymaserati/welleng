@@ -1,0 +1,21 @@
+{
+	"$schema"     : "https://json-schema.org/draft/2020-12/schema",
+	"$id"         : "https://github.com/iscwsa/error-models/blob/main/schemas/parameters.json",
+	"type"        : "object",
+	"title"       : "Running Parameters",
+	"description" : "The conditions in which the Error Model or Error Term are applicable",
+	"examples"    : ["inc_min: 0, inc_max: 180"],
+
+	"properties": {
+		"inc_min": { "type": "integer", "minimum": 0, "maximum": 180 },
+		"inc_max": { "type": "integer", "minimum": 0, "maximum": 180 }
+	},
+
+	"anyOf": [
+		{ "required": [ "inc_min" ] },
+		{ "required": [ "inc_max" ] }
+	],
+
+	"additionalProperties" : false
+
+}
