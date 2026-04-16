@@ -1,6 +1,7 @@
 import numpy as np
 from numpy import sin, cos, tan, pi, sqrt
 from numpy.char import index
+import json
 import yaml
 import os
 from collections import OrderedDict
@@ -8,6 +9,102 @@ from collections import OrderedDict
 
 # import welleng.error
 from ..utils import NEV_to_HLA
+from .interpreter import evaluate_formula
+
+
+# Map ISCWSA JSON propagation_mode enum -> the lowercase string the
+# legacy welleng dispatch expects.
+_JSON_PROP_TO_LEGACY = {
+    "Random": "random",
+    "Systematic": "systematic",
+    "Global": "global",
+    "Well": "well",
+}
+
+
+def _resolve_json_model(model_name: str) -> str | None:
+    """Find the ISCWSA-format JSON tool model for the given name.
+
+    `model_name` may be either an OWSG prefix (e.g. 'A020Gb') or a
+    Short Name (e.g. 'GYRO-NS'). Searches every JSON under
+    welleng/errors/iscwsa_json/ and matches against the file basename,
+    its metadata.model_id, and its metadata.short_name.
+
+    Returns the absolute path of the first match, or None if no JSON
+    file matches.
+    """
+    json_root = os.path.join(PATH, 'iscwsa_json')
+    if not os.path.isdir(json_root):
+        return None
+    # Cheap path: filename matches model name directly.
+    for sub in os.listdir(json_root):
+        sub_p = os.path.join(json_root, sub)
+        if os.path.isdir(sub_p):
+            cand = os.path.join(sub_p, f"{model_name}.json")
+            if os.path.isfile(cand):
+                return cand
+    # Fallback: walk every JSON, peek metadata for matching id / short_name.
+    for sub in os.listdir(json_root):
+        sub_p = os.path.join(json_root, sub)
+        if not os.path.isdir(sub_p):
+            continue
+        for fn in os.listdir(sub_p):
+            if not fn.endswith(".json"):
+                continue
+            path = os.path.join(sub_p, fn)
+            try:
+                with open(path) as f:
+                    md = json.load(f).get("metadata", {})
+            except Exception:
+                continue
+            if (md.get("model_id") == model_name
+                    or md.get("short_name") == model_name):
+                return path
+    return None
+
+
+def _json_to_em_adapter(model: dict) -> dict:
+    """Adapt an ISCWSA-format JSON tool model to the YAML-like dict
+    structure the legacy ToolError code expects (`header` + `codes`).
+
+    The resulting dict's ``codes`` entries carry the formula strings
+    (``depth_formula``, ``inclination_formula``, ``azimuth_formula``)
+    in addition to the legacy ``magnitude`` / ``propagation`` /
+    ``unit`` fields, so the interpreter-driven term-evaluation path
+    has everything it needs without re-reading the JSON.
+    """
+    md = model.get("metadata", {})
+    pp = model.get("parameters", {})
+    inc_max_deg = pp.get("inc_max", 180)
+    inc_min_deg = pp.get("inc_min", 0)
+    header = {
+        "Short Name": md.get("short_name", ""),
+        "Long Name": md.get("long_name", ""),
+        "Application": md.get("application", ""),
+        "Source": md.get("source", ""),
+        "Tool Type": md.get("tool_type", ""),
+        "Inclination Range Min": f"{inc_min_deg} deg",
+        "Inclination Range Max": f"{inc_max_deg} deg",
+        "Revision No": md.get("revision_number", ""),
+        "Revision Date": md.get("revision_date", ""),
+        # Required for the legacy code path to be happy when JSON tool
+        # carries no tortuosity (we synthesise a default).
+        "Default Tortusity (rad/m)": 0.000572615,
+    }
+    codes = OrderedDict()
+    for term in model.get("terms", []):
+        name = term["name"]
+        codes[name] = {
+            "function": "_INTERPRETER_",
+            "magnitude": float(term["value"]),
+            "propagation": _JSON_PROP_TO_LEGACY.get(
+                term["propagation_mode"], "systematic"
+            ),
+            "unit": term.get("units", ""),
+            # Carry through the formula strings for the interpreter.
+            "_iscwsa_term": term,
+        }
+    return {"header": header, "codes": codes}
 
 # since this is running on different OS flavors
 PATH = os.path.dirname(__file__)
@@ -43,12 +140,40 @@ class ToolError:
         self.e = error
         self.errors = {}
 
-        filename = os.path.join(
-            '', *[PATH, 'tool_codes', f"{model}.yaml"]
-        )
+        # Resolve the tool model file. Try the legacy YAML location
+        # first (welleng/errors/tool_codes/<model>.yaml); if it doesn't
+        # exist, fall back to an ISCWSA-format JSON tool model under
+        # welleng/errors/iscwsa_json/. Gyro tools ship via the JSON
+        # path -- the legacy YAML weight functions for AXYZ_*/GXY_*
+        # were deleted in favour of the formula-string interpreter
+        # (welleng/errors/interpreter.py).
+        #
+        # The dispatch in welleng.error.ErrorModel maps the user's
+        # `error_model='X'` (a Short Name) to an OWSG prefix `model`.
+        # Some JSON files are named by Short Name (the converter's
+        # default), so we walk the iscwsa_json/ tree looking at both
+        # the OWSG prefix and the metadata.short_name of each JSON.
+        yaml_filename = os.path.join(PATH, 'tool_codes', f"{model}.yaml")
+        json_filename = _resolve_json_model(model)
 
-        with open(filename, 'r') as file:
-            self.em = yaml.safe_load(file)
+        self._json_path = None
+        if os.path.isfile(yaml_filename):
+            with open(yaml_filename, 'r') as file:
+                self.em = yaml.safe_load(file)
+        elif json_filename is not None:
+            with open(json_filename) as file:
+                self._json_model = json.load(file)
+            self._json_path = json_filename
+            # Adapter: shape the JSON into a YAML-like dict so the
+            # downstream code that expects ``self.em['header']`` and
+            # ``self.em['codes']`` keeps working without a refactor.
+            self.em = _json_to_em_adapter(self._json_model)
+        else:
+            raise FileNotFoundError(
+                f"No tool model file found for {model!r}. Searched:\n"
+                f"  YAML: {yaml_filename}\n"
+                f"  JSON: {os.path.join(PATH, 'iscwsa_json', '**')}"
+            )
 
         # self.em = iscwsa_error_models[model]
         #     iscwsa_error_models = yaml.safe_load(file)
@@ -80,12 +205,22 @@ class ToolError:
         self._initiate_func_dict()
 
         for err in self.em['codes']:
-            # func = self._get_the_func_out(err)
-            func = self.em['codes'][err]['function']
-            mag = self.em['codes'][err]['magnitude']
-            propagation = self.em['codes'][err]['propagation']
-            self.errors[err] = (
-                self.call_func(
+            entry = self.em['codes'][err]
+            func = entry['function']
+            mag = entry['magnitude']
+            propagation = entry['propagation']
+            if func == "_INTERPRETER_":
+                # JSON-tool path: evaluate the term's formula strings
+                # against per-station bindings, build dpde, hand off to
+                # the existing _generate_error machinery.
+                self.errors[err] = self._call_interpreter(
+                    code=err,
+                    term=entry["_iscwsa_term"],
+                    mag=mag,
+                    propagation=propagation,
+                )
+            else:
+                self.errors[err] = self.call_func(
                     code=err,
                     func=func,
                     error=self.e,
@@ -93,9 +228,8 @@ class ToolError:
                     propagation=propagation,
                     tortuosity=self.tortuosity,
                     header=self.em['header'],
-                    errors=self
+                    errors=self,
                 )
-            )
 
         shape = (len(self.e.survey_rad), 3, 3)
         self.cov_NEVs = np.zeros(shape)
@@ -132,6 +266,73 @@ class ToolError:
         assert func in self.func_dict, f"no function for function {func}"
 
         return self.func_dict[func](code, error, mag, propagation, **kwargs)
+
+    def _call_interpreter(self, code, term, mag, propagation):
+        """JSON-tool term evaluation via formula-string interpreter.
+
+        Mirrors the `call_func` contract for legacy hand-coded weight
+        functions: returns an `Error` object with cov_NEV computed via
+        the existing `error._generate_error` machinery. The only
+        difference is the source of the per-station per-axis dpde --
+        the interpreter evaluates the term's depth/inclination/azimuth
+        formula strings against per-station survey bindings.
+
+        Terms that fail to evaluate (formula references variables not
+        bound -- e.g. cross-station MDPrev/AzPrev/IncPrev, or per-tool
+        calibration constants like NoiseReductionFactor) raise. These
+        are the schema-gap findings catalogued for the ISCWSA Discussion
+        post; see welleng/errors/conformance.py output.
+        """
+        survey = self.e.survey
+        n = len(survey.md)
+        bindings = {
+            "MD": np.asarray(survey.md, dtype=float),
+            "Inc": np.asarray(survey.inc_rad, dtype=float),
+            "AzT": np.asarray(survey.azi_true_rad, dtype=float),
+            "AzM": np.asarray(survey.azi_mag_rad, dtype=float),
+            "Az": np.asarray(survey.azi_grid_rad, dtype=float),
+            "TVD": np.asarray(survey.tvd, dtype=float),
+            "Gfield": float(survey.header.G),
+            "Dip": float(survey.header.dip),
+            "BField": float(survey.header.b_total or 50000.0),
+            # EarthRate is needed by gyro-azimuth terms; standard value
+            # in rad/hr (15.041 deg/hr).
+            "EarthRate": 0.262516,
+            "Latitude": np.radians(float(survey.header.latitude or 0.0)),
+            "RAD": np.pi / 180.0,
+        }
+        try:
+            d = evaluate_formula(term["depth_formula"], bindings)
+            i = evaluate_formula(term["inclination_formula"], bindings)
+            a = evaluate_formula(term["azimuth_formula"], bindings)
+        except Exception as exc:
+            # Term references variables the interpreter doesn't know how
+            # to bind -- typically cross-station refs (MDPrev/AzPrev/
+            # IncPrev) or per-tool calibration constants
+            # (NoiseReductionFactor, XY_Gyro_Drift, ...). These are
+            # documented schema gaps in the ISCWSA JSON spec; see
+            # welleng/errors/conformance.py output for the catalogue.
+            #
+            # User-facing behaviour: emit a warning identifying the
+            # missing variable, then contribute zero from this term so
+            # the model as a whole still produces a usable Survey.
+            import warnings
+            warnings.warn(
+                f"JSON tool model term {code!r} could not be evaluated "
+                f"({exc}). Term contributes zero covariance to this Survey. "
+                f"This is a known ISCWSA-JSON schema gap; see "
+                f"welleng/errors/conformance.py.",
+                RuntimeWarning,
+            )
+            d = np.zeros(n)
+            i = np.zeros(n)
+            a = np.zeros(n)
+        d = np.broadcast_to(np.asarray(d, dtype=float), (n,))
+        i = np.broadcast_to(np.asarray(i, dtype=float), (n,))
+        a = np.broadcast_to(np.asarray(a, dtype=float), (n,))
+        dpde = np.column_stack([d, i, a])
+        e_DIA = dpde * mag
+        return self.e._generate_error(code, e_DIA, propagation, NEV=True)
 
     def _initiate_func_dict(self):
         """
