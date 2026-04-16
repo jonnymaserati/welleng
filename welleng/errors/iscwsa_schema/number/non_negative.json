@@ -1,0 +1,8 @@
+{
+	"$schema"     : "https://json-schema.org/draft/2020-12/schema",
+	"$id"         : "https://github.com/iscwsa/error-models/blob/main/schemas/number/non_negative.json",
+	"type"        : "number",
+	"title"       : "Non-Negative Number",
+	"description" : "Only numbers >= 0 are allowed",
+	"minimum"     : 0
+}

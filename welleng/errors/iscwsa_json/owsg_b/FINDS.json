@@ -1,0 +1,88 @@
+{
+  "$schema": "../../iscwsa_schema/draft.json",
+  "metadata": {
+    "schema_uuid": "00000000-0000-0000-0000-000000000000",
+    "model_uuid": "964eb8de-e3c0-5fa0-add6-a7edfe4ed179",
+    "model_id": "B021Ga",
+    "short_name": "FINDS",
+    "long_name": "OWSG BHI Ferranti FINDS",
+    "revision_number": 1,
+    "revision_date": "2013-11-01",
+    "revision_comment": "Initial Release",
+    "source": "OWSG - Copsegrove Developments Ltd",
+    "application": "Ferranti FINDS Inertial Surveys",
+    "tool_type": "Gyroscopic",
+    "author": "welleng OWSG-to-ISCWSA converter",
+    "framework": "ISCWSA Rev5",
+    "tags": [
+      "owsg-setb",
+      "sheet-FINDS",
+      "source-xlsx:toolgroup-owsg-b-rev-5-1-08-oct-2020-produced-23-sep-2022.xlsx",
+      "warn:term 'DSFS': unit '-' not in ISCWSA enum ['1/m', 'deg', 'deg/hr', 'deg/nT', 'm', 'm/s2', 'nT', 'rad']",
+      "warn:term 'CNA': unit '-' not in ISCWSA enum ['1/m', 'deg', 'deg/hr', 'deg/nT', 'm', 'm/s2', 'nT', 'rad']",
+      "warn:term 'CNI': unit '-' not in ISCWSA enum ['1/m', 'deg', 'deg/hr', 'deg/nT', 'm', 'm/s2', 'nT', 'rad']"
+    ]
+  },
+  "parameters": {
+    "inc_min": 0,
+    "inc_max": 180
+  },
+  "terms": [
+    {
+      "uuid": "4e12c641-a93c-5dcd-ada1-19b1c5297d25",
+      "name": "DSFS",
+      "x_owsg_weight_function": "DSF",
+      "value": 0.001,
+      "units": "-",
+      "depth_factor": 1,
+      "inclination_factor": 0,
+      "azimuth_factor": 0,
+      "propagation_mode": "Systematic",
+      "depth_formula": "MD",
+      "inclination_formula": "0",
+      "azimuth_formula": "0",
+      "north_singularity": null,
+      "east_singularity": null,
+      "vertical_singularity": null,
+      "hash_value": "00000000000000000000000000000000"
+    },
+    {
+      "uuid": "20d03918-7862-5049-9a19-a90b00e4ca35",
+      "name": "CNA",
+      "x_owsg_weight_function": "CNA",
+      "value": 0.001,
+      "units": "-",
+      "depth_factor": 1,
+      "inclination_factor": 0,
+      "azimuth_factor": 0,
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "0",
+      "azimuth_formula": "1 / Sin(Inc)",
+      "north_singularity": "-Sin(Az)",
+      "east_singularity": "Cos(Az)",
+      "vertical_singularity": null,
+      "hash_value": "00000000000000000000000000000000"
+    },
+    {
+      "uuid": "9058d09f-9e98-5401-8a01-9ad2739a20db",
+      "name": "CNI",
+      "x_owsg_weight_function": "CNI",
+      "value": 0.001,
+      "units": "-",
+      "depth_factor": 1,
+      "inclination_factor": 0,
+      "azimuth_factor": 0,
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "1",
+      "azimuth_formula": "0",
+      "north_singularity": null,
+      "east_singularity": null,
+      "vertical_singularity": null,
+      "hash_value": "00000000000000000000000000000000"
+    }
+  ],
+  "hash_function": "SHA256",
+  "hash_value": "00000000000000000000000000000000"
+}

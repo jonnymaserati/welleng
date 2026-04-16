@@ -1,0 +1,77 @@
+{
+	"$schema"     : "https://json-schema.org/draft/2020-12/schema",
+	"$id"         : "https://github.com/iscwsa/error-models/blob/main/schemas/error_term.json",
+	"type"        : "object",
+	"title"       : "Error Term",
+	"description" : "An individual Error Term",
+	"examples"    : ["DREF", "SAG", "XYM3E"],
+
+	"properties"  : {
+
+		"uuid"  : {"$ref": "./strings/non_empty.json"},
+		"name"  : {"$ref": "./strings/non_empty.json"},
+		"value" : {"$ref": "./number/any.json"},
+
+		"units": {
+			"description": "",
+			"type": "string",
+			"enum": ["m", "1/m", "nT", "m/s2", "deg", "deg/nT", "deg/hr", "rad"]
+		},
+
+		"depth_factor"       : {"$ref": "./number/non_negative.json"},
+		"inclination_factor" : {"$ref": "./number/non_negative.json"},
+		"azimuth_factor"     : {"$ref": "./number/non_negative.json"},
+
+		"propagation_mode": {
+			"description" : "",
+			"type"        : "string",
+			"enum"        : ["Global", "Random", "Systematic", "Well"]
+		},
+
+		"depth_formula"       : {"$ref": "./strings/non_empty.json"},
+		"inclination_formula" : {"$ref": "./strings/non_empty.json"},
+		"azimuth_formula"     : {"$ref": "./strings/non_empty.json"},
+
+		"north_singularity": {
+			"description" : "",
+			"type"        : ["string", "null"],
+			"minLength"   : 1
+		},
+
+		"east_singularity": {
+			"description" : "",
+			"type"        : ["string", "null"],
+			"minLength"   : 1
+		},
+
+		"vertical_singularity": {
+			"description" : "",
+			"type"        : ["string", "null"],
+			"minLength"   : 1
+		},
+
+		"hash_value": {"$ref": "./strings/non_empty.json"}
+
+	},
+
+	"required": [
+		"uuid",
+		"name",
+		"value",
+		"units",
+		"depth_factor",
+		"inclination_factor",
+		"azimuth_factor",
+		"propagation_mode",
+		"depth_formula",
+		"inclination_formula",
+		"north_singularity",
+		"east_singularity",
+		"vertical_singularity",
+		"azimuth_formula",
+		"hash_value"
+	],
+
+	"additionalProperties" : false
+
+}

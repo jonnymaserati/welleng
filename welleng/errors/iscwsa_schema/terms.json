@@ -1,0 +1,11 @@
+{
+	"$schema"     : "https://json-schema.org/draft/2020-12/schema",
+	"$id"         : "https://github.com/iscwsa/error-models/blob/main/schemas/terms.json",
+	"type"        : "array",
+	"title"       : "Error Terms",
+	"description" : "Array of individual Error Terms",
+
+	"minItems"    : 1,
+	"uniqueItems" : true,
+	"items"       : {"$ref": "./error_term.json"}
+}

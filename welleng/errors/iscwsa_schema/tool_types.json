@@ -1,0 +1,15 @@
+{
+	"$schema"     : "https://json-schema.org/draft/2020-12/schema",
+	"$id"         : "https://github.com/iscwsa/error-models/blob/main/schemas/tool_types.json",
+	"type"        : "string",
+	"title"       : "Tool Type",
+	"description" : "How does the tool acquire surveys?",
+	"examples"    : ["Magnetic, Gyroscopic, Unknown"],
+
+	"enum": [
+		"Magnetic",
+		"Gyroscopic",
+		"Inertial",
+		"Unknown"
+	]
+}
