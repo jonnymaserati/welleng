@@ -35,16 +35,24 @@ we.error.get_error_models()
 > need to reproduce older results. See `welleng/errors/iscwsa_validate.py` for
 > the validation harness used to audit against each ISCWSA example workbook.
 
-> **Gyro support (welleng 0.10.0).** The OWSG Set A gyro tool stacks are
-> available as `Survey(error_model='GYRO-NS' | 'GYRO-NS-CT' | 'GYRO-MWD' | ...)`.
-> These are driven by the new ISCWSA JSON schema (vendored at
-> `welleng/errors/iscwsa_schema/`, pinned to upstream
-> [`iscwsa/error-models`](https://github.com/iscwsa/error-models)) and a
-> ~95-line Excel-formula interpreter at `welleng/errors/interpreter.py`. The
-> 100-tool OWSG Set A library lives at `welleng/errors/iscwsa_json/owsg_a/`,
-> generated from the OWSG-published `.xlsx` toolgroup files. See
-> `examples/gyro_survey_example.py` for a side-by-side MWD/gyro position-
-> uncertainty comparison.
+> **Gyro support + JSON-driven tool models (welleng 0.11.0).** ISCWSA is
+> moving its error-model standard from the legacy Excel workbooks to a
+> machine-readable JSON schema at
+> [`iscwsa/error-models`](https://github.com/iscwsa/error-models). welleng
+> 0.11 ships ahead of that transition: a vendored copy of the schema
+> (pinned to upstream SHA `c7af784` at
+> `welleng/errors/iscwsa_schema/`), a ~95-line Excel-formula interpreter
+> at `welleng/errors/interpreter.py`, and the full OWSG Set A library
+> (~100 tool models, including the gyro stacks) generated as ISCWSA
+> JSON at `welleng/errors/iscwsa_json/owsg_a/`. Use them via
+> `Survey(error_model='GYRO-NS' | 'GYRO-NS-CT' | 'GYRO-MWD' | 'MWD+SRGM' | ...)`.
+> See `examples/gyro_survey_example.py` for a side-by-side MWD/gyro
+> position-uncertainty comparison.
+>
+> The legacy hand-coded MWD path is **untouched** — the canonical
+> strings (`'ISCWSA MWD Rev4'`, `'ISCWSA MWD Rev5'`, `'ISCWSA MWD Rev5.11'`)
+> still route through the production engine, so existing users see no
+> behaviour change unless they opt in to a JSON-driven tool name.
 
 > **Parallel-paths conformance harness.** Every term that exists in *both*
 > the legacy hand-coded dispatcher and the new JSON+interpreter path is
@@ -53,7 +61,8 @@ we.error.get_error_models()
 > evaluate against the current draft schema (cross-station references like
 > `MDPrev` / `AzPrev` / `IncPrev`, per-tool calibration constants like
 > `NoiseReductionFactor`). Run `python -m welleng.errors.conformance --summary`
-> for the agreement matrix.
+> for the agreement matrix. Findings are filed upstream as schema-feedback
+> on the ISCWSA Discussions board.
 
 ## Support welleng
 welleng is fuelled by copious amounts of coffee, so if you wish to supercharge development please donate generously:
