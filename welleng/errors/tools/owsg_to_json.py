@@ -21,8 +21,9 @@ Usage:
         --xlsx /path/to/01-owsg-set-a-...xlsx \\
         --out  welleng/errors/iscwsa_json/owsg_a/
 
-By default both Set A and Set B are searched at their canonical paths
-under ``~/Dropbox/Documents/Reference/Wellbore Uncertainty/``.
+By default both Set A and Set B are read from the OWSG toolgroup
+workbooks vendored at ``data/iscwsa/toolgroups/`` (relative to the
+welleng repo root). Override with ``--xlsx-a`` / ``--xlsx-b``.
 """
 
 from __future__ import annotations
