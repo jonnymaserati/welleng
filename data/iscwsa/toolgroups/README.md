@@ -21,9 +21,12 @@ ISCWSA-format JSON tool models in ``welleng/errors/iscwsa_json/``.
 ## Source
 
 Downloaded from the public ISCWSA (Industry Steering Committee on
-Wellbore Survey Accuracy) website:
+Wellbore Survey Accuracy) website. The same files are referenced in
+the README of [iscwsa/error-models](https://github.com/iscwsa/error-models),
+the upstream JSON-schema repository:
 
-  https://www.iscwsa.net/
+- Set A: <https://www.iscwsa.net/files/807>
+- Set B: <https://www.iscwsa.net/files/808>
 
 The OWSG (Operators Wellbore Survey Group) is the operators-side
 group that maintains the canonical *tool model data* (magnitudes,
