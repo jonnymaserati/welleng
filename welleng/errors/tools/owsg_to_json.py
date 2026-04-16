@@ -336,21 +336,17 @@ def convert_sheet(
 # ---------------------------------------------------------------------------
 
 
-DEFAULT_XLSX_A = (
-    "/home/jonathancorcutt/Dropbox/Documents/Reference/Wellbore Uncertainty/"
-    "01-owsg-set-a-standard-error-model-set-rev2-14-oct-2015.xlsx"
+# Defaults resolve to the OWSG toolgroup workbooks vendored at
+# data/iscwsa/toolgroups/ (relative to the welleng repo root). See that
+# directory's README for source / licence / coverage.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_TOOLGROUPS_DIR = _REPO_ROOT / "data" / "iscwsa" / "toolgroups"
+
+DEFAULT_XLSX_A = str(
+    _TOOLGROUPS_DIR / "toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-23-sep-2022.xlsx"
 )
-DEFAULT_XLSX_B = (
-    "/home/jonathancorcutt/Dropbox/Documents/Reference/Wellbore Uncertainty/"
-    "02-owsg-extended-set-b-rev2-14-oct-2015.xlsx"
-)
-DEFAULT_XLSX_A_REV51 = (
-    "/home/jonathancorcutt/Dropbox/Documents/Reference/Wellbore Uncertainty/"
-    "toolgroup-owsg-a-rev-5-1-08-oct-2020-produced-23-sep-2022.xlsx"
-)
-DEFAULT_XLSX_B_REV51 = (
-    "/home/jonathancorcutt/Dropbox/Documents/Reference/Wellbore Uncertainty/"
-    "toolgroup-owsg-b-rev-5-1-08-oct-2020-produced-23-sep-2022.xlsx"
+DEFAULT_XLSX_B = str(
+    _TOOLGROUPS_DIR / "toolgroup-owsg-b-rev-5-1-08-oct-2020-produced-23-sep-2022.xlsx"
 )
 
 
@@ -379,10 +375,10 @@ def convert_workbook(xlsx_path: str, out_dir: str, set_label: str) -> dict[str, 
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--xlsx-a", default=DEFAULT_XLSX_A_REV51,
-                   help="OWSG Set A xlsx path (defaults to Rev 5-1, 2020)")
-    p.add_argument("--xlsx-b", default=DEFAULT_XLSX_B_REV51,
-                   help="OWSG Set B xlsx path (defaults to Rev 5-1, 2020)")
+    p.add_argument("--xlsx-a", default=DEFAULT_XLSX_A,
+                   help="OWSG Set A xlsx (default: vendored Rev 5-1 in data/iscwsa/toolgroups/)")
+    p.add_argument("--xlsx-b", default=DEFAULT_XLSX_B,
+                   help="OWSG Set B xlsx (default: vendored Rev 5-1 in data/iscwsa/toolgroups/)")
     p.add_argument(
         "--out-root",
         default=str(Path(__file__).parents[2] / "errors" / "iscwsa_json"),
