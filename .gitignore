@@ -9,13 +9,30 @@ dist
 *.egg-info/
 
 iframe_figures
-data
+data/*
 blender
 utils
 work
 *.vtu
 *.old
 *.pdf
+
+# Selectively un-ignore public OWSG toolgroup reference data that the
+# conformance harness depends on. Everything else under data/ stays
+# ignored.
+#
+# Pattern note: each parent directory must be re-included with a
+# matching ignore-children rule before the leaf un-ignore can take
+# effect. The deeper negations only catch the specific OWSG xlsx +
+# README; ISCWSA spec PDFs (in data/iscwsa/references/), the rev5_11
+# example workbooks, the Copsegrove .dat diagnostics, and Volve XML
+# all stay excluded.
+!data/iscwsa
+data/iscwsa/*
+!data/iscwsa/toolgroups
+data/iscwsa/toolgroups/*
+!data/iscwsa/toolgroups/*.xlsx
+!data/iscwsa/toolgroups/README.md
 
 key.asc
 .~*
