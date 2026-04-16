@@ -1,0 +1,31 @@
+{
+	"$schema"     : "https://json-schema.org/draft/2020-12/schema",
+	"$id"         : "https://github.com/iscwsa/error-models/blob/main/schemas/draft.json",
+	"type"        : "object",
+	"title"       : "Error Model Schema",
+	"description" : "Provides validation of Error Models",
+
+	"$defs": {
+		"schema_uuid": {"const": "00000000-0000-0000-0000-000000000000"}
+	},
+
+	"properties": {
+		"$schema"       : {"$ref": "./strings/non_empty.json"},
+		"metadata"      : {"$ref": "./metadata.json"},
+		"parameters"    : {"$ref": "./parameters.json"},
+		"terms"         : {"$ref": "./terms.json"},
+		"hash_function" : {"$ref": "./strings/non_empty.json"},
+		"hash_value"    : {"$ref": "./strings/non_empty.json"}
+	},
+
+	"required": [
+		"$schema",
+		"metadata",
+		"parameters",
+		"terms",
+		"hash_function",
+		"hash_value"
+	],
+
+	"additionalProperties" : false
+}

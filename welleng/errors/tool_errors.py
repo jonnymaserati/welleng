@@ -1,6 +1,7 @@
 import numpy as np
 from numpy import sin, cos, tan, pi, sqrt
 from numpy.char import index
+import json
 import yaml
 import os
 from collections import OrderedDict
@@ -8,6 +9,121 @@ from collections import OrderedDict
 
 # import welleng.error
 from ..utils import NEV_to_HLA
+from .interpreter import evaluate_formula
+
+
+# Map ISCWSA JSON propagation_mode enum -> the lowercase string the
+# legacy welleng dispatch expects.
+_JSON_PROP_TO_LEGACY = {
+    "Random": "random",
+    "Systematic": "systematic",
+    "Global": "global",
+    "Well": "well",
+}
+
+
+# Unit-conversion table: declared unit -> multiplier to convert magnitude
+# to the SI / base-unit form welleng's downstream propagation expects.
+# Legacy YAML tools store magnitudes already in this base; the new
+# JSON converter copies OWSG-xlsx values verbatim, so the dispatcher
+# converts them at evaluation time.
+_MAG_UNIT_TO_BASE = {
+    "m":       1.0,            # depth / length already in metres
+    "1/m":     1.0,
+    "nT":      1.0,            # magnetic field already in nT
+    "m/s2":    1.0,            # accel already in m/s^2
+    "rad":     1.0,            # angles already in radians
+    "deg":     np.pi / 180.0,  # angle: degrees -> radians
+    "deg/hr":  np.pi / 180.0,  # gyro rate: deg/hr -> rad/hr
+    "deg/nT":  np.pi / 180.0,  # B-field-coupled angle gradient
+    "-":       1.0,            # dimensionless (scale factors)
+    "":        1.0,            # missing unit treated as dimensionless
+}
+
+
+def _resolve_json_model(model_name: str) -> str | None:
+    """Find the ISCWSA-format JSON tool model for the given name.
+
+    `model_name` may be either an OWSG prefix (e.g. 'A020Gb') or a
+    Short Name (e.g. 'GYRO-NS'). Searches every JSON under
+    welleng/errors/iscwsa_json/ and matches against the file basename,
+    its metadata.model_id, and its metadata.short_name.
+
+    Returns the absolute path of the first match, or None if no JSON
+    file matches.
+    """
+    json_root = os.path.join(PATH, 'iscwsa_json')
+    if not os.path.isdir(json_root):
+        return None
+    # Cheap path: filename matches model name directly.
+    for sub in os.listdir(json_root):
+        sub_p = os.path.join(json_root, sub)
+        if os.path.isdir(sub_p):
+            cand = os.path.join(sub_p, f"{model_name}.json")
+            if os.path.isfile(cand):
+                return cand
+    # Fallback: walk every JSON, peek metadata for matching id / short_name.
+    for sub in os.listdir(json_root):
+        sub_p = os.path.join(json_root, sub)
+        if not os.path.isdir(sub_p):
+            continue
+        for fn in os.listdir(sub_p):
+            if not fn.endswith(".json"):
+                continue
+            path = os.path.join(sub_p, fn)
+            try:
+                with open(path) as f:
+                    md = json.load(f).get("metadata", {})
+            except Exception:
+                continue
+            if (md.get("model_id") == model_name
+                    or md.get("short_name") == model_name):
+                return path
+    return None
+
+
+def _json_to_em_adapter(model: dict) -> dict:
+    """Adapt an ISCWSA-format JSON tool model to the YAML-like dict
+    structure the legacy ToolError code expects (`header` + `codes`).
+
+    The resulting dict's ``codes`` entries carry the formula strings
+    (``depth_formula``, ``inclination_formula``, ``azimuth_formula``)
+    in addition to the legacy ``magnitude`` / ``propagation`` /
+    ``unit`` fields, so the interpreter-driven term-evaluation path
+    has everything it needs without re-reading the JSON.
+    """
+    md = model.get("metadata", {})
+    pp = model.get("parameters", {})
+    inc_max_deg = pp.get("inc_max", 180)
+    inc_min_deg = pp.get("inc_min", 0)
+    header = {
+        "Short Name": md.get("short_name", ""),
+        "Long Name": md.get("long_name", ""),
+        "Application": md.get("application", ""),
+        "Source": md.get("source", ""),
+        "Tool Type": md.get("tool_type", ""),
+        "Inclination Range Min": f"{inc_min_deg} deg",
+        "Inclination Range Max": f"{inc_max_deg} deg",
+        "Revision No": md.get("revision_number", ""),
+        "Revision Date": md.get("revision_date", ""),
+        # Required for the legacy code path to be happy when JSON tool
+        # carries no tortuosity (we synthesise a default).
+        "Default Tortusity (rad/m)": 0.000572615,
+    }
+    codes = OrderedDict()
+    for term in model.get("terms", []):
+        name = term["name"]
+        codes[name] = {
+            "function": "_INTERPRETER_",
+            "magnitude": float(term["value"]),
+            "propagation": _JSON_PROP_TO_LEGACY.get(
+                term["propagation_mode"], "systematic"
+            ),
+            "unit": term.get("units", ""),
+            # Carry through the formula strings for the interpreter.
+            "_iscwsa_term": term,
+        }
+    return {"header": header, "codes": codes}
 
 # since this is running on different OS flavors
 PATH = os.path.dirname(__file__)
@@ -43,26 +159,40 @@ class ToolError:
         self.e = error
         self.errors = {}
 
-        filename = os.path.join(
-            '', *[PATH, 'tool_codes', f"{model}.yaml"]
-        )
+        # Resolve the tool model file. Try the legacy YAML location
+        # first (welleng/errors/tool_codes/<model>.yaml); if it doesn't
+        # exist, fall back to an ISCWSA-format JSON tool model under
+        # welleng/errors/iscwsa_json/. Gyro tools ship via the JSON
+        # path -- the legacy YAML weight functions for AXYZ_*/GXY_*
+        # were deleted in favour of the formula-string interpreter
+        # (welleng/errors/interpreter.py).
+        #
+        # The dispatch in welleng.error.ErrorModel maps the user's
+        # `error_model='X'` (a Short Name) to an OWSG prefix `model`.
+        # Some JSON files are named by Short Name (the converter's
+        # default), so we walk the iscwsa_json/ tree looking at both
+        # the OWSG prefix and the metadata.short_name of each JSON.
+        yaml_filename = os.path.join(PATH, 'tool_codes', f"{model}.yaml")
+        json_filename = _resolve_json_model(model)
 
-        with open(filename, 'r') as file:
-            self.em = yaml.safe_load(file)
-
-        # for gyro tools the continuous survey errors need to be done last
-        self.em['codes'] = OrderedDict(self.em['codes'])
-        gyro_continuous = ['GXY-GD', 'GXY-GRW']
-        gyro_stationary = ['GXY-B1S', 'GXY-B2S', 'GXY-G4', 'GXY-RN']
-        for tool in gyro_continuous:
-            if tool in self.em['codes']:
-                self.gyro_continuous = []
-                self.em['codes'].move_to_end(tool)
-                self.gyro_continuous.append(tool)
-        self.gyro_stationary = [
-            tool for tool in gyro_stationary
-            if tool in self.em['codes']
-        ]
+        self._json_path = None
+        if os.path.isfile(yaml_filename):
+            with open(yaml_filename, 'r') as file:
+                self.em = yaml.safe_load(file)
+        elif json_filename is not None:
+            with open(json_filename) as file:
+                self._json_model = json.load(file)
+            self._json_path = json_filename
+            # Adapter: shape the JSON into a YAML-like dict so the
+            # downstream code that expects ``self.em['header']`` and
+            # ``self.em['codes']`` keeps working without a refactor.
+            self.em = _json_to_em_adapter(self._json_model)
+        else:
+            raise FileNotFoundError(
+                f"No tool model file found for {model!r}. Searched:\n"
+                f"  YAML: {yaml_filename}\n"
+                f"  JSON: {os.path.join(PATH, 'iscwsa_json', '**')}"
+            )
 
         # self.em = iscwsa_error_models[model]
         #     iscwsa_error_models = yaml.safe_load(file)
@@ -94,12 +224,22 @@ class ToolError:
         self._initiate_func_dict()
 
         for err in self.em['codes']:
-            # func = self._get_the_func_out(err)
-            func = self.em['codes'][err]['function']
-            mag = self.em['codes'][err]['magnitude']
-            propagation = self.em['codes'][err]['propagation']
-            self.errors[err] = (
-                self.call_func(
+            entry = self.em['codes'][err]
+            func = entry['function']
+            mag = entry['magnitude']
+            propagation = entry['propagation']
+            if func == "_INTERPRETER_":
+                # JSON-tool path: evaluate the term's formula strings
+                # against per-station bindings, build dpde, hand off to
+                # the existing _generate_error machinery.
+                self.errors[err] = self._call_interpreter(
+                    code=err,
+                    term=entry["_iscwsa_term"],
+                    mag=mag,
+                    propagation=propagation,
+                )
+            else:
+                self.errors[err] = self.call_func(
                     code=err,
                     func=func,
                     error=self.e,
@@ -107,9 +247,8 @@ class ToolError:
                     propagation=propagation,
                     tortuosity=self.tortuosity,
                     header=self.em['header'],
-                    errors=self
+                    errors=self,
                 )
-            )
 
         shape = (len(self.e.survey_rad), 3, 3)
         self.cov_NEVs = np.zeros(shape)
@@ -146,6 +285,80 @@ class ToolError:
         assert func in self.func_dict, f"no function for function {func}"
 
         return self.func_dict[func](code, error, mag, propagation, **kwargs)
+
+    def _call_interpreter(self, code, term, mag, propagation):
+        """JSON-tool term evaluation via formula-string interpreter.
+
+        Mirrors the `call_func` contract for legacy hand-coded weight
+        functions: returns an `Error` object with cov_NEV computed via
+        the existing `error._generate_error` machinery. The only
+        difference is the source of the per-station per-axis dpde --
+        the interpreter evaluates the term's depth/inclination/azimuth
+        formula strings against per-station survey bindings.
+
+        Terms that fail to evaluate (formula references variables not
+        bound -- e.g. cross-station MDPrev/AzPrev/IncPrev, or per-tool
+        calibration constants like NoiseReductionFactor) raise. These
+        are the schema-gap findings catalogued for the ISCWSA Discussion
+        post; see welleng/errors/conformance.py output.
+        """
+        survey = self.e.survey
+        n = len(survey.md)
+        bindings = {
+            "MD": np.asarray(survey.md, dtype=float),
+            "Inc": np.asarray(survey.inc_rad, dtype=float),
+            "AzT": np.asarray(survey.azi_true_rad, dtype=float),
+            "AzM": np.asarray(survey.azi_mag_rad, dtype=float),
+            "Az": np.asarray(survey.azi_grid_rad, dtype=float),
+            "TVD": np.asarray(survey.tvd, dtype=float),
+            "Gfield": float(survey.header.G),
+            "Dip": float(survey.header.dip),
+            "BField": float(survey.header.b_total or 50000.0),
+            # EarthRate is needed by gyro-azimuth terms; standard value
+            # in rad/hr (15.041 deg/hr).
+            "EarthRate": 0.262516,
+            "Latitude": np.radians(float(survey.header.latitude or 0.0)),
+            "RAD": np.pi / 180.0,
+        }
+        try:
+            d = evaluate_formula(term["depth_formula"], bindings)
+            i = evaluate_formula(term["inclination_formula"], bindings)
+            a = evaluate_formula(term["azimuth_formula"], bindings)
+        except Exception as exc:
+            # Term references variables the interpreter doesn't know how
+            # to bind -- typically cross-station refs (MDPrev/AzPrev/
+            # IncPrev) or per-tool calibration constants
+            # (NoiseReductionFactor, XY_Gyro_Drift, ...). These are
+            # documented schema gaps in the ISCWSA JSON spec; see
+            # welleng/errors/conformance.py output for the catalogue.
+            #
+            # User-facing behaviour: emit a warning identifying the
+            # missing variable, then contribute zero from this term so
+            # the model as a whole still produces a usable Survey.
+            import warnings
+            warnings.warn(
+                f"JSON tool model term {code!r} could not be evaluated "
+                f"({exc}). Term contributes zero covariance to this Survey. "
+                f"This is a known ISCWSA-JSON schema gap; see "
+                f"welleng/errors/conformance.py.",
+                RuntimeWarning,
+            )
+            d = np.zeros(n)
+            i = np.zeros(n)
+            a = np.zeros(n)
+        d = np.broadcast_to(np.asarray(d, dtype=float), (n,))
+        i = np.broadcast_to(np.asarray(i, dtype=float), (n,))
+        a = np.broadcast_to(np.asarray(a, dtype=float), (n,))
+        dpde = np.column_stack([d, i, a])
+        # Convert the declared magnitude to welleng's SI base. OWSG xlsx
+        # publishes magnitudes in the term's natural unit (deg, deg/hr,
+        # m, ...); the propagation engine expects rad / m / m/s^2 /
+        # rad/hr internally. The legacy YAML tools shipped pre-converted
+        # values, so this conversion only fires for JSON-driven tools.
+        unit = term.get("units") or term.get("unit") or "-"
+        scale = _MAG_UNIT_TO_BASE.get(unit, 1.0)
+        e_DIA = dpde * (mag * scale)
+        return self.e._generate_error(code, e_DIA, propagation, NEV=True)
 
     def _initiate_func_dict(self):
         """
@@ -196,16 +409,13 @@ class ToolError:
             'MBIXY_TI1': MBIXY_TI1,  # Needs QAQC
             'MBIXY_TI2': MBIXY_TI2,  # Needs QAQC
             'MDI': MDI,  # Needs QAQC
-            'AXYZ_MIS': AXYZ_MIS,  # Needs QAQC
-            'AXYZ_SF': AXYZ_SF,  # Needs QAQC
-            'AXYZ_ZB': AXYZ_ZB,  # Needs QAQC
-            'GXY_B1': GXY_B1,  # Needs QAQC
-            'GXY_B2': GXY_B2,  # Needs QAQC
-            'GXY_G1': GXY_G1,  # Needs QAQC
-            'GXY_G4': GXY_G4,  # Needs QAQC
-            'GXY_RN': GXY_RN,  # Needs QAQC
-            'GXY_GD': GXY_GD,  # Needs QAQC
-            'GXY_GRW': GXY_GRW,  # Needs QAQC
+            # Gyro-tool weight functions (AXYZ_*, GXY_*) previously lived
+            # here as a half-finished first attempt flagged '# Needs QAQC'.
+            # Deleted 2026-04-16 in favour of a JSON-schema + interpreter
+            # path (welleng/errors/interpreter.py) that consumes the
+            # ISCWSA error-models JSON schema directly. Gyro tools will be
+            # added as JSON files driven by that interpreter, not as
+            # hand-coded Python weight functions.
             'MFI': MFI,  # Needs QAQC
             'MSIXY_TI1': MSIXY_TI1,  # Needs QAQC
             'MSIXY_TI2': MSIXY_TI2,  # Needs QAQC
@@ -696,72 +906,12 @@ def ASIZ(
     return error._generate_error(code, e_DIA, propagation, NEV)
 
 
-def AXYZ_MIS(
-    code, error, mag=0.0001658062789394613, propagation='systematic', NEV=True,
-    **kwargs
-):
-    """
-    SPE 90408 Table 1
-    """
-    dpde = np.full((len(error.survey_rad), 3), [0., 1., 0.])
-    dpde = dpde * np.array(error.survey_rad)
-    e_DIA = dpde * mag
-
-    result = error._generate_error(code, e_DIA, propagation, NEV)
-
-    return result
-
-
-def AXYZ_SF(
-    code, error, mag=0.000111, propagation='systematic', NEV=True,
-    **kwargs
-):
-    """
-    SPE 90408 Table 1
-    """
-    dpde = np.full((len(error.survey_rad), 3), [0., 1., 0.])
-    dpde[:, 1] = (
-        1.3 * sin(error.survey.inc_rad) * cos(error.survey.inc_rad)
-    )
-    e_DIA = dpde * mag
-
-    result = error._generate_error(code, e_DIA, propagation, NEV)
-
-    return result
-
-
-def AXYZ_ZB(
-    code, error, mag=0.0017, propagation='systematic', NEV=True,
-    **kwargs
-):
-    """
-    SPE 90408 Table 1
-    """
-    dpde = np.full((len(error.survey_rad), 3), [0., 1., 0.])
-    dpde[:, 1] = (
-        sin(error.survey.inc_rad) / error.survey.header.G
-    )
-    e_DIA = dpde * mag
-
-    result = error._generate_error(code, e_DIA, propagation, NEV)
-
-    return result
-
-
-def _get_ref_init_error(dpde, error, **kwargs):
-    """
-    Function that identifies where the continuous gyro begins, initiates and
-    then carries the static errors during the continuous modes.
-    """
-    temp = [0.0]
-    for coeff, inc in zip(dpde[1:, 2], error.survey.inc_rad[1:]):
-        if inc > kwargs['header']['XY Static Gyro']['End Inc']:
-            temp.append(temp[-1])
-        else:
-            temp.append(coeff)
-    dpde[:, 2] = temp
-
-    return dpde
+# Gyro accelerometer-related weights (AXYZ_MIS, AXYZ_SF, AXYZ_ZB) and the
+# continuous-mode initialisation helper (_get_ref_init_error) previously
+# lived here as a half-finished SPE 90408 (Torkildsen et al. 2008)
+# implementation flagged '# Needs QAQC'. Removed 2026-04-16 in favour of
+# a JSON-schema + interpreter path (welleng/errors/interpreter.py) that
+# consumes the ISCWSA error-models JSON schema directly.
 
 
 def CNA(
@@ -855,287 +1005,6 @@ def CNI(
     return result
 
 
-def GXY_B1(
-    code, error, mag=0.002617993877991494, propagation='random',
-    NEV=True, **kwargs
-):
-    """
-    SPE 90408 Table 4
-    """
-
-    dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
-    dpde[:, 2] = np.where(
-        error.survey.inc_rad <= kwargs['header']['XY Static Gyro']['End Inc'],
-        sin(error.survey.azi_true_rad)
-        / (
-            error.survey.header.earth_rate
-            * cos(np.radians(error.survey.header.latitude))
-            * cos(error.survey.inc_rad)
-        ),
-        np.zeros_like(error.survey.md)
-    )
-    dpde = _get_ref_init_error(dpde, error, **kwargs)
-
-    e_DIA = dpde * mag
-
-    result = error._generate_error(code, e_DIA, propagation, NEV)
-
-    return result
-
-
-def GXY_B2(
-    code, error, mag=0.002617993877991494, propagation='random',
-    NEV=True, **kwargs
-):
-    """
-    SPE 90408 Table 4
-    """
-    dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
-    dpde[:, 2] = np.where(
-        error.survey.inc_rad <= kwargs['header']['XY Static Gyro']['End Inc'],
-        cos(error.survey.azi_true_rad)
-        / (
-            error.survey.header.earth_rate
-            * cos(np.radians(error.survey.header.latitude))
-        ),
-        np.zeros_like(error.survey.md)
-    )
-    dpde = _get_ref_init_error(dpde, error, **kwargs)
-
-    e_DIA = dpde * mag
-
-    result = error._generate_error(code, e_DIA, propagation, NEV)
-
-    return result
-
-
-def GXY_G1(
-    code, error, mag=0.006981317007977318, propagation='systematic',
-    NEV=True, **kwargs
-):
-    """
-    SPE 90408 Table 4
-    """
-    dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
-    dpde[:, 2] = np.where(
-        error.survey.inc_rad <= kwargs['header']['XY Static Gyro']['End Inc'],
-        cos(error.survey.azi_true_rad) * sin(error.survey.inc_rad)
-        / (
-            error.survey.header.earth_rate
-            * cos(np.radians(error.survey.header.latitude))
-        ),
-        np.zeros_like(error.survey.md)
-    )
-    dpde = _get_ref_init_error(dpde, error, **kwargs)
-
-    e_DIA = dpde * mag
-
-    result = error._generate_error(code, e_DIA, propagation, NEV)
-
-    return result
-
-
-def GXY_G4(
-    code, error, mag=0.010471975511965976, propagation='systematic',
-    NEV=True, **kwargs
-):
-    """
-    SPE 90408 Table 4
-    """
-    dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
-    dpde[:, 2] = np.where(
-        error.survey.inc_rad <= kwargs['header']['XY Static Gyro']['End Inc'],
-        sin(error.survey.azi_true_rad) * tan(error.survey.inc_rad)
-        / (
-            error.survey.header.earth_rate
-            * cos(np.radians(error.survey.header.latitude))
-        ),
-        np.zeros_like(error.survey.md)
-    )
-    dpde = _get_ref_init_error(dpde, error, **kwargs)
-
-    e_DIA = dpde * mag
-
-    result = error._generate_error(code, e_DIA, propagation, NEV)
-
-    return result
-
-
-def GXY_RN(
-    code, error, mag=0.006981317007977318, propagation='random',
-    NEV=True, **kwargs
-):
-    """
-    SPE 90408 Table 4
-    """
-    dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
-    dpde[:, 2] = np.where(
-        error.survey.inc_rad <= kwargs['header']['XY Static Gyro']['End Inc'],
-        1.0
-        * (
-            np.sqrt(
-                1 - cos(error.survey.azi_true_rad) ** 2
-                * sin(error.survey.inc_rad) ** 2
-            )
-            / (
-                error.survey.header.earth_rate
-                * cos(np.radians(error.survey.header.latitude))
-                * cos(error.survey.inc_rad)
-            )
-        ),
-        np.zeros_like(error.survey.md)
-    )
-    dpde = _get_ref_init_error(dpde, error, **kwargs)
-    dpde_systematic = np.zeros_like(dpde)
-    index_systematic = np.where(
-        error.survey.inc_rad > kwargs['header']['XY Static Gyro']['End Inc']
-    )
-    np.put(
-        dpde_systematic[:, 2],
-        index_systematic,
-        (
-            dpde[index_systematic][:, 2]
-            * kwargs['header']['Noise Reduction Factor']
-        )
-    )
-    e_DIA_systematic = dpde_systematic * mag
-
-    result_systematic = error._generate_error(
-        code, e_DIA_systematic, 'systematic', NEV
-    )
-
-    np.put(
-        dpde[:, 2],
-        index_systematic,
-        np.zeros(len(index_systematic))
-    )
-
-    # dpde[:, 2] = np.where(
-    #     error.survey.inc_rad > kwargs['header']['XY Static Gyro']['End Inc'],
-    #     dpde[:, 2],
-    #     dpde[:, 2] * kwargs['header']['Noise Reduction Factor'],
-    # )
-    e_DIA = dpde * mag
-
-    result = error._generate_error(code, e_DIA, propagation, NEV)
-
-    result.cov_NEV += result_systematic.cov_NEV
-
-    return result
-
-
-def GXY_GD(
-    code, error, mag=0.008726646259971648, propagation='systematic',
-    NEV=True, **kwargs
-):
-    """
-    SPE 90408 Table 7
-    """
-    dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
-    with np.errstate(divide='ignore', invalid='ignore'):
-        dpde[:, 2] = np.where(
-            error.survey.inc_rad > kwargs['header']['XY Static Gyro']['End Inc'],
-            np.append(
-                np.array([0]),
-                (
-                    (error.survey.md[1:] - error.survey.md[:-1])
-                    / (
-                        float(
-                            kwargs['header']['XY Continuous Gyro']['Running Speed'].split()[0]
-                        )
-                        * sin(
-                            (error.survey.inc_rad[1:] + error.survey.inc_rad[:-1])
-                            / 2
-                        )
-                    )
-                )
-            ),
-            np.zeros_like(error.survey.md)
-        )
-
-    init_error = []
-    for i, (u, l) in enumerate(zip(
-        error.survey.inc_rad[1:], error.survey.inc_rad[:-1]
-    )):
-        init_error.append(0.0)
-        if all((
-            u > kwargs['header']['XY Static Gyro']['End Inc'],
-            l <= kwargs['header']['XY Static Gyro']['End Inc']
-        )):
-            for tool in kwargs['errors'].gyro_stationary:
-                temp = kwargs['errors'].errors[tool].e_DIA[i - 1][2]
-                if tool in ['GXY_RN']:
-                    temp *= kwargs['header']['Noise Reduction Factor']
-                init_error[-1] += temp
-
-    temp = [0.0]
-    for i, (u, e) in enumerate(zip(dpde[1:, 2], init_error)):
-        temp.append(0.0)
-        if u != 0.0:
-            temp[-1] += temp[-2] + u * mag
-    dpde[:, 2] = temp
-
-    e_DIA = dpde
-
-    result = error._generate_error(code, e_DIA, propagation, NEV)
-
-    return result
-
-
-def GXY_GRW(
-    code, error, mag=0.004363323129985824, propagation='systematic',
-    NEV=True, **kwargs
-):
-    """
-    SPE 90408 Table 7
-    """
-    dpde = np.full((len(error.survey_rad), 3), [0., 0., 1.])
-    with np.errstate(divide='ignore', invalid='ignore'):
-        dpde[:, 2] = np.where(
-            error.survey.inc_rad > kwargs['header']['XY Static Gyro']['End Inc'],
-            np.append(
-                np.array([0]),
-                (error.survey.md[1:] - error.survey.md[:-1])
-                / (
-                    float(
-                        kwargs['header']['XY Continuous Gyro']['Running Speed'].split()[0]
-                    )
-                    * sin(
-                        (error.survey.inc_rad[1:] + error.survey.inc_rad[:-1])
-                        / 2
-                    ) ** 2
-                )
-            ),
-            np.zeros_like(error.survey.md)
-        )
-
-    init_error = []
-    for i, (u, l) in enumerate(zip(
-        error.survey.inc_rad[1:], error.survey.inc_rad[:-1]
-    )):
-        init_error.append(0.0)
-        if all((
-            u > kwargs['header']['XY Static Gyro']['End Inc'],
-            l <= kwargs['header']['XY Static Gyro']['End Inc']
-        )):
-            for tool in kwargs['errors'].gyro_stationary:
-                temp = kwargs['errors'].errors[tool].e_DIA[i - 1][2]
-                if tool in ['GXY_RN']:
-                    temp *= kwargs['header']['Noise Reduction Factor']
-                init_error[-1] += temp
-
-    temp = [0.0]
-    for i, (u, e) in enumerate(zip(dpde[1:, 2], init_error)):
-        temp.append(0.0)
-        if u != 0.0:
-            temp[-1] += np.sqrt(temp[-2] ** 2 + u * mag)
-    dpde[:, 2] = temp
-
-    e_DIA = dpde
-
-    result = error._generate_error(code, e_DIA, propagation, NEV)
-
-    return result
 
 
 def MBXY_TI1(

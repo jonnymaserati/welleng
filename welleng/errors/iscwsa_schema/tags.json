@@ -1,0 +1,12 @@
+{
+	"$schema"     : "https://json-schema.org/draft/2020-12/schema",
+	"$id"         : "https://github.com/iscwsa/error-models/blob/main/schemas/tags.json",
+	"type"        : "array",
+	"title"       : "Tags",
+	"description" : "An optional list of descriptive tags",
+	"examples"    : ["Magnetic", "Legacy", "Camera"],
+
+	"minItems"    : 0,
+	"uniqueItems" : true,
+	"items"       : {"$ref": "./strings/non_empty.json"}
+}

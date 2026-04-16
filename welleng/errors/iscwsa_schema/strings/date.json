@@ -1,0 +1,9 @@
+{
+	"$schema"     : "https://json-schema.org/draft/2020-12/schema",
+	"$id"         : "https://github.com/iscwsa/error-models/blob/main/schemas/string/date.json",
+	"type"        : "string",
+	"title"       : "Date String",
+	"description" : "Ensures valid dates are provided",
+	"minLength"   : 1,
+	"format"      : "date"
+}

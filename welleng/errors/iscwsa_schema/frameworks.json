@@ -1,0 +1,20 @@
+{
+	"$schema"     : "https://json-schema.org/draft/2020-12/schema",
+	"$id"         : "https://github.com/iscwsa/error-models/blob/main/schemas/frameworks.json",
+	"type"        : "string",
+	"title"       : "Framework type",
+	"description" : "Which framework was used for the model?",
+	"examples"    : ["ISCWSA Rev5, Cone, Other, Wolff and de Wardt"],
+
+	"enum": [
+		"ISCWSA Rev5",
+		"ISCWSA Rev4",
+		"ISCWSA Rev3",
+		"ISCWSA Rev2",
+		"ISCWSA Rev1",
+		"ISCWSA Rev0",
+		"Cone",
+		"Wolff and de Wardt",
+		"Other"
+	]
+}
