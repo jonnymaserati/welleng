@@ -36,8 +36,11 @@ _EXCEL_FUNCS = {
     "Asin": "asin", "Acos": "acos", "Atan": "atan",
     "Abs": "abs",        # built-in, fine
     "Sqr": "sqrt",       # Excel/VBA convention: Sqr = square root
+    "Sqrt": "sqrt",
     "Exp": "exp",
     "Log": "log",
+    "Max": "maximum",    # numpy.maximum is element-wise max (vectorised)
+    "Min": "minimum",
 }
 
 
@@ -74,7 +77,8 @@ _ALLOWED_NODES = (
     ast.Call,
 )
 _ALLOWED_FUNCS = {"sin", "cos", "tan", "asin", "acos", "atan",
-                  "abs", "sqrt", "exp", "log", "pi"}
+                  "abs", "sqrt", "exp", "log", "pi",
+                  "maximum", "minimum"}
 
 
 def _validate(tree: ast.AST) -> None:
@@ -114,6 +118,7 @@ def evaluate_formula(
         "sin": np.sin, "cos": np.cos, "tan": np.tan,
         "asin": np.arcsin, "acos": np.arccos, "atan": np.arctan,
         "abs": np.abs, "sqrt": np.sqrt, "exp": np.exp, "log": np.log,
+        "maximum": np.maximum, "minimum": np.minimum,
         "pi": math.pi,
     }
     ns.update(bindings)
