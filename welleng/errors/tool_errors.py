@@ -22,6 +22,25 @@ _JSON_PROP_TO_LEGACY = {
 }
 
 
+# Unit-conversion table: declared unit -> multiplier to convert magnitude
+# to the SI / base-unit form welleng's downstream propagation expects.
+# Legacy YAML tools store magnitudes already in this base; the new
+# JSON converter copies OWSG-xlsx values verbatim, so the dispatcher
+# converts them at evaluation time.
+_MAG_UNIT_TO_BASE = {
+    "m":       1.0,            # depth / length already in metres
+    "1/m":     1.0,
+    "nT":      1.0,            # magnetic field already in nT
+    "m/s2":    1.0,            # accel already in m/s^2
+    "rad":     1.0,            # angles already in radians
+    "deg":     np.pi / 180.0,  # angle: degrees -> radians
+    "deg/hr":  np.pi / 180.0,  # gyro rate: deg/hr -> rad/hr
+    "deg/nT":  np.pi / 180.0,  # B-field-coupled angle gradient
+    "-":       1.0,            # dimensionless (scale factors)
+    "":        1.0,            # missing unit treated as dimensionless
+}
+
+
 def _resolve_json_model(model_name: str) -> str | None:
     """Find the ISCWSA-format JSON tool model for the given name.
 
@@ -331,7 +350,14 @@ class ToolError:
         i = np.broadcast_to(np.asarray(i, dtype=float), (n,))
         a = np.broadcast_to(np.asarray(a, dtype=float), (n,))
         dpde = np.column_stack([d, i, a])
-        e_DIA = dpde * mag
+        # Convert the declared magnitude to welleng's SI base. OWSG xlsx
+        # publishes magnitudes in the term's natural unit (deg, deg/hr,
+        # m, ...); the propagation engine expects rad / m / m/s^2 /
+        # rad/hr internally. The legacy YAML tools shipped pre-converted
+        # values, so this conversion only fires for JSON-driven tools.
+        unit = term.get("units") or term.get("unit") or "-"
+        scale = _MAG_UNIT_TO_BASE.get(unit, 1.0)
+        e_DIA = dpde * (mag * scale)
         return self.e._generate_error(code, e_DIA, propagation, NEV=True)
 
     def _initiate_func_dict(self):
