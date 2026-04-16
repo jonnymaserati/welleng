@@ -1,0 +1,78 @@
+{
+  "$schema": "https://github.com/iscwsa/error-models/blob/main/schemas/draft.json",
+  "metadata": {
+    "schema_uuid": "00000000-0000-0000-0000-000000000000",
+    "model_uuid": "spike-three-terms-deadbeef-0001",
+    "model_id": "spike-three-terms",
+    "short_name": "SPIKE-3TERMS",
+    "long_name": "Spike model: DRFR + DSFS + ABZ only",
+    "revision_number": 0,
+    "revision_date": "2026-04-16",
+    "revision_comment": "Hand-crafted minimum to test the welleng formula-string interpreter against the existing weight-function path. Three terms picked to exercise (a) trivial constant formula, (b) one-variable linear formula, (c) multi-variable trig + division formula.",
+    "source": "OWSG Set A Rev 2 (extracted from MWD sheet, rows 3, 4, 8)",
+    "application": "spike validation only -- not a real tool model",
+    "tool_type": "Magnetic",
+    "author": "welleng-spike",
+    "framework": "ISCWSA Rev5",
+    "tags": ["spike", "validation"]
+  },
+  "parameters": {
+    "inc_min": 0,
+    "inc_max": 180
+  },
+  "terms": [
+    {
+      "uuid": "spike-drfr-0001",
+      "name": "DRFR",
+      "value": 0.35,
+      "units": "m",
+      "depth_factor": 0,
+      "inclination_factor": 0,
+      "azimuth_factor": 0,
+      "propagation_mode": "Random",
+      "depth_formula": "1",
+      "inclination_formula": "0",
+      "azimuth_formula": "0",
+      "north_singularity": null,
+      "east_singularity": null,
+      "vertical_singularity": null,
+      "hash_value": "spike-no-hash"
+    },
+    {
+      "uuid": "spike-dsfs-0001",
+      "name": "DSFS",
+      "value": 0.00056,
+      "units": "-",
+      "depth_factor": 1,
+      "inclination_factor": 0,
+      "azimuth_factor": 0,
+      "propagation_mode": "Systematic",
+      "depth_formula": "MD",
+      "inclination_formula": "0",
+      "azimuth_formula": "0",
+      "north_singularity": null,
+      "east_singularity": null,
+      "vertical_singularity": null,
+      "hash_value": "spike-no-hash"
+    },
+    {
+      "uuid": "spike-abz-0001",
+      "name": "ABZ",
+      "value": 0.004,
+      "units": "m/s2",
+      "depth_factor": 1,
+      "inclination_factor": 0,
+      "azimuth_factor": 0,
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "-Sin(Inc) / Gfield",
+      "azimuth_formula": "Tan(Dip) * Sin(Inc) * Sin(AzM) / Gfield",
+      "north_singularity": null,
+      "east_singularity": null,
+      "vertical_singularity": null,
+      "hash_value": "spike-no-hash"
+    }
+  ],
+  "hash_function": "sha256",
+  "hash_value": "spike-no-hash"
+}
