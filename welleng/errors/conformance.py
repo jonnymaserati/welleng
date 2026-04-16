@@ -35,6 +35,21 @@ PROP_MODE_REVERSE = {
 }
 
 
+# OWSG xlsx publishes magnitudes in their declared natural unit
+# (deg, deg/hr, m, ...). welleng's downstream propagation expects SI
+# base units (rad, rad/hr, m, ...). Apply the conversion at the
+# comparison boundary so legacy YAML magnitudes (which are stored
+# pre-converted to SI) and JSON magnitudes (which are NOT) compare
+# apples-to-apples. Mirrors the table in tool_errors.py.
+_MAG_UNIT_TO_BASE = {
+    "m": 1.0, "1/m": 1.0, "nT": 1.0, "m/s2": 1.0, "rad": 1.0,
+    "deg": np.pi / 180.0,
+    "deg/hr": np.pi / 180.0,
+    "deg/nT": np.pi / 180.0,
+    "-": 1.0, "": 1.0,
+}
+
+
 @dataclass
 class TermResult:
     """One row of the agreement matrix."""
@@ -82,22 +97,31 @@ class _ShimError:
         return e_DIA
 
 
-def _legacy_eval_term(term_name: str, legacy_func_name: str, mag: float,
+def _legacy_eval_term(term_name: str, legacy_func_name: str, mag_si: float,
                       prop_mode: str, survey) -> np.ndarray | None:
-    """Look the legacy weight function up by name and call it."""
+    """Look the legacy weight function up by name and call it.
+
+    ``mag_si`` is already scaled to SI base units (the legacy functions
+    in ``tool_errors.py`` were written assuming SI inputs because the
+    YAML stores magnitudes pre-converted to rad / rad/hr).
+    """
     func = getattr(TE, legacy_func_name, None)
     if func is None:
         return None
     shim = _ShimError(survey)
     try:
-        func(term_name, shim, mag=mag, propagation=prop_mode, NEV=True)
+        func(term_name, shim, mag=mag_si, propagation=prop_mode, NEV=True)
     except Exception:
         return None
     return shim._captured.get(term_name)
 
 
-def _interp_eval_term(term: dict, mag: float, survey, bindings: dict) -> np.ndarray:
-    """Evaluate the JSON term's three formula axes against the survey."""
+def _interp_eval_term(term: dict, mag_si: float, survey, bindings: dict) -> np.ndarray:
+    """Evaluate the JSON term's three formula axes against the survey.
+
+    ``mag_si`` is already scaled to SI base units so the resulting
+    e_DIA matches what the legacy path produces.
+    """
     n = len(survey.md)
     d = evaluate_formula(term["depth_formula"], bindings)
     i = evaluate_formula(term["inclination_formula"], bindings)
@@ -105,7 +129,7 @@ def _interp_eval_term(term: dict, mag: float, survey, bindings: dict) -> np.ndar
     d = np.broadcast_to(np.asarray(d, dtype=float), (n,))
     i = np.broadcast_to(np.asarray(i, dtype=float), (n,))
     a = np.broadcast_to(np.asarray(a, dtype=float), (n,))
-    return np.column_stack([d, i, a]) * mag
+    return np.column_stack([d, i, a]) * mag_si
 
 
 def compare_model(json_path: str, survey, *,
@@ -127,6 +151,9 @@ def compare_model(json_path: str, survey, *,
     for term in model["terms"]:
         name = term["name"]
         mag = float(term["value"])
+        unit = term.get("units") or term.get("unit") or "-"
+        scale = _MAG_UNIT_TO_BASE.get(unit, 1.0)
+        mag_si = mag * scale
         prop_mode = PROP_MODE_REVERSE.get(term["propagation_mode"], "systematic")
         # Prefer the OWSG-stamped weight-function name (column 'Wt.Fn.'
         # from the source xlsx); fall back to deriving from the term
@@ -135,7 +162,7 @@ def compare_model(json_path: str, survey, *,
         legacy_fn_name = wt_fn.replace("-", "_")
 
         try:
-            interp_eDIA = _interp_eval_term(term, mag, survey, bindings)
+            interp_eDIA = _interp_eval_term(term, mag_si, survey, bindings)
             interp_ok = True
         except Exception as exc:
             results.append(TermResult(
@@ -146,7 +173,7 @@ def compare_model(json_path: str, survey, *,
             ))
             continue
 
-        legacy_eDIA = _legacy_eval_term(name, legacy_fn_name, mag, prop_mode, survey)
+        legacy_eDIA = _legacy_eval_term(name, legacy_fn_name, mag_si, prop_mode, survey)
         if legacy_eDIA is None:
             results.append(TermResult(
                 name=name, legacy_function=legacy_fn_name,
@@ -177,7 +204,7 @@ def compare_model(json_path: str, survey, *,
 def standard_test_survey():
     """ISCWSA Test Well 1 with the standard environmental setup."""
     here = Path(__file__).parent
-    json_path = here.parent.parent / "test" / "test_data" / "error_mwdrev5_1_iscwsa_data.json"
+    json_path = here.parent.parent / "tests" / "test_data" / "error_mwdrev5_1_iscwsa_data.json"
     with open(json_path) as f:
         d = json.load(f)
     h = d["header"]
