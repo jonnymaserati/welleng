@@ -197,47 +197,117 @@ def standard_test_survey():
     )
 
 
+def _classify(r: TermResult) -> str:
+    if not r.interp_available:
+        return "INTERP_FAILED"
+    if not r.legacy_available:
+        return "NO_LEGACY"
+    if r.max_abs_diff < 1e-10:
+        return "MATCH"
+    if r.max_abs_diff < 1e-6:
+        return "NEAR_MATCH"
+    return "DIFFER"
+
+
+def _print_one_model(json_path: str, results: list[TermResult]) -> dict[str, int]:
+    print(f"\n--- {Path(json_path).name} ---")
+    print(f"  {'term':<14s}  {'wt fn':<14s}  {'verdict':<22s}  "
+          f"{'max |Δ|':>10s}  {'note':<55s}")
+    counts: dict[str, int] = {}
+    for r in results:
+        c = _classify(r)
+        counts[c] = counts.get(c, 0) + 1
+        max_abs = "n/a" if c in ("INTERP_FAILED", "NO_LEGACY") else f"{r.max_abs_diff:.2e}"
+        print(f"  {r.name:<14s}  {r.legacy_function or '-':<14s}  "
+              f"{c:<22s}  {max_abs:>10s}  {r.note[:55] if r.note else ''}")
+    summary = "  ".join(f"{k}={v}" for k, v in counts.items())
+    print(f"  > {summary}  (of {len(results)} terms)")
+    return counts
+
+
 def main() -> None:
     import argparse
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument(
-        "--json", default=str(Path(__file__).parent / "iscwsa_json" / "owsg_a" / "MWD.json"),
-        help="ISCWSA JSON tool model to compare against legacy welleng",
+        "--json",
+        help="single ISCWSA JSON tool model to compare against legacy welleng",
+    )
+    p.add_argument(
+        "--summary", action="store_true",
+        help="run across the canonical ISCWSA Rev 5.11 + 3 gyro tools and "
+             "report the aggregate coverage matrix",
     )
     args = p.parse_args()
 
     survey = standard_test_survey()
     print(f"Survey: ISCWSA Test Well 1, {len(survey.md)} stations")
-    print(f"Tool model: {args.json}\n")
+
+    if not args.summary and not args.json:
+        args.summary = True
+
+    if args.summary:
+        # The four canonical tool models: one MWD (Rev 5.11), three gyro
+        # variants (stationary, mixed, gyro-MWD). These are the gating
+        # set for the conformance harness's "robust story".
+        models = [
+            "owsg_a/MWD+SRGM.json",      # ISCWSA MWD Rev 5.11 canonical
+            "owsg_a/GYRO-NS.json",       # north-seeking gyro (stationary)
+            "owsg_a/GYRO-NS-CT.json",    # mixed stationary + continuous
+            "owsg_a/GYRO-MWD.json",      # gyro-MWD hybrid
+        ]
+        json_root = Path(__file__).parent / "iscwsa_json"
+        agg: dict[str, int] = {}
+        per_model: list[tuple[str, dict[str, int]]] = []
+        # Track unique findings (term, error message) so the post can
+        # quote each gap once even if it appears across multiple tools.
+        findings: dict[str, list[str]] = {}
+        for rel in models:
+            path = str(json_root / rel)
+            results = compare_model(path, survey)
+            counts = _print_one_model(path, results)
+            per_model.append((rel, counts))
+            for k, v in counts.items():
+                agg[k] = agg.get(k, 0) + v
+            for r in results:
+                if not r.interp_available and r.note:
+                    findings.setdefault(r.note, []).append(f"{rel}::{r.name}")
+
+        print("\n" + "=" * 80)
+        print("AGGREGATE COVERAGE MATRIX")
+        print("=" * 80)
+        print(f"  {'tool':<32s}  MATCH  NEAR  DIFFER  INTERP_FAIL  NO_LEGACY  TOTAL")
+        for rel, c in per_model:
+            tot = sum(c.values())
+            print(f"  {Path(rel).stem:<32s}  "
+                  f"{c.get('MATCH', 0):>5d}  "
+                  f"{c.get('NEAR_MATCH', 0):>4d}  "
+                  f"{c.get('DIFFER', 0):>6d}  "
+                  f"{c.get('INTERP_FAILED', 0):>11d}  "
+                  f"{c.get('NO_LEGACY', 0):>9d}  "
+                  f"{tot:>5d}")
+        total = sum(agg.values())
+        print(f"  {'TOTAL':<32s}  "
+              f"{agg.get('MATCH', 0):>5d}  "
+              f"{agg.get('NEAR_MATCH', 0):>4d}  "
+              f"{agg.get('DIFFER', 0):>6d}  "
+              f"{agg.get('INTERP_FAILED', 0):>11d}  "
+              f"{agg.get('NO_LEGACY', 0):>9d}  "
+              f"{total:>5d}")
+
+        if findings:
+            print("\n" + "=" * 80)
+            print("INTERPRETER-FAILURE FINDINGS (schema gaps surfaced)")
+            print("=" * 80)
+            for note, where in sorted(findings.items()):
+                print(f"\n  [{note}]")
+                for w in where[:8]:
+                    print(f"    {w}")
+                if len(where) > 8:
+                    print(f"    ... and {len(where) - 8} more")
+        return
 
     results = compare_model(args.json, survey)
-
-    n_match = sum(1 for r in results if r.legacy_available and r.max_abs_diff < 1e-10)
-    n_diff = sum(1 for r in results if r.legacy_available and r.max_abs_diff >= 1e-10)
-    n_no_legacy = sum(1 for r in results if not r.legacy_available)
-
-    print(f"{'term':<14s}  {'legacy fn':<14s}  {'verdict':<32s}  "
-          f"{'max |Δ|':>12s}  {'max rel':>12s}")
-    print("-" * 100)
-    for r in results:
-        if not r.interp_available:
-            verdict = "INTERP FAILED"
-        elif not r.legacy_available:
-            verdict = "no legacy fn (skip)"
-        elif r.max_abs_diff < 1e-10:
-            verdict = "MATCH (machine precision)"
-        elif r.max_abs_diff < 1e-6:
-            verdict = f"≈ MATCH (Δ < 1e-6)"
-        else:
-            verdict = f"DIFFER"
-        max_abs = "n/a" if not r.legacy_available else f"{r.max_abs_diff:.2e}"
-        max_rel = "n/a" if not r.legacy_available else f"{r.max_rel_diff:.2e}"
-        print(f"{r.name:<14s}  {r.legacy_function or '-':<14s}  "
-              f"{verdict:<32s}  {max_abs:>12s}  {max_rel:>12s}"
-              + (f"   [{r.note}]" if r.note else ""))
-
-    print(f"\nSummary: {n_match} match, {n_diff} differ, "
-          f"{n_no_legacy} no legacy fn (out of {len(results)} terms)")
+    _print_one_model(args.json, results)
 
 
 if __name__ == "__main__":
