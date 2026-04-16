@@ -11,7 +11,7 @@
 ## Features
 
 - **Survey listings** — generate and interpolate well trajectories using minimum curvature or maximum curvature methods
-- **Well bore uncertainty** — ISCWSA MWD Rev 5.11 error model (validated 35/35 sources against all three ISCWSA example workbooks) and legacy Rev4 for back-compat; OWSG models also available
+- **Well bore uncertainty** — ISCWSA MWD Rev 5.11 error model (validated 35/35 sources against all three ISCWSA example workbooks), legacy Rev4 for back-compat, and OWSG **gyro** tool stacks (north-seeking stationary, mixed continuous, gyro-MWD) driven by the new ISCWSA JSON schema and an Excel-formula interpreter
 - **Clearance & Separation Factors** — standard ISCWSA method (within 0.5% of ISCWSA test data) and mesh-based method using the [Flexible Collision Library]
 - **Well path creation** — the `connector` module builds trajectories between start/end locations automatically
 - **Vertical section, TVD interpolation, project-ahead** — common survey planning tools
@@ -34,6 +34,26 @@ we.error.get_error_models()
 > output to welleng ≤ 0.9.x). `"ISCWSA MWD Rev4"` is unchanged for users who
 > need to reproduce older results. See `welleng/errors/iscwsa_validate.py` for
 > the validation harness used to audit against each ISCWSA example workbook.
+
+> **Gyro support (welleng 0.10.0).** The OWSG Set A gyro tool stacks are
+> available as `Survey(error_model='GYRO-NS' | 'GYRO-NS-CT' | 'GYRO-MWD' | ...)`.
+> These are driven by the new ISCWSA JSON schema (vendored at
+> `welleng/errors/iscwsa_schema/`, pinned to upstream
+> [`iscwsa/error-models`](https://github.com/iscwsa/error-models)) and a
+> ~95-line Excel-formula interpreter at `welleng/errors/interpreter.py`. The
+> 100-tool OWSG Set A library lives at `welleng/errors/iscwsa_json/owsg_a/`,
+> generated from the OWSG-published `.xlsx` toolgroup files. See
+> `examples/gyro_survey_example.py` for a side-by-side MWD/gyro position-
+> uncertainty comparison.
+
+> **Parallel-paths conformance harness.** Every term that exists in *both*
+> the legacy hand-coded dispatcher and the new JSON+interpreter path is
+> diff-tested at machine precision in CI (`tests/test_iscwsa_json_conformance.py`).
+> The harness also catalogues schema gaps it surfaces — terms that don't
+> evaluate against the current draft schema (cross-station references like
+> `MDPrev` / `AzPrev` / `IncPrev`, per-tool calibration constants like
+> `NoiseReductionFactor`). Run `python -m welleng.errors.conformance --summary`
+> for the agreement matrix.
 
 ## Support welleng
 welleng is fuelled by copious amounts of coffee, so if you wish to supercharge development please donate generously:
