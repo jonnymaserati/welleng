@@ -184,10 +184,11 @@ class ToolError:
             'MDI': MDI,  # Needs QAQC
             # Gyro-tool weight functions (AXYZ_*, GXY_*) previously lived
             # here as a half-finished first attempt flagged '# Needs QAQC'.
-            # Deleted 2026-04-16 to make room for a clean-sheet
-            # implementation of SPE 90408 (Torkildsen et al. 2008) on the
-            # `iscwsa-gyro-error-model` branch. See welleng/errors/iscwsa_gyro.py
-            # once that work lands.
+            # Deleted 2026-04-16 in favour of a JSON-schema + interpreter
+            # path (welleng/errors/interpreter.py) that consumes the
+            # ISCWSA error-models JSON schema directly. Gyro tools will be
+            # added as JSON files driven by that interpreter, not as
+            # hand-coded Python weight functions.
             'MFI': MFI,  # Needs QAQC
             'MSIXY_TI1': MSIXY_TI1,  # Needs QAQC
             'MSIXY_TI2': MSIXY_TI2,  # Needs QAQC
@@ -681,9 +682,9 @@ def ASIZ(
 # Gyro accelerometer-related weights (AXYZ_MIS, AXYZ_SF, AXYZ_ZB) and the
 # continuous-mode initialisation helper (_get_ref_init_error) previously
 # lived here as a half-finished SPE 90408 (Torkildsen et al. 2008)
-# implementation flagged '# Needs QAQC'. Removed 2026-04-16 to clear the
-# slate for a clean-sheet implementation under welleng/errors/iscwsa_gyro.py
-# on the iscwsa-gyro-error-model branch.
+# implementation flagged '# Needs QAQC'. Removed 2026-04-16 in favour of
+# a JSON-schema + interpreter path (welleng/errors/interpreter.py) that
+# consumes the ISCWSA error-models JSON schema directly.
 
 
 def CNA(
