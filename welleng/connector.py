@@ -1603,49 +1603,60 @@ def get_vec_target(
     """Derives the target unit vector from curve geometry and target position.
 
     Solves for the direction vector at the end of a curve-hold section
-    given the start state, curve parameters, and target position.
+    given the start state, curve parameters, and target position. Accepts
+    either scalar inputs (legacy shape-(3,) positions/vectors with scalar
+    tangent_length/dist_curve/func_dogleg) or batched inputs (leading
+    batch dims on all arrays, positions/vectors with trailing axis 3).
 
     Parameters
     ----------
-    pos1 : ndarray
+    pos1 : ndarray, shape (..., 3)
         Start position in NEV coordinates.
-    vec1 : ndarray
+    vec1 : ndarray, shape (..., 3)
         Start unit direction vector in NEV coordinates.
-    pos_target : ndarray
+    pos_target : ndarray, shape (..., 3)
         Target position in NEV coordinates.
-    tangent_length : float
+    tangent_length : float or ndarray, shape (...)
         Length of the tangent (hold) section.
-    dist_curve : float
-        Arc length of the curve section.
-    func_dogleg : float
+    dist_curve : float or ndarray, shape (...)
+        Arc length of the curve section. Where equal to zero, the input
+        ``vec1`` is returned unchanged (pure-hold fallback).
+    func_dogleg : float or ndarray, shape (...)
         Shape factor (ratio factor) for the curve.
 
     Returns
     -------
-    ndarray
+    ndarray, shape (..., 3)
         Target unit direction vector in NEV coordinates.
     """
-    if dist_curve == 0:
-        return vec1
+    pos1 = np.asarray(pos1, dtype=float)
+    vec1 = np.asarray(vec1, dtype=float)
+    pos_target = np.asarray(pos_target, dtype=float)
+    tangent_length = np.asarray(tangent_length, dtype=float)
+    dist_curve = np.asarray(dist_curve, dtype=float)
+    func_dogleg = np.asarray(func_dogleg, dtype=float)
 
-    vec_target = (
-        (
-            pos_target - pos1 - (
-                    dist_curve
-                    * func_dogleg
-                ) / 2 * vec1
-        )
-        /
-        (
-            (
-                dist_curve * func_dogleg / 2
-            ) + tangent_length
-        )
-    )
+    half = dist_curve * func_dogleg / 2
+    denom = half + tangent_length
 
-    vec_target /= np.linalg.norm(vec_target)
+    # Broadcast per-sample scalars to match pos/vec batch shape (..., 3).
+    half_b = half[..., None] if half.ndim >= 1 else half
+    denom_b = denom[..., None] if denom.ndim >= 1 else denom
 
-    return vec_target
+    vec_target = (pos_target - pos1 - half_b * vec1) / denom_b
+
+    # Axis-aware normalise — works for scalar shape-(3,) and batched (..., 3).
+    norm = np.linalg.norm(vec_target, axis=-1, keepdims=True)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        vec_target = vec_target / norm
+
+    # Pure-hold fallback: where dist_curve == 0, return vec1.
+    zero_mask = (dist_curve == 0)
+    if zero_mask.ndim == 0:
+        if bool(zero_mask):
+            return vec1
+        return vec_target
+    return np.where(zero_mask[..., None], vec1, vec_target)
 
 
 def get_curve_hold_data(radius, dogleg):
@@ -1687,6 +1698,95 @@ def shape_factor(dogleg):
         The ratio factor (shape factor) for minimum-curvature interpolation.
     """
     return get_rf(dogleg)
+
+
+def solve_curve_hold_batch(pos1, vec1, pos_target, radius):
+    """Vectorised curve-hold connector: fixed start pose, fixed target pos.
+
+    Solves the minimum-MD curve-then-hold geometry from a start pose
+    ``(pos1, vec1)`` to a target position ``pos_target`` with a given
+    design radius. The target tangent vector is an OUTPUT of the solve —
+    computed analytically from the geometry — not an input. Equivalent
+    to ``Connector(pos1=..., vec1=..., pos2=pos_target, dls_design=...)``
+    in the ``'curve_hold'`` mode (binary code ``00110`` in
+    ``_get_initial_methods``), but operates element-wise on arrays so a
+    large sweep is one numpy call rather than a Python loop over
+    ``Connector`` instances.
+
+    Parameters
+    ----------
+    pos1 : array_like, shape (..., 3)
+        Start positions in NEV coordinates. Arbitrary leading batch shape.
+    vec1 : array_like, shape (..., 3)
+        Unit direction vectors at the start. Must share ``pos1``'s leading
+        shape.
+    pos_target : array_like, shape (..., 3)
+        Target positions in NEV coordinates. Must share ``pos1``'s leading
+        shape.
+    radius : float or array_like, shape (...)
+        Design radius of curvature. Broadcasts against the leading shape.
+
+    Returns
+    -------
+    dict
+        All entries are ndarrays whose leading shape matches the inputs.
+
+        - ``'pos2'`` shape (..., 3) — end of the curve / start of the hold.
+        - ``'vec_target'`` shape (..., 3) — computed unit tangent at target.
+        - ``'tangent_length'`` shape (...) — hold-section length.
+        - ``'dogleg'`` shape (...) — curve angle, radians.
+        - ``'dist_curve'`` shape (...) — arc length of the curve section.
+        - ``'md'`` shape (...) — total measured depth (curve + hold).
+
+    Notes
+    -----
+    When the target is exactly along ``vec1`` (pure-hold degenerate case),
+    the solver returns ``dogleg = 0``, ``tangent_length = dist_to_target``,
+    ``vec_target = vec1``, and ``pos2 = pos1``. This matches the scalar
+    ``Connector`` behaviour in that regime.
+
+    The underlying helpers (``min_dist_to_target``, ``get_curve_hold_data``,
+    ``get_vec_target``) have all been array-safe since the vectorisation
+    patch; this function is just a thin wrapper that computes the three
+    intermediate distance scalars and composes the helpers.
+    """
+    pos1 = np.asarray(pos1, dtype=float)
+    vec1 = np.asarray(vec1, dtype=float)
+    pos_target = np.asarray(pos_target, dtype=float)
+    radius = np.asarray(radius, dtype=float)
+
+    delta = pos_target - pos1
+    dist_to_target = np.linalg.norm(delta, axis=-1)
+    dist_perp_to_target = np.sum(delta * vec1, axis=-1)
+    # Same clamp the scalar Connector._get_distances applies to catch fp drift
+    # where the projected distance can marginally exceed the straight-line
+    # distance.
+    dist_perp_to_target = np.minimum(dist_perp_to_target, dist_to_target)
+    dist_norm_to_target = np.sqrt(
+        np.clip(dist_to_target ** 2 - dist_perp_to_target ** 2, 0.0, None)
+    )
+
+    distances = (dist_to_target, dist_perp_to_target, dist_norm_to_target)
+    tangent_length, dogleg = min_dist_to_target(radius, distances)
+    dist_curve, func_dogleg = get_curve_hold_data(radius, dogleg)
+
+    vec_target = get_vec_target(
+        pos1, vec1, pos_target, tangent_length, dist_curve, func_dogleg
+    )
+
+    # pos2 = end of arc = target - (hold-section vector)
+    tl = tangent_length[..., None] if tangent_length.ndim >= 1 else tangent_length
+    pos2 = pos_target - tl * vec_target
+    md = dist_curve + tangent_length
+
+    return {
+        "pos2": pos2,
+        "vec_target": vec_target,
+        "tangent_length": tangent_length,
+        "dogleg": dogleg,
+        "dist_curve": dist_curve,
+        "md": md,
+    }
 
 
 def min_dist_to_target(radius, distances):
