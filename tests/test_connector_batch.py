@@ -95,10 +95,13 @@ def test_batch_scalar_input_shapes():
     )
     assert out['pos2'].shape == (3,)
     assert out['vec_target'].shape == (3,)
-    assert out['tangent_length'].ndim == 0
-    assert out['dogleg'].ndim == 0
-    assert out['dist_curve'].ndim == 0
-    assert out['md'].ndim == 0
+    # Scalars may come back as either 0-d ndarrays or Python floats
+    # (``check_dogleg`` returns a Python float for scalar input — matching
+    # its pre-batch scalar API). Use ``np.ndim`` which handles both.
+    assert np.ndim(out['tangent_length']) == 0
+    assert np.ndim(out['dogleg']) == 0
+    assert np.ndim(out['dist_curve']) == 0
+    assert np.ndim(out['md']) == 0
 
     # And the values should match a scalar Connector run on the same inputs.
     c = Connector(
@@ -155,6 +158,56 @@ def test_get_vec_target_zero_curve_batch_mixed():
             np.testing.assert_array_equal(out[i], vec1[i])
         else:
             np.testing.assert_allclose(np.linalg.norm(out[i]), 1.0, rtol=1e-10)
+
+
+def test_batch_wraps_negative_dogleg_like_scalar():
+    """Geometries that produce a raw negative dogleg must be wrapped by +2π
+    (matching ``check_dogleg`` inside the scalar ``_min_dist_to_target``)
+    — otherwise ``dist_curve`` goes negative and total MD is nonsense.
+    """
+    # Construct a case that is known to produce negative raw dogleg:
+    # a near-vertical start reaching a target that's lateral and deeper by a
+    # small amount, with a small radius. The scalar Connector handles this
+    # via check_dogleg; the batch must do the same.
+    pos1 = np.array([0.0, 0.0, 1500.0])
+    vec1 = np.array([0.0, 0.0, 1.0])
+    pos_target = np.array([-60.0, -350.0, 1800.0])   # same as demo KOP→intermediate
+    radius = 250.0
+
+    out = solve_curve_hold_batch(pos1, vec1, pos_target, radius)
+    # If check_dogleg is applied, dogleg ∈ [0, 2π) and dist_curve ≥ 0,
+    # so md ≥ 0.
+    assert out["dogleg"] >= 0.0, f"dogleg not wrapped: {out['dogleg']}"
+    assert out["dist_curve"] >= 0.0, f"negative dist_curve: {out['dist_curve']}"
+    assert out["md"] >= 0.0, f"negative md: {out['md']}"
+
+    # And the scalar Connector on the same inputs agrees.
+    c = Connector(
+        pos1=pos1.tolist(), vec1=vec1.tolist(),
+        pos2=pos_target.tolist(),
+        dls_design=float(_dls_deg_per_30m(radius)),
+    )
+    assert c.method == 'min_dist_to_target'
+    np.testing.assert_allclose(out["dogleg"], c.dogleg, rtol=1e-9, atol=1e-8)
+    np.testing.assert_allclose(out["dist_curve"], c.dist_curve, rtol=1e-9, atol=1e-8)
+    np.testing.assert_allclose(out["tangent_length"], c.tangent_length, rtol=1e-9, atol=1e-8)
+
+
+def test_check_dogleg_scalar_and_array():
+    """Scalar input → scalar output; array input → array output."""
+    from welleng.connector import check_dogleg
+
+    # Scalar
+    assert check_dogleg(-1.0) == -1.0 + 2 * np.pi
+    assert check_dogleg(1.0) == 1.0
+    assert isinstance(check_dogleg(0.5), float)
+
+    # Array
+    arr = np.array([-1.0, 0.0, 1.0, -0.5])
+    out = check_dogleg(arr)
+    np.testing.assert_allclose(
+        out, np.array([-1.0 + 2 * np.pi, 0.0, 1.0, -0.5 + 2 * np.pi])
+    )
 
 
 def test_batch_shape_preserved_2d():

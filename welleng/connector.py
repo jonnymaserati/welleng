@@ -1527,22 +1527,24 @@ def minimize_target_pos_and_vec_defined(
 def check_dogleg(dogleg):
     """Ensures the dogleg angle is positive by wrapping negative values.
 
+    Accepts scalar or array-like; output shape matches input.
+
     Parameters
     ----------
-    dogleg : float
-        Dogleg angle in radians.
+    dogleg : float or array_like
+        Dogleg angle(s) in radians.
 
     Returns
     -------
-    float
-        The dogleg angle normalized to [0, 2*pi).
+    float or ndarray
+        The dogleg angle(s) normalized to [0, 2*pi).
     """
     # the code assumes angles are positive and clockwise
-    if dogleg < 0:
-        dogleg_new = dogleg + 2 * np.pi
-        return dogleg_new
-    else:
-        return dogleg
+    dogleg = np.asarray(dogleg, dtype=float)
+    wrapped = np.where(dogleg < 0, dogleg + 2 * np.pi, dogleg)
+    if wrapped.ndim == 0:
+        return float(wrapped)
+    return wrapped
 
 
 def mod_vec(vec, error=1e-5):
@@ -1768,6 +1770,12 @@ def solve_curve_hold_batch(pos1, vec1, pos_target, radius):
 
     distances = (dist_to_target, dist_perp_to_target, dist_norm_to_target)
     tangent_length, dogleg = min_dist_to_target(radius, distances)
+    # Wrap negative doglegs by +2π to match the scalar Connector
+    # (connector.py `_min_dist_to_target` calls `check_dogleg` on the raw
+    # output before building the path). Without this, a geometry that
+    # dictates a "backward" turn yields negative dist_curve and the
+    # reported total MD ends up negative.
+    dogleg = check_dogleg(dogleg)
     dist_curve, func_dogleg = get_curve_hold_data(radius, dogleg)
 
     vec_target = get_vec_target(
