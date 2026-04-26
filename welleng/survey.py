@@ -1081,6 +1081,37 @@ class Survey:
         """
         export_csv(self, filename)
 
+    def interpolate_mds(self, md):
+        """
+        Method to interpolate positions based on measured depths and return
+        a new `welleng.Survey` object.
+
+        Parameters
+        ----------
+        md: (,n) list or array of floats
+            The measured depths of the points of interest.
+
+        Returns
+        -------
+        A welleng.survey.Survey object.
+
+        Examples
+        --------
+        >>> import welleng as we
+        >>> import numpy as np
+        >>> survey=we.survey.Survey(
+        ...       md=[0, 500, 1000, 2000, 3000],
+        ...       inc=[0, 0, 30, 90, 90],
+        ...       azi=[0, 0, 45, 135, 180],
+        ...    )
+        >>> survey_interp = survey.interpolate_mds(
+        ...    np.arange(0, 3000, 30)
+        ... )
+        """
+         
+        s = interpolate_mds(self, md)
+        return s
+
     def interpolate_md(self, md):
         """
         Method to interpolate a position based on measured depth and return
@@ -1805,6 +1836,24 @@ def get_node(survey, idx, interpolated=False):
     )
     return node
 
+def interpolate_mds(survey, md):
+    """
+    Interpolates a survey at given measured depths.
+    """
+    md = np.array(md)
+    md = np.setdiff1d(md, survey.md)
+    _ = md.sort()
+
+    assert md[0] >= survey.md[0], "The shortest md is not within the survey"
+    assert md[-1] <= survey.md[-1], "The largest md is beyond the survey"
+
+    # get the closest survey stations
+    idxs = np.searchsorted(survey.md, md, side="left") - 1
+    idxs = np.clip(idxs, 0, len(survey.md)-2)
+
+    xs = md - survey.md[idxs]
+
+    return _interpolate_surveys(survey, md, xs, idxs)
 
 def interpolate_md(survey, md):
     """
@@ -1825,6 +1874,130 @@ def interpolate_md(survey, md):
 
     return _interpolate_survey(survey, x=x, index=idx)
 
+def _interpolate_surveys(survey, md, xs, indexes):
+    """
+    Interpolate multiple points distance xs between sets of two survey stations
+    using minimum curvature.
+
+    Parameters
+    ----------
+        survey: welleng.Survey
+            A survey object with at least two survey stations.
+        md: (,n) array of floats
+            The measured depths of the points of interest. Assumes that 
+            each value in md is not in survey.md
+        xs: (,n) array of floats
+            Lengths along well path from each indexed survey station to
+            perform the interpolation at. Must be less than length
+            to the next survey station.
+        indexes: (,n) array of ints
+            The indexes of the survey station from which to interpolate
+            each x in xs.
+
+    Returns
+    -------
+        survey_interpolated: welleng.survey.Survey object
+            Note that a `interpolated` property is added indicating if the survey
+            station is interpolated (True) or not (False).
+    """
+    # indexes = _ensure_int_or_float(indexes, int)
+    # xs = _ensure_int_or_float(xs, float)
+
+    assert indexes[-1] < len(survey.md) - 1, "Index is out of range"
+
+    total_doglegs = survey.dogleg[indexes+1]
+    azi, inc = np.zeros(len(xs)), np.zeros(len(xs))
+
+    # regions which are effectively straight
+    mask = np.where(total_doglegs < 1e-14) 
+    azi[mask] = survey.azi_grid_rad[indexes][mask]
+    inc[mask] = survey.inc_rad[indexes][mask]
+
+    # regions which are not straight
+    mask = np.where(total_doglegs >= 1e-14)
+    t1 = survey.vec_xyz[indexes][mask]
+    t2 = survey.vec_xyz[indexes + 1][mask]
+    
+    dogleg = (xs[mask]) * (total_doglegs[mask] / survey.delta_md[indexes + 1][mask])
+
+    t = (
+        t1 * (np.sin(total_doglegs[mask] - dogleg) / np.sin(total_doglegs[mask]))[:, np.newaxis]
+        + t2 * (np.sin(dogleg) / np.sin(total_doglegs[mask]))[:, np.newaxis]
+    )
+
+    # normalise tangent vectors
+    t = t / np.linalg.norm(t, axis=-1).reshape(-1, 1)
+
+    inc_azi = get_angles(t)
+    inc[mask], azi[mask] = inc_azi[:, 0], inc_azi[:,1]
+
+    len_svy = len(survey.md)
+    len_md = len(md)
+    sorted_arr = np.zeros((3, len_svy+len_md))
+    sorted_arr[0, 0:len_svy] = survey.md
+    sorted_arr[0, len_svy:] = md
+    sorted_arr[1, 0:len_svy] = survey.inc_rad
+    sorted_arr[1, len_svy:] = inc
+    sorted_arr[2, 0:len_svy] = survey.azi_grid_rad
+    sorted_arr[2, len_svy:] = azi
+
+    # sort on md
+    sorted_arr = sorted_arr[:, np.argsort(sorted_arr[0, :])]
+
+    sh = survey.header
+    sh.azi_reference = 'grid'
+
+    survey_interpolated = Survey(
+        md=sorted_arr[0,:],
+        inc=sorted_arr[1,:],
+        azi=sorted_arr[2,:],
+        start_xyz=survey.start_xyz,
+        start_nev=survey.start_nev,
+        header=sh,
+        deg=False,
+        error_model=None
+    )
+
+    survey_interpolated.interpolated = ~np.isin(survey_interpolated.md, survey.md)
+
+    i = -1
+    radii = []
+    cov_nev = []
+    for (md, boolean) in zip(
+        survey_interpolated.md,
+        survey_interpolated.interpolated
+    ):
+        if not boolean:
+            i += 1
+            if survey.error_model is not None:
+                # interpolate covariance error between survey stations
+                j = 1 if i < len(survey.md) - 1 else 0
+                delta_md = survey.md[i + j] - survey.md[i]
+                delta_cov_nev = (
+                    survey.cov_nev[i + j] - survey.cov_nev[i]
+                )
+                unit_cov_nev = (
+                    delta_cov_nev / delta_md
+                    if j == 1
+                    else 0
+                )
+        radii.append(survey.radius[i])
+        if survey.error_model is not None:
+            cov_nev.append(
+                survey.cov_nev[i]
+                + (
+                    (md - survey.md[i]) * unit_cov_nev
+                )
+            )
+    survey_interpolated.radius = np.array(radii)
+    if bool(cov_nev):
+        survey_interpolated.cov_nev = np.array(cov_nev)
+        survey_interpolated.cov_hla = NEV_to_HLA(
+            survey_interpolated.survey_rad,
+            survey_interpolated.cov_nev.T
+        ).T
+
+    return survey_interpolated
 
 def _interpolate_survey(survey, x=0, index=0):
     """
