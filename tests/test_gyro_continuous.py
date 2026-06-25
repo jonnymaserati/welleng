@@ -21,7 +21,6 @@ import numpy as np
 import pytest
 
 from welleng.survey import Survey, SurveyHeader
-from welleng.errors.tool_errors import _MAG_UNIT_TO_BASE
 
 
 def _build_survey():
@@ -42,11 +41,16 @@ def _closed_form(survey, speed, gate, power, mode, mag, scale):
     n = len(md)
     acc = 0.0
     e = np.zeros(n)
+    # Accumulate the SPE 90408-PA Table 7 coefficient h_i, then apply the
+    # magnitude LINEARLY (Eqs 5c / 6c: dA_i = v * h_i). Drift: h_i = acc
+    # (power=1). Random walk: h_i = sqrt(acc) (power=2) -- the sqrt is the
+    # coefficient's, NOT applied to the magnitude.
     for k in range(1, n):
         if inc[k] > gate:
             s = np.sin((inc[k] + inc[k - 1]) / 2.0) ** power
             acc += (md[k] - md[k - 1]) / (speed * s)
-            e[k] = acc * (mag * scale) if mode == "drift" else np.sqrt(acc) * np.sqrt(mag * scale)
+            h_i = acc if mode == "drift" else np.sqrt(acc)
+            e[k] = h_i * (mag * scale)
         else:
             acc = 0.0
     return e
@@ -77,10 +81,12 @@ def test_continuous_gyro_running_integral(code, power, mode):
     assert e_dia[above[-1]] > 0.0, f"{code}: zero contribution above gate"
     assert np.all(np.diff(e_dia[above]) >= -1e-12), f"{code}: not monotone above gate"
 
-    # (c) equals the closed-form running integral (the deleted SPE 90408
-    #     Table 7 hand-coded behaviour), to machine precision
+    # (c) equals the SPE 90408-PA Table 7 coefficient times the magnitude
+    #     (Eqs 5c / 6c: dA_i = v * h_i), to machine precision. `scale` is
+    #     hard-coded to deg->rad here, independent of _MAG_UNIT_TO_BASE, so
+    #     this also guards the "deg/sqr(hr)" unit-conversion lookup.
     mag = float(err.errors.em["codes"][code]["magnitude"])
-    scale = _MAG_UNIT_TO_BASE.get(err.errors.em["codes"][code]["unit"], 1.0)
+    scale = np.pi / 180.0  # both GXY-GD (deg/hr) and GXY-GRW (deg/sqr(hr)) -> rad
     ref = _closed_form(survey, speed, gate, power, mode, mag, scale)
     assert np.allclose(e_dia, ref, atol=1e-12, rtol=0.0), (
         f"{code}: max|e_DIA - closed_form| = {np.max(np.abs(e_dia - ref)):.3e}"
@@ -89,3 +95,11 @@ def test_continuous_gyro_running_integral(code, power, mode):
     # and it produces a non-trivial NEV covariance (was identically zero
     # before the recurrence path existed)
     assert np.max(np.abs(np.asarray(term.cov_NEV))) > 0.0
+
+    # (d) regression guard: binding MDPrev activates cross-station terms
+    #     (XYM3E/XYM4E: Max(1, sqrt(10/(MD-MDPrev)))) whose station-0
+    #     MD-MDPrev==0 would otherwise yield inf/nan. The whole-survey
+    #     covariance must stay finite.
+    assert np.all(np.isfinite(np.asarray(err.errors.cov_NEVs))), (
+        "non-finite survey covariance (station-0 cross-station blow-up)"
+    )
