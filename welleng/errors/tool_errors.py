@@ -360,6 +360,15 @@ class ToolError:
             "Latitude": np.radians(float(survey.header.latitude or 0.0)),
             "NoiseReductionFactor": nrf,
             "RAD": np.pi / 180.0,
+            # Canted-accelerometer 180deg tool-rotation switching operator
+            # (SPE 90408-MS Table 2 / Table 11 note 5): k = +1 for inc <= 90deg,
+            # k = -1 for inc > 90deg. Canted-accel inclination weights are
+            # f(Inc - k*gamma) (gamma = cant angle), so above 90deg the cant is
+            # added rather than subtracted, keeping cos(Inc - k*gamma) finite
+            # past inc = 90 + gamma. Only terms whose formula references `k`
+            # (the canted XY-accel terms in example_4) are affected; all other
+            # fixtures/models leave it unreferenced and are unchanged.
+            "k": np.where(inc > np.pi / 2, -1.0, 1.0),
         }
         if hdr.get("GXYRunningSpeed") is not None:
             bindings["GXYRunningSpeed"] = float(hdr["GXYRunningSpeed"])
