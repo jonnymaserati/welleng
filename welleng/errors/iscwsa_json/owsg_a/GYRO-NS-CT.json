@@ -27,7 +27,10 @@
   },
   "parameters": {
     "inc_min": 0,
-    "inc_max": 150
+    "inc_max": 150,
+    "gxy_running_speed": 2160,
+    "xy_static_gyro_end_inc": 0.29670597283903605,
+    "noise_reduction_factor": 0.5
   },
   "terms": [
     {
