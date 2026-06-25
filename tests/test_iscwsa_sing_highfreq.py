@@ -199,3 +199,62 @@ def test_all_sources_finite_on_singular_geometries(model, geometry):
         if not np.all(np.isfinite(np.asarray(e.cov_NEV)))
     )
     assert not bad, f"{model}/{geometry}: non-finite covariance in {bad}"
+
+
+# --------------------------------------------------------------------------
+# Field-dependent singular term: ABXY-TI2 (accelerometer bias, term 2)
+#
+# Deferred (not reachable from the base MWD models, so not asserted here):
+#   - CNA   — "Linear Cone" gyro/continuous term; appears only in gyro tool
+#             stacks. Covered when gyro validation lands (GYRO_SURVEY_PLAN.md).
+#   - ABIXY-TI2 — accelerometer-bias axial-interference variant; only present
+#             in OWSG AX-correction stacks, not Rev4 / Rev5.11.
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("model", ["ISCWSA MWD Rev4", "ISCWSA MWD Rev5.11"])
+def test_abxy_ti2_sing_structure(model):
+    """ABXY-TI2 is singular in vertical hole; Rev5.13 §11.5 row 19V gives
+    VertWftFn = [-sin(Az)/G, cos(Az)/G, 0]. On a vertical, due-north well
+    (azi=0) the North channel vanishes and the East channel carries the term,
+    built from the same interval structure as the misalignment SING branch:
+
+        interior:        e_k = c·(D_{k+1}-D_{k-1})/2,  e*_k = c·(D_k-D_{k-1})/2
+        first station:   e_1 = c·(D_2+D_1-2·D_0)/2,    e*_1 = c·(D_1-D_0)
+
+    with c = σ/G. The first-station override applies for Rev5 only (matches the
+    `!= 'rev4'` gate in tool_errors.py). ABXY-TI2 propagates SYSTEMATICally, so
+    cov_k = (e*_k + Σ_{i<k} e_i)².
+    """
+    md = np.arange(0, 151, 30.0)
+    err = _err(md, np.zeros_like(md), np.zeros_like(md), model)
+    src = err.errors.errors["ABXY-TI2S"]
+    eN = np.asarray(src.e_NEV)[:, 0]
+    eE = np.asarray(src.e_NEV)[:, 1]
+    esN = np.asarray(src.e_NEV_star)[:, 0]
+    esE = np.asarray(src.e_NEV_star)[:, 1]
+    covEE = np.asarray(src.cov_NEV)[:, 1, 1]
+    rev4 = model.lower().split()[-1] == "rev4"
+
+    # North channel vanishes at azi=0 (projection [-sin(0)/G, cos(0)/G, 0]).
+    np.testing.assert_allclose(eN, 0.0, atol=1e-15)
+    np.testing.assert_allclose(esN, 0.0, atol=1e-15)
+
+    # recover c = σ/G from a mid interior e* (half back-interval).
+    c = esE[2] / ((md[2] - md[1]) / 2)
+    exp_eE = np.zeros_like(md)
+    exp_esE = np.zeros_like(md)
+    exp_eE[1:-1] = c * (md[2:] - md[:-2]) / 2
+    exp_esE[1:-1] = c * (md[1:-1] - md[:-2]) / 2
+    if not rev4:                                   # first-station overrides
+        exp_eE[1] = c * (md[2] + md[1] - 2 * md[0]) / 2
+        exp_esE[1] = c * (md[1] - md[0])
+
+    np.testing.assert_allclose(eE, exp_eE, rtol=1e-9, atol=1e-15)
+    np.testing.assert_allclose(esE, exp_esE, rtol=1e-9, atol=1e-15)
+
+    # first-station doubling differential: full interval (Rev5) vs halved (Rev4)
+    assert np.isclose(esE[1], (1.0 if rev4 else 2.0) * c * (md[1] - md[0]) / 2)
+
+    # systematic accumulation: cov_k = (e*_k + Σ_{i<k} e_i)²
+    cum_prior = np.concatenate(([0.0], np.cumsum(eE)[:-1]))
+    np.testing.assert_allclose(covEE, (esE + cum_prior) ** 2, rtol=1e-9, atol=1e-18)
