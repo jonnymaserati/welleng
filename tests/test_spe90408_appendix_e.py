@@ -44,10 +44,14 @@ Differences" (Copsegrove/Grindrod CDR-SM-03, 2020):
     applying ~1 deg convergence (azi_true = grid + conv) + rotating the output
     to grid closes Well #2 Model #1 to 0.9%. We don't have the authoritative
     per-well convergence in-repo, so those cells are xfail(non-strict).
-  - **Continuous re-initialisation**: Well #3 builds, drops back to vertical
-    (inc=0 at 2460 m), then rebuilds -- requiring re-initialisation of the
-    continuous gyro (App. C box 13 / min_D). Not implemented; the single
-    init-seed carry over-predicts after the second build. xfail.
+  - **Well #3 high-inc carry** (build->drop-to-vertical->rebuild-to-110deg):
+    investigated re-init and grid/true; NEITHER is the cause. Re-init never
+    fires (the drop-rebuild is within min_D=2500 m, so corrected App. C box 11
+    keeps the first init); and it is not a frame rotation (no single gamma
+    closes it -- 4030 m NE stays ~640x tol for all gamma). The residual is the
+    carried stationary g-dependent error projected at inc>90deg after the
+    rebuild -- a carry/mode-handoff subtlety, underspecified, left for
+    dedicated work. xfail with the evidence in XFAIL below.
 
 Model config + magnitudes: SPE 90408-MS Appendix D (D1-D7). Weight functions:
 Tables 1/2 (accel), 3/4 (gyro), 6/7 (continuous), 9 (misalignment Alt.3),
@@ -168,15 +172,32 @@ FIXTURE = {
 
 # Combos not yet within band -- documented frame / re-initialisation gaps
 # (see module docstring). xfail non-strict: passing cells are fine too.
+# NB the two hypothesised fixes (continuous re-init, grid/true convergence)
+# were investigated and are NOT the cause (see each reason). Diagnosis verified
+# by per-term decomposition + a rotation sweep over gamma.
 XFAIL = {
-    ("well2", "model_1"): "true-vs-grid north: App. E azimuths are grid; "
-                          "Well #2 (UTM 15N) convergence ~1 deg not applied "
-                          "(closes to 0.9% with it). CDR-SM-03.",
-    ("well3", "model_1"): "Well #3 build-drop-rebuild needs continuous "
-                          "re-initialisation (App. C box 13 / min_D), not "
-                          "implemented; + grid/true (UTM 55S).",
-    ("well3", "model_3"): "Well #3 re-initialisation (App. C box 13 / min_D) "
-                          "not implemented; + grid/true (UTM 55S).",
+    ("well2", "model_1"): "deep-NE residual ~2.7% (worst at 12500 ft); NOT a "
+                          "frame rotation (gamma=0 is best; an output rotation "
+                          "only worsens it) and NOT re-init -- consistent with "
+                          "the documented station-data convention (N+/-1 vs "
+                          "N-2/N-1) / precision inter-impl difference "
+                          "(CDR-SM-03), larger here than Well #1's 0.6% due to "
+                          "this well's geometry. The other cells are in band.",
+    ("well3", "model_1"): "build->drop-to-vertical->rebuild-to-110deg: the "
+                          "carried stationary g-dependent error blows up at "
+                          "high inc after the rebuild. NOT re-init (drop-rebuild "
+                          "is within min_D=2500 m, so the corrected App. C box "
+                          "11 keeps the first init -- re-init never fires) and "
+                          "NOT a frame rotation (no single gamma closes it; "
+                          "4030 m NE stays ~640x tol for all gamma). Root cause: "
+                          "stationary-carry / mode-handoff semantics for a "
+                          "g-dept source carried to inc>90deg -- underspecified, "
+                          "needs dedicated modelling.",
+    ("well3", "model_3"): "as well3/model_1 -- carried stationary g-dept error "
+                          "at high inc across the build-drop-rebuild (failures "
+                          "start at 3000 m and grow toward inc 110deg). Not "
+                          "re-init (within min_D), not a frame rotation; the "
+                          "carry/handoff at inc>90deg is the root cause.",
 }
 
 
