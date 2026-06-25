@@ -1,4 +1,3 @@
-import math
 import numpy as np
 from numpy import sin, cos, tan, pi, sqrt
 from numpy.char import index
@@ -36,6 +35,7 @@ _MAG_UNIT_TO_BASE = {
     "rad":     1.0,            # angles already in radians
     "deg":     np.pi / 180.0,  # angle: degrees -> radians
     "deg/hr":  np.pi / 180.0,  # gyro rate: deg/hr -> rad/hr
+    "deg/sqr(hr)": np.pi / 180.0,  # gyro random-walk coeff: deg/sqrt(hr) -> rad/sqrt(hr)
     "deg/nT":  np.pi / 180.0,  # B-field-coupled angle gradient
     "-":       1.0,            # dimensionless (scale factors)
     "":        1.0,            # missing unit treated as dimensionless
@@ -400,7 +400,19 @@ class ToolError:
         d = np.broadcast_to(np.asarray(d, dtype=float), (n,))
         i = np.broadcast_to(np.asarray(i, dtype=float), (n,))
         a = np.broadcast_to(np.asarray(a, dtype=float), (n,))
-        dpde = np.column_stack([d, i, a])
+        dpde = np.column_stack([d, i, a]).astype(float)
+        # Cross-station terms (those referencing a "...Prev" variable, e.g.
+        # the XYM3E/XYM4E station-spacing amplifier Max(1, sqrt(10/(MD-MDPrev)))
+        # or the XCL tortuosity terms) have no predecessor at station 0. The
+        # `_prev` padding fabricates MDPrev[0]=MD[0], so MD-MDPrev=0 there and
+        # the formula evaluates to inf/nan. Zero the first station's
+        # contribution, matching the deleted hand-coded weight functions which
+        # forced station 0 to zero (np.append([0], ...)).
+        if any(
+            isinstance(term.get(f), str) and "Prev" in term[f]
+            for f in ("depth_formula", "inclination_formula", "azimuth_formula")
+        ):
+            dpde[0] = 0.0
         # Convert the declared magnitude to welleng's SI base. OWSG xlsx
         # publishes magnitudes in the term's natural unit (deg, deg/hr,
         # m, ...); the propagation engine expects rad / m / m/s^2 /
@@ -412,9 +424,12 @@ class ToolError:
         return self.e._generate_error(code, e_DIA, propagation, NEV=True)
 
     # Recurrence (self-referential) state variables a continuous-gyro
-    # azimuth formula may carry, mapped to accumulation mode:
-    #   - "drift"       : linear running integral  (e_DIA = state * mag)
-    #   - "random_walk" : quadrature running walk   (e_DIA = state * sqrt(mag))
+    # azimuth formula may carry, mapped to accumulation mode. The mode
+    # selects how the coefficient `state` (h_i) accumulates inside the
+    # formula; the magnitude enters linearly afterwards in both cases
+    # (e_DIA = state * mag * scale -- see SPE 90408-PA Eqs 5c / 6c):
+    #   - "drift"       : linear running integral, h_i = h_{i-1} + dD/c/sin
+    #   - "random_walk" : quadrature running walk, h_i = sqrt(h_{i-1}^2 + dD/c/sin^2)
     _RECURRENCE_VARS = {
         "XY_Gyro_Drift": "drift",
         "XY_Gyro_Random_Walk": "random_walk",
@@ -435,13 +450,25 @@ class ToolError:
     ):
         """Evaluate a continuous-gyro recurrence term station-by-station.
 
-        The azimuth formula advances an accumulated state from the previous
-        station's value; below the `XY Static Gyro End Inc` inclination gate
-        the continuous survey is not running, so the contribution is zero and
-        the accumulator resets. Magnitude placement follows the term's
-        accumulation mode (drift = linear, random_walk = quadrature variance
-        increment), reproducing the SPE 90408 Table 7 hand-coded weight
-        functions that the JSON+interpreter path replaced.
+        Implements the continuous-survey gyro azimuth weight functions of
+        SPE 90408-PA (Torkildsen et al. 2008, SPE Drilling & Completion,
+        DOI 10.2118/90408-PA):
+
+        - Coefficient recurrence per Table 7 (xy gyro) -- drift
+          ``h_i = h_{i-1} + dD_i / (c*sin((I_{i-1}+I_i)/2))`` and random walk
+          ``h_i = sqrt(h_{i-1}^2 + dD_i / (c*sin^2((I_{i-1}+I_i)/2)))``,
+          where ``c`` is the running speed and ``dD = MD - MDPrev``. The
+          analogous z-gyro / xyz coefficients are Tables 6 and 8.
+        - Azimuth error is the magnitude times the coefficient, ``dA_i =
+          v * h_i`` (Eqs 5a-5c drift, 6a-6c random walk) -- LINEAR in the
+          magnitude for both modes; the sqrt of random walk is contained in
+          ``h_i``, not applied to ``v``.
+
+        Below the ``XY Static Gyro End Inc`` inclination gate the continuous
+        survey is not running, so the contribution is zero and the
+        accumulator resets. Using the stationary tool's end-inc as the
+        continuous start-inc follows Table 11 note 3. Both modes propagate
+        systematically within an initialisation section (Table 6/7 mode = S).
         """
         import warnings
 
@@ -487,9 +514,15 @@ class ToolError:
 
         unit = term.get("units") or term.get("unit") or "-"
         scale = _MAG_UNIT_TO_BASE.get(unit, 1.0)
-        # drift accumulates the magnitude linearly; random-walk accumulates
-        # the variance, so the standard-deviation scale is sqrt(mag).
-        outer = (mag * scale) if mode == "drift" else math.sqrt(mag * scale)
+        # The magnitude multiplies the accumulated coefficient `state` (h_i)
+        # LINEARLY for both drift and random walk. Per SPE 90408-PA
+        # (Torkildsen et al. 2008) Eqs 5a-5c / 6a-6c, the azimuth error is
+        # dA_i = v * h_i: the quadrature (sqrt) accumulation of random walk
+        # lives entirely inside h_i (the `Sqr(state^2 + ...)` recurrence,
+        # Table 7), so v_rw enters linearly exactly as the drift rate v_d
+        # does. Units: drift v_d [deg/hr] * h_i [hr] and walk v_rw
+        # [deg/sqrt(hr)] * h_i [sqrt(hr)] both give deg, then `scale` -> rad.
+        outer = mag * scale
 
         e_DIA = np.zeros((n, 3))
         e_DIA[:, 2] = states * outer
