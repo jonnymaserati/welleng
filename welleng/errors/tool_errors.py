@@ -421,6 +421,25 @@ class ToolError:
         unit = term.get("units") or term.get("unit") or "-"
         scale = _MAG_UNIT_TO_BASE.get(unit, 1.0)
         e_DIA = dpde * (mag * scale)
+        # Vertical-hole singularity: OWSG/ISCWSA azimuth weight functions carry
+        # a 1/sin(inc) factor that cancels the sin(inc) of the position
+        # Jacobian in deviated hole but evaluates to nan at an exactly-vertical
+        # station. When the JSON term supplies position-space singular weights
+        # (north/east/vertical_singularity), substitute the ISCWSA Rev5.13
+        # Sec 11.5 singular vectors at those stations.
+        if any(
+            isinstance(term.get(k), str)
+            for k in ("north_singularity", "east_singularity",
+                      "vertical_singularity")
+        ):
+            e_DIA = np.nan_to_num(e_DIA, nan=0.0, posinf=0.0, neginf=0.0)
+            e_NEV, e_NEV_star = self._call_interpreter_singularity(
+                e_DIA, term, bindings, mag * scale
+            )
+            return self.e._generate_error(
+                code, e_DIA, propagation, NEV=True,
+                e_NEV=e_NEV, e_NEV_star=e_NEV_star,
+            )
         return self.e._generate_error(code, e_DIA, propagation, NEV=True)
 
     # Recurrence (self-referential) state variables a continuous-gyro
@@ -527,6 +546,84 @@ class ToolError:
         e_DIA = np.zeros((n, 3))
         e_DIA[:, 2] = states * outer
         return self.e._generate_error(code, e_DIA, propagation, NEV=True)
+
+    def _call_interpreter_singularity(self, e_DIA, term, bindings, sigma):
+        """Build e_NEV / e_NEV_star with vertical-hole singularity substitution.
+
+        At a station with ``inc < vertical_inc_limit`` the term's azimuth
+        weight function is undefined (1/sin(inc) -> nan), so the position-error
+        contribution is taken directly from the JSON ``*_singularity`` weights
+        (``VertWftFn = [north, east, vertical]``) using the ISCWSA Rev5.13
+        Sec 11.5 singular vectors (mirrors the hand-coded ABXY-TI2/XYM3E SING
+        branch):
+
+            interior k : e_k  = sigma * (D_{k+1}-D_{k-1})/2 * VertWftFn  (eq 20)
+                         e*_k = sigma * (D_k    -D_{k-1})/2 * VertWftFn  (eq 21)
+            station 1  : e_1  = sigma * (D_2+D_1-2 D_0)/2   * VertWftFn  (eq 33)
+                         e*_1 = sigma * (D_1-D_0)           * VertWftFn  (eq 34)
+
+        Station 0 is the tie-on (always zero). The eq 34 full-interval star
+        (vs the halved interior eq 21) is the Rev5 behaviour; Rev4 keeps it
+        halved, matching the ``drk_dInc`` first-station gate.
+        """
+        survey = self.e.survey
+        n = len(survey.md)
+        e_NEV = self.e._e_NEV(e_DIA)
+        e_NEV_star = self.e._e_NEV_star(e_DIA)
+
+        sing = np.where(
+            np.asarray(survey.inc_rad) < survey.header.vertical_inc_limit
+        )[0]
+        if sing.size == 0:
+            return e_NEV, e_NEV_star
+
+        def _vw(key):
+            f = term.get(key)
+            if not isinstance(f, str):
+                return np.zeros(n)
+            try:
+                val = evaluate_formula(f, bindings)
+            except Exception:
+                # Singular weight references a variable the interpreter can't
+                # bind (e.g. XCLTortuosity) -- a documented schema gap; the
+                # component contributes zero, same as the main eval path.
+                return np.zeros(n)
+            return np.broadcast_to(
+                np.asarray(val, dtype=float), (n,)
+            ).astype(float)
+
+        # Position-space weight, already carrying the source magnitude `sigma`.
+        vw = np.column_stack([
+            _vw("north_singularity"),
+            _vw("east_singularity"),
+            _vw("vertical_singularity"),
+        ]) * sigma
+
+        md = np.asarray(survey.md, dtype=float)
+        double_delta = np.zeros(n)   # D_{k+1} - D_{k-1}
+        delta = np.zeros(n)          # D_k     - D_{k-1}
+        double_delta[1:-1] = md[2:] - md[:-2]
+        delta[1:-1] = md[1:-1] - md[:-2]
+
+        e_sing = 0.5 * double_delta[:, None] * vw      # eq 20
+        estar_sing = 0.5 * delta[:, None] * vw         # eq 21
+
+        # First surveyed station (index 1; index 0 is the tie-on -> zero).
+        if n >= 3 and 1 in sing:
+            e_sing[1] = ((md[2] + md[1] - 2 * md[0]) / 2) * vw[1]   # eq 33
+            if self.e.error_model.lower().split()[-1] == 'rev4':
+                estar_sing[1] = ((md[1] - md[0]) / 2) * vw[1]
+            else:
+                estar_sing[1] = (md[1] - md[0]) * vw[1]            # eq 34
+
+        # A singular weight may be inf where MD==MDPrev (station 0 padding);
+        # 0*inf -> nan there. Sanitise; station 0 is the tie-on (zero anyway).
+        e_sing = np.nan_to_num(e_sing, nan=0.0, posinf=0.0, neginf=0.0)
+        estar_sing = np.nan_to_num(estar_sing, nan=0.0, posinf=0.0, neginf=0.0)
+
+        e_NEV[sing] = e_sing[sing]
+        e_NEV_star[sing] = estar_sing[sing]
+        return e_NEV, e_NEV_star
 
     def _initiate_func_dict(self):
         """
