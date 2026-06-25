@@ -1803,8 +1803,11 @@ def XYM3L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
 
         e_NEV_star = error._e_NEV_star(e_DIA)
         e_NEV_star_sing = np.zeros_like(e_NEV)
+        # Rev 5.13 eq (21): e* carries VertWftFn, which includes the damping M
+        # (coeff). coeff (len N-1) aligns elementwise with md[1:]-md[:-1].
         e_NEV_star_sing[1:, 0] = (
-            (
+            coeff
+            * (
                 error.survey.md[1:]
                 - error.survey.md[:-1]
             ) / 2
@@ -1812,8 +1815,10 @@ def XYM3L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
         )
         # Rev 5.11 "funny stuff": at SING station 1 the workbook uses the full
         # first interval, not the halved value (see ABXY precedent at line ~409).
+        # Rev 5.13 eq (34): M (coeff[0]) applies here too.
         e_NEV_star_sing[1, 0] = (
-            (error.survey.md[1] - error.survey.md[0])
+            coeff[0]
+            * (error.survey.md[1] - error.survey.md[0])
             * mag
         )
 
@@ -1896,15 +1901,20 @@ def XYM4L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
 
         e_NEV_star = error._e_NEV_star(e_DIA)
         e_NEV_star_sing = np.zeros_like(e_NEV)
+        # Rev 5.13 eq (21): e* carries VertWftFn including damping M (coeff).
+        # XYM4L coeff is len N (coeff[0]=1); coeff[1:] aligns with md[1:]-md[:-1].
         e_NEV_star_sing[1:, 1] = (
-            (
+            coeff[1:]
+            * (
                 error.survey.md[1:]
                 - error.survey.md[:-1]
             ) / 2
             * mag
         )
+        # Rev 5.13 eq (34): full first interval, with M (coeff[1]).
         e_NEV_star_sing[1, 1] = (
-            (
+            coeff[1]
+            * (
                 error.survey.md[1]
                 - error.survey.md[0]
             )
