@@ -20,14 +20,6 @@ welleng.errors.extract\_owsg\_codes\_generic module
    :undoc-members:
    :show-inheritance:
 
-welleng.errors.iscwsa\_mwd module
----------------------------------
-
-.. automodule:: welleng.errors.iscwsa_mwd
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 welleng.errors.tool\_errors module
 ----------------------------------
 
