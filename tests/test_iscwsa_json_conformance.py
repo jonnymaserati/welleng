@@ -28,12 +28,17 @@ JSON_ROOT = Path(__file__).parent.parent / "welleng" / "errors" / "iscwsa_json" 
 
 # (json filename, expected MATCH count, expected DIFFER count, expected
 # INTERP_FAILED count, expected NO_LEGACY count, total terms).
-# Numbers come from the audited 2026-04-16 baseline run.
+# Re-baselined 2026-06-25 after fixing standard_test_survey() (it built a
+# 90-radian well by double-converting inc; see conformance.py). On the
+# corrected well one singular term per model moves DIFFER -> MATCH: the
+# vertical section now exercises the interpreter's SING substitution, which
+# agrees with the legacy hand-coded singular branch (was masked by the broken
+# well, where no station had inc < 0.0001 deg). Totals unchanged.
 EXPECTED = [
-    ("MWD+SRGM.json",   28, 2, 4, 1, 35),
-    ("GYRO-NS.json",     5, 1, 5, 7, 18),
-    ("GYRO-NS-CT.json",  5, 1, 7, 6, 19),
-    ("GYRO-MWD.json",    5, 1, 5, 7, 18),
+    ("MWD+SRGM.json",   29, 1, 4, 1, 35),
+    ("GYRO-NS.json",     6, 0, 5, 7, 18),
+    ("GYRO-NS-CT.json",  6, 0, 7, 6, 19),
+    ("GYRO-MWD.json",    6, 0, 5, 7, 18),
 ]
 
 
