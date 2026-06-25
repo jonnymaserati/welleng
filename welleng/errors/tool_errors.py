@@ -465,14 +465,17 @@ class ToolError:
     # (e_DIA = state * mag * scale -- see SPE 90408-PA Eqs 5c / 6c):
     #   - "drift"       : linear running integral, h_i = h_{i-1} + dD/c/sin
     #   - "random_walk" : quadrature running walk, h_i = sqrt(h_{i-1}^2 + dD/c/sin^2)
-    # XYZ variants (SPE 90408 Table 6) accumulate with NO sin(I) factor --
-    # the formula difference lives entirely in the JSON azimuth_formula; only
-    # the var name + accumulation mode are registered here.
+    # XYZ variants (SPE 90408 Table 6) accumulate with NO sin(I) factor and
+    # Z variants (Table 8) with a 1/cos(I) factor -- the formula difference
+    # lives entirely in the JSON azimuth_formula; only the var name +
+    # accumulation mode are registered here.
     _RECURRENCE_VARS = {
         "XY_Gyro_Drift": "drift",
         "XY_Gyro_Random_Walk": "random_walk",
         "XYZ_Gyro_Drift": "drift",
         "XYZ_Gyro_Random_Walk": "random_walk",
+        "Z_Gyro_Drift": "drift",
+        "Z_Gyro_Random_Walk": "random_walk",
     }
 
     def _recurrence_var(self, formula):
@@ -516,18 +519,39 @@ class ToolError:
         formula = term["azimuth_formula"]
         n = len(bindings["MD"])
         inc = bindings["Inc"]
+        inc_deg = np.degrees(inc)
+
+        # A recurrence term is either:
+        #  (a) zone-gated: ``inc_min_deg``/``inc_max_deg`` define the active
+        #      inclination window (e.g. Model #4's z-continuous 0-17deg and
+        #      xy-continuous 17-150deg). ``carry_above_max`` freezes the
+        #      accumulated value above the window (SPE 90408 App. C Box 12,
+        #      "non-actual mode preservation" -- a continuous source that has
+        #      handed off to another mode preserves its last value as a
+        #      systematic carry); below the window the term has not yet
+        #      started (zero). The z- and xy-continuous are independent error
+        #      SOURCES summed in the covariance -- no cross-seeding needed.
+        #  (b) single-gate (default): accumulate above the
+        #      ``XY Static Gyro End Inc`` gate, reset below. (Models #3/#5/#6
+        #      and the from-station-0 case via a negative gate.)
+        lo_deg = term.get("inc_min_deg")
+        hi_deg = term.get("inc_max_deg")
+        zoned = lo_deg is not None or hi_deg is not None
+        carry = bool(term.get("carry_above_max"))
+        lo = -np.inf if lo_deg is None else float(lo_deg)
+        hi = np.inf if hi_deg is None else float(hi_deg)
 
         gate = hdr.get("XY Static Gyro End Inc")
-        if gate is None or "GXYRunningSpeed" not in bindings:
+        if "GXYRunningSpeed" not in bindings or (gate is None and not zoned):
             warnings.warn(
-                f"continuous-gyro term {code!r} needs 'XY Static Gyro End Inc' "
-                f"and 'GXYRunningSpeed' tool parameters (JSON parameters block); "
-                f"missing -> term contributes zero covariance.",
+                f"continuous-gyro term {code!r} needs 'GXYRunningSpeed' (and, "
+                f"unless inc-zoned, 'XY Static Gyro End Inc') tool parameters "
+                f"(JSON parameters block); missing -> zero covariance.",
                 RuntimeWarning,
             )
             zeros = np.zeros((n, 3))
             return self.e._generate_error(code, zeros, propagation, NEV=True)
-        gate = float(gate)
+        gate = float(gate) if gate is not None else -np.inf
 
         # Per-station scalar bindings reused each step (running speed,
         # earth rate, NRF, ... already live in `bindings`).
@@ -536,7 +560,13 @@ class ToolError:
         state = 0.0
         states = np.zeros(n)
         for k in range(1, n):
-            if inc[k] > gate:
+            if zoned:
+                active = lo <= inc_deg[k] <= hi
+                frozen = carry and inc_deg[k] > hi
+            else:
+                active = inc[k] > gate
+                frozen = False
+            if active:
                 step_ns = dict(base)
                 step_ns.update({
                     "MD": float(bindings["MD"][k]),
@@ -548,8 +578,10 @@ class ToolError:
                     var: state,
                 })
                 state = float(evaluate_formula(formula, step_ns))
+            elif frozen:
+                pass  # above the window: preserve the handed-off value
             else:
-                state = 0.0  # below gate: continuous survey not running
+                state = 0.0  # outside the active survey: not running / reset
             states[k] = state
 
         unit = term.get("units") or term.get("unit") or "-"

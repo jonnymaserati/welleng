@@ -7,11 +7,21 @@ implementation agrees to within +/-1% of every tabulated value (or +/-2 units
 where the value is < 200), "verified within these limits by independent
 implementations".
 
-This pins the implemented Example Models on the ISCWSA standard wells:
+This pins the implemented Example Models on the ISCWSA standard wells (all
+six Appendix D models now covered):
   - **Model #1** XY accelerometer + XY stationary gyro (0-150 deg).
+  - **Model #2** XY accel + external-reference init (constant 5deg azimuth)
+    + Z continuous gyro (Table 8, /cos -> diverges at 90deg, so the paper
+    blanks 5400/8000). Continuous from station 0 (negative gate).
   - **Model #3** XYZ accel + XY static gyro (0-17) + XY continuous gyro
     (17-150) -- the hybrid, exercising inc gating + the stationary->continuous
     initialisation-seed carry (App. C Fig C1, boxes 9/12).
+  - **Model #4** XY accel cant 17deg + XY stationary init 3deg + TWO
+    continuous zones: Z (Table 8, /cos) 0-17deg and XY (Table 7, /sin)
+    17-150deg. The z/xy continuous are independent error sources, each
+    accumulating in its zone and frozen (carried) above it (App. C box 12);
+    summed in covariance, no cross-seeding. (Cant switching k never fires --
+    Well #1 max inc = 90deg, so k=+1 throughout.)
   - **Model #5** XYZ accel + XYZ stationary (init at first station) + XYZ
     continuous gyro (Tables 3 + 6). The XYZ continuous recurrence has no
     sin(I) factor; init_inc<0 => seed at the first station + continuous gate
@@ -102,6 +112,23 @@ REF = {
         5400: [44826, -11964, -14, 3376, -39, 136],
         8000: [128301, -34301, -16, 9472, -38, 289],
     },
+    # Model #2: XY accel + external-reference init (5deg) + Z continuous gyro
+    # (Table 8, /cos -> diverges as inc->90deg, so 5400/8000 are blank in the
+    # paper). Model #4: XY accel cant17 + XY stationary init 3deg + two
+    # continuous zones (Z 0-17deg /cos, XY 17-150deg /sin), the independent
+    # z/xy sources summed (App. C box 12).
+    ("well1", "model_2"): {
+        1200: [19, 0, 0, 18, 0, 2],
+        2100: [1446, -376, -2, 144, -6, 9],
+        5100: [86999, -23272, -18, 6400, -49, 137],
+    },
+    ("well1", "model_4"): {
+        1200: [19, 0, 0, 18, 0, 2],
+        2100: [940, -240, -2, 108, -6, 9],
+        5100: [46086, -12308, -15, 3456, -41, 124],
+        5400: [55449, -14814, -15, 4143, -43, 143],
+        8000: [183899, -49206, -22, 13470, -54, 396],
+    },
     # Well #2 (Table E2) in ft / ft^2 (checkpoints in ft).
     ("well2", "model_1"): {
         2000: [53, 0, 0, 49, 0, 10],
@@ -134,7 +161,8 @@ REF = {
 }
 
 FIXTURE = {
-    "model_1": "example_1.json", "model_3": "example_3.json",
+    "model_1": "example_1.json", "model_2": "example_2.json",
+    "model_3": "example_3.json", "model_4": "example_4.json",
     "model_5": "example_5.json", "model_6": "example_6.json",
 }
 
