@@ -7,11 +7,17 @@ implementation agrees to within +/-1% of every tabulated value (or +/-2 units
 where the value is < 200), "verified within these limits by independent
 implementations".
 
-This pins the two implemented Example Models on the ISCWSA standard wells:
+This pins the implemented Example Models on the ISCWSA standard wells:
   - **Model #1** XY accelerometer + XY stationary gyro (0-150 deg).
   - **Model #3** XYZ accel + XY static gyro (0-17) + XY continuous gyro
     (17-150) -- the hybrid, exercising inc gating + the stationary->continuous
     initialisation-seed carry (App. C Fig C1, boxes 9/12).
+  - **Model #5** XYZ accel + XYZ stationary (init at first station) + XYZ
+    continuous gyro (Tables 3 + 6). The XYZ continuous recurrence has no
+    sin(I) factor; init_inc<0 => seed at the first station + continuous gate
+    set negative so drift/RW accumulate from station 0 (incl. the vertical).
+  - **Model #6** XYZ accel + XYZ stationary gyro (Table 3, 0-150). XYZ
+    stationary terms lack the 1/cosI factor so they do not diverge at 90 deg.
 
 Unlike the conformance harness (which compares the JSON interpreter against
 the legacy welleng weight functions and so cancels any common scale error),
@@ -45,7 +51,6 @@ full known-differences list.
 from __future__ import annotations
 
 import json
-import re
 import warnings
 from pathlib import Path
 
@@ -57,7 +62,6 @@ from welleng.survey import Survey, SurveyHeader
 from welleng.errors.tool_errors import _json_to_em_adapter
 
 DATA = Path(__file__).parent / "test_data"
-DIAG = Path(__file__).parents[1] / "data" / "iscwsa" / "diagnostics"
 FT = 0.3048          # foot -> metre
 FT2 = FT * FT        # ft^2 -> m^2
 
@@ -80,6 +84,23 @@ REF = {
         5100: [45445, -12136, -13, 3408, -38, 120],
         5400: [54685, -14608, -14, 4085, -39, 136],
         8000: [181521, -48567, -16, 13296, -38, 289],
+    },
+    # Model #5: XYZ accel + XYZ stationary (init at first station) + XYZ
+    # continuous gyro (Table 3 + 6). Model #6: XYZ accel + XYZ stationary
+    # (Table 3, full range). Both Well #1.
+    ("well1", "model_5"): {
+        1200: [19, 0, 0, 18, 0, 2],
+        2100: [891, -226, -2, 104, -6, 9],
+        5100: [43571, -11635, -13, 3274, -38, 120],
+        5400: [52430, -14005, -14, 3924, -39, 136],
+        8000: [174424, -46668, -16, 12788, -38, 289],
+    },
+    ("well1", "model_6"): {
+        1200: [19, 0, 0, 18, 0, 2],
+        2100: [758, -191, -2, 94, -6, 9],
+        5100: [37936, -10122, -13, 2867, -38, 120],
+        5400: [44826, -11964, -14, 3376, -39, 136],
+        8000: [128301, -34301, -16, 9472, -38, 289],
     },
     # Well #2 (Table E2) in ft / ft^2 (checkpoints in ft).
     ("well2", "model_1"): {
@@ -112,7 +133,10 @@ REF = {
     },
 }
 
-FIXTURE = {"model_1": "example_1.json", "model_3": "example_3.json"}
+FIXTURE = {
+    "model_1": "example_1.json", "model_3": "example_3.json",
+    "model_5": "example_5.json", "model_6": "example_6.json",
+}
 
 # Combos not yet within band -- documented frame / re-initialisation gaps
 # (see module docstring). xfail non-strict: passing cells are fine too.
@@ -150,39 +174,33 @@ def _build_well1() -> Survey:
                       azi=np.array(sv["azi"]), header=sh)
 
 
-def _build_well_from_dat(num: int) -> Survey:
-    """ISCWSA Standard Test Well #2/#3 geometry + reference params from the
-    diagnostics .dat. The per-station ``SURVEY MD INC AZT TF TVD MODE`` lines
-    give md/inc/azt (degrees); the MWD covariances in the file are ignored.
-    azimuth is true-referenced (AZT)."""
-    txt = (DIAG / f"ErrorModelDiagnostics_Rev5-1_ISCWSA#{num}.dat").read_text()
-    m = re.search(
-        r"Latitude:\s*([-\d.]+).*BTotal:\s*([-\d.]+).*Dip:\s*([-\d.]+)"
-        r".*Declination:\s*([-\d.]+).*GTotal:\s*([-\d.]+)", txt)
-    lat, b, dip, decl, g = map(float, m.groups())
-    rows = []
-    for ln in txt.splitlines():
-        if ln.startswith("SURVEY"):
-            f = ln.split()
-            if len(f) >= 6:
-                try:
-                    rows.append((float(f[1]), float(f[2]), float(f[3])))
-                except ValueError:
-                    continue
-    rows = np.array(rows)
+def _build_well_from_fixture(num: int) -> Survey:
+    """ISCWSA Standard Test Well #2/#3 geometry + reference params from a
+    committed fixture (``tests/test_data/iscwsa_well{num}.json``).
+
+    The geometry was extracted from the (gitignored) ISCWSA diagnostics
+    ``.dat`` so that CI runs the validation against committed data rather than
+    skipping it. MD in metres, inc/azi in degrees, azimuth true-referenced;
+    the .dat's MWD covariances are not used (we validate against SPE 90408
+    App. E, not the MWD numbers)."""
+    d = json.loads((DATA / f"iscwsa_well{num}.json").read_text())
+    h, sv = d["header"], d["survey"]
     sh = SurveyHeader(
-        name=f"iscwsa-{num}", latitude=lat, b_total=b, dip=dip,
-        declination=decl, convergence=0.0, G=g, azi_reference="true")
+        name=f"iscwsa-{num}", latitude=h["latitude"], b_total=h["b_total"],
+        dip=h["dip"], declination=h["declination"], convergence=0.0,
+        G=h["G"], azi_reference="true")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        return Survey(md=rows[:, 0], inc=rows[:, 1], azi=rows[:, 2], header=sh)
+        return Survey(md=np.array(sv["md"]), inc=np.array(sv["inc"]),
+                      azi=np.array(sv["azi"]), header=sh)
 
 
-# well -> (builder, depth_to_m, cov_to_ref_unit). Well #2 is reported in feet.
+# well -> (builder, depth_to_m, cov_to_ref_unit). Well #2 is reported in feet
+# by App. E (geometry is metric; convert the ft checkpoints + ft^2 covariances).
 WELLS = {
     "well1": (_build_well1, 1.0, 1.0),
-    "well2": (lambda: _build_well_from_dat(2), FT, 1.0 / FT2),
-    "well3": (lambda: _build_well_from_dat(3), 1.0, 1.0),
+    "well2": (lambda: _build_well_from_fixture(2), FT, 1.0 / FT2),
+    "well3": (lambda: _build_well_from_fixture(3), 1.0, 1.0),
 }
 
 
