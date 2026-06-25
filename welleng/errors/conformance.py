@@ -213,13 +213,20 @@ def standard_test_survey():
         name="iscwsa-test-1",
         latitude=h["latitude"], b_total=h["b_total"],
         dip=np.degrees(h["dip"]), declination=np.degrees(h["declination"]),
-        convergence=h.get("convergence", 0.0),
+        convergence=np.degrees(h.get("convergence", 0.0)),
         G=h["G"], azi_reference=h["azi_reference"],
     )
+    # NB: the JSON stores inc/azi already in DEGREES (max 90 / 75); only the
+    # header angles (dip/declination/convergence) are radians. Do NOT apply
+    # np.degrees() to inc/azi -- an earlier version did, producing a 90-RADIAN
+    # well. The conformance harness still passed because it only compares the
+    # interpreter vs legacy paths on the same survey (any common scale error
+    # cancels), but the well was physically nonsensical and never exercised
+    # the vertical-hole singular branch (no station had inc < 0.0001 deg).
     return we.survey.Survey(
         md=np.array(sv["md"]),
-        inc=np.degrees(np.array(sv["inc"])),
-        azi=np.degrees(np.array(sv["azi"])),
+        inc=np.array(sv["inc"]),
+        azi=np.array(sv["azi"]),
         header=sh,
     )
 
