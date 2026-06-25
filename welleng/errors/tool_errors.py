@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from numpy import sin, cos, tan, pi, sqrt
 from numpy.char import index
@@ -110,6 +111,20 @@ def _json_to_em_adapter(model: dict) -> dict:
         # carries no tortuosity (we synthesise a default).
         "Default Tortusity (rad/m)": 0.000572615,
     }
+    # Continuous / stationary gyro tool parameters. The ISCWSA Rev5 gyro
+    # weight functions (GXY-GD/GRW running integral, GXY-RN noise, and the
+    # static-gyro inclination gate) need per-tool calibration constants that
+    # the OWSG->ISCWSA converter does not yet have a schema home for. Until
+    # the schema carries them natively, surface whatever the `parameters`
+    # block provides so the interpreter can bind them (see _call_interpreter).
+    # NB: running speed in m/hr, inclination gates in radians.
+    for src_key, hdr_key in (
+        ("gxy_running_speed", "GXYRunningSpeed"),
+        ("xy_static_gyro_end_inc", "XY Static Gyro End Inc"),
+        ("noise_reduction_factor", "Noise Reduction Factor"),
+    ):
+        if src_key in pp:
+            header[hdr_key] = pp[src_key]
     codes = OrderedDict()
     for term in model.get("terms", []):
         name = term["name"]
@@ -304,22 +319,58 @@ class ToolError:
         """
         survey = self.e.survey
         n = len(survey.md)
+        md = np.asarray(survey.md, dtype=float)
+        inc = np.asarray(survey.inc_rad, dtype=float)
+        azt = np.asarray(survey.azi_true_rad, dtype=float)
+        azm = np.asarray(survey.azi_mag_rad, dtype=float)
+        azg = np.asarray(survey.azi_grid_rad, dtype=float)
+
+        # Previous-station ("...Prev") bindings: cross-station weight
+        # functions (e.g. the continuous-gyro running integral) reference
+        # the previous survey station. Index 0 has no predecessor, so it
+        # is padded with its own value (the gate below zeroes station 0's
+        # contribution anyway).
+        def _prev(arr):
+            return np.concatenate(([arr[0]], arr[:-1]))
+
+        # Per-tool calibration constants surfaced by the JSON adapter
+        # (see _json_to_em_adapter). EarthRate falls back to the standard
+        # sidereal value (15.041 deg/hr) used by the gyro-azimuth terms.
+        hdr = self.em.get("header", {}) if hasattr(self, "em") else {}
+        earth_rate = float(getattr(survey.header, "earth_rate", None) or 0.262516)
+        nrf = float(
+            hdr.get("Noise Reduction Factor")
+            if hdr.get("Noise Reduction Factor") is not None
+            else getattr(survey.header, "noise_reduction_factor", 1.0)
+        )
         bindings = {
-            "MD": np.asarray(survey.md, dtype=float),
-            "Inc": np.asarray(survey.inc_rad, dtype=float),
-            "AzT": np.asarray(survey.azi_true_rad, dtype=float),
-            "AzM": np.asarray(survey.azi_mag_rad, dtype=float),
-            "Az": np.asarray(survey.azi_grid_rad, dtype=float),
+            "MD": md, "Inc": inc, "AzT": azt, "AzM": azm, "Az": azg,
+            "MDPrev": _prev(md), "IncPrev": _prev(inc),
+            "AzTPrev": _prev(azt), "AzMPrev": _prev(azm), "AzPrev": _prev(azg),
             "TVD": np.asarray(survey.tvd, dtype=float),
             "Gfield": float(survey.header.G),
             "Dip": float(survey.header.dip),
             "BField": float(survey.header.b_total or 50000.0),
-            # EarthRate is needed by gyro-azimuth terms; standard value
-            # in rad/hr (15.041 deg/hr).
-            "EarthRate": 0.262516,
+            "EarthRate": earth_rate,
             "Latitude": np.radians(float(survey.header.latitude or 0.0)),
+            "NoiseReductionFactor": nrf,
             "RAD": np.pi / 180.0,
         }
+        if hdr.get("GXYRunningSpeed") is not None:
+            bindings["GXYRunningSpeed"] = float(hdr["GXYRunningSpeed"])
+
+        # Recurrence terms (continuous gyro): the azimuth formula references
+        # its own accumulated state from the previous station
+        # (XY_Gyro_Drift = running drift integral; XY_Gyro_Random_Walk =
+        # running random-walk). These cannot be evaluated by a single
+        # vectorised call -- evaluate them station-by-station with the
+        # static-gyro inclination gate, then return.
+        recur = self._recurrence_var(term["azimuth_formula"])
+        if recur is not None:
+            return self._call_interpreter_recurrence(
+                code, term, mag, propagation, bindings, recur, hdr
+            )
+
         try:
             d = evaluate_formula(term["depth_formula"], bindings)
             i = evaluate_formula(term["inclination_formula"], bindings)
@@ -358,6 +409,90 @@ class ToolError:
         unit = term.get("units") or term.get("unit") or "-"
         scale = _MAG_UNIT_TO_BASE.get(unit, 1.0)
         e_DIA = dpde * (mag * scale)
+        return self.e._generate_error(code, e_DIA, propagation, NEV=True)
+
+    # Recurrence (self-referential) state variables a continuous-gyro
+    # azimuth formula may carry, mapped to accumulation mode:
+    #   - "drift"       : linear running integral  (e_DIA = state * mag)
+    #   - "random_walk" : quadrature running walk   (e_DIA = state * sqrt(mag))
+    _RECURRENCE_VARS = {
+        "XY_Gyro_Drift": "drift",
+        "XY_Gyro_Random_Walk": "random_walk",
+    }
+
+    def _recurrence_var(self, formula):
+        """Return (var_name, mode) if `formula` references a recurrence
+        state variable, else None."""
+        if not isinstance(formula, str):
+            return None
+        for var, mode in self._RECURRENCE_VARS.items():
+            if var in formula:
+                return var, mode
+        return None
+
+    def _call_interpreter_recurrence(
+        self, code, term, mag, propagation, bindings, recur, hdr
+    ):
+        """Evaluate a continuous-gyro recurrence term station-by-station.
+
+        The azimuth formula advances an accumulated state from the previous
+        station's value; below the `XY Static Gyro End Inc` inclination gate
+        the continuous survey is not running, so the contribution is zero and
+        the accumulator resets. Magnitude placement follows the term's
+        accumulation mode (drift = linear, random_walk = quadrature variance
+        increment), reproducing the SPE 90408 Table 7 hand-coded weight
+        functions that the JSON+interpreter path replaced.
+        """
+        import warnings
+
+        var, mode = recur
+        formula = term["azimuth_formula"]
+        n = len(bindings["MD"])
+        inc = bindings["Inc"]
+
+        gate = hdr.get("XY Static Gyro End Inc")
+        if gate is None or "GXYRunningSpeed" not in bindings:
+            warnings.warn(
+                f"continuous-gyro term {code!r} needs 'XY Static Gyro End Inc' "
+                f"and 'GXYRunningSpeed' tool parameters (JSON parameters block); "
+                f"missing -> term contributes zero covariance.",
+                RuntimeWarning,
+            )
+            zeros = np.zeros((n, 3))
+            return self.e._generate_error(code, zeros, propagation, NEV=True)
+        gate = float(gate)
+
+        # Per-station scalar bindings reused each step (running speed,
+        # earth rate, NRF, ... already live in `bindings`).
+        base = {k: v for k, v in bindings.items() if np.isscalar(v)}
+
+        state = 0.0
+        states = np.zeros(n)
+        for k in range(1, n):
+            if inc[k] > gate:
+                step_ns = dict(base)
+                step_ns.update({
+                    "MD": float(bindings["MD"][k]),
+                    "MDPrev": float(bindings["MDPrev"][k]),
+                    "Inc": float(inc[k]),
+                    "IncPrev": float(bindings["IncPrev"][k]),
+                    "AzT": float(bindings["AzT"][k]),
+                    "AzTPrev": float(bindings["AzTPrev"][k]),
+                    var: state,
+                })
+                state = float(evaluate_formula(formula, step_ns))
+            else:
+                state = 0.0  # below gate: continuous survey not running
+            states[k] = state
+
+        unit = term.get("units") or term.get("unit") or "-"
+        scale = _MAG_UNIT_TO_BASE.get(unit, 1.0)
+        # drift accumulates the magnitude linearly; random-walk accumulates
+        # the variance, so the standard-deviation scale is sqrt(mag).
+        outer = (mag * scale) if mode == "drift" else math.sqrt(mag * scale)
+
+        e_DIA = np.zeros((n, 3))
+        e_DIA[:, 2] = states * outer
         return self.e._generate_error(code, e_DIA, propagation, NEV=True)
 
     def _initiate_func_dict(self):
