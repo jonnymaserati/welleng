@@ -19,7 +19,10 @@ the first-station override), so on high-frequency wells e* was short by a
 factor of M.
 """
 
+import warnings
+
 import numpy as np
+import pytest
 
 from welleng.survey import Survey, SurveyHeader
 
@@ -113,3 +116,86 @@ def test_highfreq_sing_covariance_matches_propagation():
     np.testing.assert_allclose(
         np.asarray(xym3.cov_NEV)[:, 0, 0], cov_exp, rtol=1e-12, atol=1e-14
     )
+
+
+# --------------------------------------------------------------------------
+# Broader SING-branch sweep across both MWD models
+# --------------------------------------------------------------------------
+
+def _err(md, inc, azi, model):
+    """Build an Error for an arbitrary geometry with magnetic params set, so
+    field-dependent terms (ABXY/MBXY/...) evaluate on non-vertical wells."""
+    sh = SurveyHeader()
+    sh.error_model = model
+    sh.latitude = 60.0
+    sh.b_total = 50000.0
+    sh.dip = 72.0
+    sh.declination = -4.0
+    md = np.asarray(md, dtype=float)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return Survey(
+            md=md, inc=np.asarray(inc, float), azi=np.asarray(azi, float),
+            header=sh, error_model=model,
+        ).err
+
+
+@pytest.mark.parametrize("model, code, axis, damped", [
+    ("ISCWSA MWD Rev4",    "XYM3",  0, False),
+    ("ISCWSA MWD Rev4",    "XYM4",  1, False),
+    ("ISCWSA MWD Rev5.11", "XYM3E", 0, True),
+    ("ISCWSA MWD Rev5.11", "XYM4E", 1, True),
+])
+def test_misalignment_damping_only_for_rev5(model, code, axis, damped):
+    """Per Rev5.13 §4.6 the damping term M is applied to XYM3E/XYM4E (Rev5,
+    random) but NOT to XYM3/XYM4 (Rev4, systematic). On a vertical well,
+    halving the course length (ΔMD 10→5 m ⇒ M: 1→√2) must scale a mid SING
+    station's e* by pure geometry (×0.5) for the undamped Rev4 terms and by
+    geometry×M (×0.5√2) for the damped Rev5 terms. Guards both the #203 bug
+    (M missing from Rev5 e*) and its inverse (M wrongly added to Rev4)."""
+    z4 = np.zeros(4)
+    reg = _err(np.arange(0, 31, 10.0), z4, z4, model)   # ΔMD=10 ⇒ M=1
+    hf = _err(np.arange(0, 16, 5.0), z4, z4, model)     # ΔMD=5  ⇒ M=√2
+    es_reg = np.asarray(reg.errors.errors[code].e_NEV_star)[2, axis]
+    es_hf = np.asarray(hf.errors.errors[code].e_NEV_star)[2, axis]
+    ratio = es_hf / es_reg
+    expected = 0.5 * np.sqrt(2) if damped else 0.5
+    assert np.isclose(ratio, expected, rtol=1e-6), (
+        f"{model}/{code}: e* hf/reg ratio {ratio:.5f}, expected {expected:.5f}"
+    )
+
+
+def test_xym3e_xym4e_vertical_symmetry():
+    """On a vertical, due-north well the singular weight functions are [M,0,0]
+    (XYM3E) and [0,M,0] (XYM4E) per Rev5.13 §11.5, so XYM3E's NN covariance
+    must equal XYM4E's EE covariance station-for-station."""
+    md = np.arange(0, 121, 30.0)
+    err = _err(md, np.zeros_like(md), np.zeros_like(md), "ISCWSA MWD Rev5.11")
+    nn = np.asarray(err.errors.errors["XYM3E"].cov_NEV)[:, 0, 0]
+    ee = np.asarray(err.errors.errors["XYM4E"].cov_NEV)[:, 1, 1]
+    np.testing.assert_allclose(nn, ee, rtol=1e-12, atol=1e-14)
+
+
+@pytest.mark.parametrize("model", ["ISCWSA MWD Rev4", "ISCWSA MWD Rev5.11"])
+@pytest.mark.parametrize("geometry", ["vertical", "highfreq_vertical", "horizontal"])
+def test_all_sources_finite_on_singular_geometries(model, geometry):
+    """No error source may leak NaN/inf covariance on geometries that exercise
+    the singular (vertical) or 1/sin(inc) (near-horizontal) branches. A blanket
+    regression net for the whole weight-function table, not just the misalignment
+    family."""
+    if geometry == "vertical":
+        md = np.arange(0, 301, 30.0)
+        inc = np.zeros_like(md)
+    elif geometry == "highfreq_vertical":
+        md = np.arange(0, 51, 5.0)
+        inc = np.zeros_like(md)
+    else:  # near-horizontal: exercises 1/sin(inc) without an exact-90° cot blowup
+        md = np.arange(0, 301, 30.0)
+        inc = np.full_like(md, 89.0)
+        inc[0] = 0.0
+    err = _err(md, inc, np.zeros_like(md), model)
+    bad = sorted(
+        s for s, e in err.errors.errors.items()
+        if not np.all(np.isfinite(np.asarray(e.cov_NEV)))
+    )
+    assert not bad, f"{model}/{geometry}: non-finite covariance in {bad}"
