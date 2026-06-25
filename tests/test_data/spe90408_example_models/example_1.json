@@ -36,6 +36,6 @@
     {"name": "DRE", "value": 0.50,   "units": "m",   "propagation_mode": "Random",     "depth_formula": "1", "inclination_formula": "0", "azimuth_formula": "0"},
     {"name": "DSR", "value": 0.50,   "units": "m",   "propagation_mode": "Systematic", "depth_formula": "1", "inclination_formula": "0", "azimuth_formula": "0"},
     {"name": "DSC", "value": 0.001,  "units": "-",   "propagation_mode": "Well",       "depth_formula": "MD", "inclination_formula": "0", "azimuth_formula": "0"},
-    {"name": "DST", "value": 5.0e-7, "units": "1/m", "propagation_mode": "Global",     "depth_formula": "(TVD + MD * Cos(Inc)) * MD", "inclination_formula": "0", "azimuth_formula": "0"}
+    {"name": "DST", "value": 5.0e-7, "units": "1/m", "propagation_mode": "Global",     "depth_formula": "TVD * MD", "inclination_formula": "0", "azimuth_formula": "0"}
   ]
 }
