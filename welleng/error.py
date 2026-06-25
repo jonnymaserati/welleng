@@ -466,6 +466,17 @@ class ErrorModel():
         pass.  Returns array of shape (n, 18): columns 0-2 drk_dDepth,
         3-5 drk_dInc, 6-8 drk_dAz, 9-11 drkplus1_dDepth,
         12-14 drkplus1_dInc, 15-17 drkplus1_dAz.
+
+        Station-data convention: each station k's measurement error propagates
+        through BOTH adjacent minimum-curvature segments -- [k-1->k] (the
+        ``drk_*`` columns) and [k->k+1] (the ``drkplus1_*`` columns), summed
+        in ``_e_NEV`` as ``(drdp[:,0]+drdp[:,9])*D + ...``. This is the N+/-1
+        ("station above and below") variant, NOT the N-2/N-1 ("two previous")
+        variant. It is the variant that reproduces the ISCWSA MWD reference to
+        ~5e-5 (tests/test_iscwsa_mwd_error.py); SPE 90408 gyro Appendix E may
+        use the other interpretation, contributing to its ~0.6% inter-
+        implementation residual. See docs/dev/VALIDATION.md ("Known
+        differences") and ISCWSA "Test Profile Differences" (CDR-SM-03).
         '''
         survey = np.array(survey)
         n = len(survey)
