@@ -56,19 +56,24 @@ def _resolve_json_model(model_name: str) -> str | None:
     json_root = os.path.join(PATH, 'iscwsa_json')
     if not os.path.isdir(json_root):
         return None
+    # NB: listdir order is filesystem-dependent, so SORT every walk -- several
+    # tools share a `model_id` (e.g. GYRO-NS-CT.json and GYRO-NS-CT_Fl.json are
+    # both 'A021Gc'), and an unsorted walk resolved to an arbitrary one (passed
+    # locally, KeyError'd in CI). Sorting makes resolution deterministic and
+    # picks the base name over the `_Fl` ("floating") variant ('.' < '_').
     # Cheap path: filename matches model name directly.
-    for sub in os.listdir(json_root):
+    for sub in sorted(os.listdir(json_root)):
         sub_p = os.path.join(json_root, sub)
         if os.path.isdir(sub_p):
             cand = os.path.join(sub_p, f"{model_name}.json")
             if os.path.isfile(cand):
                 return cand
     # Fallback: walk every JSON, peek metadata for matching id / short_name.
-    for sub in os.listdir(json_root):
+    for sub in sorted(os.listdir(json_root)):
         sub_p = os.path.join(json_root, sub)
         if not os.path.isdir(sub_p):
             continue
-        for fn in os.listdir(sub_p):
+        for fn in sorted(os.listdir(sub_p)):
             if not fn.endswith(".json"):
                 continue
             path = os.path.join(sub_p, fn)
@@ -460,9 +465,14 @@ class ToolError:
     # (e_DIA = state * mag * scale -- see SPE 90408-PA Eqs 5c / 6c):
     #   - "drift"       : linear running integral, h_i = h_{i-1} + dD/c/sin
     #   - "random_walk" : quadrature running walk, h_i = sqrt(h_{i-1}^2 + dD/c/sin^2)
+    # XYZ variants (SPE 90408 Table 6) accumulate with NO sin(I) factor --
+    # the formula difference lives entirely in the JSON azimuth_formula; only
+    # the var name + accumulation mode are registered here.
     _RECURRENCE_VARS = {
         "XY_Gyro_Drift": "drift",
         "XY_Gyro_Random_Walk": "random_walk",
+        "XYZ_Gyro_Drift": "drift",
+        "XYZ_Gyro_Random_Walk": "random_walk",
     }
 
     def _recurrence_var(self, formula):
