@@ -44,14 +44,22 @@ Differences" (Copsegrove/Grindrod CDR-SM-03, 2020):
     applying ~1 deg convergence (azi_true = grid + conv) + rotating the output
     to grid closes Well #2 Model #1 to 0.9%. We don't have the authoritative
     per-well convergence in-repo, so those cells are xfail(non-strict).
-  - **Well #3 high-inc carry** (build->drop-to-vertical->rebuild-to-110deg):
-    investigated re-init and grid/true; NEITHER is the cause. Re-init never
-    fires (the drop-rebuild is within min_D=2500 m, so corrected App. C box 11
-    keeps the first init); and it is not a frame rotation (no single gamma
-    closes it -- 4030 m NE stays ~640x tol for all gamma). The residual is the
-    carried stationary g-dependent error projected at inc>90deg after the
-    rebuild -- a carry/mode-handoff subtlety, underspecified, left for
-    dedicated work. xfail with the evidence in XFAIL below.
+  - **Well #3 re-gyrocompass at the vertical re-entry** (RESOLVED for the
+    headline divergence; XFAIL keyed per depth). Well #3 builds to ~50deg,
+    drops back to vertical at 2460 m, then rebuilds (azi 283->193) past 90deg
+    to 110deg. For an XY/XY-hybrid gyro tool with a *positive* stationary
+    ``init_inc`` (Models #3/#4), App. C boxes 2/3/9 say that dropping below
+    ``init_inc`` switches the tool back to stationary mode and de-initialises
+    the continuous survey (``initialised = FALSE``); the rebuild then RE-
+    gyrocompasses, so the carried stationary init error d_A_init = dA(j,
+    act_init_inc, A(i)) uses the *rebuild* azimuth (283deg), not the first-
+    build azimuth (0deg). welleng previously froze the carry at the first
+    crossing (azi 0) for the whole well, so Model #3 NE was +1143 vs ref -147
+    (wrong sign). The per-continuous-section carry (``_carry_per_section`` in
+    ``tool_errors.py``, guarded on ``init_inc >= 0`` so the init-at-first-
+    station XYZ Models #5/#6 are untouched) corrects this: NN/NV/EV/VV now
+    close exactly and the NE sign flips correct. Residual at the two inc=110deg
+    checkpoints stays xfail -- see the per-(well,model,depth) reasons below.
 
 Model config + magnitudes: SPE 90408-MS Appendix D (D1-D7). Weight functions:
 Tables 1/2 (accel), 3/4 (gyro), 6/7 (continuous), 9 (misalignment Alt.3),
@@ -226,49 +234,65 @@ FIXTURE = {
     "model_5": "example_5.json", "model_6": "example_6.json",
 }
 
-# Combos not yet within band -- documented frame / re-initialisation gaps
-# (see module docstring). xfail non-strict: passing cells are fine too.
-# NB the two hypothesised fixes (continuous re-init, grid/true convergence)
-# were investigated and are NOT the cause (see each reason). Diagnosis verified
-# by per-term decomposition + a rotation sweep over gamma.
+# Cells not yet within band, keyed per (well, model, depth). xfail non-strict
+# (a passing cell is fine -- borderline cells must not break CI on a different
+# BLAS/numpy). Reasons are evidence-based: the re-gyrocompass mechanism (see
+# docstring) closed every Well #3 cell up to the rebuild; what remains is the
+# inc=110deg residual + the (separate) canted-accelerometer inc>90 gap.
 XFAIL = {
-    ("well2", "model_1"): "deep-NE residual ~2.7% (worst at 12500 ft); NOT a "
-                          "frame rotation (gamma=0 is best; an output rotation "
-                          "only worsens it) and NOT re-init -- consistent with "
-                          "the documented station-data convention (N+/-1 vs "
-                          "N-2/N-1) / precision inter-impl difference "
-                          "(CDR-SM-03), larger here than Well #1's 0.6% due to "
-                          "this well's geometry. The other cells are in band.",
-    ("well3", "model_1"): "build->drop-to-vertical->rebuild-to-110deg: the "
-                          "carried stationary g-dependent error blows up at "
-                          "high inc after the rebuild. NOT re-init (drop-rebuild "
-                          "is within min_D=2500 m, so the corrected App. C box "
-                          "11 keeps the first init -- re-init never fires) and "
-                          "NOT a frame rotation (no single gamma closes it; "
-                          "4030 m NE stays ~640x tol for all gamma). Root cause: "
-                          "stationary-carry / mode-handoff semantics for a "
-                          "g-dept source carried to inc>90deg -- underspecified, "
-                          "needs dedicated modelling.",
-    ("well3", "model_3"): "as well3/model_1 -- carried stationary g-dept error "
-                          "at high inc across the build-drop-rebuild (failures "
-                          "start at 3000 m and grow toward inc 110deg). Not "
-                          "re-init (within min_D), not a frame rotation; the "
-                          "carry/handoff at inc>90deg is the root cause.",
-    ("well3", "model_4"): "same Well #3 inc>90deg class as model_1/3. Two "
-                          "continuous zones (Z /cos 0-17deg, XY /sin 17-150deg) "
-                          "plus an XY-only stationary init; the XY-axis terms "
-                          "have no Z-gyro to bound them at the rebuild, so they "
-                          "diverge past 90deg. In band to 2460 m; first miss is "
-                          "NE @3000 m (got 192 / ref 167, Δ+24.9u, tol ±2u), then "
-                          "grows: @4030 m NN +11.9%, NE +16.9%, EE -12.3%, VV "
-                          "+79.1u (ref 44). Smaller than model_3 (whose NE hits "
-                          "+359%) because Model #4's well-behaved /sin XY-"
-                          "continuous dominates. Decisive evidence it's the XY-"
-                          "axis (no Z-gyro) carry: Models #5/#6 (XYZ stationary, "
-                          "ZB/ZRN/ZD terms) PASS the very same 3720/4030 inc>90 "
-                          "checkpoints. Not re-init (within min_D=2500 m), not a "
-                          "frame rotation -- the inc>90deg carry/mode-handoff for "
-                          "an XY-axis source is the root cause, underspecified.",
+    # Well #2 deep-NE precision: NOT a frame rotation (gamma=0 is best; an
+    # output rotation only worsens it) and NOT re-init -- consistent with the
+    # documented station-data convention (N+/-1 vs N-2/N-1) / inter-impl
+    # precision (CDR-SM-03), worst ~2.7% at 12500 ft. Shallower cells in band.
+    ("well2", "model_1", 7102): "Well #2 deep-NE inter-impl precision (CDR-SM-03)",
+    ("well2", "model_1", 9398): "Well #2 deep-NE inter-impl precision (CDR-SM-03)",
+    ("well2", "model_1", 12500): "Well #2 deep-NE inter-impl precision (CDR-SM-03)",
+    # Model #1 is a PURE stationary XY gyro (0-150deg, no init/carry/continuous)
+    # so the re-gyrocompass fix does not apply here. Residual is NN +5.0u (4.2%)
+    # at inc=75deg -- the live 1/cos-amplified XY-stationary g-dependent +
+    # misalignment terms (MIS3/GD3/GD4 dominate NN) summed across the build-
+    # drop-rebuild. No identified bug; small, of the same inter-impl precision
+    # class as Well #2. All other components in band. (Paper blanks Model #1
+    # past 3000 m: pure stationary 1/cos diverges at 90deg.)
+    ("well3", "model_1", 3000): "pure XY-stationary (no carry); NN +5.0u/4.2% "
+                                "at inc=75 -- inter-impl precision, not the carry",
+    # Model #3 (XY stationary 0-17 + XY continuous 17-150): the per-section
+    # re-gyrocompass carry is in force and closes NN/NV/EV/VV exactly and fixes
+    # the NE SIGN (was +1143, now -102 vs ref -147 at 4030). What remains:
+    #   3000m (inc 75): NE +2.4u (0.4u over the +/-2u band) -- essentially in band.
+    #   3720m (inc 110): NE +41u (ref 318); 4030m (inc 110): NE +45u, EE -2.3%.
+    # The residual is BRACKETED by the two inter-section carry-correlation
+    # limits: treating the two gyrocompassings as one fully-correlated source
+    # (single running sum) gives NE -102/+359; as fully independent (per-section
+    # reset) gives NE -452/+34; the reference (-147/+318) lies between, nearest
+    # full-correlation. So it is the precise correlation treatment of the carried
+    # init across the de-correlation boundary + inter-impl precision at the
+    # matrix's most extreme inclination (110deg), NOT a missing mechanism:
+    # the init-inc choice (gate vs stepped-back station), GXY reset on/off, and
+    # the section-coupling variants were all tested and none moves the residual
+    # to the reference.
+    ("well3", "model_3", 3000): "NE +2.4u (0.4u over +/-2u); re-gyrocompass fix "
+                                "in force, essentially in band",
+    ("well3", "model_3", 3720): "inc=110deg carry-correlation/precision residual "
+                                "(NE +41u); bracketed by full/zero inter-section "
+                                "correlation, ref nearest full-correlation",
+    ("well3", "model_3", 4030): "inc=110deg carry-correlation/precision residual "
+                                "(NE +45u, EE -2.3%); bracketed by full/zero "
+                                "inter-section correlation, ref nearest full-corr",
+    # Model #4 (canted-accel cant17 + XY stat init + Z cont 0-17 + XY cont
+    # 17-150): the re-gyrocompass fix closed 3000m (was NE +24.9u). 3720/4030
+    # fail on a DIFFERENT, unimplemented mechanism -- the canted-accelerometer
+    # 180deg tool-rotation switching at inc>90 (SPE 90408 Table 2 / Table 11
+    # note 5, operator k). The XY accels are canted 17deg, so AXY-B/SF/GB carry
+    # 1/cos(inc-17) and tan(inc-17) which diverge as (inc-17)->90deg (inc=107).
+    # Smoking gun: VV +79u @4030 (ref 44, got 123) -- a vertical/depth-channel
+    # blow-up the azimuth carry cannot cause. Decisive that it's the canted
+    # accel and not the gyro carry: Models #5/#6 (XYZ accel, no cant) PASS the
+    # same 3720/4030 inc>90 checkpoints. k-switching is separate, deferred work.
+    ("well3", "model_4", 3720): "canted-accel inc>90 switching (Table 2 / note 5) "
+                                "not implemented; 1/cos(inc-17) diverges (VV +15u)",
+    ("well3", "model_4", 4030): "canted-accel inc>90 switching (Table 2 / note 5) "
+                                "not implemented; 1/cos(inc-17) diverges (VV +79u)",
 }
 
 
@@ -362,13 +386,12 @@ def _cases():
     out = []
     for (well, model), ref in REF.items():
         for depth in ref:
-            p = pytest.param(well, model, depth, id=f"{well}-{model}-{depth}")
-            if (well, model) in XFAIL:
-                p = pytest.param(
-                    well, model, depth, id=f"{well}-{model}-{depth}",
-                    marks=pytest.mark.xfail(reason=XFAIL[(well, model)],
-                                            strict=False))
-            out.append(p)
+            marks = ()
+            if (well, model, depth) in XFAIL:
+                marks = pytest.mark.xfail(
+                    reason=XFAIL[(well, model, depth)], strict=False)
+            out.append(pytest.param(
+                well, model, depth, id=f"{well}-{model}-{depth}", marks=marks))
     return out
 
 
