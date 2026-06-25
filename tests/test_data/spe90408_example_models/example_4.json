@@ -1,0 +1,292 @@
+{
+  "metadata": {
+    "short_name": "SPE90408-EX4",
+    "long_name": "SPE 90408 Example Model #4 (XY accel cant17 + XY stat init 3deg + Z continuous 0-17 + XY continuous 17-150)",
+    "source": "SPE 90408-MS Torkildsen 2004 App. D D4/D7; gyro Tables 4 (init) + 8 (Z cont) + 7 (XY cont)",
+    "tool_type": "Gyroscopic",
+    "revision_number": 5
+  },
+  "parameters": {
+    "inc_min": 0,
+    "inc_max": 150,
+    "noise_reduction_factor": 1.0,
+    "gxy_running_speed": 2160,
+    "xy_static_gyro_end_inc": 0.05235987756
+  },
+  "terms": [
+    {
+      "name": "AXY-B",
+      "value": 0.005,
+      "units": "m/s2",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "1 / (Gfield * Cos(Inc - RAD * 17))",
+      "azimuth_formula": "0"
+    },
+    {
+      "name": "AXY-SF",
+      "value": 0.0005,
+      "units": "-",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "Tan(Inc - RAD * 17)",
+      "azimuth_formula": "0"
+    },
+    {
+      "name": "AXY-MIS",
+      "value": 0.05,
+      "units": "deg",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "1",
+      "azimuth_formula": "0"
+    },
+    {
+      "name": "AXY-GB",
+      "value": 0.005,
+      "units": "m/s2",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "Tan(Inc - RAD * 17) / Gfield",
+      "azimuth_formula": "0"
+    },
+    {
+      "name": "GB1",
+      "value": 0.1,
+      "units": "deg/hr",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "0",
+      "azimuth_formula": "Sin(AzT) / (EarthRate * Cos(Latitude) * Cos(Inc))",
+      "inc_max_deg": 3,
+      "carry_above_max": true
+    },
+    {
+      "name": "GB2",
+      "value": 0.1,
+      "units": "deg/hr",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "0",
+      "azimuth_formula": "Cos(AzT) / (EarthRate * Cos(Latitude))",
+      "inc_max_deg": 3,
+      "carry_above_max": true
+    },
+    {
+      "name": "GD1",
+      "value": 0.5,
+      "units": "deg/hr",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "0",
+      "azimuth_formula": "Cos(AzT) * Sin(Inc) / (EarthRate * Cos(Latitude))",
+      "inc_max_deg": 3,
+      "carry_above_max": true
+    },
+    {
+      "name": "GD2",
+      "value": 0.5,
+      "units": "deg/hr",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "0",
+      "azimuth_formula": "Cos(AzT) * Cos(Inc) / (EarthRate * Cos(Latitude))",
+      "inc_max_deg": 3,
+      "carry_above_max": true
+    },
+    {
+      "name": "GD3",
+      "value": 0.5,
+      "units": "deg/hr",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "0",
+      "azimuth_formula": "Sin(AzT) / (EarthRate * Cos(Latitude))",
+      "inc_max_deg": 3,
+      "carry_above_max": true
+    },
+    {
+      "name": "GD4",
+      "value": 0.5,
+      "units": "deg/hr",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "0",
+      "azimuth_formula": "Sin(AzT) * Tan(Inc) / (EarthRate * Cos(Latitude))",
+      "inc_max_deg": 3,
+      "carry_above_max": true
+    },
+    {
+      "name": "GSF",
+      "value": 0.001,
+      "units": "-",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "0",
+      "azimuth_formula": "Tan(Latitude) * Sin(AzT) * Tan(Inc)",
+      "inc_max_deg": 3,
+      "carry_above_max": true
+    },
+    {
+      "name": "GMIS",
+      "value": 0.05,
+      "units": "deg",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "0",
+      "azimuth_formula": "1 / (Cos(Latitude) * Cos(Inc))",
+      "inc_max_deg": 3,
+      "carry_above_max": true
+    },
+    {
+      "name": "GRN",
+      "value": 0.1,
+      "units": "deg/hr",
+      "propagation_mode": "Random",
+      "depth_formula": "0",
+      "inclination_formula": "0",
+      "azimuth_formula": "Sqr(1 - Cos(AzT) ^ 2 * Sin(Inc) ^ 2) / (EarthRate * Cos(Latitude) * Cos(Inc))",
+      "inc_max_deg": 3
+    },
+    {
+      "name": "GRN-INIT",
+      "value": 0.1,
+      "units": "deg/hr",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "0",
+      "azimuth_formula": "NoiseReductionFactor * Sqr(1 - Cos(AzT) ^ 2 * Sin(Inc) ^ 2) / (EarthRate * Cos(Latitude) * Cos(Inc))",
+      "inc_min_deg": 3,
+      "carry_only": true
+    },
+    {
+      "name": "Z-GD",
+      "value": 1.0,
+      "units": "deg/hr",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "0",
+      "azimuth_formula": "Z_Gyro_Drift + (MD - MDPrev) / (GXYRunningSpeed * Cos((Inc + IncPrev) / 2))",
+      "inc_min_deg": 0,
+      "inc_max_deg": 17,
+      "carry_above_max": true
+    },
+    {
+      "name": "Z-GRW",
+      "value": 1.0,
+      "units": "deg/sqr(hr)",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "0",
+      "azimuth_formula": "Sqr(Z_Gyro_Random_Walk ^ 2 + (MD - MDPrev) / (GXYRunningSpeed * Cos((Inc + IncPrev) / 2) ^ 2))",
+      "inc_min_deg": 0,
+      "inc_max_deg": 17,
+      "carry_above_max": true
+    },
+    {
+      "name": "XY-GD",
+      "value": 0.5,
+      "units": "deg/hr",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "0",
+      "azimuth_formula": "XY_Gyro_Drift + (MD - MDPrev) / (GXYRunningSpeed * Sin((Inc + IncPrev) / 2))",
+      "inc_min_deg": 17,
+      "inc_max_deg": 150
+    },
+    {
+      "name": "XY-GRW",
+      "value": 0.5,
+      "units": "deg/sqr(hr)",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "0",
+      "azimuth_formula": "Sqr(XY_Gyro_Random_Walk ^ 2 + (MD - MDPrev) / (GXYRunningSpeed * Sin((Inc + IncPrev) / 2) ^ 2))",
+      "inc_min_deg": 17,
+      "inc_max_deg": 150
+    },
+    {
+      "name": "MIS1",
+      "value": 0.1,
+      "units": "deg",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "Abs(Sin(Inc))",
+      "azimuth_formula": "0"
+    },
+    {
+      "name": "MIS2",
+      "value": 0.1,
+      "units": "deg",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "0",
+      "azimuth_formula": "-1"
+    },
+    {
+      "name": "MIS3",
+      "value": 0.2,
+      "units": "deg",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "Abs(Cos(Inc)) * Cos(AzT)",
+      "azimuth_formula": "-Abs(Cos(Inc)) * Sin(AzT) / Sin(Inc)",
+      "north_singularity": "1"
+    },
+    {
+      "name": "MIS4",
+      "value": 0.2,
+      "units": "deg",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "Abs(Cos(Inc)) * Sin(AzT)",
+      "azimuth_formula": "Abs(Cos(Inc)) * Cos(AzT) / Sin(Inc)",
+      "east_singularity": "1"
+    },
+    {
+      "name": "VSAG",
+      "value": 0.1,
+      "units": "deg",
+      "propagation_mode": "Systematic",
+      "depth_formula": "0",
+      "inclination_formula": "Sin(Inc)",
+      "azimuth_formula": "0"
+    },
+    {
+      "name": "DRE",
+      "value": 0.5,
+      "units": "m",
+      "propagation_mode": "Random",
+      "depth_formula": "1",
+      "inclination_formula": "0",
+      "azimuth_formula": "0"
+    },
+    {
+      "name": "DSR",
+      "value": 0.5,
+      "units": "m",
+      "propagation_mode": "Systematic",
+      "depth_formula": "1",
+      "inclination_formula": "0",
+      "azimuth_formula": "0"
+    },
+    {
+      "name": "DSC",
+      "value": 0.001,
+      "units": "-",
+      "propagation_mode": "Well",
+      "depth_formula": "MD",
+      "inclination_formula": "0",
+      "azimuth_formula": "0"
+    },
+    {
+      "name": "DST",
+      "value": 5e-07,
+      "units": "1/m",
+      "propagation_mode": "Global",
+      "depth_formula": "TVD * MD",
+      "inclination_formula": "0",
+      "azimuth_formula": "0"
+    }
+  ]
+}
