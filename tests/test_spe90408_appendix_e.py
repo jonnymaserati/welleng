@@ -20,8 +20,12 @@ six Appendix D models now covered):
     continuous zones: Z (Table 8, /cos) 0-17deg and XY (Table 7, /sin)
     17-150deg. The z/xy continuous are independent error sources, each
     accumulating in its zone and frozen (carried) above it (App. C box 12);
-    summed in covariance, no cross-seeding. (Cant switching k never fires --
-    Well #1 max inc = 90deg, so k=+1 throughout.)
+    summed in covariance, no cross-seeding. The canted XY accels carry the
+    180deg tool-rotation switching operator k (SPE 90408 Table 2 / Table 11
+    note 5: k=+1 for inc<=90, k=-1 for inc>90), so the inclination weights are
+    f(Inc - k*17deg) -- on Well #1 (max inc 90deg) k=+1 throughout, but on
+    Well #3 (inc to 110deg) k flips above 90deg, keeping cos(Inc - k*17) finite
+    past inc=90+17 instead of diverging at inc=107.
   - **Model #5** XYZ accel + XYZ stationary (init at first station) + XYZ
     continuous gyro (Tables 3 + 6). The XYZ continuous recurrence has no
     sin(I) factor; init_inc<0 => seed at the first station + continuous gate
@@ -237,8 +241,11 @@ FIXTURE = {
 # Cells not yet within band, keyed per (well, model, depth). xfail non-strict
 # (a passing cell is fine -- borderline cells must not break CI on a different
 # BLAS/numpy). Reasons are evidence-based: the re-gyrocompass mechanism (see
-# docstring) closed every Well #3 cell up to the rebuild; what remains is the
-# inc=110deg residual + the (separate) canted-accelerometer inc>90 gap.
+# docstring) closed every Well #3 cell up to the rebuild, and the canted-accel
+# k-switching (Table 2 / note 5) closed the inc>90 depth-channel divergence for
+# Model #4 (VV @4030 was +79u, now in band). What remains is the inc=110deg
+# carried-init azimuth-correlation residual -- whole-cell here, element-scoped
+# (see XFAIL_ELEMENTS) for Model #4 where the depth channel now closes.
 XFAIL = {
     # Well #2 deep-NE precision: NOT a frame rotation (gamma=0 is best; an
     # output rotation only worsens it) and NOT re-init -- consistent with the
@@ -280,19 +287,42 @@ XFAIL = {
                                 "(NE +45u, EE -2.3%); bracketed by full/zero "
                                 "inter-section correlation, ref nearest full-corr",
     # Model #4 (canted-accel cant17 + XY stat init + Z cont 0-17 + XY cont
-    # 17-150): the re-gyrocompass fix closed 3000m (was NE +24.9u). 3720/4030
-    # fail on a DIFFERENT, unimplemented mechanism -- the canted-accelerometer
-    # 180deg tool-rotation switching at inc>90 (SPE 90408 Table 2 / Table 11
-    # note 5, operator k). The XY accels are canted 17deg, so AXY-B/SF/GB carry
-    # 1/cos(inc-17) and tan(inc-17) which diverge as (inc-17)->90deg (inc=107).
-    # Smoking gun: VV +79u @4030 (ref 44, got 123) -- a vertical/depth-channel
-    # blow-up the azimuth carry cannot cause. Decisive that it's the canted
-    # accel and not the gyro carry: Models #5/#6 (XYZ accel, no cant) PASS the
-    # same 3720/4030 inc>90 checkpoints. k-switching is separate, deferred work.
-    ("well3", "model_4", 3720): "canted-accel inc>90 switching (Table 2 / note 5) "
-                                "not implemented; 1/cos(inc-17) diverges (VV +15u)",
-    ("well3", "model_4", 4030): "canted-accel inc>90 switching (Table 2 / note 5) "
-                                "not implemented; 1/cos(inc-17) diverges (VV +79u)",
+    # 17-150): the re-gyrocompass fix closed 3000m (was NE +24.9u), and the
+    # canted-accel 180deg tool-rotation switching at inc>90 (SPE 90408 Table 2 /
+    # Table 11 note 5, operator k = +1 inc<=90 / -1 inc>90) is now implemented:
+    # the canted XY-accel inclination weights are f(Inc - k*17), so above 90deg
+    # the cant adds rather than subtracts and 1/cos(Inc - k*17) stays finite
+    # (previously 1/cos(107-17)=1/cos(90)->inf). That closed the depth/vertical
+    # channel at inc=110: VV @4030 was +79u (got 123 vs ref 44), now 43.7 (in
+    # band); NV/EV/VV all close, NE @3720 closes. What remains at 3720/4030 is
+    # the inc=110deg carried stationary-init azimuth residual (GD2-dominated --
+    # the same inter-section carry-correlation / inter-impl precision limit as
+    # Model #3), which now shows up element-scoped in the NE-plane (NN low / NE
+    # high / EE low, a slight error-ellipse rotation), not in the depth channel.
+    # Tracked per-element below so the closing elements (esp. VV) are asserted.
+}
+
+# Element-scoped residuals: for these (well, model, depth) the canted-accel
+# k-switching fix closed the depth channel (VV/NV/EV, + NE@3720), so those
+# elements are now HARD-ASSERTED. The listed elements remain a documented
+# inc=110deg carried-init azimuth-correlation residual (see Model #4 note
+# above and the Model #3 reasons) and are recorded xfail (non-strict).
+XFAIL_ELEMENTS = {
+    ("well3", "model_4", 3720): {
+        "elements": frozenset({"NN"}),
+        "reason": "inc=110deg carried stationary-init azimuth residual "
+                  "(GD2-dominated; same carry-correlation/inter-impl class as "
+                  "Model #3). Canted-accel k-switching closed NE/NV/EE/EV/VV "
+                  "(VV was +15u, now in band)",
+    },
+    ("well3", "model_4", 4030): {
+        "elements": frozenset({"NN", "NE", "EE"}),
+        "reason": "inc=110deg carried stationary-init azimuth residual "
+                  "(GD2-dominated; NN low/NE high/EE low = NE-plane ellipse "
+                  "rotation; same carry-correlation/inter-impl class as Model "
+                  "#3). Canted-accel k-switching closed the depth channel: "
+                  "VV was +79u (123 vs 44), now 43.7 in band; NV/EV also close",
+    },
 }
 
 
@@ -407,13 +437,23 @@ def test_appendix_e(well, model, depth):
            "EE": c[1, 1], "EV": c[1, 2], "VV": c[2, 2]}
     ref = dict(zip(("NN", "NE", "NV", "EE", "EV", "VV"), REF[(well, model)][depth]))
 
-    failures = []
+    # Element-scoped xfail: closing elements are hard-asserted; only the
+    # listed residual elements are allowed to miss band (recorded xfail).
+    xf = XFAIL_ELEMENTS.get((well, model, depth))
+    xf_elems = xf["elements"] if xf else frozenset()
+
+    failures, residual = [], []
     for name, gv in got.items():
         r = ref[name]
         ok = (abs(gv - r) <= ABS_TOL_SMALL if abs(r) < SMALL
               else abs((gv - r) / r) <= REL_TOL)
         if not ok:
-            failures.append(f"{name}: got {gv:.2f}, ref {r} (Δ {gv - r:+.2f})")
+            msg = f"{name}: got {gv:.2f}, ref {r} (Δ {gv - r:+.2f})"
+            (residual if name in xf_elems else failures).append(msg)
+    # Closing elements (incl. the canted-accel-fixed VV) must be in band.
     assert not failures, (
         f"SPE 90408 Appendix E {well} {model} @ {depth} outside ±1%/±2u:\n  "
         + "\n  ".join(failures))
+    # Documented residual element(s) still out of band -> record xfail.
+    if residual:
+        pytest.xfail(f"{xf['reason']}:\n  " + "\n  ".join(residual))

@@ -20,7 +20,7 @@
       "units": "m/s2",
       "propagation_mode": "Systematic",
       "depth_formula": "0",
-      "inclination_formula": "1 / (Gfield * Cos(Inc - RAD * 17))",
+      "inclination_formula": "1 / (Gfield * Cos(Inc - k * RAD * 17))",
       "azimuth_formula": "0"
     },
     {
@@ -29,7 +29,7 @@
       "units": "-",
       "propagation_mode": "Systematic",
       "depth_formula": "0",
-      "inclination_formula": "Tan(Inc - RAD * 17)",
+      "inclination_formula": "Tan(Inc - k * RAD * 17)",
       "azimuth_formula": "0"
     },
     {
@@ -47,7 +47,7 @@
       "units": "m/s2",
       "propagation_mode": "Systematic",
       "depth_formula": "0",
-      "inclination_formula": "Tan(Inc - RAD * 17) / Gfield",
+      "inclination_formula": "Tan(Inc - k * RAD * 17) / Gfield",
       "azimuth_formula": "0"
     },
     {
