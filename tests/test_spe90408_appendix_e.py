@@ -42,6 +42,23 @@ REF_E1_MODEL1 = {
     5100: [134488, -35992, -18, 9807, -49, 137],
 }
 
+# SPE 90408-MS Appendix E, Table E1, Example Model #3 (XYZ accel + XY static
+# gyro 0-17 deg + XY continuous gyro 17-150 deg) -- the hybrid stationary->
+# continuous model. Exercises the inclination gating + the stationary->
+# continuous initialisation-seed carry (App. C Fig C1, boxes 9/12).
+REF_E3_MODEL3 = {
+    1200: [19, 0, 0, 18, 0, 2],
+    2100: [923, -235, -2, 106, -6, 9],
+    5100: [45445, -12136, -13, 3408, -38, 120],
+    5400: [54685, -14608, -14, 4085, -39, 136],
+    8000: [181521, -48567, -16, 13296, -38, 289],
+}
+
+MODELS = {
+    "model_1": ("example_1.json", REF_E1_MODEL1),
+    "model_3": ("example_3.json", REF_E3_MODEL3),
+}
+
 # Paper's acceptance: within +/-1%, or +/-2 units where |value| < 200.
 REL_TOL = 0.01
 ABS_TOL_SMALL = 2.0
@@ -109,10 +126,14 @@ def _example_model_cov(survey: Survey, fixture: str) -> np.ndarray:
     return cov
 
 
-@pytest.mark.parametrize("depth", list(REF_E1_MODEL1))
-def test_example_model_1_appendix_e(depth):
+@pytest.mark.parametrize(
+    "model,depth",
+    [(m, d) for m, (_, ref) in MODELS.items() for d in ref],
+)
+def test_appendix_e(model, depth):
+    fixture, ref_all = MODELS[model]
     survey = _build_well1()
-    cov = _example_model_cov(survey, "example_1.json")
+    cov = _example_model_cov(survey, fixture)
 
     md = np.asarray(survey.md)
     i = int(np.argmin(np.abs(md - depth)))
@@ -125,7 +146,7 @@ def test_example_model_1_appendix_e(depth):
         "NN": c[0, 0], "NE": c[0, 1], "NV": c[0, 2],
         "EE": c[1, 1], "EV": c[1, 2], "VV": c[2, 2],
     }
-    ref = dict(zip(("NN", "NE", "NV", "EE", "EV", "VV"), REF_E1_MODEL1[depth]))
+    ref = dict(zip(("NN", "NE", "NV", "EE", "EV", "VV"), ref_all[depth]))
 
     failures = []
     for name, g in got.items():
@@ -135,9 +156,8 @@ def test_example_model_1_appendix_e(depth):
         else:
             ok = abs((g - r) / r) <= REL_TOL
         if not ok:
-            failures.append(f"{name}: got {g:.2f}, ref {r} "
-                            f"(Δ {g - r:+.2f})")
+            failures.append(f"{name}: got {g:.2f}, ref {r} (Δ {g - r:+.2f})")
     assert not failures, (
-        f"SPE 90408 Appendix E Model #1 @ {depth} m outside ±1%/±2u:\n  "
+        f"SPE 90408 Appendix E {model} @ {depth} m outside ±1%/±2u:\n  "
         + "\n  ".join(failures)
     )

@@ -413,6 +413,17 @@ class ToolError:
             for f in ("depth_formula", "inclination_formula", "azimuth_formula")
         ):
             dpde[0] = 0.0
+        # Per-term inclination gating + stationary->continuous carry.
+        # A term may be active only within [inc_min_deg, inc_max_deg]
+        # (e.g. a stationary-gyro term that runs below the static-gyro end
+        # inclination). ``carry_above_max`` freezes the weight at the gate
+        # (inc = inc_max) for stations above it -- the stationary azimuth
+        # error at the mode switch is carried as a constant initialisation
+        # error through the continuous zone (SPE 90408 "Initialization of
+        # Continuous Surveys"). The gate weight is interpolated at exactly
+        # inc_max (the paper notes covariance is underestimated otherwise).
+        if term.get("inc_min_deg") is not None or term.get("inc_max_deg") is not None:
+            dpde = self._apply_inc_gating(dpde, inc, term)
         # Convert the declared magnitude to welleng's SI base. OWSG xlsx
         # publishes magnitudes in the term's natural unit (deg, deg/hr,
         # m, ...); the propagation engine expects rad / m / m/s^2 /
@@ -546,6 +557,59 @@ class ToolError:
         e_DIA = np.zeros((n, 3))
         e_DIA[:, 2] = states * outer
         return self.e._generate_error(code, e_DIA, propagation, NEV=True)
+
+    def _dpde_at_inc(self, dpde, inc_deg, gate):
+        """Interpolate the per-axis weight (dpde row) at inc == gate, at the
+        first station where inclination crosses the gate. SPE 90408 App. C
+        Box 9 (act_init_inc): the initialisation weight is taken at the mode-
+        switch inclination, interpolated since a station rarely lands on it."""
+        above = np.where(inc_deg > gate)[0]
+        if above.size == 0:
+            return np.zeros(dpde.shape[1])
+        j = int(above[0])
+        if j == 0:
+            return dpde[0].copy()
+        lo_i, hi_i = inc_deg[j - 1], inc_deg[j]
+        if hi_i == lo_i:
+            return dpde[j].copy()
+        f = (gate - lo_i) / (hi_i - lo_i)
+        return dpde[j - 1] + f * (dpde[j] - dpde[j - 1])
+
+    def _apply_inc_gating(self, dpde, inc, term):
+        """Inclination-window gating + stationary->continuous carry.
+
+        - ``inc_min_deg``/``inc_max_deg``: term active only in that window;
+          outside contributes zero.
+        - ``carry_above_max``: above inc_max, freeze the weight at the gate
+          value (SPE 90408 App. C Box 12: stationary terms d_A(j,i)=d_A(j,i-1)
+          above the mode switch -> constant initialisation error carried
+          through the continuous zone).
+        - ``carry_only``: zero below inc_min, frozen at the gate value above
+          it (used for the systematic initialisation seed of a stationary
+          *random* term, which is carried systematic -- App. C Box 9).
+        """
+        inc_deg = np.degrees(inc)
+        lo = term.get("inc_min_deg")
+        hi = term.get("inc_max_deg")
+        lo = -np.inf if lo is None else float(lo)
+        hi = np.inf if hi is None else float(hi)
+        out = dpde.copy()
+        if term.get("carry_only"):
+            gate = lo
+            above = inc_deg > gate
+            gate_dpde = self._dpde_at_inc(dpde, inc_deg, gate)
+            out[:] = 0.0
+            out[above] = gate_dpde
+            return out
+        if term.get("carry_above_max") and np.isfinite(hi):
+            above = inc_deg > hi
+            gate_dpde = self._dpde_at_inc(dpde, inc_deg, hi)
+            out[above] = gate_dpde
+            out[inc_deg < lo] = 0.0
+            return out
+        active = (inc_deg >= lo) & (inc_deg <= hi)
+        out[~active] = 0.0
+        return out
 
     def _call_interpreter_singularity(self, e_DIA, term, bindings, sigma):
         """Build e_NEV / e_NEV_star with vertical-hole singularity substitution.
