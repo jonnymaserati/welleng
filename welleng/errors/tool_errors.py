@@ -617,6 +617,42 @@ class ToolError:
         f = (gate - lo_i) / (hi_i - lo_i)
         return dpde[j - 1] + f * (dpde[j] - dpde[j - 1])
 
+    def _carry_per_section(self, dpde, inc_deg, gate, below):
+        """Per-continuous-section stationary-init carry (SPE 90408 App. C
+        Boxes 2/3/9).
+
+        A gyro tool that surveys stationary below ``gate`` (= the stationary
+        ``init_inc``/``end_inc``) and continuous above it RE-INITIALISES the
+        continuous survey every time the well bore drops back below the gate
+        and rebuilds (Box 3 sets ``initialised = FALSE`` whenever inc < gate;
+        Box 9 then recomputes ``d_A_init(j) = dA(j, act_init_inc, A(i))`` at
+        the *new* initialisation point on the next entry into continuous
+        mode). The carried weight is therefore the gate-crossing value of the
+        MOST RECENT up-crossing -- using the azimuth at that crossing -- not a
+        single global value frozen at the first crossing.
+
+        Returns ``out`` with, for each station above ``gate``, the weight
+        interpolated at ``inc == gate`` on its own section's up-crossing.
+        Below the gate the station keeps its live stationary weight
+        (``below='live'``, ``carry_above_max``) or zero (``below='zero'``,
+        ``carry_only`` init seed).
+        """
+        out = dpde.copy() if below == "live" else np.zeros_like(dpde)
+        carried = None
+        for k in range(len(inc_deg)):
+            if inc_deg[k] > gate:
+                if carried is None:               # first station of a section
+                    if k == 0:
+                        carried = dpde[0].copy()
+                    else:
+                        lo_i, hi_i = inc_deg[k - 1], inc_deg[k]
+                        f = 0.0 if hi_i == lo_i else (gate - lo_i) / (hi_i - lo_i)
+                        carried = dpde[k - 1] + f * (dpde[k] - dpde[k - 1])
+                out[k] = carried
+            else:
+                carried = None                    # below gate: re-init pending
+        return out
+
     def _apply_inc_gating(self, dpde, inc, term):
         """Inclination-window gating + stationary->continuous carry.
 
@@ -629,21 +665,39 @@ class ToolError:
         - ``carry_only``: zero below inc_min, frozen at the gate value above
           it (used for the systematic initialisation seed of a stationary
           *random* term, which is carried systematic -- App. C Box 9).
+
+        When the tool has a positive stationary ``init_inc`` (``XY Static Gyro
+        End Inc`` >= 0) the carry RE-INITIALISES per continuous section
+        (``_carry_per_section``): a drop back below the gate followed by a
+        rebuild re-gyrocompasses, so the carried weight above the gate uses
+        the azimuth of the most-recent crossing, not the first. For a tool
+        that initialises at the first survey station (negative ``init_inc``,
+        e.g. an XYZ system, Table 11 note 2) there is no stationary mode to
+        drop into, so the original single global-first carry is kept.
         """
         inc_deg = np.degrees(inc)
         lo = term.get("inc_min_deg")
         hi = term.get("inc_max_deg")
         lo = -np.inf if lo is None else float(lo)
         hi = np.inf if hi is None else float(hi)
+        hdr = self.em.get("header", {}) if hasattr(self, "em") else {}
+        init_inc = hdr.get("XY Static Gyro End Inc")
+        per_section = init_inc is not None and float(init_inc) >= 0.0
         out = dpde.copy()
         if term.get("carry_only"):
             gate = lo
+            if per_section:
+                return self._carry_per_section(dpde, inc_deg, gate, below="zero")
             above = inc_deg > gate
             gate_dpde = self._dpde_at_inc(dpde, inc_deg, gate)
             out[:] = 0.0
             out[above] = gate_dpde
             return out
         if term.get("carry_above_max") and np.isfinite(hi):
+            if per_section:
+                out = self._carry_per_section(dpde, inc_deg, hi, below="live")
+                out[inc_deg < lo] = 0.0
+                return out
             above = inc_deg > hi
             gate_dpde = self._dpde_at_inc(dpde, inc_deg, hi)
             out[above] = gate_dpde
