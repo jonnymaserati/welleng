@@ -148,6 +148,34 @@ REF = {
         9398: [1540, -301, -68, 1133, -65, 218],
         12500: [3688, -4789, -31, 9211, -29, 441],
     },
+    ("well2", "model_2"): {
+        2000: [53, 0, 0, 49, 0, 10],
+        5000: [289, -381, -55, 11193, -2, 54],
+        7102: [6320, -10841, -106, 20872, -48, 130],
+        9398: [4687, -1816, -70, 1939, -66, 222],
+        12500: [12928, -19779, -25, 33482, -23, 481],
+    },
+    ("well2", "model_4"): {
+        2000: [53, 0, 0, 49, 0, 10],
+        5000: [278, -85, -55, 2714, -2, 54],
+        7102: [1875, -2473, -104, 5089, -48, 128],
+        9398: [1644, -356, -68, 1161, -64, 218],
+        12500: [3910, -5154, -29, 9810, -26, 450],
+    },
+    ("well2", "model_5"): {
+        2000: [53, 0, 0, 49, 0, 10],
+        5000: [277, -77, -55, 2482, -2, 54],
+        7102: [1682, -2187, -105, 4623, -48, 129],
+        9398: [1528, -380, -68, 1015, -65, 218],
+        12500: [3119, -3672, -31, 7034, -29, 441],
+    },
+    ("well2", "model_6"): {
+        2000: [53, 0, 0, 49, 0, 10],
+        5000: [277, -71, -55, 2290, -2, 54],
+        7102: [1264, -759, -105, 4308, -48, 129],
+        9398: [2340, -1922, -68, 11416, -65, 218],
+        12500: [11018, -14867, -31, 30376, -29, 441],
+    },
     # Well #3 (Table E3) in m / m^2. (Model #1 blank past 3000 m -- pure
     # stationary diverges as inc -> 90 deg; those checkpoints omitted.)
     ("well3", "model_1"): {
@@ -161,6 +189,34 @@ REF = {
         3000: [92, 41, -21, 2226, 1, 30],
         3720: [1229, 318, -25, 2202, -1, 40],
         4030: [1447, -147, -27, 2129, -1, 43],
+    },
+    # Model #2 on Well #3: Z continuous /cos -> diverges at 90deg, so the paper
+    # blanks 3720/4030 (as for Model #1). Only the sub-90deg checkpoints exist.
+    ("well3", "model_2"): {
+        1110: [13, 0, -2, 514, 0, 2],
+        2460: [51, 0, -18, 8352, 0, 20],
+        3000: [140, 714, -22, 8702, 1, 30],
+    },
+    ("well3", "model_4"): {
+        1110: [13, 0, -2, 155, 0, 2],
+        2460: [51, 0, -17, 2385, 0, 20],
+        3000: [92, 167, -21, 2488, 1, 30],
+        3720: [1196, 1444, -26, 2382, -1, 41],
+        4030: [1408, 1094, -27, 1423, -1, 44],
+    },
+    ("well3", "model_5"): {
+        1110: [13, 0, -2, 147, 0, 2],
+        2460: [50, 0, -17, 2227, 0, 20],
+        3000: [93, 184, -21, 2338, 1, 30],
+        3720: [1305, 1589, -25, 2220, -1, 40],
+        4030: [1540, 1200, -27, 1163, -1, 43],
+    },
+    ("well3", "model_6"): {
+        1110: [13, 0, -2, 134, 0, 2],
+        2460: [50, 0, -17, 1980, 0, 20],
+        3000: [89, 37, -21, 2024, 1, 30],
+        3720: [887, 139, -25, 2259, -1, 40],
+        4030: [923, -22, -27, 2948, -1, 43],
     },
 }
 
@@ -198,6 +254,21 @@ XFAIL = {
                           "start at 3000 m and grow toward inc 110deg). Not "
                           "re-init (within min_D), not a frame rotation; the "
                           "carry/handoff at inc>90deg is the root cause.",
+    ("well3", "model_4"): "same Well #3 inc>90deg class as model_1/3. Two "
+                          "continuous zones (Z /cos 0-17deg, XY /sin 17-150deg) "
+                          "plus an XY-only stationary init; the XY-axis terms "
+                          "have no Z-gyro to bound them at the rebuild, so they "
+                          "diverge past 90deg. In band to 2460 m; first miss is "
+                          "NE @3000 m (got 192 / ref 167, Δ+24.9u, tol ±2u), then "
+                          "grows: @4030 m NN +11.9%, NE +16.9%, EE -12.3%, VV "
+                          "+79.1u (ref 44). Smaller than model_3 (whose NE hits "
+                          "+359%) because Model #4's well-behaved /sin XY-"
+                          "continuous dominates. Decisive evidence it's the XY-"
+                          "axis (no Z-gyro) carry: Models #5/#6 (XYZ stationary, "
+                          "ZB/ZRN/ZD terms) PASS the very same 3720/4030 inc>90 "
+                          "checkpoints. Not re-init (within min_D=2500 m), not a "
+                          "frame rotation -- the inc>90deg carry/mode-handoff for "
+                          "an XY-axis source is the root cause, underspecified.",
 }
 
 
