@@ -64,6 +64,18 @@ we.error.get_error_models()
 > for the agreement matrix. Findings are filed upstream as schema-feedback
 > on the ISCWSA Discussions board.
 
+> **Absolute validation against SPE 90408.** The conformance harness above
+> compares the two welleng paths (and so cancels any shared scale error); on
+> top of that, the gyro weight functions are now checked against the
+> *published* position covariances in SPE 90408-MS (Torkildsen et al. 2004)
+> Appendix E — the first non-self-referential validation of welleng's gyro
+> output. Example Models #1 (XY stationary), #3 (XY stationary→continuous
+> hybrid), #5 (XYZ stationary→continuous) and #6 (XYZ stationary) reproduce
+> the Appendix E covariances on ISCWSA Well #1 to within the paper's ±1%
+> acceptance (the hybrid to ~0.1%), and Model #3 also on Well #2. See
+> `tests/test_spe90408_appendix_e.py`. The propagation engine itself is
+> independently exact — MWD `cov_NEVs` matches the ISCWSA reference to 5e-5.
+
 ## Support welleng
 welleng is fuelled by copious amounts of coffee, so if you wish to supercharge development please donate generously:
 

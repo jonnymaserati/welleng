@@ -252,6 +252,36 @@ class ErrorModel():
             )
         )
 
+    def _cov_NEV_carry_per_section(self, e_NEV, e_NEV_star, sections):
+        """Per-continuous-section RSS of the systematic running-sum outer
+        products (ISCWSA v5.13 Sec 7.3 pt14 / eqs 44-46).
+
+        A RANDOM carried initialisation seed (a ``carry_only`` term, e.g. the
+        gyro-compass init GRN-INIT) is propagated *systematic within* each
+        continuous survey section but RE-RANDOMISES at every re-initialisation
+        (a drop below the stationary init gate followed by a rebuild). Its
+        covariance is therefore the root-sum-square (independent sum) of the
+        per-section systematic running-sum outer products
+
+            Sum_sec (Sum_{i in sec} e)(Sum_{i in sec} e)^T
+
+        rather than one fully-correlated cumsum across the whole well
+        (Sum_all e)(Sum_all e)^T. ``sections`` are the maximal continuous runs
+        (``ToolError._continuous_sections``); a single section reduces this to
+        the standard single outer product, so non-re-initialised wells are
+        bit-identical. ``sigma_e_NEV`` (consumed by ``clearance.py``) is left
+        as the global running sum -- only ``cov_NEV`` becomes the RSS.
+        """
+        cov_NEV = np.zeros((e_NEV.shape[0], 3, 3))
+        for start, stop in sections:
+            mask = np.zeros(e_NEV.shape[0], dtype=bool)
+            mask[start:stop] = True
+            e_sec = np.where(mask[:, None], e_NEV, 0.0)
+            e_sec_star = np.where(mask[:, None], e_NEV_star, 0.0)
+            sigma_sec = self._sigma_e_NEV_systematic(e_sec, e_sec_star)
+            cov_NEV += cov_from_vec(sigma_sec)
+        return cov_NEV
+
     def _generate_error(
         self,
         code,
@@ -259,7 +289,8 @@ class ErrorModel():
         propagation='systematic',
         NEV=True,
         e_NEV=None,
-        e_NEV_star=None
+        e_NEV_star=None,
+        sections=None
     ):
         if not NEV:
             return e_DIA
@@ -268,9 +299,21 @@ class ErrorModel():
             if e_NEV is None:
                 e_NEV = self._e_NEV(e_DIA)
                 e_NEV_star = self._e_NEV_star(e_DIA)
-            if propagation in ('systematic', 'global', 'within_pad'):
+            if propagation in ('systematic', 'global', 'within_pad', 'well'):
+                # ``sigma_e_NEV`` stays the global systematic running sum (it
+                # is consumed by ``clearance.py``). When ``sections`` is given
+                # -- only for a ``carry_only`` random init seed under the
+                # per-section re-init regime -- ``cov_NEV`` becomes the eqs
+                # 44-46 per-section RSS instead of the single fully-correlated
+                # outer product. A single section reduces to the same result,
+                # so non-re-initialised wells are bit-identical.
                 sigma_e_NEV = self._sigma_e_NEV_systematic(e_NEV, e_NEV_star)
-                cov_NEV = cov_from_vec(sigma_e_NEV)
+                if sections is None:
+                    cov_NEV = cov_from_vec(sigma_e_NEV)
+                else:
+                    cov_NEV = self._cov_NEV_carry_per_section(
+                        e_NEV, e_NEV_star, sections
+                    )
             elif propagation == 'random':
                 sigma_e_NEV = np.cumsum(cov_from_vec(e_NEV), axis=0)
                 cov_NEV = np.add(
@@ -466,6 +509,17 @@ class ErrorModel():
         pass.  Returns array of shape (n, 18): columns 0-2 drk_dDepth,
         3-5 drk_dInc, 6-8 drk_dAz, 9-11 drkplus1_dDepth,
         12-14 drkplus1_dInc, 15-17 drkplus1_dAz.
+
+        Station-data convention: each station k's measurement error propagates
+        through BOTH adjacent minimum-curvature segments -- [k-1->k] (the
+        ``drk_*`` columns) and [k->k+1] (the ``drkplus1_*`` columns), summed
+        in ``_e_NEV`` as ``(drdp[:,0]+drdp[:,9])*D + ...``. This is the N+/-1
+        ("station above and below") variant, NOT the N-2/N-1 ("two previous")
+        variant. It is the variant that reproduces the ISCWSA MWD reference to
+        ~5e-5 (tests/test_iscwsa_mwd_error.py); SPE 90408 gyro Appendix E may
+        use the other interpretation, contributing to its ~0.6% inter-
+        implementation residual. See docs/dev/VALIDATION.md ("Known
+        differences") and ISCWSA "Test Profile Differences" (CDR-SM-03).
         '''
         survey = np.array(survey)
         n = len(survey)
