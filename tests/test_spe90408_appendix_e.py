@@ -276,12 +276,18 @@ XFAIL = {
     # limits: treating the two gyrocompassings as one fully-correlated source
     # (single running sum) gives NE -102/+359; as fully independent (per-section
     # reset) gives NE -452/+34; the reference (-147/+318) lies between, nearest
-    # full-correlation. So it is the precise correlation treatment of the carried
-    # init across the de-correlation boundary + inter-impl precision at the
-    # matrix's most extreme inclination (110deg), NOT a missing mechanism:
-    # the init-inc choice (gate vs stepped-back station), GXY reset on/off, and
-    # the section-coupling variants were all tested and none moves the residual
-    # to the reference.
+    # full-correlation -- which is what the PAPER prescribes: Table D7 sets
+    # bias1/2 + g-dept1-4 all Systematic, App. C box 9 carries the random init
+    # Systematic too, and the tie-on note warns shared-reference surveys are
+    # "highly correlated ... otherwise the covariance matrix is underestimated".
+    # So welleng's full-correlation MATCHES the paper; the residual is inter-impl
+    # precision at the matrix's most extreme inclination (110deg), NOT a missing
+    # mechanism. Tested + REFUTED (2026-06-26): per-section S/R de-correlation
+    # (Table 4 footnote (1)) overshoots NE to -434 (the full-decorr bound) and
+    # breaks EE +9.5%/NN -- and footnote (1) is "R when rotated between survey
+    # STATIONS" (per-station re-indexing), not the per-section re-gyrocompass
+    # anyway. init-inc choice (gate vs stepped-back), GXY reset on/off, N-2/N-1
+    # station convention, grid/true, min_D re-init: all tested, none closes it.
     ("well3", "model_3", 3000): "NE +2.4u (0.4u over +/-2u); re-gyrocompass fix "
                                 "in force, essentially in band",
     ("well3", "model_3", 3720): "inc=110deg carry-correlation/precision residual "
