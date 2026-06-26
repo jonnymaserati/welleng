@@ -248,8 +248,12 @@ FIXTURE = {
 # (see XFAIL_ELEMENTS) for Model #4 where the depth channel now closes.
 XFAIL = {
     # Well #2 deep-NE precision: NOT a frame rotation (gamma=0 is best; an
-    # output rotation only worsens it) and NOT re-init -- consistent with the
-    # documented station-data convention (N+/-1 vs N-2/N-1) / inter-impl
+    # output rotation only worsens it), NOT re-init, and NOT the station-data
+    # convention -- the latter was TESTED 2026-06-26 (an N-2/N-1 "backward"
+    # _drdp variant): it makes NE WORSE (-2.75%->-6.08% @12500 ft, ~-24% @9398),
+    # and Wells #1/#2 move in opposite directions, so no single convention fixes
+    # both. N+/-1 (centered) is the exact min-curvature chain-rule derivative AND
+    # the closest to the paper here. So this is confirmed irreducible inter-impl
     # precision (CDR-SM-03), worst ~2.7% at 12500 ft. Shallower cells in band.
     ("well2", "model_1", 7102): "Well #2 deep-NE inter-impl precision (CDR-SM-03)",
     ("well2", "model_1", 9398): "Well #2 deep-NE inter-impl precision (CDR-SM-03)",
