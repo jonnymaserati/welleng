@@ -35,6 +35,7 @@ _MAG_UNIT_TO_BASE = {
     "rad":     1.0,            # angles already in radians
     "deg":     np.pi / 180.0,  # angle: degrees -> radians
     "deg/hr":  np.pi / 180.0,  # gyro rate: deg/hr -> rad/hr
+    "deg/sqr(hr)": np.pi / 180.0,  # gyro random-walk coeff: deg/sqrt(hr) -> rad/sqrt(hr)
     "deg/nT":  np.pi / 180.0,  # B-field-coupled angle gradient
     "-":       1.0,            # dimensionless (scale factors)
     "":        1.0,            # missing unit treated as dimensionless
@@ -55,19 +56,24 @@ def _resolve_json_model(model_name: str) -> str | None:
     json_root = os.path.join(PATH, 'iscwsa_json')
     if not os.path.isdir(json_root):
         return None
+    # NB: listdir order is filesystem-dependent, so SORT every walk -- several
+    # tools share a `model_id` (e.g. GYRO-NS-CT.json and GYRO-NS-CT_Fl.json are
+    # both 'A021Gc'), and an unsorted walk resolved to an arbitrary one (passed
+    # locally, KeyError'd in CI). Sorting makes resolution deterministic and
+    # picks the base name over the `_Fl` ("floating") variant ('.' < '_').
     # Cheap path: filename matches model name directly.
-    for sub in os.listdir(json_root):
+    for sub in sorted(os.listdir(json_root)):
         sub_p = os.path.join(json_root, sub)
         if os.path.isdir(sub_p):
             cand = os.path.join(sub_p, f"{model_name}.json")
             if os.path.isfile(cand):
                 return cand
     # Fallback: walk every JSON, peek metadata for matching id / short_name.
-    for sub in os.listdir(json_root):
+    for sub in sorted(os.listdir(json_root)):
         sub_p = os.path.join(json_root, sub)
         if not os.path.isdir(sub_p):
             continue
-        for fn in os.listdir(sub_p):
+        for fn in sorted(os.listdir(sub_p)):
             if not fn.endswith(".json"):
                 continue
             path = os.path.join(sub_p, fn)
@@ -110,6 +116,29 @@ def _json_to_em_adapter(model: dict) -> dict:
         # carries no tortuosity (we synthesise a default).
         "Default Tortusity (rad/m)": 0.000572615,
     }
+    # Continuous / stationary gyro tool parameters. The ISCWSA Rev5 gyro
+    # weight functions (GXY-GD/GRW running integral, GXY-RN noise, and the
+    # static-gyro inclination gate) need per-tool calibration constants that
+    # the OWSG->ISCWSA converter does not yet have a schema home for. Until
+    # the schema carries them natively, surface whatever the `parameters`
+    # block provides so the interpreter can bind them (see _call_interpreter).
+    # NB: running speed in m/hr, inclination gates in radians.
+    for src_key, hdr_key in (
+        ("gxy_running_speed", "GXYRunningSpeed"),
+        ("xy_static_gyro_end_inc", "XY Static Gyro End Inc"),
+        ("noise_reduction_factor", "Noise Reduction Factor"),
+        # SPE 90408 App. C box-11 periodic re-initialisation (opt-in): the
+        # along-hole spacing min_D (metres) at which a continuous gyro survey
+        # is re-gyrocompassed to bound drift. Surfaced so the ToolError can
+        # bind it; the feature only ACTIVATES when `periodic_reinit` is true
+        # (see ToolError._resolve_periodic_reinit).
+        ("min_dist_between_initialisations", "Min Dist Between Initialisations"),
+    ):
+        if src_key in pp:
+            header[hdr_key] = pp[src_key]
+    # Opt-in switch for the (theoretical, UNVALIDATED) periodic re-init. Always
+    # present (default False) so the ToolError can branch without a KeyError.
+    header["Periodic Reinit"] = bool(pp.get("periodic_reinit", False))
     codes = OrderedDict()
     for term in model.get("terms", []):
         name = term["name"]
@@ -221,6 +250,14 @@ class ToolError:
                 "Model not suitable for this well path inclination"
             )
 
+        # SPE 90408 App. C box-11 periodic re-initialisation (opt-in, default
+        # OFF, UNVALIDATED). ``self._min_D`` is the along-hole re-init spacing
+        # in metres when ENABLED, else None -> every downstream caller (the
+        # stationary-init carry + the continuous recurrence) takes the
+        # byte-identical validated path. Resolving here also emits the one-shot
+        # advisory warnings; all are warn-and-continue, never fatal.
+        self._min_D = self._resolve_periodic_reinit()
+
         self._initiate_func_dict()
 
         for err in self.em['codes']:
@@ -304,22 +341,67 @@ class ToolError:
         """
         survey = self.e.survey
         n = len(survey.md)
+        md = np.asarray(survey.md, dtype=float)
+        inc = np.asarray(survey.inc_rad, dtype=float)
+        azt = np.asarray(survey.azi_true_rad, dtype=float)
+        azm = np.asarray(survey.azi_mag_rad, dtype=float)
+        azg = np.asarray(survey.azi_grid_rad, dtype=float)
+
+        # Previous-station ("...Prev") bindings: cross-station weight
+        # functions (e.g. the continuous-gyro running integral) reference
+        # the previous survey station. Index 0 has no predecessor, so it
+        # is padded with its own value (the gate below zeroes station 0's
+        # contribution anyway).
+        def _prev(arr):
+            return np.concatenate(([arr[0]], arr[:-1]))
+
+        # Per-tool calibration constants surfaced by the JSON adapter
+        # (see _json_to_em_adapter). EarthRate falls back to the standard
+        # sidereal value (15.041 deg/hr) used by the gyro-azimuth terms.
+        hdr = self.em.get("header", {}) if hasattr(self, "em") else {}
+        earth_rate = float(getattr(survey.header, "earth_rate", None) or 0.262516)
+        nrf = float(
+            hdr.get("Noise Reduction Factor")
+            if hdr.get("Noise Reduction Factor") is not None
+            else getattr(survey.header, "noise_reduction_factor", 1.0)
+        )
         bindings = {
-            "MD": np.asarray(survey.md, dtype=float),
-            "Inc": np.asarray(survey.inc_rad, dtype=float),
-            "AzT": np.asarray(survey.azi_true_rad, dtype=float),
-            "AzM": np.asarray(survey.azi_mag_rad, dtype=float),
-            "Az": np.asarray(survey.azi_grid_rad, dtype=float),
+            "MD": md, "Inc": inc, "AzT": azt, "AzM": azm, "Az": azg,
+            "MDPrev": _prev(md), "IncPrev": _prev(inc),
+            "AzTPrev": _prev(azt), "AzMPrev": _prev(azm), "AzPrev": _prev(azg),
             "TVD": np.asarray(survey.tvd, dtype=float),
             "Gfield": float(survey.header.G),
             "Dip": float(survey.header.dip),
             "BField": float(survey.header.b_total or 50000.0),
-            # EarthRate is needed by gyro-azimuth terms; standard value
-            # in rad/hr (15.041 deg/hr).
-            "EarthRate": 0.262516,
+            "EarthRate": earth_rate,
             "Latitude": np.radians(float(survey.header.latitude or 0.0)),
+            "NoiseReductionFactor": nrf,
             "RAD": np.pi / 180.0,
+            # Canted-accelerometer 180deg tool-rotation switching operator
+            # (SPE 90408-MS Table 2 / Table 11 note 5): k = +1 for inc <= 90deg,
+            # k = -1 for inc > 90deg. Canted-accel inclination weights are
+            # f(Inc - k*gamma) (gamma = cant angle), so above 90deg the cant is
+            # added rather than subtracted, keeping cos(Inc - k*gamma) finite
+            # past inc = 90 + gamma. Only terms whose formula references `k`
+            # (the canted XY-accel terms in example_4) are affected; all other
+            # fixtures/models leave it unreferenced and are unchanged.
+            "k": np.where(inc > np.pi / 2, -1.0, 1.0),
         }
+        if hdr.get("GXYRunningSpeed") is not None:
+            bindings["GXYRunningSpeed"] = float(hdr["GXYRunningSpeed"])
+
+        # Recurrence terms (continuous gyro): the azimuth formula references
+        # its own accumulated state from the previous station
+        # (XY_Gyro_Drift = running drift integral; XY_Gyro_Random_Walk =
+        # running random-walk). These cannot be evaluated by a single
+        # vectorised call -- evaluate them station-by-station with the
+        # static-gyro inclination gate, then return.
+        recur = self._recurrence_var(term["azimuth_formula"])
+        if recur is not None:
+            return self._call_interpreter_recurrence(
+                code, term, mag, propagation, bindings, recur, hdr
+            )
+
         try:
             d = evaluate_formula(term["depth_formula"], bindings)
             i = evaluate_formula(term["inclination_formula"], bindings)
@@ -349,7 +431,30 @@ class ToolError:
         d = np.broadcast_to(np.asarray(d, dtype=float), (n,))
         i = np.broadcast_to(np.asarray(i, dtype=float), (n,))
         a = np.broadcast_to(np.asarray(a, dtype=float), (n,))
-        dpde = np.column_stack([d, i, a])
+        dpde = np.column_stack([d, i, a]).astype(float)
+        # Cross-station terms (those referencing a "...Prev" variable, e.g.
+        # the XYM3E/XYM4E station-spacing amplifier Max(1, sqrt(10/(MD-MDPrev)))
+        # or the XCL tortuosity terms) have no predecessor at station 0. The
+        # `_prev` padding fabricates MDPrev[0]=MD[0], so MD-MDPrev=0 there and
+        # the formula evaluates to inf/nan. Zero the first station's
+        # contribution, matching the deleted hand-coded weight functions which
+        # forced station 0 to zero (np.append([0], ...)).
+        if any(
+            isinstance(term.get(f), str) and "Prev" in term[f]
+            for f in ("depth_formula", "inclination_formula", "azimuth_formula")
+        ):
+            dpde[0] = 0.0
+        # Per-term inclination gating + stationary->continuous carry.
+        # A term may be active only within [inc_min_deg, inc_max_deg]
+        # (e.g. a stationary-gyro term that runs below the static-gyro end
+        # inclination). ``carry_above_max`` freezes the weight at the gate
+        # (inc = inc_max) for stations above it -- the stationary azimuth
+        # error at the mode switch is carried as a constant initialisation
+        # error through the continuous zone (SPE 90408 "Initialization of
+        # Continuous Surveys"). The gate weight is interpolated at exactly
+        # inc_max (the paper notes covariance is underestimated otherwise).
+        if term.get("inc_min_deg") is not None or term.get("inc_max_deg") is not None:
+            dpde = self._apply_inc_gating(dpde, inc, term, bindings)
         # Convert the declared magnitude to welleng's SI base. OWSG xlsx
         # publishes magnitudes in the term's natural unit (deg, deg/hr,
         # m, ...); the propagation engine expects rad / m / m/s^2 /
@@ -358,7 +463,660 @@ class ToolError:
         unit = term.get("units") or term.get("unit") or "-"
         scale = _MAG_UNIT_TO_BASE.get(unit, 1.0)
         e_DIA = dpde * (mag * scale)
-        return self.e._generate_error(code, e_DIA, propagation, NEV=True)
+        # ISCWSA v5.13 Sec 7.3 pt14 / eqs 44-46: a RANDOM carried init seed
+        # re-randomises at every re-initialisation, so its covariance is the
+        # RSS of the per-continuous-section systematic running sums, not one
+        # fully-correlated cumsum across the whole well. Self-scoping:
+        # ``carry_only`` uniquely tags the random init seed (the systematic
+        # biases use ``carry_above_max``), and only under the per-section
+        # re-init regime (positive stationary ``XY Static Gyro End Inc``) does
+        # the well re-gyrocompass. The continuous sections are the same maximal
+        # inc>gate runs ``_carry_per_section`` already detects (gate =
+        # ``inc_min_deg``). A single section reduces to the standard single
+        # outer product, so non-re-initialised wells / init-at-first-station
+        # (XYZ, gate<0) models are inert (bit-identical).
+        carry_sections = None
+        hdr_ci = self.em.get("header", {}) if hasattr(self, "em") else {}
+        init_inc = hdr_ci.get("XY Static Gyro End Inc")
+        per_section_regime = init_inc is not None and float(init_inc) >= 0.0
+        if per_section_regime and term.get("carry_only"):
+            # D2 lever (default ON): GRN-INIT carried random init seed RSSs per
+            # continuous section. ``_grninit_rss=False`` reverts to one fully-
+            # correlated cumsum across the whole well.
+            if getattr(self, "_grninit_rss", True):
+                gate = term.get("inc_min_deg")
+                gate = -np.inf if gate is None else float(gate)
+                carry_sections = self._continuous_sections(np.degrees(inc), gate)
+        elif per_section_regime and term.get("carry_above_max"):
+            # D5 lever (default OFF): the systematic carried g-dependent biases
+            # (GD2/GD3/... ``carry_above_max``) are normally FULLY CORRELATED
+            # across re-inits (eqs 44-46 do not touch systematic terms). Setting
+            # ``_sys_carry_rss=True`` RSSs them per section -- the broad S->R
+            # decorrelation refuted earlier; exposed as a diagnostic lever only.
+            if getattr(self, "_sys_carry_rss", False):
+                gate = term.get("inc_max_deg")
+                gate = -np.inf if gate is None else float(gate)
+                carry_sections = self._continuous_sections(np.degrees(inc), gate)
+        # Vertical-hole singularity: OWSG/ISCWSA azimuth weight functions carry
+        # a 1/sin(inc) factor that cancels the sin(inc) of the position
+        # Jacobian in deviated hole but evaluates to nan at an exactly-vertical
+        # station. When the JSON term supplies position-space singular weights
+        # (north/east/vertical_singularity), substitute the ISCWSA Rev5.13
+        # Sec 11.5 singular vectors at those stations.
+        if any(
+            isinstance(term.get(k), str)
+            for k in ("north_singularity", "east_singularity",
+                      "vertical_singularity")
+        ):
+            e_DIA = np.nan_to_num(e_DIA, nan=0.0, posinf=0.0, neginf=0.0)
+            e_NEV, e_NEV_star = self._call_interpreter_singularity(
+                e_DIA, term, bindings, mag * scale
+            )
+            return self.e._generate_error(
+                code, e_DIA, propagation, NEV=True,
+                e_NEV=e_NEV, e_NEV_star=e_NEV_star,
+                sections=carry_sections,
+            )
+        return self.e._generate_error(
+            code, e_DIA, propagation, NEV=True, sections=carry_sections
+        )
+
+    # Recurrence (self-referential) state variables a continuous-gyro
+    # azimuth formula may carry, mapped to accumulation mode. The mode
+    # selects how the coefficient `state` (h_i) accumulates inside the
+    # formula; the magnitude enters linearly afterwards in both cases
+    # (e_DIA = state * mag * scale -- see SPE 90408-PA Eqs 5c / 6c):
+    #   - "drift"       : linear running integral, h_i = h_{i-1} + dD/c/sin
+    #   - "random_walk" : quadrature running walk, h_i = sqrt(h_{i-1}^2 + dD/c/sin^2)
+    # XYZ variants (SPE 90408 Table 6) accumulate with NO sin(I) factor and
+    # Z variants (Table 8) with a 1/cos(I) factor -- the formula difference
+    # lives entirely in the JSON azimuth_formula; only the var name +
+    # accumulation mode are registered here.
+    _RECURRENCE_VARS = {
+        "XY_Gyro_Drift": "drift",
+        "XY_Gyro_Random_Walk": "random_walk",
+        "XYZ_Gyro_Drift": "drift",
+        "XYZ_Gyro_Random_Walk": "random_walk",
+        "Z_Gyro_Drift": "drift",
+        "Z_Gyro_Random_Walk": "random_walk",
+    }
+
+    def _recurrence_var(self, formula):
+        """Return (var_name, mode) if `formula` references a recurrence
+        state variable, else None."""
+        if not isinstance(formula, str):
+            return None
+        for var, mode in self._RECURRENCE_VARS.items():
+            if var in formula:
+                return var, mode
+        return None
+
+    def _call_interpreter_recurrence(
+        self, code, term, mag, propagation, bindings, recur, hdr
+    ):
+        """Evaluate a continuous-gyro recurrence term station-by-station.
+
+        Implements the continuous-survey gyro azimuth weight functions of
+        SPE 90408-PA (Torkildsen et al. 2008, SPE Drilling & Completion,
+        DOI 10.2118/90408-PA):
+
+        - Coefficient recurrence per Table 7 (xy gyro) -- drift
+          ``h_i = h_{i-1} + dD_i / (c*sin((I_{i-1}+I_i)/2))`` and random walk
+          ``h_i = sqrt(h_{i-1}^2 + dD_i / (c*sin^2((I_{i-1}+I_i)/2)))``,
+          where ``c`` is the running speed and ``dD = MD - MDPrev``. The
+          analogous z-gyro / xyz coefficients are Tables 6 and 8.
+        - Azimuth error is the magnitude times the coefficient, ``dA_i =
+          v * h_i`` (Eqs 5a-5c drift, 6a-6c random walk) -- LINEAR in the
+          magnitude for both modes; the sqrt of random walk is contained in
+          ``h_i``, not applied to ``v``.
+
+        Below the ``XY Static Gyro End Inc`` inclination gate the continuous
+        survey is not running, so the contribution is zero and the
+        accumulator resets. Using the stationary tool's end-inc as the
+        continuous start-inc follows Table 11 note 3. Both modes propagate
+        systematically within an initialisation section (Table 6/7 mode = S).
+
+        SPE 90408 App. C box-11 periodic re-init (opt-in/UNVALIDATED, gated on
+        ``self._min_D`` -- see ``_resolve_periodic_reinit``): when enabled, the
+        accumulation ALSO resets to zero every ``min_D`` along-hole WITHIN an
+        uninterrupted continuous run, starting a fresh independent ~min_D
+        segment to bound drift. ``self._min_D is None`` (the default) takes the
+        byte-identical validated path.
+        """
+        import warnings
+
+        var, mode = recur
+        formula = term["azimuth_formula"]
+        n = len(bindings["MD"])
+        inc = bindings["Inc"]
+        inc_deg = np.degrees(inc)
+
+        # A recurrence term is either:
+        #  (a) zone-gated: ``inc_min_deg``/``inc_max_deg`` define the active
+        #      inclination window (e.g. Model #4's z-continuous 0-17deg and
+        #      xy-continuous 17-150deg). ``carry_above_max`` freezes the
+        #      accumulated value above the window (SPE 90408 App. C Box 12,
+        #      "non-actual mode preservation" -- a continuous source that has
+        #      handed off to another mode preserves its last value as a
+        #      systematic carry); below the window the term has not yet
+        #      started (zero). The z- and xy-continuous are independent error
+        #      SOURCES summed in the covariance -- no cross-seeding needed.
+        #  (b) single-gate (default): accumulate above the
+        #      ``XY Static Gyro End Inc`` gate, reset below. (Models #3/#5/#6
+        #      and the from-station-0 case via a negative gate.)
+        lo_deg = term.get("inc_min_deg")
+        hi_deg = term.get("inc_max_deg")
+        zoned = lo_deg is not None or hi_deg is not None
+        carry = bool(term.get("carry_above_max"))
+        lo = -np.inf if lo_deg is None else float(lo_deg)
+        hi = np.inf if hi_deg is None else float(hi_deg)
+
+        gate = hdr.get("XY Static Gyro End Inc")
+        if "GXYRunningSpeed" not in bindings or (gate is None and not zoned):
+            warnings.warn(
+                f"continuous-gyro term {code!r} needs 'GXYRunningSpeed' (and, "
+                f"unless inc-zoned, 'XY Static Gyro End Inc') tool parameters "
+                f"(JSON parameters block); missing -> zero covariance.",
+                RuntimeWarning,
+            )
+            zeros = np.zeros((n, 3))
+            return self.e._generate_error(code, zeros, propagation, NEV=True)
+        gate = float(gate) if gate is not None else -np.inf
+
+        # Per-station scalar bindings reused each step (running speed,
+        # earth rate, NRF, ... already live in `bindings`).
+        base = {k: v for k, v in bindings.items() if np.isscalar(v)}
+
+        # SPE 90408 App. C box-11 periodic re-init (opt-in/unvalidated). When
+        # disabled (the default) ``min_D`` is None -> the reset branch never
+        # fires and the accumulation is byte-identical to the validated path.
+        min_D = getattr(self, "_min_D", None)
+        md = bindings["MD"]
+        state = 0.0
+        states = np.zeros(n)
+        seg_start = None  # along-hole MD where the current active segment began
+        for k in range(1, n):
+            if zoned:
+                active = lo <= inc_deg[k] <= hi
+                frozen = carry and inc_deg[k] > hi
+            else:
+                active = inc[k] > gate
+                frozen = False
+            if active:
+                if seg_start is None:
+                    seg_start = float(md[k - 1])
+                if min_D is not None and md[k] - seg_start >= min_D:
+                    # box 11: re-gyrocompass here -> the continuous drift /
+                    # random-walk accumulation restarts from zero at the start
+                    # of a fresh independent ~min_D section.
+                    state = 0.0
+                    seg_start = float(md[k])
+                    states[k] = 0.0
+                    continue
+                step_ns = dict(base)
+                step_ns.update({
+                    "MD": float(bindings["MD"][k]),
+                    "MDPrev": float(bindings["MDPrev"][k]),
+                    "Inc": float(inc[k]),
+                    "IncPrev": float(bindings["IncPrev"][k]),
+                    "AzT": float(bindings["AzT"][k]),
+                    "AzTPrev": float(bindings["AzTPrev"][k]),
+                    var: state,
+                })
+                state = float(evaluate_formula(formula, step_ns))
+            elif frozen:
+                # above the window: preserve the handed-off value (box 12), but
+                # END the current active run so a later re-entry into the zone
+                # starts a fresh box-11 segment (its min_D is measured from the
+                # re-entry, not across the frozen gap).
+                seg_start = None
+            else:
+                state = 0.0  # outside the active survey: not running / reset
+                seg_start = None
+            states[k] = state
+
+        unit = term.get("units") or term.get("unit") or "-"
+        scale = _MAG_UNIT_TO_BASE.get(unit, 1.0)
+        # The magnitude multiplies the accumulated coefficient `state` (h_i)
+        # LINEARLY for both drift and random walk. Per SPE 90408-PA
+        # (Torkildsen et al. 2008) Eqs 5a-5c / 6a-6c, the azimuth error is
+        # dA_i = v * h_i: the quadrature (sqrt) accumulation of random walk
+        # lives entirely inside h_i (the `Sqr(state^2 + ...)` recurrence,
+        # Table 7), so v_rw enters linearly exactly as the drift rate v_d
+        # does. Units: drift v_d [deg/hr] * h_i [hr] and walk v_rw
+        # [deg/sqrt(hr)] * h_i [sqrt(hr)] both give deg, then `scale` -> rad.
+        outer = mag * scale
+
+        e_DIA = np.zeros((n, 3))
+        e_DIA[:, 2] = states * outer
+        # ISCWSA v5.13 Sec 7.3 pt14 / eqs 44-46: a continuous RANDOM-WALK source
+        # (mode ``random_walk``: XY-GRW, Z-GRW) re-randomises at every re-
+        # initialisation, so under the per-section re-init regime (positive
+        # ``XY Static Gyro End Inc``) its covariance RSSs the per-continuous-
+        # section systematic running sums instead of one fully-correlated cumsum
+        # across the whole well. The drift mode stays a single cumsum (a
+        # systematic bias, not re-randomised). Re-init boundaries are the
+        # stationary gate crossings (same boundary the GRN-INIT carry uses). A
+        # single section reduces to the standard outer product, so monotonic /
+        # single-section wells (Well #1/#2) are bit-identical.
+        # Default scope is GXY-GRW only (the XY continuous random walk) per the
+        # ISCWSA fix; the Z continuous random walk (Z-GRW) is left fully
+        # correlated by default (its re-randomisation is unvalidated and makes
+        # the Well #3 inc=110 EE marginally worse -- see the sweep). Override
+        # via ``_rw_rss_vars`` = a set of recurrence-var names to RSS (an empty
+        # set => fully correlated; include 'Z_Gyro_Random_Walk' to RSS Z too).
+        sections = None
+        if mode == "random_walk":
+            rss_vars = getattr(self, "_rw_rss_vars", None)
+            if rss_vars is None:
+                rss_vars = {"XY_Gyro_Random_Walk"}
+            apply_rss = var in rss_vars
+            init_inc = hdr.get("XY Static Gyro End Inc")
+            if apply_rss and init_inc is not None and float(init_inc) >= 0.0:
+                sections = self._continuous_sections(
+                    inc_deg, np.degrees(float(init_inc))
+                )
+        return self.e._generate_error(
+            code, e_DIA, propagation, NEV=True, sections=sections
+        )
+
+    def _dpde_at_inc(self, dpde, inc_deg, gate):
+        """Interpolate the per-axis weight (dpde row) at inc == gate, at the
+        first station where inclination crosses the gate. SPE 90408 App. C
+        Box 9 (act_init_inc): the initialisation weight is taken at the mode-
+        switch inclination, interpolated since a station rarely lands on it."""
+        above = np.where(inc_deg > gate)[0]
+        if above.size == 0:
+            return np.zeros(dpde.shape[1])
+        j = int(above[0])
+        if j == 0:
+            return dpde[0].copy()
+        lo_i, hi_i = inc_deg[j - 1], inc_deg[j]
+        if hi_i == lo_i:
+            return dpde[j].copy()
+        f = (gate - lo_i) / (hi_i - lo_i)
+        return dpde[j - 1] + f * (dpde[j] - dpde[j - 1])
+
+    def _carried_weight_slerp(self, term, bindings, inc_deg, start, gate):
+        """Carried gate-crossing weight via great-circle (SLERP/min-curve)
+        interpolation of the survey DIRECTION (SPE 90408 App. C Box 9).
+
+        The legacy ``carry_interp='linear'`` blends the per-axis weight VECTOR
+        between the two stations bracketing the up-crossing. When a section
+        re-gyrocompasses off a near-vertical rebuild, the lower bracketing
+        station is essentially vertical, where azimuth is a placeholder (azi 0)
+        -- so the linear blend mixes an azi-0 weight with the live weight and
+        carries a wrong gate azimuth. Instead, SLERP the survey direction
+        (built from ``Inc``/``AzT``) across the up-crossing to ``inc == gate``;
+        the great circle yields the correct gate azimuth (e.g. 283 deg on Well
+        #3's rebuild, not the vertical placeholder), then RE-EVALUATE the term's
+        weight formulas at (gate inc, gate azi)."""
+        inc_rad = np.asarray(bindings["Inc"], dtype=float)
+        azi_rad = np.asarray(bindings["AzT"], dtype=float)
+        gate_rad = np.radians(gate)
+        ia, ib = inc_rad[start - 1], inc_rad[start]
+        aa, ab = azi_rad[start - 1], azi_rad[start]
+        va = np.array([np.sin(ia) * np.cos(aa), np.sin(ia) * np.sin(aa),
+                       np.cos(ia)])
+        vb = np.array([np.sin(ib) * np.cos(ab), np.sin(ib) * np.sin(ab),
+                       np.cos(ib)])
+        omega = np.arccos(float(np.clip(np.dot(va, vb), -1.0, 1.0)))
+        target_v = np.cos(gate_rad)          # vertical component at inc == gate
+        if omega < 1e-9:
+            vg = va
+        else:
+            so = np.sin(omega)
+
+            def vec(t):
+                return (np.sin((1.0 - t) * omega) * va
+                        + np.sin(t * omega) * vb) / so
+
+            lo_t, hi_t = 0.0, 1.0             # V(t) decreases monotonically
+            for _ in range(60):
+                mt = 0.5 * (lo_t + hi_t)
+                if vec(mt)[2] > target_v:
+                    lo_t = mt
+                else:
+                    hi_t = mt
+            vg = vec(0.5 * (lo_t + hi_t))
+        gate_azi = float(np.arctan2(vg[1], vg[0]))
+        scal = {k: v for k, v in bindings.items() if np.isscalar(v)}
+        scal.update({
+            "Inc": gate_rad, "IncPrev": gate_rad,
+            "AzT": gate_azi, "AzTPrev": gate_azi,
+            "Az": gate_azi, "AzPrev": gate_azi,
+            "AzM": gate_azi, "AzMPrev": gate_azi,
+            "k": 1.0,                          # gate inc < 90 deg => k = +1
+        })
+        d = float(evaluate_formula(term["depth_formula"], scal))
+        i = float(evaluate_formula(term["inclination_formula"], scal))
+        a = float(evaluate_formula(term["azimuth_formula"], scal))
+        return np.array([d, i, a], dtype=float)
+
+    def _carry_per_section(self, dpde, inc_deg, gate, below,
+                           term=None, bindings=None):
+        """Per-continuous-section stationary-init carry (SPE 90408 App. C
+        Boxes 2/3/9).
+
+        A gyro tool that surveys stationary below ``gate`` (= the stationary
+        ``init_inc``/``end_inc``) and continuous above it RE-INITIALISES the
+        continuous survey every time the well bore drops back below the gate
+        and rebuilds (Box 3 sets ``initialised = FALSE`` whenever inc < gate;
+        Box 9 then recomputes ``d_A_init(j) = dA(j, act_init_inc, A(i))`` at
+        the *new* initialisation point on the next entry into continuous
+        mode). The carried weight is therefore the gate-crossing value of the
+        MOST RECENT up-crossing -- using the azimuth at that crossing -- not a
+        single global value frozen at the first crossing.
+
+        Returns ``out`` with, for each station above ``gate``, the weight
+        interpolated at ``inc == gate`` on its own section's up-crossing.
+        Below the gate the station keeps its live stationary weight
+        (``below='live'``, ``carry_above_max``) or zero (``below='zero'``,
+        ``carry_only`` init seed).
+
+        Note (SPE 90408 App. C box-11 periodic re-init): box 11 deliberately
+        does NOT touch this carry. The stationary-init weights it carries
+        (e.g. ``Tan(Inc)``, ``1/Cos(Inc)`` -- GD4/GB1/GMIS/GSF) DIVERGE at high
+        inclination, which is exactly why the carry freezes them at the gate
+        value rather than evaluating them live above it. Re-gyrocompassing
+        mid-run at the (high-inc) current station would evaluate ``Tan(90deg)``
+        / ``1/Cos(90deg)`` -> non-finite. The per-section gyrocompass-init
+        magnitude is therefore preserved at the gate value; box 11's finite,
+        drift-bounding effect lives entirely in the continuous recurrence reset
+        (``_call_interpreter_recurrence``). The inter-section de-correlation of
+        the carried init is intentionally not modelled (the box-11 caveat
+        covers it -- see ``_resolve_periodic_reinit``).
+        """
+        # D4 lever -- carry azimuth/interpolation across the up-crossing:
+        #   'slerp'      (default): great-circle interp of the survey direction
+        #                to inc==gate, then re-evaluate the weight there (correct
+        #                rebuild gate azimuth). Needs ``term`` + ``bindings``.
+        #   'linear'     (legacy/back-compat, DEPRECATED): blend the weight
+        #                vector linearly in inclination across the up-crossing.
+        #   'keep_first' (diagnostic): freeze every section at the FIRST
+        #                section's carried value (the pre-per-section behaviour
+        #                that carried the first-build azimuth through the well).
+        interp = getattr(self, "_carry_interp", "slerp")
+        can_slerp = term is not None and bindings is not None
+        out = dpde.copy() if below == "live" else np.zeros_like(dpde)
+        carried_first = None
+        for start, stop in self._continuous_sections(inc_deg, gate):
+            if interp == "keep_first" and carried_first is not None:
+                carried = carried_first
+            elif start == 0:                      # section opens at station 0
+                carried = dpde[0].copy()
+            elif interp in ("slerp", "keep_first") and can_slerp:
+                carried = self._carried_weight_slerp(
+                    term, bindings, inc_deg, start, gate)
+            else:                                 # 'linear' (legacy) up-crossing
+                lo_i, hi_i = inc_deg[start - 1], inc_deg[start]
+                f = 0.0 if hi_i == lo_i else (gate - lo_i) / (hi_i - lo_i)
+                carried = dpde[start - 1] + f * (dpde[start] - dpde[start - 1])
+            if carried_first is None:
+                carried_first = np.asarray(carried, dtype=float).copy()
+            out[start:stop] = carried
+        return out
+
+    @staticmethod
+    def _continuous_sections(inc_deg, gate):
+        """Maximal runs of consecutive stations with ``inc_deg > gate``.
+
+        These are the continuous-survey sections separated by drops below the
+        stationary-init gate -- each up-crossing re-initialises (re-
+        gyrocompasses) the survey. Shared by the per-section carry
+        (``_carry_per_section``) and the ISCWSA v5.13 eqs 44-46 carried-seed
+        RSS (``error._cov_NEV_carry_per_section``) so both use one boundary
+        definition. Returns a list of ``(start, stop)`` half-open index pairs.
+        """
+        above = np.asarray(inc_deg) > gate
+        sections = []
+        k, n = 0, len(above)
+        while k < n:
+            if above[k]:
+                j = k + 1
+                while j < n and above[j]:
+                    j += 1
+                sections.append((k, j))
+                k = j
+            else:
+                k += 1
+        return sections
+
+    def _apply_inc_gating(self, dpde, inc, term, bindings=None):
+        """Inclination-window gating + stationary->continuous carry.
+
+        - ``inc_min_deg``/``inc_max_deg``: term active only in that window;
+          outside contributes zero.
+        - ``carry_above_max``: above inc_max, freeze the weight at the gate
+          value (SPE 90408 App. C Box 12: stationary terms d_A(j,i)=d_A(j,i-1)
+          above the mode switch -> constant initialisation error carried
+          through the continuous zone).
+        - ``carry_only``: zero below inc_min, frozen at the gate value above
+          it (used for the systematic initialisation seed of a stationary
+          *random* term, which is carried systematic -- App. C Box 9).
+
+        When the tool has a positive stationary ``init_inc`` (``XY Static Gyro
+        End Inc`` >= 0) the carry RE-INITIALISES per continuous section
+        (``_carry_per_section``): a drop back below the gate followed by a
+        rebuild re-gyrocompasses, so the carried weight above the gate uses
+        the azimuth of the most-recent crossing, not the first. For a tool
+        that initialises at the first survey station (negative ``init_inc``,
+        e.g. an XYZ system, Table 11 note 2) there is no stationary mode to
+        drop into, so the original single global-first carry is kept.
+        """
+        inc_deg = np.degrees(inc)
+        lo = term.get("inc_min_deg")
+        hi = term.get("inc_max_deg")
+        lo = -np.inf if lo is None else float(lo)
+        hi = np.inf if hi is None else float(hi)
+        hdr = self.em.get("header", {}) if hasattr(self, "em") else {}
+        init_inc = hdr.get("XY Static Gyro End Inc")
+        per_section = init_inc is not None and float(init_inc) >= 0.0
+        out = dpde.copy()
+        if term.get("carry_only"):
+            gate = lo
+            if per_section:
+                return self._carry_per_section(
+                    dpde, inc_deg, gate, below="zero",
+                    term=term, bindings=bindings)
+            above = inc_deg > gate
+            gate_dpde = self._dpde_at_inc(dpde, inc_deg, gate)
+            out[:] = 0.0
+            out[above] = gate_dpde
+            return out
+        if term.get("carry_above_max") and np.isfinite(hi):
+            if per_section:
+                out = self._carry_per_section(
+                    dpde, inc_deg, hi, below="live",
+                    term=term, bindings=bindings)
+                out[inc_deg < lo] = 0.0
+                return out
+            above = inc_deg > hi
+            gate_dpde = self._dpde_at_inc(dpde, inc_deg, hi)
+            out[above] = gate_dpde
+            out[inc_deg < lo] = 0.0
+            return out
+        active = (inc_deg >= lo) & (inc_deg <= hi)
+        out[~active] = 0.0
+        return out
+
+    def _resolve_periodic_reinit(self):
+        """Resolve the (opt-in, default-OFF) SPE 90408 App. C box-11 periodic
+        re-initialisation config and emit the appropriate one-shot advisory.
+
+        Box 11 of the gyro implementation flow chart (Fig C1) re-initialises a
+        continuous survey every ``min_D`` along-hole -- splitting an
+        uninterrupted continuous run into consecutive ~min_D sections, each
+        gyrocompassed independently, to bound the drift/random-walk growth.
+        This is the author's recommendation (Ekseth); it is **unvalidatable**
+        -- no published SPE 90408 reference tabulates a result computed WITH a
+        genuine within-run re-init, so the ON path cannot be checked against an
+        absolute reference (the validated engine is the OFF path).
+
+        Returns ``min_D`` (metres) when the feature is ENABLED, else ``None``
+        (-> the carry + recurrence take the byte-identical validated path).
+        All paths warn-and-continue (RuntimeWarning, never fatal):
+
+          - ON (``periodic_reinit`` true) + usable min_D -> experimental,
+            unverifiable warning; returns min_D (feature applied).
+          - ON but no positive min_D -> no-op warning; returns None.
+          - OFF + a continuous section longer than min_D actually occurs ->
+            advisory pointing at the switch (drift/RW may be over-estimated);
+            returns None. Output is UNCHANGED -- detection/warning only.
+          - OFF + no min_D / no long section -> silent; returns None.
+        """
+        import warnings
+        hdr = self.em.get("header", {}) if hasattr(self, "em") else {}
+        flag = bool(hdr.get("Periodic Reinit"))
+        raw = hdr.get("Min Dist Between Initialisations")
+        min_D = None
+        if raw is not None:
+            try:
+                min_D = float(raw)
+            except (TypeError, ValueError):
+                min_D = None
+            if min_D is not None and min_D <= 0.0:
+                min_D = None
+
+        if flag:
+            if min_D is None:
+                warnings.warn(
+                    "periodic re-initialisation (`periodic_reinit`) is enabled "
+                    "but no positive `min_dist_between_initialisations` (min_D) "
+                    "is set: the flag is a no-op and the default (validated) "
+                    "output is returned.",
+                    RuntimeWarning,
+                )
+                return None
+            warnings.warn(
+                "periodic re-initialisation (min_D, SPE 90408 App. C box 11) "
+                "is ENABLED: this is a theoretical model (author's "
+                "recommendation, Ekseth) NOT validated against any published "
+                "reference -- results are unverifiable.",
+                RuntimeWarning,
+            )
+            return min_D
+
+        # Default OFF. Validated output is returned UNCHANGED; only warn if the
+        # survey actually enters the regime box 11 would govern.
+        if min_D is not None and self._continuous_section_exceeds(min_D):
+            warnings.warn(
+                f"continuous-gyro section exceeds min_D={min_D:g} m without "
+                f"re-initialisation: drift/random-walk may be OVER-estimated "
+                f"in this regime (periodic re-init, SPE 90408 App. C box 11, "
+                f"is not applied by default). To model it, enable the "
+                f"experimental `periodic_reinit` flag -- note its results are "
+                f"theoretical (author's recommendation, Ekseth) and "
+                f"unvalidated against any published reference.",
+                RuntimeWarning,
+            )
+        return None
+
+    def _continuous_section_exceeds(self, min_D):
+        """True if any continuous-gyro section spans >= ``min_D`` along-hole.
+
+        A continuous section is a maximal run of stations above the static-gyro
+        inclination gate (``XY Static Gyro End Inc``); a missing/negative gate
+        means the tool runs continuous from the first station (one section).
+        Detection only -- never changes any output (used by the default-OFF
+        advisory in ``_resolve_periodic_reinit``)."""
+        try:
+            survey = self.e.survey
+            md = np.asarray(survey.md, dtype=float)
+            inc = np.asarray(survey.inc_rad, dtype=float)
+        except Exception:
+            return False
+        hdr = self.em.get("header", {}) if hasattr(self, "em") else {}
+        gate = hdr.get("XY Static Gyro End Inc")
+        gate = -np.inf if gate is None else float(gate)
+        longest = 0.0
+        start = None
+        for k in range(len(md)):
+            if inc[k] > gate:
+                if start is None:
+                    start = md[k]
+                longest = max(longest, md[k] - start)
+            else:
+                start = None
+        return longest >= min_D
+
+    def _call_interpreter_singularity(self, e_DIA, term, bindings, sigma):
+        """Build e_NEV / e_NEV_star with vertical-hole singularity substitution.
+
+        At a station with ``inc < vertical_inc_limit`` the term's azimuth
+        weight function is undefined (1/sin(inc) -> nan), so the position-error
+        contribution is taken directly from the JSON ``*_singularity`` weights
+        (``VertWftFn = [north, east, vertical]``) using the ISCWSA Rev5.13
+        Sec 11.5 singular vectors (mirrors the hand-coded ABXY-TI2/XYM3E SING
+        branch):
+
+            interior k : e_k  = sigma * (D_{k+1}-D_{k-1})/2 * VertWftFn  (eq 20)
+                         e*_k = sigma * (D_k    -D_{k-1})/2 * VertWftFn  (eq 21)
+            station 1  : e_1  = sigma * (D_2+D_1-2 D_0)/2   * VertWftFn  (eq 33)
+                         e*_1 = sigma * (D_1-D_0)           * VertWftFn  (eq 34)
+
+        Station 0 is the tie-on (always zero). The eq 34 full-interval star
+        (vs the halved interior eq 21) is the Rev5 behaviour; Rev4 keeps it
+        halved, matching the ``drk_dInc`` first-station gate.
+        """
+        survey = self.e.survey
+        n = len(survey.md)
+        e_NEV = self.e._e_NEV(e_DIA)
+        e_NEV_star = self.e._e_NEV_star(e_DIA)
+
+        sing = np.where(
+            np.asarray(survey.inc_rad) < survey.header.vertical_inc_limit
+        )[0]
+        if sing.size == 0:
+            return e_NEV, e_NEV_star
+
+        def _vw(key):
+            f = term.get(key)
+            if not isinstance(f, str):
+                return np.zeros(n)
+            try:
+                val = evaluate_formula(f, bindings)
+            except Exception:
+                # Singular weight references a variable the interpreter can't
+                # bind (e.g. XCLTortuosity) -- a documented schema gap; the
+                # component contributes zero, same as the main eval path.
+                return np.zeros(n)
+            return np.broadcast_to(
+                np.asarray(val, dtype=float), (n,)
+            ).astype(float)
+
+        # Position-space weight, already carrying the source magnitude `sigma`.
+        vw = np.column_stack([
+            _vw("north_singularity"),
+            _vw("east_singularity"),
+            _vw("vertical_singularity"),
+        ]) * sigma
+
+        md = np.asarray(survey.md, dtype=float)
+        double_delta = np.zeros(n)   # D_{k+1} - D_{k-1}
+        delta = np.zeros(n)          # D_k     - D_{k-1}
+        double_delta[1:-1] = md[2:] - md[:-2]
+        delta[1:-1] = md[1:-1] - md[:-2]
+
+        e_sing = 0.5 * double_delta[:, None] * vw      # eq 20
+        estar_sing = 0.5 * delta[:, None] * vw         # eq 21
+
+        # First surveyed station (index 1; index 0 is the tie-on -> zero).
+        if n >= 3 and 1 in sing:
+            e_sing[1] = ((md[2] + md[1] - 2 * md[0]) / 2) * vw[1]   # eq 33
+            if self.e.error_model.lower().split()[-1] == 'rev4':
+                estar_sing[1] = ((md[1] - md[0]) / 2) * vw[1]
+            else:
+                estar_sing[1] = (md[1] - md[0]) * vw[1]            # eq 34
+
+        # A singular weight may be inf where MD==MDPrev (station 0 padding);
+        # 0*inf -> nan there. Sanitise; station 0 is the tie-on (zero anyway).
+        e_sing = np.nan_to_num(e_sing, nan=0.0, posinf=0.0, neginf=0.0)
+        estar_sing = np.nan_to_num(estar_sing, nan=0.0, posinf=0.0, neginf=0.0)
+
+        e_NEV[sing] = e_sing[sing]
+        e_NEV_star[sing] = estar_sing[sing]
+        return e_NEV, e_NEV_star
 
     def _initiate_func_dict(self):
         """
