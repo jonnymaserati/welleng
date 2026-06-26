@@ -454,7 +454,7 @@ class ToolError:
         # Continuous Surveys"). The gate weight is interpolated at exactly
         # inc_max (the paper notes covariance is underestimated otherwise).
         if term.get("inc_min_deg") is not None or term.get("inc_max_deg") is not None:
-            dpde = self._apply_inc_gating(dpde, inc, term)
+            dpde = self._apply_inc_gating(dpde, inc, term, bindings)
         # Convert the declared magnitude to welleng's SI base. OWSG xlsx
         # publishes magnitudes in the term's natural unit (deg, deg/hr,
         # m, ...); the propagation engine expects rad / m / m/s^2 /
@@ -476,15 +476,27 @@ class ToolError:
         # outer product, so non-re-initialised wells / init-at-first-station
         # (XYZ, gate<0) models are inert (bit-identical).
         carry_sections = None
-        if term.get("carry_only"):
-            hdr_ci = self.em.get("header", {}) if hasattr(self, "em") else {}
-            init_inc = hdr_ci.get("XY Static Gyro End Inc")
-            if init_inc is not None and float(init_inc) >= 0.0:
+        hdr_ci = self.em.get("header", {}) if hasattr(self, "em") else {}
+        init_inc = hdr_ci.get("XY Static Gyro End Inc")
+        per_section_regime = init_inc is not None and float(init_inc) >= 0.0
+        if per_section_regime and term.get("carry_only"):
+            # D2 lever (default ON): GRN-INIT carried random init seed RSSs per
+            # continuous section. ``_grninit_rss=False`` reverts to one fully-
+            # correlated cumsum across the whole well.
+            if getattr(self, "_grninit_rss", True):
                 gate = term.get("inc_min_deg")
                 gate = -np.inf if gate is None else float(gate)
-                carry_sections = self._continuous_sections(
-                    np.degrees(inc), gate
-                )
+                carry_sections = self._continuous_sections(np.degrees(inc), gate)
+        elif per_section_regime and term.get("carry_above_max"):
+            # D5 lever (default OFF): the systematic carried g-dependent biases
+            # (GD2/GD3/... ``carry_above_max``) are normally FULLY CORRELATED
+            # across re-inits (eqs 44-46 do not touch systematic terms). Setting
+            # ``_sys_carry_rss=True`` RSSs them per section -- the broad S->R
+            # decorrelation refuted earlier; exposed as a diagnostic lever only.
+            if getattr(self, "_sys_carry_rss", False):
+                gate = term.get("inc_max_deg")
+                gate = -np.inf if gate is None else float(gate)
+                carry_sections = self._continuous_sections(np.degrees(inc), gate)
         # Vertical-hole singularity: OWSG/ISCWSA azimuth weight functions carry
         # a 1/sin(inc) factor that cancels the sin(inc) of the position
         # Jacobian in deviated hole but evaluates to nan at an exactly-vertical
@@ -677,7 +689,36 @@ class ToolError:
 
         e_DIA = np.zeros((n, 3))
         e_DIA[:, 2] = states * outer
-        return self.e._generate_error(code, e_DIA, propagation, NEV=True)
+        # ISCWSA v5.13 Sec 7.3 pt14 / eqs 44-46: a continuous RANDOM-WALK source
+        # (mode ``random_walk``: XY-GRW, Z-GRW) re-randomises at every re-
+        # initialisation, so under the per-section re-init regime (positive
+        # ``XY Static Gyro End Inc``) its covariance RSSs the per-continuous-
+        # section systematic running sums instead of one fully-correlated cumsum
+        # across the whole well. The drift mode stays a single cumsum (a
+        # systematic bias, not re-randomised). Re-init boundaries are the
+        # stationary gate crossings (same boundary the GRN-INIT carry uses). A
+        # single section reduces to the standard outer product, so monotonic /
+        # single-section wells (Well #1/#2) are bit-identical.
+        # Default scope is GXY-GRW only (the XY continuous random walk) per the
+        # ISCWSA fix; the Z continuous random walk (Z-GRW) is left fully
+        # correlated by default (its re-randomisation is unvalidated and makes
+        # the Well #3 inc=110 EE marginally worse -- see the sweep). Override
+        # via ``_rw_rss_vars`` = a set of recurrence-var names to RSS (an empty
+        # set => fully correlated; include 'Z_Gyro_Random_Walk' to RSS Z too).
+        sections = None
+        if mode == "random_walk":
+            rss_vars = getattr(self, "_rw_rss_vars", None)
+            if rss_vars is None:
+                rss_vars = {"XY_Gyro_Random_Walk"}
+            apply_rss = var in rss_vars
+            init_inc = hdr.get("XY Static Gyro End Inc")
+            if apply_rss and init_inc is not None and float(init_inc) >= 0.0:
+                sections = self._continuous_sections(
+                    inc_deg, np.degrees(float(init_inc))
+                )
+        return self.e._generate_error(
+            code, e_DIA, propagation, NEV=True, sections=sections
+        )
 
     def _dpde_at_inc(self, dpde, inc_deg, gate):
         """Interpolate the per-axis weight (dpde row) at inc == gate, at the
@@ -696,7 +737,64 @@ class ToolError:
         f = (gate - lo_i) / (hi_i - lo_i)
         return dpde[j - 1] + f * (dpde[j] - dpde[j - 1])
 
-    def _carry_per_section(self, dpde, inc_deg, gate, below):
+    def _carried_weight_slerp(self, term, bindings, inc_deg, start, gate):
+        """Carried gate-crossing weight via great-circle (SLERP/min-curve)
+        interpolation of the survey DIRECTION (SPE 90408 App. C Box 9).
+
+        The legacy ``carry_interp='linear'`` blends the per-axis weight VECTOR
+        between the two stations bracketing the up-crossing. When a section
+        re-gyrocompasses off a near-vertical rebuild, the lower bracketing
+        station is essentially vertical, where azimuth is a placeholder (azi 0)
+        -- so the linear blend mixes an azi-0 weight with the live weight and
+        carries a wrong gate azimuth. Instead, SLERP the survey direction
+        (built from ``Inc``/``AzT``) across the up-crossing to ``inc == gate``;
+        the great circle yields the correct gate azimuth (e.g. 283 deg on Well
+        #3's rebuild, not the vertical placeholder), then RE-EVALUATE the term's
+        weight formulas at (gate inc, gate azi)."""
+        inc_rad = np.asarray(bindings["Inc"], dtype=float)
+        azi_rad = np.asarray(bindings["AzT"], dtype=float)
+        gate_rad = np.radians(gate)
+        ia, ib = inc_rad[start - 1], inc_rad[start]
+        aa, ab = azi_rad[start - 1], azi_rad[start]
+        va = np.array([np.sin(ia) * np.cos(aa), np.sin(ia) * np.sin(aa),
+                       np.cos(ia)])
+        vb = np.array([np.sin(ib) * np.cos(ab), np.sin(ib) * np.sin(ab),
+                       np.cos(ib)])
+        omega = np.arccos(float(np.clip(np.dot(va, vb), -1.0, 1.0)))
+        target_v = np.cos(gate_rad)          # vertical component at inc == gate
+        if omega < 1e-9:
+            vg = va
+        else:
+            so = np.sin(omega)
+
+            def vec(t):
+                return (np.sin((1.0 - t) * omega) * va
+                        + np.sin(t * omega) * vb) / so
+
+            lo_t, hi_t = 0.0, 1.0             # V(t) decreases monotonically
+            for _ in range(60):
+                mt = 0.5 * (lo_t + hi_t)
+                if vec(mt)[2] > target_v:
+                    lo_t = mt
+                else:
+                    hi_t = mt
+            vg = vec(0.5 * (lo_t + hi_t))
+        gate_azi = float(np.arctan2(vg[1], vg[0]))
+        scal = {k: v for k, v in bindings.items() if np.isscalar(v)}
+        scal.update({
+            "Inc": gate_rad, "IncPrev": gate_rad,
+            "AzT": gate_azi, "AzTPrev": gate_azi,
+            "Az": gate_azi, "AzPrev": gate_azi,
+            "AzM": gate_azi, "AzMPrev": gate_azi,
+            "k": 1.0,                          # gate inc < 90 deg => k = +1
+        })
+        d = float(evaluate_formula(term["depth_formula"], scal))
+        i = float(evaluate_formula(term["inclination_formula"], scal))
+        a = float(evaluate_formula(term["azimuth_formula"], scal))
+        return np.array([d, i, a], dtype=float)
+
+    def _carry_per_section(self, dpde, inc_deg, gate, below,
+                           term=None, bindings=None):
         """Per-continuous-section stationary-init carry (SPE 90408 App. C
         Boxes 2/3/9).
 
@@ -729,14 +827,33 @@ class ToolError:
         the carried init is intentionally not modelled (the box-11 caveat
         covers it -- see ``_resolve_periodic_reinit``).
         """
+        # D4 lever -- carry azimuth/interpolation across the up-crossing:
+        #   'slerp'      (default): great-circle interp of the survey direction
+        #                to inc==gate, then re-evaluate the weight there (correct
+        #                rebuild gate azimuth). Needs ``term`` + ``bindings``.
+        #   'linear'     (legacy/back-compat, DEPRECATED): blend the weight
+        #                vector linearly in inclination across the up-crossing.
+        #   'keep_first' (diagnostic): freeze every section at the FIRST
+        #                section's carried value (the pre-per-section behaviour
+        #                that carried the first-build azimuth through the well).
+        interp = getattr(self, "_carry_interp", "slerp")
+        can_slerp = term is not None and bindings is not None
         out = dpde.copy() if below == "live" else np.zeros_like(dpde)
+        carried_first = None
         for start, stop in self._continuous_sections(inc_deg, gate):
-            if start == 0:                        # section opens at station 0
+            if interp == "keep_first" and carried_first is not None:
+                carried = carried_first
+            elif start == 0:                      # section opens at station 0
                 carried = dpde[0].copy()
-            else:                                 # interpolate the up-crossing
+            elif interp in ("slerp", "keep_first") and can_slerp:
+                carried = self._carried_weight_slerp(
+                    term, bindings, inc_deg, start, gate)
+            else:                                 # 'linear' (legacy) up-crossing
                 lo_i, hi_i = inc_deg[start - 1], inc_deg[start]
                 f = 0.0 if hi_i == lo_i else (gate - lo_i) / (hi_i - lo_i)
                 carried = dpde[start - 1] + f * (dpde[start] - dpde[start - 1])
+            if carried_first is None:
+                carried_first = np.asarray(carried, dtype=float).copy()
             out[start:stop] = carried
         return out
 
@@ -765,7 +882,7 @@ class ToolError:
                 k += 1
         return sections
 
-    def _apply_inc_gating(self, dpde, inc, term):
+    def _apply_inc_gating(self, dpde, inc, term, bindings=None):
         """Inclination-window gating + stationary->continuous carry.
 
         - ``inc_min_deg``/``inc_max_deg``: term active only in that window;
@@ -799,7 +916,9 @@ class ToolError:
         if term.get("carry_only"):
             gate = lo
             if per_section:
-                return self._carry_per_section(dpde, inc_deg, gate, below="zero")
+                return self._carry_per_section(
+                    dpde, inc_deg, gate, below="zero",
+                    term=term, bindings=bindings)
             above = inc_deg > gate
             gate_dpde = self._dpde_at_inc(dpde, inc_deg, gate)
             out[:] = 0.0
@@ -807,7 +926,9 @@ class ToolError:
             return out
         if term.get("carry_above_max") and np.isfinite(hi):
             if per_section:
-                out = self._carry_per_section(dpde, inc_deg, hi, below="live")
+                out = self._carry_per_section(
+                    dpde, inc_deg, hi, below="live",
+                    term=term, bindings=bindings)
                 out[inc_deg < lo] = 0.0
                 return out
             above = inc_deg > hi
