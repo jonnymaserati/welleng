@@ -127,9 +127,18 @@ def _json_to_em_adapter(model: dict) -> dict:
         ("gxy_running_speed", "GXYRunningSpeed"),
         ("xy_static_gyro_end_inc", "XY Static Gyro End Inc"),
         ("noise_reduction_factor", "Noise Reduction Factor"),
+        # SPE 90408 App. C box-11 periodic re-initialisation (opt-in): the
+        # along-hole spacing min_D (metres) at which a continuous gyro survey
+        # is re-gyrocompassed to bound drift. Surfaced so the ToolError can
+        # bind it; the feature only ACTIVATES when `periodic_reinit` is true
+        # (see ToolError._resolve_periodic_reinit).
+        ("min_dist_between_initialisations", "Min Dist Between Initialisations"),
     ):
         if src_key in pp:
             header[hdr_key] = pp[src_key]
+    # Opt-in switch for the (theoretical, UNVALIDATED) periodic re-init. Always
+    # present (default False) so the ToolError can branch without a KeyError.
+    header["Periodic Reinit"] = bool(pp.get("periodic_reinit", False))
     codes = OrderedDict()
     for term in model.get("terms", []):
         name = term["name"]
@@ -240,6 +249,14 @@ class ToolError:
             assert np.amax(self.e.survey.inc_rad) < value, (
                 "Model not suitable for this well path inclination"
             )
+
+        # SPE 90408 App. C box-11 periodic re-initialisation (opt-in, default
+        # OFF, UNVALIDATED). ``self._min_D`` is the along-hole re-init spacing
+        # in metres when ENABLED, else None -> every downstream caller (the
+        # stationary-init carry + the continuous recurrence) takes the
+        # byte-identical validated path. Resolving here also emits the one-shot
+        # advisory warnings; all are warn-and-continue, never fatal.
+        self._min_D = self._resolve_periodic_reinit()
 
         self._initiate_func_dict()
 
@@ -521,6 +538,13 @@ class ToolError:
         accumulator resets. Using the stationary tool's end-inc as the
         continuous start-inc follows Table 11 note 3. Both modes propagate
         systematically within an initialisation section (Table 6/7 mode = S).
+
+        SPE 90408 App. C box-11 periodic re-init (opt-in/UNVALIDATED, gated on
+        ``self._min_D`` -- see ``_resolve_periodic_reinit``): when enabled, the
+        accumulation ALSO resets to zero every ``min_D`` along-hole WITHIN an
+        uninterrupted continuous run, starting a fresh independent ~min_D
+        segment to bound drift. ``self._min_D is None`` (the default) takes the
+        byte-identical validated path.
         """
         import warnings
 
@@ -566,8 +590,14 @@ class ToolError:
         # earth rate, NRF, ... already live in `bindings`).
         base = {k: v for k, v in bindings.items() if np.isscalar(v)}
 
+        # SPE 90408 App. C box-11 periodic re-init (opt-in/unvalidated). When
+        # disabled (the default) ``min_D`` is None -> the reset branch never
+        # fires and the accumulation is byte-identical to the validated path.
+        min_D = getattr(self, "_min_D", None)
+        md = bindings["MD"]
         state = 0.0
         states = np.zeros(n)
+        seg_start = None  # along-hole MD where the current active segment began
         for k in range(1, n):
             if zoned:
                 active = lo <= inc_deg[k] <= hi
@@ -576,6 +606,16 @@ class ToolError:
                 active = inc[k] > gate
                 frozen = False
             if active:
+                if seg_start is None:
+                    seg_start = float(md[k - 1])
+                if min_D is not None and md[k] - seg_start >= min_D:
+                    # box 11: re-gyrocompass here -> the continuous drift /
+                    # random-walk accumulation restarts from zero at the start
+                    # of a fresh independent ~min_D section.
+                    state = 0.0
+                    seg_start = float(md[k])
+                    states[k] = 0.0
+                    continue
                 step_ns = dict(base)
                 step_ns.update({
                     "MD": float(bindings["MD"][k]),
@@ -588,9 +628,14 @@ class ToolError:
                 })
                 state = float(evaluate_formula(formula, step_ns))
             elif frozen:
-                pass  # above the window: preserve the handed-off value
+                # above the window: preserve the handed-off value (box 12), but
+                # END the current active run so a later re-entry into the zone
+                # starts a fresh box-11 segment (its min_D is measured from the
+                # re-entry, not across the frozen gap).
+                seg_start = None
             else:
                 state = 0.0  # outside the active survey: not running / reset
+                seg_start = None
             states[k] = state
 
         unit = term.get("units") or term.get("unit") or "-"
@@ -645,6 +690,19 @@ class ToolError:
         Below the gate the station keeps its live stationary weight
         (``below='live'``, ``carry_above_max``) or zero (``below='zero'``,
         ``carry_only`` init seed).
+
+        Note (SPE 90408 App. C box-11 periodic re-init): box 11 deliberately
+        does NOT touch this carry. The stationary-init weights it carries
+        (e.g. ``Tan(Inc)``, ``1/Cos(Inc)`` -- GD4/GB1/GMIS/GSF) DIVERGE at high
+        inclination, which is exactly why the carry freezes them at the gate
+        value rather than evaluating them live above it. Re-gyrocompassing
+        mid-run at the (high-inc) current station would evaluate ``Tan(90deg)``
+        / ``1/Cos(90deg)`` -> non-finite. The per-section gyrocompass-init
+        magnitude is therefore preserved at the gate value; box 11's finite,
+        drift-bounding effect lives entirely in the continuous recurrence reset
+        (``_call_interpreter_recurrence``). The inter-section de-correlation of
+        the carried init is intentionally not modelled (the box-11 caveat
+        covers it -- see ``_resolve_periodic_reinit``).
         """
         out = dpde.copy() if below == "live" else np.zeros_like(dpde)
         carried = None
@@ -715,6 +773,106 @@ class ToolError:
         active = (inc_deg >= lo) & (inc_deg <= hi)
         out[~active] = 0.0
         return out
+
+    def _resolve_periodic_reinit(self):
+        """Resolve the (opt-in, default-OFF) SPE 90408 App. C box-11 periodic
+        re-initialisation config and emit the appropriate one-shot advisory.
+
+        Box 11 of the gyro implementation flow chart (Fig C1) re-initialises a
+        continuous survey every ``min_D`` along-hole -- splitting an
+        uninterrupted continuous run into consecutive ~min_D sections, each
+        gyrocompassed independently, to bound the drift/random-walk growth.
+        This is the author's recommendation (Ekseth); it is **unvalidatable**
+        -- no published SPE 90408 reference tabulates a result computed WITH a
+        genuine within-run re-init, so the ON path cannot be checked against an
+        absolute reference (the validated engine is the OFF path).
+
+        Returns ``min_D`` (metres) when the feature is ENABLED, else ``None``
+        (-> the carry + recurrence take the byte-identical validated path).
+        All paths warn-and-continue (RuntimeWarning, never fatal):
+
+          - ON (``periodic_reinit`` true) + usable min_D -> experimental,
+            unverifiable warning; returns min_D (feature applied).
+          - ON but no positive min_D -> no-op warning; returns None.
+          - OFF + a continuous section longer than min_D actually occurs ->
+            advisory pointing at the switch (drift/RW may be over-estimated);
+            returns None. Output is UNCHANGED -- detection/warning only.
+          - OFF + no min_D / no long section -> silent; returns None.
+        """
+        import warnings
+        hdr = self.em.get("header", {}) if hasattr(self, "em") else {}
+        flag = bool(hdr.get("Periodic Reinit"))
+        raw = hdr.get("Min Dist Between Initialisations")
+        min_D = None
+        if raw is not None:
+            try:
+                min_D = float(raw)
+            except (TypeError, ValueError):
+                min_D = None
+            if min_D is not None and min_D <= 0.0:
+                min_D = None
+
+        if flag:
+            if min_D is None:
+                warnings.warn(
+                    "periodic re-initialisation (`periodic_reinit`) is enabled "
+                    "but no positive `min_dist_between_initialisations` (min_D) "
+                    "is set: the flag is a no-op and the default (validated) "
+                    "output is returned.",
+                    RuntimeWarning,
+                )
+                return None
+            warnings.warn(
+                "periodic re-initialisation (min_D, SPE 90408 App. C box 11) "
+                "is ENABLED: this is a theoretical model (author's "
+                "recommendation, Ekseth) NOT validated against any published "
+                "reference -- results are unverifiable.",
+                RuntimeWarning,
+            )
+            return min_D
+
+        # Default OFF. Validated output is returned UNCHANGED; only warn if the
+        # survey actually enters the regime box 11 would govern.
+        if min_D is not None and self._continuous_section_exceeds(min_D):
+            warnings.warn(
+                f"continuous-gyro section exceeds min_D={min_D:g} m without "
+                f"re-initialisation: drift/random-walk may be OVER-estimated "
+                f"in this regime (periodic re-init, SPE 90408 App. C box 11, "
+                f"is not applied by default). To model it, enable the "
+                f"experimental `periodic_reinit` flag -- note its results are "
+                f"theoretical (author's recommendation, Ekseth) and "
+                f"unvalidated against any published reference.",
+                RuntimeWarning,
+            )
+        return None
+
+    def _continuous_section_exceeds(self, min_D):
+        """True if any continuous-gyro section spans >= ``min_D`` along-hole.
+
+        A continuous section is a maximal run of stations above the static-gyro
+        inclination gate (``XY Static Gyro End Inc``); a missing/negative gate
+        means the tool runs continuous from the first station (one section).
+        Detection only -- never changes any output (used by the default-OFF
+        advisory in ``_resolve_periodic_reinit``)."""
+        try:
+            survey = self.e.survey
+            md = np.asarray(survey.md, dtype=float)
+            inc = np.asarray(survey.inc_rad, dtype=float)
+        except Exception:
+            return False
+        hdr = self.em.get("header", {}) if hasattr(self, "em") else {}
+        gate = hdr.get("XY Static Gyro End Inc")
+        gate = -np.inf if gate is None else float(gate)
+        longest = 0.0
+        start = None
+        for k in range(len(md)):
+            if inc[k] > gate:
+                if start is None:
+                    start = md[k]
+                longest = max(longest, md[k] - start)
+            else:
+                start = None
+        return longest >= min_D
 
     def _call_interpreter_singularity(self, e_DIA, term, bindings, sigma):
         """Build e_NEV / e_NEV_star with vertical-hole singularity substitution.
