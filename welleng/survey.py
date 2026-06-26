@@ -34,7 +34,6 @@ from .utils import (
     make_long_cov,
     min_curve_step,
     radius_from_dls,
-    get_arc
 )
 from .error import ErrorModel, ERROR_MODELS
 from .node import Node
@@ -1567,19 +1566,24 @@ class Survey:
             radius_effective
         )
 
-        arc1 = [
-            get_arc(dogleg, _radius_effective, toolface, vec=vec)
-            for dogleg, _radius_effective, toolface, vec in zip(
-                dogleg1[1:], radius_effective[1:], self.toolface[:-1],
-                self.vec_nev[:-1]
-            )
-        ]
+        # Each leg's mid-station is the end of an arc of swept angle dogleg1,
+        # transformed by the leg toolface and the start-station orientation.
+        # Only the arc end-vector and arc length (dogleg * radius) are needed
+        # (the new Survey recomputes positions by minimum curvature), so this is
+        # vectorised over all legs rather than calling get_arc per station.
+        dl = dogleg1[1:]
+        # arc end-vector in the local arc frame: [sin(dogleg), 0, cos(dogleg)]
+        local_vec = np.column_stack((np.sin(dl), np.zeros_like(dl), np.cos(dl)))
+        inc_azi = get_angles(self.vec_nev[:-1], nev=True)
+        euler = np.column_stack((self.toolface[:-1], inc_azi[:, 0], inc_azi[:, 1]))
+        vec_new = R.from_euler('zyz', euler, degrees=False).apply(local_vec)
+        inc_azi_new = np.degrees(get_angles(vec_new, nev=True))
 
-        _survey_new = np.array([
-            [row[-1], *np.degrees(get_angles(row[1], nev=True))[0]]
-            for row in arc1
-        ])
-        _survey_new[:, 0] += self.md[:-1]
+        _survey_new = np.column_stack((
+            self.md[:-1] + dl * radius_effective[1:],   # leg start MD + arc length
+            inc_azi_new[:, 0],
+            inc_azi_new[:, 1],
+        ))
 
         survey_new = np.zeros(shape=(len(_survey_new) * 2 + 1, 3))
         survey_new[:-1] = np.stack(
