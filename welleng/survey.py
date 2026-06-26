@@ -1667,17 +1667,8 @@ def modified_tortuosity_index(
     b = (
         (l_cs / l_xs) - 1
     ) / l_cs
-    # )
 
-    cumsum = 0
-    a = []
-    for n in n_sections:
-        a.extend(
-            b[n_sections_arr == n]
-            + cumsum
-        )
-        cumsum = a[-1]
-    a = np.array(a)
+    a = _accumulate_sections(b, n_sections_arr)
 
     mti = np.hstack((
         np.array([0.0]),
@@ -1756,15 +1747,7 @@ def tortuosity_index(survey, rtol=0.01, dls_tol=None, data=False, **kwargs):
         (l_cs / l_xs) - 1
     )
 
-    cumsum = 0
-    a = []
-    for n in n_sections:
-        a.extend(
-            b[n_sections_arr == n]
-            + cumsum
-        )
-        cumsum = a[-1]
-    a = np.array(a)
+    a = _accumulate_sections(b, n_sections_arr)
 
     ti = np.hstack((
         np.array([0.0]),
@@ -1852,6 +1835,33 @@ def directional_difficulty_index(survey, **kwargs):
         ), nan=0.0, posinf=0.0, neginf=0.0)
 
     return ddi
+
+
+def _accumulate_sections(b, n_sections_arr):
+    """Per-section cumulative sum used by the tortuosity indices.
+
+    Returns ``a`` where ``a[k] = b[k] + (sum of each prior section's final b)``,
+    i.e. each station's section contribution plus the running total of every
+    completed section. This is the vectorized (O(n)) equivalent of the
+    per-section carry loop (which was O(sections * n) because it masked the full
+    array once per section).
+
+    ``n_sections_arr`` is the per-station section index and must be
+    non-decreasing (stations in measured-depth order, as produced by
+    :func:`_get_ti_data`).
+    """
+    b = np.asarray(b, dtype=float)
+    if b.size == 0:
+        return b.copy()
+    # last index of each contiguous section run
+    run_last = np.concatenate((
+        np.where(np.diff(n_sections_arr) != 0)[0],
+        [b.size - 1]
+    ))
+    # carry into each run = cumulative sum of the previous runs' final b
+    carry_per_run = np.concatenate(([0.0], np.cumsum(b[run_last])[:-1]))
+    run_sizes = np.diff(np.concatenate(([-1], run_last)))
+    return b + np.repeat(carry_per_run, run_sizes)
 
 
 def _get_ti_data(survey, rtol, dls_tol=None):
