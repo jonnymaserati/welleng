@@ -463,6 +463,28 @@ class ToolError:
         unit = term.get("units") or term.get("unit") or "-"
         scale = _MAG_UNIT_TO_BASE.get(unit, 1.0)
         e_DIA = dpde * (mag * scale)
+        # ISCWSA v5.13 Sec 7.3 pt14 / eqs 44-46: a RANDOM carried init seed
+        # re-randomises at every re-initialisation, so its covariance is the
+        # RSS of the per-continuous-section systematic running sums, not one
+        # fully-correlated cumsum across the whole well. Self-scoping:
+        # ``carry_only`` uniquely tags the random init seed (the systematic
+        # biases use ``carry_above_max``), and only under the per-section
+        # re-init regime (positive stationary ``XY Static Gyro End Inc``) does
+        # the well re-gyrocompass. The continuous sections are the same maximal
+        # inc>gate runs ``_carry_per_section`` already detects (gate =
+        # ``inc_min_deg``). A single section reduces to the standard single
+        # outer product, so non-re-initialised wells / init-at-first-station
+        # (XYZ, gate<0) models are inert (bit-identical).
+        carry_sections = None
+        if term.get("carry_only"):
+            hdr_ci = self.em.get("header", {}) if hasattr(self, "em") else {}
+            init_inc = hdr_ci.get("XY Static Gyro End Inc")
+            if init_inc is not None and float(init_inc) >= 0.0:
+                gate = term.get("inc_min_deg")
+                gate = -np.inf if gate is None else float(gate)
+                carry_sections = self._continuous_sections(
+                    np.degrees(inc), gate
+                )
         # Vertical-hole singularity: OWSG/ISCWSA azimuth weight functions carry
         # a 1/sin(inc) factor that cancels the sin(inc) of the position
         # Jacobian in deviated hole but evaluates to nan at an exactly-vertical
@@ -481,8 +503,11 @@ class ToolError:
             return self.e._generate_error(
                 code, e_DIA, propagation, NEV=True,
                 e_NEV=e_NEV, e_NEV_star=e_NEV_star,
+                sections=carry_sections,
             )
-        return self.e._generate_error(code, e_DIA, propagation, NEV=True)
+        return self.e._generate_error(
+            code, e_DIA, propagation, NEV=True, sections=carry_sections
+        )
 
     # Recurrence (self-referential) state variables a continuous-gyro
     # azimuth formula may carry, mapped to accumulation mode. The mode
@@ -705,20 +730,40 @@ class ToolError:
         covers it -- see ``_resolve_periodic_reinit``).
         """
         out = dpde.copy() if below == "live" else np.zeros_like(dpde)
-        carried = None
-        for k in range(len(inc_deg)):
-            if inc_deg[k] > gate:
-                if carried is None:               # first station of a section
-                    if k == 0:
-                        carried = dpde[0].copy()
-                    else:
-                        lo_i, hi_i = inc_deg[k - 1], inc_deg[k]
-                        f = 0.0 if hi_i == lo_i else (gate - lo_i) / (hi_i - lo_i)
-                        carried = dpde[k - 1] + f * (dpde[k] - dpde[k - 1])
-                out[k] = carried
-            else:
-                carried = None                    # below gate: re-init pending
+        for start, stop in self._continuous_sections(inc_deg, gate):
+            if start == 0:                        # section opens at station 0
+                carried = dpde[0].copy()
+            else:                                 # interpolate the up-crossing
+                lo_i, hi_i = inc_deg[start - 1], inc_deg[start]
+                f = 0.0 if hi_i == lo_i else (gate - lo_i) / (hi_i - lo_i)
+                carried = dpde[start - 1] + f * (dpde[start] - dpde[start - 1])
+            out[start:stop] = carried
         return out
+
+    @staticmethod
+    def _continuous_sections(inc_deg, gate):
+        """Maximal runs of consecutive stations with ``inc_deg > gate``.
+
+        These are the continuous-survey sections separated by drops below the
+        stationary-init gate -- each up-crossing re-initialises (re-
+        gyrocompasses) the survey. Shared by the per-section carry
+        (``_carry_per_section``) and the ISCWSA v5.13 eqs 44-46 carried-seed
+        RSS (``error._cov_NEV_carry_per_section``) so both use one boundary
+        definition. Returns a list of ``(start, stop)`` half-open index pairs.
+        """
+        above = np.asarray(inc_deg) > gate
+        sections = []
+        k, n = 0, len(above)
+        while k < n:
+            if above[k]:
+                j = k + 1
+                while j < n and above[j]:
+                    j += 1
+                sections.append((k, j))
+                k = j
+            else:
+                k += 1
+        return sections
 
     def _apply_inc_gating(self, dpde, inc, term):
         """Inclination-window gating + stationary->continuous carry.
