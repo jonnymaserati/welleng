@@ -41,3 +41,6 @@ VERSION*
 test/test_data/*.xlsx
 
 CLAUDE.md
+docs/dev/
+# secrets
+.env
