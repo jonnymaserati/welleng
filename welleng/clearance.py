@@ -1067,9 +1067,12 @@ class MeshClearance(Clearance):
         Interpolates a point on a well trajectory and returns
         the distance between the interpolated point and the
         position provided.
+
+        Uses the lightweight position-only interpolation (no Survey object
+        is constructed) since this is the inner cost function of the
+        closest-point optimisation and only the NEV position is needed.
         """
-        s = _interpolate_survey(survey, x[0])
-        new_pos = np.array([s.n, s.e, s.tvd]).T[1]
+        new_pos = _interpolate_pos_nev(survey, x[0], 0)
         dist = norm(new_pos - pos, axis=-1)
 
         return dist
@@ -1089,9 +1092,7 @@ class MeshClearance(Clearance):
             args=(survey, pos)
             )
 
-        s = _interpolate_survey(survey, res.x[0])
-
-        nev = np.array([s.n, s.e, s.tvd]).T[-1]
+        nev = _interpolate_pos_nev(survey, res.x[0], 0)
 
         return (nev, res)
 
