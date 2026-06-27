@@ -140,3 +140,106 @@ def test_mahalanobis_less_conservative_than_pedal(data=data):
         if np.isfinite(ped):
             assert mah >= ped - 1e-6, well          # never more conservative
         assert (mah < 1.0) == (well in hits), well
+
+
+def _resample_brute(survey, step):
+    """Resample a survey's position/covariance/radius to a fine MD step (test
+    helper for the independent brute-force reference)."""
+    md = np.asarray(survey.md, float)
+    pos = np.column_stack([survey.n, survey.e, survey.tvd]).astype(float)
+    cov = np.asarray(survey.cov_nev, float).reshape(-1, 3, 3)
+    rad = np.asarray(survey.radius, float).reshape(-1)
+    mdf = np.arange(md[0], md[-1] + step, step)
+    P = np.column_stack([np.interp(mdf, md, pos[:, a]) for a in range(3)])
+    C = np.empty((len(mdf), 3, 3))
+    for a in range(3):
+        for b in range(3):
+            C[:, a, b] = np.interp(mdf, md, cov[:, a, b])
+    return P, C, np.interp(mdf, md, rad)
+
+
+def _brute_force_min_sf(reference, offset, step=1.0, k=3.5, Sm=0.3, sigma_pa=0.5):
+    """Exhaustive all-pairs minimum radii-adjusted Mahalanobis SF at a fine MD
+    step — the independent reference MahalanobisClearance must reproduce."""
+    Rp, Rc, Rr = _resample_brute(reference, step)
+    Op, Oc, Ro = _resample_brute(offset, step)
+    best = np.inf
+    for i in range(len(Rp)):
+        d = Op - Rp[i]
+        D = np.linalg.norm(d, axis=1)
+        S = Rc[i] + Oc + sigma_pa ** 2 * np.eye(3)
+        scale = np.divide(np.maximum(D - (Rr[i] + Ro + Sm), 0.0), D,
+                          out=np.zeros_like(D), where=D > 0)
+        dp = d * scale[:, None]
+        m = np.sqrt(np.einsum('oi,oij,oj->o', dp, np.linalg.inv(S), dp)) / k
+        best = min(best, float(np.min(m)))
+    return best
+
+
+def test_mahalanobis_matches_brute_force(data=data):
+    """MahalanobisClearance (broadphase + continuous narrowphase) agrees with an
+    exhaustive all-pairs reference sampled at 1 m to < 1e-3 — the optimisation
+    finds the TRUE minimum, not a station-sampling artefact. (The continuous
+    narrowphase can sit a fraction below the 1 m-discrete brute, because it
+    resolves the minimum *between* the 1 m samples; the two-sided bound catches
+    both that and any narrowphase regression.) Pins the paper's exactness claim."""
+    surveys = generate_surveys(data)
+    reference = surveys["Reference well"]
+    for well in ["03 - well", "07 - well"]:
+        offset = surveys[well]
+        got = float(np.nanmin(MahalanobisClearance(reference, offset).sf))
+        truth = _brute_force_min_sf(reference, offset, step=1.0)
+        assert abs(got - truth) < 1e-3, f"{well}: maha={got:.4f} brute={truth:.4f}"
+
+
+def test_mahalanobis_equals_brooks_transform(data=data):
+    """The SHIPPED metric is exactly Brooks's (SPE-116155) Mahalanobis-space
+    distance ||V E^-1/2 V^T d||. Drives the actual `_sf_point` (sigma_pa=0,
+    Sm=0 -> pure metric) and compares to the transform on real station
+    covariances — a non-trivial check of the implementation, not an identity."""
+    surveys = generate_surveys(data)
+    reference = surveys["Reference well"]
+    offset = surveys["03 - well"]
+    mc = MahalanobisClearance(reference, offset)
+    mc.sigma_pa = 0.0
+    mc.Sm = 0.0
+    Rp = np.column_stack([reference.n, reference.e, reference.tvd])
+    Rc = np.asarray(reference.cov_nev).reshape(-1, 3, 3)
+    Op = np.column_stack([offset.n, offset.e, offset.tvd])
+    Oc = np.asarray(offset.cov_nev).reshape(-1, 3, 3)
+    checked = 0
+    for i, j in [(40, 40), (50, 45), (60, 55)]:
+        S = Rc[i] + Oc[j]
+        w, V = np.linalg.eigh(S)
+        if w.min() < 1e-9:
+            continue
+        d = Op[j] - Rp[i]
+        brooks = float(np.linalg.norm(V @ np.diag(w ** -0.5) @ V.T @ d))
+        shipped = mc._sf_point(Rp[i], Rc[i], 0.0, Op[j], Oc[j], 0.0) * mc.k
+        assert abs(shipped - brooks) < 1e-9, f"({i},{j}) shipped={shipped} brooks={brooks}"
+        checked += 1
+    assert checked >= 2
+
+
+def test_mahalanobis_n_candidates_convergence(data=data):
+    """A margin-governed (clear) well's governing SF must be stable as the
+    narrowphase candidate count grows: n_candidates=8 is sufficient."""
+    surveys = generate_surveys(data)
+    reference = surveys["Reference well"]
+    offset = surveys["07 - well"]   # clear, margin-governed (not a crossing)
+    vals = [float(np.nanmin(
+        MahalanobisClearance(reference, offset, n_candidates=n).sf))
+        for n in (1, 4, 8, 16)]
+    assert max(vals) - min(vals) < 1e-6, vals
+
+
+def test_mahalanobis_governing_values(data=data):
+    """Pin the governing minimum SF (not just hit/clear) for the between-station
+    crossing (09) and the sidetrack/degenerate-covariance case (10)."""
+    surveys = generate_surveys(data)
+    reference = surveys["Reference well"]
+    sf09 = float(np.nanmin(MahalanobisClearance(reference, surveys["09 - well"]).sf))
+    assert sf09 < 0.01, sf09     # sharp between-station crossing -> overlap
+    sf10 = float(np.nanmin(
+        MahalanobisClearance(reference, surveys["10 - well"], kop_depth=900.0).sf))
+    assert sf10 < 0.01, sf10     # sidetrack, degenerate cov, scanned below KOP
