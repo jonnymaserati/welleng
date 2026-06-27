@@ -831,11 +831,16 @@ class IscwsaClearance(Clearance):
         ) % 360
 
 
-class MahalanobisClearance(IscwsaClearance):
+class MahalanobisClearance(Clearance):
     """Anti-collision using the exact Mahalanobis k-sigma boundary of the
     combined (relative-position) uncertainty ellipsoid, rather than the
     pedal-curve support-function approximation used by the ISCWSA separation
     rule (:class:`IscwsaClearance`).
+
+    Subclasses the lightweight :class:`Clearance` base (NOT IscwsaClearance) so
+    it does not pay for the pedal-curve separation-factor minimisation it does
+    not use; it needs only the reference/offset surveys, their covariances and
+    hole radii.
 
     The separation rule measures the combined ellipsoid's extent toward the
     offset with its support function ``sqrt(uT.Sigma.u)`` (the tangent
