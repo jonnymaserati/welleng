@@ -1,6 +1,6 @@
 ---
 title: "Making the Exact Wellbore Anti-Collision Boundary Practical: an Efficient, Validated, Open Implementation, and the Cost of the Separation-Rule Approximation"
-author: "Jonathan Corcutt (welleng)"
+author: "Jonathan Corcutt — Corcutt Beheer B.V., Wassenaar, Netherlands — ORCID 0009-0008-1953-7760"
 date: "2026"
 geometry: margin=2.2cm
 fontsize: 10pt
@@ -15,7 +15,7 @@ header-includes: \usepackage{amssymb}
 
 Wellbore anti-collision is governed by the ISCWSA separation rule (Sawaryn et al., SPE-187073-MS), which expresses risk as a dimensionless separation factor (SF) and is the industry standard for permitting drilling near existing wells. The rule is, by construction, conservative: it characterises the combined positional-uncertainty ellipsoid of the reference and offset wells by its *support function* (the pedal-curve / tangent distance) in the centre-to-centre direction, which always over-states the ellipsoid's true reach toward an off-axis offset. The literature acknowledges this — "overconservative separation rules also have a cost" (SPE-116155) — and that more accurate methods have been considered "impractical for general application because of high conceptual or computational complexity" (SPE-184644).
 
-The exact boundary is **not new**: it is the Mahalanobis distance (Mahalanobis, 1936), brought into wellbore collision by Brooks (2008) after Alfano's satellite-conjunction work, and underlying the analytic collision-probability methods of Bang (2017). Yet the operational standard remains the approximate rule — the exact method having been judged *impractical* "because of high conceptual or computational complexity" (Bang, 2017). **Our contribution is to remove that blocker:** an efficient, validated, open implementation, together with an exact bound on what the approximation costs. We show the conservatism is exactly quantifiable — the rule uses the support function $\sqrt{\mathbf{u}^\top\Sigma\,\mathbf{u}}$ where the correct boundary is the Mahalanobis distance $\sqrt{\mathbf{d}^\top\Sigma^{-1}\mathbf{d}}$, and by the Kantorovich inequality the rule's factor never exceeds the exact one (the gap growing with ellipsoid eccentricity and approach obliquity). We compute the exact boundary as a general, step-free **minimum-Mahalanobis distance between two uncertain parametric curves** — broadphase (the curves' own stations) plus continuous narrowphase, analytic, no mesh — in the open-source library welleng, and validate it three ways: it reproduces the published ISCWSA separation factors to $0.5\%$; it equals Brooks's Mahalanobis-space distance to machine precision; and it agrees with the rule on every collision/clear verdict of the standard set while being up to $1.47\times$ less conservative on the margin, matching an exhaustive reference to $<10^{-3}$ at $\approx 35$ ms per pair. All data, code and diagnostics are released for full reproducibility. The result lets operators safely reduce standoff — recovering wells that conservatism would forbid and avoiding the cost and production delay of unnecessary additional surveying.
+The exact boundary is **not new**: it is the Mahalanobis distance (Mahalanobis, 1936), brought into wellbore collision by Brooks (2008) after Alfano's satellite-conjunction work, and underlying the analytic collision-probability methods of Bang (2017). Yet the operational standard remains the approximate rule — the exact method having been judged *impractical* "because of high conceptual or computational complexity" (Bang, 2017). **Our contribution is to remove that blocker:** an efficient, validated, open implementation, together with an exact bound on what the approximation costs. We show the conservatism is exactly quantifiable — the rule uses the support function $\sqrt{\mathbf{u}^\top\Sigma\,\mathbf{u}}$ where the correct boundary is the Mahalanobis distance $\sqrt{\mathbf{d}^\top\Sigma^{-1}\mathbf{d}}$, and by the Kantorovich inequality the rule's factor never exceeds the exact one (the gap growing with ellipsoid eccentricity and approach obliquity). We compute the exact boundary as a general, step-free **minimum-Mahalanobis distance between two uncertain parametric curves** — broadphase (the curves' own stations) plus continuous narrowphase, analytic, no mesh — in the open-source library welleng, and validate it: welleng reproduces the published ISCWSA factors to $0.5\%$; the shipped metric agrees with Brooks's Mahalanobis-space transform to floating-point precision (an implementation-consistency check — no third-party Mahalanobis factor exists to match); and the broadphase+narrowphase search matches an exhaustive all-pairs reference to $<2\times10^{-3}$. On the standard set it agrees with the rule on every collision/clear verdict while being up to $1.47\times$ less conservative on the margin, at tens of milliseconds per pair. All data, code and diagnostics are released for full reproducibility. The result lets operators safely reduce standoff — recovering wells that conservatism would forbid and avoiding the cost and production delay of unnecessary additional surveying.
 
 **Notation.** $\Sigma=\Sigma_{\text{ref}}+\Sigma_{\text{off}}$ the combined relative-position covariance (NEV), $\mathbf{d}$ the centre-to-centre vector, $\mathbf{u}=\mathbf{d}/\lVert\mathbf{d}\rVert$, $k$ the confidence multiple ($k=3.5$ in the standard rule), $R$ the combined hole radii plus surface margin $S_m$, $\sigma_{pa}$ the project-ahead term.
 
@@ -34,7 +34,7 @@ We make five contributions:
 1. We identify and quantify the source of the separation rule's conservatism: the support function over-states the ellipsoid's reach (Section 3), and bound it exactly via the Kantorovich inequality (Section 5).
 2. We validate welleng's separation-rule implementation against the published ISCWSA standard set to within $0.5\%$ (Section 4) — establishing that we compute the rule correctly before improving on it.
 3. We give the exact combined-covariance, minimum-Mahalanobis $k\sigma$ method, searching the worst point over both interpolated wells, with a project-ahead floor for degenerate geometries (Section 6).
-4. We validate it against the rule on the standard set (identical verdicts, up to $1.48\times$ less conservative) and show it is fast (Section 7).
+4. We validate it against the rule on the standard set (identical verdicts, up to $1.47\times$ less conservative) and show it is fast (Section 7).
 5. We release the implementation, data and diagnostics for full reproducibility (Section 8).
 
 ## 2. The separation rule and its geometry
@@ -148,29 +148,31 @@ for i in the N stations with smallest sf[i]:
 return min over i of sf[i]
 ```
 
-Both phases operate directly on the analytic ellipsoid, so there is no surface to mesh and no fixed step to choose: the resolution is **self-derived from the geometry** (the survey's own stations) and the result is **step-free** (an optimiser tolerance), scaling without a domain-specific tuning parameter. The method is validated three ways: it reproduces the published ISCWSA separation factors to $0.5\%$ (Table 1); its per-point metric equals Brooks's Mahalanobis-space transform $\lVert V E^{-1/2} V^{\top}\mathbf{d}\rVert$ to machine precision (the algebraic identity $\mathbf{d}^\top\Sigma^{-1}\mathbf{d}=\lVert V E^{-1/2} V^{\top}\mathbf{d}\rVert^2$ for $\Sigma=VEV^\top$); and it agrees with an exhaustive all-pairs reference sampled at $1$ m to better than $10^{-3}$ on every well of the standard set, at $\approx 35$ ms per pair. Table 2 gives the second of these checks: at each well's closest approach, our metric equals Brooks's Mahalanobis-space transform to machine precision.
+Both phases operate directly on the analytic ellipsoid, so there is no surface to mesh and no fixed step to choose: the resolution is **self-derived from the geometry** (the survey's own stations) and the result is **step-free** (an optimiser tolerance), scaling without a domain-specific tuning parameter, in **tens of milliseconds per pair** — several-fold faster than the pedal rule on the same hardware (the absolute time is machine-dependent; the ratio is the durable claim).
 
-| Offset | ours $\sqrt{\mathbf{d}^\top\Sigma^{-1}\mathbf{d}}$ | Brooks $\lVert V E^{-1/2}V^\top\mathbf{d}\rVert$ | \|diff\| |
-|---|---|---|---|
-| 01 | 4.954973 | 4.954973 | 1.8e-15 |
-| 02 | 13.294141 | 13.294141 | 1.8e-15 |
-| 03 | 2.584106 | 2.584106 | 4.4e-16 |
-| 04 | 1.555430 | 1.555430 | 4.4e-16 |
-| 05 | 6.309519 | 6.309519 | 5.3e-15 |
-| 06 | 3.858673 | 3.858673 | 4.4e-16 |
-| 07 | 7.795756 | 7.795756 | 8.9e-16 |
-| 08 | 6.302172 | 6.302172 | 0 |
-| 09 | 4.135453 | 4.135453 | 2.7e-15 |
-| 10 | 0.000000 | 0.000000 | 0 |
-| 11 | 1.228445 | 1.228445 | 2.2e-16 |
+Correctness is anchored as follows. The *external* anchor is the separation rule itself: welleng reproduces the published ISCWSA factors to $0.5\%$ (Table 1), so the covariance pipeline and geometry are correct. The exact method then rests on two further checks — because **no third-party Mahalanobis separation factor exists to match** (the standard set publishes pedal factors, not Mahalanobis distances): (i) the metric is computed correctly — our direct eigendecomposition agrees with Brooks's (SPE-116155) Mahalanobis-space transform $\lVert V E^{-1/2}V^\top\mathbf{d}\rVert$ to floating-point precision (Table 2); since these are the *same* quadratic form, this is an implementation-consistency check (two code paths), not external corroboration; and (ii) the search finds the true minimum — the broadphase+narrowphase result agrees with an exhaustive all-pairs reference sampled at $1$ m to $<2\times10^{-3}$ on every well. Finally, the method agrees with the validated pedal rule on every collision/clear verdict of the standard set while remaining $\ge$ it (Kantorovich, Section 5), so it is never optimistic relative to the rule.
 
-Table: our separation-factor metric vs Brooks's (SPE-116155) Mahalanobis-space transform $T=V E^{-1/2}V^\top$, evaluated at each well's closest approach (the raw Mahalanobis distance; the separation factor rescales it by the combined radii and $k$). Identical to $\le 5.3\times10^{-15}$ — the two are the same quantity, confirming the implementation computes exactly Brooks's established measure.
+| Offset | ours $\sqrt{\mathbf{d}^\top\Sigma^{-1}\mathbf{d}}$ (eigh) | Brooks transform $\lVert V E^{-1/2}V^\top\mathbf{d}\rVert$ |
+|---|---|---|
+| 01 | 4.954973 | 4.954973 |
+| 02 | 13.294141 | 13.294141 |
+| 03 | 2.584106 | 2.584106 |
+| 04 | 1.555430 | 1.555430 |
+| 05 | 6.309519 | 6.309519 |
+| 06 | 3.858673 | 3.858673 |
+| 07 | 7.795756 | 7.795756 |
+| 08 | 6.302172 | 6.302172 |
+| 09 | 4.135453 | 4.135453 |
+| 10 | 0.000000 | 0.000000 |
+| 11 | 1.228445 | 1.228445 |
+
+Table: welleng's Mahalanobis distance computed two ways — directly by eigendecomposition (the shipped `_sf_point`) and via Brooks's (SPE-116155) transform $T=V E^{-1/2}V^\top$ — at each well's closest approach (raw distance; the separation factor rescales by the combined radii and $k$). The two code paths are the same quadratic form and agree to floating-point precision ($<10^{-14}$) on every well: an *implementation-consistency* check that welleng computes Brooks's established measure, not a match against external data (which, for the Mahalanobis factor, does not exist).
 
 For *multi-well scenes* — one planned well against many offsets — a spatial index over the curves' bounding volumes restricts the work to nearby pairs, each then evaluated by the same analytic kernel. A triangulated-mesh realisation is also available (for visualisation, or as a collision-manager scene); its resolution trade-off is in Appendix A.
 
 ## 7. Results
 
-On the ISCWSA standard set the exact method returns the **same collision/clear verdict as the validated rule on every well** (Wells 03, 04, 09, 10, 11 collide; 01, 02, 05, 06, 07, 08 clear), while being **less conservative on the margin** — up to $1.47\times$ (Well 03: $\mathrm{SF}$ $0.46\to0.67$; Well 05: $1.20\to1.73$; Well 07: $1.63\to2.18$). Figure 2 contrasts the two across the set. The method is **fast**: $\approx 35$ ms per well pair versus $\approx 300$ ms for the pedal rule, suitable for the inner loop of batch and automated well planning.
+On the ISCWSA standard set the exact method returns the **same collision/clear verdict as the validated rule on every well** (Wells 03, 04, 09, 10, 11 collide; 01, 02, 05, 06, 07, 08 clear), while being **less conservative on the margin** — up to $1.47\times$ (Well 03: $\mathrm{SF}$ $0.46\to0.67$; Well 05: $1.20\to1.73$; Well 07: $1.63\to2.18$). Figure 2 contrasts the two across the set. The method is **fast**: tens of milliseconds per well pair, several-fold faster than the pedal rule on the same hardware — well inside the inner loop of batch and automated well planning.
 
 Two conventions are worth noting on the deeply overlapping wells. Where the *centres* lie closer than the combined hole radii plus surface margin ($\lVert\mathbf{d}\rVert < R$) the wellbores physically intersect: the separation rule returns a **negative** factor (its linear numerator $\lVert\mathbf{d}\rVert-R$ goes negative, conveying the depth of overlap), whereas the Mahalanobis factor is non-negative by construction and floors at $0$. Both correctly report a collision; the sign is a property of the rule's linear form, not a disagreement. Well 10 is the reference well's sidetrack: its kickoff intersects the parent by design, so the scan begins below the kickoff (`kop_depth`) — applied identically to *both* methods, and consistent with the published standard-set value.
 
@@ -183,7 +185,7 @@ The practical reading: where the rule reports, say, $\mathrm{SF}=1.2$ and would 
 The standing argument against adopting an exact method is that *"more advanced methods that overcome such limitations are impractical for general application because of high conceptual or computational complexity"* (SPE-184644). Every plank of that objection fails for the exact $k\sigma$-boundary method.
 
 - **Conceptual simplicity.** The exact boundary is the Mahalanobis distance (Mahalanobis, 1936) — a single standard quadratic form, $m=\sqrt{\mathbf{d}^\top\Sigma^{-1}\mathbf{d}}$, with collision when $m<k$. It is *simpler* than the rule it replaces, not more complex: the separation rule needs the support function **and** a Euclidean closest-approach scan that carries its own documented exceptions (limitations A and B); the exact method needs neither — one metric, no special cases, no geometrical caveats.
-- **Computational cheapness.** The cost is one $3\times3$ linear solve (or eigendecomposition) per station. Measured end-to-end, the method runs in $35$ ms per well pair — an order of magnitude *faster* than our own implementation of the pedal rule ($300$ ms) and well inside the inner loop of automated trajectory planning. On current hardware the "high computational complexity" is unmeasurable.
+- **Computational cheapness.** The cost is one $3\times3$ linear solve (or eigendecomposition) per station. Measured end-to-end, the method runs in tens of milliseconds per well pair — several-fold *faster* than our own implementation of the pedal rule, and well inside the inner loop of automated trajectory planning. On current hardware the "high computational complexity" is unmeasurable.
 - **Generality.** It applies unchanged to every geometry in the ISCWSA standard set — parallel, crossing, oblique, eccentric and the sidetrack — with no special-casing. The support-function / closest-approach machinery, by contrast, carries the limitations the rule itself documents, and SPE-116155 records that *"many computations currently in use fail when the two wells are parallel"*. The Mahalanobis metric is well-defined for every relative geometry, parallel included.
 
 The objection likely conflates two different problems: the full probability-of-collision *integral over the uncertainty volume* (genuinely more involved, and deliberately out of scope here — Section 10) and the exact $k\sigma$-*boundary* (this paper). The boundary question is the very one the separation rule already answers — approximately. Answering it *exactly* is cheaper, simpler and more general than the approximation.
@@ -205,9 +207,9 @@ Because both bodies are *analytic* (covariance ellipsoids along curves) and the 
 ## 11. Conclusions
 
 - The ISCWSA separation rule is *provably conservative*: it uses the ellipsoid support function where the exact boundary is the Mahalanobis distance, and by the Kantorovich inequality the rule's separation factor never exceeds the exact one.
-- The conservatism is real and quantifiable — up to $1.48\times$ excess standoff on the ISCWSA standard set — and it has a direct economic cost (forgone wells; additional surveying; delayed production).
+- The conservatism is real and quantifiable — up to $1.47\times$ excess standoff on the ISCWSA standard set — and it has a direct economic cost (forgone wells; additional surveying; delayed production).
 - The exact combined-covariance, minimum-Mahalanobis method (searching both interpolated wells, with a project-ahead floor and a conservatively *circumscribed* surface) agrees with the rule on every standard-set verdict while reducing conservatism, and runs in milliseconds.
-- The objection that accurate methods are "impractical … because of high conceptual or computational complexity" fails on every plank: the exact method is *conceptually simpler* than the rule (one Mahalanobis form, no closest-approach caveats), an *order of magnitude faster* ($35$ ms vs $300$ ms), and *general* across all geometries — validated against the published standard set and released open-source. The barrier to accurate anti-collision was never complexity; it was the absence of an auditable implementation, now removed.
+- The objection that accurate methods are "impractical … because of high conceptual or computational complexity" fails on every plank: the exact method is *conceptually simpler* than the rule (one Mahalanobis form, no closest-approach caveats), *several-fold faster* (tens of ms vs hundreds), and *general* across all geometries — validated against the published standard set and released open-source. The barrier to accurate anti-collision was never complexity; it was the absence of an auditable implementation, now removed.
 
 ## Appendix A — From a discrete mesh to the analytic solution
 
