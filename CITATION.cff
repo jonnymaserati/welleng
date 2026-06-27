@@ -9,6 +9,8 @@ type: software
 authors:
   - family-names: Corcutt
     given-names: Jonathan
+    affiliation: "Corcutt Beheer B.V., Wassenaar, Netherlands"
+    orcid: "https://orcid.org/0009-0008-1953-7760"
 version: 0.12.1
 license: Apache-2.0
 repository-code: "https://github.com/jonnymaserati/welleng"
@@ -29,6 +31,8 @@ references:
     authors:
       - family-names: Corcutt
         given-names: Jonathan
+        affiliation: "Corcutt Beheer B.V., Wassenaar, Netherlands"
+        orcid: "https://orcid.org/0009-0008-1953-7760"
     year: 2026
     doi: 10.5281/zenodo.20940515
   # Anti-collision (exact Mahalanobis separation factor) paper.
@@ -41,4 +45,6 @@ references:
     authors:
       - family-names: Corcutt
         given-names: Jonathan
+        affiliation: "Corcutt Beheer B.V., Wassenaar, Netherlands"
+        orcid: "https://orcid.org/0009-0008-1953-7760"
     year: 2026

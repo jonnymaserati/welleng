@@ -884,8 +884,12 @@ class MahalanobisClearance(Clearance):
     kop_depth : float, default -inf
         Kick-off depth below which to scan (inherited; for sidetracks).
     n_candidates : int, default 8
-        Number of lowest broadphase candidates polished by the narrowphase.
-        Results are insensitive above a handful (see the convergence test).
+        Number of globally-lowest broadphase stations polished by the
+        narrowphase, IN ADDITION to every local minimum of the broadphase
+        profile (so a sharp crossing is refined whatever its rank). For the
+        ISCWSA standard set the result already converges with a single
+        candidate; this is defensive headroom, not a tuned value, and remains
+        a heuristic rather than a guarantee.
     tol : float, default 1e-3
         Narrowphase convergence tolerance on the curve parameter (measured
         depth), m.
@@ -894,7 +898,9 @@ class MahalanobisClearance(Clearance):
     ----------
     sf : numpy.ndarray
         Separation factor at each reference station; ``min(sf) < 1`` is a
-        collision. The governing value is ``numpy.nanmin(sf)``.
+        collision.
+    min_sf : float
+        The governing (minimum) separation factor over all stations.
     """
 
     def __init__(self, *args, n_candidates=8, tol=1e-3, **kwargs):
@@ -902,6 +908,11 @@ class MahalanobisClearance(Clearance):
         self._tol = tol                         # narrowphase convergence (curve param)
         super().__init__(*args, **kwargs)
         self.sf = self._mahalanobis_sf()
+
+    @property
+    def min_sf(self):
+        """The governing (minimum) separation factor; ``< 1`` is a collision."""
+        return float(np.nanmin(self.sf))
 
     @staticmethod
     def _curve(survey):
@@ -946,6 +957,12 @@ class MahalanobisClearance(Clearance):
         radii) returns 0. In a zero-variance (perfectly known) direction with a
         non-zero offset component the metric is infinite (the offset is
         infinitely many sigma away — clear); this matches :meth:`_sf_row`.
+
+        The ``np.isclose(proj, 0)`` guard (absolute ``atol`` 1e-8 m) only changes
+        the result when an eigenvalue is ~0, which the ``sigma_pa`` floor
+        prevents in the operational path (``S >= sigma_pa**2 I``). With
+        ``sigma_pa=0`` against a genuinely rank-deficient covariance it can only
+        drop a term, i.e. lower SF — conservative, never a missed collision.
         """
         d = po - pr
         D = float(np.linalg.norm(d))
@@ -1003,15 +1020,24 @@ class MahalanobisClearance(Clearance):
             return sf
 
         # NARROWPHASE: continuous 2-D minimisation over the two curve parameters
-        # from the lowest broadphase candidates — the true minimum falls between
+        # from the broadphase candidates — the true minimum falls between
         # stations. Converges to a tolerance (no fixed step); each search is
         # bounded to the candidate's neighbouring segments.
+        #
+        # Candidates = EVERY local minimum of the broadphase profile (each close
+        # approach straddles a local minimum, so this catches a sharp crossing
+        # whatever its rank) UNION the n_candidates globally-lowest stations
+        # (belt-and-braces, and covers a minimum at the first/last station that
+        # argrelmin omits).
         def objective(x):
             pr, cr, rr = self._at(ref, x[0])
             po, co, ro = self._at(off, x[1])
             return self._sf_point(pr, cr, rr, po, co, ro)
 
-        for i in np.argsort(sf)[:int(min(self._n_candidates, len(sf)))]:
+        local = set(np.atleast_1d(argrelmin(sf)[0]).tolist())
+        local.update(int(x) for x in np.argsort(sf)[:int(min(self._n_candidates, len(sf)))])
+        local.update((0, len(sf) - 1))      # endpoints argrelmin cannot flag
+        for i in sorted(local):
             j = best_j[i]
             bounds = [(Rmd[max(i - 1, 0)], Rmd[min(i + 1, len(Rmd) - 1)]),
                       (Omd[max(j - 1, 0)], Omd[min(j + 1, len(Omd) - 1)])]
