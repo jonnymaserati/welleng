@@ -130,40 +130,38 @@ def fig3():
     print("saved conservative-surface-construction.png")
 
 
-# ---- fig4: separation factor vs depth, the three highest-variance offsets ----
+# ---- fig4: separation factor vs depth along the reference well (single well) ----
 def fig4():
+    # NB a multi-well panel of this view is misleading: per station the rule and
+    # the exact metric pick *different* closest offsets and the far-field forms
+    # differ, so the per-station profiles cross (maha < pedal away from the
+    # governing minimum). "maha >= pedal" holds at the governing minimum — shown
+    # across all wells in Fig 2. Well 05 is the one offset whose crossings are all
+    # far-field (SF > 54), so it shows the gap-along-depth cleanly.
     import tests.test_clearance_iscwsa as t
     from welleng.clearance import IscwsaClearance, MahalanobisClearance
     gs = t.generate_surveys(t.data)
     ref = gs["Reference well"]
-    # the three offsets with the most SF variation along the reference well
-    # (by std of log10 SF), excluding the degenerate sidetrack (Well 10);
-    # ordered collision -> near-miss -> clear.
-    wells = ["11 - well", "06 - well", "05 - well"]
-    fig, axes = plt.subplots(1, 3, figsize=(12.6, 5.0), sharey=True)
-    for ax, w in zip(axes, wells):
-        off = gs[w]
-        ped = np.asarray(IscwsaClearance(ref, off, minimize_sf=False).sf, float)
-        mah = np.asarray(MahalanobisClearance(ref, off).sf, float)
-        tvd = np.asarray(ref.tvd, float)
-        n = min(len(tvd), len(ped), len(mah))
-        ax.plot(ped[:n], tvd[:n], color="C1", lw=1.7, label="pedal / separation rule")
-        ax.plot(mah[:n], tvd[:n], color="C0", lw=1.7, label="exact (Mahalanobis)")
-        ax.axvspan(0, 1.0, color="red", alpha=0.06)        # collision zone
-        ax.axvline(1.0, color="k", lw=1, ls="--")
-        ax.set_xscale("log"); ax.set_xlim(0.05, 100)
-        ax.set_title(f"Well {w.split(' ')[0]}  (min SF {np.nanmin(mah):.2f})", fontsize=10)
-        ax.set_xlabel("separation factor"); ax.grid(alpha=0.25)
-    axes[0].invert_yaxis()                       # shared y: inverts all (depth downward)
-    axes[0].set_ylabel("reference-well TVD [m]")
-    axes[0].text(0.40, 0.98, "SF = 1", transform=axes[0].transAxes, fontsize=8,
-                 va="top", ha="left")     # just right of the SF=1 line (log xlim 0.05–100)
-    axes[-1].legend(loc="lower right", fontsize=8.5)
-    fig.suptitle("Separation factor vs depth — the three offsets with the most SF variation "
-                 "(collision → near-miss → clear):\nthe exact factor stays right of the rule, "
-                 "and the conservatism gap is widest at the closest approach", fontsize=11)
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
-    plt.savefig(f"{OUT}/sf-vs-depth.png", dpi=140, bbox_inches="tight")
+    off = gs["05 - well"]
+    # both continuously minimised (consistent with Fig 2)
+    ped = np.asarray(IscwsaClearance(ref, off, minimize_sf=True).sf, float)
+    mah = np.asarray(MahalanobisClearance(ref, off).sf, float)
+    tvd = np.asarray(ref.tvd, float)
+    n = min(len(tvd), len(ped), len(mah))
+    fig, ax = plt.subplots(figsize=(7.6, 6.0))
+    ax.plot(ped[:n], tvd[:n], color="C1", lw=1.9, label="pedal / separation rule (ISCWSA)")
+    ax.plot(mah[:n], tvd[:n], color="C0", lw=1.9, label="exact combined-ellipsoid (Mahalanobis)")
+    ax.axvspan(0, 1.0, color="red", alpha=0.06)        # collision zone
+    ax.axvline(1.0, color="k", lw=1, ls="--")
+    ax.set_xscale("log"); ax.set_xlim(0.8, 40)         # decision-relevant range
+    ax.text(0.06, 0.985, "SF = 1", transform=ax.transAxes, fontsize=8, va="top", ha="left")
+    ax.invert_yaxis()       # depth increases downward
+    ax.set_xlabel("separation factor"); ax.set_ylabel("reference-well TVD [m]")
+    ax.set_title("Separation factor vs depth along the reference well (offset Well 05):\n"
+                 "SF dips to its minimum at the closest approach, and the conservatism gap\n"
+                 "(exact, right of the rule) opens up there — where the go/no-go decision is made")
+    ax.legend(loc="lower right", fontsize=8.5); ax.grid(alpha=0.25)
+    plt.tight_layout(); plt.savefig(f"{OUT}/sf-vs-depth.png", dpi=140, bbox_inches="tight")
     print("saved sf-vs-depth.png")
 
 
