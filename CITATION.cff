@@ -11,10 +11,14 @@ authors:
     given-names: Jonathan
     affiliation: "Corcutt Beheer B.V., Wassenaar, Netherlands"
     orcid: "https://orcid.org/0009-0008-1953-7760"
-version: 0.12.1
+version: 0.13.0
 license: Apache-2.0
 repository-code: "https://github.com/jonnymaserati/welleng"
 url: "https://github.com/jonnymaserati/welleng"
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.20968887
+    description: Concept DOI (resolves to the latest version)
 keywords:
   - directional drilling
   - wellbore positioning
