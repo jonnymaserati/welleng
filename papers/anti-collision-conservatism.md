@@ -17,7 +17,7 @@ header-includes: |
   \floatplacement{table}{tbp}
 ---
 
-**Preprint — Version 1.0 (2026-06-27)**
+**Preprint — Version 1.0 (2026-06-27) · DOI: [10.5281/zenodo.20976872](https://doi.org/10.5281/zenodo.20976872)**
 
 ---
 
