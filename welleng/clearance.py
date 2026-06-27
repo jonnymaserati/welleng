@@ -927,14 +927,20 @@ class MahalanobisClearance(Clearance):
         pos = np.column_stack([survey.n, survey.e, survey.tvd]).astype(float)
         cov = np.asarray(survey.cov_nev, float).reshape(-1, 3, 3)
         rad = np.asarray(survey.radius, float).reshape(-1)
-        return md, pos, cov, rad
+        return md, pos, cov, rad, survey
 
     @staticmethod
     def _at(curve, q):
-        """Linear interpolation of (position, covariance, radius) at parameter q
-        — i.e. evaluate the continuous curve at any point, not just a station."""
-        md, pos, cov, rad = curve
-        p = np.array([np.interp(q, md, pos[:, a]) for a in range(3)])
+        """Evaluate the continuous curve at parameter (measured depth) q.
+
+        Position is interpolated by **minimum curvature** (SLERP of the unit
+        tangents, via ``_interpolate_pos_nev``) — the same wellpath the
+        separation rule uses, so the between-station closest approach follows the
+        true arc, not the chord. Covariance and radius are interpolated linearly
+        (the standard approximation; cf. Brooks SPE-116155)."""
+        md, pos, cov, rad, survey = curve
+        i = int(np.clip(np.searchsorted(md, q, side="right") - 1, 0, len(md) - 2))
+        p = _interpolate_pos_nev(survey, float(q - md[i]), i)   # min-curvature
         c = np.empty((3, 3))
         for a in range(3):
             for b in range(3):
@@ -1005,8 +1011,8 @@ class MahalanobisClearance(Clearance):
         # (the swept tube interpolates between stations; here the curve is
         # interpolated directly, with no externally imposed step).
         ref, off = self._curve(self.ref), self._curve(self.offset)
-        Rmd, Rp, Rc, Rr = ref
-        Omd, Op, Oc, Ro = off
+        Rmd, Rp, Rc, Rr, _ = ref
+        Omd, Op, Oc, Ro, _ = off
 
         # BROADPHASE: all-pairs at the survey's OWN stations (geometry-derived
         # sampling). All pairs — not a Euclidean nearest-neighbour shortlist —

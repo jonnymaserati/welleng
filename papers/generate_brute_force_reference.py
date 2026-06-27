@@ -13,6 +13,7 @@ import numpy as np
 
 import tests.test_clearance_iscwsa as t
 from welleng.clearance import MahalanobisClearance
+from welleng.survey import _interpolate_pos_nev
 
 OUT = "papers/data/brute-force-reference.csv"
 STEP = 1.0          # measured-depth sampling of the brute-force reference, m
@@ -21,11 +22,14 @@ K, SM, SIGMA_PA = 3.5, 0.3, 0.5      # MahalanobisClearance defaults
 
 def resample(survey, step):
     md = np.asarray(survey.md, float)
-    pos = np.column_stack([survey.n, survey.e, survey.tvd]).astype(float)
     cov = np.asarray(survey.cov_nev, float).reshape(-1, 3, 3)
     rad = np.asarray(survey.radius, float).reshape(-1)
     mdf = np.arange(md[0], md[-1] + step, step)
-    P = np.column_stack([np.interp(mdf, md, pos[:, a]) for a in range(3)])
+    # position by minimum curvature (matches MahalanobisClearance._at); cov/rad linear
+    P = np.empty((len(mdf), 3))
+    for r, q in enumerate(mdf):
+        i = int(np.clip(np.searchsorted(md, q, side="right") - 1, 0, len(md) - 2))
+        P[r] = _interpolate_pos_nev(survey, float(q - md[i]), i)
     C = np.empty((len(mdf), 3, 3))
     for a in range(3):
         for b in range(3):
