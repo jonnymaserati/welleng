@@ -78,14 +78,13 @@ def fig2():
     x = np.arange(len(names)); w = 0.38
     fig, ax = plt.subplots(figsize=(9.2, 5.0))
     ymin = min(min(ped), min(mah)) - 0.3
-    ax.axhspan(ymin, 1.0, color="red", alpha=0.06)            # collision zone SF<1
+    ax.axhspan(ymin, 1.0, color="red", alpha=0.06, label="collision zone (SF < 1)")
     ax.bar(x - w / 2, ped, w, label="pedal / separation rule (ISCWSA)", color="C1")
     ax.bar(x + w / 2, mah, w, label="exact combined-ellipsoid (Mahalanobis)", color="C0")
     ax.axhline(1.0, color="k", lw=1, ls="--")
     ax.text(len(names) - 0.55, 1.05, "SF = 1 (collision threshold)", fontsize=8,
             ha="right", va="bottom")
     ax.axhline(0.0, color="0.6", lw=0.8)
-    ax.text(0.1, ymin + 0.15, "collision zone (SF < 1)", fontsize=8, color="firebrick")
     # label maha values for the collision wells (otherwise SF≈0 bars vanish)
     for xi, m in zip(x, mah):
         if m < 1.0:
