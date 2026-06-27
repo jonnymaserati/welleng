@@ -52,6 +52,7 @@ class WellMesh:
         sigma_pa: float = 0.5,
         Sm: float = 0,
         method: str = "ellipse",
+        polygon_fit: str = "circumscribed",
     ):
         """Create a WellMesh object from a welleng Survey object.
 
@@ -76,6 +77,15 @@ class WellMesh:
         method : str, optional
             The method for constructing the uncertainty edge.
             Either "ellipse", "pedal_curve" or "circle".
+        polygon_fit : str, optional
+            How the n_verts polygon approximates the uncertainty ellipse:
+            "circumscribed" (default) scales the polygon out by
+            1 / cos(pi / n_verts) so its edges are tangent to and the polygon
+            fully contains the ellipse — it never under-represents the
+            uncertainty for the given sigma (the safety-conservative choice);
+            "inscribed" places the vertices on the ellipse, which under-counts
+            the uncertainty area between vertices. Only applies to the
+            "ellipse"/"circle" methods.
         """
         self.s = survey
         # self.c = clearance
@@ -88,6 +98,16 @@ class WellMesh:
         assert method in ["ellipse", "pedal_curve", "circle"], \
             "Invalid method (ellipse or pedal_curve)"
         self.method = method
+
+        assert polygon_fit in ["circumscribed", "inscribed"], \
+            "Invalid polygon_fit (circumscribed or inscribed)"
+        self.polygon_fit = polygon_fit
+        # circumscribe so the polygon contains the ellipse (no under-count);
+        # bloat = 1 for inscribed (vertices on the ellipse).
+        self._bloat = (
+            1.0 / np.cos(pi / self.n_verts)
+            if polygon_fit == "circumscribed" else 1.0
+        )
 
         if self.method != 'circle':
             self.sigmaH, self.sigmaL, self.sigmaA = get_sigmas(
@@ -167,8 +187,8 @@ class WellMesh:
             temp = np.broadcast_to(temp, (len(self.s.md), len(temp)))
             lam = deepcopy(temp)
 
-            x_ell = h * cos(lam)
-            y_ell = l * sin(lam)
+            x_ell = h * self._bloat * cos(lam)
+            y_ell = l * self._bloat * sin(lam)
 
             if self.method == "ellipse":
                 cos_t = np.cos(ellipse_theta)

@@ -873,6 +873,7 @@ class MeshClearance(Clearance):
         sigma: float = 2.445,
         return_data: bool = True,
         return_meshes: bool = False,
+        polygon_fit: str = "circumscribed",
         **clearance_kwargs
     ):
         super().__init__(*clearance_args, **clearance_kwargs)
@@ -880,6 +881,9 @@ class MeshClearance(Clearance):
         assert MESH_MODE, "ImportError: try pip install welleng[all]"
         self.n_verts = n_verts
         self.sigma = sigma
+        # circumscribed (default) so the mesh never under-represents the
+        # uncertainty ellipsoid for the given sigma (see WellMesh.polygon_fit).
+        self.polygon_fit = polygon_fit
         self.Rr = self.ref.radius
         self.Ro = self.offset.radius
 
@@ -949,6 +953,7 @@ class MeshClearance(Clearance):
             n_verts=self.n_verts,
             sigma=self.sigma,
             Sm=Sm,
+            polygon_fit=self.polygon_fit,
         )
 
         return mesh
