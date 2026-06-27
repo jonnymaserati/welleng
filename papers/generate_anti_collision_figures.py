@@ -34,44 +34,33 @@ def fig1():
     bp = u * r_true                  # true ellipse boundary along u
     tp = u * h_sup                   # support-function reach along u
 
-    from adjustText import adjust_text
     fig, ax = plt.subplots(figsize=(8.6, 6.0))
-    ax.add_patch(Ellipse((0, 0), 2 * a, 2 * b, color="C0", alpha=0.16, ec="C0", lw=2))
-    ax.text(-a + 0.3, -b + 0.25, "combined kσ uncertainty\n(Σ = Σ_ref + Σ_off)",
-            color="C0", fontsize=8, style="italic")
-    # the two WELL CENTRE points (use a ⊕ borehole-style marker for both)
-    ax.plot(0, 0, marker="o", color="white", mec="C0", mew=1.8, ms=12, zorder=5)
-    ax.plot(0, 0, marker="+", color="C0", mew=1.8, ms=10, zorder=6)
-    ax.plot(P[0], P[1], marker="o", color="white", mec="C3", mew=1.8, ms=12, zorder=5)
-    ax.plot(P[0], P[1], marker="+", color="C3", mew=1.8, ms=10, zorder=6)
+    # all elements carry LEGEND labels (no inline text → nothing can overlap)
+    ax.add_patch(Ellipse((0, 0), 2 * a, 2 * b, color="C0", alpha=0.16, ec="C0",
+                         lw=2, label="reference kσ uncertainty (combined Σ)"))
     ax.annotate("", xy=P, xytext=(0, 0), arrowprops=dict(arrowstyle="->", color="0.4", lw=1.2))
     ax.plot([tp[0] - 2.6 * perp[0], tp[0] + 2.6 * perp[0]],
-            [tp[1] - 2.6 * perp[1], tp[1] + 2.6 * perp[1]], color="C1", lw=1.5, ls="--")
+            [tp[1] - 2.6 * perp[1], tp[1] + 2.6 * perp[1]], color="C1", lw=1.5,
+            ls="--", label="pedal tangent — support fn √(uᵀΣu)")
     ax.plot([0, tp[0]], [0, tp[1]], color="C1", lw=0.8, ls=":")
-    ax.plot(*bp, "o", color="C0", ms=8)
-    ax.plot(*tp, "X", color="C1", ms=11)
+    ax.plot(*bp, "o", color="C0", ms=8, label="true boundary (Mahalanobis = k)")
+    ax.plot(*tp, "X", color="C1", ms=12, label="pedal-curve reach")
+    # the two WELL CENTRE points as ⊕ borehole markers
+    ax.plot(0, 0, marker="o", color="white", mec="C0", mew=1.8, ms=13, zorder=5,
+            label="reference well centre")
+    ax.plot(0, 0, marker="+", color="C0", mew=1.8, ms=11, zorder=6)
+    ax.plot(P[0], P[1], marker="o", color="white", mec="C3", mew=1.8, ms=13, zorder=5,
+            label="offset well centre")
+    ax.plot(P[0], P[1], marker="+", color="C3", mew=1.8, ms=11, zorder=6)
     ax.annotate("", xy=tp, xytext=bp, arrowprops=dict(arrowstyle="<->", color="purple", lw=2))
-    # element labels, force-repelled apart (adjustText) with leader lines
-    lbl = [
-        (0.0, 0.0, "reference well centre", "C0"),
-        (bp[0], bp[1], "true boundary\n(Mahalanobis = k)", "C0"),
-        (tp[0], tp[1], "pedal reach\n(support fn √(uᵀΣu))", "C1"),
-        (P[0], P[1], "offset well centre", "C3"),
-    ]
-    texts = [ax.text(x, y, s, color=c, fontsize=9, ha="center")
-             for x, y, s, c in lbl]
-    adjust_text(
-        texts, x=[p[0] for p in lbl], y=[p[1] for p in lbl], ax=ax,
-        expand=(1.6, 2.0), force_text=(0.6, 0.9),
-        arrowprops=dict(arrowstyle="-", color="0.5", lw=0.7),
-    )
-    # the "over-reach" call-out: fixed in empty space, arrow to the gap
+    # single call-out, anchored in empty space, arrow to the gap
     gap_mid = 0.5 * (tp + bp)
     ax.annotate("over-reach: the rule 'collides',\nthe truth is clear",
-                xy=gap_mid, xytext=(5.2, -1.6), fontsize=9, color="purple",
+                xy=gap_mid, xytext=(5.4, -1.8), fontsize=10, color="purple",
                 ha="center", weight="bold",
                 arrowprops=dict(arrowstyle="->", color="purple", lw=1.4))
-    ax.set_aspect("equal"); ax.set_xlim(-5.5, 9.5); ax.set_ylim(-4.0, 5.5)
+    ax.legend(loc="upper left", fontsize=8.5, framealpha=0.95)
+    ax.set_aspect("equal"); ax.set_xlim(-5.5, 9.5); ax.set_ylim(-4.2, 5.5)
     ax.set_xlabel("north [arb.]"); ax.set_ylabel("east [arb.]")
     ax.set_title("Why the separation rule is conservative: the support function\n"
                  "over-states the ellipsoid's reach toward an off-axis offset")
@@ -88,10 +77,18 @@ def fig2():
     mah = [float(r["mahalanobis_minSF"]) for r in rows]
     x = np.arange(len(names)); w = 0.38
     fig, ax = plt.subplots(figsize=(9.2, 5.0))
+    ymin = min(min(ped), min(mah)) - 0.3
+    ax.axhspan(ymin, 1.0, color="red", alpha=0.06)            # collision zone SF<1
     ax.bar(x - w / 2, ped, w, label="pedal / separation rule (ISCWSA)", color="C1")
     ax.bar(x + w / 2, mah, w, label="exact combined-ellipsoid (Mahalanobis)", color="C0")
     ax.axhline(1.0, color="k", lw=1, ls="--"); ax.text(len(names) - 0.6, 1.08, "SF = 1 (collision threshold)", fontsize=8)
     ax.axhline(0.0, color="0.6", lw=0.8)
+    ax.text(0.1, ymin + 0.15, "collision zone (SF < 1)", fontsize=8, color="firebrick")
+    # label maha values for the collision wells (otherwise SF≈0 bars vanish)
+    for xi, m in zip(x, mah):
+        if m < 1.0:
+            ax.text(xi + w / 2, m + 0.06, f"{m:.2f}", ha="center", fontsize=7, color="C0")
+    ax.set_ylim(ymin, max(max(ped), max(mah)) * 1.08)
     ax.set_xticks(x); ax.set_xticklabels(names)
     ax.set_xlabel("ISCWSA standard-set offset well"); ax.set_ylabel("minimum separation factor")
     ax.set_title("Minimum separation factor: pedal rule vs exact Mahalanobis boundary\n"
