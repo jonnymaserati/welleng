@@ -73,6 +73,7 @@ all = [
     "trimesh",
     "utm",
     "python-fcl",
+    "rtree",
 ]
 
 [project.urls]

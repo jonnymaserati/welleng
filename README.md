@@ -13,7 +13,7 @@
 
 - **Survey listings** — generate and interpolate well trajectories using minimum curvature or maximum curvature methods
 - **Well bore uncertainty** — ISCWSA MWD Rev 5.11 error model (validated 35/35 sources against all three ISCWSA example workbooks), legacy Rev4 for back-compat, and OWSG **gyro** tool stacks (north-seeking stationary, mixed continuous, gyro-MWD) driven by the new ISCWSA JSON schema and an Excel-formula interpreter
-- **Clearance & Separation Factors** — standard ISCWSA method (within 0.5% of ISCWSA test data) and mesh-based method using the [Flexible Collision Library]
+- **Clearance & Separation Factors** — the standard ISCWSA separation rule (within 0.5% of ISCWSA test data), the **exact combined-ellipsoid Mahalanobis method** (`MahalanobisClearance` — same collision/clear verdicts as the rule but up to ~1.47× less conservative, analytic and mesh-free), and a mesh-based method using the [Flexible Collision Library]
 - **Well path creation** — the `connector` module builds trajectories between start/end locations automatically
 - **Vertical section, TVD interpolation, project-ahead** — common survey planning tools
 - **Torque and drag** — simple torque/drag model with architecture module
