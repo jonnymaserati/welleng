@@ -36,22 +36,28 @@ def main():
     for well in [w for w in DATA["wells"] if w != "Reference well"]:
         off = survey(well)
         kop = 900.0 if well == "10 - well" else -np.inf
-        published = float(np.min(DATA["wells"][well]["SF"]))
-        ped = IscwsaClearance(ref, off, kop_depth=kop)
-        ped_min = float(np.nanmin(ped.sf))
-        mah_min = float(np.nanmin(MahalanobisClearance(ref, off, kop_depth=kop).sf))
-        # validation error: welleng pedal vs published, at the original stations
-        got = ped.sf[np.where(ped.ref.interpolated == False)]  # noqa: E712
-        n = min(len(got), len(DATA["wells"][well]["SF"]))
+        pub = np.array(DATA["wells"][well]["SF"], dtype=float)
+        published = float(np.min(pub))
+        # VALIDATION: welleng AT THE PUBLISHED STATIONS (no between-station
+        # interpolation) — the apples-to-apples comparison with the published SFs
+        atstn = np.asarray(
+            IscwsaClearance(ref, off, kop_depth=kop, minimize_sf=False).sf,
+            dtype=float)
+        n = min(len(atstn), len(pub))
         rel_err = float(np.nanmax(np.abs(
-            (got[:n] - np.array(DATA["wells"][well]["SF"])[:n])
-            / np.where(np.abs(np.array(DATA["wells"][well]["SF"])[:n]) < 0.1,
-                       np.nan, np.array(DATA["wells"][well]["SF"])[:n]))) * 100)
+            (atstn[:n] - pub[:n])
+            / np.where(np.abs(pub[:n]) < 0.1, np.nan, pub[:n]))) * 100)
+        wlg_atstn_min = float(np.min(atstn))
+        # CONSERVATISM: true minima (welleng interpolates between stations); both
+        # the pedal and Mahalanobis factors use the interpolated worst point
+        ped_min = float(np.nanmin(IscwsaClearance(ref, off, kop_depth=kop).sf))
+        mah_min = float(np.nanmin(MahalanobisClearance(ref, off, kop_depth=kop).sf))
         ratio = mah_min / ped_min if ped_min > 0 else float("nan")
         rows.append({
             "offset": well, "published_minSF": round(published, 3),
-            "welleng_pedal_minSF": round(ped_min, 3),
+            "welleng_minSF_at_station": round(wlg_atstn_min, 3),
             "pedal_vs_published_relerr_pct": round(rel_err, 3),
+            "welleng_pedal_minSF_interp": round(ped_min, 3),
             "mahalanobis_minSF": round(mah_min, 3),
             "maha_over_pedal": round(ratio, 3) if ped_min > 0 else "",
             "verdict_pedal": "HIT" if ped_min < 1 else "clear",
@@ -64,12 +70,13 @@ def main():
         wr.writerows(rows)
 
     # console summary for the paper tables
-    print(f"{'offset':>10s} {'pub':>6s} {'pedal':>6s} {'err%':>5s} "
-          f"{'maha':>6s} {'m/p':>5s} {'ped':>5s} {'mah':>5s}")
+    print(f"{'offset':>10s} {'pub':>6s} {'atstn':>6s} {'err%':>5s} "
+          f"{'p_int':>6s} {'maha':>6s} {'m/p':>5s} {'ped':>5s} {'mah':>5s}")
     for r in rows:
         print(f"{r['offset']:>10s} {r['published_minSF']:>6.3f} "
-              f"{r['welleng_pedal_minSF']:>6.3f} "
+              f"{r['welleng_minSF_at_station']:>6.3f} "
               f"{r['pedal_vs_published_relerr_pct']:>5.2f} "
+              f"{r['welleng_pedal_minSF_interp']:>6.3f} "
               f"{r['mahalanobis_minSF']:>6.3f} {str(r['maha_over_pedal']):>5s} "
               f"{r['verdict_pedal']:>5s} {r['verdict_maha']:>5s}")
     worst = max(r["pedal_vs_published_relerr_pct"] for r in rows)
