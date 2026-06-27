@@ -1,4 +1,4 @@
-from welleng.survey import Survey, make_survey_header
+from welleng.survey import Survey, make_survey_header, _interpolate_pos_nev
 from welleng.clearance import IscwsaClearance, MahalanobisClearance
 import numpy as np
 import json
@@ -146,11 +146,14 @@ def _resample_brute(survey, step):
     """Resample a survey's position/covariance/radius to a fine MD step (test
     helper for the independent brute-force reference)."""
     md = np.asarray(survey.md, float)
-    pos = np.column_stack([survey.n, survey.e, survey.tvd]).astype(float)
     cov = np.asarray(survey.cov_nev, float).reshape(-1, 3, 3)
     rad = np.asarray(survey.radius, float).reshape(-1)
     mdf = np.arange(md[0], md[-1] + step, step)
-    P = np.column_stack([np.interp(mdf, md, pos[:, a]) for a in range(3)])
+    # position by minimum curvature (matches MahalanobisClearance._at); cov/rad linear
+    P = np.empty((len(mdf), 3))
+    for r, q in enumerate(mdf):
+        i = int(np.clip(np.searchsorted(md, q, side="right") - 1, 0, len(md) - 2))
+        P[r] = _interpolate_pos_nev(survey, float(q - md[i]), i)
     C = np.empty((len(mdf), 3, 3))
     for a in range(3):
         for b in range(3):
