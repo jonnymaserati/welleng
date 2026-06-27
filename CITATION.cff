@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+message: "If you use welleng in your research, please cite it."
+title: welleng
+abstract: A collection of well engineering tools.
+type: software
+authors:
+  - family-names: Corcutt
+    given-names: Jonathan
+    affiliation: "Corcutt Beheer B.V., Wassenaar, Netherlands"
+    orcid: "https://orcid.org/0009-0008-1953-7760"
+version: 0.12.2
+license: Apache-2.0
+repository-code: "https://github.com/jonnymaserati/welleng"
+url: "https://github.com/jonnymaserati/welleng"
+keywords:
+  - directional drilling
+  - wellbore positioning
+  - anti-collision
+  - ISCWSA
+  - survey error model
+references:
+  # Gyro error-model validation paper (published).
+  - type: article
+    title: >-
+      Reproducing the ISCWSA Gyro Error-Model Test Cases: Implementation
+      Clarifications, Reference-Data Inconsistencies, and an Open-Source
+      Reference Implementation
+    authors:
+      - family-names: Corcutt
+        given-names: Jonathan
+        affiliation: "Corcutt Beheer B.V., Wassenaar, Netherlands"
+        orcid: "https://orcid.org/0009-0008-1953-7760"
+    year: 2026
+    doi: 10.5281/zenodo.20940515
