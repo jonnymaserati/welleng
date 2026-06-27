@@ -257,3 +257,19 @@ def test_mahalanobis_governing_values(data=data):
     sf10 = float(np.nanmin(
         MahalanobisClearance(reference, surveys["10 - well"], kop_depth=900.0).sf))
     assert sf10 < 0.01, sf10     # sidetrack, degenerate cov, scanned below KOP
+
+
+def test_sf_vs_md_inherited_and_consistent(data=data):
+    """``Clearance.sf_vs_md()`` is defined on the base class (inherited by every
+    subclass) and returns consistent profiles: at every reference station the
+    exact (Mahalanobis) factor is >= the pedal (support-function) factor, both
+    computed from one kernel over the same station pairing (Kantorovich)."""
+    from welleng.clearance import Clearance
+    assert "sf_vs_md" in vars(Clearance)        # on the base -> inherited by all
+    surveys = generate_surveys(data)
+    reference = surveys["Reference well"]
+    for w in ["03 - well", "05 - well", "07 - well", "11 - well"]:
+        md, ped, mah = MahalanobisClearance(reference, surveys[w]).sf_vs_md()
+        assert len(md) == len(ped) == len(mah)
+        assert np.all(np.isfinite(ped)) and np.all(np.isfinite(mah))
+        assert np.all(mah >= ped - 1e-9), w     # exact never below the rule, per station
