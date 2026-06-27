@@ -1,0 +1,22 @@
+{
+  "title": "welleng",
+  "description": "A collection of well engineering tools: survey management, wellbore position-uncertainty error models (ISCWSA), clearance / anti-collision, and trajectory connectors.",
+  "upload_type": "software",
+  "access_right": "open",
+  "license": "Apache-2.0",
+  "creators": [
+    {
+      "name": "Corcutt, Jonathan",
+      "affiliation": "Corcutt Beheer B.V., Wassenaar, Netherlands",
+      "orcid": "0009-0008-1953-7760"
+    }
+  ],
+  "keywords": [
+    "directional drilling",
+    "wellbore positioning",
+    "anti-collision",
+    "ISCWSA",
+    "survey error model",
+    "well engineering"
+  ]
+}
