@@ -1166,3 +1166,62 @@ def get_ref_sigma(sigma1, sigma2, sigma3, kop_index):
     sigma_new = np.vstack((sigma_above, np.array([0, 0, 0]), sigma_below))
 
     return sigma_new
+
+
+def combined_cov_mesh(
+    survey, other, k=2.445, n_verts=12, Sm=0.0, polygon_fit="circumscribed"
+):
+    """Build a trimesh of ``survey``'s uncertainty tube carrying the COMBINED
+    relative-position covariance ``Sigma_survey + Sigma_other``.
+
+    A collision check between two uncertain wells should use the combined
+    (relative-position) uncertainty ``Sigma_ref + Sigma_off`` (the variance of
+    ``P_off - P_ref``), which a single ellipsoid represents exactly. Building a
+    separate k-sigma mesh for each well and testing surface overlap instead
+    sums their extents *linearly* (``k(sigma_ref + sigma_off)``) rather than in
+    quadrature (``k*sqrt(sigma_ref^2 + sigma_off^2)``), which over-states the
+    required standoff by up to sqrt(2) (symmetric case) and raises false
+    collision alarms.
+
+    This builds ONE mesh — ``survey`` inflated by the combined covariance and
+    the combined hole radii (``survey.radius + other.radius + Sm``) — intended
+    to be tested against the *centreline* of ``other`` (e.g. via
+    ``mesh.contains(other.pos_nev)`` or a ``trimesh`` ``CollisionManager``
+    against a zero-uncertainty tube). The result matches the exact k-sigma
+    boundary of :class:`MahalanobisClearance` while keeping the speed of a
+    binary mesh collision query.
+
+    Parameters
+    ----------
+    survey, other : welleng.survey.Survey
+        The two wells. ``other``'s covariance and hole radius are mapped onto
+        ``survey`` by nearest position and folded into the returned mesh.
+    k : float
+        The sigma multiple defining the uncertainty surface (default 2.445).
+    n_verts, polygon_fit, Sm
+        Passed through to :class:`welleng.mesh.WellMesh` (``polygon_fit``
+        defaults to "circumscribed" so the polygon never under-counts the
+        ellipse).
+
+    Returns
+    -------
+    trimesh.Trimesh
+        ``survey``'s combined-covariance uncertainty tube.
+
+    Notes
+    -----
+    The combination is pairwise (it depends on ``other``), so a candidate
+    checked against N offsets needs N combined meshes; the other well is taken
+    as a deterministic centreline.
+    """
+    # map other's covariance + hole radius onto each survey station (nearest)
+    idx = KDTree(other.pos_nev).query(survey.pos_nev)[1]
+    combined = deepcopy(survey)
+    combined.cov_nev = survey.cov_nev + other.cov_nev[idx]
+    combined.cov_hla = NEV_to_HLA(survey.survey_rad, combined.cov_nev)
+    combined.radius = survey.radius + other.radius[idx] + Sm
+
+    mesh = WellMesh(
+        combined, n_verts=n_verts, sigma=k, Sm=0.0, polygon_fit=polygon_fit,
+    )
+    return to_trimesh(mesh)

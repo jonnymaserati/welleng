@@ -17,7 +17,7 @@ pytest.importorskip("trimesh")
 pytest.importorskip("fcl")
 
 from welleng.survey import Survey, make_survey_header  # noqa: E402
-from welleng.clearance import MeshClearance  # noqa: E402
+from welleng.clearance import MeshClearance, combined_cov_mesh  # noqa: E402
 from welleng.mesh import WellMesh  # noqa: E402
 
 DATA = json.load(open("tests/test_data/clearance_iscwsa_well_data.json"))
@@ -88,3 +88,49 @@ def test_mesh_detects_known_collision():
     (min SF < 1)."""
     ref, off = _survey("Reference well"), _survey("03 - well")
     assert float(np.min(MeshClearance(ref, off, n_verts=12).sf)) < 1.0
+
+
+def test_combined_cov_mesh_returns_mesh():
+    """combined_cov_mesh builds a usable trimesh (for a CollisionManager)."""
+    pytest.importorskip("rtree")
+    ref, off = _survey("Reference well"), _survey("06 - well")
+    mesh = combined_cov_mesh(ref, off, k=2.445, n_verts=12)
+    assert hasattr(mesh, "contains") and len(mesh.vertices) > 0
+
+
+def test_combined_cov_mesh_not_more_conservative_than_linear():
+    """The combined-covariance mesh (RSS) must never flag a collision that the
+    two-ellipsoid linear mesh clears — it removes conservatism, never adds it."""
+    pytest.importorskip("rtree")
+    ref = _survey("Reference well")
+    for well in ("01 - well", "03 - well", "06 - well", "07 - well", "08 - well"):
+        off = _survey(well)
+        comb_hit = bool(
+            combined_cov_mesh(ref, off, k=2.445, n_verts=16).contains(off.pos_nev).any())
+        lin_hit = bool(np.min(MeshClearance(ref, off, sigma=2.445, n_verts=16).sf) < 1.0)
+        assert not (comb_hit and not lin_hit), well
+
+
+def test_combined_cov_mesh_clears_linear_false_alarm():
+    """Headline: nudge ISCWSA Well 06 ~10 m toward the reference into the gap
+    between the RSS and linear thresholds — the linear two-ellipsoid mesh raises
+    a (false) collision while the combined-covariance mesh correctly clears it."""
+    pytest.importorskip("rtree")
+    ref = _survey("Reference well")
+    o = DATA["wells"]["06 - well"]
+    sh = make_survey_header(o["header"])
+    off0 = Survey(md=o["MD"], inc=o["IncDeg"], azi=o["AziDeg"], n=o["N"], e=o["E"],
+                  tvd=o["TVD"], radius=0.3048, header=sh, error_model="ISCWSA MWD Rev4")
+    # closest-approach horizontal direction, nudge Well 06 10 m toward reference
+    dmat = np.linalg.norm(ref.pos_nev[:, None, :] - off0.pos_nev[None, :, :], axis=2)
+    i, j = np.unravel_index(np.argmin(dmat), dmat.shape)
+    u = (off0.pos_nev[j] - ref.pos_nev[i]).astype(float); u[2] = 0.0
+    u /= np.linalg.norm(u)
+    off = Survey(md=o["MD"], inc=o["IncDeg"], azi=o["AziDeg"],
+                 n=np.array(o["N"]) - 10 * u[0], e=np.array(o["E"]) - 10 * u[1],
+                 tvd=o["TVD"], radius=0.3048, header=make_survey_header(o["header"]),
+                 error_model="ISCWSA MWD Rev4")
+    lin_hit = bool(np.min(MeshClearance(ref, off, sigma=2.445, n_verts=16).sf) < 1.0)
+    comb_hit = bool(
+        combined_cov_mesh(ref, off, k=2.445, n_verts=16).contains(off.pos_nev).any())
+    assert lin_hit and not comb_hit
