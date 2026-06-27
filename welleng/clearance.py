@@ -941,11 +941,12 @@ class MahalanobisClearance(Clearance):
         md, pos, cov, rad, survey = curve
         i = int(np.clip(np.searchsorted(md, q, side="right") - 1, 0, len(md) - 2))
         p = _interpolate_pos_nev(survey, float(q - md[i]), i)   # min-curvature
-        c = np.empty((3, 3))
-        for a in range(3):
-            for b in range(3):
-                c[a, b] = np.interp(q, md, cov[:, a, b])
-        return p, c, float(np.interp(q, md, rad))
+        # covariance/radius linearly within the bracketing interval — one blend,
+        # reusing the position index (np.interp's end-clamp == f clipped to [0, 1]).
+        dm = md[i + 1] - md[i]
+        f = 0.0 if dm == 0 else float(np.clip((q - md[i]) / dm, 0.0, 1.0))
+        c = (1.0 - f) * cov[i] + f * cov[i + 1]
+        return p, c, float((1.0 - f) * rad[i] + f * rad[i + 1])
 
     def _sf_point(self, pr, cr, rr, po, co, ro):
         """Radii-adjusted Mahalanobis separation factor between two single
