@@ -867,7 +867,9 @@ class MahalanobisClearance(Clearance):
     This is the Mahalanobis distance of Brooks (SPE-116155, 2008; after
     Alfano's satellite-conjunction work); see `papers/anti-collision-
     conservatism.md` for the derivation, validation and references. If you use
-    this method, please cite welleng and that paper.
+    this method, please cite welleng (doi:10.5281/zenodo.20968887) and that
+    paper. Author: Jonathan Corcutt, Corcutt Beheer B.V.
+    (ORCID 0009-0008-1953-7760).
 
     Parameters
     ----------

@@ -130,6 +130,35 @@ def fig3():
     print("saved conservative-surface-construction.png")
 
 
+# ---- fig4: separation factor vs depth along the reference well ----
+def fig4():
+    import tests.test_clearance_iscwsa as t
+    from welleng.clearance import IscwsaClearance, MahalanobisClearance
+    gs = t.generate_surveys(t.data)
+    ref = gs["Reference well"]
+    off = gs["05 - well"]          # clear well, large conservatism gap (1.20 -> 1.73)
+    ped = np.asarray(IscwsaClearance(ref, off, minimize_sf=False).sf, float)
+    mah = np.asarray(MahalanobisClearance(ref, off).sf, float)
+    tvd = np.asarray(ref.tvd, float)
+    n = min(len(tvd), len(ped), len(mah))
+    fig, ax = plt.subplots(figsize=(7.4, 6.0))
+    ax.plot(ped[:n], tvd[:n], color="C1", lw=1.8, label="pedal / separation rule (ISCWSA)")
+    ax.plot(mah[:n], tvd[:n], color="C0", lw=1.8, label="exact combined-ellipsoid (Mahalanobis)")
+    ax.axvspan(0, 1.0, color="red", alpha=0.06)        # collision zone
+    ax.axvline(1.0, color="k", lw=1, ls="--")
+    ax.set_xscale("log"); ax.set_xlim(0.7, 100)
+    ax.text(1.05, tvd[:n].max(), "SF = 1", fontsize=8, va="bottom")
+    ax.invert_yaxis()       # depth increases downward
+    ax.set_xlabel("separation factor"); ax.set_ylabel("reference-well TVD [m]")
+    ax.set_title("Separation factor vs depth along the reference well (vs Well 05):\n"
+                 "SF dips to its minimum at the closest approach, and the conservatism\n"
+                 "gap (pedal vs exact) opens up there — where the go/no-go decision is made")
+    ax.legend(loc="lower right", fontsize=8.5); ax.grid(alpha=0.25)
+    plt.tight_layout(); plt.savefig(f"{OUT}/sf-vs-depth.png", dpi=140, bbox_inches="tight")
+    print("saved sf-vs-depth.png")
+
+
 fig1()
 fig2()
+fig4()
 fig3()
