@@ -831,6 +831,68 @@ class IscwsaClearance(Clearance):
         ) % 360
 
 
+class MahalanobisClearance(IscwsaClearance):
+    """Anti-collision using the exact Mahalanobis k-sigma boundary of the
+    combined (relative-position) uncertainty ellipsoid, rather than the
+    pedal-curve support-function approximation used by the ISCWSA separation
+    rule (:class:`IscwsaClearance`).
+
+    The separation rule measures the combined ellipsoid's extent toward the
+    offset with its support function ``sqrt(uT.Sigma.u)`` (the tangent
+    distance), which always over-states the ellipsoid's reach in an off-axis
+    direction and so is conservative. This class instead uses the true
+    ellipsoid-surface distance — the Mahalanobis distance of the
+    radii-adjusted centre-to-centre vector in the combined covariance metric:
+
+        SF = sqrt(d'T (Sigma_ref + Sigma_off)^-1 d') / k
+
+    where ``d'`` is the centre-to-centre vector shortened by the combined hole
+    radii and surface margin. ``SF < 1`` means the offset lies within the
+    k-sigma combined ellipsoid (collision). It reuses the validated
+    closest-approach machinery of :class:`IscwsaClearance` and only replaces
+    the separation factor, so it is less conservative while remaining a
+    k-sigma *geometric boundary* method (it is not a probability of collision).
+    Fast and analytic — no mesh or collision library required.
+
+    All constructor arguments are those of :class:`IscwsaClearance`.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.sf = self._mahalanobis_sf()
+
+    def _mahalanobis_sf(self):
+        rn = np.asarray(self.ref_nevs, dtype=float)
+        on = np.asarray(self.off_nevs, dtype=float)
+        Rc = np.asarray(self.ref_cov_nev, dtype=float).reshape(-1, 3, 3)
+        Oc = np.asarray(self.off_cov_nev, dtype=float).reshape(-1, 3, 3)
+        ch = np.asarray(self.calc_hole, dtype=float).reshape(-1)
+
+        d = on - rn                                    # (n, 3)
+        D = np.linalg.norm(d, axis=1)                  # (n,)
+        S = Rc + Oc                                    # combined covariance
+        # shorten the centre-to-centre vector by the combined hole radii + Sm
+        R = ch + self.Sm
+        scale = np.divide(
+            np.maximum(D - R, 0.0), D,
+            out=np.zeros_like(D), where=D > 0
+        )
+        dp = d * scale[:, None]
+
+        # Mahalanobis via the symmetric eigen-decomposition (robust to a
+        # singular/degenerate covariance near surface: a zero-variance axis
+        # gives an infinite distance unless the offset sits exactly on it).
+        vals, vecs = np.linalg.eigh(S)                 # (n,3), (n,3,3)
+        proj = np.einsum('nji,nj->ni', vecs, dp)       # dp in eigen-basis
+        with np.errstate(divide='ignore', invalid='ignore'):
+            terms = np.where(vals > 0, proj ** 2 / vals, np.inf)
+        terms = np.where(np.isclose(proj, 0.0), 0.0, terms)
+        m = np.sqrt(np.sum(terms, axis=1))
+        sf = m / self.k
+        sf[D == 0] = 0.0
+        return sf
+
+
 class MeshClearance(Clearance):
     """
     Class to calculate the clearance between two well bores using a novel
