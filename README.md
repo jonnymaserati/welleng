@@ -5,7 +5,7 @@
 [![Downloads](https://static.pepy.tech/personalized-badge/welleng?period=total&units=international_system&left_color=grey&right_color=orange&left_text=Downloads&kill_cache=1)](https://pepy.tech/project/welleng)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![welleng-tests Actions Status](https://github.com/jonnymaserati/welleng/workflows/welleng-tests/badge.svg)](https://github.com/jonnymaserati/welleng/actions)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20968887.svg)](https://doi.org/10.5281/zenodo.20968887)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20968887-blue)](https://doi.org/10.5281/zenodo.20968887)
 
 [welleng] is a collection of tools for Wells/Drilling Engineers, with a focus on well trajectory design and analysis.
 
