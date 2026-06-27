@@ -130,38 +130,68 @@ def fig3():
     print("saved conservative-surface-construction.png")
 
 
-# ---- fig4: separation factor vs depth along the reference well (single well) ----
+def sf_vs_md(ref, off):
+    """Consistent SF-vs-MD profiles for both methods.
+
+    At each reference station, returns the minimum over the offset stations of
+    (i) the pedal / support-function separation factor (paper eq 2) and (ii) the
+    exact Mahalanobis separation factor (paper eq 5), computed from the SAME
+    kernel with identical radii, k and sigma_pa. Because the only difference is
+    the metric, maha >= pedal at every station (Kantorovich, Section 5) — there
+    are no spurious crossings. (Comparing two different welleng classes,
+    IscwsaClearance vs MahalanobisClearance, is NOT apples-to-apples: they pair
+    ref/offset and resolve closest approach differently, and can appear to cross.)
+
+    Returns (md, pedal_sf, maha_sf), each an array over the reference stations.
+    """
+    from welleng.clearance import MahalanobisClearance
+    c = MahalanobisClearance(ref, off)
+    k, Sm, spa = c.k, c.Sm, c.sigma_pa
+    Rmd, Rp, Rc, Rr, _ = c._curve(ref)
+    Omd, Op, Oc, Ro, _ = c._curve(off)
+    ped = np.empty(len(Rp)); mah = np.empty(len(Rp))
+    for i in range(len(Rp)):
+        d = Op - Rp[i]; D = np.linalg.norm(d, axis=1)
+        best = np.inf
+        for j in range(len(Op)):                     # eq-2 support-function SF over offsets
+            if D[j] == 0.0:
+                best = 0.0; continue
+            u = d[j] / D[j]; h2 = u @ (Rc[i] + Oc[j]) @ u
+            best = min(best, max(D[j] - (Rr[i] + Ro[j] + Sm), 0.0) / (k * np.sqrt(h2 + spa ** 2)))
+        ped[i] = best
+        mah[i] = c._sf_row(Rp[i], Rc[i], Rr[i], Op, Oc, Ro).min()      # eq-5 Mahalanobis
+    return Rmd, ped, mah
+
+
+# ---- fig4: separation factor vs MD, three offsets (collision/near-miss/clear) ----
 def fig4():
-    # NB a multi-well panel of this view is misleading: per station the rule and
-    # the exact metric pick *different* closest offsets and the far-field forms
-    # differ, so the per-station profiles cross (maha < pedal away from the
-    # governing minimum). "maha >= pedal" holds at the governing minimum — shown
-    # across all wells in Fig 2. Well 05 is the one offset whose crossings are all
-    # far-field (SF > 54), so it shows the gap-along-depth cleanly.
+    from matplotlib.transforms import blended_transform_factory
     import tests.test_clearance_iscwsa as t
-    from welleng.clearance import IscwsaClearance, MahalanobisClearance
     gs = t.generate_surveys(t.data)
     ref = gs["Reference well"]
-    off = gs["05 - well"]
-    # both continuously minimised (consistent with Fig 2)
-    ped = np.asarray(IscwsaClearance(ref, off, minimize_sf=True).sf, float)
-    mah = np.asarray(MahalanobisClearance(ref, off).sf, float)
-    tvd = np.asarray(ref.tvd, float)
-    n = min(len(tvd), len(ped), len(mah))
-    fig, ax = plt.subplots(figsize=(7.6, 6.0))
-    ax.plot(ped[:n], tvd[:n], color="C1", lw=1.9, label="pedal / separation rule (ISCWSA)")
-    ax.plot(mah[:n], tvd[:n], color="C0", lw=1.9, label="exact combined-ellipsoid (Mahalanobis)")
-    ax.axvspan(0, 1.0, color="red", alpha=0.06)        # collision zone
-    ax.axvline(1.0, color="k", lw=1, ls="--")
-    ax.set_xscale("log"); ax.set_xlim(0.8, 40)         # decision-relevant range
-    ax.text(0.06, 0.985, "SF = 1", transform=ax.transAxes, fontsize=8, va="top", ha="left")
-    ax.invert_yaxis()       # depth increases downward
-    ax.set_xlabel("separation factor"); ax.set_ylabel("reference-well TVD [m]")
-    ax.set_title("Separation factor vs depth along the reference well (offset Well 05):\n"
-                 "SF dips to its minimum at the closest approach, and the conservatism gap\n"
-                 "(exact, right of the rule) opens up there — where the go/no-go decision is made")
-    ax.legend(loc="lower right", fontsize=8.5); ax.grid(alpha=0.25)
-    plt.tight_layout(); plt.savefig(f"{OUT}/sf-vs-depth.png", dpi=140, bbox_inches="tight")
+    wells = [("11 - well", "collision"), ("06 - well", "near-miss"), ("05 - well", "clear")]
+    fig, axes = plt.subplots(1, 3, figsize=(12.6, 5.2), sharex=True, sharey=True)
+    for ax, (w, lab) in zip(axes, wells):
+        md, ped, mah = sf_vs_md(ref, gs[w])
+        ax.plot(ped, md, color="C1", lw=1.7, label="pedal / separation rule (eq 2)")
+        ax.plot(mah, md, color="C0", lw=1.7, label="exact / Mahalanobis (eq 5)")
+        ax.axvspan(0, 1.0, color="red", alpha=0.06)        # collision zone
+        ax.axvline(1.0, color="k", lw=1, ls="--")
+        ax.set_xscale("log"); ax.set_xlim(0.3, 300)        # full range; no clipping
+        ax.set_title(f"Well {w.split(' ')[0]} — {lab}", fontsize=10)
+        ax.set_xlabel("separation factor"); ax.grid(alpha=0.25)
+    axes[0].invert_yaxis()                       # shared y: MD downward
+    axes[0].set_ylabel("reference-well MD [m]")
+    tr = blended_transform_factory(axes[0].transData, axes[0].transAxes)
+    axes[0].text(1.15, 0.985, "SF = 1", transform=tr, fontsize=8, va="top", ha="left")
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=2, fontsize=9.5,
+               bbox_to_anchor=(0.5, -0.01))      # one shared legend, valid for all three
+    fig.suptitle("Separation factor vs MD — the exact factor (eq 5) is everywhere ≥ the rule "
+                 "(eq 2), per station:\ncollision, near-miss and clear offsets; the conservatism "
+                 "gap is widest at the closest approach", fontsize=11)
+    plt.tight_layout(rect=[0, 0.04, 1, 0.95])
+    plt.savefig(f"{OUT}/sf-vs-depth.png", dpi=140, bbox_inches="tight")
     print("saved sf-vs-depth.png")
 
 
