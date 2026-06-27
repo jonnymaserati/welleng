@@ -1,0 +1,12 @@
+offset,published_minSF,welleng_pedal_minSF,pedal_vs_published_relerr_pct,mahalanobis_minSF,maha_over_pedal,verdict_pedal,verdict_maha
+01 - well,1.4,1.4,0.115,1.4,1.0,clear,clear
+02 - well,3.627,3.627,0.12,3.752,1.034,clear,clear
+03 - well,0.457,0.456,0.115,0.677,1.483,HIT,HIT
+04 - well,0.397,0.396,0.209,0.397,1.002,HIT,HIT
+05 - well,1.195,1.195,0.258,1.731,1.448,clear,clear
+06 - well,1.029,1.029,0.015,1.066,1.036,clear,clear
+07 - well,1.633,1.633,0.063,2.175,1.332,clear,clear
+08 - well,1.272,1.272,0.154,1.662,1.306,clear,clear
+09 - well,0.01,-0.089,0.122,0.3,,HIT,HIT
+10 - well,-0.607,-0.607,0.496,0.0,,HIT,HIT
+11 - well,0.226,0.08,0.115,0.103,1.285,HIT,HIT
