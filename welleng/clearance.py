@@ -862,74 +862,115 @@ class MahalanobisClearance(Clearance):
     All constructor arguments are those of :class:`IscwsaClearance`.
     """
 
-    def __init__(self, *args, step=10.0, n_nearest=24, **kwargs):
-        self._maha_step = step
-        self._maha_n_nearest = n_nearest
+    def __init__(self, *args, n_candidates=8, tol=1e-3, **kwargs):
+        self._n_candidates = n_candidates       # broadphase seeds to polish
+        self._tol = tol                         # narrowphase convergence (curve param)
         super().__init__(*args, **kwargs)
         self.sf = self._mahalanobis_sf()
 
     @staticmethod
-    def _resample(survey, step):
-        """Linearly resample a survey's position, covariance and radius to a
-        fine measured-depth step, so the minimum-distance search can find a
-        closest approach that falls BETWEEN survey stations."""
+    def _curve(survey):
+        """A survey as a general uncertain parametric curve: parameter (measured
+        depth), position, covariance field and radius at each station. Nothing
+        here is drilling-specific — any two such curves can be compared."""
         md = np.asarray(survey.md, dtype=float)
-        # use the authoritative n/e/tvd positions (as the separation rule does),
-        # NOT survey.pos_nev which is recomputed from md/inc/azi+start and can
-        # diverge when a survey is built with inconsistent start + n/e/tvd.
+        # authoritative n/e/tvd positions (as the separation rule uses), NOT
+        # survey.pos_nev which is recomputed from md/inc/azi+start.
         pos = np.column_stack([survey.n, survey.e, survey.tvd]).astype(float)
-        if step is None or len(md) < 2:
-            return (pos,
-                    np.asarray(survey.cov_nev, float).reshape(-1, 3, 3),
-                    np.asarray(survey.radius, float).reshape(-1))
-        md_f = np.arange(md[0], md[-1] + step, step)
-        pos_f = np.column_stack([np.interp(md_f, md, pos[:, a]) for a in range(3)])
         cov = np.asarray(survey.cov_nev, float).reshape(-1, 3, 3)
-        cov_f = np.empty((len(md_f), 3, 3))
+        rad = np.asarray(survey.radius, float).reshape(-1)
+        return md, pos, cov, rad
+
+    @staticmethod
+    def _at(curve, q):
+        """Linear interpolation of (position, covariance, radius) at parameter q
+        — i.e. evaluate the continuous curve at any point, not just a station."""
+        md, pos, cov, rad = curve
+        p = np.array([np.interp(q, md, pos[:, a]) for a in range(3)])
+        c = np.empty((3, 3))
         for a in range(3):
             for b in range(3):
-                cov_f[:, a, b] = np.interp(md_f, md, cov[:, a, b])
-        r_f = np.interp(md_f, md, np.asarray(survey.radius, float).reshape(-1))
-        return pos_f, cov_f, r_f
+                c[a, b] = np.interp(q, md, cov[:, a, b])
+        return p, c, float(np.interp(q, md, rad))
+
+    def _sf_point(self, pr, cr, rr, po, co, ro):
+        """Radii-adjusted Mahalanobis separation factor between two single
+        uncertain points (the general kernel)."""
+        d = po - pr
+        D = float(np.linalg.norm(d))
+        if D == 0.0:
+            return 0.0
+        # combined covariance + isotropic project-ahead floor (sigma_pa) so the
+        # metric stays finite where a survey covariance is degenerate.
+        S = cr + co + (self.sigma_pa ** 2) * np.eye(3)
+        dp = d * (max(D - (rr + ro + self.Sm), 0.0) / D)
+        try:
+            m = float(np.sqrt(dp @ np.linalg.solve(S, dp)))
+        except np.linalg.LinAlgError:
+            vals, vecs = np.linalg.eigh(S)
+            proj = vecs.T @ dp
+            m = float(np.sqrt(np.sum(
+                np.where(vals > 0, proj ** 2 / np.maximum(vals, 1e-30), 0.0))))
+        return m / self.k
+
+    def _sf_row(self, pr, cr, rr, Op, Oc, Ro):
+        """Separation factor of one reference point against ALL offset points
+        (vectorised) — the broadphase scan."""
+        d = Op - pr
+        D = np.linalg.norm(d, axis=1)
+        S = cr + Oc + (self.sigma_pa ** 2) * np.eye(3)
+        scale = np.divide(np.maximum(D - (rr + Ro + self.Sm), 0.0), D,
+                          out=np.zeros_like(D), where=D > 0)
+        dp = d * scale[:, None]
+        vals, vecs = np.linalg.eigh(S)            # robust to degenerate S
+        proj = np.einsum('oji,oj->oi', vecs, dp)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            terms = np.where(vals > 0, proj ** 2 / vals, np.inf)
+        terms = np.where(np.isclose(proj, 0.0), 0.0, terms)
+        m = np.sqrt(np.sum(terms, axis=1))
+        m[D == 0] = 0.0
+        return m / self.k
 
     def _mahalanobis_sf(self):
-        # The minimum-probability (worst) approach is the point of minimum
-        # *Mahalanobis* distance, which for an eccentric ellipsoid is NOT the
-        # Euclidean closest-approach point the separation rule selects
-        # (SPE-187073 "limitation B"). It also generally falls BETWEEN survey
-        # stations, so BOTH wells are resampled to a fine step before searching
-        # — otherwise a between-station crossing is missed (a false negative).
-        Rp, Rc, Rr = self._resample(self.ref, self._maha_step)
-        Op, Oc, Ro = self._resample(self.offset, self._maha_step)
-        tree = KDTree(Op)
-        K = int(min(self._maha_n_nearest, len(Op)))
+        # Minimum Mahalanobis distance between two uncertain parametric curves,
+        # by broadphase + narrowphase — the analytic analogue of a mesh+fcl query
+        # (the swept tube interpolates between stations; here the curve is
+        # interpolated directly, with no externally imposed step).
+        from scipy.optimize import minimize
+        ref, off = self._curve(self.ref), self._curve(self.offset)
+        Rmd, Rp, Rc, Rr = ref
+        Omd, Op, Oc, Ro = off
 
-        sf = np.full(len(Rp), np.inf)
+        # BROADPHASE: all-pairs at the survey's OWN stations (geometry-derived
+        # sampling). All pairs — not a Euclidean nearest-neighbour shortlist —
+        # because the min-*Mahalanobis* offset need not be the Euclidean-nearest
+        # one (SPE-187073 "limitation B").
+        sf = np.empty(len(Rp))
+        best_j = np.empty(len(Rp), dtype=int)
         for i in range(len(Rp)):
-            js = np.atleast_1d(tree.query(Rp[i], k=K)[1])
-            d = Op[js] - Rp[i]
-            D = np.linalg.norm(d, axis=1)
-            # combined relative-position covariance + the isotropic project-ahead
-            # floor (sigma_pa, "radius of a sphere") so the metric stays finite
-            # where the survey covariance is degenerate (e.g. a sidetrack at its
-            # KOP) and a physical/radii collision is still detected.
-            S = Rc[i] + Oc[js] + (self.sigma_pa ** 2) * np.eye(3)
-            R = Rr[i] + Ro[js] + self.Sm
-            scale = np.divide(
-                np.maximum(D - R, 0.0), D,
-                out=np.zeros_like(D), where=D > 0
-            )
-            dp = d * scale[:, None]
-            # batched Mahalanobis via eigen-decomposition (robust to a
-            # singular/degenerate covariance near surface).
-            vals, vecs = np.linalg.eigh(S)
-            proj = np.einsum('oji,oj->oi', vecs, dp)
-            with np.errstate(divide='ignore', invalid='ignore'):
-                terms = np.where(vals > 0, proj ** 2 / vals, np.inf)
-            terms = np.where(np.isclose(proj, 0.0), 0.0, terms)
-            m = np.sqrt(np.sum(terms, axis=1))
-            m[D == 0] = 0.0
-            sf[i] = np.min(m) / self.k
+            row = self._sf_row(Rp[i], Rc[i], Rr[i], Op, Oc, Ro)
+            best_j[i] = int(np.argmin(row))
+            sf[i] = row[best_j[i]]
+        if len(Rp) < 2 or len(Op) < 2:
+            return sf
+
+        # NARROWPHASE: continuous 2-D minimisation over the two curve parameters
+        # from the lowest broadphase candidates — the true minimum falls between
+        # stations. Converges to a tolerance (no fixed step); each search is
+        # bounded to the candidate's neighbouring segments.
+        def objective(x):
+            pr, cr, rr = self._at(ref, x[0])
+            po, co, ro = self._at(off, x[1])
+            return self._sf_point(pr, cr, rr, po, co, ro)
+
+        for i in np.argsort(sf)[:int(min(self._n_candidates, len(sf)))]:
+            j = best_j[i]
+            bounds = [(Rmd[max(i - 1, 0)], Rmd[min(i + 1, len(Rmd) - 1)]),
+                      (Omd[max(j - 1, 0)], Omd[min(j + 1, len(Omd) - 1)])]
+            res = minimize(objective, x0=[Rmd[i], Omd[j]], method="Nelder-Mead",
+                           bounds=bounds,
+                           options={"xatol": self._tol, "fatol": 1e-7})
+            sf[i] = min(sf[i], float(res.fun))
         return sf
 
 
