@@ -239,11 +239,13 @@ Two parts of that scaffold remain useful.
 
 **Honest visualisation.** When the uncertainty envelope is *drawn* rather than queried, the polygonal cross-section must not make the uncertainty look smaller than it is. welleng builds the visualisation polygon **circumscribing** the ellipse — scaled out by $1/\cos(\pi/n)$ so its edges are tangent to, and it fully contains, the true ellipse (Figure 4). An inscribed polygon would under-draw the envelope; the circumscribed one never does.
 
+\floatplacement{figure}{H}
+
 ![Conservative surface construction. The visualisation polygon is circumscribed (scaled by $1/\cos(\pi/n)$) so it contains the true $k\sigma$ ellipse and never under-represents the uncertainty; an inscribed polygon would under-count it. ($n=8$ shown for clarity.)](figures/conservative-surface-construction.png){width=76%}
 
 **Mesh resolution.** For visualisation, or a multi-well collision-manager scene, the vertex count $n$ trades a closed-form over-conservatism — radial over-count $\sec(\pi/n)-1$, which only ever *adds* margin — against mesh-build cost (Table 3). A typical $n=12$ over-draws by $3.5\%$, a sensible default; $n=24$ brings it under $1\%$. The analytic separation factor of Section 6 carries no such parameter.
 
-\begin{table}[tbp]
+\begin{table}[H]
 \centering
 \begin{tabular}{lrrr}
 \hline
