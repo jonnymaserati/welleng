@@ -83,7 +83,6 @@ class Clearance:
         self.k = k
         self.sigma_pa = sigma_pa
         self.Sm = Sm
-        # self.N_verts = N_verts
 
         self._get_kop_index(kop_depth)
         self._get_ref()
@@ -360,9 +359,6 @@ class IscwsaClearance(Clearance):
         # get the unit vectors and horizontal bearing between the wells
         self._get_delta_nev_vectors()
 
-        # transform to HLA coordinates
-        # self._get_delta_hla_vectors()
-
         # make the covariance matrices
         self._get_covs()
 
@@ -402,9 +398,6 @@ class IscwsaClearance(Clearance):
         # check for minima
         if minimize_sf:
             self.get_sf_mins()
-
-        # for debugging
-        # self.pc_method()
 
     def _get_sf_min(self, x, i, delta_md):
         # scipy.optimize.minimize passes x as a 1-element array; extract scalar
@@ -1040,7 +1033,6 @@ class MeshClearance(Clearance):
                     sf = distance_cc / denom if denom != 0 else np.inf
 
                 # data for ISCWSA method comparison
-                # self.collision.append(collision)
                 self.off_index.append(off_index)
                 self.distance.append(distance)
                 self.distance_cc.append(distance_cc)

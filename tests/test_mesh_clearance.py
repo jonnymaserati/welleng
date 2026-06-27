@@ -73,3 +73,18 @@ def test_invalid_polygon_fit_rejected():
     s = _survey("06 - well")
     with pytest.raises(AssertionError):
         WellMesh(s, n_verts=12, polygon_fit="banana")
+
+
+def test_mesh_sf_regression_anchor():
+    """Lock the mesh min-SF for ISCWSA Well 06 (default circumscribed, n_verts=12)
+    to guard the closest-point refactor and future changes."""
+    ref, off = _survey("Reference well"), _survey("06 - well")
+    sf = float(np.min(MeshClearance(ref, off, n_verts=12).sf))
+    assert np.isclose(sf, 1.0100, rtol=1e-2)
+
+
+def test_mesh_detects_known_collision():
+    """ISCWSA Well 03 deeply overlaps the reference — the mesh must flag it
+    (min SF < 1)."""
+    ref, off = _survey("Reference well"), _survey("03 - well")
+    assert float(np.min(MeshClearance(ref, off, n_verts=12).sf)) < 1.0
