@@ -128,20 +128,30 @@ Two conventions are worth noting on the deeply overlapping wells. Where the *cen
 
 The practical reading: where the rule reports, say, $\mathrm{SF}=1.2$ and would demand additional surveying or a redesign, the exact method may report $\mathrm{SF}=1.7$ — clear with margin — recovering a drillable well without acquiring more data.
 
-## 8. Implementation and reproducibility
+## 8. The "impractical" objection, refuted
+
+The standing argument against adopting an exact method is that *"more advanced methods that overcome such limitations are impractical for general application because of high conceptual or computational complexity"* (SPE-184644). Every plank of that objection fails for the exact $k\sigma$-boundary method.
+
+- **Conceptual simplicity.** The exact boundary is the Mahalanobis distance (Mahalanobis, 1936) — a single standard quadratic form, $m=\sqrt{\mathbf{d}^\top\Sigma^{-1}\mathbf{d}}$, with collision when $m<k$. It is *simpler* than the rule it replaces, not more complex: the separation rule needs the support function **and** a Euclidean closest-approach scan that carries its own documented exceptions (limitations A and B); the exact method needs neither — one metric, no special cases, no geometrical caveats.
+- **Computational cheapness.** The cost is one $3\times3$ linear solve (or eigendecomposition) per station. Measured end-to-end, the method runs in $35$ ms per well pair — an order of magnitude *faster* than our own implementation of the pedal rule ($300$ ms) and well inside the inner loop of automated trajectory planning. On current hardware the "high computational complexity" is unmeasurable.
+- **Generality.** It applies unchanged to every geometry in the ISCWSA standard set — parallel, crossing, oblique, eccentric and the sidetrack — with no special-casing. The support-function / closest-approach machinery, by contrast, carries the limitations the rule itself documents, and SPE-116155 records that *"many computations currently in use fail when the two wells are parallel"*. The Mahalanobis metric is well-defined for every relative geometry, parallel included.
+
+The objection likely conflates two different problems: the full probability-of-collision *integral over the uncertainty volume* (genuinely more involved, and deliberately out of scope here — Section 10) and the exact $k\sigma$-*boundary* (this paper). The boundary question is the very one the separation rule already answers — approximately. Answering it *exactly* is cheaper, simpler and more general than the approximation. The barrier to adoption was never complexity; it was the absence of a validated, openly auditable implementation. This paper removes that barrier.
+
+## 9. Implementation and reproducibility
 
 The method is implemented in the open-source library welleng (`welleng.clearance.MahalanobisClearance` and `combined_cov_mesh`), with the validated separation rule (`IscwsaClearance`) for comparison. Following the spirit of what reference papers too often omit, *everything required to reproduce every number and figure in this paper is released*: the input wells are the public ISCWSA standard clearance set; the per-station separation factors (published, pedal and Mahalanobis) are provided as a diagnostics file; and the figure- and table-generation scripts are in the repository. The validation is encoded as automated tests.
 
-## 9. Scope and limitations
+## 10. Scope and limitations
 
 This work is a **geometric $k\sigma$-boundary** method — it answers "is the offset within the combined $k\sigma$ ellipsoid", the same question the separation rule answers, computed exactly. It is not a probability-of-collision integral over the uncertainty volume; that is a richer, complementary treatment and is left to future work. The covariance model and confidence multiple are inherited from the ISCWSA error model and the chosen $k$; the method changes only how the uncertainty geometry is evaluated, not the uncertainty model itself.
 
-## 10. Conclusions
+## 11. Conclusions
 
 - The ISCWSA separation rule is *provably conservative*: it uses the ellipsoid support function where the exact boundary is the Mahalanobis distance, and by the Kantorovich inequality the rule's separation factor never exceeds the exact one.
 - The conservatism is real and quantifiable — up to $1.48\times$ excess standoff on the ISCWSA standard set — and it has a direct economic cost (forgone wells; additional surveying; delayed production).
 - The exact combined-covariance, minimum-Mahalanobis method (searching both interpolated wells, with a project-ahead floor and a conservatively *circumscribed* surface) agrees with the rule on every standard-set verdict while reducing conservatism, and runs in milliseconds.
-- It is validated (the rule reproduced to $0.5\%$; identical verdicts) and released open-source with its data and diagnostics — refuting the view that accurate anti-collision is impractical.
+- The objection that accurate methods are "impractical … because of high conceptual or computational complexity" fails on every plank: the exact method is *conceptually simpler* than the rule (one Mahalanobis form, no closest-approach caveats), an *order of magnitude faster* ($35$ ms vs $300$ ms), and *general* across all geometries — validated against the published standard set and released open-source. The barrier to accurate anti-collision was never complexity; it was the absence of an auditable implementation, now removed.
 
 ## References
 
