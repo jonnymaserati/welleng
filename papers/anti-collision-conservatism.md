@@ -4,6 +4,10 @@ author: "Jonathan Corcutt — Corcutt Beheer B.V., Wassenaar, Netherlands — OR
 date: "2026"
 geometry: margin=2.2cm
 fontsize: 10pt
+colorlinks: true
+linkcolor: black
+urlcolor: blue
+citecolor: blue
 header-includes: |
   \usepackage{amssymb}
   \usepackage{caption}
@@ -268,11 +272,11 @@ analytic & 0\% & 0\% & --- (no mesh) \\
 ## References
 
 - Mahalanobis, P. C. *On the generalised distance in statistics.* Proceedings of the National Institute of Sciences of India, 2(1), 49–55, 1936. (Predates DOIs.)
-- Brooks, A. G. and Wilson, H. *An Improved Method for Computing Wellbore Position Uncertainty and its Application to Collision and Target Intersection Probability.* SPE European Petroleum Conference, 1996. doi:10.2118/36863-MS
-- Alfano, S. *Satellite Collision Probability Enhancements.* Journal of Guidance, Control, and Dynamics, 29(3), 588–592, 2006. doi:10.2514/1.15523
-- Brooks, A. G. *A New Look at Wellbore-Collision Probability.* SPE Drilling & Completion, 25(2), 223–232, 2010 (SPE-116155, presented 2008). doi:10.2118/116155-PA
-- Poedjono, B., Lombardo, G. J., Phillips, W. *Anti-Collision Risk Management Standard for Well Placement.* SPE Americas E&P Environmental & Safety Conference, 2009. doi:10.2118/121040-MS
-- Bang, J. *Quantification of Wellbore-Collision Probability by Novel Analytic Methods.* SPE Drilling & Completion, 2017. doi:10.2118/184644-PA
-- Sawaryn, S. J., Wilson, H., Bang, J., Nyrnes, E., Sentance, A., Poedjono, B., Lowdon, R., Mitchell, I., Codling, J., Clark, P. J., Allen, W. T. *Well-Collision-Avoidance Separation Rule.* SPE Drilling & Completion, 34, 01–15, 2019. doi:10.2118/187073-PA
-- Diao, B. et al. *Adjacent well separation factor algorithm considering the wellbore position error envelope.* Journal of Petroleum Exploration and Production Technology, 15:140, 2025. doi:10.1007/s13202-025-02054-z
-- Corcutt, J. *welleng: open-source well-engineering tools.* Zenodo, 2026. doi:10.5281/zenodo.20968887 (concept DOI). <https://github.com/jonnymaserati/welleng>
+- Brooks, A. G. and Wilson, H. *An Improved Method for Computing Wellbore Position Uncertainty and its Application to Collision and Target Intersection Probability.* SPE European Petroleum Conference, 1996. [doi:10.2118/36863-MS](https://doi.org/10.2118/36863-MS)
+- Alfano, S. *Satellite Collision Probability Enhancements.* Journal of Guidance, Control, and Dynamics, 29(3), 588–592, 2006. [doi:10.2514/1.15523](https://doi.org/10.2514/1.15523)
+- Brooks, A. G. *A New Look at Wellbore-Collision Probability.* SPE Drilling & Completion, 25(2), 223–232, 2010 (SPE-116155, presented 2008). [doi:10.2118/116155-PA](https://doi.org/10.2118/116155-PA)
+- Poedjono, B., Lombardo, G. J., Phillips, W. *Anti-Collision Risk Management Standard for Well Placement.* SPE Americas E&P Environmental & Safety Conference, 2009. [doi:10.2118/121040-MS](https://doi.org/10.2118/121040-MS)
+- Bang, J. *Quantification of Wellbore-Collision Probability by Novel Analytic Methods.* SPE Drilling & Completion, 2017. [doi:10.2118/184644-PA](https://doi.org/10.2118/184644-PA)
+- Sawaryn, S. J., Wilson, H., Bang, J., Nyrnes, E., Sentance, A., Poedjono, B., Lowdon, R., Mitchell, I., Codling, J., Clark, P. J., Allen, W. T. *Well-Collision-Avoidance Separation Rule.* SPE Drilling & Completion, 34, 01–15, 2019. [doi:10.2118/187073-PA](https://doi.org/10.2118/187073-PA)
+- Diao, B. et al. *Adjacent well separation factor algorithm considering the wellbore position error envelope.* Journal of Petroleum Exploration and Production Technology, 15:140, 2025. [doi:10.1007/s13202-025-02054-z](https://doi.org/10.1007/s13202-025-02054-z)
+- Corcutt, J. *welleng: open-source well-engineering tools.* Zenodo, 2026. [doi:10.5281/zenodo.20968887](https://doi.org/10.5281/zenodo.20968887) (concept DOI). <https://github.com/jonnymaserati/welleng>
