@@ -75,6 +75,7 @@ def fig2():
     names = [r["offset"].replace(" - well", "") for r in rows]
     ped = [float(r["welleng_pedal_minSF_interp"]) for r in rows]
     mah = [float(r["mahalanobis_minSF"]) for r in rows]
+    ratio = max(m / p for m, p in zip(mah, ped) if p > 0)  # max less-conservatism
     x = np.arange(len(names)); w = 0.38
     fig, ax = plt.subplots(figsize=(9.2, 5.0))
     ymin = min(min(ped), min(mah)) - 0.3
@@ -93,7 +94,7 @@ def fig2():
     ax.set_xticks(x); ax.set_xticklabels(names)
     ax.set_xlabel("ISCWSA standard-set offset well"); ax.set_ylabel("minimum separation factor")
     ax.set_title("Minimum separation factor: pedal rule vs exact Mahalanobis boundary\n"
-                 "(same hit/clear verdict everywhere; Mahalanobis ≥ pedal — up to 1.48× less standoff)")
+                 f"(same hit/clear verdict everywhere; Mahalanobis ≥ pedal — up to {ratio:.2f}× less standoff)")
     ax.legend(loc="lower left", fontsize=9); ax.grid(alpha=0.25, axis="y")
     plt.tight_layout(); plt.savefig(f"{OUT}/pedal-vs-mahalanobis-iscwsa.png", dpi=140, bbox_inches="tight")
     print("saved pedal-vs-mahalanobis-iscwsa.png")
