@@ -1,0 +1,59 @@
+{
+  "title": "Making the Exact Wellbore Anti-Collision Boundary Practical: an Efficient, Validated, Open Implementation, and the Cost of the Separation-Rule Approximation",
+  "version": "1.0",
+  "upload_type": "publication",
+  "publication_type": "preprint",
+  "description": "The ISCWSA separation rule characterises the combined positional-uncertainty ellipsoid of two wells by its support function (the pedal curve / tangent distance) in the centre-to-centre direction, which is provably conservative: by the Kantorovich inequality the rule's separation factor never exceeds the exact one. This paper computes the exact boundary - the Mahalanobis distance, the measure Brooks (2008, after Alfano) and Bang (2017) identified but which has not been adopted operationally - as a general, step-free minimum-Mahalanobis distance between two uncertain parametric curves (broadphase plus continuous narrowphase; analytic, no mesh), released open-source in welleng. It is validated: welleng reproduces the published ISCWSA factors to 0.5%; the shipped metric matches Brooks's Mahalanobis-space transform to floating-point precision; and the broadphase-plus-narrowphase search matches an exhaustive all-pairs reference to under 1e-3. On the ISCWSA standard set the exact method agrees with the rule on every collision/clear verdict while being up to 1.47x less conservative on the margin, at tens of milliseconds per well pair. All data, code and diagnostics are released for full reproducibility, letting drilling operators safely reduce standoff - recovering wells that conservatism would forbid and avoiding the cost and delay of unnecessary additional surveying.",
+  "creators": [
+    {
+      "name": "Corcutt, Jonathan",
+      "affiliation": "Corcutt Beheer B.V., Wassenaar, Netherlands",
+      "orcid": "0009-0008-1953-7760"
+    }
+  ],
+  "keywords": [
+    "anti-collision",
+    "wellbore position uncertainty",
+    "ISCWSA separation rule",
+    "Mahalanobis distance",
+    "directional drilling",
+    "separation factor",
+    "pedal curve",
+    "welleng",
+    "open source"
+  ],
+  "license": "cc-by-4.0",
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/jonnymaserati/welleng",
+      "relation": "isSupplementedBy",
+      "scheme": "url",
+      "resource_type": "software"
+    },
+    {
+      "identifier": "10.5281/zenodo.20968887",
+      "relation": "isSupplementedBy",
+      "scheme": "doi",
+      "resource_type": "software"
+    },
+    {
+      "identifier": "10.2118/187073-PA",
+      "relation": "references",
+      "scheme": "doi",
+      "resource_type": "publication-article"
+    },
+    {
+      "identifier": "10.2118/116155-PA",
+      "relation": "references",
+      "scheme": "doi",
+      "resource_type": "publication-article"
+    },
+    {
+      "identifier": "10.2118/184644-PA",
+      "relation": "references",
+      "scheme": "doi",
+      "resource_type": "publication-article"
+    }
+  ],
+  "notes": "Reproducibility bundle: paper source, figure generators and diagnostics live in the welleng repository under papers/. welleng software DOI (concept): 10.5281/zenodo.20968887."
+}
