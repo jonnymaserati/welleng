@@ -34,22 +34,25 @@ def main():
         off = gs[well]
         Op = np.column_stack([off.n, off.e, off.tvd])
         Oc = np.asarray(off.cov_nev).reshape(-1, 3, 3)
-        # find the closest-approach point in the (pure) Mahalanobis metric
+        # drive the SHIPPED implementation in pure-metric mode (no floor, no
+        # radii) so this exercises welleng's actual _sf_point, not an inline
+        # re-derivation.
+        mc = MahalanobisClearance(ref, off)
+        mc.sigma_pa = 0.0
+        mc.Sm = 0.0
+        # find the closest-approach point via the shipped per-point metric
         best = (np.inf, None, None)
         for i in range(len(Rp)):
             for j in range(len(Op)):
-                S = Rc[i] + Oc[j]
-                w = np.linalg.eigvalsh(S)
-                if w.min() < 1e-9:        # degenerate near-surface cov; skip
-                    continue
-                d = Op[j] - Rp[i]
-                m = float(np.sqrt(d @ np.linalg.solve(S, d)))
+                if np.linalg.eigvalsh(Rc[i] + Oc[j]).min() < 1e-9:
+                    continue              # degenerate near-surface cov; skip
+                m = mc._sf_point(Rp[i], Rc[i], 0.0, Op[j], Oc[j], 0.0) * mc.k
                 if m < best[0]:
                     best = (m, i, j)
-        m_ours, i, j = best
+        m_ours, i, j = best               # welleng's shipped Mahalanobis distance
         S = Rc[i] + Oc[j]
         d = Op[j] - Rp[i]
-        m_brooks = float(np.linalg.norm(brooks_T(S) @ d))
+        m_brooks = float(np.linalg.norm(brooks_T(S) @ d))  # Brooks's transform
         rows.append({
             "offset": well,
             "ours_sqrt_dT_Sinv_d": round(m_ours, 6),

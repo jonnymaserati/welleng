@@ -849,17 +849,52 @@ class MahalanobisClearance(Clearance):
     ellipsoid-surface distance — the Mahalanobis distance of the
     radii-adjusted centre-to-centre vector in the combined covariance metric:
 
-        SF = sqrt(d'T (Sigma_ref + Sigma_off)^-1 d') / k
+        SF = min over both curves of
+                 sqrt(d'T (Sigma_ref + Sigma_off + sigma_pa^2 I)^-1 d') / k
 
     where ``d'`` is the centre-to-centre vector shortened by the combined hole
-    radii and surface margin. ``SF < 1`` means the offset lies within the
-    k-sigma combined ellipsoid (collision). It reuses the validated
-    closest-approach machinery of :class:`IscwsaClearance` and only replaces
-    the separation factor, so it is less conservative while remaining a
-    k-sigma *geometric boundary* method (it is not a probability of collision).
-    Fast and analytic — no mesh or collision library required.
+    radii and surface margin ``Sm``, and ``sigma_pa^2 I`` is the isotropic
+    project-ahead floor (mirroring the separation rule's ``sigma_pa`` term),
+    which keeps the metric finite where a survey covariance is degenerate.
+    The minimum is found over both wells by broadphase (all-pairs at the
+    surveys' own stations) plus a continuous narrowphase refinement, so the
+    worst point between stations is captured without an externally imposed
+    step. ``SF < 1`` means the offset lies within the k-sigma combined
+    ellipsoid (collision). It is a k-sigma *geometric boundary* method (not a
+    probability of collision), fast and analytic — no mesh or collision
+    library required.
 
-    All constructor arguments are those of :class:`IscwsaClearance`.
+    This is the Mahalanobis distance of Brooks (SPE-116155, 2008; after
+    Alfano's satellite-conjunction work); see `papers/anti-collision-
+    conservatism.md` for the derivation, validation and references. If you use
+    this method, please cite welleng and that paper.
+
+    Parameters
+    ----------
+    reference, offset : welleng.survey.Survey
+        The two wells (with an error model so ``cov_nev`` is populated).
+    k : float, default 3.5
+        Confidence multiple (inherited from :class:`Clearance`).
+    Sm : float, default 0.3
+        Surface margin, m (inherited).
+    sigma_pa : float, default 0.5
+        Isotropic project-ahead floor, m (inherited). ``sigma_pa > 0``
+        guarantees a positive-definite combined covariance; set ``0`` for the
+        pure combined-ellipsoid metric (e.g. when reproducing Brooks).
+    kop_depth : float, default -inf
+        Kick-off depth below which to scan (inherited; for sidetracks).
+    n_candidates : int, default 8
+        Number of lowest broadphase candidates polished by the narrowphase.
+        Results are insensitive above a handful (see the convergence test).
+    tol : float, default 1e-3
+        Narrowphase convergence tolerance on the curve parameter (measured
+        depth), m.
+
+    Attributes
+    ----------
+    sf : numpy.ndarray
+        Separation factor at each reference station; ``min(sf) < 1`` is a
+        collision. The governing value is ``numpy.nanmin(sf)``.
     """
 
     def __init__(self, *args, n_candidates=8, tol=1e-3, **kwargs):
@@ -895,23 +930,37 @@ class MahalanobisClearance(Clearance):
 
     def _sf_point(self, pr, cr, rr, po, co, ro):
         """Radii-adjusted Mahalanobis separation factor between two single
-        uncertain points (the general kernel)."""
+        uncertain points — the general kernel (scalar; used by the narrowphase).
+
+        Parameters
+        ----------
+        pr, po : (3,) array — reference and offset positions (NEV).
+        cr, co : (3, 3) array — their covariances (NEV).
+        rr, ro : float — their hole radii.
+
+        Notes
+        -----
+        Uses the combined covariance plus the isotropic project-ahead floor
+        ``sigma_pa**2 I``. ``d`` is shortened by the combined radii + surface
+        margin before the metric, so a physical overlap (centres within the
+        radii) returns 0. In a zero-variance (perfectly known) direction with a
+        non-zero offset component the metric is infinite (the offset is
+        infinitely many sigma away — clear); this matches :meth:`_sf_row`.
+        """
         d = po - pr
         D = float(np.linalg.norm(d))
         if D == 0.0:
             return 0.0
-        # combined covariance + isotropic project-ahead floor (sigma_pa) so the
-        # metric stays finite where a survey covariance is degenerate.
         S = cr + co + (self.sigma_pa ** 2) * np.eye(3)
         dp = d * (max(D - (rr + ro + self.Sm), 0.0) / D)
-        try:
-            m = float(np.sqrt(dp @ np.linalg.solve(S, dp)))
-        except np.linalg.LinAlgError:
-            vals, vecs = np.linalg.eigh(S)
-            proj = vecs.T @ dp
-            m = float(np.sqrt(np.sum(
-                np.where(vals > 0, proj ** 2 / np.maximum(vals, 1e-30), 0.0))))
-        return m / self.k
+        # eigen-decomposition (consistent with _sf_row, robust to degenerate S):
+        # a zero eigenvalue with a non-zero projection -> +inf (clear), not 0.
+        vals, vecs = np.linalg.eigh(S)
+        proj = vecs.T @ dp
+        with np.errstate(divide='ignore', invalid='ignore'):
+            terms = np.where(vals > 0, proj ** 2 / vals, np.inf)
+        terms = np.where(np.isclose(proj, 0.0), 0.0, terms)
+        return float(np.sqrt(np.sum(terms))) / self.k
 
     def _sf_row(self, pr, cr, rr, Op, Oc, Ro):
         """Separation factor of one reference point against ALL offset points
@@ -936,7 +985,6 @@ class MahalanobisClearance(Clearance):
         # by broadphase + narrowphase — the analytic analogue of a mesh+fcl query
         # (the swept tube interpolates between stations; here the curve is
         # interpolated directly, with no externally imposed step).
-        from scipy.optimize import minimize
         ref, off = self._curve(self.ref), self._curve(self.offset)
         Rmd, Rp, Rc, Rr = ref
         Omd, Op, Oc, Ro = off
@@ -967,7 +1015,7 @@ class MahalanobisClearance(Clearance):
             j = best_j[i]
             bounds = [(Rmd[max(i - 1, 0)], Rmd[min(i + 1, len(Rmd) - 1)]),
                       (Omd[max(j - 1, 0)], Omd[min(j + 1, len(Omd) - 1)])]
-            res = minimize(objective, x0=[Rmd[i], Omd[j]], method="Nelder-Mead",
+            res = optimize.minimize(objective, x0=[Rmd[i], Omd[j]], method="Nelder-Mead",
                            bounds=bounds,
                            options={"xatol": self._tol, "fatol": 1e-7})
             sf[i] = min(sf[i], float(res.fun))
@@ -1268,9 +1316,14 @@ def combined_cov_mesh(
     the combined hole radii (``survey.radius + other.radius + Sm``) — intended
     to be tested against the *centreline* of ``other`` (e.g. via
     ``mesh.contains(other.pos_nev)`` or a ``trimesh`` ``CollisionManager``
-    against a zero-uncertainty tube). The result matches the exact k-sigma
-    boundary of :class:`MahalanobisClearance` while keeping the speed of a
-    binary mesh collision query.
+    against a zero-uncertainty tube). It is the mesh/visualisation counterpart
+    of :class:`MahalanobisClearance` and is *consistent* with it (same RSS
+    combined covariance), but **not numerically identical**: it omits the
+    project-ahead floor ``sigma_pa``, maps ``other``'s covariance by nearest
+    Euclidean station, and discretises the surface into ``n_verts`` facets. For
+    the exact pairwise separation factor use :class:`MahalanobisClearance`;
+    use this where a triangulated surface is needed (visualisation or a
+    multi-well collision-manager scene).
 
     Parameters
     ----------

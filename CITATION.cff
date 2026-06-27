@@ -1,0 +1,44 @@
+cff-version: 1.2.0
+message: >-
+  If you use welleng, please cite it. If you use the anti-collision
+  (exact Mahalanobis separation factor) method, please also cite the
+  anti-collision paper listed under references.
+title: welleng
+abstract: A collection of well engineering tools.
+type: software
+authors:
+  - family-names: Corcutt
+    given-names: Jonathan
+version: 0.12.1
+license: Apache-2.0
+repository-code: "https://github.com/jonnymaserati/welleng"
+url: "https://github.com/jonnymaserati/welleng"
+keywords:
+  - directional drilling
+  - wellbore positioning
+  - anti-collision
+  - ISCWSA
+  - survey error model
+references:
+  # Gyro error-model validation paper (published).
+  - type: article
+    title: >-
+      Reproducing the ISCWSA Gyro Error-Model Test Cases: Implementation
+      Clarifications, Reference-Data Inconsistencies, and an Open-Source
+      Reference Implementation
+    authors:
+      - family-names: Corcutt
+        given-names: Jonathan
+    year: 2026
+    doi: 10.5281/zenodo.20940515
+  # Anti-collision (exact Mahalanobis separation factor) paper.
+  # DOI to be added on publication; source: papers/anti-collision-conservatism.md
+  - type: article
+    title: >-
+      Making the Exact Wellbore Anti-Collision Boundary Practical: an
+      Efficient, Validated, Open Implementation, and the Cost of the
+      Separation-Rule Approximation
+    authors:
+      - family-names: Corcutt
+        given-names: Jonathan
+    year: 2026

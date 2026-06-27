@@ -71,21 +71,27 @@ For an eccentric ellipsoid approached off-axis these differ substantially: the t
 
 Before improving on the rule we confirm we compute it correctly. welleng's `IscwsaClearance` reproduces the **published** separation factors of the ISCWSA standard set of clearance scenarios (reference well plus eleven offsets) to within $0.5\%$ on every well — well inside the documented inter-implementation band. Table 1 lists the minimum separation factors.
 
-| Offset | published min SF | welleng min SF | rel. err. |
-|---|---|---|---|
-| 01 | 1.400 | 1.400 | 0.12% |
-| 02 | 3.627 | 3.627 | 0.12% |
-| 03 | 0.457 | 0.457 | 0.12% |
-| 04 | 0.397 | 0.396 | 0.23% |
-| 05 | 1.195 | 1.195 | 0.26% |
-| 06 | 1.029 | 1.029 | 0.01% |
-| 07 | 1.633 | 1.633 | 0.06% |
-| 08 | 1.272 | 1.272 | 0.16% |
-| 09 | 0.010 | 0.010 | 0.12% |
-| 10 | -0.607 | -0.607 | 0.50% |
-| 11 | 0.226 | 0.226 | 0.12% |
-
-Table: welleng's separation-rule implementation vs the published ISCWSA standard-set minimum separation factors, compared **at the tabulated survey stations** (worst-case per-station relative error $0.50\%$). welleng's between-station interpolation finds slightly lower true minima where the worst point lies between stations (Wells 09: $-0.089$; 11: $0.080$); these are used for the like-for-like comparison against the exact method in Section 7, not here.
+\begin{table}[!htbp]
+\centering
+\begin{tabular}{lrrr}
+\hline
+Offset & published min SF & welleng min SF & rel.\ err. \\
+\hline
+01 & 1.400 & 1.400 & 0.12\% \\
+02 & 3.627 & 3.627 & 0.12\% \\
+03 & 0.457 & 0.457 & 0.12\% \\
+04 & 0.397 & 0.396 & 0.23\% \\
+05 & 1.195 & 1.195 & 0.26\% \\
+06 & 1.029 & 1.029 & 0.01\% \\
+07 & 1.633 & 1.633 & 0.06\% \\
+08 & 1.272 & 1.272 & 0.16\% \\
+09 & 0.010 & 0.010 & 0.12\% \\
+10 & -0.607 & -0.607 & 0.50\% \\
+11 & 0.226 & 0.226 & 0.12\% \\
+\hline
+\end{tabular}
+\caption{welleng's separation-rule implementation vs the published ISCWSA standard-set minimum separation factors, compared at the tabulated survey stations (worst-case per-station relative error 0.50\%). welleng's between-station interpolation finds slightly lower true minima where the worst point lies between stations (Wells 09: $-0.089$; 11: $0.080$); these are used for the like-for-like comparison against the exact method in Section 7, not here.}
+\end{table}
 
 ## 5. The conservatism is exactly bounded
 
@@ -180,7 +186,9 @@ The standing argument against adopting an exact method is that *"more advanced m
 - **Computational cheapness.** The cost is one $3\times3$ linear solve (or eigendecomposition) per station. Measured end-to-end, the method runs in $35$ ms per well pair — an order of magnitude *faster* than our own implementation of the pedal rule ($300$ ms) and well inside the inner loop of automated trajectory planning. On current hardware the "high computational complexity" is unmeasurable.
 - **Generality.** It applies unchanged to every geometry in the ISCWSA standard set — parallel, crossing, oblique, eccentric and the sidetrack — with no special-casing. The support-function / closest-approach machinery, by contrast, carries the limitations the rule itself documents, and SPE-116155 records that *"many computations currently in use fail when the two wells are parallel"*. The Mahalanobis metric is well-defined for every relative geometry, parallel included.
 
-The objection likely conflates two different problems: the full probability-of-collision *integral over the uncertainty volume* (genuinely more involved, and deliberately out of scope here — Section 10) and the exact $k\sigma$-*boundary* (this paper). The boundary question is the very one the separation rule already answers — approximately. Answering it *exactly* is cheaper, simpler and more general than the approximation. The barrier to adoption was never complexity; it was the absence of a validated, openly auditable implementation. This paper removes that barrier.
+The objection likely conflates two different problems: the full probability-of-collision *integral over the uncertainty volume* (genuinely more involved, and deliberately out of scope here — Section 10) and the exact $k\sigma$-*boundary* (this paper). The boundary question is the very one the separation rule already answers — approximately. Answering it *exactly* is cheaper, simpler and more general than the approximation.
+
+The barrier to adoption was never the mathematics; it was the absence of a validated, openly auditable implementation. Bang (2017) is explicit on this point: of the exact Mahalanobis-space approach he writes that *"to this author's knowledge, the method has not been fully implemented by any company in the petroleum industry."* That gap has persisted — and recent work has largely chosen to refine the *approximation* rather than implement the exact boundary: the error-envelope method (Diao et al., 2025) and the elliptic-cylinder-of-uncertainty method reduce the rule's conservatism for non-parallel wells, but through geometric projection (not the exact metric) and without released code. Diao et al. are themselves explicit that "elliptical column equations provide approximate envelope calculations" and that "future work should develop more precise models." The exact Mahalanobis boundary *is* that more precise model; this paper computes it and releases it — answering both Diao's accuracy call and Bang's implementation gap. (We also note a subtlety these projection methods highlight: the rule is conservative in its *metric* — support function $\ge$ Mahalanobis, Section 5 — yet can be *optimistic* in its *point selection*, evaluating the factor away from the true closest approach; the minimum over both interpolated curves here corrects both.)
 
 ## 9. Implementation and reproducibility
 
@@ -189,6 +197,8 @@ The method is implemented in the open-source library welleng (`welleng.clearance
 ## 10. Scope and limitations
 
 This work is a **geometric $k\sigma$-boundary** method — it answers "is the offset within the combined $k\sigma$ ellipsoid", the same question the separation rule answers, computed exactly. It is not a probability-of-collision integral over the uncertainty volume; that is a richer, complementary treatment and is left to future work. The covariance model and confidence multiple are inherited from the ISCWSA error model and the chosen $k$; the method changes only how the uncertainty geometry is evaluated, not the uncertainty model itself.
+
+One inherited limitation is worth stating explicitly. The combined covariance $\Sigma_{\text{ref}}+\Sigma_{\text{off}}$ (and equivalently the rule's $\sigma_r^2+\sigma_o^2$) assumes the two wells' errors are **independent**. Where wells share systematic error sources — common reference, tool, or crew — these sums must be modified; as Sawaryn et al. (2019) note, *"a rigorous methodology for this has yet to be developed and this limitation must therefore be regarded as a potential unknown simplification inherent in the present practice."* The exact boundary presented here inherits that assumption unchanged; handling correlated between-well errors is left to future work.
 
 Because both bodies are *analytic* (covariance ellipsoids along curves) and the metric is a quadratic form, the proximity query has a closed-form kernel and needs no surface mesh. This holds for any proximity problem whose bodies admit a tractable distance function (ellipsoids, quadrics, convex primitives); arbitrary non-analytic geometry is out of scope.
 
@@ -234,4 +244,5 @@ Table: mesh discretisation over-conservatism (closed-form, from the circumscribe
 - Poedjono, B., Lombardo, G. J., Phillips, W. *Anti-Collision Risk Management Standard for Well Placement.* SPE Americas E&P Environmental & Safety Conference, 2009. doi:10.2118/121040-MS
 - Bang, J. *Quantification of Wellbore-Collision Probability by Novel Analytic Methods.* SPE Drilling & Completion, 2017. doi:10.2118/184644-PA
 - Sawaryn, S. J., Wilson, H., Bang, J., Nyrnes, E., Sentance, A., Poedjono, B., Lowdon, R., Mitchell, I., Codling, J., Clark, P. J., Allen, W. T. *Well-Collision-Avoidance Separation Rule.* SPE Drilling & Completion, 34, 01–15, 2019. doi:10.2118/187073-PA
+- Diao, B. et al. *Adjacent well separation factor algorithm considering the wellbore position error envelope.* Journal of Petroleum Exploration and Production Technology, 15:140, 2025. doi:10.1007/s13202-025-02054-z
 - welleng (open-source well-engineering library). <https://github.com/jonnymaserati/welleng>
