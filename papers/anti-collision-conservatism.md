@@ -75,17 +75,17 @@ Before improving on the rule we confirm we compute it correctly. welleng's `Iscw
 |---|---|---|---|
 | 01 | 1.400 | 1.400 | 0.12% |
 | 02 | 3.627 | 3.627 | 0.12% |
-| 03 | 0.457 | 0.456 | 0.12% |
-| 04 | 0.397 | 0.396 | 0.21% |
+| 03 | 0.457 | 0.457 | 0.12% |
+| 04 | 0.397 | 0.396 | 0.23% |
 | 05 | 1.195 | 1.195 | 0.26% |
 | 06 | 1.029 | 1.029 | 0.01% |
 | 07 | 1.633 | 1.633 | 0.06% |
-| 08 | 1.272 | 1.272 | 0.15% |
-| 09 | 0.010 | -0.089 | <0.5% |
+| 08 | 1.272 | 1.272 | 0.16% |
+| 09 | 0.010 | 0.010 | 0.12% |
 | 10 | -0.607 | -0.607 | 0.50% |
-| 11 | 0.226 | 0.080 | <0.5% |
+| 11 | 0.226 | 0.226 | 0.12% |
 
-Table: welleng's separation-rule implementation vs the published ISCWSA standard-set minimum separation factors (per-station relative error; Wells 09/11 reach a lower interpolated minimum than the tabulated stations).
+Table: welleng's separation-rule implementation vs the published ISCWSA standard-set minimum separation factors, compared **at the tabulated survey stations** (worst-case per-station relative error $0.50\%$). welleng's between-station interpolation finds slightly lower true minima where the worst point lies between stations (Wells 09: $-0.089$; 11: $0.080$); these are used for the like-for-like comparison against the exact method in Section 7, not here.
 
 ## 5. The conservatism is exactly bounded
 
@@ -117,6 +117,20 @@ where $\mathbf{d}'$ is the centre-to-centre vector shortened by the combined hol
 - **Project-ahead floor $\sigma_{pa}^2\mathbf{I}$.** Where the survey covariance is degenerate (for example a near-vertical sidetrack with negligible horizontal uncertainty) the isotropic floor keeps the metric finite so a physical (radii) collision is still detected — mirroring the rule's own $\sigma_{pa}$.
 
 The same combined-covariance ellipsoid can be realised as a triangulated mesh and tested against the other well's centreline with a standard collision manager, giving an identical verdict while retaining the speed of a binary mesh query — the form used in automated trajectory planning.
+
+**Mesh resolution ($n$).** The mesh realisation introduces one parameter the analytic method does not: the number of vertices $n$ per ellipsoid cross-section. Because the polygon is *circumscribed* (Section 5), this discretisation can only ever *add* conservatism, and by a closed-form amount — the radial over-count (the factor by which the polygon's reach exceeds the true ellipse) is $\sec(\pi/n)-1$, which vanishes as $n$ grows. Table 2 shows the trade-off against mesh-build cost. The default $n=12$ over-demands standoff by $3.5\%$ — an order of magnitude below the $40$–$48\%$ conservatism the method removes from the rule — and is a sensible knee; $n=24$ brings it under $1\%$ for tight calls. Crucially, the **analytic method is the $n\to\infty$ limit with zero discretisation error and the lowest cost** (no mesh to build): it is preferred for the separation factor itself, and the mesh is reserved for when a triangulated scene / collision-manager query is genuinely required (large multi-well batches).
+
+| $n$ | radial over-count | area over-count | mesh build [ms] |
+|---|---|---|---|
+| 6 | 15.5% | 33.3% | 69 |
+| 8 | 8.2% | 17.2% | 87 |
+| **12** (default) | **3.5%** | 7.2% | 125 |
+| 16 | 2.0% | 4.0% | 164 |
+| 24 | 0.9% | 1.7% | 240 |
+| 48 | 0.2% | 0.4% | 475 |
+| analytic ($n\to\infty$) | 0% | 0% | 35 (no mesh) |
+
+Table: mesh discretisation over-conservatism (closed-form, from the circumscribed polygon) and build cost vs vertex count $n$. The analytic Mahalanobis method is the exact limit at the lowest cost.
 
 ## 7. Results
 

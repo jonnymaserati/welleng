@@ -73,7 +73,7 @@ def fig1():
 def fig2():
     rows = list(csv.DictReader(open("papers/data/anti-collision-diagnostics.csv")))
     names = [r["offset"].replace(" - well", "") for r in rows]
-    ped = [float(r["welleng_pedal_minSF"]) for r in rows]
+    ped = [float(r["welleng_pedal_minSF_interp"]) for r in rows]
     mah = [float(r["mahalanobis_minSF"]) for r in rows]
     x = np.arange(len(names)); w = 0.38
     fig, ax = plt.subplots(figsize=(9.2, 5.0))
