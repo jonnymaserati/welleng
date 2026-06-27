@@ -1,5 +1,5 @@
 ---
-title: "Reducing Conservatism in Wellbore Anti-Collision: an Exact, Validated, Open-Source Combined-Ellipsoid Separation Method"
+title: "Making the Exact Wellbore Anti-Collision Boundary Practical: an Efficient, Validated, Open Implementation, and the Cost of the Separation-Rule Approximation"
 author: "Jonathan Corcutt (welleng)"
 date: "2026"
 geometry: margin=2.2cm
@@ -15,7 +15,7 @@ header-includes: \usepackage{amssymb}
 
 Wellbore anti-collision is governed by the ISCWSA separation rule (Sawaryn et al., SPE-187073-MS), which expresses risk as a dimensionless separation factor (SF) and is the industry standard for permitting drilling near existing wells. The rule is, by construction, conservative: it characterises the combined positional-uncertainty ellipsoid of the reference and offset wells by its *support function* (the pedal-curve / tangent distance) in the centre-to-centre direction, which always over-states the ellipsoid's true reach toward an off-axis offset. The literature acknowledges this — "overconservative separation rules also have a cost" (SPE-116155) — and that more accurate methods have been considered "impractical for general application because of high conceptual or computational complexity" (SPE-184644).
 
-We show that the conservatism is exactly quantifiable. The separation factor uses the support function $\sqrt{\mathbf{u}^\top\Sigma\,\mathbf{u}}$ where the statistically correct boundary is the Mahalanobis distance $\sqrt{\mathbf{d}^\top\Sigma^{-1}\mathbf{d}}$; by the Kantorovich inequality the rule's factor is always less than or equal to the exact one, with the gap growing with ellipsoid eccentricity and approach obliquity. We implement the exact boundary as a general, step-free **minimum-Mahalanobis distance between two uncertain parametric curves** — solved by broadphase (the curves' own stations) plus continuous narrowphase, analytic and needing no surface mesh — in the open-source library welleng. It is validated two ways: (i) welleng's separation-rule implementation reproduces the published ISCWSA standard-set separation factors to within $0.5\%$, and (ii) the exact method agrees with the rule on every collision/clear verdict of the standard set while being up to $1.47\times$ less conservative on the margin, matching an exhaustive reference to $<10^{-3}$ at $\approx 35$ ms per pair. Where a mesh is used (multi-well scenes) its surface is built *circumscribing* the ellipse, so the discretisation never under-represents uncertainty. All data, code and diagnostics are released for full reproducibility. The result lets operators safely reduce standoff — recovering wells that conservatism would forbid and avoiding the cost and production delay of unnecessary additional surveying.
+The exact boundary is **not new**: it is the Mahalanobis distance (Mahalanobis, 1936), brought into wellbore collision by Brooks (2008) after Alfano's satellite-conjunction work, and underlying the analytic collision-probability methods of Bang (2017). Yet the operational standard remains the approximate rule — the exact method having been judged *impractical* "because of high conceptual or computational complexity" (Bang, 2017). **Our contribution is to remove that blocker:** an efficient, validated, open implementation, together with an exact bound on what the approximation costs. We show the conservatism is exactly quantifiable — the rule uses the support function $\sqrt{\mathbf{u}^\top\Sigma\,\mathbf{u}}$ where the correct boundary is the Mahalanobis distance $\sqrt{\mathbf{d}^\top\Sigma^{-1}\mathbf{d}}$, and by the Kantorovich inequality the rule's factor never exceeds the exact one (the gap growing with ellipsoid eccentricity and approach obliquity). We compute the exact boundary as a general, step-free **minimum-Mahalanobis distance between two uncertain parametric curves** — broadphase (the curves' own stations) plus continuous narrowphase, analytic, no mesh — in the open-source library welleng, and validate it three ways: it reproduces the published ISCWSA separation factors to $0.5\%$; it equals Brooks's Mahalanobis-space distance to machine precision; and it agrees with the rule on every collision/clear verdict of the standard set while being up to $1.47\times$ less conservative on the margin, matching an exhaustive reference to $<10^{-3}$ at $\approx 35$ ms per pair. All data, code and diagnostics are released for full reproducibility. The result lets operators safely reduce standoff — recovering wells that conservatism would forbid and avoiding the cost and production delay of unnecessary additional surveying.
 
 **Notation.** $\Sigma=\Sigma_{\text{ref}}+\Sigma_{\text{off}}$ the combined relative-position covariance (NEV), $\mathbf{d}$ the centre-to-centre vector, $\mathbf{u}=\mathbf{d}/\lVert\mathbf{d}\rVert$, $k$ the confidence multiple ($k=3.5$ in the standard rule), $R$ the combined hole radii plus surface margin $S_m$, $\sigma_{pa}$ the project-ahead term.
 
@@ -98,9 +98,7 @@ Writing $\mathrm{SF}_{\text{exact}}=m/k$ (the radii-adjusted Mahalanobis boundar
 
 by the Kantorovich (Cauchy–Schwarz) inequality, with equality if and only if $\mathbf{u}$ is an eigenvector of $\Sigma$. The rule is therefore *provably conservative* — never optimistic — and the gap grows with ellipsoid eccentricity and approach obliquity. (A separate, larger conservatism arises if two independent $k\sigma$ ellipsoids are meshed and overlap-tested: their surfaces meet at the *linear* sum $k(\sigma_{\text{ref}}+\sigma_{\text{off}})$ rather than the root-sum-square $k\sqrt{\sigma_{\text{ref}}^2+\sigma_{\text{off}}^2}$, a further $\sqrt{2}$ in the symmetric case — avoided here by combining into one ellipsoid.)
 
-A subtle but essential point for credibility: the reduced conservatism must come from the *method*, not from under-representing the uncertainty surface. welleng builds the discretised mesh surface **circumscribing** the ellipse — each $n$-vertex polygon is scaled out by $1/\cos(\pi/n)$ so its edges are tangent to, and the polygon fully contains, the ellipse (Figure 2). The surface therefore never under-counts uncertainty for the given $\sigma$; it errs conservative, while the *metric* is what reduces conservatism.
-
-![Conservative surface construction. welleng's default polygon is circumscribed (scaled by $1/\cos(\pi/n)$) so it contains the true $k\sigma$ ellipse and never under-represents the uncertainty; an inscribed polygon would under-count it. ($n=8$ shown for clarity.)](figures/conservative-surface-construction.png){width=78%}
+Crucially, the reduced conservatism comes from the *metric*, not from under-representing the uncertainty: the exact method evaluates the true ellipsoid boundary directly — there is no surface to shrink. (welleng's *optional* mesh, used for visualisation and multi-well scenes, is deliberately built to err the *other* way and never under-draw the envelope; Appendix A covers it, and recounts how the analytic method emerged, backwards, from that discrete construction.)
 
 ## 6. The exact method: minimum Mahalanobis distance between two uncertain curves
 
@@ -115,33 +113,62 @@ where $\mathbf{d}'(s,t)$ is the centre-to-centre vector shortened by the combine
 - **Broadphase (locate).** Evaluate the factor at the curves' own survey stations — every reference station against every offset station. The sampling is the geometry's own, so there is no arbitrary step to choose, and the pairing is *exhaustive*, not a Euclidean nearest-neighbour shortlist: the minimum-*Mahalanobis* offset is generally not the Euclidean-nearest one (the rule's "limitation B"), so a shortlist would silently miss it.
 - **Narrowphase (refine).** From the lowest broadphase candidates, minimise the factor *continuously* over the two curve parameters, bounded to the neighbouring segments. This converges to a set tolerance — there is no discretisation step, and the worst point, which generally falls *between* stations, is found exactly. Refining several candidates (not only the global broadphase minimum) prevents a sharp crossing from hiding between stations.
 
-The project-ahead floor $\sigma_{pa}^2\mathbf{I}$ keeps the metric finite where a covariance is degenerate (e.g. a near-vertical sidetrack with negligible horizontal uncertainty), so a physical/radii collision is still detected — mirroring the rule's own $\sigma_{pa}$.
+The project-ahead floor $\sigma_{pa}^2\mathbf{I}$ keeps the metric finite where a covariance is degenerate (e.g. a near-vertical sidetrack with negligible horizontal uncertainty), so a physical/radii collision is still detected — mirroring the rule's own $\sigma_{pa}$. **Algorithm 1** states the procedure in full.
 
-Both phases operate directly on the analytic ellipsoid, so there is no surface to mesh and no fixed step to choose: the resolution is **self-derived from the geometry** (the survey's own stations) and the result is **step-free** (an optimiser tolerance), scaling without a domain-specific tuning parameter. Validated against an exhaustive all-pairs reference sampled at $1$ m, the method agrees to better than $10^{-3}$ in separation factor on every well of the ISCWSA standard set, at $\approx 35$ ms per pair.
+> **Algorithm 1** — minimum-Mahalanobis separation factor between two uncertain curves.
 
-For *multi-well scenes* — one planned well against many offsets — a spatial index over the curves' bounding volumes restricts the work to nearby pairs, each then evaluated by the same analytic kernel.
+```
+Input:  reference curve R, offset curve O   # each: stations with position P, covariance C, radius r
+        confidence k; margins Sm, sigma_pa; candidate count N
+Output: separation factor SF
 
-**Mesh resolution ($n$).** A mesh realisation (for multi-well scenes) introduces one parameter the analytic method does not: the number of vertices $n$ per ellipsoid cross-section. Because the polygon is *circumscribed* (Section 5), this discretisation can only ever *add* conservatism, and by a closed-form amount — the radial over-count (the factor by which the polygon's reach exceeds the true ellipse) is $\sec(\pi/n)-1$, which vanishes as $n$ grows. Table 2 shows the trade-off against mesh-build cost. A typical $n=12$ over-demands standoff by $3.5\%$ — an order of magnitude below the $40$–$47\%$ conservatism the method removes from the rule — and is a sensible knee; $n=24$ brings it under $1\%$ for tight calls. The **analytic method carries no such parameter**: being a continuous optimisation it is exact (to tolerance) and the cheapest option, so it is preferred for the pairwise separation factor, the mesh being reserved for triangulated multi-well collision-manager scenes.
+function f(s, t):                  # radii-adjusted Mahalanobis SF between two points
+    d = P_O(t) - P_R(s);  D = norm(d)
+    if D == 0: return 0
+    C  = C_R(s) + C_O(t) + sigma_pa^2 * I
+    d' = d * max(D - (r_R(s) + r_O(t) + Sm), 0) / D
+    return sqrt( d'^T * inv(C) * d' ) / k
 
-| $n$ | radial over-count | area over-count | mesh build [ms] |
+# broadphase: exhaustive over each curve's own stations (not a nearest-neighbour shortlist)
+for each reference station i:
+    sf[i]    = min    over offset stations j of  f(s_i, t_j)
+    jstar[i] = argmin over offset stations j of  f(s_i, t_j)
+
+# narrowphase: continuous refinement of the N lowest candidates
+for i in the N stations with smallest sf[i]:
+    B     = neighbouring segments of s_i and t_jstar[i]
+    sf[i] = min( sf[i], minimize over (s,t) in B of f(s, t) )   # continuous, to tolerance
+
+return min over i of sf[i]
+```
+
+Both phases operate directly on the analytic ellipsoid, so there is no surface to mesh and no fixed step to choose: the resolution is **self-derived from the geometry** (the survey's own stations) and the result is **step-free** (an optimiser tolerance), scaling without a domain-specific tuning parameter. The method is validated three ways: it reproduces the published ISCWSA separation factors to $0.5\%$ (Table 1); its per-point metric equals Brooks's Mahalanobis-space transform $\lVert V E^{-1/2} V^{\top}\mathbf{d}\rVert$ to machine precision (the algebraic identity $\mathbf{d}^\top\Sigma^{-1}\mathbf{d}=\lVert V E^{-1/2} V^{\top}\mathbf{d}\rVert^2$ for $\Sigma=VEV^\top$); and it agrees with an exhaustive all-pairs reference sampled at $1$ m to better than $10^{-3}$ on every well of the standard set, at $\approx 35$ ms per pair. Table 2 gives the second of these checks: at each well's closest approach, our metric equals Brooks's Mahalanobis-space transform to machine precision.
+
+| Offset | ours $\sqrt{\mathbf{d}^\top\Sigma^{-1}\mathbf{d}}$ | Brooks $\lVert V E^{-1/2}V^\top\mathbf{d}\rVert$ | \|diff\| |
 |---|---|---|---|
-| 6 | 15.5% | 33.3% | 69 |
-| 8 | 8.2% | 17.2% | 87 |
-| **12** (default) | **3.5%** | 7.2% | 125 |
-| 16 | 2.0% | 4.0% | 164 |
-| 24 | 0.9% | 1.7% | 240 |
-| 48 | 0.2% | 0.4% | 475 |
-| analytic (exact) | 0% | 0% | 35 (no mesh) |
+| 01 | 4.954973 | 4.954973 | 1.8e-15 |
+| 02 | 13.294141 | 13.294141 | 1.8e-15 |
+| 03 | 2.584106 | 2.584106 | 4.4e-16 |
+| 04 | 1.555430 | 1.555430 | 4.4e-16 |
+| 05 | 6.309519 | 6.309519 | 5.3e-15 |
+| 06 | 3.858673 | 3.858673 | 4.4e-16 |
+| 07 | 7.795756 | 7.795756 | 8.9e-16 |
+| 08 | 6.302172 | 6.302172 | 0 |
+| 09 | 4.135453 | 4.135453 | 2.7e-15 |
+| 10 | 0.000000 | 0.000000 | 0 |
+| 11 | 1.228445 | 1.228445 | 2.2e-16 |
 
-Table: mesh discretisation over-conservatism (closed-form, from the circumscribed polygon) and build cost vs vertex count $n$. The analytic Mahalanobis method carries no discretisation parameter — it is exact (to optimiser tolerance) at the lowest cost.
+Table: our separation-factor metric vs Brooks's (SPE-116155) Mahalanobis-space transform $T=V E^{-1/2}V^\top$, evaluated at each well's closest approach (the raw Mahalanobis distance; the separation factor rescales it by the combined radii and $k$). Identical to $\le 5.3\times10^{-15}$ — the two are the same quantity, confirming the implementation computes exactly Brooks's established measure.
+
+For *multi-well scenes* — one planned well against many offsets — a spatial index over the curves' bounding volumes restricts the work to nearby pairs, each then evaluated by the same analytic kernel. A triangulated-mesh realisation is also available (for visualisation, or as a collision-manager scene); its resolution trade-off is in Appendix A.
 
 ## 7. Results
 
-On the ISCWSA standard set the exact method returns the **same collision/clear verdict as the validated rule on every well** (Wells 03, 04, 09, 10, 11 collide; 01, 02, 05, 06, 07, 08 clear), while being **less conservative on the margin** — up to $1.47\times$ (Well 03: $\mathrm{SF}$ $0.46\to0.67$; Well 05: $1.20\to1.73$; Well 07: $1.63\to2.18$). Figure 3 contrasts the two across the set. The method is **fast**: $\approx 35$ ms per well pair versus $\approx 300$ ms for the pedal rule, suitable for the inner loop of batch and automated well planning.
+On the ISCWSA standard set the exact method returns the **same collision/clear verdict as the validated rule on every well** (Wells 03, 04, 09, 10, 11 collide; 01, 02, 05, 06, 07, 08 clear), while being **less conservative on the margin** — up to $1.47\times$ (Well 03: $\mathrm{SF}$ $0.46\to0.67$; Well 05: $1.20\to1.73$; Well 07: $1.63\to2.18$). Figure 2 contrasts the two across the set. The method is **fast**: $\approx 35$ ms per well pair versus $\approx 300$ ms for the pedal rule, suitable for the inner loop of batch and automated well planning.
 
 Two conventions are worth noting on the deeply overlapping wells. Where the *centres* lie closer than the combined hole radii plus surface margin ($\lVert\mathbf{d}\rVert < R$) the wellbores physically intersect: the separation rule returns a **negative** factor (its linear numerator $\lVert\mathbf{d}\rVert-R$ goes negative, conveying the depth of overlap), whereas the Mahalanobis factor is non-negative by construction and floors at $0$. Both correctly report a collision; the sign is a property of the rule's linear form, not a disagreement. Well 10 is the reference well's sidetrack: its kickoff intersects the parent by design, so the scan begins below the kickoff (`kop_depth`) — applied identically to *both* methods, and consistent with the published standard-set value.
 
-![Minimum separation factor on the ISCWSA standard set: the separation rule (pedal) vs the exact combined-ellipsoid Mahalanobis boundary. The verdict (relative to $\mathrm{SF}=1$) is identical for every well, but the exact factor is never smaller than the rule's — up to $1.48\times$ larger on the clear wells, i.e. that much less standoff demanded.](figures/pedal-vs-mahalanobis-iscwsa.png){width=90%}
+![Minimum separation factor on the ISCWSA standard set: the separation rule (pedal) vs the exact combined-ellipsoid Mahalanobis boundary. The verdict (relative to $\mathrm{SF}=1$) is identical for every well, but the exact factor is never smaller than the rule's — up to $1.47\times$ larger on the clear wells, i.e. that much less standoff demanded.](figures/pedal-vs-mahalanobis-iscwsa.png){width=90%}
 
 The practical reading: where the rule reports, say, $\mathrm{SF}=1.2$ and would demand additional surveying or a redesign, the exact method may report $\mathrm{SF}=1.7$ — clear with margin — recovering a drillable well without acquiring more data.
 
@@ -172,12 +199,39 @@ Because both bodies are *analytic* (covariance ellipsoids along curves) and the 
 - The exact combined-covariance, minimum-Mahalanobis method (searching both interpolated wells, with a project-ahead floor and a conservatively *circumscribed* surface) agrees with the rule on every standard-set verdict while reducing conservatism, and runs in milliseconds.
 - The objection that accurate methods are "impractical … because of high conceptual or computational complexity" fails on every plank: the exact method is *conceptually simpler* than the rule (one Mahalanobis form, no closest-approach caveats), an *order of magnitude faster* ($35$ ms vs $300$ ms), and *general* across all geometries — validated against the published standard set and released open-source. The barrier to accurate anti-collision was never complexity; it was the absence of an auditable implementation, now removed.
 
+## Appendix A — From a discrete mesh to the analytic solution
+
+This implementation reached its result *backwards*. The usual path discretises an analytic solution for computation; here a discrete construction came first and revealed the analytic one the literature already held.
+
+The first version modelled each well's uncertainty as a triangulated **mesh** — an elliptical tube swept along the trajectory — and tested pairs for overlap with a collision query. A natural prototyping choice, and still how welleng **visualises** uncertainty. Driving down its conservatism (combining the covariances; the exact boundary instead of the support function) and removing its discretisation error led, step by step, to the recognition that the quantity being approximated is simply the Mahalanobis distance — the measure Brooks (2008) and Alfano had used all along. At that point the mesh was no longer needed for the separation factor. The discrete scaffold revealed, for us, the analytic answer the field already had but had not adopted.
+
+Two parts of that scaffold remain useful.
+
+**Honest visualisation.** When the uncertainty envelope is *drawn* rather than queried, the polygonal cross-section must not make the uncertainty look smaller than it is. welleng builds the visualisation polygon **circumscribing** the ellipse — scaled out by $1/\cos(\pi/n)$ so its edges are tangent to, and it fully contains, the true ellipse (Figure 3). An inscribed polygon would under-draw the envelope; the circumscribed one never does.
+
+![Conservative surface construction. The visualisation polygon is circumscribed (scaled by $1/\cos(\pi/n)$) so it contains the true $k\sigma$ ellipse and never under-represents the uncertainty; an inscribed polygon would under-count it. ($n=8$ shown for clarity.)](figures/conservative-surface-construction.png){width=76%}
+
+**Mesh resolution.** For visualisation, or a multi-well collision-manager scene, the vertex count $n$ trades a closed-form over-conservatism — radial over-count $\sec(\pi/n)-1$, which only ever *adds* margin — against mesh-build cost (Table 3). A typical $n=12$ over-draws by $3.5\%$, a sensible default; $n=24$ brings it under $1\%$. The analytic separation factor of Section 6 carries no such parameter.
+
+| $n$ | radial over-count | area over-count | mesh build [ms] |
+|---|---|---|---|
+| 6 | 15.5% | 33.3% | 69 |
+| 8 | 8.2% | 17.2% | 87 |
+| **12** | **3.5%** | 7.2% | 125 |
+| 16 | 2.0% | 4.0% | 164 |
+| 24 | 0.9% | 1.7% | 240 |
+| 48 | 0.2% | 0.4% | 475 |
+| analytic | 0% | 0% | 35 (no mesh) |
+
+Table: mesh discretisation over-conservatism (closed-form, from the circumscribed polygon) and build cost vs vertex count $n$. The analytic method carries no discretisation parameter — exact at the lowest cost.
+
 ## References
 
-- Gaynor, T. M., Chen, D. C.-K., Stuart, D., Comeaux, B. *Tortuosity versus Micro-Tortuosity — Why Little Things Mean a Lot.* SPE/IADC Drilling Conference, 2001. doi:10.2118/67616-MS
 - Mahalanobis, P. C. *On the generalised distance in statistics.* Proceedings of the National Institute of Sciences of India, 2(1), 49–55, 1936.
+- Brooks, A. G. and Wilson, H. *An Improved Method for Computing Wellbore Position Uncertainty and its Application to Collision and Target Intersection Probability.* SPE European Petroleum Conference, 1996. doi:10.2118/36863-MS
+- Alfano, S. *Satellite Collision Probability Enhancements.* Journal of Guidance, Control, and Dynamics, 29(3), 588–592, 2006. doi:10.2514/1.15523
+- Brooks, A. G. *A New Look at Wellbore-Collision Probability.* SPE Drilling & Completion, 25(2), 223–232, 2010 (SPE-116155, presented 2008). doi:10.2118/116155-PA
+- Poedjono, B., Lombardo, G. J., Phillips, W. *Anti-Collision Risk Management Standard for Well Placement.* SPE Americas E&P Environmental & Safety Conference, 2009. doi:10.2118/121040-MS
+- Bang, J. *Quantification of Wellbore-Collision Probability by Novel Analytic Methods.* SPE Drilling & Completion, 2017. doi:10.2118/184644-PA
 - Sawaryn, S. J., Wilson, H., Bang, J., Nyrnes, E., Sentance, A., Poedjono, B., Lowdon, R., Mitchell, I., Codling, J., Clark, P. J., Allen, W. T. *Well-Collision-Avoidance Separation Rule.* SPE Drilling & Completion, 34, 01–15, 2019. doi:10.2118/187073-PA
-- Williamson, H. S., et al. *(SPE-116155-PA)* — wellbore-collision risk assessment. doi:10.2118/116155-PA
-- *(SPE-121040-MS)* — tool error model and anti-collision margins. doi:10.2118/121040-MS
-- *(SPE-184644-PA)* — analytic collision-probability methods and their practicality. doi:10.2118/184644-PA
 - welleng (open-source well-engineering library). <https://github.com/jonnymaserati/welleng>
