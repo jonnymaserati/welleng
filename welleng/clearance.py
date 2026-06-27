@@ -83,7 +83,6 @@ class Clearance:
         self.k = k
         self.sigma_pa = sigma_pa
         self.Sm = Sm
-        # self.N_verts = N_verts
 
         self._get_kop_index(kop_depth)
         self._get_ref()
@@ -215,6 +214,146 @@ class Clearance:
                 unit=self.reference.unit,
                 nev=True
             )
+
+    @staticmethod
+    def _curve(survey):
+        """A survey as a general uncertain parametric curve: parameter (measured
+        depth), position, covariance field and radius at each station. Nothing
+        here is drilling-specific — any two such curves can be compared."""
+        md = np.asarray(survey.md, dtype=float)
+        # authoritative n/e/tvd positions (as the separation rule uses), NOT
+        # survey.pos_nev which is recomputed from md/inc/azi+start.
+        pos = np.column_stack([survey.n, survey.e, survey.tvd]).astype(float)
+        cov = np.asarray(survey.cov_nev, float).reshape(-1, 3, 3)
+        rad = np.asarray(survey.radius, float).reshape(-1)
+        return md, pos, cov, rad, survey
+
+    @staticmethod
+    def _at(curve, q):
+        """Evaluate the continuous curve at parameter (measured depth) q.
+
+        Position is interpolated by **minimum curvature** (SLERP of the unit
+        tangents, via ``_interpolate_pos_nev``) — the same wellpath the
+        separation rule uses, so the between-station closest approach follows the
+        true arc, not the chord. Covariance and radius are interpolated linearly
+        (the standard approximation; cf. Brooks SPE-116155)."""
+        md, pos, cov, rad, survey = curve
+        i = int(np.clip(np.searchsorted(md, q, side="right") - 1, 0, len(md) - 2))
+        p = _interpolate_pos_nev(survey, float(q - md[i]), i)   # min-curvature
+        # covariance/radius linearly within the bracketing interval — one blend,
+        # reusing the position index (np.interp's end-clamp == f clipped to [0, 1]).
+        dm = md[i + 1] - md[i]
+        f = 0.0 if dm == 0 else float(np.clip((q - md[i]) / dm, 0.0, 1.0))
+        c = (1.0 - f) * cov[i] + f * cov[i + 1]
+        return p, c, float((1.0 - f) * rad[i] + f * rad[i + 1])
+
+    def _sf_point(self, pr, cr, rr, po, co, ro):
+        """Radii-adjusted Mahalanobis separation factor between two single
+        uncertain points — the general kernel (scalar; used by the narrowphase).
+
+        Parameters
+        ----------
+        pr, po : (3,) array — reference and offset positions (NEV).
+        cr, co : (3, 3) array — their covariances (NEV).
+        rr, ro : float — their hole radii.
+
+        Notes
+        -----
+        Uses the combined covariance plus the isotropic project-ahead floor
+        ``sigma_pa**2 I``. ``d`` is shortened by the combined radii + surface
+        margin before the metric, so a physical overlap (centres within the
+        radii) returns 0. In a zero-variance (perfectly known) direction with a
+        non-zero offset component the metric is infinite (the offset is
+        infinitely many sigma away — clear); this matches :meth:`_sf_row`.
+
+        The ``np.isclose(proj, 0)`` guard (absolute ``atol`` 1e-8 m) only changes
+        the result when an eigenvalue is ~0, which the ``sigma_pa`` floor
+        prevents in the operational path (``S >= sigma_pa**2 I``). With
+        ``sigma_pa=0`` against a genuinely rank-deficient covariance it can only
+        drop a term, i.e. lower SF — conservative, never a missed collision.
+        """
+        d = po - pr
+        D = float(np.linalg.norm(d))
+        if D == 0.0:
+            return 0.0
+        S = cr + co + (self.sigma_pa ** 2) * np.eye(3)
+        dp = d * (max(D - (rr + ro + self.Sm), 0.0) / D)
+        # eigen-decomposition (consistent with _sf_row, robust to degenerate S):
+        # a zero eigenvalue with a non-zero projection -> +inf (clear), not 0.
+        vals, vecs = np.linalg.eigh(S)
+        proj = vecs.T @ dp
+        with np.errstate(divide='ignore', invalid='ignore'):
+            terms = np.where(vals > 0, proj ** 2 / vals, np.inf)
+        terms = np.where(np.isclose(proj, 0.0), 0.0, terms)
+        return float(np.sqrt(np.sum(terms))) / self.k
+
+    def _sf_row(self, pr, cr, rr, Op, Oc, Ro):
+        """Exact (Mahalanobis) separation factor of one reference point against
+        ALL offset points (vectorised) — the broadphase scan."""
+        d = Op - pr
+        D = np.linalg.norm(d, axis=1)
+        S = cr + Oc + (self.sigma_pa ** 2) * np.eye(3)
+        scale = np.divide(np.maximum(D - (rr + Ro + self.Sm), 0.0), D,
+                          out=np.zeros_like(D), where=D > 0)
+        dp = d * scale[:, None]
+        vals, vecs = np.linalg.eigh(S)            # robust to degenerate S
+        proj = np.einsum('oji,oj->oi', vecs, dp)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            terms = np.where(vals > 0, proj ** 2 / vals, np.inf)
+        terms = np.where(np.isclose(proj, 0.0), 0.0, terms)
+        m = np.sqrt(np.sum(terms, axis=1))
+        m[D == 0] = 0.0
+        return m / self.k
+
+    def _pedal_sf_row(self, pr, cr, rr, Op, Oc, Ro):
+        """Pedal / support-function (ISCWSA separation-rule) separation factor of
+        one reference point against ALL offset points (vectorised). The combined
+        ellipsoid is characterised by its support function ``h(u)=sqrt(u'Su)`` in
+        the centre-to-centre direction ``u``; this over-states the true reach, so
+        it is never larger than :meth:`_sf_row` (Kantorovich)."""
+        d = Op - pr
+        D = np.linalg.norm(d, axis=1)
+        S = cr + Oc                               # combined covariance (no floor in h)
+        dSd = np.einsum('oi,oij,oj->o', d, S, d)  # = D^2 * u'Su
+        with np.errstate(divide='ignore', invalid='ignore'):
+            h2 = np.where(D > 0, dSd / D ** 2, 0.0)
+        num = np.maximum(D - (rr + Ro + self.Sm), 0.0)
+        sf = num / (self.k * np.sqrt(h2 + self.sigma_pa ** 2))
+        sf[D == 0] = 0.0
+        return sf
+
+    def sf_vs_md(self):
+        """Separation-factor-versus-MD profiles for both methods along the
+        reference well — a single consistent computation, inherited by every
+        ``Clearance`` subclass.
+
+        At each reference station, returns the minimum over the offset stations of
+        (i) the pedal / support-function separation factor (the ISCWSA separation
+        rule) and (ii) the exact combined-ellipsoid Mahalanobis separation factor,
+        evaluated over the *same* station pairing with this clearance's ``k``,
+        ``Sm`` and ``sigma_pa``. Because only the metric differs, the exact factor
+        is ``>=`` the pedal factor at every station (Kantorovich). Comparing two
+        different ``Clearance`` subclasses station-by-station is **not**
+        apples-to-apples — they pair reference/offset and resolve closest approach
+        differently, and their profiles can appear to cross.
+
+        Returns
+        -------
+        md : (N,) ndarray
+            Reference-well measured depth at each station.
+        pedal_sf : (N,) ndarray
+            Pedal / support-function (ISCWSA separation-rule) separation factor.
+        mahalanobis_sf : (N,) ndarray
+            Exact combined-ellipsoid (Mahalanobis) separation factor.
+        """
+        Rmd, Rp, Rc, Rr, _ = self._curve(self.ref)
+        _, Op, Oc, Ro, _ = self._curve(self.offset)
+        ped = np.empty(len(Rp))
+        mah = np.empty(len(Rp))
+        for i in range(len(Rp)):
+            ped[i] = self._pedal_sf_row(Rp[i], Rc[i], Rr[i], Op, Oc, Ro).min()
+            mah[i] = self._sf_row(Rp[i], Rc[i], Rr[i], Op, Oc, Ro).min()
+        return Rmd, ped, mah
 
 
 class IscwsaClearance(Clearance):
@@ -360,9 +499,6 @@ class IscwsaClearance(Clearance):
         # get the unit vectors and horizontal bearing between the wells
         self._get_delta_nev_vectors()
 
-        # transform to HLA coordinates
-        # self._get_delta_hla_vectors()
-
         # make the covariance matrices
         self._get_covs()
 
@@ -402,9 +538,6 @@ class IscwsaClearance(Clearance):
         # check for minima
         if minimize_sf:
             self.get_sf_mins()
-
-        # for debugging
-        # self.pc_method()
 
     def _get_sf_min(self, x, i, delta_md):
         # scipy.optimize.minimize passes x as a 1-element array; extract scalar
@@ -838,6 +971,142 @@ class IscwsaClearance(Clearance):
         ) % 360
 
 
+class MahalanobisClearance(Clearance):
+    """Anti-collision using the exact Mahalanobis k-sigma boundary of the
+    combined (relative-position) uncertainty ellipsoid, rather than the
+    pedal-curve support-function approximation used by the ISCWSA separation
+    rule (:class:`IscwsaClearance`).
+
+    Subclasses the lightweight :class:`Clearance` base (NOT IscwsaClearance) so
+    it does not pay for the pedal-curve separation-factor minimisation it does
+    not use; it needs only the reference/offset surveys, their covariances and
+    hole radii.
+
+    The separation rule measures the combined ellipsoid's extent toward the
+    offset with its support function ``sqrt(uT.Sigma.u)`` (the tangent
+    distance), which always over-states the ellipsoid's reach in an off-axis
+    direction and so is conservative. This class instead uses the true
+    ellipsoid-surface distance — the Mahalanobis distance of the
+    radii-adjusted centre-to-centre vector in the combined covariance metric:
+
+        SF = min over both curves of
+                 sqrt(d'T (Sigma_ref + Sigma_off + sigma_pa^2 I)^-1 d') / k
+
+    where ``d'`` is the centre-to-centre vector shortened by the combined hole
+    radii and surface margin ``Sm``, and ``sigma_pa^2 I`` is the isotropic
+    project-ahead floor (mirroring the separation rule's ``sigma_pa`` term),
+    which keeps the metric finite where a survey covariance is degenerate.
+    The minimum is found over both wells by broadphase (all-pairs at the
+    surveys' own stations) plus a continuous narrowphase refinement, so the
+    worst point between stations is captured without an externally imposed
+    step. ``SF < 1`` means the offset lies within the k-sigma combined
+    ellipsoid (collision). It is a k-sigma *geometric boundary* method (not a
+    probability of collision), fast and analytic — no mesh or collision
+    library required.
+
+    This is the Mahalanobis distance of Brooks (SPE-116155, 2008; after
+    Alfano's satellite-conjunction work); see `papers/anti-collision-
+    conservatism.md` for the derivation, validation and references. If you use
+    this method, please cite welleng (doi:10.5281/zenodo.20968887) and that
+    paper. Author: Jonathan Corcutt, Corcutt Beheer B.V.
+    (ORCID 0009-0008-1953-7760).
+
+    Parameters
+    ----------
+    reference, offset : welleng.survey.Survey
+        The two wells (with an error model so ``cov_nev`` is populated).
+    k : float, default 3.5
+        Confidence multiple (inherited from :class:`Clearance`).
+    Sm : float, default 0.3
+        Surface margin, m (inherited).
+    sigma_pa : float, default 0.5
+        Isotropic project-ahead floor, m (inherited). ``sigma_pa > 0``
+        guarantees a positive-definite combined covariance; set ``0`` for the
+        pure combined-ellipsoid metric (e.g. when reproducing Brooks).
+    kop_depth : float, default -inf
+        Kick-off depth below which to scan (inherited; for sidetracks).
+    n_candidates : int, default 8
+        Number of globally-lowest broadphase stations polished by the
+        narrowphase, IN ADDITION to every local minimum of the broadphase
+        profile (so a sharp crossing is refined whatever its rank). For the
+        ISCWSA standard set the result already converges with a single
+        candidate; this is defensive headroom, not a tuned value, and remains
+        a heuristic rather than a guarantee.
+    tol : float, default 1e-3
+        Narrowphase convergence tolerance on the curve parameter (measured
+        depth), m.
+
+    Attributes
+    ----------
+    sf : numpy.ndarray
+        Separation factor at each reference station; ``min(sf) < 1`` is a
+        collision.
+    min_sf : float
+        The governing (minimum) separation factor over all stations.
+    """
+
+    def __init__(self, *args, n_candidates=8, tol=1e-3, **kwargs):
+        self._n_candidates = n_candidates       # broadphase seeds to polish
+        self._tol = tol                         # narrowphase convergence (curve param)
+        super().__init__(*args, **kwargs)
+        self.sf = self._mahalanobis_sf()
+
+    @property
+    def min_sf(self):
+        """The governing (minimum) separation factor; ``< 1`` is a collision."""
+        return float(np.nanmin(self.sf))
+
+    def _mahalanobis_sf(self):
+        # Minimum Mahalanobis distance between two uncertain parametric curves,
+        # by broadphase + narrowphase — the analytic analogue of a mesh+fcl query
+        # (the swept tube interpolates between stations; here the curve is
+        # interpolated directly, with no externally imposed step).
+        ref, off = self._curve(self.ref), self._curve(self.offset)
+        Rmd, Rp, Rc, Rr, _ = ref
+        Omd, Op, Oc, Ro, _ = off
+
+        # BROADPHASE: all-pairs at the survey's OWN stations (geometry-derived
+        # sampling). All pairs — not a Euclidean nearest-neighbour shortlist —
+        # because the min-*Mahalanobis* offset need not be the Euclidean-nearest
+        # one (SPE-187073 "limitation B").
+        sf = np.empty(len(Rp))
+        best_j = np.empty(len(Rp), dtype=int)
+        for i in range(len(Rp)):
+            row = self._sf_row(Rp[i], Rc[i], Rr[i], Op, Oc, Ro)
+            best_j[i] = int(np.argmin(row))
+            sf[i] = row[best_j[i]]
+        if len(Rp) < 2 or len(Op) < 2:
+            return sf
+
+        # NARROWPHASE: continuous 2-D minimisation over the two curve parameters
+        # from the broadphase candidates — the true minimum falls between
+        # stations. Converges to a tolerance (no fixed step); each search is
+        # bounded to the candidate's neighbouring segments.
+        #
+        # Candidates = EVERY local minimum of the broadphase profile (each close
+        # approach straddles a local minimum, so this catches a sharp crossing
+        # whatever its rank) UNION the n_candidates globally-lowest stations
+        # (belt-and-braces, and covers a minimum at the first/last station that
+        # argrelmin omits).
+        def objective(x):
+            pr, cr, rr = self._at(ref, x[0])
+            po, co, ro = self._at(off, x[1])
+            return self._sf_point(pr, cr, rr, po, co, ro)
+
+        local = set(np.atleast_1d(argrelmin(sf)[0]).tolist())
+        local.update(int(x) for x in np.argsort(sf)[:int(min(self._n_candidates, len(sf)))])
+        local.update((0, len(sf) - 1))      # endpoints argrelmin cannot flag
+        for i in sorted(local):
+            j = best_j[i]
+            bounds = [(Rmd[max(i - 1, 0)], Rmd[min(i + 1, len(Rmd) - 1)]),
+                      (Omd[max(j - 1, 0)], Omd[min(j + 1, len(Omd) - 1)])]
+            res = optimize.minimize(objective, x0=[Rmd[i], Omd[j]], method="Nelder-Mead",
+                           bounds=bounds,
+                           options={"xatol": self._tol, "fatol": 1e-7})
+            sf[i] = min(sf[i], float(res.fun))
+        return sf
+
+
 class MeshClearance(Clearance):
     """
     Class to calculate the clearance between two well bores using a novel
@@ -873,6 +1142,7 @@ class MeshClearance(Clearance):
         sigma: float = 2.445,
         return_data: bool = True,
         return_meshes: bool = False,
+        polygon_fit: str = "circumscribed",
         **clearance_kwargs
     ):
         super().__init__(*clearance_args, **clearance_kwargs)
@@ -880,6 +1150,9 @@ class MeshClearance(Clearance):
         assert MESH_MODE, "ImportError: try pip install welleng[all]"
         self.n_verts = n_verts
         self.sigma = sigma
+        # circumscribed (default) so the mesh never under-represents the
+        # uncertainty ellipsoid for the given sigma (see WellMesh.polygon_fit).
+        self.polygon_fit = polygon_fit
         self.Rr = self.ref.radius
         self.Ro = self.offset.radius
 
@@ -949,6 +1222,7 @@ class MeshClearance(Clearance):
             n_verts=self.n_verts,
             sigma=self.sigma,
             Sm=Sm,
+            polygon_fit=self.polygon_fit,
         )
 
         return mesh
@@ -1035,7 +1309,6 @@ class MeshClearance(Clearance):
                     sf = distance_cc / denom if denom != 0 else np.inf
 
                 # data for ISCWSA method comparison
-                # self.collision.append(collision)
                 self.off_index.append(off_index)
                 self.distance.append(distance)
                 self.distance_cc.append(distance_cc)
@@ -1067,9 +1340,12 @@ class MeshClearance(Clearance):
         Interpolates a point on a well trajectory and returns
         the distance between the interpolated point and the
         position provided.
+
+        Uses the lightweight position-only interpolation (no Survey object
+        is constructed) since this is the inner cost function of the
+        closest-point optimisation and only the NEV position is needed.
         """
-        s = _interpolate_survey(survey, x[0])
-        new_pos = np.array([s.n, s.e, s.tvd]).T[1]
+        new_pos = _interpolate_pos_nev(survey, x[0], 0)
         dist = norm(new_pos - pos, axis=-1)
 
         return dist
@@ -1089,9 +1365,7 @@ class MeshClearance(Clearance):
             args=(survey, pos)
             )
 
-        s = _interpolate_survey(survey, res.x[0])
-
-        nev = np.array([s.n, s.e, s.tvd]).T[-1]
+        nev = _interpolate_pos_nev(survey, res.x[0], 0)
 
         return (nev, res)
 
@@ -1106,3 +1380,71 @@ def get_ref_sigma(sigma1, sigma2, sigma3, kop_index):
     sigma_new = np.vstack((sigma_above, np.array([0, 0, 0]), sigma_below))
 
     return sigma_new
+
+
+def combined_cov_mesh(
+    survey, other, k=2.445, n_verts=12, Sm=0.0, polygon_fit="circumscribed"
+):
+    """Build a trimesh of ``survey``'s uncertainty tube carrying the COMBINED
+    relative-position covariance ``Sigma_survey + Sigma_other``.
+
+    A collision check between two uncertain wells should use the combined
+    (relative-position) uncertainty ``Sigma_ref + Sigma_off`` (the variance of
+    ``P_off - P_ref``), which a single ellipsoid represents exactly. Building a
+    separate k-sigma mesh for each well and testing surface overlap instead
+    sums their extents *linearly* (``k(sigma_ref + sigma_off)``) rather than in
+    quadrature (``k*sqrt(sigma_ref^2 + sigma_off^2)``), which over-states the
+    required standoff by up to sqrt(2) (symmetric case) and raises false
+    collision alarms.
+
+    This builds ONE mesh — ``survey`` inflated by the combined covariance and
+    the combined hole radii (``survey.radius + other.radius + Sm``) — intended
+    to be tested against the *centreline* of ``other`` (e.g. via
+    ``mesh.contains(other.pos_nev)`` or a ``trimesh`` ``CollisionManager``
+    against a zero-uncertainty tube). It is the mesh/visualisation counterpart
+    of :class:`MahalanobisClearance` and is *consistent* with it (same RSS
+    combined covariance), but **not numerically identical**: it omits the
+    project-ahead floor ``sigma_pa``, maps ``other``'s covariance by nearest
+    Euclidean station, and discretises the surface into ``n_verts`` facets. For
+    the exact pairwise separation factor use :class:`MahalanobisClearance`;
+    use this where a triangulated surface is needed (visualisation or a
+    multi-well collision-manager scene).
+
+    Parameters
+    ----------
+    survey, other : welleng.survey.Survey
+        The two wells. ``other``'s covariance and hole radius are mapped onto
+        ``survey`` by nearest position and folded into the returned mesh.
+    k : float
+        The sigma multiple defining the uncertainty surface (default 2.445).
+    n_verts, polygon_fit, Sm
+        Passed through to :class:`welleng.mesh.WellMesh` (``polygon_fit``
+        defaults to "circumscribed" so the polygon never under-counts the
+        ellipse).
+
+    Returns
+    -------
+    trimesh.Trimesh
+        ``survey``'s combined-covariance uncertainty tube.
+
+    Notes
+    -----
+    The combination is pairwise (it depends on ``other``), so a candidate
+    checked against N offsets needs N combined meshes; the other well is taken
+    as a deterministic centreline.
+    """
+    # map other's covariance + hole radius onto each survey station (nearest).
+    # Use the authoritative n/e/tvd positions (as WellMesh does for its
+    # vertices), not survey.pos_nev which can diverge from them.
+    survey_nev = np.column_stack([survey.n, survey.e, survey.tvd])
+    other_nev = np.column_stack([other.n, other.e, other.tvd])
+    idx = KDTree(other_nev).query(survey_nev)[1]
+    combined = deepcopy(survey)
+    combined.cov_nev = survey.cov_nev + other.cov_nev[idx]
+    combined.cov_hla = NEV_to_HLA(survey.survey_rad, combined.cov_nev)
+    combined.radius = survey.radius + other.radius[idx] + Sm
+
+    mesh = WellMesh(
+        combined, n_verts=n_verts, sigma=k, Sm=0.0, polygon_fit=polygon_fit,
+    )
+    return to_trimesh(mesh)
