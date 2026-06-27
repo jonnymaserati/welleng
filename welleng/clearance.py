@@ -857,39 +857,74 @@ class MahalanobisClearance(IscwsaClearance):
     All constructor arguments are those of :class:`IscwsaClearance`.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, step=10.0, n_nearest=24, **kwargs):
+        self._maha_step = step
+        self._maha_n_nearest = n_nearest
         super().__init__(*args, **kwargs)
         self.sf = self._mahalanobis_sf()
 
+    @staticmethod
+    def _resample(survey, step):
+        """Linearly resample a survey's position, covariance and radius to a
+        fine measured-depth step, so the minimum-distance search can find a
+        closest approach that falls BETWEEN survey stations."""
+        md = np.asarray(survey.md, dtype=float)
+        # use the authoritative n/e/tvd positions (as the separation rule does),
+        # NOT survey.pos_nev which is recomputed from md/inc/azi+start and can
+        # diverge when a survey is built with inconsistent start + n/e/tvd.
+        pos = np.column_stack([survey.n, survey.e, survey.tvd]).astype(float)
+        if step is None or len(md) < 2:
+            return (pos,
+                    np.asarray(survey.cov_nev, float).reshape(-1, 3, 3),
+                    np.asarray(survey.radius, float).reshape(-1))
+        md_f = np.arange(md[0], md[-1] + step, step)
+        pos_f = np.column_stack([np.interp(md_f, md, pos[:, a]) for a in range(3)])
+        cov = np.asarray(survey.cov_nev, float).reshape(-1, 3, 3)
+        cov_f = np.empty((len(md_f), 3, 3))
+        for a in range(3):
+            for b in range(3):
+                cov_f[:, a, b] = np.interp(md_f, md, cov[:, a, b])
+        r_f = np.interp(md_f, md, np.asarray(survey.radius, float).reshape(-1))
+        return pos_f, cov_f, r_f
+
     def _mahalanobis_sf(self):
-        rn = np.asarray(self.ref_nevs, dtype=float)
-        on = np.asarray(self.off_nevs, dtype=float)
-        Rc = np.asarray(self.ref_cov_nev, dtype=float).reshape(-1, 3, 3)
-        Oc = np.asarray(self.off_cov_nev, dtype=float).reshape(-1, 3, 3)
-        ch = np.asarray(self.calc_hole, dtype=float).reshape(-1)
+        # The minimum-probability (worst) approach is the point of minimum
+        # *Mahalanobis* distance, which for an eccentric ellipsoid is NOT the
+        # Euclidean closest-approach point the separation rule selects
+        # (SPE-187073 "limitation B"). It also generally falls BETWEEN survey
+        # stations, so BOTH wells are resampled to a fine step before searching
+        # — otherwise a between-station crossing is missed (a false negative).
+        Rp, Rc, Rr = self._resample(self.ref, self._maha_step)
+        Op, Oc, Ro = self._resample(self.offset, self._maha_step)
+        tree = KDTree(Op)
+        K = int(min(self._maha_n_nearest, len(Op)))
 
-        d = on - rn                                    # (n, 3)
-        D = np.linalg.norm(d, axis=1)                  # (n,)
-        S = Rc + Oc                                    # combined covariance
-        # shorten the centre-to-centre vector by the combined hole radii + Sm
-        R = ch + self.Sm
-        scale = np.divide(
-            np.maximum(D - R, 0.0), D,
-            out=np.zeros_like(D), where=D > 0
-        )
-        dp = d * scale[:, None]
-
-        # Mahalanobis via the symmetric eigen-decomposition (robust to a
-        # singular/degenerate covariance near surface: a zero-variance axis
-        # gives an infinite distance unless the offset sits exactly on it).
-        vals, vecs = np.linalg.eigh(S)                 # (n,3), (n,3,3)
-        proj = np.einsum('nji,nj->ni', vecs, dp)       # dp in eigen-basis
-        with np.errstate(divide='ignore', invalid='ignore'):
-            terms = np.where(vals > 0, proj ** 2 / vals, np.inf)
-        terms = np.where(np.isclose(proj, 0.0), 0.0, terms)
-        m = np.sqrt(np.sum(terms, axis=1))
-        sf = m / self.k
-        sf[D == 0] = 0.0
+        sf = np.full(len(Rp), np.inf)
+        for i in range(len(Rp)):
+            js = np.atleast_1d(tree.query(Rp[i], k=K)[1])
+            d = Op[js] - Rp[i]
+            D = np.linalg.norm(d, axis=1)
+            # combined relative-position covariance + the isotropic project-ahead
+            # floor (sigma_pa, "radius of a sphere") so the metric stays finite
+            # where the survey covariance is degenerate (e.g. a sidetrack at its
+            # KOP) and a physical/radii collision is still detected.
+            S = Rc[i] + Oc[js] + (self.sigma_pa ** 2) * np.eye(3)
+            R = Rr[i] + Ro[js] + self.Sm
+            scale = np.divide(
+                np.maximum(D - R, 0.0), D,
+                out=np.zeros_like(D), where=D > 0
+            )
+            dp = d * scale[:, None]
+            # batched Mahalanobis via eigen-decomposition (robust to a
+            # singular/degenerate covariance near surface).
+            vals, vecs = np.linalg.eigh(S)
+            proj = np.einsum('oji,oj->oi', vecs, dp)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                terms = np.where(vals > 0, proj ** 2 / vals, np.inf)
+            terms = np.where(np.isclose(proj, 0.0), 0.0, terms)
+            m = np.sqrt(np.sum(terms, axis=1))
+            m[D == 0] = 0.0
+            sf[i] = np.min(m) / self.k
         return sf
 
 
@@ -1214,8 +1249,12 @@ def combined_cov_mesh(
     checked against N offsets needs N combined meshes; the other well is taken
     as a deterministic centreline.
     """
-    # map other's covariance + hole radius onto each survey station (nearest)
-    idx = KDTree(other.pos_nev).query(survey.pos_nev)[1]
+    # map other's covariance + hole radius onto each survey station (nearest).
+    # Use the authoritative n/e/tvd positions (as WellMesh does for its
+    # vertices), not survey.pos_nev which can diverge from them.
+    survey_nev = np.column_stack([survey.n, survey.e, survey.tvd])
+    other_nev = np.column_stack([other.n, other.e, other.tvd])
+    idx = KDTree(other_nev).query(survey_nev)[1]
     combined = deepcopy(survey)
     combined.cov_nev = survey.cov_nev + other.cov_nev[idx]
     combined.cov_hla = NEV_to_HLA(survey.survey_rad, combined.cov_nev)
