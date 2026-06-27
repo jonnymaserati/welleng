@@ -300,6 +300,21 @@ If your work relies on the **gyro error-model validation** specifically, please 
 }
 ```
 
+If your work uses the **anti-collision (exact Mahalanobis separation factor) method**, please also cite:
+
+> Corcutt, J. (2026). *Making the Exact Wellbore Anti-Collision Boundary Practical: an Efficient, Validated, Open Implementation, and the Cost of the Separation-Rule Approximation.* Zenodo. <https://doi.org/10.5281/zenodo.20976872>
+
+```bibtex
+@misc{corcutt2026anticollision,
+  author    = {Corcutt, Jonathan},
+  title     = {Making the Exact Wellbore Anti-Collision Boundary Practical: an Efficient, Validated, Open Implementation, and the Cost of the Separation-Rule Approximation},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.20976872},
+  url       = {https://doi.org/10.5281/zenodo.20976872}
+}
+```
+
 ## License
 
 [Apache 2.0](LICENSE)
