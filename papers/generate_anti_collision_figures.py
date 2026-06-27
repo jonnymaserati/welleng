@@ -36,22 +36,27 @@ def fig1():
 
     from adjustText import adjust_text
     fig, ax = plt.subplots(figsize=(8.6, 6.0))
-    ax.add_patch(Ellipse((0, 0), 2 * a, 2 * b, color="C0", alpha=0.18, ec="C0", lw=2))
-    ax.plot(0, 0, "o", color="C0", ms=6)
+    ax.add_patch(Ellipse((0, 0), 2 * a, 2 * b, color="C0", alpha=0.16, ec="C0", lw=2))
+    ax.text(-a + 0.3, -b + 0.25, "combined kσ uncertainty\n(Σ = Σ_ref + Σ_off)",
+            color="C0", fontsize=8, style="italic")
+    # the two WELL CENTRE points (use a ⊕ borehole-style marker for both)
+    ax.plot(0, 0, marker="o", color="white", mec="C0", mew=1.8, ms=12, zorder=5)
+    ax.plot(0, 0, marker="+", color="C0", mew=1.8, ms=10, zorder=6)
+    ax.plot(P[0], P[1], marker="o", color="white", mec="C3", mew=1.8, ms=12, zorder=5)
+    ax.plot(P[0], P[1], marker="+", color="C3", mew=1.8, ms=10, zorder=6)
     ax.annotate("", xy=P, xytext=(0, 0), arrowprops=dict(arrowstyle="->", color="0.4", lw=1.2))
     ax.plot([tp[0] - 2.6 * perp[0], tp[0] + 2.6 * perp[0]],
             [tp[1] - 2.6 * perp[1], tp[1] + 2.6 * perp[1]], color="C1", lw=1.5, ls="--")
     ax.plot([0, tp[0]], [0, tp[1]], color="C1", lw=0.8, ls=":")
-    ax.plot(*bp, "o", color="C0", ms=9)
+    ax.plot(*bp, "o", color="C0", ms=8)
     ax.plot(*tp, "X", color="C1", ms=11)
-    ax.plot(*P, "s", color="C3", ms=9)
     ax.annotate("", xy=tp, xytext=bp, arrowprops=dict(arrowstyle="<->", color="purple", lw=2))
     # element labels, force-repelled apart (adjustText) with leader lines
     lbl = [
-        (0.0, 0.0, "reference\n(combined kσ ellipsoid)", "C0"),
+        (0.0, 0.0, "reference well centre", "C0"),
         (bp[0], bp[1], "true boundary\n(Mahalanobis = k)", "C0"),
         (tp[0], tp[1], "pedal reach\n(support fn √(uᵀΣu))", "C1"),
-        (P[0], P[1], "offset well", "C3"),
+        (P[0], P[1], "offset well centre", "C3"),
     ]
     texts = [ax.text(x, y, s, color=c, fontsize=9, ha="center")
              for x, y, s, c in lbl]
