@@ -215,6 +215,146 @@ class Clearance:
                 nev=True
             )
 
+    @staticmethod
+    def _curve(survey):
+        """A survey as a general uncertain parametric curve: parameter (measured
+        depth), position, covariance field and radius at each station. Nothing
+        here is drilling-specific — any two such curves can be compared."""
+        md = np.asarray(survey.md, dtype=float)
+        # authoritative n/e/tvd positions (as the separation rule uses), NOT
+        # survey.pos_nev which is recomputed from md/inc/azi+start.
+        pos = np.column_stack([survey.n, survey.e, survey.tvd]).astype(float)
+        cov = np.asarray(survey.cov_nev, float).reshape(-1, 3, 3)
+        rad = np.asarray(survey.radius, float).reshape(-1)
+        return md, pos, cov, rad, survey
+
+    @staticmethod
+    def _at(curve, q):
+        """Evaluate the continuous curve at parameter (measured depth) q.
+
+        Position is interpolated by **minimum curvature** (SLERP of the unit
+        tangents, via ``_interpolate_pos_nev``) — the same wellpath the
+        separation rule uses, so the between-station closest approach follows the
+        true arc, not the chord. Covariance and radius are interpolated linearly
+        (the standard approximation; cf. Brooks SPE-116155)."""
+        md, pos, cov, rad, survey = curve
+        i = int(np.clip(np.searchsorted(md, q, side="right") - 1, 0, len(md) - 2))
+        p = _interpolate_pos_nev(survey, float(q - md[i]), i)   # min-curvature
+        # covariance/radius linearly within the bracketing interval — one blend,
+        # reusing the position index (np.interp's end-clamp == f clipped to [0, 1]).
+        dm = md[i + 1] - md[i]
+        f = 0.0 if dm == 0 else float(np.clip((q - md[i]) / dm, 0.0, 1.0))
+        c = (1.0 - f) * cov[i] + f * cov[i + 1]
+        return p, c, float((1.0 - f) * rad[i] + f * rad[i + 1])
+
+    def _sf_point(self, pr, cr, rr, po, co, ro):
+        """Radii-adjusted Mahalanobis separation factor between two single
+        uncertain points — the general kernel (scalar; used by the narrowphase).
+
+        Parameters
+        ----------
+        pr, po : (3,) array — reference and offset positions (NEV).
+        cr, co : (3, 3) array — their covariances (NEV).
+        rr, ro : float — their hole radii.
+
+        Notes
+        -----
+        Uses the combined covariance plus the isotropic project-ahead floor
+        ``sigma_pa**2 I``. ``d`` is shortened by the combined radii + surface
+        margin before the metric, so a physical overlap (centres within the
+        radii) returns 0. In a zero-variance (perfectly known) direction with a
+        non-zero offset component the metric is infinite (the offset is
+        infinitely many sigma away — clear); this matches :meth:`_sf_row`.
+
+        The ``np.isclose(proj, 0)`` guard (absolute ``atol`` 1e-8 m) only changes
+        the result when an eigenvalue is ~0, which the ``sigma_pa`` floor
+        prevents in the operational path (``S >= sigma_pa**2 I``). With
+        ``sigma_pa=0`` against a genuinely rank-deficient covariance it can only
+        drop a term, i.e. lower SF — conservative, never a missed collision.
+        """
+        d = po - pr
+        D = float(np.linalg.norm(d))
+        if D == 0.0:
+            return 0.0
+        S = cr + co + (self.sigma_pa ** 2) * np.eye(3)
+        dp = d * (max(D - (rr + ro + self.Sm), 0.0) / D)
+        # eigen-decomposition (consistent with _sf_row, robust to degenerate S):
+        # a zero eigenvalue with a non-zero projection -> +inf (clear), not 0.
+        vals, vecs = np.linalg.eigh(S)
+        proj = vecs.T @ dp
+        with np.errstate(divide='ignore', invalid='ignore'):
+            terms = np.where(vals > 0, proj ** 2 / vals, np.inf)
+        terms = np.where(np.isclose(proj, 0.0), 0.0, terms)
+        return float(np.sqrt(np.sum(terms))) / self.k
+
+    def _sf_row(self, pr, cr, rr, Op, Oc, Ro):
+        """Exact (Mahalanobis) separation factor of one reference point against
+        ALL offset points (vectorised) — the broadphase scan."""
+        d = Op - pr
+        D = np.linalg.norm(d, axis=1)
+        S = cr + Oc + (self.sigma_pa ** 2) * np.eye(3)
+        scale = np.divide(np.maximum(D - (rr + Ro + self.Sm), 0.0), D,
+                          out=np.zeros_like(D), where=D > 0)
+        dp = d * scale[:, None]
+        vals, vecs = np.linalg.eigh(S)            # robust to degenerate S
+        proj = np.einsum('oji,oj->oi', vecs, dp)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            terms = np.where(vals > 0, proj ** 2 / vals, np.inf)
+        terms = np.where(np.isclose(proj, 0.0), 0.0, terms)
+        m = np.sqrt(np.sum(terms, axis=1))
+        m[D == 0] = 0.0
+        return m / self.k
+
+    def _pedal_sf_row(self, pr, cr, rr, Op, Oc, Ro):
+        """Pedal / support-function (ISCWSA separation-rule) separation factor of
+        one reference point against ALL offset points (vectorised). The combined
+        ellipsoid is characterised by its support function ``h(u)=sqrt(u'Su)`` in
+        the centre-to-centre direction ``u``; this over-states the true reach, so
+        it is never larger than :meth:`_sf_row` (Kantorovich)."""
+        d = Op - pr
+        D = np.linalg.norm(d, axis=1)
+        S = cr + Oc                               # combined covariance (no floor in h)
+        dSd = np.einsum('oi,oij,oj->o', d, S, d)  # = D^2 * u'Su
+        with np.errstate(divide='ignore', invalid='ignore'):
+            h2 = np.where(D > 0, dSd / D ** 2, 0.0)
+        num = np.maximum(D - (rr + Ro + self.Sm), 0.0)
+        sf = num / (self.k * np.sqrt(h2 + self.sigma_pa ** 2))
+        sf[D == 0] = 0.0
+        return sf
+
+    def sf_vs_md(self):
+        """Separation-factor-versus-MD profiles for both methods along the
+        reference well — a single consistent computation, inherited by every
+        ``Clearance`` subclass.
+
+        At each reference station, returns the minimum over the offset stations of
+        (i) the pedal / support-function separation factor (the ISCWSA separation
+        rule) and (ii) the exact combined-ellipsoid Mahalanobis separation factor,
+        evaluated over the *same* station pairing with this clearance's ``k``,
+        ``Sm`` and ``sigma_pa``. Because only the metric differs, the exact factor
+        is ``>=`` the pedal factor at every station (Kantorovich). Comparing two
+        different ``Clearance`` subclasses station-by-station is **not**
+        apples-to-apples — they pair reference/offset and resolve closest approach
+        differently, and their profiles can appear to cross.
+
+        Returns
+        -------
+        md : (N,) ndarray
+            Reference-well measured depth at each station.
+        pedal_sf : (N,) ndarray
+            Pedal / support-function (ISCWSA separation-rule) separation factor.
+        mahalanobis_sf : (N,) ndarray
+            Exact combined-ellipsoid (Mahalanobis) separation factor.
+        """
+        Rmd, Rp, Rc, Rr, _ = self._curve(self.ref)
+        _, Op, Oc, Ro, _ = self._curve(self.offset)
+        ped = np.empty(len(Rp))
+        mah = np.empty(len(Rp))
+        for i in range(len(Rp)):
+            ped[i] = self._pedal_sf_row(Rp[i], Rc[i], Rr[i], Op, Oc, Ro).min()
+            mah[i] = self._sf_row(Rp[i], Rc[i], Rr[i], Op, Oc, Ro).min()
+        return Rmd, ped, mah
+
 
 class IscwsaClearance(Clearance):
     """
@@ -915,96 +1055,6 @@ class MahalanobisClearance(Clearance):
     def min_sf(self):
         """The governing (minimum) separation factor; ``< 1`` is a collision."""
         return float(np.nanmin(self.sf))
-
-    @staticmethod
-    def _curve(survey):
-        """A survey as a general uncertain parametric curve: parameter (measured
-        depth), position, covariance field and radius at each station. Nothing
-        here is drilling-specific — any two such curves can be compared."""
-        md = np.asarray(survey.md, dtype=float)
-        # authoritative n/e/tvd positions (as the separation rule uses), NOT
-        # survey.pos_nev which is recomputed from md/inc/azi+start.
-        pos = np.column_stack([survey.n, survey.e, survey.tvd]).astype(float)
-        cov = np.asarray(survey.cov_nev, float).reshape(-1, 3, 3)
-        rad = np.asarray(survey.radius, float).reshape(-1)
-        return md, pos, cov, rad, survey
-
-    @staticmethod
-    def _at(curve, q):
-        """Evaluate the continuous curve at parameter (measured depth) q.
-
-        Position is interpolated by **minimum curvature** (SLERP of the unit
-        tangents, via ``_interpolate_pos_nev``) — the same wellpath the
-        separation rule uses, so the between-station closest approach follows the
-        true arc, not the chord. Covariance and radius are interpolated linearly
-        (the standard approximation; cf. Brooks SPE-116155)."""
-        md, pos, cov, rad, survey = curve
-        i = int(np.clip(np.searchsorted(md, q, side="right") - 1, 0, len(md) - 2))
-        p = _interpolate_pos_nev(survey, float(q - md[i]), i)   # min-curvature
-        # covariance/radius linearly within the bracketing interval — one blend,
-        # reusing the position index (np.interp's end-clamp == f clipped to [0, 1]).
-        dm = md[i + 1] - md[i]
-        f = 0.0 if dm == 0 else float(np.clip((q - md[i]) / dm, 0.0, 1.0))
-        c = (1.0 - f) * cov[i] + f * cov[i + 1]
-        return p, c, float((1.0 - f) * rad[i] + f * rad[i + 1])
-
-    def _sf_point(self, pr, cr, rr, po, co, ro):
-        """Radii-adjusted Mahalanobis separation factor between two single
-        uncertain points — the general kernel (scalar; used by the narrowphase).
-
-        Parameters
-        ----------
-        pr, po : (3,) array — reference and offset positions (NEV).
-        cr, co : (3, 3) array — their covariances (NEV).
-        rr, ro : float — their hole radii.
-
-        Notes
-        -----
-        Uses the combined covariance plus the isotropic project-ahead floor
-        ``sigma_pa**2 I``. ``d`` is shortened by the combined radii + surface
-        margin before the metric, so a physical overlap (centres within the
-        radii) returns 0. In a zero-variance (perfectly known) direction with a
-        non-zero offset component the metric is infinite (the offset is
-        infinitely many sigma away — clear); this matches :meth:`_sf_row`.
-
-        The ``np.isclose(proj, 0)`` guard (absolute ``atol`` 1e-8 m) only changes
-        the result when an eigenvalue is ~0, which the ``sigma_pa`` floor
-        prevents in the operational path (``S >= sigma_pa**2 I``). With
-        ``sigma_pa=0`` against a genuinely rank-deficient covariance it can only
-        drop a term, i.e. lower SF — conservative, never a missed collision.
-        """
-        d = po - pr
-        D = float(np.linalg.norm(d))
-        if D == 0.0:
-            return 0.0
-        S = cr + co + (self.sigma_pa ** 2) * np.eye(3)
-        dp = d * (max(D - (rr + ro + self.Sm), 0.0) / D)
-        # eigen-decomposition (consistent with _sf_row, robust to degenerate S):
-        # a zero eigenvalue with a non-zero projection -> +inf (clear), not 0.
-        vals, vecs = np.linalg.eigh(S)
-        proj = vecs.T @ dp
-        with np.errstate(divide='ignore', invalid='ignore'):
-            terms = np.where(vals > 0, proj ** 2 / vals, np.inf)
-        terms = np.where(np.isclose(proj, 0.0), 0.0, terms)
-        return float(np.sqrt(np.sum(terms))) / self.k
-
-    def _sf_row(self, pr, cr, rr, Op, Oc, Ro):
-        """Separation factor of one reference point against ALL offset points
-        (vectorised) — the broadphase scan."""
-        d = Op - pr
-        D = np.linalg.norm(d, axis=1)
-        S = cr + Oc + (self.sigma_pa ** 2) * np.eye(3)
-        scale = np.divide(np.maximum(D - (rr + Ro + self.Sm), 0.0), D,
-                          out=np.zeros_like(D), where=D > 0)
-        dp = d * scale[:, None]
-        vals, vecs = np.linalg.eigh(S)            # robust to degenerate S
-        proj = np.einsum('oji,oj->oi', vecs, dp)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            terms = np.where(vals > 0, proj ** 2 / vals, np.inf)
-        terms = np.where(np.isclose(proj, 0.0), 0.0, terms)
-        m = np.sqrt(np.sum(terms, axis=1))
-        m[D == 0] = 0.0
-        return m / self.k
 
     def _mahalanobis_sf(self):
         # Minimum Mahalanobis distance between two uncertain parametric curves,
