@@ -124,7 +124,7 @@ The problem is not drilling-specific. Each well is an *uncertain parametric curv
 \mathrm{SF} \;=\; \frac{1}{k}\,\min_{s,\,t}\; \sqrt{\mathbf{d}'(s,t)^{\top}\big(\Sigma_{\text{ref}}(s)+\Sigma_{\text{off}}(t)+\sigma_{pa}^2 \mathbf{I}\big)^{-1}\mathbf{d}'(s,t)},
 \end{equation}
 
-where $\mathbf{d}'(s,t)$ is the centre-to-centre vector shortened by the combined hole radii and surface margin. This is a continuous two-parameter minimisation, solved to a tolerance — *not* a search on an externally imposed grid. We solve it the way any geometric collision query does, in two phases:
+where $\mathbf{d}'(s,t)$ is the centre-to-centre vector shortened by the combined hole radii and surface margin, and $\mathbf{I}$ is the $3\times 3$ identity matrix. This is a continuous two-parameter minimisation, solved to a tolerance — *not* a search on an externally imposed grid. We solve it the way any geometric collision query does, in two phases:
 
 - **Broadphase (locate).** Evaluate the factor at the curves' own survey stations — every reference station against every offset station. The sampling is the geometry's own, so there is no arbitrary step to choose, and the pairing is *exhaustive*, not a Euclidean nearest-neighbour shortlist: the minimum-*Mahalanobis* offset is generally not the Euclidean-nearest one (the rule's "limitation B"), so a shortlist would silently miss it.
 - **Narrowphase (refine).** From the lowest broadphase candidates, minimise the factor *continuously* over the two curve parameters, bounded to the neighbouring segments. This converges to a set tolerance — there is no discretisation step, and the worst point, which generally falls *between* stations, is found exactly. Refining several candidates (not only the global broadphase minimum) prevents a sharp crossing from hiding between stations.
@@ -196,9 +196,9 @@ Two conventions are worth noting on the deeply overlapping wells. Where the *cen
 
 The practical reading: where the rule reports, say, $\mathrm{SF}=1.2$ and would demand additional surveying or a redesign, the exact method may report $\mathrm{SF}=1.7$ — clear with margin — recovering a drillable well without acquiring more data.
 
-Figure 3 shows the same effect *along* a well: the separation factor falls to its minimum at the closest approach, and the gap between the rule and the exact method widens toward that minimum — it is largest exactly where the go/no-go decision is taken.
+Figure 3 shows the same effect *along* the well for the three offsets whose separation factor varies most with depth — a collision (Well 11), a near-miss (Well 06) and a clear approach with margin (Well 05). In each, the factor falls to its minimum at the closest approach, and the gap between the rule and the exact method widens toward that minimum — it is largest exactly where the go/no-go decision is taken.
 
-![Separation factor versus depth along the reference well (offset Well 05). SF dips to its minimum at the closest approach; the conservatism gap (pedal vs exact Mahalanobis) is negligible where the wells are far apart and opens to its maximum at the closest approach — where the decision is made. Log SF axis; the shaded band is the $\mathrm{SF}<1$ collision zone.](figures/sf-vs-depth.png){width=72%}
+![Separation factor versus depth along the reference well, for the three offsets with the greatest variation in SF (excluding the degenerate sidetrack, Well 10): a collision (Well 11, min SF 0.09), a near-miss (Well 06, 1.04) and a clear approach (Well 05, 1.72). In each the factor dips to its minimum at the closest approach, where the exact Mahalanobis factor (blue) sits furthest to the right of the rule (orange) — least conservative exactly where the decision is made. Log SF axis; the shaded band is the $\mathrm{SF}<1$ collision zone.](figures/sf-vs-depth.png){width=100%}
 
 ## 8. The "impractical" objection, refuted
 
