@@ -1,5 +1,5 @@
 from welleng.survey import Survey, make_survey_header
-from welleng.clearance import IscwsaClearance
+from welleng.clearance import IscwsaClearance, MahalanobisClearance
 import numpy as np
 import json
 
@@ -117,3 +117,27 @@ def test_clearance_iscwsa(data=data, rtol=1e-02, atol=1e-03):
                 )
 
     pass
+
+
+def test_mahalanobis_less_conservative_than_pedal(data=data):
+    """MahalanobisClearance uses the exact combined-ellipsoid k-sigma boundary
+    instead of the pedal-curve support-function approximation. It must never be
+    MORE conservative than the (validated) pedal rule: SF_maha >= SF_pedal at
+    every reference station (the support function over-states the ellipsoid's
+    reach toward the offset). It must also agree with pedal that the deeply
+    overlapping wells (03, 09, 10, 11) are collisions."""
+    surveys = generate_surveys(data)
+    reference = surveys["Reference well"]
+    hits = {"03 - well", "09 - well", "10 - well", "11 - well"}
+    for well in surveys:
+        if well == "Reference well":
+            continue
+        offset = surveys[well]
+        kop_depth = 900.0 if well == "10 - well" else -np.inf
+        ped = IscwsaClearance(reference, offset, kop_depth=kop_depth)
+        mah = MahalanobisClearance(reference, offset, kop_depth=kop_depth)
+        # less (or equally) conservative wherever the pedal SF is meaningful
+        finite = np.isfinite(ped.sf) & (ped.sf > 0)
+        assert np.all(mah.sf[finite] >= ped.sf[finite] - 1e-6), well
+        if well in hits:
+            assert np.nanmin(mah.sf) < 1.0, well
