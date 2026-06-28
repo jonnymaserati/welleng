@@ -112,9 +112,11 @@ def _json_to_em_adapter(model: dict) -> dict:
         "Inclination Range Max": f"{inc_max_deg} deg",
         "Revision No": md.get("revision_number", ""),
         "Revision Date": md.get("revision_date", ""),
-        # Required for the legacy code path to be happy when JSON tool
-        # carries no tortuosity (we synthesise a default).
-        "Default Tortusity (rad/m)": 0.000572615,
+        # XCL tortuosity for the legacy/native path (self.tortuosity reads this
+        # key). Sourced from the JSON parameters block (parsed by owsg_to_json from
+        # the sheet's "XCL Tortuosity" cell); falls back to 1 deg/100 ft if a tool
+        # carries none.
+        "Default Tortusity (rad/m)": pp.get("XCLTortuosity", 0.000572615),
     }
     # Continuous / stationary gyro tool parameters. The ISCWSA Rev5 gyro
     # weight functions (GXY-GD/GRW running integral, GXY-RN noise, and the
@@ -389,6 +391,15 @@ class ToolError:
         }
         if hdr.get("GXYRunningSpeed") is not None:
             bindings["GXYRunningSpeed"] = float(hdr["GXYRunningSpeed"])
+        # XCL (extended course length, Codling SPE-187249-MS): the XCLA/XCLH weight
+        # formulas reference `XCLTortuosity` (rad/m). Its per-model value comes from
+        # the JSON parameters block (owsg_to_json parses the sheet's "XCL Tortuosity"
+        # cell) via the header key above; bind it so the interpreter path evaluates
+        # XCL identically to the native path. Without the binding the formula throws
+        # and XCL silently contributes zero.
+        _xcl_tort = hdr.get("Default Tortusity (rad/m)")
+        if _xcl_tort is not None:
+            bindings["XCLTortuosity"] = float(_xcl_tort)
 
         # Recurrence terms (continuous gyro): the azimuth formula references
         # its own accumulated state from the previous station
