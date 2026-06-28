@@ -315,6 +315,8 @@ If your work uses the **anti-collision (exact Mahalanobis separation factor) met
 }
 ```
 
+**Built on:** welleng stands on NumPy, SciPy, pandas, trimesh, FCL and more, and implements published methods (ISCWSA, Brooks, Sawaryn, …) — see [CITATIONS.md](CITATIONS.md) for the dependency and method references to credit.
+
 ## License
 
 [Apache 2.0](LICENSE)
