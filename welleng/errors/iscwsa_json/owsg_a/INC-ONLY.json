@@ -1,5 +1,6 @@
 {
   "$schema": "../../iscwsa_schema/draft.json",
+  "_comment": "GENERATED from the ISCWSA-issued OWSG spreadsheet by welleng/errors/tools/owsg_to_json.py -- DO NOT EDIT BY HAND. Regenerate from the source xlsx. If a test needs different parameter values for validation, it must override them locally, never modify this shipped model. (test_iscwsa_json_generated.py enforces this.)",
   "metadata": {
     "schema_uuid": "00000000-0000-0000-0000-000000000000",
     "model_uuid": "d99082f3-58f2-5bd4-9cc4-490fa62eba62",

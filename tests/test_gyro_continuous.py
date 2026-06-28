@@ -24,8 +24,9 @@ from welleng.survey import Survey, SurveyHeader
 
 
 def _build_survey():
-    # Simple build well crossing the static-gyro gate (17 deg): vertical to
-    # ~60 deg over 2000 m, constant azimuth.
+    # Simple build well crossing the static-gyro gate (15 deg, GYRO-NS-CT's
+    # ISCWSA-sheet value -- read from the model, not assumed): vertical to ~60 deg
+    # over 2000 m, constant azimuth.
     md = np.arange(0.0, 2001.0, 100.0)
     inc = np.clip((md / 2000.0) * 60.0, 0.0, 60.0)
     azi = np.full_like(md, 30.0)

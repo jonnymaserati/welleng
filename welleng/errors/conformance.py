@@ -145,6 +145,12 @@ def compare_model(json_path: str, survey, *,
     with open(json_path) as f:
         model = json.load(f)
     bindings = _bindings_from_survey(survey)
+    # Surface the JSON parameters block (XCLTortuosity, per-tool gyro constants, ...)
+    # into the formula bindings so weight functions referencing them resolve instead
+    # of throwing (the silent-zero gap). See ERROR_MODEL_ENGINE.md S8.
+    for _pk, _pv in (model.get("parameters") or {}).items():
+        if isinstance(_pv, (int, float)):
+            bindings[_pk] = float(_pv)
     n = len(survey.md)
 
     results: list[TermResult] = []
