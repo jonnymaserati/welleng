@@ -86,8 +86,10 @@ def _bindings_from_survey(survey) -> dict[str, Any]:
         "AzTPrev": _prev(azt), "AzMPrev": _prev(azm), "AzPrev": _prev(azg),
         "TVD": np.asarray(survey.tvd, dtype=float),
         "Gfield": float(survey.header.G),
+        "GField": float(survey.header.G),   # casing alias (ABIXY formulas use GField)
         "Dip": float(survey.header.dip),
         "BField": float(survey.header.b_total or 50000.0),
+        "Bfield": float(survey.header.b_total or 50000.0),   # casing alias (MFI formulas use Bfield)
         "EarthRate": 0.262516,            # rad/hr (~ 15.041 deg/hr)
         "Latitude": np.radians(float(survey.header.latitude or 0.0)),
         "RAD": np.pi / 180.0,             # used in some singularity formulas

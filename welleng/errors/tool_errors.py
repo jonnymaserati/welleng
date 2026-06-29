@@ -386,8 +386,10 @@ class ToolError:
             "AzTPrev": _prev(azt), "AzMPrev": _prev(azm), "AzPrev": _prev(azg),
             "TVD": np.asarray(survey.tvd, dtype=float),
             "Gfield": float(survey.header.G),
+            "GField": float(survey.header.G),   # casing alias: some sheet formulas (ABIXY) use GField
             "Dip": float(survey.header.dip),
             "BField": float(survey.header.b_total or 50000.0),
+            "Bfield": float(survey.header.b_total or 50000.0),   # casing alias: MFI formulas use Bfield
             "EarthRate": earth_rate,
             "Latitude": np.radians(float(survey.header.latitude or 0.0)),
             "NoiseReductionFactor": nrf,
