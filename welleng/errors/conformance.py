@@ -65,16 +65,31 @@ class TermResult:
 
 def _bindings_from_survey(survey) -> dict[str, Any]:
     """Variable namespace for formula evaluation."""
+    md = np.asarray(survey.md, dtype=float)
+    inc = np.asarray(survey.inc_rad, dtype=float)
+    azt = np.asarray(survey.azi_true_rad, dtype=float)
+    azm = np.asarray(survey.azi_mag_rad, dtype=float)
+    azg = np.asarray(survey.azi_grid_rad, dtype=float)
+
+    # Previous-station arrays (padded so station 0's "...Prev" equals its own value;
+    # the cross-station terms that consume them gate or zero station 0). Without
+    # these the XCL (XCLA/XCLH) and extended-misalignment (XYM3E/XYM4E) formulas
+    # raise and were bucketed as a schema gap -- binding them lets the conformance
+    # matrix actually cross-check those terms against the legacy path, matching what
+    # tool_errors._call_interpreter binds in production.
+    def _prev(a):
+        return np.concatenate(([a[0]], a[:-1]))
+
     return {
-        "MD": np.asarray(survey.md, dtype=float),
-        "Inc": np.asarray(survey.inc_rad, dtype=float),
-        "AzT": np.asarray(survey.azi_true_rad, dtype=float),
-        "AzM": np.asarray(survey.azi_mag_rad, dtype=float),
-        "Az": np.asarray(survey.azi_grid_rad, dtype=float),
+        "MD": md, "Inc": inc, "AzT": azt, "AzM": azm, "Az": azg,
+        "MDPrev": _prev(md), "IncPrev": _prev(inc),
+        "AzTPrev": _prev(azt), "AzMPrev": _prev(azm), "AzPrev": _prev(azg),
         "TVD": np.asarray(survey.tvd, dtype=float),
         "Gfield": float(survey.header.G),
+        "GField": float(survey.header.G),   # casing alias (ABIXY formulas use GField)
         "Dip": float(survey.header.dip),
         "BField": float(survey.header.b_total or 50000.0),
+        "Bfield": float(survey.header.b_total or 50000.0),   # casing alias (MFI formulas use Bfield)
         "EarthRate": 0.262516,            # rad/hr (~ 15.041 deg/hr)
         "Latitude": np.radians(float(survey.header.latitude or 0.0)),
         "RAD": np.pi / 180.0,             # used in some singularity formulas
@@ -123,9 +138,14 @@ def _interp_eval_term(term: dict, mag_si: float, survey, bindings: dict) -> np.n
     e_DIA matches what the legacy path produces.
     """
     n = len(survey.md)
-    d = evaluate_formula(term["depth_formula"], bindings)
-    i = evaluate_formula(term["inclination_formula"], bindings)
-    a = evaluate_formula(term["azimuth_formula"], bindings)
+    # Some formulas (e.g. XCLA's /Sin(Inc)) are singular at the vertical station; the
+    # harness evaluates them anyway (the production path gates / SING-substitutes
+    # there). Suppress the divide warnings -- the values are exact away from the
+    # singularity, and irrelevant for the NO_LEGACY cross-station terms.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        d = evaluate_formula(term["depth_formula"], bindings)
+        i = evaluate_formula(term["inclination_formula"], bindings)
+        a = evaluate_formula(term["azimuth_formula"], bindings)
     d = np.broadcast_to(np.asarray(d, dtype=float), (n,))
     i = np.broadcast_to(np.asarray(i, dtype=float), (n,))
     a = np.broadcast_to(np.asarray(a, dtype=float), (n,))
@@ -145,6 +165,12 @@ def compare_model(json_path: str, survey, *,
     with open(json_path) as f:
         model = json.load(f)
     bindings = _bindings_from_survey(survey)
+    # Surface the JSON parameters block (XCLTortuosity, per-tool gyro constants, ...)
+    # into the formula bindings so weight functions referencing them resolve instead
+    # of throwing (the silent-zero gap). See ERROR_MODEL_ENGINE.md S8.
+    for _pk, _pv in (model.get("parameters") or {}).items():
+        if isinstance(_pv, (int, float)):
+            bindings[_pk] = float(_pv)
     n = len(survey.md)
 
     results: list[TermResult] = []

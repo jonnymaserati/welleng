@@ -65,8 +65,10 @@ def _bindings_for_station(
         "Az": azi_rad,
         "TVD": md_arr,     # rough; Copsegrove doesn't report TVD per term
         "Gfield": G,
+        "GField": G,        # casing alias (ABIXY formulas use GField)
         "Dip": dip_rad,
         "BField": b_total,
+        "Bfield": b_total,  # casing alias (MFI formulas use Bfield)
         "EarthRate": 0.262516,
         "Latitude": np.radians(latitude_deg),
         "RAD": np.pi / 180.0,
