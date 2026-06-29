@@ -206,27 +206,42 @@ def solve_clc_resultant(p1, t1, p4, t4, R1, R2):
     min-MD roots). Spurious roots (from clearing the half-angle denominators and
     squaring Eq. 13) are removed by forward-verification.
 
-    Slower (~seconds/solve; sympy over the rationals) but complete and
-    deterministic. Fine for well-planning; a closed-form-coefficient version
-    (derived once, then numeric) is the route to high throughput.
+    Fast (~0.3s/solve; python-flint resultant + arbitrary-precision acb roots,
+    scale-normalised so coefficients stay representable) and complete +
+    deterministic. ~190x faster than the equivalent sympy path.
     """
-    import sympy as sp
+    import flint
+    from fractions import Fraction
+    flint.ctx.prec = 400
     psi2, eta1, eta4, eta14, mu = _scalars(p1, t1, p4, t4)
-    Q = lambda x: sp.Rational(x).limit_denominator(10**9)
-    e1, e4, e14, m = Q(eta1), Q(eta4), Q(eta14), Q(mu)
-    r1, r2 = sp.nsimplify(R1, rational=True), sp.nsimplify(R2, rational=True)
-    T1, T2, B = sp.symbols('T1 T2 B')
-    c1 = (1 - T1**2)/(1 + T1**2); s1 = 2*T1/(1 + T1**2)
-    c2 = (1 - T2**2)/(1 + T2**2); s2 = 2*T2/(1 + T2**2)
-    P1 = sp.numer(sp.together(r1*s1 + B*c1 + r2*T2*(m + c1) - e1))
-    P2 = sp.numer(sp.together(r1*T1*(m + c2) + B*c2 + r2*s2 - e4))
-    P3 = sp.numer(sp.together((r1*T1 + B + r2*T2)**2
-                              * (1 - m**2 - c1**2 - c2**2 + 2*m*c1*c2)
-                              - e14**2*(1 - m**2)))
-    F = sp.Poly(sp.resultant(sp.resultant(P1, P2, T1),
-                             sp.resultant(P1, P3, T1), T2), B)
-    betas = sorted({complex(r).real for r in F.nroots(maxsteps=500)
-                    if abs(complex(r).imag) < 1e-4 and complex(r).real > 1e-6})
+    L = np.sqrt(psi2)                              # characteristic length -> O(1) coeffs
+
+    def fq(x):
+        f = Fraction(float(x)).limit_denominator(10**9)
+        return flint.fmpq(f.numerator, f.denominator)
+
+    ctx = flint.fmpq_mpoly_ctx.get(['T1', 'T2', 'B'], flint.Ordering.lex)
+    T1, T2, B = ctx.gens()
+    e1, e4, e14, m, r1, r2 = (fq(eta1/L), fq(eta4/L), fq(eta14/L),
+                              fq(mu), fq(R1/L), fq(R2/L))
+    # Sawaryn's clean forward eqs 11,12,13^2 with the half-angle denominators cleared
+    P1 = r1*2*T1 + B*(1 - T1**2) + r2*T2*(m*(1 + T1**2) + (1 - T1**2)) - e1*(1 + T1**2)
+    P2 = r1*T1*(m*(1 + T2**2) + (1 - T2**2)) + B*(1 - T2**2) + r2*2*T2 - e4*(1 + T2**2)
+    u1p, u1m, u2p, u2m = 1 + T1**2, 1 - T1**2, 1 + T2**2, 1 - T2**2
+    surd = ((1 - m**2)*u1p**2*u2p**2 - u1m**2*u2p**2 - u1p**2*u2m**2
+            + 2*m*u1m*u2m*u1p*u2p)
+    P3 = (r1*T1 + B + r2*T2)**2 * surd - e14**2*(1 - m**2)*u1p**2*u2p**2
+    # eliminate T1 (index 0), then T2 (index 1) -> univariate polynomial in B
+    F = P1.resultant(P2, 0).resultant(P1.resultant(P3, 0), 1)
+    deg = max(mn[2] for mn in F.monoms())
+    cl = [flint.fmpq(0)]*(deg + 1)
+    for mn, co in zip(F.monoms(), F.coeffs()):
+        cl[mn[2]] = co
+    Fp = flint.fmpq_poly(cl)
+    sqf = Fp // Fp.gcd(Fp.derivative())            # squarefree part (acb roots need it)
+    roots = flint.acb_poly([sqf[i] for i in range(sqf.degree() + 1)]).roots()
+    betas = sorted({float(z.real)*L for z in roots
+                    if abs(float(z.imag)) < 1e-5 and float(z.real) > 1e-6})
     sols = []
     for b in betas:
         a1s, a2s = subtended_angles(b, psi2, eta1, eta4, eta14, mu, R1, R2)

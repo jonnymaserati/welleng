@@ -69,6 +69,7 @@ def test_solve_clc_resultant_is_complete_on_example2():
     # The resultant solver is complete *by construction* (every valid solution's
     # beta is a root of the eliminated polynomial); spurious roots filtered by
     # forward-verification. Recovers all four Example-2 roots exactly.
+    pytest.importorskip("flint")  # optional 'analytical' extra (python-flint)
     sols = solve_clc_resultant(P1, T1, P4, T4, R1, R2)
     betas = sorted(s['beta'] for s in sols)
     expected = [1072.6, 1630.2, 1789.95, 2356.9]

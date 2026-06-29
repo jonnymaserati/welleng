@@ -66,6 +66,9 @@ easy = [
     "vedo",
     "vtk",
 ]
+analytical = [
+    "python-flint",
+]
 all = [
     "magnetic_field_calculator",
     "networkx",
@@ -74,6 +77,7 @@ all = [
     "utm",
     "python-fcl",
     "rtree",
+    "python-flint",
 ]
 
 [project.urls]
