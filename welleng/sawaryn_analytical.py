@@ -194,3 +194,55 @@ def eq15(beta, psi2, eta1, eta4, eta14, mu, R1, R2):
     term3 = 4*(R1**2 - R2**2)*(eta1 - eta4)*beta
     term4 = 2*(R1**2 + R2**2)*((1 - mu)*(psi2 - b2) + 2*eta1*eta4)
     return A*(inner1 - inner2) + term2 + term3 - term4
+
+
+def solve_clc_resultant(p1, t1, p4, t4, R1, R2):
+    """Complete CLC solve via per-instance resultant elimination.
+
+    Eliminates the two half-angle tangents from Sawaryn's clean forward
+    equations (11-13) by exact-rational resultants -> a polynomial in beta whose
+    real positive roots include EVERY CLC solution (complete *by construction* -
+    unlike the scan-based ``solve_clc_analytical``, which can drop large-angle /
+    min-MD roots). Spurious roots (from clearing the half-angle denominators and
+    squaring Eq. 13) are removed by forward-verification.
+
+    Slower (~seconds/solve; sympy over the rationals) but complete and
+    deterministic. Fine for well-planning; a closed-form-coefficient version
+    (derived once, then numeric) is the route to high throughput.
+    """
+    import sympy as sp
+    psi2, eta1, eta4, eta14, mu = _scalars(p1, t1, p4, t4)
+    Q = lambda x: sp.Rational(x).limit_denominator(10**9)
+    e1, e4, e14, m = Q(eta1), Q(eta4), Q(eta14), Q(mu)
+    r1, r2 = sp.nsimplify(R1, rational=True), sp.nsimplify(R2, rational=True)
+    T1, T2, B = sp.symbols('T1 T2 B')
+    c1 = (1 - T1**2)/(1 + T1**2); s1 = 2*T1/(1 + T1**2)
+    c2 = (1 - T2**2)/(1 + T2**2); s2 = 2*T2/(1 + T2**2)
+    P1 = sp.numer(sp.together(r1*s1 + B*c1 + r2*T2*(m + c1) - e1))
+    P2 = sp.numer(sp.together(r1*T1*(m + c2) + B*c2 + r2*s2 - e4))
+    P3 = sp.numer(sp.together((r1*T1 + B + r2*T2)**2
+                              * (1 - m**2 - c1**2 - c2**2 + 2*m*c1*c2)
+                              - e14**2*(1 - m**2)))
+    F = sp.Poly(sp.resultant(sp.resultant(P1, P2, T1),
+                             sp.resultant(P1, P3, T1), T2), B)
+    betas = sorted({complex(r).real for r in F.nroots(maxsteps=500)
+                    if abs(complex(r).imag) < 1e-4 and complex(r).real > 1e-6})
+    sols = []
+    for b in betas:
+        a1s, a2s = subtended_angles(b, psi2, eta1, eta4, eta14, mu, R1, R2)
+        for a1 in a1s:
+            for a2 in a2s:
+                f = forward(a1, a2, b, mu, R1, R2)
+                if f is None:
+                    continue
+                res = np.sqrt((f[0]-eta1)**2 + (f[1]-eta4)**2
+                              + (abs(f[2])-abs(eta14))**2)
+                if res < 1e-4*np.sqrt(psi2) and not any(
+                        abs(b - s['beta']) < 1e-3 for s in sols):
+                    arc1, arc2 = R1*abs(a1), R2*abs(a2)
+                    sols.append(dict(beta=b, alpha1=a1, alpha2=a2,
+                                     arc1=arc1, line=b, arc2=arc2,
+                                     total_md=arc1 + b + arc2, residual=res))
+                    break
+    sols.sort(key=lambda s: s['total_md'])
+    return sols

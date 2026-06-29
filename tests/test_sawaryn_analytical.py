@@ -14,6 +14,7 @@ import pytest
 
 from welleng.sawaryn_analytical import (
     tangent, _scalars, forward, subtended_angles, solve_clc_analytical, eq15,
+    solve_clc_resultant,
 )
 
 P1 = np.array([8000.0, 8000.0, 6000.0])
@@ -62,6 +63,22 @@ def test_solve_clc_reproduces_example2_exactly():
     assert np.degrees(principal['alpha1']) == pytest.approx(13.953, abs=0.01)
     assert np.degrees(principal['alpha2']) == pytest.approx(13.109, abs=0.01)
     assert principal['residual'] < 1e-3
+
+
+def test_solve_clc_resultant_is_complete_on_example2():
+    # The resultant solver is complete *by construction* (every valid solution's
+    # beta is a root of the eliminated polynomial); spurious roots filtered by
+    # forward-verification. Recovers all four Example-2 roots exactly.
+    sols = solve_clc_resultant(P1, T1, P4, T4, R1, R2)
+    betas = sorted(s['beta'] for s in sols)
+    expected = [1072.6, 1630.2, 1789.95, 2356.9]
+    assert len(betas) == 4
+    for got, exp in zip(betas, expected):
+        assert got == pytest.approx(exp, abs=0.2)
+    principal = min(sols, key=lambda s: s['beta'])
+    assert np.degrees(principal['alpha1']) == pytest.approx(13.953, abs=0.01)
+    assert np.degrees(principal['alpha2']) == pytest.approx(13.109, abs=0.01)
+    assert all(s['residual'] < 1e-6 for s in sols)
 
 
 def test_eq15_is_trapped():
