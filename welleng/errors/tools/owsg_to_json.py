@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import uuid
@@ -153,6 +154,77 @@ def _parse_inc_range(raw: Any) -> int | None:
     return int(round(float(m.group(1))))
 
 
+def _parse_tortuosity(raw: Any) -> float | None:
+    """Parse an OWSG "XCL Tortuosity" cell to rad/m; None if absent.
+
+    The sheet stores it as a unit string, e.g. "1 deg / 100 ft". The XCLA/XCLH
+    weight formulas reference the variable ``XCLTortuosity`` (rad/m), so surface it
+    into the JSON ``parameters`` under that name (else XCL silently evaluates to 0).
+    """
+    if _is_nanish(raw):
+        return None
+    s = str(raw).strip().lower().replace(" ", "")
+    m = re.match(r"^(-?\d+(?:\.\d+)?)deg/(-?\d+(?:\.\d+)?)(ft|m)$", s)
+    if not m:
+        return None
+    deg, length, unit = float(m.group(1)), float(m.group(2)), m.group(3)
+    metres = length * 0.3048 if unit == "ft" else length
+    return (deg * math.pi / 180.0) / metres
+
+
+def _parse_deg(raw: Any) -> float | None:
+    """Parse a "<n> deg" cell to radians; None if absent/unparseable."""
+    if _is_nanish(raw):
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw) * math.pi / 180.0
+    m = re.match(r"^(-?\d+(?:\.\d+)?)\s*deg$", str(raw).strip(), re.I)
+    return float(m.group(1)) * math.pi / 180.0 if m else None
+
+
+def _parse_number(raw: Any) -> float | None:
+    """Parse the leading number from a cell ("2743.2 m/hr", "0.4082", 0.5) -> float."""
+    if _is_nanish(raw):
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    m = re.match(r"^(-?\d+(?:\.\d+)?)", str(raw).strip())
+    return float(m.group(1)) if m else None
+
+
+def _extract_gyro_params(df: pd.DataFrame) -> dict[str, float]:
+    """Section-aware capture of the per-tool gyro Tool-Parameters the interpreter
+    binds, FROM THE SHEET: gxy_running_speed (m/hr), xy_static_gyro_end_inc (rad,
+    the static->continuous gate), noise_reduction_factor. "End Inc" appears under
+    both the static and continuous sections, so track which section we're in.
+    Returns only the params present (empty for non-gyro tools)."""
+    out: dict[str, float] = {}
+    section: str | None = None
+    for i in range(len(df)):
+        label = df.iloc[i, COL_LABEL]
+        if _is_nanish(label):
+            continue
+        key = str(label).strip().rstrip(":").strip()
+        val = df.iloc[i, COL_LABEL_VAL]
+        if key == "XY Static Gyro":
+            section = "static"
+        elif key == "XY Continuous Gyro":
+            section = "continuous"
+        if section == "static" and key == "End Inc":
+            v = _parse_deg(val)
+            if v is not None:
+                out["xy_static_gyro_end_inc"] = v
+        elif section == "continuous" and key == "Running Speed":
+            v = _parse_number(val)
+            if v is not None:
+                out["gxy_running_speed"] = v
+        elif key == "Noise Reduction Factor":
+            v = _parse_number(val)
+            if v is not None:
+                out["noise_reduction_factor"] = v
+    return out
+
+
 def _to_iso_date(x: Any) -> str:
     if isinstance(x, (date, datetime)):
         return x.strftime("%Y-%m-%d")
@@ -264,6 +336,17 @@ def convert_sheet(
     }
 
     parameters = {"inc_min": int(inc_min), "inc_max": int(inc_max)}
+    # XCL "extended course length" tortuosity (Codling SPE-187249-MS): the XCLA/XCLH
+    # weight formulas reference the variable XCLTortuosity (rad/m). The sheet carries
+    # its per-model value in the "XCL Tortuosity" cell (a unit string). Surface it so
+    # the interpreter can bind it; without it XCL silently evaluates to zero.
+    _xcl = _parse_tortuosity(kv.get("XCL Tortuosity"))
+    if _xcl is not None:
+        parameters["XCLTortuosity"] = _xcl
+    # Per-tool gyro calibration (running speed, static-gyro gate, noise reduction)
+    # that the continuous-gyro recurrence terms bind -- captured from the sheet's
+    # "Tool Parameters" section so they are never hand-overridden post-generation.
+    parameters.update(_extract_gyro_params(df))
 
     terms: list[dict] = []
     for i in _term_rows(df):
@@ -323,6 +406,13 @@ def convert_sheet(
 
     out = {
         "$schema": "../../iscwsa_schema/draft.json",
+        "_comment": (
+            "GENERATED from the ISCWSA-issued OWSG spreadsheet by "
+            "welleng/errors/tools/owsg_to_json.py -- DO NOT EDIT BY HAND. Regenerate "
+            "from the source xlsx. If a test needs different parameter values for "
+            "validation, it must override them locally, never modify this shipped "
+            "model. (test_iscwsa_json_generated.py enforces this.)"
+        ),
         "metadata": metadata,
         "parameters": parameters,
         "terms": terms,

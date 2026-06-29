@@ -8,6 +8,7 @@ coordinate transformations.
 """
 import numpy as np
 import math
+import warnings
 import pandas as pd
 from copy import copy
 try:
@@ -183,9 +184,19 @@ class SurveyParameters(Proj):
                     altitude=0 if altitude is None else altitude,
                     date=date
                 )
-            except Exception:
+            except Exception as exc:
+                warnings.warn(
+                    f"Magnetic-field lookup failed ({exc}); declination, dip and "
+                    "field intensity set to None (no connection to the BGS service?)."
+                )
                 result_magnetic = None
         else:
+            warnings.warn(
+                "Magnetic-field parameters (declination, dip, field intensity) need "
+                "the optional 'magnetic_field_calculator' package -- install with "
+                "`pip install welleng[all]` (or `pip install magnetic_field_calculator`). "
+                "Returning None for those fields."
+            )
             result_magnetic = None
 
         data = dict(
@@ -425,7 +436,7 @@ class SurveyHeader:
                     altitude=self.altitude,
                     date=self.survey_date
                 )
-            except:
+            except Exception:
                 try:
                     result = calculator.calculate(
                         latitude=self.latitude,
@@ -433,9 +444,12 @@ class SurveyHeader:
                         altitude=self.altitude,
                         date=self._get_date(date=None)
                     )
-                except:  # prevents crashing if there's no connection to the internet - need to have a log that captures when this occurs.
-                    # TODO: log when no internet connection prvents updating the result var
-                    pass
+                except Exception as exc:
+                    warnings.warn(
+                        f"Magnetic-field lookup failed ({exc}); using the header's "
+                        "default magnetic parameters (no connection to the BGS "
+                        "service?)."
+                    )
 
         if self.b_total is None:
             self.b_total = result['field-value']['total-intensity']['value']
@@ -667,9 +681,15 @@ class Survey:
             well bore coordinate system (high side, lateral, along
             hole).
         error_model: str (default: None)
-            If specified, this model is used to calculate the
-            covariance matrices if they are not present. Currently,
-            only the "ISCWSA_MWD" model is provided.
+            Name of the survey-tool error model used to compute the position
+            covariance. Leave as None for no uncertainty calculation. The
+            recommended/standard model is ``"ISCWSA MWD Rev5.11"`` (the validated
+            ISCWSA standard); ``"ISCWSA MWD Rev4"`` is the legacy model. The OWSG
+            toolcode library (``"MWD+SRGM"``, ``+SAG``, ``+AX``, ``+IFR``, gyro
+            stacks ``"GYRO-NS"`` / ``"GYRO-NS-CT"`` / ``"GYRO-MWD"``, ...) is also
+            selectable. List every available name with
+            ``welleng.error.get_error_models()``; switch by passing a different
+            name. Raises if the name is unrecognised.
         start_xyz: (,3) list or array of floats (default: [0,0,0])
             The start position of the well bore in (x,y,z) coordinates.
         start_nev: (,3) list or array of floats (default: [0,0,0])
@@ -744,8 +764,7 @@ class Survey:
         self._min_curve(vec)
         self._get_toolface_and_rates()
 
-        # initialize errors
-        # TODO: read this from a yaml file in errors
+        # initialize errors (ERROR_MODELS is derived from errors/tool_index.yaml)
         error_models = ERROR_MODELS
         if error_model is not None:
             assert error_model in error_models, "Unrecognized error model"

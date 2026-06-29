@@ -2,6 +2,7 @@ import numpy as np
 from numpy import sin, cos, tan, pi, sqrt
 from numpy.char import index
 import json
+import re
 import yaml
 import os
 from collections import OrderedDict
@@ -112,9 +113,11 @@ def _json_to_em_adapter(model: dict) -> dict:
         "Inclination Range Max": f"{inc_max_deg} deg",
         "Revision No": md.get("revision_number", ""),
         "Revision Date": md.get("revision_date", ""),
-        # Required for the legacy code path to be happy when JSON tool
-        # carries no tortuosity (we synthesise a default).
-        "Default Tortusity (rad/m)": 0.000572615,
+        # XCL tortuosity for the legacy/native path (self.tortuosity reads this
+        # key). Sourced from the JSON parameters block (parsed by owsg_to_json from
+        # the sheet's "XCL Tortuosity" cell); falls back to 1 deg/100 ft if a tool
+        # carries none.
+        "Default Tortusity (rad/m)": pp.get("XCLTortuosity", 0.000572615),
     }
     # Continuous / stationary gyro tool parameters. The ISCWSA Rev5 gyro
     # weight functions (GXY-GD/GRW running integral, GXY-RN noise, and the
@@ -229,10 +232,22 @@ class ToolError:
         if 'Default Tortusity (rad/m)' in self.em['header']:
             self.tortuosity = self.em['header']['Default Tortusity (rad/m)']
         elif 'XCL Tortuosity' in self.em['header']:
-            # assuming that this is always 1 deg / 100 ft but this might not
-            # be the case
-            # TODO use pint to handle this string inputs
-            self.tortuosity = (np.radians(1.) / 100) * 3.281
+            # Parse the unit string (e.g. "1 deg / 100 ft") to rad/m, rather than
+            # assuming a fixed 1 deg/100 ft.
+            _raw = str(self.em['header']['XCL Tortuosity'])
+            _m = re.match(
+                r"^\s*(-?\d+(?:\.\d+)?)\s*deg\s*/\s*(-?\d+(?:\.\d+)?)\s*(ft|m)\s*$",
+                _raw, re.I,
+            )
+            if _m:
+                _deg, _len, _unit = (
+                    float(_m.group(1)), float(_m.group(2)), _m.group(3).lower()
+                )
+                _metres = _len * 0.3048 if _unit == "ft" else _len
+                self.tortuosity = np.radians(_deg) / _metres
+            else:
+                # Fallback: the ISCWSA/OWSG default tortuosity, 1 deg/100 ft.
+                self.tortuosity = (np.radians(1.) / 100) * 3.281
         else:
             self.tortuosity = None
 
@@ -371,8 +386,10 @@ class ToolError:
             "AzTPrev": _prev(azt), "AzMPrev": _prev(azm), "AzPrev": _prev(azg),
             "TVD": np.asarray(survey.tvd, dtype=float),
             "Gfield": float(survey.header.G),
+            "GField": float(survey.header.G),   # casing alias: some sheet formulas (ABIXY) use GField
             "Dip": float(survey.header.dip),
             "BField": float(survey.header.b_total or 50000.0),
+            "Bfield": float(survey.header.b_total or 50000.0),   # casing alias: MFI formulas use Bfield
             "EarthRate": earth_rate,
             "Latitude": np.radians(float(survey.header.latitude or 0.0)),
             "NoiseReductionFactor": nrf,
@@ -389,6 +406,15 @@ class ToolError:
         }
         if hdr.get("GXYRunningSpeed") is not None:
             bindings["GXYRunningSpeed"] = float(hdr["GXYRunningSpeed"])
+        # XCL (extended course length, Codling SPE-187249-MS): the XCLA/XCLH weight
+        # formulas reference `XCLTortuosity` (rad/m). Its per-model value comes from
+        # the JSON parameters block (owsg_to_json parses the sheet's "XCL Tortuosity"
+        # cell) via the header key above; bind it so the interpreter path evaluates
+        # XCL identically to the native path. Without the binding the formula throws
+        # and XCL silently contributes zero.
+        _xcl_tort = hdr.get("Default Tortusity (rad/m)")
+        if _xcl_tort is not None:
+            bindings["XCLTortuosity"] = float(_xcl_tort)
 
         # Recurrence terms (continuous gyro): the azimuth formula references
         # its own accumulated state from the previous station
@@ -1077,9 +1103,12 @@ class ToolError:
             try:
                 val = evaluate_formula(f, bindings)
             except Exception:
-                # Singular weight references a variable the interpreter can't
-                # bind (e.g. XCLTortuosity) -- a documented schema gap; the
-                # component contributes zero, same as the main eval path.
+                # Defensive fallback: a singular weight whose formula fails to
+                # evaluate (a variable not in scope, a malformed expression)
+                # contributes zero rather than crashing -- the main eval path does
+                # the same. XCLTortuosity and the prev-station vars (MDPrev, ...) are
+                # now bound, so XCL's singular weight evaluates; this only guards a
+                # genuinely unbound/malformed term.
                 return np.zeros(n)
             return np.broadcast_to(
                 np.asarray(val, dtype=float), (n,)
@@ -1119,9 +1148,22 @@ class ToolError:
         return e_NEV, e_NEV_star
 
     def _initiate_func_dict(self):
-        """
-        This dictionary will need to be updated if/when additional error
-        functions are added to the model.
+        """Map weight-function name -> implementation.
+
+        Update when error functions are added/removed. A ``# Needs QAQC`` flag marks
+        a function not yet validated. After the 2026-06-29 audit these are all
+        **OWSG-specific** terms, outside the base ISCWSA standard model -- so the
+        ISCWSA standard test wells legitimately do NOT exercise them and there is no
+        in-repo ISCWSA reference to validate against; they would need OWSG
+        (extended-model) reference data:
+          - MDI, MFI, AMID, ABIZ, ASIZ, MSIXY: only in the OWSG ``+AX``/``+IFR``
+            axial-interference-correction models (MWD+IFR1+AX, MWD+SRGM+AX, ...).
+          - CNA, CNI: only in the BLIND/UNKNOWN/FINDS/TREND special models
+            (gyro "Linear Cone").
+          - ASIXY, ABIXY, MBIXY: in no current JSON model at all -- legacy-only.
+        See docs/dev/ERROR_MODEL_ENGINE.md S6. The base-ISCWSA terms that DO have
+        reference data (XYM3E/XYM4E/DBHR) are validated per-source to 5e-5 by
+        tests/test_iscwsa_mwd_error.py and are no longer flagged.
         """
         self.func_dict = {
             'ABXY_TI1': ABXY_TI1,
@@ -1150,13 +1192,13 @@ class ToolError:
             'XYM3': XYM3,
             'XYM4': XYM4,
             'SAGE': SAGE,
-            'XCL': XCL,  # requires an exception
+            'XCL': XCL,  # dispatcher dummy -> XCLA/XCLH (workbook lists XCL as one term)
             'XYM3L': XYM3L,
             'XYM4L': XYM4L,
             'XCLA': XCLA,
             'XCLH': XCLH,
-            'XYM3E': XYM3E,  # Needs QAQC
-            'XYM4E': XYM4E,  # Need QAQC
+            'XYM3E': XYM3E,  # validated: test_iscwsa_mwd_error (per-source, 5e-5)
+            'XYM4E': XYM4E,  # validated: test_iscwsa_mwd_error (per-source, 5e-5)
             'ASIXY_TI1': ASIXY_TI1,  # Needs QAQC
             'ASIXY_TI2': ASIXY_TI2,  # Needs QAQC
             'ASIXY_TI3': ASIXY_TI3,  # Needs QAQC
@@ -1178,7 +1220,7 @@ class ToolError:
             'MSIXY_TI1': MSIXY_TI1,  # Needs QAQC
             'MSIXY_TI2': MSIXY_TI2,  # Needs QAQC
             'MSIXY_TI3': MSIXY_TI3,  # Needs QAQC
-            'DBHR': DBHR,  # Needs QAQC
+            'DBHR': DBHR,  # validated: test_iscwsa_mwd_error (per-source, 5e-5)
             'AMID': AMID,  # Needs QAQC
             'CNA': CNA,  # Needs QAQC
             'CNI': CNI,  # Needs QAQC

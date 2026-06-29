@@ -1,5 +1,6 @@
 {
   "$schema": "../../iscwsa_schema/draft.json",
+  "_comment": "GENERATED from the ISCWSA-issued OWSG spreadsheet by welleng/errors/tools/owsg_to_json.py -- DO NOT EDIT BY HAND. Regenerate from the source xlsx. If a test needs different parameter values for validation, it must override them locally, never modify this shipped model. (test_iscwsa_json_generated.py enforces this.)",
   "metadata": {
     "schema_uuid": "00000000-0000-0000-0000-000000000000",
     "model_uuid": "ead5db0e-70c3-552f-9ff7-755c2dabeb09",
@@ -28,9 +29,10 @@
   "parameters": {
     "inc_min": 0,
     "inc_max": 150,
-    "gxy_running_speed": 2160,
-    "xy_static_gyro_end_inc": 0.29670597283903605,
-    "noise_reduction_factor": 0.5
+    "XCLTortuosity": 0.000572614583987641,
+    "xy_static_gyro_end_inc": 0.2617993877991494,
+    "gxy_running_speed": 2743.2,
+    "noise_reduction_factor": 0.4082
   },
   "terms": [
     {
