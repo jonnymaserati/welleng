@@ -15,23 +15,36 @@ REFERENCE = {
 CALCULATOR = we.survey.SurveyParameters(REFERENCE.get('srs'))
 
 
-def test_known_location():
-    # Magnetic-field params need the optional 'magnetic_field_calculator'
-    # (welleng[all]) and the BGS service; skip cleanly when either is absent.
-    pytest.importorskip("magnetic_field_calculator")
+def test_known_location(monkeypatch):
+    # Always runs -- no optional 'magnetic_field_calculator' install and no live BGS
+    # network call needed. Stub the API client to return the known BGS response for
+    # this location/date, so we deterministically validate welleng's own code: the
+    # projection factors (real pyproj) and the magnetic-field processing (dip sign
+    # from the "down" units, nested-field extraction). The external service's values
+    # are not welleng's to test.
+    class _StubMagCalc:
+        def calculate(self, **kwargs):
+            return {"field-value": {
+                "total-intensity": {"value": REFERENCE["magnetic_field_intensity"]},
+                "declination": {"value": REFERENCE["declination"]},
+                # welleng negates a "down" inclination -> dip; feed +intensity so the
+                # sign handling is what's under test.
+                "inclination": {"value": -REFERENCE["dip"], "units": "deg (down)"},
+            }}
+    monkeypatch.setattr(we.survey, "MAG_CALC", True)
+    monkeypatch.setattr(we.survey, "MagneticFieldCalculator", _StubMagCalc, raising=False)
+
     survey_parameters = CALCULATOR.get_factors_from_x_y(
         x=REFERENCE.get('x'), y=REFERENCE.get('y'),
         date=REFERENCE.get('date')
     )
-    if survey_parameters.get('declination') is None:
-        pytest.skip("magnetic-field service unavailable (offline?)")
     for k, v in survey_parameters.items():
+        if REFERENCE.get(k) is None:
+            continue
         try:
             assert round(v, 3) == round(REFERENCE.get(k), 3)
         except TypeError:
             assert v == REFERENCE.get(k)
-
-    pass
 
 def test_transform_projection_coordinates():
     # Convert survey coordinates from UTM31_ED50 to UTM31_WGS84

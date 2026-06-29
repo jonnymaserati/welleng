@@ -436,7 +436,7 @@ class SurveyHeader:
                     altitude=self.altitude,
                     date=self.survey_date
                 )
-            except:
+            except Exception:
                 try:
                     result = calculator.calculate(
                         latitude=self.latitude,
@@ -444,9 +444,12 @@ class SurveyHeader:
                         altitude=self.altitude,
                         date=self._get_date(date=None)
                     )
-                except:  # prevents crashing if there's no connection to the internet - need to have a log that captures when this occurs.
-                    # TODO: log when no internet connection prvents updating the result var
-                    pass
+                except Exception as exc:
+                    warnings.warn(
+                        f"Magnetic-field lookup failed ({exc}); using the header's "
+                        "default magnetic parameters (no connection to the BGS "
+                        "service?)."
+                    )
 
         if self.b_total is None:
             self.b_total = result['field-value']['total-intensity']['value']
