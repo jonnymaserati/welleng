@@ -34,7 +34,6 @@ from .utils import (
     make_long_cov,
     min_curve_step,
     radius_from_dls,
-    get_arc
 )
 from .error import ErrorModel, ERROR_MODELS
 from .node import Node
@@ -1365,38 +1364,59 @@ class Survey:
         **kwargs
     ):
         """
-        Convenience method for calculating the Tortuosity Index (TI) using a
-        modified version of the method described in the [International
-        Association of Directional Drilling presentation](https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf)
-        by Pradeep Ashok et al.
+        Convenience method for the Modified Tortuosity Index (MTI): a native-3D,
+        *dimensionless* variant of the Tortuosity Index (TI) of Ashok et al.
+        ([IADD presentation](https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf))
+        and D'Angelo et al. (SPE/IADC-194099-MS).
+
+        Compared with :func:`tortuosity_index`, the MTI divides each curve
+        turn's ``(L_cs / L_xs - 1)`` term by its arc length ``L_cs`` and uses
+        ``L_c`` (rather than ``1 / L_c``) as the normalizing factor, which makes
+        the result independent of the survey's unit of length (a survey in feet
+        and the same survey in metres give the same MTI). See
+        [the method post](https://jonnymaserati.github.io/2022/05/26/a-modified-tortuosity-index.html).
+
+        .. warning::
+            "MTI" here means *Modified* Tortuosity Index. In SPE/IADC-194099-MS
+            "MTI" denotes the unrelated *Mapped* Tortuosity Index (planned curve
+            turns mapped onto the as-drilled path); do not conflate the two.
+
+        By default the survey is pre-processed with the maximum-curvature method
+        (interpolated to ``step`` then ``dls_noise`` deg/30m added) so that the
+        MTI is robust to survey-station frequency; set ``dls_noise=None`` to use
+        the raw minimum-curvature survey instead.
 
         Parameters
         ----------
         rtol: float
-            Relative tolerance when determining closeness of normal vectors.
+            Relative tolerance when testing normal-vector continuity (passed to
+            ``numpy.isclose`` as both ``rtol`` and ``atol``).
         dls_tol: float or None
-            Indicates whether or not to check for dls continuity within the
-            defined dls tolerance.
+            If not None, additionally require dogleg-severity continuity within
+            this tolerance when sectionizing.
         step: float or None
-            The step length in meters used for interpolating the survey prior
-            to calculating trajectory with the maximum curvature method. If
-            None or dls_noise is None then no interpolation is done.
+            Step length (metres) for interpolating the survey before applying
+            the maximum-curvature method. Ignored if ``dls_noise`` is None.
         dls_noise: float or None
-            The incremental Dog Leg Severity to be added when using the
-            maximum curvature method. If None then no pre-processing will be
-            done and minimum curvature is assumed.
+            Incremental Dog Leg Severity (deg/30m) added by the maximum-curvature
+            method. If None, no pre-processing is done and minimum curvature is
+            assumed.
         data: bool
-            If true returns a dictionary of properties.
+            If True, return a dict of intermediate properties instead of the
+            array.
 
         Returns
         -------
-        ti: (n,1) array or dict
-            Array of tortuosity index or a dict of results where:
+        mti: (n,) ndarray or dict
+            Per-station modified tortuosity index, or a dict of intermediate
+            results (``starts``, ``mds``, ``locs``, ``l_cs``, ``l_xs``,
+            ``mti``, ``survey`` ...) if ``data`` is True.
 
         References
         ----------
-        Further details regarding the maximum curvature method can be read
-        [here](https://jonnymaserati.github.io/2022/06/19/modified-tortuosity-index-survey-frequency.html)
+        Further details on the maximum-curvature method and survey-frequency
+        robustness are
+        [here](https://jonnymaserati.github.io/2022/06/19/modified-tortuosity-index-survey-frequency.html).
         """
         # Check whether to pre-process the survey to apply maximum curvature.
         if bool(dls_noise):
@@ -1412,42 +1432,94 @@ class Survey:
 
     def tortuosity_index(self, rtol=0.01, dls_tol=None, data=False, **kwargs):
         """
-        A modified version of the Tortuosity Index function originally
-        referenced in an IADD presentation on "Measuring Wellbore
-        Tortuosity" by Pradeep Ashok - https://www.iadd-intl.org/media/
-        files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf with
-        reference to the original paper "A Novel Method for the Automatic
-        Grading of Retinal Vessel Tortuosity" by Enrico Grisan et al.
-        In SPE/IADC-194099-MS there's mention that a factor of 1e7 is
-        applied to the TI result since the results are otherwise very small
-        numbers.
-        Unlike the documented version that uses delta inc and azi for
-        determining continuity and directional intervals (which are not
-        independent and so values are double dipped in 3D), this method
-        determines the point around which the well bore is turning and tests
-        for continuity of these points. As such, this function takes account
-        of torsion of the well bore and demonstrates that actual/drilled
-        trajectories are significantly more tortuous than planned
-        trajectories (intuitively).
+        Convenience method for the Tortuosity Index (TI), a native-3D variant
+        of the method presented in the [IADD presentation](https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf)
+        by Pradeep Ashok et al. and in SPE/IADC-194099-MS by D'Angelo et al.
+        (itself adapted from the retinal-vessel tortuosity work of Grisan et
+        al.).
+
+        The published method computes a tortuosity index separately in the
+        inclination and azimuth domains and combines them as the root of the
+        sum of squares. However, the arc-length and chord-length terms used in
+        each domain are the full 3D quantities (only the curve-turn *detection*
+        differs between the domains), so the two components are not independent
+        and the 3D curvature is effectively double-counted. This method avoids
+        that by sectionizing the trajectory directly in 3D: a curve turn is
+        considered continuous while its normal vector (``vec_i x vec_j``)
+        remains constant, which inherently accounts for torsion. See
+        :func:`tortuosity_index` for the implementation and
+        :func:`modified_tortuosity_index` for the dimensionless variant.
+
+        Note that TI is *not* dimensionless (the result scales with the unit of
+        length, since the ``1 / L_c`` normalization carries length units); per
+        SPE/IADC-194099-MS a scale factor of ``1e7`` is applied so values fall
+        in a convenient range. Compute ``L_c`` in feet to compare with the
+        published reference ranges.
 
         Parameters
         ----------
         rtol: float
-            Relative tolerance when determining closeness of normal vectors.
-        atol: float
-            Absolute tolerance when determining closeness of normal vectors.
-        data: boolean
-            If true returns a dictionary of properties.
+            Relative tolerance when testing normal-vector continuity (passed to
+            ``numpy.isclose`` as both ``rtol`` and ``atol``).
+        dls_tol: float or None
+            If not None, additionally require dogleg-severity continuity within
+            this tolerance when sectionizing.
+        data: bool
+            If True, return a dict of intermediate properties instead of the
+            array.
+        **kwargs
+            ``coeff`` (length unit conversion, default 0.3048 -> feet) and
+            ``kappa`` (scale factor, default 1e7) may be overridden.
 
         Returns
         -------
         ti : ndarray or dict
-            Array of tortuosity index or a dict of results.
+            Per-station tortuosity index, or a dict of results if ``data``.
         """
 
         return tortuosity_index(
-            self, rtol=rtol, dls_tol=None, data=data, **kwargs
+            self, rtol=rtol, dls_tol=dls_tol, data=data, **kwargs
         )
+
+    def tortuosity_views(self, modified=True, target_md=None, **kwargs):
+        """Total, remaining and local readings of the tortuosity profile.
+
+        The tortuosity index is evaluated at every station, so it is a profile;
+        these are the three engineering reads of it (see the MTI paper):
+
+        - **total**: the value at the end (the whole-well KPI scalar);
+        - **remaining**: the increment still to accumulate from each station to
+          the end (or to ``target_md``) — what is left to drill;
+        - **local**: the along-hole gradient of the index — flags a single
+          tortuous interval that the total would hide.
+
+        Parameters
+        ----------
+        modified: bool
+            If True (default) use the dimensionless
+            :meth:`modified_tortuosity_index`; otherwise use
+            :meth:`tortuosity_index`.
+        target_md: float or None
+            Reference depth for ``remaining``; defaults to total depth.
+        **kwargs
+            Passed through to the underlying index method.
+
+        Returns
+        -------
+        dict
+            ``{'md', 'total', 'remaining', 'local'}`` where ``md`` is the depth
+            grid the profile is evaluated on (the maximum-curvature pre-processed
+            grid when ``modified`` pre-processing is active).
+        """
+        if modified:
+            d = self.modified_tortuosity_index(data=True, **kwargs)
+            profile, md = d['mti'], d['survey'].md
+        else:
+            d = self.tortuosity_index(data=True, **kwargs)
+            profile, md = d['ti'], self.md
+        views = tortuosity_views(profile, md, target_md=target_md)
+        views['md'] = md
+        return views
 
     def directional_difficulty_index(self, **kwargs):
         """
@@ -1494,19 +1566,24 @@ class Survey:
             radius_effective
         )
 
-        arc1 = [
-            get_arc(dogleg, _radius_effective, toolface, vec=vec)
-            for dogleg, _radius_effective, toolface, vec in zip(
-                dogleg1[1:], radius_effective[1:], self.toolface[:-1],
-                self.vec_nev[:-1]
-            )
-        ]
+        # Each leg's mid-station is the end of an arc of swept angle dogleg1,
+        # transformed by the leg toolface and the start-station orientation.
+        # Only the arc end-vector and arc length (dogleg * radius) are needed
+        # (the new Survey recomputes positions by minimum curvature), so this is
+        # vectorised over all legs rather than calling get_arc per station.
+        dl = dogleg1[1:]
+        # arc end-vector in the local arc frame: [sin(dogleg), 0, cos(dogleg)]
+        local_vec = np.column_stack((np.sin(dl), np.zeros_like(dl), np.cos(dl)))
+        inc_azi = get_angles(self.vec_nev[:-1], nev=True)
+        euler = np.column_stack((self.toolface[:-1], inc_azi[:, 0], inc_azi[:, 1]))
+        vec_new = R.from_euler('zyz', euler, degrees=False).apply(local_vec)
+        inc_azi_new = np.degrees(get_angles(vec_new, nev=True))
 
-        _survey_new = np.array([
-            [row[-1], *np.degrees(get_angles(row[1], nev=True))[0]]
-            for row in arc1
-        ])
-        _survey_new[:, 0] += self.md[:-1]
+        _survey_new = np.column_stack((
+            self.md[:-1] + dl * radius_effective[1:],   # leg start MD + arc length
+            inc_azi_new[:, 0],
+            inc_azi_new[:, 1],
+        ))
 
         survey_new = np.zeros(shape=(len(_survey_new) * 2 + 1, 3))
         survey_new[:-1] = np.stack(
@@ -1541,14 +1618,43 @@ def modified_tortuosity_index(
     survey, rtol=1.0, dls_tol=1e-3, data=False, **kwargs
 ):
     """
-    Method for calculating the Tortuosity Index (TI) using a modified
-    version of the method described in the International Association of
-    Directional Drilling presentation (https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf)
-    by Pradeep Ashok et al.
+    Calculate the Modified Tortuosity Index (MTI): a native-3D, dimensionless
+    variant of the Tortuosity Index (TI) of Ashok et al. ([IADD presentation](https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf))
+    and D'Angelo et al. (SPE/IADC-194099-MS).
+
+    The trajectory is split into curve-turn / hold sections in 3D via
+    normal-vector continuity (see :func:`_get_ti_data`). Each section's
+    ``(L_cs / L_xs - 1)`` term is divided by its arc length ``L_cs`` and the
+    running sum is scaled by ``n / (n + 1)`` and the curve length ``L_c``,
+    making the result independent of the unit of length. ``L_cs`` is the
+    along-hole (arc) distance from the section start to each station and
+    ``L_xs`` the corresponding straight-line (chord) distance.
+
+    Note: "MTI" here is the *Modified* Tortuosity Index; in SPE/IADC-194099-MS
+    "MTI" is the unrelated *Mapped* Tortuosity Index.
+
+    Parameters
+    ----------
+    survey : welleng.survey.Survey
+    rtol : float
+        Relative tolerance for normal-vector continuity (also used as atol).
+    dls_tol : float or None
+        If not None, also require dogleg-severity continuity within this
+        tolerance.
+    data : bool
+        If True, return a dict of intermediate properties.
+    **kwargs
+        ``coeff`` (unit conversion, default 1.0) and ``kappa`` (scale factor,
+        default 1) may be overridden.
+
+    Returns
+    -------
+    mti : ndarray or dict
     """
     # set default params
-    coeff = kwargs.get('coeff', 1.0)  # for testing dimensionlessness
-    kappa = kwargs.get('kapa', 1)
+    coeff = kwargs.get('coeff', 1.0)  # length-unit conversion (1.0 -> as-is)
+    # honour the correctly-spelled 'kappa'; fall back to the legacy 'kapa' typo
+    kappa = kwargs.get('kappa', kwargs.get('kapa', 1))
 
     continuous, starts, mds, locs, n_sections, n_sections_arr = _get_ti_data(
         survey, rtol, dls_tol
@@ -1565,17 +1671,8 @@ def modified_tortuosity_index(
     b = (
         (l_cs / l_xs) - 1
     ) / l_cs
-    # )
 
-    cumsum = 0
-    a = []
-    for n in n_sections:
-        a.extend(
-            b[n_sections_arr == n]
-            + cumsum
-        )
-        cumsum = a[-1]
-    a = np.array(a)
+    a = _accumulate_sections(b, n_sections_arr)
 
     mti = np.hstack((
         np.array([0.0]),
@@ -1601,14 +1698,44 @@ def modified_tortuosity_index(
 
 def tortuosity_index(survey, rtol=0.01, dls_tol=None, data=False, **kwargs):
     """
-    Method for calculating the Tortuosity Index (TI) as described in the 
-    International Association of Directional Drilling presentation
-    (https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf)
-    by Pradeep Ashok et al.
+    Calculate the Tortuosity Index (TI), a native-3D variant of the method of
+    Ashok et al. ([IADD presentation](https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf))
+    and D'Angelo et al. (SPE/IADC-194099-MS).
+
+    The trajectory is split into curve-turn / hold sections in 3D via
+    normal-vector continuity (see :func:`_get_ti_data`); each section's
+    ``(L_cs / L_xs - 1)`` term is accumulated, scaled by ``n / (n + 1)`` and
+    normalized by ``1 / L_c``, then by ``kappa`` (1e7 per SPE/IADC-194099-MS).
+    ``L_cs`` is the along-hole (arc) distance from the section start to each
+    station and ``L_xs`` the corresponding straight-line (chord) distance.
+
+    TI is *not* dimensionless: the result scales with the unit of length, so
+    ``coeff`` defaults to 0.3048 to express ``L_c`` in feet and match the
+    published reference ranges. See :func:`modified_tortuosity_index` for the
+    dimensionless variant.
+
+    Parameters
+    ----------
+    survey : welleng.survey.Survey
+    rtol : float
+        Relative tolerance for normal-vector continuity (also used as atol).
+    dls_tol : float or None
+        If not None, also require dogleg-severity continuity within this
+        tolerance.
+    data : bool
+        If True, return a dict of intermediate properties.
+    **kwargs
+        ``coeff`` (unit conversion, default 0.3048 -> feet) and ``kappa``
+        (scale factor, default 1e7) may be overridden.
+
+    Returns
+    -------
+    ti : ndarray or dict
     """
     # set default params
-    coeff = kwargs.get('coeff', 0.3048)  # for testing dimensionlessness
-    kappa = kwargs.get('kapa', 1e7)
+    coeff = kwargs.get('coeff', 0.3048)  # length-unit conversion (-> feet)
+    # honour the correctly-spelled 'kappa'; fall back to the legacy 'kapa' typo
+    kappa = kwargs.get('kappa', kwargs.get('kapa', 1e7))
 
     continuous, starts, mds, locs, n_sections, n_sections_arr = _get_ti_data(
         survey, rtol, dls_tol
@@ -1624,15 +1751,7 @@ def tortuosity_index(survey, rtol=0.01, dls_tol=None, data=False, **kwargs):
         (l_cs / l_xs) - 1
     )
 
-    cumsum = 0
-    a = []
-    for n in n_sections:
-        a.extend(
-            b[n_sections_arr == n]
-            + cumsum
-        )
-        cumsum = a[-1]
-    a = np.array(a)
+    a = _accumulate_sections(b, n_sections_arr)
 
     ti = np.hstack((
         np.array([0.0]),
@@ -1652,6 +1771,41 @@ def tortuosity_index(survey, rtol=0.01, dls_tol=None, data=False, **kwargs):
         }
 
     return ti
+
+
+def tortuosity_views(profile, md, target_md=None):
+    """Derive total, remaining and local readings from a tortuosity profile.
+
+    Parameters
+    ----------
+    profile: array_like
+        A per-station tortuosity index profile (TI or MTI), monotonic
+        non-decreasing.
+    md: array_like
+        Measured depth at each station, same length as ``profile``.
+    target_md: float or None
+        Reference depth for the ``remaining`` calculation; defaults to the last
+        station (total depth).
+
+    Returns
+    -------
+    dict
+        ``total`` (float, the profile value at ``target_md`` / end),
+        ``remaining`` (ndarray, ``total`` minus the profile — what is left to
+        accumulate from each station), ``local`` (ndarray, the along-hole
+        gradient ``d(profile)/d(md)`` — the rate of tortuosity accumulation).
+    """
+    profile = np.asarray(profile, dtype=float)
+    md = np.asarray(md, dtype=float)
+    end = (
+        float(profile[-1]) if target_md is None
+        else float(np.interp(target_md, md, profile))
+    )
+    return {
+        'total': end,
+        'remaining': end - profile,
+        'local': np.gradient(profile, md),
+    }
 
 
 def directional_difficulty_index(survey, **kwargs):
@@ -1687,18 +1841,65 @@ def directional_difficulty_index(survey, **kwargs):
     return ddi
 
 
-def _get_ti_data(survey, rtol, dls_tol=None):
-    # tol_0 = np.full((len(survey.md) - 2, 3), rtol)
-    # delta_md = (survey.md[2:] - survey.md[1:-1]).reshape(-1, 1)
-    # delta_norm = survey.normals[1:] - survey.normals[:-1]
-    # tol_norm = tol_0 * np.sin(delta_md / 30)
+def _accumulate_sections(b, n_sections_arr):
+    """Per-section cumulative sum used by the tortuosity indices.
 
-    # continuous = (
-    #     (delta_norm / 30 * delta_md <= tol_norm).all(axis=-1) | (
-    #         np.isnan(survey.normals[1:]).all(axis=-1)
-    #         & np.isnan(survey.normals[:-1]).all(axis=-1)
-    #     )
-    # )
+    Returns ``a`` where ``a[k] = b[k] + (sum of each prior section's final b)``,
+    i.e. each station's section contribution plus the running total of every
+    completed section. This is the vectorized (O(n)) equivalent of the
+    per-section carry loop (which was O(sections * n) because it masked the full
+    array once per section).
+
+    ``n_sections_arr`` is the per-station section index and must be
+    non-decreasing (stations in measured-depth order, as produced by
+    :func:`_get_ti_data`).
+    """
+    b = np.asarray(b, dtype=float)
+    if b.size == 0:
+        return b.copy()
+    # last index of each contiguous section run
+    run_last = np.concatenate((
+        np.where(np.diff(n_sections_arr) != 0)[0],
+        [b.size - 1]
+    ))
+    # carry into each run = cumulative sum of the previous runs' final b
+    carry_per_run = np.concatenate(([0.0], np.cumsum(b[run_last])[:-1]))
+    run_sizes = np.diff(np.concatenate(([-1], run_last)))
+    return b + np.repeat(carry_per_run, run_sizes)
+
+
+def _get_ti_data(survey, rtol, dls_tol=None):
+    """Sectionize a survey into curve-turn / hold sections for the TI/MTI.
+
+    A section is continuous while successive stations share the same normal
+    vector (``vec_i x vec_j``, NaN for straight holds) within ``rtol`` and,
+    optionally, the same dogleg severity within ``dls_tol``. Hold (straight)
+    sections are treated as discrete sections with arc length == chord length.
+
+    Parameters
+    ----------
+    survey : welleng.survey.Survey
+    rtol : float
+        Relative (and absolute) tolerance for normal-vector continuity.
+    dls_tol : float or None
+        If not None, also require dogleg-severity continuity within this
+        tolerance.
+
+    Returns
+    -------
+    continuous : ndarray of bool
+        Per-station continuity flags.
+    starts : ndarray of int
+        Station indices at which each section starts (always includes 0).
+    mds : ndarray of float
+        Measured depth at each section start.
+    locs : ndarray
+        NEV position at each section start.
+    n_sections : ndarray of int
+        1-based section numbers.
+    n_sections_arr : ndarray of int
+        Section number for each station (from ``survey.md[1:]``).
+    """
     if dls_tol is None:
         dls_continuity = np.full(len(survey.dls) - 2, True)
     else:
