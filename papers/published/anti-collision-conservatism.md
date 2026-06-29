@@ -75,7 +75,7 @@ m \;=\; \sqrt{\mathbf{d}^\top \Sigma^{-1}\, \mathbf{d}},
 
 For an eccentric ellipsoid approached off-axis these differ substantially: the tangent-plane distance over-states how far the ellipsoid actually reaches *along* $\mathbf{u}$. Figure 1 shows the geometry — the offset lies beyond the true ellipsoid boundary (clear) yet within the support-function reach the rule uses (flagged as a collision).
 
-![Why the separation rule is conservative: the support function (pedal-curve reach) over-states the ellipsoid's reach toward an off-axis offset relative to the true boundary (Mahalanobis $=k$). The offset shown is clear in truth but flagged by the rule.](figures/why-pedal-is-conservative.png){width=82%}
+![Why the separation rule is conservative: the support function (pedal-curve reach) over-states the ellipsoid's reach toward an off-axis offset relative to the true boundary (Mahalanobis $=k$). The offset shown is clear in truth but flagged by the rule.](../figures/why-pedal-is-conservative.png){width=82%}
 
 ## 4. Validation of the baseline
 
@@ -192,13 +192,13 @@ On the ISCWSA standard set the exact method returns the **same collision/clear v
 
 Two conventions are worth noting on the deeply overlapping wells. Where the *centres* lie closer than the combined hole radii plus surface margin ($\lVert\mathbf{d}\rVert < R$) the wellbores physically intersect: the separation rule returns a **negative** factor (its linear numerator $\lVert\mathbf{d}\rVert-R$ goes negative, conveying the depth of overlap), whereas the Mahalanobis factor is non-negative by construction and floors at $0$. Both correctly report a collision; the sign is a property of the rule's linear form, not a disagreement. Well 10 is the reference well's sidetrack: its kickoff intersects the parent by design, so the scan begins below the kickoff (`kop_depth`) — applied identically to *both* methods, and consistent with the published standard-set value.
 
-![Minimum separation factor on the ISCWSA standard set: the separation rule (pedal) vs the exact combined-ellipsoid Mahalanobis boundary. The verdict (relative to $\mathrm{SF}=1$) is identical for every well, but the exact factor is never smaller than the rule's — up to $1.47\times$ larger on the clear wells, i.e. that much less standoff demanded.](figures/pedal-vs-mahalanobis-iscwsa.png){width=90%}
+![Minimum separation factor on the ISCWSA standard set: the separation rule (pedal) vs the exact combined-ellipsoid Mahalanobis boundary. The verdict (relative to $\mathrm{SF}=1$) is identical for every well, but the exact factor is never smaller than the rule's — up to $1.47\times$ larger on the clear wells, i.e. that much less standoff demanded.](../figures/pedal-vs-mahalanobis-iscwsa.png){width=90%}
 
 The practical reading: where the rule reports, say, $\mathrm{SF}=1.2$ and would demand additional surveying or a redesign, the exact method may report $\mathrm{SF}=1.7$ — clear with margin — recovering a drillable well without acquiring more data.
 
 Figure 3 shows the same effect *along* the well for three offsets — a collision (Well 11), a near-miss (Well 06) and a clear approach (Well 05). To isolate the metric, both factors are computed at each station from the paper's own formulas — the support-function rule (eq 2) and the exact Mahalanobis factor (eq 5) — with identical radii, $k$ and $\sigma_{pa}$. The exact factor is then everywhere $\ge$ the rule, per station (Kantorovich, Section 5), and the gap widens toward the closest approach — where the go/no-go decision is taken.
 
-![Separation factor versus measured depth along the reference well, for three offsets (collision, near-miss, clear). At each station both factors are the minimum over the offset well, computed from the paper's own formulas — the support-function rule (eq 2) and the exact Mahalanobis factor (eq 5) — with identical radii, $k$ and $\sigma_{pa}$, so the only difference is the metric. The exact factor (blue) is everywhere $\ge$ the rule (orange), the gap widening toward the closest approach; the shaded band is the $\mathrm{SF}<1$ collision zone. (Figure 2 gives the all-wells comparison at the governing minimum, using welleng's externally-validated pedal implementation.)](figures/sf-vs-depth.png){width=100%}
+![Separation factor versus measured depth along the reference well, for three offsets (collision, near-miss, clear). At each station both factors are the minimum over the offset well, computed from the paper's own formulas — the support-function rule (eq 2) and the exact Mahalanobis factor (eq 5) — with identical radii, $k$ and $\sigma_{pa}$, so the only difference is the metric. The exact factor (blue) is everywhere $\ge$ the rule (orange), the gap widening toward the closest approach; the shaded band is the $\mathrm{SF}<1$ collision zone. (Figure 2 gives the all-wells comparison at the governing minimum, using welleng's externally-validated pedal implementation.)](../figures/sf-vs-depth.png){width=100%}
 
 ## 8. The "impractical" objection, refuted
 
@@ -245,7 +245,7 @@ Two parts of that scaffold remain useful.
 
 \floatplacement{figure}{H}
 
-![Conservative surface construction. The visualisation polygon is circumscribed (scaled by $1/\cos(\pi/n)$) so it contains the true $k\sigma$ ellipse and never under-represents the uncertainty; an inscribed polygon would under-count it. ($n=8$ shown for clarity.)](figures/conservative-surface-construction.png){width=76%}
+![Conservative surface construction. The visualisation polygon is circumscribed (scaled by $1/\cos(\pi/n)$) so it contains the true $k\sigma$ ellipse and never under-represents the uncertainty; an inscribed polygon would under-count it. ($n=8$ shown for clarity.)](../figures/conservative-surface-construction.png){width=76%}
 
 **Mesh resolution.** For visualisation, or a multi-well collision-manager scene, the vertex count $n$ trades a closed-form over-conservatism — radial over-count $\sec(\pi/n)-1$, which only ever *adds* margin — against mesh-build cost (Table 3). A typical $n=12$ over-draws by $3.5\%$, a sensible default; $n=24$ brings it under $1\%$. The analytic separation factor of Section 6 carries no such parameter.
 

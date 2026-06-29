@@ -42,5 +42,13 @@ test/test_data/*.xlsx
 
 CLAUDE.md
 docs/dev/
+
+# Paper drafts are LOCAL-ONLY until published (with a DOI). Drafts live in
+# papers/drafts/ and never reach GitHub; working notes (*-NOTES.md) too. Only
+# papers/published/ is tracked — moving a paper there is the deliberate publish step.
+papers/drafts/
+papers/*-NOTES.md
+papers/**/*-NOTES.md
+
 # secrets
 .env
