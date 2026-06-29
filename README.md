@@ -299,6 +299,8 @@ The ISCWSA standard set of well paths for evaluating clearance scenarios have be
 
 ## Citation
 
+**Author:** Jonathan Corcutt — Corcutt Beheer B.V., Wassenaar, Netherlands · ORCID [0009-0008-1953-7760](https://orcid.org/0009-0008-1953-7760).
+
 If welleng supports your work, please cite the **software** (the concept DOI always resolves to the latest version):
 
 > Corcutt, J. *welleng: open-source well-engineering tools.* Zenodo. <https://doi.org/10.5281/zenodo.20968887>
