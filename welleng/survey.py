@@ -8,6 +8,7 @@ coordinate transformations.
 """
 import numpy as np
 import math
+import warnings
 import pandas as pd
 from copy import copy
 try:
@@ -183,9 +184,19 @@ class SurveyParameters(Proj):
                     altitude=0 if altitude is None else altitude,
                     date=date
                 )
-            except Exception:
+            except Exception as exc:
+                warnings.warn(
+                    f"Magnetic-field lookup failed ({exc}); declination, dip and "
+                    "field intensity set to None (no connection to the BGS service?)."
+                )
                 result_magnetic = None
         else:
+            warnings.warn(
+                "Magnetic-field parameters (declination, dip, field intensity) need "
+                "the optional 'magnetic_field_calculator' package -- install with "
+                "`pip install welleng[all]` (or `pip install magnetic_field_calculator`). "
+                "Returning None for those fields."
+            )
             result_magnetic = None
 
         data = dict(

@@ -1,5 +1,6 @@
 import welleng as we
 import numpy as np
+import pytest
 
 REFERENCE = {
     'x': 588319.02, 'y': 5770571.03, 'northing': 5770571.03,
@@ -15,10 +16,15 @@ CALCULATOR = we.survey.SurveyParameters(REFERENCE.get('srs'))
 
 
 def test_known_location():
+    # Magnetic-field params need the optional 'magnetic_field_calculator'
+    # (welleng[all]) and the BGS service; skip cleanly when either is absent.
+    pytest.importorskip("magnetic_field_calculator")
     survey_parameters = CALCULATOR.get_factors_from_x_y(
         x=REFERENCE.get('x'), y=REFERENCE.get('y'),
         date=REFERENCE.get('date')
     )
+    if survey_parameters.get('declination') is None:
+        pytest.skip("magnetic-field service unavailable (offline?)")
     for k, v in survey_parameters.items():
         try:
             assert round(v, 3) == round(REFERENCE.get(k), 3)
