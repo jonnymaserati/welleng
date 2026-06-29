@@ -1,0 +1,6 @@
+# The ISCWSA error-model JSON is GENERATED from the ISCWSA-issued OWSG spreadsheets
+# by welleng/errors/tools/owsg_to_json.py. Mark it as generated so GitHub collapses
+# it in pull-request diffs and flags it as not-hand-authored. Do NOT hand-edit these
+# files — regenerate from the source xlsx. The test_iscwsa_json_generated.py CI guard
+# fails any PR whose committed JSON diverges from the generator output.
+welleng/errors/iscwsa_json/**/*.json linguist-generated=true

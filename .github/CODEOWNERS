@@ -1,0 +1,19 @@
+# Code owners — paths that require maintainer review on every pull request.
+#
+# To ENFORCE this, enable "Require review from Code Owners" in the branch-protection
+# rule for the default branch (Settings → Branches). Listing owners here alone does
+# not block merges until that toggle is on.
+#
+# Why the error-model paths are gated: the ISCWSA error-model JSON under
+# iscwsa_json/ is GENERATED from the ISCWSA-issued OWSG spreadsheets by
+# owsg_to_json.py — it must never be hand-edited (a past PR hijacked
+# GYRO-NS-CT.json, overwriting its ISCWSA sheet parameters with SPE-90408 paper
+# values to satisfy a test). Any change to the generator, the generated models, the
+# error engine, or the generated-JSON guard test needs maintainer eyes — even though
+# test_iscwsa_json_generated.py already fails a hand-edit in CI.
+
+/welleng/errors/iscwsa_json/           @jonnymaserati
+/welleng/errors/tools/owsg_to_json.py  @jonnymaserati
+/welleng/errors/tool_errors.py         @jonnymaserati
+/welleng/errors/conformance.py         @jonnymaserati
+/tests/test_iscwsa_json_generated.py   @jonnymaserati
