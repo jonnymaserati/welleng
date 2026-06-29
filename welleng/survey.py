@@ -758,8 +758,7 @@ class Survey:
         self._min_curve(vec)
         self._get_toolface_and_rates()
 
-        # initialize errors
-        # TODO: read this from a yaml file in errors
+        # initialize errors (ERROR_MODELS is derived from errors/tool_index.yaml)
         error_models = ERROR_MODELS
         if error_model is not None:
             assert error_model in error_models, "Unrecognized error model"

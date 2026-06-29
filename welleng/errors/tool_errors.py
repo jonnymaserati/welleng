@@ -2,6 +2,7 @@ import numpy as np
 from numpy import sin, cos, tan, pi, sqrt
 from numpy.char import index
 import json
+import re
 import yaml
 import os
 from collections import OrderedDict
@@ -231,10 +232,22 @@ class ToolError:
         if 'Default Tortusity (rad/m)' in self.em['header']:
             self.tortuosity = self.em['header']['Default Tortusity (rad/m)']
         elif 'XCL Tortuosity' in self.em['header']:
-            # assuming that this is always 1 deg / 100 ft but this might not
-            # be the case
-            # TODO use pint to handle this string inputs
-            self.tortuosity = (np.radians(1.) / 100) * 3.281
+            # Parse the unit string (e.g. "1 deg / 100 ft") to rad/m, rather than
+            # assuming a fixed 1 deg/100 ft.
+            _raw = str(self.em['header']['XCL Tortuosity'])
+            _m = re.match(
+                r"^\s*(-?\d+(?:\.\d+)?)\s*deg\s*/\s*(-?\d+(?:\.\d+)?)\s*(ft|m)\s*$",
+                _raw, re.I,
+            )
+            if _m:
+                _deg, _len, _unit = (
+                    float(_m.group(1)), float(_m.group(2)), _m.group(3).lower()
+                )
+                _metres = _len * 0.3048 if _unit == "ft" else _len
+                self.tortuosity = np.radians(_deg) / _metres
+            else:
+                # Fallback: the ISCWSA/OWSG default tortuosity, 1 deg/100 ft.
+                self.tortuosity = (np.radians(1.) / 100) * 3.281
         else:
             self.tortuosity = None
 
