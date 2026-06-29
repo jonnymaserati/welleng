@@ -21,20 +21,48 @@
 - **Data exchange** — import/export Landmark .wbp files; read EDM datasets
 - **World Magnetic Model** — auto-calculates magnetic field data when not supplied
 
-Available error models:
+### Selecting an error model
+
+`Survey`/`SurveyHeader` take an `error_model` name — **switch models by changing the
+string**. The **default and recommended model is `"ISCWSA MWD Rev5.11"`**: the current
+ISCWSA standard, validated 35/35 sources against all three ISCWSA example workbooks.
+Omit `error_model` (leave it `None`) for no uncertainty calculation.
+
 ```python
 import welleng as we
-we.error.get_error_models()
+
+we.error.get_error_models()            # -> list every available model name
+
+survey = we.survey.Survey(
+    md, inc, azi, header=header,
+    error_model="ISCWSA MWD Rev5.11",  # the standard; change this string to switch
+)
+cov = survey.err.errors.cov_NEVs       # NEV covariance per station
 ```
 
+**Model families** (all selectable by name via `error_model=`):
+- **Canonical ISCWSA MWD** — `"ISCWSA MWD Rev5.11"` (**default**, validated),
+  `"ISCWSA MWD Rev4"` (legacy, to reproduce older results). (The older
+  `"ISCWSA MWD Rev5"` name has been retired — use `"ISCWSA MWD Rev5.11"`.)
+- **OWSG tool stacks** (Set A, JSON-driven) — the toolcode library:
+  `"MWD+SRGM"`, `"MWD+SRGM+SAG"`, `"MWD+SRGM+AX"` (axial-interference correction),
+  `"MWD+IFR1"` / `"MWD+IFR1+AX"` (in-field referencing), and the gyro stacks
+  `"GYRO-NS"` (north-seeking stationary), `"GYRO-NS-CT"` (mixed continuous),
+  `"GYRO-MWD"`. A `_Fl` suffix is the floating-rig variant.
+
+> **Revisions.** welleng ships **Rev5-1 / Rev5.11** as the default. The older **OWSG
+> Rev2** (2015) toolcodes can be regenerated from their workbooks with
+> `python -m welleng.errors.tools.owsg_to_json`, but are not yet shipped as a
+> selectable revision (tracked in `docs/dev/FUTURE_WORK.md`). Validate any model only
+> against a **matching-revision** reference.
+
 > **Error model update (welleng 0.10.0).** The MWD Rev 5 model has been brought
-> into compliance with the ISCWSA Rev 5.11 example workbooks. The
-> `"ISCWSA MWD Rev5"` string remains a selectable alias with a
-> `DeprecationWarning` pointing at the new `"ISCWSA MWD Rev5.11"` name, but
-> produces the corrected Rev 5.11 covariance (slightly different numerical
-> output to welleng ≤ 0.9.x). `"ISCWSA MWD Rev4"` is unchanged for users who
-> need to reproduce older results. See `welleng/errors/iscwsa_validate.py` for
-> the validation harness used to audit against each ISCWSA example workbook.
+> into compliance with the ISCWSA Rev 5.11 example workbooks; select it as
+> `"ISCWSA MWD Rev5.11"` (the older `"ISCWSA MWD Rev5"` name has since been
+> retired). Its covariance differs slightly from welleng ≤ 0.9.x (the Rev 5.11
+> corrections). `"ISCWSA MWD Rev4"` is unchanged for users who need to reproduce
+> older results. See `welleng/errors/iscwsa_validate.py` for the validation harness
+> used to audit against each ISCWSA example workbook.
 
 > **Gyro support + JSON-driven tool models (welleng 0.11.0).** ISCWSA is
 > moving its error-model standard from the legacy Excel workbooks to a
