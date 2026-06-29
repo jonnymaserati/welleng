@@ -1146,9 +1146,17 @@ class ToolError:
         return e_NEV, e_NEV_star
 
     def _initiate_func_dict(self):
-        """
-        This dictionary will need to be updated if/when additional error
-        functions are added to the model.
+        """Map weight-function name -> implementation.
+
+        Update when error functions are added/removed. A ``# Needs QAQC`` flag marks
+        a function not yet validated against ISCWSA reference data. After the
+        2026-06-29 audit these are the extended axial-interference / IFR-correction
+        terms (ASIXY/ABIXY/MBIXY/MSIXY/MDI/MFI/AMID/CNA/CNI/ABIZ/ASIZ) that the
+        standard ISCWSA test wells do NOT exercise, so there is no in-repo reference
+        to validate them against -- they need the extended-model workbooks (see
+        docs/dev/ERROR_MODEL_ENGINE.md S6). The base-model terms that DO have
+        reference data (XYM3E/XYM4E/DBHR) are validated per-source to 5e-5 by
+        tests/test_iscwsa_mwd_error.py and are no longer flagged.
         """
         self.func_dict = {
             'ABXY_TI1': ABXY_TI1,
@@ -1177,13 +1185,13 @@ class ToolError:
             'XYM3': XYM3,
             'XYM4': XYM4,
             'SAGE': SAGE,
-            'XCL': XCL,  # requires an exception
+            'XCL': XCL,  # dispatcher dummy -> XCLA/XCLH (workbook lists XCL as one term)
             'XYM3L': XYM3L,
             'XYM4L': XYM4L,
             'XCLA': XCLA,
             'XCLH': XCLH,
-            'XYM3E': XYM3E,  # Needs QAQC
-            'XYM4E': XYM4E,  # Need QAQC
+            'XYM3E': XYM3E,  # validated: test_iscwsa_mwd_error (per-source, 5e-5)
+            'XYM4E': XYM4E,  # validated: test_iscwsa_mwd_error (per-source, 5e-5)
             'ASIXY_TI1': ASIXY_TI1,  # Needs QAQC
             'ASIXY_TI2': ASIXY_TI2,  # Needs QAQC
             'ASIXY_TI3': ASIXY_TI3,  # Needs QAQC
@@ -1205,7 +1213,7 @@ class ToolError:
             'MSIXY_TI1': MSIXY_TI1,  # Needs QAQC
             'MSIXY_TI2': MSIXY_TI2,  # Needs QAQC
             'MSIXY_TI3': MSIXY_TI3,  # Needs QAQC
-            'DBHR': DBHR,  # Needs QAQC
+            'DBHR': DBHR,  # validated: test_iscwsa_mwd_error (per-source, 5e-5)
             'AMID': AMID,  # Needs QAQC
             'CNA': CNA,  # Needs QAQC
             'CNI': CNI,  # Needs QAQC
