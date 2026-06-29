@@ -681,9 +681,15 @@ class Survey:
             well bore coordinate system (high side, lateral, along
             hole).
         error_model: str (default: None)
-            If specified, this model is used to calculate the
-            covariance matrices if they are not present. Currently,
-            only the "ISCWSA_MWD" model is provided.
+            Name of the survey-tool error model used to compute the position
+            covariance. Leave as None for no uncertainty calculation. The
+            recommended/standard model is ``"ISCWSA MWD Rev5.11"`` (the validated
+            ISCWSA standard); ``"ISCWSA MWD Rev4"`` is the legacy model. The OWSG
+            toolcode library (``"MWD+SRGM"``, ``+SAG``, ``+AX``, ``+IFR``, gyro
+            stacks ``"GYRO-NS"`` / ``"GYRO-NS-CT"`` / ``"GYRO-MWD"``, ...) is also
+            selectable. List every available name with
+            ``welleng.error.get_error_models()``; switch by passing a different
+            name. Raises if the name is unrecognised.
         start_xyz: (,3) list or array of floats (default: [0,0,0])
             The start position of the well bore in (x,y,z) coordinates.
         start_nev: (,3) list or array of floats (default: [0,0,0])
