@@ -12,8 +12,8 @@ Eq. 15, which carries a transcription/print error (see ``test_eq15_is_trapped``)
 import numpy as np
 import pytest
 
-from welleng.sawaryn_clc import (
-    tangent, _scalars, forward, subtended_angles, solve_clc, eq15,
+from welleng.sawaryn_analytical import (
+    tangent, _scalars, forward, subtended_angles, solve_clc_analytical, eq15,
 )
 
 P1 = np.array([8000.0, 8000.0, 6000.0])
@@ -52,7 +52,7 @@ def test_back_substitution_is_exact_at_principal():
 
 def test_solve_clc_reproduces_example2_exactly():
     # The full forward-verified solver: all four roots + the principal angles.
-    sols = solve_clc(P1, T1, P4, T4, R1, R2)
+    sols = solve_clc_analytical(P1, T1, P4, T4, R1, R2)
     betas = sorted(s['beta'] for s in sols)
     expected = [1072.6, 1630.2, 1789.95, 2356.9]
     assert len(betas) == 4

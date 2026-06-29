@@ -112,7 +112,7 @@ def forward(alpha1, alpha2, beta, mu, R1, R2):
     return np.array([eta1, eta4, eta14])
 
 
-def solve_clc(p1, t1, p4, t4, R1, R2, n_scan=4000, tol=1e-6):
+def solve_clc_analytical(p1, t1, p4, t4, R1, R2, n_scan=4000, tol=1e-6):
     """Solve the CLC point-to-target problem (Sawaryn 2021), forward-verified.
 
     Parameters
@@ -137,7 +137,11 @@ def solve_clc(p1, t1, p4, t4, R1, R2, n_scan=4000, tol=1e-6):
             for a2 in a2s:
                 f = forward(a1, a2, beta, mu, R1, R2)
                 if f is not None:
-                    r = float(np.linalg.norm(f - target))
+                    # Eq. 13 carries a ± out-of-plane branch: match |eta14|
+                    # (sign is resolved at path reconstruction).
+                    r = float(np.sqrt((f[0] - target[0])**2
+                                      + (f[1] - target[1])**2
+                                      + (abs(f[2]) - abs(target[2]))**2))
                     if r < best[0]:
                         best = (r, a1, a2)
         return best
@@ -146,7 +150,7 @@ def solve_clc(p1, t1, p4, t4, R1, R2, n_scan=4000, tol=1e-6):
         return best_branch(beta)[0]
 
     b_max = 5.0 * np.sqrt(psi2)
-    grid = np.linspace(1.0, b_max, n_scan)
+    grid = np.linspace(1e-4 * np.sqrt(psi2), b_max, n_scan)
     res = np.array([residual(b) for b in grid])
 
     solutions = []
@@ -174,7 +178,7 @@ def eq15(beta, psi2, eta1, eta4, eta14, mu, R1, R2):
 
     The printed form is NOT scale-covariant (it does not reproduce the paper's
     own worked roots under length normalisation) — it carries a transcription/
-    print error in the eliminated polynomial. ``solve_clc`` does not use it;
+    print error in the eliminated polynomial. ``solve_clc_analytical`` does not use it;
     it forward-verifies via the clean Eqs. 11-13 + 18-25 instead. Kept here only
     to document the discrepancy.
     """
