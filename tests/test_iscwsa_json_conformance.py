@@ -34,11 +34,17 @@ JSON_ROOT = Path(__file__).parent.parent / "welleng" / "errors" / "iscwsa_json" 
 # vertical section now exercises the interpreter's SING substitution, which
 # agrees with the legacy hand-coded singular branch (was masked by the broken
 # well, where no station had inc < 0.0001 deg). Totals unchanged.
+# Re-baselined 2026-06-29: binding the previous-station arrays (MDPrev/IncPrev/
+# AzPrev) in conformance._bindings_from_survey lets the cross-station terms (XCLA/
+# XCLH, XYM3E/XYM4E) evaluate in the interpreter -- they move INTERP_FAILED ->
+# NO_LEGACY (they evaluate but welleng's legacy hand-coded dispatcher never
+# implemented them, so there is nothing to diff against). The only remaining
+# INTERP_FAILED are the recurrence/noise gyro terms (GXY-RN/GD/GRW).
 EXPECTED = [
-    ("MWD+SRGM.json",   29, 1, 4, 1, 35),
-    ("GYRO-NS.json",     6, 0, 5, 7, 18),
-    ("GYRO-NS-CT.json",  6, 0, 7, 6, 19),
-    ("GYRO-MWD.json",    6, 0, 5, 7, 18),
+    ("MWD+SRGM.json",   29, 1, 0,  5, 35),
+    ("GYRO-NS.json",     6, 0, 1, 11, 18),
+    ("GYRO-NS-CT.json",  6, 0, 3, 10, 19),
+    ("GYRO-MWD.json",    6, 0, 1, 11, 18),
 ]
 
 
@@ -92,11 +98,14 @@ def test_conformance_matrix(survey, json_name, exp_match, exp_differ,
 
 
 def test_known_schema_gaps_present(survey):
-    """The catalogued schema gaps should still be detected.
+    """Lock which terms evaluate vs remain a gap.
 
-    If any of these terms suddenly evaluates cleanly, either the schema
-    has gained a new variable (good — update this test) or the interpreter
-    is silently substituting something wrong (bad — investigate).
+    Cross-station terms (XCLA/XCLH, XYM3E/XYM4E) now evaluate -- the prev-station
+    arrays (MDPrev/IncPrev/AzPrev) are bound (2026-06-29), matching production. The
+    remaining interpreter gaps are the recurrence/noise gyro terms (GXY-RN noise,
+    GXY-GD drift, GXY-GRW random walk), which the single-vectorised conformance eval
+    cannot express (they need the station-by-station recurrence path). If one of
+    those suddenly evaluates, the harness gained the recurrence path -- update this.
     """
     path = JSON_ROOT / "GYRO-NS-CT.json"
     if not path.exists():
@@ -105,17 +114,20 @@ def test_known_schema_gaps_present(survey):
     results = compare_model(str(path), survey)
     by_name = {r.name: r for r in results}
 
-    cross_station = {"XYM3E", "XYM4E", "XCLA", "XCLH"}
-    per_tool_calibration = {"GXY-RN", "GXY-GD", "GXY-GRW"}
+    # Now evaluate (were INTERP_FAILED before the prev-station bindings):
+    for term in ("XCLA", "XCLH", "XYM3E", "XYM4E"):
+        if term in by_name:
+            assert by_name[term].interp_available, (
+                f"{term} no longer evaluates — prev-station bindings regressed?"
+            )
 
-    for term in cross_station | per_tool_calibration:
-        if term not in by_name:
-            continue
-        r = by_name[term]
-        assert not r.interp_available, (
-            f"{term} unexpectedly evaluated — schema gap closed? "
-            f"Update the conformance matrix expectation."
-        )
+    # Still a gap (recurrence/noise terms the vectorised harness can't express):
+    for term in ("GXY-RN", "GXY-GD", "GXY-GRW"):
+        if term in by_name:
+            assert not by_name[term].interp_available, (
+                f"{term} unexpectedly evaluated — harness gained the recurrence "
+                f"path? Update the conformance matrix expectation."
+            )
 
 
 def test_mwd_canonical_terms_match_to_machine_precision(survey):
