@@ -1101,9 +1101,12 @@ class ToolError:
             try:
                 val = evaluate_formula(f, bindings)
             except Exception:
-                # Singular weight references a variable the interpreter can't
-                # bind (e.g. XCLTortuosity) -- a documented schema gap; the
-                # component contributes zero, same as the main eval path.
+                # Defensive fallback: a singular weight whose formula fails to
+                # evaluate (a variable not in scope, a malformed expression)
+                # contributes zero rather than crashing -- the main eval path does
+                # the same. XCLTortuosity and the prev-station vars (MDPrev, ...) are
+                # now bound, so XCL's singular weight evaluates; this only guards a
+                # genuinely unbound/malformed term.
                 return np.zeros(n)
             return np.broadcast_to(
                 np.asarray(val, dtype=float), (n,)
