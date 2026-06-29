@@ -40,7 +40,7 @@ references:
     year: 2026
     doi: 10.5281/zenodo.20940515
   # Anti-collision (exact Mahalanobis separation factor) paper.
-  # source: papers/anti-collision-conservatism.md
+  # source: papers/published/anti-collision-conservatism.md
   - type: article
     title: >-
       Making the Exact Wellbore Anti-Collision Boundary Practical: an
