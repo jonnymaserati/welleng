@@ -1149,12 +1149,17 @@ class ToolError:
         """Map weight-function name -> implementation.
 
         Update when error functions are added/removed. A ``# Needs QAQC`` flag marks
-        a function not yet validated against ISCWSA reference data. After the
-        2026-06-29 audit these are the extended axial-interference / IFR-correction
-        terms (ASIXY/ABIXY/MBIXY/MSIXY/MDI/MFI/AMID/CNA/CNI/ABIZ/ASIZ) that the
-        standard ISCWSA test wells do NOT exercise, so there is no in-repo reference
-        to validate them against -- they need the extended-model workbooks (see
-        docs/dev/ERROR_MODEL_ENGINE.md S6). The base-model terms that DO have
+        a function not yet validated. After the 2026-06-29 audit these are all
+        **OWSG-specific** terms, outside the base ISCWSA standard model -- so the
+        ISCWSA standard test wells legitimately do NOT exercise them and there is no
+        in-repo ISCWSA reference to validate against; they would need OWSG
+        (extended-model) reference data:
+          - MDI, MFI, AMID, ABIZ, ASIZ, MSIXY: only in the OWSG ``+AX``/``+IFR``
+            axial-interference-correction models (MWD+IFR1+AX, MWD+SRGM+AX, ...).
+          - CNA, CNI: only in the BLIND/UNKNOWN/FINDS/TREND special models
+            (gyro "Linear Cone").
+          - ASIXY, ABIXY, MBIXY: in no current JSON model at all -- legacy-only.
+        See docs/dev/ERROR_MODEL_ENGINE.md S6. The base-ISCWSA terms that DO have
         reference data (XYM3E/XYM4E/DBHR) are validated per-source to 5e-5 by
         tests/test_iscwsa_mwd_error.py and are no longer flagged.
         """
