@@ -150,21 +150,21 @@ def test_chc_analytical_is_used_simple():
     assert np.allclose(c.vec_target, vec2, atol=TIGHT_TOL)
 
 
-def test_chc_fallback_preserved_for_tight_target():
+def test_tight_target_raises():
     """A target needing tighter curvature than the design DLS has no CLC at the
-    design radii -> the connector falls back to the iterative solver and still
-    produces a valid critical-radius result (public API intact)."""
-    c = Connector(
-        pos1=[0., 0., 0.], vec1=[0., 0., 1.],
-        pos2=[0., 100., 100.], vec2=[0., 0., 1.],
-    )
-    assert c.method == 'curve_hold_curve'
-    assert c._chc_solver == 'iterative'
-    assert c.radius_critical < c.radius_design
+    design radii. The iterative auto-tighten is gone, so the connector raises
+    ValueError rather than silently exceeding the design DLS -- the caller sweeps
+    the radius / raises dls_design (see the max-radius-solver TODO)."""
+    import pytest
+    with pytest.raises(ValueError):
+        Connector(
+            pos1=[0., 0., 0.], vec1=[0., 0., 1.],
+            pos2=[0., 100., 100.], vec2=[0., 0., 1.],
+        )
 
 
 if __name__ == "__main__":
     test_chc_analytical_roundtrip()
     test_chc_analytical_is_used_simple()
-    test_chc_fallback_preserved_for_tight_target()
+    test_tight_target_raises()
     print("ok")
