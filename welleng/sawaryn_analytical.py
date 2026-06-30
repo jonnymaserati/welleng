@@ -37,8 +37,18 @@ tangent (|mu| = 1) cases are handled by ``solve_clc_2d`` (the paper's biquadrati
 2D form). Forward-verified solvers (``solve_clc_analytical`` scan,
 ``solve_clc_resultant`` per-instance resultant) are provided as cross-checks.
 
-This supersedes the iterative Sawaryn-Thorogood (2005, SPE-84246-PA) scheme that
-welleng's ``Connector`` inherits.
+This supersedes the iterative scheme of Sawaryn & Thorogood (2005, "A Compendium
+of Directional Calculations Based on the Minimum Curvature Method", SPE-84246-PA)
+that welleng's ``Connector`` inherits.
+
+Citation
+--------
+Cite Sawaryn (2021, SPE-204111-PA) for the underlying mathematics. If you use
+*this* (welleng's) implementation, please also cite welleng — software concept
+DOI 10.5281/zenodo.20968887.
+
+    # TODO: when the welleng analytical-CLC paper is published, add its full
+    # reference + Zenodo DOI here, and to CITATION.cff / CITATIONS.md / README.
 
 ----------------------------------------------------------------------------
 Dedicated to the memory of **Steven J. Sawaryn**, in honour of his decades of
