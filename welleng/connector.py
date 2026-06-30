@@ -7,6 +7,7 @@ from scipy.optimize import minimize
 from scipy.spatial import distance
 
 from .node import Node, get_node_params
+from .sawaryn_analytical import solve_clc
 from .utils import (
     NEV_to_HLA, dls_from_radius, get_angles,
     get_dogleg, get_nev, get_rf, get_unit_vec, get_vec, get_xyz,
@@ -483,13 +484,22 @@ class Connector:
         elif self.method == 'min_curve':
             self._min_curve()
         elif self.method == 'curve_hold_curve':
-            self.pos2_list, self.pos3_list = [], [deepcopy(self.pos_target)]
-            self.vec23 = [np.array([0., 0., 0.])]
-            self.delta_radius_list = []
-            # self._target_pos_and_vec_defined(deepcopy(self.pos_target))
-            self._target_pos_and_vec_defined(
-                self.pos1 + (self.pos_target - self.pos1) / 2
-            )
+            # PRIMARY: closed-form Sawaryn (2021) point-to-target solve. Returns
+            # True (state populated) when a CLC exists at the design radii.
+            if self._solve_chc_analytical():
+                self._chc_solver = 'analytical'
+            else:
+                # FALLBACK: no CLC at the design radii (target needs tighter
+                # curvature than dls_design, or a degenerate geometry) — defer
+                # to the inherited iterative fixed-point scheme, unchanged.
+                self._chc_solver = 'iterative'
+                self.pos2_list, self.pos3_list = [], [deepcopy(self.pos_target)]
+                self.vec23 = [np.array([0., 0., 0.])]
+                self.delta_radius_list = []
+                # self._target_pos_and_vec_defined(deepcopy(self.pos_target))
+                self._target_pos_and_vec_defined(
+                    self.pos1 + (self.pos_target - self.pos1) / 2
+                )
         else:
             self.distances = self._get_distances(
                 self.pos1, self.vec1, self.pos_target
@@ -739,10 +749,139 @@ class Connector:
         )
         return pos2
 
+    def _solve_chc_analytical(self):
+        """Closed-form curve-hold-curve solve — the primary CHC path.
+
+        Solves the curve-hold-curve point-to-target problem analytically via
+        the closed-form solution of Sawaryn (2021), SPE-204111-PA
+        (:func:`welleng.sawaryn_analytical.solve_clc`), at the design radii
+        ``radius_design`` / ``radius_design2``, and populates the full public
+        CHC state (``pos2/vec2/md2``, ``pos3/vec3/md3``, ``md_target``,
+        ``dogleg/dist_curve/dls/func_dogleg`` and the ``*2`` second-arc twins,
+        ``tangent_length``, the ``inc*/azi*`` angles and ``radius_critical*``)
+        exactly as the inherited iterative scheme would, but directly and to
+        machine precision.
+
+        Among all CLCs at the design radii it takes the shortest whose two arc
+        doglegs are each ``<= pi`` — the connector's minimum-curvature renderer
+        (:func:`interpolate_curve`) takes the short way round, so a ``> pi`` arc
+        is a non-physical loop it cannot reproduce. If no such CLC exists (the
+        target needs tighter curvature than ``dls_design``, only loop solutions
+        exist, or a degenerate geometry), this method returns ``False`` and the
+        caller falls back to the iterative path. The reconstructed state is
+        finiteness-checked (the minimum-curvature shape factor is singular at a
+        180° arc); any non-finite result also triggers the fallback.
+
+        Returns
+        -------
+        bool
+            ``True`` if an analytical CLC was found and the state populated;
+            ``False`` if the caller should fall back to the iterative solver.
+        """
+        # Parallel/antiparallel tangents (|mu|=1) make the general closed form
+        # singular; solve_clc auto-routes those to the planar 2D form, but the
+        # transient 1/(1-mu^2) still emits a benign divide warning -> silence it.
+        with np.errstate(divide='ignore', invalid='ignore'):
+            sols = solve_clc(
+                self.pos1, self.vec1, self.pos_target, self.vec_target,
+                self.radius_design, self.radius_design2, return_all=True
+            )
+        if not sols:
+            return False
+        # Keep only renderable (each arc dogleg <= pi) CLCs, then the shortest.
+        _PI = np.pi + 1e-9
+        candidates = [
+            s for s in sols if s['alpha1'] <= _PI and s['alpha2'] <= _PI
+        ]
+        if not candidates:
+            return False
+        sol = min(candidates, key=lambda s: s['total_md'])
+
+        beta = float(sol['beta'])
+        alpha1 = check_dogleg(float(sol['alpha1']))
+        alpha2 = check_dogleg(float(sol['alpha2']))
+        R1 = self.radius_design
+        R2 = self.radius_design2
+
+        t1 = self.vec1
+        t4 = self.vec_target
+        T1h = np.tan(alpha1 / 2)
+        T2h = np.tan(alpha2 / 2)
+
+        # Hold-section direction (Sawaryn 2021): the straight tangent that joins
+        # the two arcs. dp = pos_target - pos1 keeps this frame-free (the task's
+        # bare-form drops the pos1 offset, valid only at the origin).
+        dp = self.pos_target - self.pos1
+        denom = R1 * T1h + beta + R2 * T2h
+        t2 = (dp - R1 * T1h * t1 - R2 * T2h * t4) / denom
+        norm = np.linalg.norm(t2)
+        if not np.isfinite(norm) or norm == 0:
+            return False
+        t2 = t2 / norm                       # unit by construction (~1e-9)
+
+        # ── Arc 1: pos1 (vec1) -> pos2 (t2), dogleg alpha1 ──────────────────
+        self.dogleg = alpha1
+        self.dist_curve, self.func_dogleg = get_curve_hold_data(R1, alpha1)
+        self.vec2 = t2
+        self.pos2 = get_pos(
+            self.pos1, self.vec1, self.vec2,
+            self.dist_curve, self.func_dogleg
+        ).reshape(3)
+        self.md2 = self.md1 + abs(self.dist_curve)
+
+        # ── Hold: pos2 -> pos3 along t2, length beta ────────────────────────
+        self.tangent_length = beta
+        self.vec3 = t2                       # straight hold: vec2 == vec3
+        self.pos3 = (self.pos2 + beta * t2).reshape(3)
+        self.md3 = self.md2 + beta
+
+        # ── Arc 2: pos3 (t2) -> pos_target (vec_target), dogleg alpha2 ───────
+        self.dogleg2 = alpha2
+        self.dist_curve2, self.func_dogleg2 = get_curve_hold_data(R2, alpha2)
+        self.md_target = self.md3 + abs(self.dist_curve2)
+
+        # The design radii are used directly, so no critical-radius override is
+        # active (mirrors the iterative path, which leaves these at inf when the
+        # design DLS is achievable). DLS therefore equals the design DLS.
+        self.radius_critical = np.inf
+        self.radius_critical2 = np.inf
+        self.dls = max(
+            np.radians(dls_from_radius(self.radius_design)),
+            np.radians(dls_from_radius(self.radius_critical))
+        )
+        self.dls2 = max(
+            np.radians(dls_from_radius(self.radius_design2)),
+            np.radians(dls_from_radius(self.radius_critical2))
+        )
+
+        self.inc2, self.azi2 = get_angles(self.vec2, nev=True).reshape(2)
+        self.inc3, self.azi3 = get_angles(self.vec3, nev=True).reshape(2)
+
+        # Reject any non-finite reconstruction (e.g. a 180° arc where the
+        # shape factor diverges) -> fall back to the iterative path.
+        for arr in (self.pos2, self.pos3, self.vec2, self.vec3):
+            if not np.all(np.isfinite(arr)):
+                return False
+        for val in (
+            self.dist_curve, self.dist_curve2, self.func_dogleg,
+            self.func_dogleg2, self.md2, self.md3, self.md_target
+        ):
+            if not np.isfinite(val):
+                return False
+
+        return True
+
+    # FALLBACK (active, load-bearing) — secondary to `_solve_chc_analytical`
+    # (closed-form Sawaryn 2021), but still REQUIRED: handles targets with no CLC
+    # at the design radii by tightening the radius (radius_critical). Removable
+    # only once solve_clc gains the R-sweep (TODO in sawaryn_analytical.py) — do
+    # not delete before then.
     def _target_pos_and_vec_defined(self, pos3, vec_old=[0., 0., 0.]):
         """
         Function for fitting a curve, hold, curve path between a pair of
-        points with vectors.
+        points with vectors. Inherited iterative scheme of Sawaryn & Thorogood
+        (2005), "A Compendium of Directional Calculations Based on the Minimum
+        Curvature Method", SPE-84246-PA.
 
         It's written in this odd way to allow a solver function like scipy's
         optimize to solve it, but so far I've not had much success using
@@ -1317,14 +1456,20 @@ class Connector:
             )
 
 
+# FALLBACK (active, load-bearing) — secondary to the closed-form
+# `Connector._solve_chc_analytical` (Sawaryn 2021, SPE-204111-PA), but still
+# REQUIRED for targets with no CLC at the design radii (radius-tightening).
+# Removable only once solve_clc gains the R-sweep (TODO in sawaryn_analytical.py).
 def minimize_target_pos_and_vec_defined(
     x, c, pos3=None, vec_old=None, result=False
 ):
     """Iteratively solves curve-hold-curve geometry between two nodes.
 
-    Uses a damped fixed-point iteration (alpha=0.5) on the intermediate
-    tangent point to find the curve-hold-curve path connecting the start
-    and target positions/vectors on the Connector.
+    Inherited iterative scheme of Sawaryn & Thorogood (2005), "A Compendium of
+    Directional Calculations Based on the Minimum Curvature Method",
+    SPE-84246-PA. Uses a damped fixed-point iteration (alpha=0.5) on the
+    intermediate tangent point to find the curve-hold-curve path connecting the
+    start and target positions/vectors on the Connector.
 
     Parameters
     ----------
