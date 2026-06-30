@@ -469,12 +469,19 @@ def solve_clc_batch(P1, T1, P4, T4, R1, R2=None, return_all=False):
                 total_md=take(md), found=found)
 
 
-# TODO: optional R-sweep fallback (r1/r2 over min..max) for when no CLC exists at
-# the given radii -- the natural home for it is here as a check-style add-on, and
-# the same in solve_clc_batch. Signature: r1_min/r1_max/r2_min/r2_max all default
-# None; r2_* fall back to the r1_* values (mirror the symmetric R2=None->R1 rule).
-# Not yet implemented; tracked for the Connector integration (Connector owns the
-# radius search today).
+# TODO (max-radius solver): when no renderable CLC exists at the given radii,
+# the useful follow-up is NOT the beta=0 critical (minimum) radius but the
+# GENTLEST feasible curve -- the LARGEST radius for which a valid CLC exists with
+# both arc doglegs <= pi (a > pi arc is a non-physical loop the min-curve renderer
+# can't draw). That is the proper analytic replacement for the old iterative
+# auto-tighten: maximise R subject to "a CLC exists AND max(alpha1, alpha2) <= pi".
+# The binding constraint at the maximum is an arc dogleg hitting pi (or beta -> 0),
+# expressible via the same Eq.15 coefficients. Symmetric R1=R2=R is a clean solve;
+# asymmetric is along a fixed R1:R2 ratio (or a bounded 2D search). Until then,
+# Connector raises on no-CLC-at-design-radii and the caller sweeps R themselves.
+# Follow-up: once this solver exists, give Connector an opt-in (e.g.
+# on_infeasible='raise' | 'max_radius') to RETURN the max-radius solution (or its
+# radius) instead of raising when the target is infeasible at the design DLS.
 def solve_clc(p1, t1, p4, t4, R1, R2=None, return_all=False):
     """Solve the CLC point-to-target problem for a single station pair.
 

@@ -484,21 +484,22 @@ class Connector:
         elif self.method == 'min_curve':
             self._min_curve()
         elif self.method == 'curve_hold_curve':
-            # PRIMARY: closed-form Sawaryn (2021) point-to-target solve. Returns
-            # True (state populated) when a CLC exists at the design radii.
+            # Closed-form Sawaryn (2021, SPE-204111-PA) point-to-target solve.
+            # Populates the state when a CLC exists at the design radii.
             if self._solve_chc_analytical():
                 self._chc_solver = 'analytical'
             else:
-                # FALLBACK: no CLC at the design radii (target needs tighter
-                # curvature than dls_design, or a degenerate geometry) — defer
-                # to the inherited iterative fixed-point scheme, unchanged.
-                self._chc_solver = 'iterative'
-                self.pos2_list, self.pos3_list = [], [deepcopy(self.pos_target)]
-                self.vec23 = [np.array([0., 0., 0.])]
-                self.delta_radius_list = []
-                # self._target_pos_and_vec_defined(deepcopy(self.pos_target))
-                self._target_pos_and_vec_defined(
-                    self.pos1 + (self.pos_target - self.pos1) / 2
+                # No CLC at the design radii: the target needs tighter curvature
+                # than the design DLS allows. We do NOT silently tighten — the
+                # caller decides (e.g. sweep the radius / raise dls_design, then
+                # retry). See solve_clc in welleng.sawaryn_analytical.
+                raise ValueError(
+                    "No curve-hold-curve solution at the design radii "
+                    f"(R1={self.radius_design:.6g}, R2={self.radius_design2:.6g}) "
+                    "for the given start and target. The target requires tighter "
+                    "curvature than the design dogleg severity. Retry with a "
+                    "smaller radius / larger dls_design (an R-sweep), or relax "
+                    "the target."
                 )
         else:
             self.distances = self._get_distances(
