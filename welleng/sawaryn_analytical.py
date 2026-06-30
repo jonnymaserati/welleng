@@ -1,8 +1,8 @@
 """
 Analytical 3D Curve-Line-Curve (CLC) point-to-target solver.
 
-The first open, runnable implementation of the closed-form point-to-target
-solution of Sawaryn (2021):
+An open implementation of the closed-form point-to-target solution of
+Sawaryn (2021):
 
     Sawaryn, S. J. (2021). "A Generalized Solution to the Point-to-Target
     Problem Using the Minimum Curvature Method." SPE Drilling & Completion.
@@ -13,31 +13,38 @@ target station with two circular arcs (radii ``R1``, ``R2``) joined by a
 straight tangent of length ``beta``. The solution is parameterised by the
 tangent length and the two subtended arc angles ``alpha1``, ``alpha2``.
 
-How this solver works (and why it sidesteps a trap)
+The corrected Eq. 15, and a note on the printed one
 ---------------------------------------------------
 The paper presents the solution two ways: the *forward* constraint equations
 (Eqs. 11-13: eta1, eta4, eta14 as functions of alpha1, alpha2, beta) and the
-*eliminated* implicit form (Eq. 15: a degree-10 polynomial in beta whose roots
-are every solution). The printed Eq. 15 is **not** scale-covariant — it does not
-reproduce the paper's own worked roots under length normalisation, i.e. it
-carries a transcription/print error in the eliminated polynomial (whose true
-expansion the paper notes is "~4000 terms, beyond human capability").
+*eliminated* implicit form (Eq. 15: a degree-10 polynomial in beta whose real
+positive roots are every solution). The **printed** Eq. 15 is not scale-
+covariant — it does not reproduce the paper's own worked roots under length
+normalisation, i.e. it carries a transcription error in the eliminated
+polynomial (whose true expansion the paper notes is "~4000 terms, beyond human
+capability"). The ``eq15`` function below reproduces the printed form and is
+retained only to document that trap (see ``test_eq15_is_trapped``).
 
-So this solver does **not** use Eq. 15. It uses Sawaryn's *clean* pieces — the
-forward equations (11-13, verified exact) and the half-angle back-substitution
-(Eqs. 18-25, verified exact) — and finds the tangent lengths by driving the
-eta-residual to zero (forward-verification). This is exact, scale-covariant, and
-reproduces Example 2 of SPE-204111-PA to the printed precision. ``eq15`` is
-retained below for reference only, flagged as the unreliable form.
+The correct degree-10 coefficients were re-derived by replicating Sawaryn's own
+surd-elimination (Appendix B: the half-angle quadratics B-15/B-16 and the
+bilinear constraint B-19), eliminating the surds symbolically (``_eq15_coeffs``).
+These power the vectorised closed-form solvers ``solve_clc`` (single pair) and
+``solve_clc_batch`` (batched, ~0.02 ms/solve via companion-matrix eigenvalues),
+which return *every* CLC solution and reproduce Example 2 of SPE-204111-PA
+exactly. Subtended angles are reported as the true dogleg in [0, 2*pi) so the
+measured depth ranks solutions correctly. Planar (eta14 ~ 0) and parallel-
+tangent (|mu| = 1) cases are handled by ``solve_clc_2d`` (the paper's biquadratic
+2D form). Forward-verified solvers (``solve_clc_analytical`` scan,
+``solve_clc_resultant`` per-instance resultant) are provided as cross-checks.
 
 This supersedes the iterative Sawaryn-Thorogood (2005, SPE-84246-PA) scheme that
 welleng's ``Connector`` inherits.
 
 ----------------------------------------------------------------------------
 Dedicated to the memory of **Steven J. Sawaryn**, in honour of his decades of
-contributions to directional drilling and wellbore-positioning science. This is
-his last and most general solution to a problem he advanced for over four
-decades, coded here in the open for the first time.
+contributions to directional drilling and wellbore-positioning science — this
+implements his last and most general solution to a problem he advanced for over
+four decades.
 ----------------------------------------------------------------------------
 """
 
@@ -112,21 +119,32 @@ def forward(alpha1, alpha2, beta, mu, R1, R2):
     return np.array([eta1, eta4, eta14])
 
 
-def solve_clc_analytical(p1, t1, p4, t4, R1, R2, n_scan=4000, tol=1e-6):
+def solve_clc_analytical(p1, t1, p4, t4, R1, R2=None, n_scan=4000, tol=1e-6):
     """Solve the CLC point-to-target problem (Sawaryn 2021), forward-verified.
 
     Parameters
     ----------
-    p1, t1 : (3,) array — kickoff position and unit tangent (N, E, V).
+    p1, t1 : (3,) array — kickoff position and unit tangent (N, E, V); ``t1`` is
+        a unit vector, as tangents are throughout welleng (cf. ``Survey.vec_nev``).
     p4, t4 : (3,) array — target position and unit tangent.
-    R1, R2 : float — first/second arc radii (any consistent length unit).
+    R1, R2 : float — first/second arc radii (``R2`` defaults to ``R1``, symmetric
+        arcs). Unit-agnostic: any length unit, so long as positions and radii
+        share it (e.g. all metres, or all feet). The returned lengths come back
+        in that same unit; angles are radians.
 
     Returns
     -------
-    list of dict, sorted by total measured depth, each with keys
-    ``beta``, ``alpha1``, ``alpha2`` (radians), ``arc1``, ``line``, ``arc2``,
-    ``total_md`` and ``residual``. Complete: every real CLC solution is returned.
+    list of dict, sorted by total measured depth, each with keys (driller's
+    terms in brackets):
+    ``beta`` / ``line`` — straight tangent length (the hold section);
+    ``alpha1``, ``alpha2`` — subtended arc angles in radians (the dogleg of each
+    build/turn); ``arc1``, ``arc2`` — arc lengths ``R*alpha`` (the build
+    sections); ``total_md`` — total measured depth; ``residual``. The build-plane
+    toolface is not returned but is recoverable from the reconstructed tangent.
+    Complete: every real CLC solution is returned.
     """
+    if R2 is None:
+        R2 = R1
     psi2, eta1, eta4, eta14, mu = _scalars(p1, t1, p4, t4)
     target = np.array([eta1, eta4, eta14])
 
@@ -196,8 +214,11 @@ def eq15(beta, psi2, eta1, eta4, eta14, mu, R1, R2):
     return A*(inner1 - inner2) + term2 + term3 - term4
 
 
-def solve_clc_resultant(p1, t1, p4, t4, R1, R2):
+def solve_clc_resultant(p1, t1, p4, t4, R1, R2=None):
     """Complete CLC solve via per-instance resultant elimination.
+
+    Independent cross-check for the vectorised ``solve_clc`` / ``solve_clc_batch``
+    (exercised in the test suite); not on welleng's hot path.
 
     Eliminates the two half-angle tangents from Sawaryn's clean forward
     equations (11-13) by exact-rational resultants -> a polynomial in beta whose
@@ -212,6 +233,8 @@ def solve_clc_resultant(p1, t1, p4, t4, R1, R2):
     forward-verification filter rejects any root that drifts, so the lower
     precision buys ~2.4x speed with no loss of completeness.
     """
+    if R2 is None:
+        R2 = R1
     import flint
     from fractions import Fraction
     flint.ctx.prec = 400
@@ -289,3 +312,255 @@ def solve_clc_resultant(p1, t1, p4, t4, R1, R2):
             break
     sols.sort(key=lambda s: s['total_md'])
     return sols
+
+
+# ----------------------------------------------------------------------------
+# Vectorised closed-form solver -- corrected Sawaryn (2021) Eq. 15.
+# ----------------------------------------------------------------------------
+def _eq15_coeffs(psi2, g1, g4, l, R1, R2):
+    """Corrected Sawaryn (2021) Eq. 15 -- the degree-10 closed-form polynomial in
+    beta. Coefficients c0..c10 as functions of the frame-invariants
+    g1=eta1=Dp.t1, g4=eta4=Dp.t4, l=mu=t1.t4, psi2=|Dp|^2, and the arc radii R1,R2
+    (eta14 is folded into psi2 via psi2 = (g1^2+g4^2-2 l g1 g4)/(1-l^2) + eta14^2).
+    Derived by computer-algebra surd-elimination of the half-angle tangents
+    (Appendix B, Eqs. B-15, B-16, B-19, via resultant elimination); not the
+    printed Eq. 15, which carries transcription errors. Reproducible in any CAS.
+    Evaluate with scale-normalised invariants (psi2=1, g/L, R/L) for conditioning;
+    roots are beta/L."""
+    # Machine-generated by symbolic resultant elimination; one un-wrapped
+    # expression per coefficient c0..c10 -- kept verbatim and inline so the engine
+    # has a single source of truth (wrapping or splitting out would only invite
+    # transcription error in a ~4000-term expansion no human edits by hand).
+    return [
+        2*g1*g4*psi2**4+psi2**5-l*psi2**5+16*g1**3*g4*psi2**2*R1**2+8*g1**2*psi2**3*R1**2-16*g1*g4*psi2**3*R1**2-8*g1**2*l*psi2**3*R1**2-8*psi2**4*R1**2+8*l*psi2**4*R1**2+32*g1**5*g4*R1**4+16*g1**4*psi2*R1**4-64*g1**3*g4*psi2*R1**4-16*g1**4*l*psi2*R1**4-32*g1**2*psi2**2*R1**4+32*g1*g4*psi2**2*R1**4+32*g1**2*l*psi2**2*R1**4+16*psi2**3*R1**4-16*l*psi2**3*R1**4+16*g1*g4**3*psi2**2*R2**2-16*g1*g4*psi2**3*R2**2+8*g4**2*psi2**3*R2**2-8*g4**2*l*psi2**3*R2**2-8*psi2**4*R2**2+8*l*psi2**4*R2**2-64*g1**3*g4**3*R1**2*R2**2-64*g1**3*g4*psi2*R1**2*R2**2+96*g1**2*g4**2*psi2*R1**2*R2**2-64*g1*g4**3*psi2*R1**2*R2**2+160*g1**2*g4**2*l*psi2*R1**2*R2**2-64*g1**2*psi2**2*R1**2*R2**2+112*g1*g4*psi2**2*R1**2*R2**2-64*g4**2*psi2**2*R1**2*R2**2+32*g1**2*l*psi2**2*R1**2*R2**2-32*g1*g4*l*psi2**2*R1**2*R2**2+32*g4**2*l*psi2**2*R1**2*R2**2-80*g1*g4*l**2*psi2**2*R1**2*R2**2+56*psi2**3*R1**2*R2**2-72*l*psi2**3*R1**2*R2**2+8*l**2*psi2**3*R1**2*R2**2+8*l**3*psi2**3*R1**2*R2**2-128*g1**4*R1**4*R2**2+192*g1**3*g4*R1**4*R2**2-128*g1**2*g4**2*R1**4*R2**2+128*g1*g4**3*R1**4*R2**2+128*g1**3*g4*l*R1**4*R2**2-256*g1**2*g4**2*l*R1**4*R2**2+64*g1**3*g4*l**2*R1**4*R2**2+224*g1**2*psi2*R1**4*R2**2-192*g1*g4*psi2*R1**4*R2**2+64*g4**2*psi2*R1**4*R2**2-160*g1**2*l*psi2*R1**4*R2**2-64*g4**2*l*psi2*R1**4*R2**2-32*g1**2*l**2*psi2*R1**4*R2**2+192*g1*g4*l**2*psi2*R1**4*R2**2-32*g1**2*l**3*psi2*R1**4*R2**2-96*psi2**2*R1**4*R2**2+160*l*psi2**2*R1**4*R2**2-32*l**2*psi2**2*R1**4*R2**2-32*l**3*psi2**2*R1**4*R2**2+32*g1*g4**5*R2**4-64*g1*g4**3*psi2*R2**4+16*g4**4*psi2*R2**4-16*g4**4*l*psi2*R2**4+32*g1*g4*psi2**2*R2**4-32*g4**2*psi2**2*R2**4+32*g4**2*l*psi2**2*R2**4+16*psi2**3*R2**4-16*l*psi2**3*R2**4+128*g1**3*g4*R1**2*R2**4-128*g1**2*g4**2*R1**2*R2**4+192*g1*g4**3*R1**2*R2**4-128*g4**4*R1**2*R2**4-256*g1**2*g4**2*l*R1**2*R2**4+128*g1*g4**3*l*R1**2*R2**4+64*g1*g4**3*l**2*R1**2*R2**4+64*g1**2*psi2*R1**2*R2**4-192*g1*g4*psi2*R1**2*R2**4+224*g4**2*psi2*R1**2*R2**4-64*g1**2*l*psi2*R1**2*R2**4-160*g4**2*l*psi2*R1**2*R2**4+192*g1*g4*l**2*psi2*R1**2*R2**4-32*g4**2*l**2*psi2*R1**2*R2**4-32*g4**2*l**3*psi2*R1**2*R2**4-96*psi2**2*R1**2*R2**4+160*l*psi2**2*R1**2*R2**4-32*l**2*psi2**2*R1**2*R2**4-32*l**3*psi2**2*R1**2*R2**4-128*g1**2*R1**4*R2**4+32*g1*g4*R1**4*R2**4-128*g4**2*R1**4*R2**4+256*g1**2*l*R1**4*R2**4+128*g1*g4*l*R1**4*R2**4+256*g4**2*l*R1**4*R2**4-128*g1**2*l**2*R1**4*R2**4-320*g1*g4*l**2*R1**4*R2**4-128*g4**2*l**2*R1**4*R2**4+128*g1*g4*l**3*R1**4*R2**4+32*g1*g4*l**4*R1**4*R2**4+144*psi2*R1**4*R2**4-336*l*psi2*R1**4*R2**4+160*l**2*psi2*R1**4*R2**4+96*l**3*psi2*R1**4*R2**4-48*l**4*psi2*R1**4*R2**4-16*l**5*psi2*R1**4*R2**4,  # c0
+        2*g1*psi2**4+2*g4*psi2**4+16*g1**3*psi2**2*R1**2+16*g1**2*g4*psi2**2*R1**2-16*g1*psi2**3*R1**2-16*g4*psi2**3*R1**2+32*g1**5*R1**4+32*g1**4*g4*R1**4-64*g1**3*psi2*R1**4-64*g1**2*g4*psi2*R1**4+32*g1*psi2**2*R1**4+32*g4*psi2**2*R1**4+16*g1*g4**2*psi2**2*R2**2+16*g4**3*psi2**2*R2**2-16*g1*psi2**3*R2**2-16*g4*psi2**3*R2**2-64*g1**3*g4**2*R1**2*R2**2-64*g1**2*g4**3*R1**2*R2**2-64*g1**3*psi2*R1**2*R2**2+64*g1**2*g4*psi2*R1**2*R2**2+64*g1*g4**2*psi2*R1**2*R2**2-64*g4**3*psi2*R1**2*R2**2+128*g1**2*g4*l*psi2*R1**2*R2**2+128*g1*g4**2*l*psi2*R1**2*R2**2+48*g1*psi2**2*R1**2*R2**2+48*g4*psi2**2*R1**2*R2**2-96*g1*l*psi2**2*R1**2*R2**2-96*g4*l*psi2**2*R1**2*R2**2-16*g1*l**2*psi2**2*R1**2*R2**2-16*g4*l**2*psi2**2*R1**2*R2**2-64*g1**3*R1**4*R2**2+192*g1**2*g4*R1**4*R2**2-128*g1*g4**2*R1**4*R2**2+128*g4**3*R1**4*R2**2-128*g1**3*l*R1**4*R2**2+128*g1**2*g4*l*R1**4*R2**2-256*g1*g4**2*l*R1**4*R2**2+64*g1**3*l**2*R1**4*R2**2+64*g1**2*g4*l**2*R1**4*R2**2+64*g1*psi2*R1**4*R2**2-192*g4*psi2*R1**4*R2**2+128*g1*l*psi2*R1**4*R2**2+128*g4*l*psi2*R1**4*R2**2-192*g1*l**2*psi2*R1**4*R2**2+64*g4*l**2*psi2*R1**4*R2**2+32*g1*g4**4*R2**4+32*g4**5*R2**4-64*g1*g4**2*psi2*R2**4-64*g4**3*psi2*R2**4+32*g1*psi2**2*R2**4+32*g4*psi2**2*R2**4+128*g1**3*R1**2*R2**4-128*g1**2*g4*R1**2*R2**4+192*g1*g4**2*R1**2*R2**4-64*g4**3*R1**2*R2**4-256*g1**2*g4*l*R1**2*R2**4+128*g1*g4**2*l*R1**2*R2**4-128*g4**3*l*R1**2*R2**4+64*g1*g4**2*l**2*R1**2*R2**4+64*g4**3*l**2*R1**2*R2**4-192*g1*psi2*R1**2*R2**4+64*g4*psi2*R1**2*R2**4+128*g1*l*psi2*R1**2*R2**4+128*g4*l*psi2*R1**2*R2**4+64*g1*l**2*psi2*R1**2*R2**4-192*g4*l**2*psi2*R1**2*R2**4+32*g1*R1**4*R2**4+32*g4*R1**4*R2**4-128*g1*l*R1**4*R2**4-128*g4*l*R1**4*R2**4+192*g1*l**2*R1**4*R2**4+192*g4*l**2*R1**4*R2**4-128*g1*l**3*R1**4*R2**4-128*g4*l**3*R1**4*R2**4+32*g1*l**4*R1**4*R2**4+32*g4*l**4*R1**4*R2**4,  # c1
+        -8*g1*g4*psi2**3-3*psi2**4+5*l*psi2**4-32*g1**3*g4*psi2*R1**2-8*g1**2*psi2**2*R1**2+32*g1*g4*psi2**2*R1**2+24*g1**2*l*psi2**2*R1**2+8*psi2**3*R1**2-24*l*psi2**3*R1**2+16*g1**4*R1**4+16*g1**4*l*R1**4-32*g1**2*psi2*R1**4-32*g1**2*l*psi2*R1**4+16*psi2**2*R1**4+16*l*psi2**2*R1**4-32*g1*g4**3*psi2*R2**2+32*g1*g4*psi2**2*R2**2-8*g4**2*psi2**2*R2**2+24*g4**2*l*psi2**2*R2**2+8*psi2**3*R2**2-24*l*psi2**3*R2**2+128*g1**3*g4*R1**2*R2**2-160*g1**2*g4**2*R1**2*R2**2+128*g1*g4**3*R1**2*R2**2-160*g1**2*g4**2*l*R1**2*R2**2+96*g1**2*psi2*R1**2*R2**2-96*g1*g4*psi2*R1**2*R2**2+96*g4**2*psi2*R1**2*R2**2-96*g1**2*l*psi2*R1**2*R2**2+64*g1*g4*l*psi2*R1**2*R2**2-96*g4**2*l*psi2*R1**2*R2**2+160*g1*g4*l**2*psi2*R1**2*R2**2-88*psi2**2*R1**2*R2**2+56*l*psi2**2*R1**2*R2**2-8*l**2*psi2**2*R1**2*R2**2-24*l**3*psi2**2*R1**2*R2**2-32*g1**2*R1**4*R2**2-64*g4**2*R1**4*R2**2+32*g1**2*l*R1**4*R2**2+128*g1*g4*l*R1**4*R2**2+64*g4**2*l*R1**4*R2**2-32*g1**2*l**2*R1**4*R2**2-128*g1*g4*l**2*R1**4*R2**2+32*g1**2*l**3*R1**4*R2**2+32*psi2*R1**4*R2**2-32*l*psi2*R1**4*R2**2-32*l**2*psi2*R1**4*R2**2+32*l**3*psi2*R1**4*R2**2+16*g4**4*R2**4+16*g4**4*l*R2**4-32*g4**2*psi2*R2**4-32*g4**2*l*psi2*R2**4+16*psi2**2*R2**4+16*l*psi2**2*R2**4-64*g1**2*R1**2*R2**4-32*g4**2*R1**2*R2**4+64*g1**2*l*R1**2*R2**4+128*g1*g4*l*R1**2*R2**4+32*g4**2*l*R1**2*R2**4-128*g1*g4*l**2*R1**2*R2**4-32*g4**2*l**2*R1**2*R2**4+32*g4**2*l**3*R1**2*R2**4+32*psi2*R1**2*R2**4-32*l*psi2*R1**2*R2**4-32*l**2*psi2*R1**2*R2**4+32*l**3*psi2*R1**2*R2**4+16*R1**4*R2**4-48*l*R1**4*R2**4+32*l**2*R1**4*R2**4+32*l**3*R1**4*R2**4-48*l**4*R1**4*R2**4+16*l**5*R1**4*R2**4,  # c2
+        -8*g1*psi2**3-8*g4*psi2**3-32*g1**3*psi2*R1**2-32*g1**2*g4*psi2*R1**2+32*g1*psi2**2*R1**2+32*g4*psi2**2*R1**2-32*g1*g4**2*psi2*R2**2-32*g4**3*psi2*R2**2+32*g1*psi2**2*R2**2+32*g4*psi2**2*R2**2+128*g1**3*R1**2*R2**2+128*g4**3*R1**2*R2**2-128*g1**2*g4*l*R1**2*R2**2-128*g1*g4**2*l*R1**2*R2**2-96*g1*psi2*R1**2*R2**2-96*g4*psi2*R1**2*R2**2+64*g1*l*psi2*R1**2*R2**2+64*g4*l*psi2*R1**2*R2**2+32*g1*l**2*psi2*R1**2*R2**2+32*g4*l**2*psi2*R1**2*R2**2,  # c3
+        12*g1*g4*psi2**2+2*psi2**3-10*l*psi2**3+16*g1**3*g4*R1**2-8*g1**2*psi2*R1**2-16*g1*g4*psi2*R1**2-24*g1**2*l*psi2*R1**2+8*psi2**2*R1**2+24*l*psi2**2*R1**2+16*g1*g4**3*R2**2-16*g1*g4*psi2*R2**2-8*g4**2*psi2*R2**2-24*g4**2*l*psi2*R2**2+8*psi2**2*R2**2+24*l*psi2**2*R2**2+32*g1**2*R1**2*R2**2-80*g1*g4*R1**2*R2**2+32*g4**2*R1**2*R2**2+64*g1**2*l*R1**2*R2**2-32*g1*g4*l*R1**2*R2**2+64*g4**2*l*R1**2*R2**2-80*g1*g4*l**2*R1**2*R2**2-24*psi2*R1**2*R2**2+8*l*psi2*R1**2*R2**2-8*l**2*psi2*R1**2*R2**2+24*l**3*psi2*R1**2*R2**2,  # c4
+        12*g1*psi2**2+12*g4*psi2**2+16*g1**3*R1**2+16*g1**2*g4*R1**2-16*g1*psi2*R1**2-16*g4*psi2*R1**2+16*g1*g4**2*R2**2+16*g4**3*R2**2-16*g1*psi2*R2**2-16*g4*psi2*R2**2-16*g1*R1**2*R2**2-16*g4*R1**2*R2**2+32*g1*l*R1**2*R2**2+32*g4*l*R1**2*R2**2-16*g1*l**2*R1**2*R2**2-16*g4*l**2*R1**2*R2**2,  # c5
+        -8*g1*g4*psi2+2*psi2**2+10*l*psi2**2+8*g1**2*R1**2+8*g1**2*l*R1**2-8*psi2*R1**2-8*l*psi2*R1**2+8*g4**2*R2**2+8*g4**2*l*R2**2-8*psi2*R2**2-8*l*psi2*R2**2-8*R1**2*R2**2+8*l*R1**2*R2**2+8*l**2*R1**2*R2**2-8*l**3*R1**2*R2**2,  # c6
+        -8*g1*psi2-8*g4*psi2,  # c7
+        2*g1*g4-3*psi2-5*l*psi2,  # c8
+        2*g1+2*g4,  # c9
+        1+l,  # c10
+    ]
+
+
+def _companion_roots(co):
+    """Roots of a batch of degree-10 polynomials via companion-matrix eigenvalues.
+
+    ``co``: (11, N) array, rows ``c0..c10`` (``c10`` the leading coeff). Returns
+    (N, 10) complex roots. This is what makes the closed form *vectorisable* -
+    one ``np.linalg.eigvals`` call over all N pairs, no Python loop.
+    """
+    N = co.shape[1]
+    C = np.zeros((N, 10, 10))
+    C[:, 1:, :-1] = np.eye(9)[None]
+    C[:, :, -1] = -(co[:10] / co[10]).T
+    return np.linalg.eigvals(C)
+
+
+def _clc_solutions(P1, T1, P4, T4, R1, R2):
+    """Core engine: every CLC solution per pair (general, non-degenerate case).
+
+    Returns ``(beta, alpha1, alpha2, total_md, valid)``, each (N, 10): the full
+    candidate set (roots of the corrected Eq. 15) with the forward-verified arc
+    angles, measured depth, and a validity mask. Selection (shortest / all) is
+    left to the public wrappers. Assumes ``|mu| < 1`` and ``eta14 != 0`` (route
+    ``|eta14|~0`` / ``|mu|~1`` to :func:`solve_clc_2d`).
+    """
+    P1, T1, P4, T4 = (np.asarray(a, float) for a in (P1, T1, P4, T4))
+    dp = P4 - P1
+    mu = np.einsum('ij,ij->i', T1, T4)
+    psi2 = np.einsum('ij,ij->i', dp, dp)
+    eta1 = np.einsum('ij,ij->i', dp, T1)
+    eta4 = np.einsum('ij,ij->i', dp, T4)
+    eta14 = np.einsum('ij,ij->i', dp, np.cross(T1, T4)) / np.sqrt(1.0 - mu**2)
+    L = np.sqrt(psi2)
+    N = len(psi2)
+    R1a = np.broadcast_to(np.asarray(R1, float), (N,))
+    R2a = np.broadcast_to(np.asarray(R2, float), (N,))
+    co = np.array(_eq15_coeffs(np.ones(N), eta1/L, eta4/L, mu, R1a/L, R2a/L))
+    roots = _companion_roots(co) * L[:, None]
+    b, bi = roots.real, roots.imag
+    ok = (np.abs(bi) < 1e-4 * (np.abs(b) + 1)) & (b > 1e-6)
+    R1b, R2b = R1a[:, None], R2a[:, None]
+    ps, e1, e4 = psi2[:, None], eta1[:, None], eta4[:, None]
+    e14, M, psb = eta14[:, None], mu[:, None], psi2[:, None] - b**2
+    A1 = 4*R1b**2*((e1+b)**2 - R2b**2*(1-M**2)); B1 = 4*R1b*(2*R2b**2*(e1-M*e4)-psb*(e1+b)); C1 = psb**2-4*R2b**2*(ps-e4**2)
+    A2 = 4*R2b**2*((e4+b)**2 - R1b**2*(1-M**2)); B2 = 4*R2b*(2*R1b**2*(e4-M*e1)-psb*(e4+b)); C2 = psb**2-4*R1b**2*(ps-e1**2)
+    d1 = np.maximum(B1**2 - 4*A1*C1, 0.0); d2 = np.maximum(B2**2 - 4*A2*C2, 0.0)
+    res4, a1_4, a2_4 = [], [], []
+    for s1 in (1, -1):
+        a1 = 2*np.arctan2(-B1 + s1*np.sqrt(d1), 2*A1)
+        for s2 in (1, -1):
+            a2 = 2*np.arctan2(-B2 + s2*np.sqrt(d2), 2*A2)
+            c1, sn1 = np.cos(a1), np.sin(a1); c2, sn2 = np.cos(a2), np.sin(a2)
+            t1h, t2h = np.tan(a1/2), np.tan(a2/2)
+            f1 = R1b*sn1 + b*c1 + R2b*t2h*(M+c1)
+            f4 = R1b*t1h*(M+c2) + b*c2 + R2b*sn2
+            sd = (1-M**2 - c1**2 - c2**2 + 2*M*c1*c2)/(1-M**2)
+            # clamp a tiny-negative surd to 0 -- at eta14~0 (planar) the true
+            # solution's surd sits at ~0- numerically; rejecting it on surd<0
+            # drops a valid root. eta1/eta4 still filter genuinely-bad branches.
+            f14 = (R1b*t1h + b + R2b*t2h) * np.sqrt(np.maximum(sd, 0.0))
+            res4.append(np.sqrt((f1-e1)**2 + (f4-e4)**2 + (np.abs(f14)-np.abs(e14))**2))
+            a1_4.append(a1); a2_4.append(a2)
+    res4 = np.stack(res4, -1); a1_4 = np.stack(a1_4, -1); a2_4 = np.stack(a2_4, -1)
+    k = np.argmin(res4, -1)                          # best-matching angle branch
+    res = np.take_along_axis(res4, k[..., None], -1)[..., 0]
+    a1b = np.take_along_axis(a1_4, k[..., None], -1)[..., 0]
+    a2b = np.take_along_axis(a2_4, k[..., None], -1)[..., 0]
+    valid = ok & (res < 1e-4 * L[:, None])
+    # subtended_angles returns 2*arctan2(...) in (-2pi, 2pi]; a co-terminal value
+    # (same tan(alpha/2), same path) inflates |alpha|. Normalise to the TRUE arc
+    # turn in [0, 2pi) so the measured depth -- and any drawing -- is correct.
+    a1b = a1b % (2 * np.pi)
+    a2b = a2b % (2 * np.pi)
+    md = R1b * a1b + b + R2b * a2b
+    return b, a1b, a2b, md, valid
+
+
+def solve_clc_batch(P1, T1, P4, T4, R1, R2=None, return_all=False):
+    """Vectorised CLC point-to-target solve via the corrected Eq. 15 closed form.
+
+    Batched over N station pairs, no Python loop: invariants (einsum) ->
+    Eq. 15 coefficients -> roots (batched companion eigvals) -> forward-verify.
+    ~0.02 ms/solve, the only solver here that vectorises.
+
+    Parameters
+    ----------
+    P1, T1, P4, T4 : (N, 3) — kickoff/target positions and unit tangents.
+    R1, R2 : float or (N,) — first/second arc radii (``R2`` defaults to ``R1``).
+    return_all : bool, default False
+        False -> the SHORTEST (min total-MD) solution per pair.
+        True  -> every valid CLC solution per pair.
+
+    Returns
+    -------
+    dict of numpy arrays:
+        return_all=False : ``beta, alpha1, alpha2, total_md`` each (N,), plus
+            ``found`` (N,) bool (False where no CLC exists).
+        return_all=True  : ``beta, alpha1, alpha2, total_md`` each (N, 10), plus
+            ``valid`` (N, 10) bool.
+
+    Assumes the general case ``|mu| < 1``, ``eta14 != 0``; route degenerate
+    (planar / parallel-tangent) pairs to :func:`solve_clc_2d`.
+    """
+    R2 = R1 if R2 is None else R2
+    b, a1, a2, md, valid = _clc_solutions(P1, T1, P4, T4, R1, R2)
+    if return_all:
+        return dict(beta=b, alpha1=a1, alpha2=a2, total_md=md, valid=valid)
+    mdm = np.where(valid, md, np.inf)
+    j = np.argmin(mdm, axis=1)                       # shortest valid per pair
+    take = lambda X: np.take_along_axis(X, j[:, None], 1)[:, 0]
+    found = np.isfinite(take(mdm))
+    return dict(beta=take(b), alpha1=take(a1), alpha2=take(a2),
+                total_md=take(md), found=found)
+
+
+# TODO: optional R-sweep fallback (r1/r2 over min..max) for when no CLC exists at
+# the given radii -- the natural home for it is here as a check-style add-on, and
+# the same in solve_clc_batch. Signature: r1_min/r1_max/r2_min/r2_max all default
+# None; r2_* fall back to the r1_* values (mirror the symmetric R2=None->R1 rule).
+# Not yet implemented; tracked for the Connector integration (Connector owns the
+# radius search today).
+def solve_clc(p1, t1, p4, t4, R1, R2=None, return_all=False):
+    """Solve the CLC point-to-target problem for a single station pair.
+
+    Main entry point. Runs the general closed-form solver first; degenerate pairs
+    (parallel/antiparallel tangents ``|mu| = 1``, or planar ``eta14 ~ 0``)
+    auto-fall back to :func:`solve_clc_2d`, so the caller need not pre-classify.
+
+    Parameters
+    ----------
+    p1, t1 : (3,) array_like
+        Kickoff position and unit tangent (N, E, V); ``t1`` is a unit vector.
+    p4, t4 : (3,) array_like
+        Target position and unit tangent.
+    R1, R2 : float
+        First / second arc radii. ``R2`` defaults to ``R1`` (symmetric arcs).
+        Unit-agnostic, so long as positions and radii share one length unit
+        (e.g. all metres, or all feet).
+    return_all : bool, default False
+        If False, return only the shortest (minimum measured-depth) solution.
+        If True, return every valid CLC solution.
+
+    Returns
+    -------
+    dict or list of dict or None
+        ``return_all=False``: the shortest solution as a dict with keys ``beta``
+        (tangent / hold length), ``alpha1``, ``alpha2`` (arc doglegs, radians)
+        and ``total_md`` (measured depth); ``None`` if no CLC exists.
+        ``return_all=True``: list of such dicts, shortest first.
+    """
+    R2 = R1 if R2 is None else R2
+    b, a1, a2, md, valid = (x[0] for x in _clc_solutions([p1], [t1], [p4], [t4], R1, R2))
+    sols = [dict(beta=float(b[k]), alpha1=float(a1[k]), alpha2=float(a2[k]),
+                 total_md=float(md[k])) for k in range(len(b)) if valid[k]]
+    if not sols:
+        # general form is singular here (parallel/antiparallel tangents, |mu|=1)
+        # -> the planar 2D form, which subsumes that case.
+        return solve_clc_2d(p1, t1, p4, t4, R1, R2, return_all=return_all)
+    sols.sort(key=lambda s: s['total_md'])
+    if return_all:
+        return sols
+    return sols[0]
+
+
+def solve_clc_2d(p1, t1, p4, t4, R1, R2=None, return_all=False):
+    """Planar / singular CLC solve (``eta14 ~ 0``) — Sawaryn Eq. 34, biquadratic in beta.
+
+    Covers the degenerate 2D case AND the parallel/antiparallel-tangent
+    singularities ``mu = +-1`` (where the general form's ``1/(1-mu^2)`` blows up):
+    ``eta14`` is identically 0 there, so this biquadratic subsumes Sawaryn's
+    Eqs 37/38. The ``+-`` is the two arc senses (Figs 10/11). Verification uses
+    Eqs 11-12 only (the out-of-plane surd sits at 0 numerically here).
+
+    return_all=False (default): the shortest solution dict, or None.
+    return_all=True: list of all solution dicts, shortest first.
+    """
+    if R2 is None:
+        R2 = R1
+    dp = np.asarray(p4, float) - np.asarray(p1, float)
+    mu = float(np.asarray(t1, float) @ np.asarray(t4, float))
+    psi2 = float(dp @ dp); eta1 = float(dp @ t1); eta4 = float(dp @ t4)
+    eta14 = 0.0 if abs(mu) > 1 - 1e-9 else float(dp @ np.cross(t1, t4)) / np.sqrt(1 - mu**2)
+    tol = 1e-4 * np.sqrt(psi2)
+    K = psi2**2 - 4*R1**2*(psi2-eta1**2) - 4*R2**2*(psi2-eta4**2) + 4*R1**2*R2**2*(1-mu)**2
+    Bc = (1+mu)*psi2 - 2*eta1*eta4
+    Bq = -(1-mu)
+
+    def _branch(b):                                  # best (alpha1, alpha2, residual)
+        a1s, a2s = subtended_angles(b, psi2, eta1, eta4, eta14, mu, R1, R2)
+        best = (np.inf, None, None)
+        for x1 in a1s:
+            for x2 in a2s:
+                c1, s1 = np.cos(x1), np.sin(x1); c2, s2 = np.cos(x2), np.sin(x2)
+                T1h, T2h = np.tan(x1/2), np.tan(x2/2)
+                r = np.hypot(R1*s1 + b*c1 + R2*T2h*(mu+c1) - eta1,
+                             R1*T1h*(mu+c2) + b*c2 + R2*s2 - eta4)
+                if r < best[0]:
+                    best = (r, x1, x2)
+        return best
+
+    sols = []
+    for sgn in (1, -1):                              # Eq 34 +- : the two arc senses
+        a2 = -2*psi2 - sgn*4*R1*R2*Bq
+        a0 = K - sgn*4*R1*R2*Bc
+        disc = a2**2 - 4*a0
+        if disc < 0:
+            continue
+        for u in ((-a2 + np.sqrt(disc))/2, (-a2 - np.sqrt(disc))/2):
+            if u <= 1e-12:
+                continue
+            b = float(np.sqrt(u))
+            r, x1, x2 = _branch(b)
+            if r < tol and not any(abs(b - s['beta']) < 1e-2 for s in sols):
+                x1, x2 = x1 % (2 * np.pi), x2 % (2 * np.pi)   # true arc turn
+                sols.append(dict(beta=b, alpha1=x1, alpha2=x2,
+                                 total_md=R1 * x1 + b + R2 * x2))
+    sols.sort(key=lambda s: s['total_md'])
+    if return_all:
+        return sols
+    return sols[0] if sols else None

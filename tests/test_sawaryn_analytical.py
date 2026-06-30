@@ -15,6 +15,7 @@ import pytest
 from welleng.sawaryn_analytical import (
     tangent, _scalars, forward, subtended_angles, solve_clc_analytical, eq15,
     solve_clc_resultant,
+    _eq15_coeffs, solve_clc, solve_clc_batch, solve_clc_2d,
 )
 
 P1 = np.array([8000.0, 8000.0, 6000.0])
@@ -90,3 +91,175 @@ def test_eq15_is_trapped():
     psi2, eta1, eta4, eta14, mu = _scalars(P1, T1, P4, T4)
     scale = abs(eq15(500.0, psi2, eta1, eta4, eta14, mu, R1, R2))
     assert abs(eq15(1072.6, psi2, eta1, eta4, eta14, mu, R1, R2)) > 1e-3 * scale
+
+
+# --- Vectorised closed-form engine (corrected Eq. 15) ------------------------
+
+def _build_clc(dl1, tf1, dl2, tf2, dist):
+    """Forward-construct a CLC path from the origin with tangent [0,0,1]; returns
+    (target position, target unit tangent). For construct-and-recover tests."""
+    def Rz(a):
+        c, s = np.cos(a), np.sin(a)
+        return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1.]])
+
+    def Ry(a):
+        c, s = np.cos(a), np.sin(a)
+        return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+
+    c1, s1 = np.cos(dl1), np.sin(dl1)
+    ct1, st1 = np.cos(tf1), np.sin(tf1)
+    a = np.array([(1 - c1) * ct1, (1 - c1) * st1, s1])
+    v = np.array([s1 * ct1, s1 * st1, c1])
+    b = a + dist * v
+    R = Rz(tf1) @ Ry(dl1) @ Rz(tf2)
+    c2, s2 = np.cos(dl2), np.sin(dl2)
+    return b + R @ np.array([1 - c2, 0, s2]), R @ np.array([s2, 0, c2])
+
+
+def test_corrected_eq15_vanishes_at_example2_roots():
+    # Unlike the printed (trapped) Eq. 15, the DERIVED degree-10 polynomial
+    # vanishes at all four paper roots (scale-normalised evaluation).
+    psi2, eta1, eta4, eta14, mu = _scalars(P1, T1, P4, T4)
+    L = np.sqrt(psi2)
+    co = _eq15_coeffs(1.0, eta1 / L, eta4 / L, mu, R1 / L, R2 / L)
+    scale = max(abs(c) for c in co)
+    for beta in (1072.6, 1630.2, 1789.95, 2356.9):
+        # vanishes to float-coefficient precision (~1e-6 relative); the printed
+        # Eq. 15 by contrast is O(scale) here (see test_eq15_is_trapped).
+        assert abs(np.polyval(co[::-1], beta / L)) < 1e-4 * scale
+
+
+def test_solve_clc_batch_reproduces_example2():
+    out = solve_clc_batch(P1[None], T1[None], P4[None], T4[None], R1, R2,
+                          return_all=True)
+    betas = sorted(out['beta'][0][out['valid'][0]])
+    assert len(betas) == 4
+    for got, exp in zip(betas, [1072.6, 1630.2, 1789.95, 2356.9]):
+        assert got == pytest.approx(exp, abs=0.2)
+
+
+def test_solve_clc_default_returns_shortest():
+    shortest = solve_clc(P1, T1, P4, T4, R1, R2)                 # default
+    allsol = solve_clc(P1, T1, P4, T4, R1, R2, return_all=True)
+    assert len(allsol) == 4
+    assert shortest['total_md'] == pytest.approx(min(s['total_md'] for s in allsol))
+    assert shortest['beta'] == pytest.approx(1072.6, abs=0.2)
+
+
+def test_solve_clc_batch_constructed_recovery():
+    # build CLC paths, the solver must return the build tangent length for each.
+    rng = np.random.default_rng(2024)
+    N = 60
+    P4s, T4s, truth = [], [], []
+    for _ in range(N):
+        dl1, tf1, dl2, tf2, d = (rng.uniform(0.3, 2.0), rng.uniform(-np.pi, np.pi),
+                                 rng.uniform(0.3, 2.0), rng.uniform(-np.pi, np.pi),
+                                 rng.uniform(0.3, 1.5))
+        p3, v3 = _build_clc(dl1, tf1, dl2, tf2, d)
+        P4s.append(p3); T4s.append(v3); truth.append(d)
+    O = np.zeros((N, 3)); V = np.tile([0, 0, 1.], (N, 1))
+    out = solve_clc_batch(O, V, np.array(P4s), np.array(T4s), 1.0, 1.0, return_all=True)
+    rec = sum(bool(np.any(out['valid'][i] & (np.abs(out['beta'][i] - truth[i]) < 1e-2)))
+              for i in range(N))
+    assert rec == N
+
+
+def test_solve_clc_2d_handles_planar_and_parallel():
+    O, V = np.zeros(3), np.array([0, 0, 1.])
+    # planar (eta14 = 0): tf1 = tf2 = 0
+    p3, v3 = _build_clc(0.6, 0.0, 0.5, 0.0, 0.8)
+    sols = solve_clc_2d(O, V, p3, v3, 1.0, 1.0, return_all=True)
+    assert any(abs(s['beta'] - 0.8) < 1e-2 for s in sols)
+    # mu = 1 parallel tangents: fwd(a, 0, a, pi, b) returns v3 = [0,0,1]
+    p3, v3 = _build_clc(0.8, 0.0, 0.8, np.pi, 0.6)
+    assert abs(V @ v3 - 1.0) < 1e-9                              # confirm mu = 1
+    s = solve_clc_2d(O, V, p3, v3, 1.0, 1.0)
+    assert s is not None and abs(s['beta'] - 0.6) < 1e-2
+
+
+def test_closed_form_matches_resultant_on_example2():
+    pytest.importorskip("flint")
+    cf = sorted(solve_clc(P1, T1, P4, T4, R1, R2, return_all=True),
+                key=lambda s: s['beta'])
+    rs = sorted(solve_clc_resultant(P1, T1, P4, T4, R1, R2), key=lambda s: s['beta'])
+    assert len(cf) == len(rs) == 4
+    for a, b in zip(cf, rs):
+        assert a['beta'] == pytest.approx(b['beta'], abs=0.05)
+
+
+def test_solve_clc_recovers_planar_eta14_zero():
+    # Planar (eta14 ~ 0) target: the surd in the forward model sits at ~0- numerically,
+    # so a naive surd>=0 filter drops the valid root. Regression guard for the
+    # asymmetric-batch completeness gap -- the generator's own path must be recovered.
+    O, V = np.zeros(3), np.array([0, 0, 1.])
+    p3, v3 = _build_clc(0.9, 0.0, 0.7, 0.0, 1.1)            # tf1 = tf2 = 0 -> planar
+    _, _, _, e14, _ = _scalars(O, V, p3, v3)
+    assert abs(e14) < 1e-6 * float(np.linalg.norm(p3))      # confirm planar
+    sols = solve_clc(O, V, p3, v3, 1.0, 1.0, return_all=True)
+    assert any(abs(s['beta'] - 1.1) < 1e-2 for s in sols)
+
+
+def test_shortest_aligns_with_generator():
+    # Regression for the |alpha|-vs-dogleg mis-ranking: subtended_angles returns
+    # 2*arctan2(...), which can be a negative co-terminal of the true dogleg, so
+    # scoring MD with |alpha| once labelled a 298-deg arc loop the 'shortest'.
+    # For random asymmetric constructions the solver must (a) recover the
+    # generator's own path -- arc1/line endpoints aligned -- and (b) rank by the
+    # true dogleg, so no shortest MD exceeds the (known valid) generator's.
+    O, V = np.zeros(3), np.array([0, 0, 1.])
+
+    def Rz(a):
+        c, s = np.cos(a), np.sin(a)
+        return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1.]])
+
+    def Ry(a):
+        c, s = np.cos(a), np.sin(a)
+        return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+
+    rng = np.random.default_rng(2024)
+    for _ in range(60):
+        dl1, tf1 = rng.uniform(0.3, 2.2), rng.uniform(-np.pi, np.pi)
+        dl2, tf2 = rng.uniform(0.3, 2.2), rng.uniform(-np.pi, np.pi)
+        dist = rng.uniform(0.4, 1.8)
+        r1, r2 = rng.uniform(0.5, 1.5), rng.uniform(0.5, 1.5)
+        c1, s1 = np.cos(dl1), np.sin(dl1)
+        ct1, st1 = np.cos(tf1), np.sin(tf1)
+        gtA = r1 * np.array([(1-c1)*ct1, (1-c1)*st1, s1])
+        v = np.array([s1*ct1, s1*st1, c1])
+        gtB = gtA + dist * v
+        R = Rz(tf1) @ Ry(dl1) @ Rz(tf2)
+        c2, s2 = np.cos(dl2), np.sin(dl2)
+        p4 = gtB + R @ (r2 * np.array([1-c2, 0, s2]))
+        t4 = R @ np.array([s2, 0, c2])
+        gt_md = r1*dl1 + dist + r2*dl2
+
+        sols = solve_clc(O, V, p4, t4, r1, r2, return_all=True)
+        assert sols
+        # (a) generator path recovered -- some solution's arc1/line points align
+        aligned = False
+        for s in sols:
+            T1, T2 = np.tan(s['alpha1']/2), np.tan(s['alpha2']/2)
+            t2 = (p4 - r1*T1*V - r2*T2*t4) / (r1*T1 + s['beta'] + r2*T2)
+            pos1 = r1*T1*(V + t2)
+            pos2 = pos1 + s['beta']*t2
+            # roots come from companion-matrix eigenvalues, not exact arithmetic,
+            # so allow a little slack rather than demanding exact alignment.
+            if np.linalg.norm(pos1-gtA) < 1e-3 and np.linalg.norm(pos2-gtB) < 1e-3:
+                aligned = True
+                break
+        assert aligned, "generator path not among the solutions"
+        # (b) ranking sane -- the true min-MD never exceeds a known valid path
+        assert min(s['total_md'] for s in sols) <= gt_md + 1e-3
+
+
+def test_r2_defaults_to_r1():
+    # R2=None must mirror R2=R1 (symmetric arcs) across the public entry points.
+    O, V = np.zeros(3), np.array([0, 0, 1.])
+    p4, t4, R1 = np.array([1500., 800, 500]), tangent(85, 30), 1200.
+    a = solve_clc(O, V, p4, t4, R1, return_all=True)
+    b = solve_clc(O, V, p4, t4, R1, R1, return_all=True)
+    assert [round(s['beta'], 6) for s in a] == [round(s['beta'], 6) for s in b]
+    P, T = np.array([[0., 0, 0]]), np.array([[0., 0, 1.]])
+    d = solve_clc_batch(P, T, p4[None], t4[None], R1)
+    e = solve_clc_batch(P, T, p4[None], t4[None], R1, R1)
+    assert np.allclose(d['total_md'], e['total_md'], equal_nan=True)
