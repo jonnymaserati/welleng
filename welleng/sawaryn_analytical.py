@@ -392,6 +392,16 @@ def _clc_solutions(P1, T1, P4, T4, R1, R2):
     R1a = np.broadcast_to(np.asarray(R1, float), (N,))
     R2a = np.broadcast_to(np.asarray(R2, float), (N,))
     co = np.array(_eq15_coeffs(np.ones(N), eta1/L, eta4/L, mu, R1a/L, R2a/L))
+    # Degenerate pairs (|mu|=1) drop the polynomial's order: the leading
+    # coefficient vanishes (or coefficients go non-finite), so the companion
+    # divide co[:10]/co[10] would blow up. Neutralise those columns so eigvals
+    # does not raise, and mark them invalid below. Callers route |mu|=1 to
+    # solve_clc_2d, the planar/parallel form (Sawaryn 2021, Eq. 34).
+    scale = np.max(np.abs(co), axis=0)
+    bad = (~np.isfinite(co).all(axis=0)) | (np.abs(co[10]) < 1e-12 * (scale + 1e-300))
+    if bad.any():
+        co[:, bad] = 0.0
+        co[10, bad] = 1.0                            # dummy monic -> finite roots
     roots = _companion_roots(co) * L[:, None]
     b, bi = roots.real, roots.imag
     ok = (np.abs(bi) < 1e-4 * (np.abs(b) + 1)) & (b > 1e-6)
@@ -424,6 +434,8 @@ def _clc_solutions(P1, T1, P4, T4, R1, R2):
     a1b = np.take_along_axis(a1_4, k[..., None], -1)[..., 0]
     a2b = np.take_along_axis(a2_4, k[..., None], -1)[..., 0]
     valid = ok & (res < 1e-4 * L[:, None])
+    if bad.any():
+        valid[bad] = False                          # degenerate pairs -> use solve_clc_2d
     # subtended_angles returns 2*arctan2(...) in (-2pi, 2pi]; a co-terminal value
     # (same tan(alpha/2), same path) inflates |alpha|. Normalise to the TRUE arc
     # turn in [0, 2pi) so the measured depth -- and any drawing -- is correct.
@@ -530,6 +542,9 @@ def solve_clc(p1, t1, p4, t4, R1, R2=None, return_all=False):
         ``return_all=True``: list of such dicts, shortest first.
     """
     R2 = R1 if R2 is None else R2
+    mu = float(np.asarray(t1, float) @ np.asarray(t4, float))
+    if abs(mu) > 1 - 1e-9:                           # parallel/antiparallel: use 2D form
+        return solve_clc_2d(p1, t1, p4, t4, R1, R2, return_all=return_all)
     b, a1, a2, md, valid = (x[0] for x in _clc_solutions([p1], [t1], [p4], [t4], R1, R2))
     sols = [dict(beta=float(b[k]), alpha1=float(a1[k]), alpha2=float(a2[k]),
                  total_md=float(md[k])) for k in range(len(b)) if valid[k]]

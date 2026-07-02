@@ -312,6 +312,38 @@ def test_max_radius_gentlest_feasible():
                        for s in above), (j, Rm)
 
 
+def test_parallel_and_antiparallel_tangents_handled():
+    # |mu|=1 must not crash. Antiparallel (mu=-1) makes the general polynomial drop
+    # order (leading coeff -> 0), which would blow up the companion divide; parallel
+    # (mu=+1) too. Both route to the 2D form (Sawaryn Eq. 34) and must reconstruct.
+    O = np.zeros(3)
+
+    def recon(t1, t4, p4, s):
+        T1h, T2h = np.tan(s['alpha1'] / 2), np.tan(s['alpha2'] / 2)
+        t2 = (p4 - O - T1h * t1 - T2h * t4) / (T1h + s['beta'] + T2h)
+        end = O + T1h * (t1 + t2) + s['beta'] * t2 + T2h * (t2 + t4)
+        return np.linalg.norm(end - p4)
+
+    for t1, t4, p4 in (
+        (np.array([0., 0, 1.]), np.array([0., 0, 1.]), np.array([1.5, 0, 4.])),   # mu=+1
+        (np.array([0., 0, 1.]), np.array([0., 0, -1.]), np.array([1.5, 0, -1.])),  # mu=-1
+    ):
+        s = solve_clc(O, t1, p4, t4, 1.0, 1.0)                # must not raise
+        assert s is not None
+        assert recon(t1, t4, p4, s) < 1e-6
+        fb = solve_clc_batch([O], [t1], [p4], [t4], 1.0, 1.0)  # batch must not raise
+        assert fb['found'][0]
+        assert abs(fb['total_md'][0] - s['total_md']) < 1e-6
+    # a mixed batch (antiparallel + general) must not crash on the degenerate row
+    mb = solve_clc_batch(
+        np.array([[0., 0, 0], [8000., 8000, 6000]]),
+        np.array([[0., 0, 1.], tangent(75, 15)]),
+        np.array([[1.5, 0, -1.], [9500., 8800, 6500]]),
+        np.array([[0., 0, -1.], tangent(85, 30)]),
+        np.array([1.0, 1250.]), np.array([1.0, 1750.]))
+    assert mb['found'][0] and mb['found'][1]
+
+
 def test_max_radius_parallel_tangents():
     # |mu|=1 (parallel tangents): the general form is singular, so max_radius
     # routes to a 2D feasibility bisection. Vertical S: t1 || t4, p4=[2,0,3].
