@@ -62,13 +62,14 @@ def test_pos_and_vec():
     assert isinstance(from_connections(c, step=30), Survey)
 
 def test_pos_inc_azi():
-    # test with pos2, inc1 and azi1 provided
+    # pos2 + start inc/azi provided -> curve_hold_curve, reachable at design DLS
+    # (inc1=54.7356, azi1=225 is the unit vector [-1,-1,1]/sqrt(3)).
     c = Connector(
         pos1=[0., 0., 0],
-        inc1=0.,
-        azi1=90,
-        pos2=[1000., 1000., 1000.],
-        vec2=[0., 0., 1.],
+        inc1=54.7356,
+        azi1=225.,
+        pos2=[0., 1000., 500.],
+        vec2=np.array([1., -1., 0.]) / np.sqrt(2),
     )
     assert c.method == 'curve_hold_curve'
 
@@ -83,15 +84,19 @@ def test_dls2():
     )
     assert c.radius_design2 < c.radius_design
 
-def test_radius_critical():
-    # test with dls_critical requirement (actual dls < dls_design)
-    c = Connector(
-        pos1=[0., 0., 0],
-        vec1=[0., 0., 1.],
-        pos2=[0., 100., 100.],
-        vec2=[0., 0., 1.],
-    )
-    assert c.radius_critical < c.radius_design
+def test_tight_chc_target_raises():
+    # Tight curve-hold-curve target: needs tighter curvature than the design DLS,
+    # so no CLC exists at the design radii. The connector no longer silently
+    # tightens (the old iterative behaviour) -- it raises; the caller sweeps the
+    # radius / raises dls_design (see the max-radius-solver TODO).
+    import pytest
+    with pytest.raises(ValueError):
+        Connector(
+            pos1=[0., 0., 0],
+            vec1=[0., 0., 1.],
+            pos2=[0., 100., 100.],
+            vec2=[0., 0., 1.],
+        )
 
 def test_min_curve():
     # test min_curve (inc2 provided)
