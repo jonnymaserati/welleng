@@ -722,8 +722,7 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
 def solve_clc_landing(p1, t1, p0, t4, R1, R2=None, return_all=False):
     """Land onto a LINE target: p4 = p0 + k*t4, solving for the scalar k.
 
-    The *landing* problem (Sawaryn & Tulceanu 2009, steering/landing; Sawaryn
-    2021, Appendix C, after Wang et al. 2019):
+    The *landing* problem (Sawaryn 2021, Appendix C):
     the target is not a fixed point but any point on the line through ``p0`` in
     direction ``t4``; the free parameter is the along-line distance ``k``, and the
     connection is a biarc (``beta = 0``). On that line the invariants collapse to
