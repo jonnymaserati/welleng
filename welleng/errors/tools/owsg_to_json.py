@@ -399,6 +399,20 @@ def convert_sheet(
             "vertical_singularity": _singularity_or_none(df.iloc[i, COL_SING_VERT]),
             "hash_value": "00000000000000000000000000000000",
         }
+        # Canonical Rev5.13 form for the random misalignment terms: wrap Cos(Inc)
+        # in Abs (well-defined at inc>90 deg) and apply the documented leading
+        # minus on the XYM3E azimuth term. Numerically IDENTICAL to the plain
+        # Rev5.1/5.11 spreadsheet form for these RANDOM terms (verified vs the
+        # Rev5-1 diagnostics and the ISCWSA #2/#3 example workbooks to ~1e-16),
+        # but adopts the canonical/robust form that the v5.13 definition and the
+        # #2/#3 workbooks use (the toolgroup + #1 workbook omit it). Results are
+        # unchanged; welleng remains Rev 5.11. See Issue #225 and
+        # docs/dev/ERROR_MODEL_ENGINE.md section 7.
+        if code in ("XYM3E", "XYM4E"):
+            term["inclination_formula"] = term["inclination_formula"].replace(
+                "Cos(Inc)", "Abs(Cos(Inc))")
+            azi = term["azimuth_formula"].replace("Cos(Inc)", "Abs(Cos(Inc))")
+            term["azimuth_formula"] = f"-({azi})" if code == "XYM3E" else azi
         terms.append(term)
 
     if warnings:
