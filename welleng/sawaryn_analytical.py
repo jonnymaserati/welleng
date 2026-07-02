@@ -725,3 +725,66 @@ def solve_clc_landing(p1, t1, p0, t4, R1, R2=None, return_all=False):
         return sols
     feas = [s for s in sols if s['alpha1'] <= np.pi + 1e-9 and s['alpha2'] <= np.pi + 1e-9]
     return feas[0] if feas else None
+
+
+def solve_clc_r_sweep(p1, t1, p4, t4, radii, ratio=1.0):
+    """Sweep the design radius: the min-MD CLC at each radius, in one batched solve.
+
+    A convenience *feature* (not new mathematics): the fixed-radius solver run over
+    a range of radii at once. Only the radii change, so the whole sweep is a single
+    vectorised :func:`solve_clc_batch` call (``R2 = ratio * R1``). For each radius it
+    returns the shortest solution whose two arc doglegs are both ``<= pi`` (the
+    renderable one), or marks it infeasible. The feasible range is bounded above by
+    :func:`max_radius` (the critical radius). Lets a caller trade dogleg severity
+    against measured depth, or find a feasible radius when the design DLS fails.
+
+    Parameters
+    ----------
+    p1, t1, p4, t4 : (3,) array_like
+        Kickoff / target positions and unit tangents (N, E, V).
+    radii : array_like
+        The R1 values to sweep.
+    ratio : float, default 1.0
+        ``R2 / R1``.
+
+    Returns
+    -------
+    dict of ndarrays (one entry per swept radius)
+        ``radius`` (R1), ``radius2`` (R2), ``feasible`` (bool), and ``beta``,
+        ``alpha1``, ``alpha2``, ``total_md`` (NaN where infeasible). Assumes the
+        general case ``|mu| < 1`` (route ``|mu| = 1`` targets via ``solve_clc_2d``).
+    """
+    radii = np.atleast_1d(np.asarray(radii, float))
+    n = len(radii)
+    P1 = np.broadcast_to(np.asarray(p1, float), (n, 3))
+    T1 = np.broadcast_to(np.asarray(t1, float), (n, 3))
+    P4 = np.broadcast_to(np.asarray(p4, float), (n, 3))
+    T4 = np.broadcast_to(np.asarray(t4, float), (n, 3))
+    R1, R2 = radii, ratio * radii
+    R1b = np.where(radii > 1e-12, radii, 1e-12)          # keep R=0 out of the batch
+    res = solve_clc_batch(P1, T1, P4, T4, R1b, ratio * R1b, return_all=True)
+    b, a1, a2, md, valid = (res['beta'], res['alpha1'], res['alpha2'],
+                            res['total_md'], res['valid'])
+    pi = np.pi + 1e-9
+    ok = valid & (a1 <= pi) & (a2 <= pi)                 # renderable (<= pi) roots
+    mdm = np.where(ok, md, np.inf)
+    j = np.argmin(mdm, axis=1)                           # shortest renderable per R
+    take = lambda X: np.take_along_axis(X, j[:, None], 1)[:, 0]
+    feasible = np.isfinite(take(mdm))
+    nan_if = lambda X: np.where(feasible, take(X), np.nan)
+    out = dict(radius=R1, radius2=R2, feasible=feasible.copy(),
+               beta=nan_if(b), alpha1=nan_if(a1), alpha2=nan_if(a2),
+               total_md=nan_if(md))
+    # R = 0 collapses to a pure tangent: zero-length arcs (instant turns), the
+    # straight line p1->p4. beta = chord, MD = chord, arc doglegs = the turns.
+    zero = radii <= 1e-12
+    if zero.any():
+        dp = np.asarray(p4, float) - np.asarray(p1, float)
+        chord = float(np.linalg.norm(dp))
+        dph = dp / chord if chord > 0 else dp
+        a1z = float(np.arccos(np.clip(np.asarray(t1, float) @ dph, -1, 1)))
+        a2z = float(np.arccos(np.clip(dph @ np.asarray(t4, float), -1, 1)))
+        for key, val in (('feasible', True), ('beta', chord), ('total_md', chord),
+                         ('alpha1', a1z), ('alpha2', a2z)):
+            out[key][zero] = val
+    return out
