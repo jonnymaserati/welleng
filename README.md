@@ -345,6 +345,21 @@ If your work uses the **anti-collision (exact Mahalanobis separation factor) met
 }
 ```
 
+If your work uses the **analytical curve-hold-curve point-to-target solver** (`welleng.sawaryn_analytical`), please also cite:
+
+> Corcutt, J. (2026). *An Open, Vectorized Closed-Form Solver for the 3D Curve-Hold-Curve Point-to-Target Problem.* Zenodo. <https://doi.org/10.5281/zenodo.21130979>
+
+```bibtex
+@misc{corcutt2026clc,
+  author    = {Corcutt, Jonathan},
+  title     = {An Open, Vectorized Closed-Form Solver for the 3D Curve-Hold-Curve Point-to-Target Problem},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.21130979},
+  url       = {https://doi.org/10.5281/zenodo.21130979}
+}
+```
+
 **Built on:** welleng stands on NumPy, SciPy, pandas, trimesh, FCL and more, and implements published methods (ISCWSA, Brooks, Sawaryn, …) — see [CITATIONS.md](CITATIONS.md) for the dependency and method references to credit.
 
 ## License

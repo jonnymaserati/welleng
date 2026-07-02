@@ -47,10 +47,10 @@ Use of this work requires citation. Cite Sawaryn (2021, SPE-204111-PA) for the
 underlying mathematics, and — for any use of *this* (welleng's) implementation,
 its corrected coefficients, or its sweep/feasibility tooling — you must also cite
 welleng (software concept DOI 10.5281/zenodo.20968887) and the welleng
-analytical-CLC paper (DOI added on publication).
+analytical-CLC paper:
 
-    # TODO: when the welleng analytical-CLC paper is published, add its full
-    # reference + Zenodo DOI here, and to CITATION.cff / CITATIONS.md / README.
+    Corcutt, J. (2026). An Open, Vectorized Closed-Form Solver for the 3D
+    Curve-Hold-Curve Point-to-Target Problem. Zenodo. DOI 10.5281/zenodo.21130979.
 
 ----------------------------------------------------------------------------
 Dedicated to the memory of **Steven J. Sawaryn**, in honour of his decades of
