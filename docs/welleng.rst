@@ -77,6 +77,14 @@ welleng.node module
    :undoc-members:
    :show-inheritance:
 
+welleng.sawaryn\_analytical module
+----------------------------------
+
+.. automodule:: welleng.sawaryn_analytical
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 welleng.survey module
 ---------------------
 

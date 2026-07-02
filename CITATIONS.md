@@ -35,6 +35,10 @@ If your work relies on a specific method, please **also** cite the relevant pape
 - **Anti-collision (exact Mahalanobis separation factor)** — Corcutt, J. (2026).
   *Making the Exact Wellbore Anti-Collision Boundary Practical.* Zenodo.
   [doi:10.5281/zenodo.20976872](https://doi.org/10.5281/zenodo.20976872)
+- **Analytical curve-hold-curve point-to-target solver** — Corcutt, J. (2026).
+  *An Open, Vectorized Closed-Form Solver for the 3D Curve-Hold-Curve
+  Point-to-Target Problem.* Zenodo.
+  [doi:10.5281/zenodo.21130979](https://doi.org/10.5281/zenodo.21130979)
 
 ## Built on — software dependencies
 
