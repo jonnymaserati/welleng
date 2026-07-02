@@ -16,7 +16,7 @@ from welleng.sawaryn_analytical import (
     tangent, _scalars, forward, subtended_angles, solve_clc_analytical, eq15,
     solve_clc_resultant,
     _eq15_coeffs, solve_clc, solve_clc_batch, solve_clc_2d, max_radius,
-    solve_clc_landing,
+    solve_clc_landing, solve_clc_r_sweep,
 )
 
 P1 = np.array([8000.0, 8000.0, 6000.0])
@@ -329,3 +329,35 @@ def test_landing_reproduces_example4():
     assert abs(np.degrees(s['alpha1']) - 30.774) < 0.05
     assert abs(np.degrees(s['alpha2']) - 16.385) < 0.05
     assert np.allclose(s['p4'], [533.30, -194.11, 3280.8], atol=0.15)
+
+
+def test_r_sweep_feature():
+    # a feature (not new maths): the fixed-radius solver run over a radius range
+    # in one batched call. Feasible up to max_radius; R=0 collapses to the tangent.
+    Rmax = max_radius(P1, T1, P4, T4)['radius']
+    radii = np.array([0.0, 500., 1250., 1750., Rmax * 0.98, Rmax * 1.03])
+    sw = solve_clc_r_sweep(P1, T1, P4, T4, radii)
+    chord = np.linalg.norm(P4 - P1)
+    # R = 0 -> pure tangent: beta = MD = chord, arcs zero-length (instant turns)
+    assert sw['feasible'][0]
+    assert abs(sw['beta'][0] - chord) < 1e-9
+    assert abs(sw['total_md'][0] - chord) < 1e-9
+    # feasible below the critical radius, infeasible above it
+    assert sw['feasible'][:-1].all()
+    assert not sw['feasible'][-1]
+    assert np.isnan(sw['total_md'][-1])
+    # gentler curve costs MD; both arc doglegs stay renderable (<= pi)
+    md = sw['total_md'][:-1]
+    assert np.all(np.diff(md) > 0)
+    assert np.all(sw['alpha1'][:-1] <= np.pi + 1e-9)
+    assert np.all(sw['alpha2'][:-1] <= np.pi + 1e-9)
+    # each feasible sweep row matches a direct solve at that radius
+    for i in range(len(radii) - 1):
+        if radii[i] == 0.0:
+            continue
+        s = solve_clc(P1, T1, P4, T4, radii[i], radii[i])
+        assert abs(s['total_md'] - sw['total_md'][i]) < 1e-6
+    # asymmetric ratio supported (R2 = 0.5 * R1)
+    sw2 = solve_clc_r_sweep(P1, T1, P4, T4, [1000.], ratio=0.5)
+    assert sw2['radius2'][0] == 500.
+    assert sw2['feasible'][0]
