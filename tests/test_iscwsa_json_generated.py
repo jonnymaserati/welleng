@@ -59,3 +59,36 @@ def test_shipped_json_matches_generator(label, xlsx, tmp_path):
         "different parameters, override them locally in the test:\n  "
         + "\n  ".join(mismatches)
     )
+
+
+def test_xym3e_xym4e_use_canonical_abs_minus_form():
+    """XYM3E/XYM4E must carry the Rev5.13-canonical Abs(Cos(Inc)) form, with the
+    leading minus on the XYM3E azimuth term. This is numerically identical to the
+    plain toolgroup/Rev5.11 form for these random terms (verified vs the Rev5-1
+    diagnostics + the ISCWSA #2/#3 example workbooks to ~1e-16), but is the robust,
+    definition-aligned form. Applied by owsg_to_json. See Issue #225."""
+    import glob
+    checked = 0
+    for path in glob.glob(str(JSON_ROOT / "owsg_*" / "*.json")):
+        data = json.loads(Path(path).read_text())
+
+        def _walk(o):
+            nonlocal checked
+            if isinstance(o, dict):
+                name = o.get("name")
+                if name in ("XYM3E", "XYM4E"):
+                    checked += 1
+                    inc = o.get("inclination_formula", "")
+                    azi = o.get("azimuth_formula", "")
+                    assert "Abs(Cos(Inc))" in inc, f"{Path(path).name} {name} inc lacks Abs: {inc}"
+                    assert "Abs(Cos(Inc))" in azi, f"{Path(path).name} {name} azi lacks Abs: {azi}"
+                    if name == "XYM3E":
+                        assert azi.lstrip().startswith("-"), f"{Path(path).name} XYM3E azi lacks leading minus: {azi}"
+                for v in o.values():
+                    _walk(v)
+            elif isinstance(o, list):
+                for v in o:
+                    _walk(v)
+
+        _walk(data)
+    assert checked > 0, "no XYM3E/XYM4E terms found to check"
