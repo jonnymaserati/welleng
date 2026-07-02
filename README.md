@@ -14,7 +14,7 @@
 - **Survey listings** — generate and interpolate well trajectories using minimum curvature or maximum curvature methods
 - **Well bore uncertainty** — ISCWSA MWD Rev 5.11 error model (validated 35/35 sources against all three ISCWSA example workbooks), legacy Rev4 for back-compat, and OWSG **gyro** tool stacks (north-seeking stationary, mixed continuous, gyro-MWD) driven by the new ISCWSA JSON schema and an Excel-formula interpreter
 - **Clearance & Separation Factors** — the standard ISCWSA separation rule (within 0.5% of ISCWSA test data), the **exact combined-ellipsoid Mahalanobis method** (`MahalanobisClearance` — same collision/clear verdicts as the rule but up to ~1.47× less conservative, analytic and mesh-free), and a mesh-based method using the [Flexible Collision Library]
-- **Well path creation** — the `connector` module builds trajectories between start/end locations automatically
+- **Well path creation** — the `connector` module builds trajectories between start/end locations automatically, backed by an analytic, vectorized closed-form curve-hold-curve (CLC) point-to-target solver (`sawaryn_analytical` — every solution + the minimum-measured-depth path) with radius-sweep and R1×R2 drillable-region tooling
 - **Vertical section, TVD interpolation, project-ahead** — common survey planning tools
 - **Torque and drag** — simple torque/drag model with architecture module
 - **Visualization** — interactive 3D via [vedo]/VTK or browser-based via plotly (requires `easy` install)
@@ -104,6 +104,17 @@ cov = survey.err.errors.cov_NEVs       # NEV covariance per station
 > acceptance (the hybrid to ~0.1%), and Model #3 also on Well #2. See
 > `tests/test_spe90408_appendix_e.py`. The propagation engine itself is
 > independently exact — MWD `cov_NEVs` matches the ISCWSA reference to 5e-5.
+
+> **Analytic curve-hold-curve solver (welleng 0.14.0).** The `Connector`'s CLC
+> point-to-target case is now solved in closed form (Sawaryn 2021, SPE-204111-PA)
+> rather than iteratively — `sawaryn_analytical` returns *every* solution and the
+> minimum-measured-depth path in one batched eigenvalue solve (~0.02 ms/path),
+> with a radius sweep that maps the feasible-radius trade-off and the R1×R2
+> drillable region (fix one arc radius, read off the maximum usable other).
+> **Breaking:** infeasible targets now raise rather than silently tightening below
+> the design DLS; opt-in `on_infeasible='max_radius'` returns the gentlest feasible
+> curve. Companion paper:
+> [doi:10.5281/zenodo.21130979](https://doi.org/10.5281/zenodo.21130979).
 
 ## Support welleng
 welleng is fuelled by copious amounts of coffee, so if you wish to supercharge development please donate generously:
