@@ -53,3 +53,16 @@ references:
         orcid: "https://orcid.org/0009-0008-1953-7760"
     year: 2026
     doi: 10.5281/zenodo.20976872
+  # Analytical curve-hold-curve point-to-target solver paper.
+  # source: papers/published/clc-point-to-target.md
+  - type: article
+    title: >-
+      An Open, Vectorized Closed-Form Solver for the 3D Curve-Hold-Curve
+      Point-to-Target Problem
+    authors:
+      - family-names: Corcutt
+        given-names: Jonathan
+        affiliation: "Corcutt Beheer B.V., Wassenaar, Netherlands"
+        orcid: "https://orcid.org/0009-0008-1953-7760"
+    year: 2026
+    doi: 10.5281/zenodo.21130979

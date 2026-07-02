@@ -1,0 +1,47 @@
+{
+  "upload_type": "publication",
+  "publication_type": "preprint",
+  "title": "An Open, Vectorized Closed-Form Solver for the 3D Curve-Hold-Curve Point-to-Target Problem",
+  "creators": [
+    {
+      "name": "Corcutt, Jonathan",
+      "affiliation": "Corcutt Beheer B.V., Wassenaar, Netherlands",
+      "orcid": "0009-0008-1953-7760"
+    }
+  ],
+  "description": "An open, vectorized closed-form solver for the 3D curve-hold-curve (circle-line-circle) point-to-target problem in directional-drilling trajectory planning. Reports and corrects a transcription error in the printed eliminated polynomial of Sawaryn (2021, SPE-204111-PA); gives a batched all-roots implementation that selects the minimum-measured-depth path; integrates it into welleng as the Connector's curve-hold-curve solver; and adds a batched radius sweep (design radius, or independent R1/R2) that maps the feasible-radius trade-off, recovers the maximum usable radius, and exposes an easily-overlooked hazard where a larger arc radius can remove the drillable path. Use requires citation of this work, welleng, and Sawaryn (2021).",
+  "license": "cc-by-4.0",
+  "access_right": "open",
+  "keywords": [
+    "directional drilling",
+    "trajectory planning",
+    "minimum curvature method",
+    "curve-hold-curve",
+    "point-to-target",
+    "wellbore positioning",
+    "3D Dubins path",
+    "Dubins curves",
+    "CSC path",
+    "curvature-constrained path planning",
+    "motion planning",
+    "robotics",
+    "computational geometry",
+    "closed-form solution",
+    "vectorized solver",
+    "welleng",
+    "SPE"
+  ],
+  "related_identifiers": [
+    {"identifier": "10.2118/204111-PA", "relation": "cites", "scheme": "doi", "resource_type": "publication-article"},
+    {"identifier": "10.2118/84246-PA", "relation": "cites", "scheme": "doi", "resource_type": "publication-article"},
+    {"identifier": "10.2118/110014-PA", "relation": "cites", "scheme": "doi", "resource_type": "publication-article"},
+    {"identifier": "arXiv:2405.08710", "relation": "cites", "scheme": "arxiv", "resource_type": "publication-preprint"},
+    {"identifier": "arXiv:2503.11560", "relation": "cites", "scheme": "arxiv", "resource_type": "publication-preprint"},
+    {"identifier": "10.1109/IROS.2010.5653663", "relation": "cites", "scheme": "doi", "resource_type": "publication-conferencepaper"},
+    {"identifier": "10.2514/1.C032245", "relation": "cites", "scheme": "doi", "resource_type": "publication-article"},
+    {"identifier": "10.2118/3362-PA", "relation": "cites", "scheme": "doi", "resource_type": "publication-article"},
+    {"identifier": "10.2118/3664-PA", "relation": "cites", "scheme": "doi", "resource_type": "publication-article"},
+    {"identifier": "10.5281/zenodo.20968887", "relation": "isSupplementTo", "scheme": "doi", "resource_type": "software"}
+  ],
+  "notes": "Reference DOIs verified 2026-07-02 (local PDF / doi.org / Crossref / IEEE Xplore); none fabricated. Software (welleng) concept DOI: 10.5281/zenodo.20968887."
+}
