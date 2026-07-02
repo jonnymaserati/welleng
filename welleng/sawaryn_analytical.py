@@ -863,3 +863,65 @@ def solve_clc_r_sweep(p1, t1, p4, t4, R1, R2=None,
                          ('alpha1', a1z), ('alpha2', a2z)):
             out[key][zero] = val
     return out
+
+
+def solve_clc_r_grid(p1, t1, p4, t4, R1, R2=None,
+                     scale_min=0.75, scale_max=1.25, n_steps=11,
+                     r1_scales=None, r2_scales=None):
+    """Sweep ``R1`` and ``R2`` *independently* — the min-MD CLC over a 2D grid.
+
+    The general case of :func:`solve_clc_r_sweep`: instead of scaling both radii
+    together, ``R1`` and ``R2`` are swept on independent axes, giving the full
+    ``K1 x K2`` reachability picture (e.g. asymmetry can buy back feasibility a
+    coupled sweep misses). No new mathematics — the closed form already solves
+    asymmetric radii; this is one batched :func:`solve_clc_batch` call over the
+    flattened grid (mu=1 rows routed to the 2D solver automatically).
+
+    Parameters
+    ----------
+    p1, t1, p4, t4 : (3,) array_like
+        Kickoff / target positions and unit tangents (N, E, V).
+    R1 : float
+        Design arc-1 radius. ``R2`` defaults to ``R1``.
+    R2 : float, optional
+        Design arc-2 radius.
+    scale_min, scale_max, n_steps : float, float, int
+        Scale-factor range applied to BOTH axes when explicit scales are not
+        given (default 0.75 .. 1.25, 11 steps; design 1.0 snapped in per axis).
+    r1_scales, r2_scales : array_like, optional
+        Explicit per-axis scale factors (override ``scale_min/max/n_steps``).
+
+    Returns
+    -------
+    dict
+        ``r1_scales`` (K1,), ``r2_scales`` (K2,), ``radius1`` (K1,),
+        ``radius2`` (K2,); ``feasible`` and ``beta``, ``alpha1``, ``alpha2``,
+        ``total_md`` each (K1, K2) with axis 0 = ``R1`` and axis 1 = ``R2`` (NaN
+        where infeasible); ``design_index`` = (i, j) of the ``(1.0, 1.0)`` cell.
+    """
+    R2 = R1 if R2 is None else R2
+    s1 = _build_r_scales(scale_min, scale_max, n_steps) if r1_scales is None else np.atleast_1d(np.asarray(r1_scales, float))
+    s2 = _build_r_scales(scale_min, scale_max, n_steps) if r2_scales is None else np.atleast_1d(np.asarray(r2_scales, float))
+    R1v, R2v = R1 * s1, R2 * s2
+    K1, K2 = len(s1), len(s2)
+    G1, G2 = np.meshgrid(R1v, R2v, indexing='ij')       # (K1, K2)
+    R1f, R2f = G1.ravel(), G2.ravel()
+    n = K1 * K2
+    P1 = np.broadcast_to(np.asarray(p1, float), (n, 3))
+    T1 = np.broadcast_to(np.asarray(t1, float), (n, 3))
+    P4 = np.broadcast_to(np.asarray(p4, float), (n, 3))
+    T4 = np.broadcast_to(np.asarray(t4, float), (n, 3))
+    res = solve_clc_batch(P1, T1, P4, T4, R1f, R2f, return_all=True)
+    b, a1, a2, md, valid = (res['beta'], res['alpha1'], res['alpha2'],
+                            res['total_md'], res['valid'])
+    pi = np.pi + 1e-9
+    mdm = np.where(valid & (a1 <= pi) & (a2 <= pi), md, np.inf)
+    j = np.argmin(mdm, axis=1)                           # shortest renderable per cell
+    take = lambda X: np.take_along_axis(X, j[:, None], 1)[:, 0].reshape(K1, K2)
+    feasible = np.isfinite(take(mdm))
+    nan_if = lambda X: np.where(feasible, take(X), np.nan)
+    return dict(r1_scales=s1, r2_scales=s2, radius1=R1v, radius2=R2v,
+                design_index=(int(np.argmin(np.abs(s1 - 1.0))),
+                              int(np.argmin(np.abs(s2 - 1.0)))),
+                feasible=feasible, beta=nan_if(b),
+                alpha1=nan_if(a1), alpha2=nan_if(a2), total_md=nan_if(md))
