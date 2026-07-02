@@ -43,9 +43,11 @@ that welleng's ``Connector`` inherits.
 
 Citation
 --------
-Cite Sawaryn (2021, SPE-204111-PA) for the underlying mathematics. If you use
-*this* (welleng's) implementation, please also cite welleng — software concept
-DOI 10.5281/zenodo.20968887.
+Use of this work requires citation. Cite Sawaryn (2021, SPE-204111-PA) for the
+underlying mathematics, and — for any use of *this* (welleng's) implementation,
+its corrected coefficients, or its sweep/feasibility tooling — you must also cite
+welleng (software concept DOI 10.5281/zenodo.20968887) and the welleng
+analytical-CLC paper (DOI added on publication).
 
     # TODO: when the welleng analytical-CLC paper is published, add its full
     # reference + Zenodo DOI here, and to CITATION.cff / CITATIONS.md / README.
