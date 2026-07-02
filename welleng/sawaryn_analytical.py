@@ -59,7 +59,7 @@ four decades.
 """
 
 import numpy as np
-from scipy.optimize import minimize_scalar
+from scipy.optimize import minimize_scalar, brentq
 
 
 def tangent(inc_deg, azi_deg):
@@ -581,3 +581,147 @@ def solve_clc_2d(p1, t1, p4, t4, R1, R2=None, return_all=False):
     if return_all:
         return sols
     return sols[0] if sols else None
+
+
+def max_radius(p1, t1, p4, t4, ratio=1.0):
+    """Largest radius admitting a valid CLC — the gentlest feasible curve.
+
+    The point-to-target CLC is reachable with both arc doglegs ``<= pi`` only up
+    to a maximum radius; beyond it the target is reachable only by a ``> pi``
+    (loop) arc, which the minimum-curvature renderer cannot draw. That maximum is
+    the ``beta = 0`` (curve-curve / biarc) boundary, where the hold vanishes —
+    equivalently the largest root of the constant coefficient ``c0`` of the
+    corrected Eq. 15 whose biarc has both doglegs ``<= pi``. This is the analytic
+    form of the classical "critical radius": the gentlest curvature that still
+    reaches the target. A caller can fall back to it when no CLC exists at the
+    design radii, instead of iterating the radius down.
+
+    Parameters
+    ----------
+    p1, t1, p4, t4 : (3,) array_like
+        Kickoff / target positions and unit tangents (N, E, V).
+    ratio : float, default 1.0
+        ``R2 / R1``. ``1.0`` is symmetric radii; otherwise the second radius
+        scales with the first along this ratio.
+
+    Returns
+    -------
+    dict or None
+        ``radius`` (R1), ``radius2`` (R2), ``beta`` (0.0), ``alpha1``, ``alpha2``
+        (biarc doglegs, radians) and ``total_md``; ``None`` if no feasible biarc
+        exists (the target is unreachable under the ``pi`` constraint).
+
+    Notes
+    -----
+    Closed-form condition of Sawaryn (2021, SPE-204111-PA); no iteration. See
+    :func:`solve_clc` for the general (fixed-design-radius) solve.
+    """
+    psi2, e1, e4, e14, mu = _scalars(p1, t1, p4, t4)
+    L = np.sqrt(psi2)
+
+    def _c0(R):
+        return _eq15_coeffs(1.0, e1 / L, e4 / L, mu, R / L, ratio * R / L)[0]
+
+    grid = np.linspace(1e-3 * L, 5.0 * L, 600)
+    cv = np.array([_c0(r) for r in grid])
+    best = None
+    for i in range(len(grid) - 1):
+        if cv[i] * cv[i + 1] >= 0:
+            continue
+        R = brentq(_c0, grid[i], grid[i + 1])
+        R1, R2 = R, ratio * R
+        a1s, a2s = subtended_angles(0.0, psi2, e1, e4, e14, mu, R1, R2)
+        for x1 in a1s:
+            for x2 in a2s:
+                f = forward(x1, x2, 0.0, mu, R1, R2)
+                if f is None:
+                    continue
+                if (abs(f[0] - e1) < 1e-4 * L and abs(f[1] - e4) < 1e-4 * L
+                        and abs(abs(f[2]) - abs(e14)) < 1e-4 * L):
+                    a1, a2 = x1 % (2 * np.pi), x2 % (2 * np.pi)
+                    if a1 <= np.pi + 1e-9 and a2 <= np.pi + 1e-9 and (
+                            best is None or R > best['radius']):
+                        best = dict(radius=R1, radius2=R2, beta=0.0,
+                                    alpha1=a1, alpha2=a2, total_md=R1 * a1 + R2 * a2)
+    return best
+
+
+def solve_clc_landing(p1, t1, p0, t4, R1, R2=None, return_all=False):
+    """Land onto a LINE target: p4 = p0 + k*t4, solving for the scalar k.
+
+    The *landing* problem (Sawaryn 2021, Appendix C, extending Wang et al. 2019):
+    the target is not a fixed point but any point on the line through ``p0`` in
+    direction ``t4``; the free parameter is the along-line distance ``k``, and the
+    connection is a biarc (``beta = 0``). On that line the invariants collapse to
+    low-order functions of ``k`` (Eqs. C-8/C-13/C-17):
+    ``eta1 = eps1 + mu*k``, ``eta4 = eps4 + k``, ``eta14 = eps14`` (constant),
+    ``psi^2 = psi0^2 + 2*eps4*k + k^2``, with ``eps* = (p0 - p1).<basis>``.
+    Substituting these into the biarc condition ``c0 = 0`` (the constant
+    coefficient of the corrected Eq. 15) gives a polynomial in ``k`` (Eq. 44)
+    whose roots are the landing distances; this is solved numerically for ``k``.
+
+    Parameters
+    ----------
+    p1, t1 : (3,) array_like
+        Kickoff position and unit tangent (N, E, V).
+    p0, t4 : (3,) array_like
+        A point on the landing line and its unit direction.
+    R1, R2 : float
+        Arc radii; ``R2`` defaults to ``R1``.
+    return_all : bool, default False
+        False -> the shortest feasible landing (both biarc doglegs <= pi) as a
+        dict, or ``None``. True -> every landing root, feasible-first then by MD.
+
+    Returns
+    -------
+    dict or list of dict or None
+        Each dict: ``k`` (along-line distance), ``p4`` (landing point), ``beta``
+        (0.0), ``alpha1``, ``alpha2`` (biarc doglegs, radians), ``total_md``.
+    """
+    R2 = R1 if R2 is None else R2
+    p1, t1, p0, t4 = (np.asarray(a, float) for a in (p1, t1, p0, t4))
+    mu = float(t1 @ t4)
+    d0 = p0 - p1
+    eps1 = float(d0 @ t1)
+    eps4 = float(d0 @ t4)
+    eps14 = 0.0 if abs(mu) > 1 - 1e-9 else float(d0 @ np.cross(t1, t4)) / np.sqrt(1 - mu**2)
+    psi0_2 = float(d0 @ d0)
+
+    def _c0k(k):
+        psi2 = psi0_2 + 2 * eps4 * k + k * k
+        if psi2 <= 0:
+            return np.nan
+        L = np.sqrt(psi2)
+        return _eq15_coeffs(1.0, (eps1 + mu * k) / L, (eps4 + k) / L, mu, R1 / L, R2 / L)[0]
+
+    kmax = 4.0 * (np.sqrt(psi0_2) + R1 + R2)
+    ks = np.linspace(1e-6, kmax, 3000)
+    cv = np.array([_c0k(k) for k in ks])
+    sols = []
+    for i in range(len(ks) - 1):
+        if not (cv[i] * cv[i + 1] < 0):
+            continue
+        k = brentq(_c0k, ks[i], ks[i + 1])
+        psi2 = psi0_2 + 2 * eps4 * k + k * k
+        g1, g4 = eps1 + mu * k, eps4 + k
+        a1s, a2s = subtended_angles(0.0, psi2, g1, g4, eps14, mu, R1, R2)
+        best = (np.inf, None, None)
+        for x1 in a1s:
+            for x2 in a2s:
+                f = forward(x1, x2, 0.0, mu, R1, R2)
+                if f is None:
+                    continue
+                r = abs(f[0] - g1) + abs(f[1] - g4) + abs(abs(f[2]) - abs(eps14))
+                if r < best[0]:
+                    best = (r, x1, x2)
+        if best[1] is None:
+            continue
+        a1, a2 = best[1] % (2 * np.pi), best[2] % (2 * np.pi)
+        sols.append(dict(k=float(k), p4=p0 + k * t4, beta=0.0,
+                         alpha1=a1, alpha2=a2, total_md=R1 * a1 + R2 * a2))
+    sols.sort(key=lambda s: (not (s['alpha1'] <= np.pi + 1e-9 and s['alpha2'] <= np.pi + 1e-9),
+                             s['total_md']))
+    if return_all:
+        return sols
+    feas = [s for s in sols if s['alpha1'] <= np.pi + 1e-9 and s['alpha2'] <= np.pi + 1e-9]
+    return feas[0] if feas else None
