@@ -249,6 +249,11 @@ def solve_clc_resultant(p1, t1, p4, t4, R1, R2=None):
         R2 = R1
     import flint
     from fractions import Fraction
+    if not hasattr(flint, 'fmpq_mpoly_ctx'):        # some python-flint builds omit it
+        raise ImportError(
+            "solve_clc_resultant needs python-flint with rational multivariate "
+            "polynomials (flint.fmpq_mpoly_ctx); this build lacks it. It is only an "
+            "independent cross-check — use solve_clc / solve_clc_batch to solve.")
     flint.ctx.prec = 400
     psi2, eta1, eta4, eta14, mu = _scalars(p1, t1, p4, t4)
     L = np.sqrt(psi2)                              # characteristic length -> O(1) coeffs

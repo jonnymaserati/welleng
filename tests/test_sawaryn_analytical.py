@@ -25,6 +25,15 @@ T1 = tangent(75.0, 15.0)
 T4 = tangent(85.0, 30.0)
 R1, R2 = 1250.0, 1750.0
 
+try:                                                # solve_clc_resultant cross-check
+    import flint as _flint                          # needs rational multivariate polys
+    _HAS_FLINT_MPOLY = hasattr(_flint, 'fmpq_mpoly_ctx')
+except ImportError:
+    _HAS_FLINT_MPOLY = False
+_needs_flint_mpoly = pytest.mark.skipif(
+    not _HAS_FLINT_MPOLY,
+    reason="python-flint build lacks fmpq_mpoly_ctx (resultant cross-check only)")
+
 
 def test_scalars_match_example1():
     # Paper Example 1: ψ²=3.14e6, η1=1728.93, η4=1736.15, η14=252.95, μ=0.95202
@@ -67,6 +76,7 @@ def test_solve_clc_reproduces_example2_exactly():
     assert principal['residual'] < 1e-3
 
 
+@_needs_flint_mpoly
 def test_solve_clc_resultant_is_complete_on_example2():
     # The resultant solver is complete *by construction* (every valid solution's
     # beta is a root of the eliminated polynomial); spurious roots filtered by
@@ -178,6 +188,7 @@ def test_solve_clc_2d_handles_planar_and_parallel():
     assert s is not None and abs(s['beta'] - 0.6) < 1e-2
 
 
+@_needs_flint_mpoly
 def test_closed_form_matches_resultant_on_example2():
     pytest.importorskip("flint")
     cf = sorted(solve_clc(P1, T1, P4, T4, R1, R2, return_all=True),
