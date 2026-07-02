@@ -1,5 +1,14 @@
-"""Wellbore trajectory connector for computing minimum-MD CLC paths."""
+"""Wellbore trajectory connector.
 
+Resolves a minimum-curvature connection between two stations (each a position
+and/or a direction), classifying it into the appropriate type — a straight
+*hold*, a single *curve* (min-curvature), a *curve-hold*, or a *curve-hold-curve*
+(the circle-line-circle, CLC, point-to-target case) — and returns the arc/hold
+sections, doglegs and measured depths. The curve-hold-curve case is solved in
+closed form via Sawaryn (2021, SPE-204111-PA) — see ``welleng.sawaryn_analytical``.
+"""
+
+import warnings
 from copy import copy, deepcopy
 
 import numpy as np
@@ -7,7 +16,7 @@ from scipy.optimize import minimize
 from scipy.spatial import distance
 
 from .node import Node, get_node_params
-from .sawaryn_analytical import solve_clc
+from .sawaryn_analytical import max_radius, solve_clc
 from .utils import (
     NEV_to_HLA, dls_from_radius, get_angles,
     get_dogleg, get_nev, get_rf, get_unit_vec, get_vec, get_xyz,
@@ -141,7 +150,8 @@ class Connector:
         min_tangent=0.,
         max_iterations=1_000,
         force_min_curve=False,
-        closest_approach=False
+        closest_approach=False,
+        on_infeasible='raise'
     ):
         """Initializes the Connector and solves the trajectory.
 
@@ -207,6 +217,13 @@ class Connector:
         closest_approach : bool
             If True, finds the closest-approach trajectory
             when the target is inside the critical radius.
+        on_infeasible : str
+            Behaviour when no curve-hold-curve solution exists at the
+            design radii. ``'raise'`` (default) raises ``ValueError``.
+            ``'max_radius'`` falls back to the gentlest feasible curve —
+            the beta=0 biarc at the largest radius admitting a valid CLC
+            (see :func:`welleng.sawaryn_analytical.max_radius`) — and
+            emits a ``UserWarning`` that the design DLS is exceeded.
 
         Raises
         ------
@@ -392,6 +409,10 @@ class Connector:
         )
         self.radius_critical, self.radius_critical2 = np.inf, np.inf
         self.closest_approach = closest_approach
+        assert on_infeasible in ('raise', 'max_radius'), (
+            "on_infeasible must be 'raise' or 'max_radius'"
+        )
+        self.on_infeasible = on_infeasible
 
         # Things fall apart if the start and end vectors exactly equal
         # one another, so need to check for this and if this is the
@@ -490,11 +511,14 @@ class Connector:
             # Populates the state when a CLC exists at the design radii.
             if self._solve_chc_analytical():
                 self._chc_solver = 'analytical'
+            elif self.on_infeasible == 'max_radius' and self._solve_chc_max_radius():
+                self._chc_solver = 'max_radius'
             else:
                 # No CLC at the design radii: the target needs tighter curvature
                 # than the design DLS allows. We do NOT silently tighten — the
                 # caller decides (e.g. sweep the radius / raise dls_design, then
-                # retry). See solve_clc in welleng.sawaryn_analytical.
+                # retry, or opt in to on_infeasible='max_radius'). See solve_clc
+                # in welleng.sawaryn_analytical.
                 raise ValueError(
                     "No curve-hold-curve solution at the design radii "
                     f"(R1={self.radius_design:.6g}, R2={self.radius_design2:.6g}) "
@@ -708,7 +732,7 @@ class Connector:
             + self.md1
         )
 
-    def _solve_chc_analytical(self):
+    def _solve_chc_analytical(self, R1=None, R2=None):
         """Closed-form curve-hold-curve solve — the primary CHC path.
 
         Solves the curve-hold-curve point-to-target problem analytically via
@@ -739,13 +763,22 @@ class Connector:
             ``False`` if no renderable CLC exists at the design radii (the
             caller then raises ``ValueError``).
         """
+        # Radii default to the design radii — behaviour with no args is
+        # identical to solving at the design DLS. A caller (the max_radius
+        # fallback) may pass explicit radii to populate the state at a
+        # different, feasible curvature without mutating the design radii.
+        if R1 is None:
+            R1 = self.radius_design
+        if R2 is None:
+            R2 = self.radius_design2
+
         # Parallel/antiparallel tangents (|mu|=1) make the general closed form
         # singular; solve_clc auto-routes those to the planar 2D form, but the
         # transient 1/(1-mu^2) still emits a benign divide warning -> silence it.
         with np.errstate(divide='ignore', invalid='ignore'):
             sols = solve_clc(
                 self.pos1, self.vec1, self.pos_target, self.vec_target,
-                self.radius_design, self.radius_design2, return_all=True
+                R1, R2, return_all=True
             )
         if not sols:
             return False
@@ -761,8 +794,6 @@ class Connector:
         beta = float(sol['beta'])
         alpha1 = check_dogleg(float(sol['alpha1']))
         alpha2 = check_dogleg(float(sol['alpha2']))
-        R1 = self.radius_design
-        R2 = self.radius_design2
 
         t1 = self.vec1
         t4 = self.vec_target
@@ -807,11 +838,11 @@ class Connector:
         self.radius_critical = np.inf
         self.radius_critical2 = np.inf
         self.dls = max(
-            np.radians(dls_from_radius(self.radius_design)),
+            np.radians(dls_from_radius(R1)),
             np.radians(dls_from_radius(self.radius_critical))
         )
         self.dls2 = max(
-            np.radians(dls_from_radius(self.radius_design2)),
+            np.radians(dls_from_radius(R2)),
             np.radians(dls_from_radius(self.radius_critical2))
         )
 
@@ -830,6 +861,43 @@ class Connector:
             if not np.isfinite(val):
                 return False
 
+        return True
+
+    def _solve_chc_max_radius(self):
+        """Opt-in fallback when no CLC exists at the design radii.
+
+        Finds the gentlest feasible curve — the ``beta=0`` biarc at the
+        largest radius admitting a valid CLC (both arc doglegs ``<= pi``),
+        via :func:`welleng.sawaryn_analytical.max_radius` — and populates
+        the full CHC state at that critical radius. The design radii are
+        left untouched; ``radius_critical``/``radius_critical2`` record the
+        radii actually used and a ``UserWarning`` flags that the resulting
+        DLS exceeds the design DLS.
+
+        Returns
+        -------
+        bool
+            ``True`` if a feasible max-radius biarc was found and the state
+            populated; ``False`` otherwise (the caller then raises).
+        """
+        mr = max_radius(
+            self.pos1, self.vec1, self.pos_target, self.vec_target,
+            ratio=self.radius_design2 / self.radius_design
+        )
+        if mr is None:
+            return False
+        if not self._solve_chc_analytical(R1=mr['radius'], R2=mr['radius2']):
+            return False
+        self.radius_critical = mr['radius']
+        self.radius_critical2 = mr['radius2']
+        warnings.warn(
+            "No curve-hold-curve solution exists at the design DLS "
+            f"(R1={self.radius_design:.6g}, R2={self.radius_design2:.6g}); "
+            "falling back to the maximum feasible radius "
+            f"(R1={mr['radius']:.6g}, R2={mr['radius2']:.6g}). The resulting "
+            "dogleg severity EXCEEDS the design DLS.",
+            UserWarning,
+        )
         return True
 
     def interpolate(self, step=30):

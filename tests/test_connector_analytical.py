@@ -2,9 +2,10 @@
 
 The ``Connector`` now solves the curve-hold-curve (CHC) point-to-target
 problem with the closed-form solution of Sawaryn (2021), SPE-204111-PA
-(``Connector._solve_chc_analytical``) as the PRIMARY path, falling back to the
-inherited iterative fixed-point scheme of Sawaryn & Thorogood (2005),
-SPE-84246-PA, only when no renderable CLC exists at the design radii.
+(``Connector._solve_chc_analytical``). When no renderable CLC exists at the
+design radii it raises by default; the inherited Sawaryn & Thorogood (2005)
+iterative scheme has been removed. Opt-in ``on_infeasible='max_radius'`` instead
+falls back to the gentlest feasible curve (the beta=0 biarc at the max radius).
 
 These tests prove the port:
 
@@ -163,8 +164,51 @@ def test_tight_target_raises():
         )
 
 
+def test_tight_target_max_radius_fallback():
+    """Opt-in ``on_infeasible='max_radius'`` falls back to the gentlest feasible
+    curve when no CLC exists at the design DLS. A tight target (raises by default,
+    like ``test_tight_target_raises``) is solved as the beta~0 biarc at the maximum
+    feasible radius: the hold vanishes, both arc doglegs <= pi, the endpoint is
+    reached to ~1e-6, the critical radius is tighter than the design radius, and a
+    UserWarning is emitted flagging the design-DLS exceedance.
+
+    The target position is the tight ``[0, 100, 100]`` case; its tangent is turned
+    45 deg off the start tangent because ``max_radius``'s general closed form is
+    singular for exactly (anti)parallel tangents (|mu|=1) and has no 2D auto-route,
+    so it returns None for the fully-vertical ``vec2=[0,0,1]`` variant."""
+    import pytest
+    target = [0., 100., 100.]
+    vec2 = list(np.array([0., 1., 1.]) / np.sqrt(2))
+    with pytest.warns(UserWarning):
+        c = Connector(
+            pos1=[0., 0., 0.], vec1=[0., 0., 1.],
+            pos2=target, vec2=vec2,
+            on_infeasible='max_radius',
+        )
+
+    assert c.method == 'curve_hold_curve'
+    assert c._chc_solver == 'max_radius'
+
+    # beta~0 biarc: the hold vanishes (negligible vs the ~140 m path length).
+    assert abs(c.tangent_length) < 1e-4, c.tangent_length
+
+    # Both arcs are renderable (dogleg <= pi).
+    assert c.dogleg <= np.pi + 1e-9
+    assert c.dogleg2 <= np.pi + 1e-9
+
+    # Endpoint reconstructed from public state hits the target tightly.
+    _, _, pos_end = _reconstruct_endpoint(c)
+    assert np.allclose(pos_end, target, atol=TIGHT_TOL), (
+        float(np.linalg.norm(np.array(pos_end) - np.array(target)))
+    )
+
+    # The fallback tightened the curvature: critical radius < design radius.
+    assert c.radius_critical < c.radius_design
+
+
 if __name__ == "__main__":
     test_chc_analytical_roundtrip()
     test_chc_analytical_is_used_simple()
     test_tight_target_raises()
+    test_tight_target_max_radius_fallback()
     print("ok")

@@ -15,7 +15,8 @@ import pytest
 from welleng.sawaryn_analytical import (
     tangent, _scalars, forward, subtended_angles, solve_clc_analytical, eq15,
     solve_clc_resultant,
-    _eq15_coeffs, solve_clc, solve_clc_batch, solve_clc_2d,
+    _eq15_coeffs, solve_clc, solve_clc_batch, solve_clc_2d, max_radius,
+    solve_clc_landing,
 )
 
 P1 = np.array([8000.0, 8000.0, 6000.0])
@@ -263,3 +264,68 @@ def test_r2_defaults_to_r1():
     d = solve_clc_batch(P, T, p4[None], t4[None], R1)
     e = solve_clc_batch(P, T, p4[None], t4[None], R1, R1)
     assert np.allclose(d['total_md'], e['total_md'], equal_nan=True)
+
+
+def test_max_radius_gentlest_feasible():
+    # max_radius = the largest R giving a valid CLC with both arc doglegs <= pi,
+    # i.e. the beta=0 biarc boundary (the analytic critical radius). The biarc
+    # must reach the target with both arcs <= pi, and just above that radius the
+    # target is reachable only by a > pi (loop) arc.
+    O, V = np.zeros(3), np.array([0, 0, 1.])
+
+    def Rz(a):
+        c, s = np.cos(a), np.sin(a)
+        return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1.]])
+
+    def Ry(a):
+        c, s = np.cos(a), np.sin(a)
+        return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+
+    rng = np.random.default_rng(11)
+    for j in range(25):
+        dl1, tf1 = rng.uniform(0.4, 1.8), rng.uniform(-np.pi, np.pi)
+        dl2, tf2 = rng.uniform(0.4, 1.8), rng.uniform(-np.pi, np.pi)
+        dist, r = rng.uniform(0.4, 1.5), rng.uniform(0.6, 1.4)
+        c1, s1 = np.cos(dl1), np.sin(dl1)
+        ct1, st1 = np.cos(tf1), np.sin(tf1)
+        a = r * np.array([(1-c1)*ct1, (1-c1)*st1, s1])
+        v = np.array([s1*ct1, s1*st1, c1])
+        b = a + dist * v
+        R = Rz(tf1) @ Ry(dl1) @ Rz(tf2)
+        c2, s2 = np.cos(dl2), np.sin(dl2)
+        p4 = b + R @ (r * np.array([1-c2, 0, s2]))
+        t4 = R @ np.array([s2, 0, c2])
+
+        mr = max_radius(O, V, p4, t4)
+        assert mr is not None, j
+        Rm, a1, a2 = mr['radius'], mr['alpha1'], mr['alpha2']
+        assert a1 <= np.pi + 1e-6 and a2 <= np.pi + 1e-6, (j, a1, a2)
+        assert mr['beta'] == 0.0
+        # the beta=0 biarc reaches the target
+        T1h, T2h = np.tan(a1/2), np.tan(a2/2)
+        t2 = (p4 - Rm*T1h*V - Rm*T2h*t4) / (Rm*T1h + Rm*T2h)
+        end = Rm*T1h*(V + t2) + Rm*T2h*(t2 + t4)
+        assert np.linalg.norm(end - p4) < 1e-6 * (np.linalg.norm(p4) + 1), j
+        # it is the maximum: just above, no CLC with both arcs <= pi exists
+        above = solve_clc(O, V, p4, t4, Rm*1.05, Rm*1.05, return_all=True)
+        assert not any(s['alpha1'] <= np.pi + 1e-9 and s['alpha2'] <= np.pi + 1e-9
+                       for s in above), (j, Rm)
+
+
+def test_landing_reproduces_example4():
+    # SPE-204111-PA Example 4 (Wang 2019 landing): line target p4 = p0 + k*t4,
+    # solve for k. Published: real roots k = 37.27, 567.52; the (largest / Wang)
+    # solution k=567.52 has alpha1=30.774, alpha2=16.385, p4=(533.30,-194.11,3280.8).
+    p1 = np.array([167.78, -81.72, 3293.92]); t1 = tangent(82, 328)
+    p0 = np.array([0., 0., 3280.80]);         t4 = tangent(90, 340)
+    R = 469.94
+    allsol = solve_clc_landing(p1, t1, p0, t4, R, R, return_all=True)
+    ks = [s['k'] for s in allsol]
+    assert any(abs(k - 37.27) < 0.1 for k in ks), ks
+    assert any(abs(k - 567.52) < 0.1 for k in ks), ks
+    # default = the feasible (both arcs <= pi) landing = Wang's k=567.52
+    s = solve_clc_landing(p1, t1, p0, t4, R, R)
+    assert abs(s['k'] - 567.52) < 0.1
+    assert abs(np.degrees(s['alpha1']) - 30.774) < 0.05
+    assert abs(np.degrees(s['alpha2']) - 16.385) < 0.05
+    assert np.allclose(s['p4'], [533.30, -194.11, 3280.8], atol=0.15)
