@@ -385,7 +385,8 @@ def _clc_solutions(P1, T1, P4, T4, R1, R2):
     psi2 = np.einsum('ij,ij->i', dp, dp)
     eta1 = np.einsum('ij,ij->i', dp, T1)
     eta4 = np.einsum('ij,ij->i', dp, T4)
-    eta14 = np.einsum('ij,ij->i', dp, np.cross(T1, T4)) / np.sqrt(1.0 - mu**2)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        eta14 = np.einsum('ij,ij->i', dp, np.cross(T1, T4)) / np.sqrt(1.0 - mu**2)
     L = np.sqrt(psi2)
     N = len(psi2)
     R1a = np.broadcast_to(np.asarray(R1, float), (N,))
@@ -409,7 +410,8 @@ def _clc_solutions(P1, T1, P4, T4, R1, R2):
             t1h, t2h = np.tan(a1/2), np.tan(a2/2)
             f1 = R1b*sn1 + b*c1 + R2b*t2h*(M+c1)
             f4 = R1b*t1h*(M+c2) + b*c2 + R2b*sn2
-            sd = (1-M**2 - c1**2 - c2**2 + 2*M*c1*c2)/(1-M**2)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                sd = (1-M**2 - c1**2 - c2**2 + 2*M*c1*c2)/(1-M**2)
             # clamp a tiny-negative surd to 0 -- at eta14~0 (planar) the true
             # solution's surd sits at ~0- numerically; rejecting it on surd<0
             # drops a valid root. eta1/eta4 still filter genuinely-bad branches.
@@ -458,7 +460,23 @@ def solve_clc_batch(P1, T1, P4, T4, R1, R2=None, return_all=False):
     (planar / parallel-tangent) pairs to :func:`solve_clc_2d`.
     """
     R2 = R1 if R2 is None else R2
-    b, a1, a2, md, valid = _clc_solutions(P1, T1, P4, T4, R1, R2)
+    P1, T1, P4, T4 = (np.asarray(a, float) for a in (P1, T1, P4, T4))
+    N = len(P1)
+    R1a = np.broadcast_to(np.asarray(R1, float), (N,))
+    R2a = np.broadcast_to(np.asarray(R2, float), (N,))
+    b, a1, a2, md, valid = _clc_solutions(P1, T1, P4, T4, R1a, R2a)
+    # Parallel / antiparallel tangents (|mu| = 1) make the general form singular
+    # (it carries a 1/sqrt(1 - mu^2)); route those rows to the planar 2D solver
+    # and splice them in, so batched callers (e.g. solve_clc_r_sweep) handle the
+    # common planar vertical-S case rather than reporting it infeasible.
+    mu = np.einsum('ij,ij->i', T1, T4)
+    for i in np.nonzero(np.abs(mu) > 1 - 1e-9)[0]:
+        b[i], a1[i], a2[i], md[i], valid[i] = 0.0, 0.0, 0.0, 0.0, False
+        for s_idx, s in enumerate(solve_clc_2d(P1[i], T1[i], P4[i], T4[i],
+                                               R1a[i], R2a[i], return_all=True)[:10]):
+            b[i, s_idx], a1[i, s_idx] = s['beta'], s['alpha1']
+            a2[i, s_idx], md[i, s_idx] = s['alpha2'], s['total_md']
+            valid[i, s_idx] = True
     if return_all:
         return dict(beta=b, alpha1=a1, alpha2=a2, total_md=md, valid=valid)
     mdm = np.where(valid, md, np.inf)
@@ -665,7 +683,9 @@ def solve_clc_landing(p1, t1, p0, t4, R1, R2=None, return_all=False):
     p1, t1 : (3,) array_like
         Kickoff position and unit tangent (N, E, V).
     p0, t4 : (3,) array_like
-        A point on the landing line and its unit direction.
+        The landing line: ``p0`` is its anchor (the ``k = 0`` base point) and
+        ``t4`` its unit direction. Named ``p0`` (not ``p4``) because the target
+        point ``p4 = p0 + k*t4`` is the *solved* output, not an input.
     R1, R2 : float
         Arc radii; ``R2`` defaults to ``R1``.
     return_all : bool, default False
@@ -727,42 +747,95 @@ def solve_clc_landing(p1, t1, p0, t4, R1, R2=None, return_all=False):
     return feas[0] if feas else None
 
 
-def solve_clc_r_sweep(p1, t1, p4, t4, radii, ratio=1.0):
-    """Sweep the design radius: the min-MD CLC at each radius, in one batched solve.
+def _build_r_scales(scale_min, scale_max, n_steps):
+    """Linspace of scale factors with the nearest value snapped to exactly 1.0.
 
-    A convenience *feature* (not new mathematics): the fixed-radius solver run over
-    a range of radii at once. Only the radii change, so the whole sweep is a single
-    vectorised :func:`solve_clc_batch` call (``R2 = ratio * R1``). For each radius it
-    returns the shortest solution whose two arc doglegs are both ``<= pi`` (the
-    renderable one), or marks it infeasible. The feasible range is bounded above by
-    :func:`max_radius` (the critical radius). Lets a caller trade dogleg severity
-    against measured depth, or find a feasible radius when the design DLS fails.
+    Snapping guarantees the *design* radius (scale 1.0) is one of the swept
+    values whenever the range brackets it.
+    """
+    if n_steps <= 1 or scale_min == scale_max:
+        return np.array([float(scale_min)])
+    scales = np.linspace(float(scale_min), float(scale_max), int(n_steps))
+    if scale_min <= 1.0 <= scale_max:
+        scales[int(np.argmin(np.abs(scales - 1.0)))] = 1.0
+    return scales
+
+
+def solve_clc_r_sweep(p1, t1, p4, t4, R1, R2=None,
+                      scale_min=0.75, scale_max=1.25, n_steps=11,
+                      scales=None, values=None):
+    """Sweep the design radius: the min-MD CLC over a range of radii, batched.
+
+    A convenience *feature* (not new mathematics): the fixed-radius solver of
+    :func:`solve_clc` evaluated over a range of radii in ONE vectorised
+    :func:`solve_clc_batch` call (only the radii change). Both arc radii are
+    scaled by a common factor, so ``R2/R1`` is preserved and the sweep is 1-D in
+    the design radius. Per radius it returns the shortest solution whose two arc
+    doglegs are both ``<= pi`` (the renderable one), or marks it infeasible; the
+    feasible range is bounded above by :func:`max_radius`.
+
+    The range is a set of *scale factors* on the design radii — as
+    ``(scale_min, scale_max, n_steps)`` (a linspace), or explicit ``scales``, or
+    explicit radius ``values`` (converted to scales of ``R1``). The **design
+    radii (scale 1.0) are always included** when the range brackets them
+    (snap-to-1.0), so the sweep always contains the as-designed solution;
+    ``design_index`` locates it. Unlike a per-instance solver there is no
+    per-radius frame normalisation — the batch solves every radius in the world
+    frame at once.
+
+    Lets a caller trade dogleg severity against measured depth, or recover a
+    feasible radius when the design DLS fails.
 
     Parameters
     ----------
     p1, t1, p4, t4 : (3,) array_like
         Kickoff / target positions and unit tangents (N, E, V).
-    radii : array_like
-        The R1 values to sweep.
-    ratio : float, default 1.0
-        ``R2 / R1``.
+    R1 : float
+        Design arc-1 radius.
+    R2 : float, optional
+        Design arc-2 radius; defaults to ``R1``.
+    scale_min, scale_max : float
+        Range of scale factors applied to the design radii (default 0.75 .. 1.25,
+        the typical +/-25% design spread).
+    n_steps : int
+        Number of scale steps, linspace endpoints inclusive (default 11).
+    scales : array_like, optional
+        Explicit scale factors (overrides ``scale_min/max/n_steps``).
+    values : array_like, optional
+        Explicit ``R1`` radius values (overrides ``scales``; converted to scales
+        ``R/R1`` so ``R2`` tracks at the design ratio). Mutually exclusive with
+        ``scales``.
 
     Returns
     -------
     dict of ndarrays (one entry per swept radius)
-        ``radius`` (R1), ``radius2`` (R2), ``feasible`` (bool), and ``beta``,
-        ``alpha1``, ``alpha2``, ``total_md`` (NaN where infeasible). Assumes the
-        general case ``|mu| < 1`` (route ``|mu| = 1`` targets via ``solve_clc_2d``).
+        ``scale``, ``radius1`` (R1*scale), ``radius2`` (R2*scale),
+        ``design_index`` (int — the scale==1.0 row, or nearest), ``feasible``
+        (bool), and ``beta``, ``alpha1``, ``alpha2``, ``total_md`` (NaN where
+        infeasible). ``R = 0`` collapses to the straight tangent
+        (``beta = total_md = chord``). Parallel-tangent (``|mu| = 1``) rows — the
+        planar vertical S — are routed to :func:`solve_clc_2d` by the batch, so
+        they are handled, not skipped.
     """
-    radii = np.atleast_1d(np.asarray(radii, float))
-    n = len(radii)
+    R2 = R1 if R2 is None else R2
+    if scales is not None and values is not None:
+        raise ValueError("scales and values are mutually exclusive")
+    if values is not None:
+        scales = np.asarray(values, float) / R1
+    elif scales is not None:
+        scales = np.asarray(scales, float)
+    else:
+        scales = _build_r_scales(scale_min, scale_max, n_steps)
+    scales = np.atleast_1d(scales)
+    R1s, R2s = R1 * scales, R2 * scales
+    n = len(scales)
     P1 = np.broadcast_to(np.asarray(p1, float), (n, 3))
     T1 = np.broadcast_to(np.asarray(t1, float), (n, 3))
     P4 = np.broadcast_to(np.asarray(p4, float), (n, 3))
     T4 = np.broadcast_to(np.asarray(t4, float), (n, 3))
-    R1, R2 = radii, ratio * radii
-    R1b = np.where(radii > 1e-12, radii, 1e-12)          # keep R=0 out of the batch
-    res = solve_clc_batch(P1, T1, P4, T4, R1b, ratio * R1b, return_all=True)
+    R1b = np.where(R1s > 1e-12, R1s, 1e-12)              # keep R=0 out of the batch
+    R2b = np.where(R2s > 1e-12, R2s, 1e-12)
+    res = solve_clc_batch(P1, T1, P4, T4, R1b, R2b, return_all=True)
     b, a1, a2, md, valid = (res['beta'], res['alpha1'], res['alpha2'],
                             res['total_md'], res['valid'])
     pi = np.pi + 1e-9
@@ -772,12 +845,14 @@ def solve_clc_r_sweep(p1, t1, p4, t4, radii, ratio=1.0):
     take = lambda X: np.take_along_axis(X, j[:, None], 1)[:, 0]
     feasible = np.isfinite(take(mdm))
     nan_if = lambda X: np.where(feasible, take(X), np.nan)
-    out = dict(radius=R1, radius2=R2, feasible=feasible.copy(),
+    out = dict(scale=scales, radius1=R1s, radius2=R2s,
+               design_index=int(np.argmin(np.abs(scales - 1.0))),
+               feasible=feasible.copy(),
                beta=nan_if(b), alpha1=nan_if(a1), alpha2=nan_if(a2),
                total_md=nan_if(md))
     # R = 0 collapses to a pure tangent: zero-length arcs (instant turns), the
     # straight line p1->p4. beta = chord, MD = chord, arc doglegs = the turns.
-    zero = radii <= 1e-12
+    zero = R1s <= 1e-12
     if zero.any():
         dp = np.asarray(p4, float) - np.asarray(p1, float)
         chord = float(np.linalg.norm(dp))
