@@ -2,8 +2,8 @@
 
 Constructs a random asymmetric (R1 != R2) curve-line-curve path, solves it back
 with ``welleng.sawaryn_analytical.solve_clc`` and draws every solution overlaid
-on the ground-truth construction. Drawing is lifted from the dubins3d-analytical
-review tool (it already handles the major-arc geometry correctly).
+on the ground-truth construction (the arc drawing handles the major-arc geometry
+correctly).
 
     python visualise_clc.py [seed]
 
