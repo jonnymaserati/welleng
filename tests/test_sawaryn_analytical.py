@@ -16,7 +16,7 @@ from welleng.sawaryn_analytical import (
     tangent, _scalars, forward, subtended_angles, solve_clc_analytical, eq15,
     solve_clc_resultant,
     _eq15_coeffs, solve_clc, solve_clc_batch, solve_clc_2d, max_radius,
-    solve_clc_landing, solve_clc_r_sweep,
+    solve_clc_landing, solve_clc_r_sweep, _build_r_scales,
 )
 
 P1 = np.array([8000.0, 8000.0, 6000.0])
@@ -331,33 +331,82 @@ def test_landing_reproduces_example4():
     assert np.allclose(s['p4'], [533.30, -194.11, 3280.8], atol=0.15)
 
 
+def test_build_r_scales_snaps_design():
+    # linspace of scale factors, with the design (1.0) snapped in when bracketed
+    s = _build_r_scales(0.9, 1.1, 11)
+    assert len(s) == 11
+    assert s[0] == 0.9 and s[-1] == 1.1
+    assert np.any(s == 1.0)                              # design radius present
+    # range not bracketing 1.0 -> no snap
+    assert not np.any(_build_r_scales(1.1, 1.3, 5) == 1.0)
+
+
 def test_r_sweep_feature():
     # a feature (not new maths): the fixed-radius solver run over a radius range
-    # in one batched call. Feasible up to max_radius; R=0 collapses to the tangent.
-    Rmax = max_radius(P1, T1, P4, T4)['radius']
-    radii = np.array([0.0, 500., 1250., 1750., Rmax * 0.98, Rmax * 1.03])
-    sw = solve_clc_r_sweep(P1, T1, P4, T4, radii)
-    chord = np.linalg.norm(P4 - P1)
-    # R = 0 -> pure tangent: beta = MD = chord, arcs zero-length (instant turns)
-    assert sw['feasible'][0]
-    assert abs(sw['beta'][0] - chord) < 1e-9
-    assert abs(sw['total_md'][0] - chord) < 1e-9
-    # feasible below the critical radius, infeasible above it
-    assert sw['feasible'][:-1].all()
-    assert not sw['feasible'][-1]
-    assert np.isnan(sw['total_md'][-1])
-    # gentler curve costs MD; both arc doglegs stay renderable (<= pi)
-    md = sw['total_md'][:-1]
-    assert np.all(np.diff(md) > 0)
-    assert np.all(sw['alpha1'][:-1] <= np.pi + 1e-9)
-    assert np.all(sw['alpha2'][:-1] <= np.pi + 1e-9)
-    # each feasible sweep row matches a direct solve at that radius
-    for i in range(len(radii) - 1):
-        if radii[i] == 0.0:
-            continue
-        s = solve_clc(P1, T1, P4, T4, radii[i], radii[i])
+    # (given as scale factors on the design radii) in one batched call. The
+    # design radius is always in the sweep; feasible up to max_radius.
+    R1d, R2d = 1250., 1750.
+    sw = solve_clc_r_sweep(P1, T1, P4, T4, R1d, R2d,
+                           scale_min=0.9, scale_max=1.1, n_steps=11)
+    di = sw['design_index']
+    # design row: scale 1.0, actual design radii, matches a direct solve
+    assert sw['scale'][di] == 1.0
+    assert sw['radius1'][di] == R1d and sw['radius2'][di] == R2d
+    s0 = solve_clc(P1, T1, P4, T4, R1d, R2d)
+    assert abs(s0['total_md'] - sw['total_md'][di]) < 1e-6
+    # R2/R1 ratio preserved across the sweep
+    assert np.allclose(sw['radius2'] / sw['radius1'], R2d / R1d)
+    # gentler curve costs MD (monotone in scale); doglegs renderable (<= pi)
+    assert np.all(sw['feasible'])
+    assert np.all(np.diff(sw['total_md']) > 0)
+    assert np.all(sw['alpha1'] <= np.pi + 1e-9)
+    assert np.all(sw['alpha2'] <= np.pi + 1e-9)
+    # every feasible row matches a direct solve at that radius
+    for i in range(len(sw['scale'])):
+        s = solve_clc(P1, T1, P4, T4, sw['radius1'][i], sw['radius2'][i])
         assert abs(s['total_md'] - sw['total_md'][i]) < 1e-6
-    # asymmetric ratio supported (R2 = 0.5 * R1)
-    sw2 = solve_clc_r_sweep(P1, T1, P4, T4, [1000.], ratio=0.5)
-    assert sw2['radius2'][0] == 500.
-    assert sw2['feasible'][0]
+
+    # explicit `values` path: full range incl R=0 and past the critical radius
+    Rmax = max_radius(P1, T1, P4, T4)['radius']
+    chord = np.linalg.norm(P4 - P1)
+    swv = solve_clc_r_sweep(P1, T1, P4, T4, 1250.,
+                            values=[0.0, 500., Rmax * 0.98, Rmax * 1.03])
+    # R = 0 -> pure tangent: beta = MD = chord (arcs collapse to instant turns)
+    assert swv['feasible'][0]
+    assert abs(swv['beta'][0] - chord) < 1e-9
+    assert abs(swv['total_md'][0] - chord) < 1e-9
+    # feasible below the critical radius, infeasible above it
+    assert swv['feasible'][:-1].all()
+    assert not swv['feasible'][-1]
+    assert np.isnan(swv['total_md'][-1])
+
+    # scales and values are mutually exclusive
+    with pytest.raises(ValueError):
+        solve_clc_r_sweep(P1, T1, P4, T4, 1250., scales=[1.0], values=[1250.])
+
+
+def test_r_sweep_planar_vertical_s_trap():
+    # Parallel-tangent (|mu|=1) vertical S: the general form is singular, so the
+    # batch must route these rows to solve_clc_2d (else the sweep wrongly reports
+    # infeasible). And the operational trap: a clean 90/90 S at the design radius
+    # becomes INFEASIBLE if the radius is raised ~10% (the drillable S vanishes;
+    # only >pi loops remain), while reducing R keeps it feasible and simpler.
+    O = np.array([0., 0., 0.]); t1 = np.array([1., 0., 0.]); t4 = np.array([1., 0., 0.])
+    p4 = np.array([2., 0., 3.])                          # a 90/90 S at R = 1.0
+    assert abs(t1 @ t4) == 1.0                           # exactly parallel (mu=1)
+
+    # the singular row is handled, not skipped: batch agrees with the 2D solver
+    fb = solve_clc_batch([O], [t1], [p4], [t4], 1.0, 1.0)
+    s2 = solve_clc_2d(O, t1, p4, t4, 1.0, 1.0)
+    assert fb['found'][0] and s2 is not None
+    assert abs(fb['total_md'][0] - s2['total_md']) < 1e-6
+    assert abs(np.degrees(fb['alpha1'][0]) - 90.0) < 0.5
+
+    sw = solve_clc_r_sweep(O, t1, p4, t4, 1.0, values=[0.8, 1.0, 1.1])
+    # reduce R -> feasible and gentler; design -> feasible ~90 deg
+    assert sw['feasible'][0] and sw['feasible'][1]
+    assert np.degrees(sw['alpha1'][0]) < np.degrees(sw['alpha1'][1])  # smaller R, smaller dogleg
+    assert abs(np.degrees(sw['alpha1'][1]) - 90.0) < 0.5
+    # raise R ~10% -> no drillable S (only >pi loops); the trap
+    assert not sw['feasible'][2]
+    assert np.isnan(sw['total_md'][2])
