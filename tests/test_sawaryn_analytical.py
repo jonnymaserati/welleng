@@ -16,7 +16,7 @@ from welleng.sawaryn_analytical import (
     tangent, _scalars, forward, subtended_angles, solve_clc_analytical, eq15,
     solve_clc_resultant,
     _eq15_coeffs, solve_clc, solve_clc_batch, solve_clc_2d, max_radius,
-    solve_clc_landing, solve_clc_r_sweep, _build_r_scales,
+    solve_clc_landing, solve_clc_r_sweep, solve_clc_r_grid, _build_r_scales,
 )
 
 P1 = np.array([8000.0, 8000.0, 6000.0])
@@ -410,3 +410,24 @@ def test_r_sweep_planar_vertical_s_trap():
     # raise R ~10% -> no drillable S (only >pi loops); the trap
     assert not sw['feasible'][2]
     assert np.isnan(sw['total_md'][2])
+
+
+def test_r_grid_independent_axes():
+    # independent R1 x R2 sweep: a 2D grid, one batched solve, design cell exact.
+    R1d, R2d = 1250., 1750.
+    g = solve_clc_r_grid(P1, T1, P4, T4, R1d, R2d,
+                         scale_min=0.8, scale_max=1.2, n_steps=9)
+    i, j = g['design_index']
+    K1, K2 = len(g['r1_scales']), len(g['r2_scales'])
+    assert g['feasible'].shape == (K1, K2) == g['total_md'].shape
+    # design cell = (1.0, 1.0) -> the design radii, matching a direct solve
+    assert g['r1_scales'][i] == 1.0 and g['r2_scales'][j] == 1.0
+    assert g['radius1'][i] == R1d and g['radius2'][j] == R2d
+    s = solve_clc(P1, T1, P4, T4, R1d, R2d)
+    assert g['feasible'][i, j]
+    assert abs(g['total_md'][i, j] - s['total_md']) < 1e-6
+    # axis 0 is R1, axis 1 is R2: an off-diagonal cell matches its direct solve
+    assert abs(g['total_md'][0, -1] -
+               solve_clc(P1, T1, P4, T4, g['radius1'][0], g['radius2'][-1])['total_md']) < 1e-6
+    # NaN exactly where infeasible
+    assert np.all(np.isnan(g['total_md'][~g['feasible']]))
