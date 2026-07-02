@@ -312,6 +312,25 @@ def test_max_radius_gentlest_feasible():
                        for s in above), (j, Rm)
 
 
+def test_max_radius_parallel_tangents():
+    # |mu|=1 (parallel tangents): the general form is singular, so max_radius
+    # routes to a 2D feasibility bisection. Vertical S: t1 || t4, p4=[2,0,3].
+    O = np.array([0., 0., 0.]); t1 = np.array([1., 0., 0.]); t4 = np.array([1., 0., 0.])
+    p4 = np.array([2., 0., 3.])
+    mr = max_radius(O, t1, p4, t4)
+    assert mr is not None
+    Rm = mr['radius']
+    assert 1.05 < Rm < 1.12                              # the biarc boundary ~1.083
+    assert mr['alpha1'] <= np.pi + 1e-9 and mr['alpha2'] <= np.pi + 1e-9
+    pi = np.pi + 1e-9
+
+    def feasible(R):
+        return any(s['alpha1'] <= pi and s['alpha2'] <= pi
+                   for s in solve_clc_2d(O, t1, p4, t4, R, R, return_all=True))
+    assert feasible(Rm * 0.99)                           # drillable just below
+    assert not feasible(Rm * 1.01)                       # gone just above
+
+
 def test_landing_reproduces_example4():
     # SPE-204111-PA Example 4 (Wang 2019 landing): line target p4 = p0 + k*t4,
     # solve for k. Published: real roots k = 37.27, 567.52; the (largest / Wang)

@@ -601,6 +601,39 @@ def solve_clc_2d(p1, t1, p4, t4, R1, R2=None, return_all=False):
     return sols[0] if sols else None
 
 
+def _max_radius_2d(p1, t1, p4, t4, ratio):
+    """Maximum radius for the parallel-tangent (|mu|=1) case, via the 2D solver.
+
+    The general form carries a 1/sqrt(1-mu^2) and is singular here, so bisect the
+    feasibility edge: the largest R for which the planar solve has a solution with
+    both arc doglegs <= pi (``solve_clc_2d`` also returns >pi loops, so filter).
+    """
+    pi = np.pi + 1e-9
+    L = float(np.linalg.norm(np.asarray(p4, float) - np.asarray(p1, float)))
+
+    def feas(R):
+        return [s for s in solve_clc_2d(p1, t1, p4, t4, R, ratio * R, return_all=True)
+                if s['alpha1'] <= pi and s['alpha2'] <= pi]
+
+    lo, hi = 1e-3 * L, 5.0 * L
+    if not feas(lo):
+        return None
+    if not feas(hi):                                     # edge lies in (lo, hi)
+        for _ in range(60):
+            mid = 0.5 * (lo + hi)
+            if feas(mid):
+                lo = mid
+            else:
+                hi = mid
+    R = lo                                               # largest feasible R found
+    sols = feas(R)
+    if not sols:
+        return None
+    s = min(sols, key=lambda x: x['total_md'])
+    return dict(radius=R, radius2=ratio * R, beta=s['beta'],
+                alpha1=s['alpha1'], alpha2=s['alpha2'], total_md=s['total_md'])
+
+
 def max_radius(p1, t1, p4, t4, ratio=1.0):
     """Largest radius admitting a valid CLC — the gentlest feasible curve.
 
@@ -631,9 +664,14 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
 
     Notes
     -----
-    Closed-form condition of Sawaryn (2021, SPE-204111-PA); no iteration. See
-    :func:`solve_clc` for the general (fixed-design-radius) solve.
+    Closed-form condition of Sawaryn (2021, SPE-204111-PA); no iteration. Parallel
+    tangents (``|mu| = 1``) — where the general form is singular — are handled by a
+    2D feasibility bisection (:func:`solve_clc_2d`). See :func:`solve_clc` for the
+    general (fixed-design-radius) solve.
     """
+    mu = float(np.asarray(t1, float) @ np.asarray(t4, float))
+    if abs(mu) > 1 - 1e-9:                  # parallel tangents: general form singular
+        return _max_radius_2d(p1, t1, p4, t4, ratio)
     psi2, e1, e4, e14, mu = _scalars(p1, t1, p4, t4)
     L = np.sqrt(psi2)
 
