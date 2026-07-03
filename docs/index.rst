@@ -11,6 +11,7 @@ Welcome to welleng's documentation!
    :caption: Contents:
 
    modules
+   publications
 
 Indices and tables
 ==================
