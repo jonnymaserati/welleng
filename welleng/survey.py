@@ -626,6 +626,7 @@ class Survey:
         start_cov_nev=None,
         deg=True,
         unit="meters",
+        steering=None,
         **kwargs
     ):
         """Initialize a `welleng.Survey` object. Calculations are performed in the
@@ -726,6 +727,13 @@ class Survey:
         self.start_nev = start_nev
         self.md = np.array(md).astype('float64')
         self.start_cov_nev = start_cov_nev
+
+        # Per-station steering mode ('slide' | 'rotary'), one entry per station
+        # (the mode of the leg arriving at that station; station 0 is ignored).
+        # Governs whether the maximum-curvature deflection is treated as a
+        # directional (slide, bent-motor) bias or is randomised (rotary/RSS,
+        # where the toolface averages out). None -> unspecified.
+        self.steering = None if steering is None else np.asarray(steering)
 
         self._process_azi_ref(inc, azi, deg)
 
@@ -1441,7 +1449,12 @@ class Survey:
         dls_noise: float or None
             Incremental Dog Leg Severity (deg/30m) added by the maximum-curvature
             method. If None, no pre-processing is done and minimum curvature is
-            assumed.
+            assumed. When applied, every leg is treated as a **slide**
+            (``steering='slide'``) - the maximum, worst-case tortuosity the method
+            is defined to give; the slide/rotary distinction of
+            :meth:`maximum_curvature` is deliberately not exposed here, since the
+            MTI is a conservative geometric quality metric rather than an
+            error-propagation calculation.
         data: bool
             If True, return a dict of intermediate properties instead of the
             array.
@@ -1462,7 +1475,12 @@ class Survey:
         # Check whether to pre-process the survey to apply maximum curvature.
         if bool(dls_noise):
             survey = self.interpolate_survey(step=step)
-            survey = survey.maximum_curvature(dls_noise=dls_noise)
+            # The MTI's max-curvature is the worst-case (all-slide) tortuosity by
+            # definition; pass steering explicitly so maximum_curvature does not
+            # demand a per-leg mode the MTI intentionally does not model.
+            survey = survey.maximum_curvature(
+                dls_noise=dls_noise, steering='slide'
+            )
 
         else:
             survey = self
@@ -1575,7 +1593,7 @@ class Survey:
 
         return directional_difficulty_index(self, **kwargs)
 
-    def maximum_curvature(self, dls_noise=1.0):
+    def maximum_curvature(self, dls_noise=1.0, steering=None):
         """
         Create a well trajectory using the Maximum Curvature method.
 
@@ -1585,6 +1603,27 @@ class Survey:
         dls_noise: float
             The additional Dog Leg Severity (DLS) in deg/30m used to calculate
             the curvature for the initial section of the survey interval.
+        steering: {'slide', 'rotary'}, or (,n) array-like of those / bool
+            The slide/rotary mode of each leg - a physical drilling property that
+            is *not* inferable from the survey (inclination, azimuth, measured
+            depth); it is either a single value applied to every leg, or one entry
+            per survey station (the mode of the leg arriving at that station):
+
+            - ``'slide'`` - the leg was steered by sliding a bent motor at an
+              oriented toolface. The extra ``dls_noise`` curvature is applied in
+              the surveyed toolface, giving a **directional** deflection (the
+              survey-interval error has a consistent sign - the well lands
+              shallower).
+            - ``'rotary'`` - the leg was drilled rotating (RSS or rotary hold).
+              The toolface averages out over rotation, so no directional
+              deflection is applied (the leg keeps its minimum-curvature path);
+              the survey-interval error there is *random*, not directional.
+
+            A boolean array is read as ``True == slide``. **Defaults to**
+            ``'slide'`` - the conservative choice, since folding a directional
+            bias into a symmetric (rotary) treatment would under-state the error;
+            **rotary is therefore opt-in** and must be positively declared. Falls
+            back to ``Survey.steering`` when the argument is left as ``None``.
 
         Returns
         -------
@@ -1592,10 +1631,41 @@ class Survey:
             A revised survey object calculated using the Minimum Curvature
             method with updated survey positions and additional mid-point
             stations.
-        """
 
-        dls_effective = self.dls + dls_noise
-        radius_effective = radius_from_dls(dls_effective)
+        Raises
+        ------
+        ValueError
+            If an array is given whose length does not match the number of survey
+            stations.
+        """
+        # slide/rotary mode per leg. Default 'slide' (conservative - the
+        # directional bias is included); rotary is opt-in and must be declared,
+        # because randomising a directional bias under-states the error.
+        mode = steering if steering is not None else self.steering
+        if mode is None:
+            mode = 'slide'
+        if isinstance(mode, str):
+            mode = np.full(len(self.md), mode)
+        mode = np.asarray(mode)
+        if mode.shape[0] != len(self.md):
+            raise ValueError(
+                "steering must have one entry per survey station "
+                f"({len(self.md)}); got {mode.shape[0]}."
+            )
+        if mode.dtype.kind in ('U', 'S', 'O'):
+            is_slide = np.array([str(m).lower() != 'rotary' for m in mode])
+        else:
+            is_slide = mode.astype(bool)
+
+        # Apply the DLS increment only on slide legs; rotary legs stay at the
+        # surveyed DLS (i.e. minimum curvature - no directional deflection).
+        dls_noise_arr = np.where(is_slide, dls_noise, 0.0)
+
+        dls_effective = self.dls + dls_noise_arr
+        # dls_effective == 0 on a rotary hold (no surveyed curvature, no added
+        # noise) -> infinite radius / straight leg; the divide is expected.
+        with np.errstate(divide='ignore'):
+            radius_effective = radius_from_dls(dls_effective)
 
         dogleg1 = (
             (self.delta_md / radius_effective) / 2
@@ -1621,7 +1691,10 @@ class Survey:
         inc_azi_new = np.degrees(get_angles(vec_new, nev=True))
 
         _survey_new = np.column_stack((
-            self.md[:-1] + dl * radius_effective[1:],   # leg start MD + arc length
+            # mid-station MD = leg start + half the leg (arc length dogleg*radius
+            # == delta_md/2 analytically; computed directly to stay finite when a
+            # rotary hold leg has an infinite radius).
+            self.md[:-1] + self.delta_md[1:] / 2,
             inc_azi_new[:, 0],
             inc_azi_new[:, 1],
         ))
