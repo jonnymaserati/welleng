@@ -570,7 +570,8 @@ class Connector:
             self.method = self.initial_method
 
     def _get_initial_methods(self):
-        # TODO: probably better to load this in from a yaml file
+        # This is a fixed dispatch table (the 32 input-boolean combinations are
+        # fixed by the geometry), so it lives in the module rather than a yaml.
         # [md2, inc2, azi2, pos2, vec2] forms the booleans
         self.initial_methods = {
             '00000': 'no_input',
