@@ -92,10 +92,14 @@ If your work relies on a specific method, please **also** cite the relevant pape
 
 ### Trajectory geometry
 
-- **Minimum curvature** — Sawaryn, S. J., Thorogood, J. L. (2005). *A Compendium
-  of Directional Calculations Based on the Minimum Curvature Method.* SPE
-  Drilling & Completion. SPE 84246-PA.
-  [doi:10.2118/84246-PA](https://doi.org/10.2118/84246-PA)
+- **Minimum curvature, TVD interpolation & turning points** — Sawaryn, S. J.,
+  Thorogood, J. L. (2005). *A Compendium of Directional Calculations Based on
+  the Minimum Curvature Method.* SPE Drilling & Completion. SPE 84246-PA.
+  [doi:10.2118/84246-PA](https://doi.org/10.2118/84246-PA) — used for the
+  minimum-curvature station geometry, and for the reversal-robust
+  `interpolate_tvd` (closed-form *Interpolation at a Plane*, Eqs. 25-27 and
+  Eq. 1, specialised to a horizontal plane; *Turning Point*, Eq. 31, to
+  segment each arc into monotonic-TVD spans).
 
 ### Anti-collision / separation
 

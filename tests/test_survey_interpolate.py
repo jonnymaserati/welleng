@@ -68,9 +68,102 @@ def test_interpolate_md(md=800):
     assert isinstance(node, we.node.Node)
 
 def test_interpolate_tvd(tvd=800):
+    # welleng 0.15.0: interpolate_tvd now returns a list of Nodes (all
+    # crossings of the target TVD), normally length 1 on a monotonic well.
+    nodes = SURVEY.interpolate_tvd(tvd=tvd)
+    assert isinstance(nodes, list)
+    assert len(nodes) == 1
+    assert isinstance(nodes[0], we.node.Node)
 
-    node = SURVEY.interpolate_tvd(tvd=tvd)
-    assert isinstance(node, we.node.Node)
+
+def test_interpolate_tvd_monotonic_equivalence():
+    """Correctness anchor: on a strictly monotonic well (inc always < 90 deg,
+    so TVD is strictly increasing) the single crossing's MD must reproduce the
+    target TVD exactly (cross-check via interpolate_md at the resulting MD)."""
+    mono = we.survey.Survey(
+        md=[0, 500, 1000, 1800, 2600],
+        inc=[0, 20, 45, 70, 85],
+        azi=[30, 30, 60, 90, 90],
+        radius=10,
+    )
+    for tvd in (100.0, 700.0, 1234.5, 1500.0):
+        nodes = mono.interpolate_tvd(tvd=tvd)
+        assert len(nodes) == 1, tvd
+        node = nodes[0]
+        # the node's own TVD equals the target
+        assert np.isclose(node.pos_nev[2], tvd, atol=1e-6), tvd
+        # and interpolating by MD at the returned MD lands at the same TVD
+        by_md = mono.interpolate_md(node.md)
+        assert np.isclose(by_md.pos_nev[2], tvd, atol=1e-6), tvd
+
+
+def test_interpolate_tvd_reversal_two_crossings():
+    """A TVD reversal (build past horizontal so the well climbs) hits a target
+    TVD twice; both crossings must be returned at the correct MDs."""
+    # single arc from inc 60 -> 120 deg: TVD rises to an interior maximum then
+    # falls, so a target just below that maximum is crossed twice.
+    s = we.survey.Survey(
+        md=[0, 300, 900], inc=[60, 60, 120], azi=[30, 30, 30], radius=10
+    )
+    # brute-force the two crossing MDs for a target below the interior max
+    mds = np.linspace(s.md[0], s.md[-1], 60001)
+    tvds = np.array([s.interpolate_md(m).pos_nev[2] for m in mds])
+    target = tvds.max() - 5.0
+    sign = np.sign(tvds - target)
+    brute = mds[:-1][np.diff(sign) != 0]
+    assert len(brute) == 2
+
+    nodes = s.interpolate_tvd(tvd=target)
+    assert len(nodes) == 2
+    got = sorted(n.md for n in nodes)
+    assert np.allclose(got, sorted(brute), atol=0.05), (got, brute)
+    for n in nodes:
+        assert np.isclose(n.pos_nev[2], target, atol=1e-6)
+
+
+def test_interpolate_tvd_outside_range_empty():
+    """A target TVD outside the well's TVD range returns an empty list."""
+    assert SURVEY.interpolate_tvd(tvd=-100.0) == []
+    assert SURVEY.interpolate_tvd(tvd=1e6) == []
+
+
+def test_interpolate_tvd_horizontal_section():
+    """A horizontal (constant-TVD) hold is handled without NaN: a target equal
+    to the hold TVD returns a sane node; other targets in the hold's band do
+    not spuriously multiply."""
+    # build up to horizontal, then a long horizontal hold, then drop
+    s = we.survey.Survey(
+        md=[0, 1000, 1500, 2500, 3000],
+        inc=[0, 90, 90, 90, 45],
+        azi=[0, 0, 0, 0, 0],
+        radius=10,
+    )
+    hold_tvd = s.tvd[1]
+    # both the build->horizontal station and the horizontal hold sit at
+    # hold_tvd; the drop re-crosses nothing above it. Expect a finite,
+    # non-empty, NaN-free result.
+    nodes = s.interpolate_tvd(tvd=hold_tvd)
+    assert len(nodes) >= 1
+    for n in nodes:
+        assert np.isfinite(n.md)
+        assert np.isclose(n.pos_nev[2], hold_tvd, atol=1e-6)
+
+
+def test_interpolate_tvd_large_delta_md():
+    """The closed form is exact for large-Delta-MD arcs (no reliance on small
+    segments): a single 5000 m arc with a 90 deg dogleg resolves the target
+    TVD to machine precision."""
+    s = we.survey.Survey(
+        md=[0, 5000], inc=[10, 100], azi=[0, 0], radius=10
+    )
+    target = 200.0
+    nodes = s.interpolate_tvd(tvd=target)
+    assert len(nodes) == 1
+    node = nodes[0]
+    assert np.isclose(node.pos_nev[2], target, atol=1e-9)
+    # independent check: interpolate_md at the solved MD returns the target TVD
+    by_md = s.interpolate_md(node.md)
+    assert np.isclose(by_md.pos_nev[2], target, atol=1e-9)
 
 
 def test_interpolate_pos_nev_matches_interpolate_survey():
