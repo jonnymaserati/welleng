@@ -1,3 +1,4 @@
+import warnings
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 import numpy as np
@@ -14,15 +15,54 @@ class EDM:
         """
         Initiate an instance of an EDM object.
 
+        .. deprecated::
+            ``EDM`` loads the entire EDM XML into a DOM, which is impractical
+            for large exports (the Volve file is ~211 MB). Prefer the streaming
+            :class:`welleng.exchange.edm_stream.EDMReader` (also reachable via
+            :meth:`EDM.open`), which indexes the file with bounded memory and
+            returns typed surveys with per-station covariance and resolved
+            survey tools. ``EDM`` is retained for the torque & drag / case
+            workflows the streaming reader does not (yet) cover.
+
         Parameters
         ----------
             filename: str
                 The path and filename of the EDM file to be imported.
         """
+        warnings.warn(
+            "welleng.exchange.edm.EDM loads the whole file into a DOM and is "
+            "deprecated for large exports; use the streaming "
+            "welleng.exchange.edm_stream.EDMReader (or EDM.open) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.tree = ET.parse(filename)
         self.root = self.tree.getroot()
         self._wellbore_id_to_name()
         self._wellbore_id_to_well_id()
+
+    @classmethod
+    def open(cls, filename, source_units="feet"):
+        """Open an EDM file with the streaming reader.
+
+        Returns a :class:`welleng.exchange.edm_stream.EDMReader` -- the
+        memory-bounded replacement for the DOM-based :class:`EDM`. This does
+        *not* build an :class:`EDM` instance and does not emit the deprecation
+        warning.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the EDM XML file.
+        source_units : str, {"feet", "meters"}
+            Units of the stored depth/offset values (default ``"feet"``).
+
+        Returns
+        -------
+        welleng.exchange.edm_stream.EDMReader
+        """
+        from .edm_stream import EDMReader
+        return EDMReader.open(filename, source_units=source_units)
 
     def get_attributes(self, tags=None, attributes={}, logic='AND'):
         """
@@ -174,7 +214,9 @@ class EDM:
 
         return attributes
 
-    def get_parents(self, wellbore_id, predecessors=[]):
+    def get_parents(self, wellbore_id, predecessors=None):
+        if predecessors is None:
+            predecessors = []
         for child in self.root:
             if (
                 child.tag == "CD_WELLBORE"
@@ -399,7 +441,9 @@ class Well:
                 survey[item[0]] = sorted(survey[item[0]], key=lambda k: float(k['md']))
         case.survey = survey
 
-    def get_parent_surveys(self, survey_header_id, data=OrderedDict()):
+    def get_parent_surveys(self, survey_header_id, data=None):
+        if data is None:
+            data = OrderedDict()
         for sh in self.well_data['CD_SURVEY_HEADER']:
             if (
                 sh['survey_header_id'] == survey_header_id

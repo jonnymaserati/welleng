@@ -12,6 +12,19 @@ import welleng.exchange.csv
 import welleng.target
 import welleng.connector
 import welleng.exchange.edm
+import welleng.exchange.edm_stream
+from welleng.exchange.edm_stream import (
+    EDMReader,
+    open_edm,
+    classify_tool,
+    ToolKind,
+    SurveyTool,
+    Wellbore,
+    SurveyHeader as EDMSurveyHeader,
+    ProgramInterval,
+    SurveyStation,
+    WellboreSurvey,
+)
 import welleng.fluid
 import welleng.node
 import welleng.architecture
