@@ -85,6 +85,14 @@ welleng.sawaryn\_analytical module
    :undoc-members:
    :show-inheritance:
 
+welleng.steering module
+------------------------
+
+.. automodule:: welleng.steering
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 welleng.survey module
 ---------------------
 
