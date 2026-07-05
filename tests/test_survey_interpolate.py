@@ -20,6 +20,37 @@ def test_survey_interpolate_survey(step=30):
     survey_interp = SURVEY.interpolate_survey(step=step)
     assert isinstance(survey_interp, we.survey.Survey)
 
+
+def test_survey_interpolate_survey_vs_interpolate_mds(step=30):
+    mds = np.arange(SURVEY.md[0], SURVEY.md[-1], step)
+
+    # module-level function
+    survey_interp = we.survey.interpolate_mds(SURVEY, mds)
+    assert isinstance(survey_interp, we.survey.Survey)
+
+    survey_interp_1 = we.survey.interpolate_survey(SURVEY, step=step)
+    assert np.allclose(survey_interp.md, survey_interp_1.md)
+    assert np.allclose(survey_interp.azi_grid_rad, survey_interp_1.azi_grid_rad)
+    assert np.allclose(survey_interp.inc_rad, survey_interp_1.inc_rad)
+    assert np.allclose(survey_interp.pos_xyz, survey_interp_1.pos_xyz)
+    assert np.allclose(survey_interp.pos_nev, survey_interp_1.pos_nev)
+    assert np.allclose(survey_interp.dogleg, survey_interp_1.dogleg)
+    assert np.all(survey_interp.interpolated == survey_interp_1.interpolated)
+
+    # Survey method
+    survey_interp = SURVEY.interpolate_mds(mds)
+    assert isinstance(survey_interp, we.survey.Survey)
+
+    survey_interp_1 = SURVEY.interpolate_survey(step=step)
+    assert np.allclose(survey_interp.md, survey_interp_1.md)
+    assert np.allclose(survey_interp.azi_grid_rad, survey_interp_1.azi_grid_rad)
+    assert np.allclose(survey_interp.inc_rad, survey_interp_1.inc_rad)
+    assert np.allclose(survey_interp.pos_xyz, survey_interp_1.pos_xyz)
+    assert np.allclose(survey_interp.pos_nev, survey_interp_1.pos_nev)
+    assert np.allclose(survey_interp.dogleg, survey_interp_1.dogleg)
+    assert np.all(survey_interp.interpolated == survey_interp_1.interpolated)
+
+
 def test_survey_interpolate_survey_tvd(step=10):
 
     survey_interp = SURVEY.interpolate_survey(step=30)
