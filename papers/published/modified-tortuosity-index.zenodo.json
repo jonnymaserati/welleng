@@ -1,0 +1,66 @@
+{
+    "upload_type": "publication",
+    "publication_type": "preprint",
+    "title": "A Note on the Well Trajectory Tortuosity Index: Non-Independence of the Inclination–Azimuth Combination, and a Dimensionless Form",
+    "creators": [
+        {
+            "name": "Corcutt, Jonathan",
+            "affiliation": "Corcutt Beheer B.V., Wassenaar, Netherlands",
+            "orcid": "0009-0008-1953-7760"
+        }
+    ],
+    "description": "A note on the well-trajectory Tortuosity Index (TI) adapted to drilling by Ashok, Zhou, D'Angelo and co-workers (Zhou et al., SPE-178869-MS, 2016; D'Angelo et al., SPE/IADC-194099-MS, 2019) from the retinal-vessel measure of Grisan et al. (2008). It shows that the published inclination/azimuth root-sum-of-squares combination TI_3D = sqrt(TI_inc^2 + TI_azm^2) is not well-posed: the arc- and chord-length terms are the full three-dimensional quantities in both domain sums (only curve-turn detection differs), so the two components are not independent and any turn detected in both domains is double-counted, over-stating three-dimensional tortuosity by up to a factor of sqrt(2). The correction computes the index directly in three dimensions, sectionizing by curve-turn-plane-normal continuity (measuring each turn once and capturing torsion); a second correction removes the index's dependence on the unit of length, giving a dimensionless Modified Tortuosity Index (MTI). Both corrected forms are validated against a closed-form single-arc solution, dimensional and ordering invariants, and regression anchors on the ISCWSA standard wells, implemented as open-source tests in welleng. A naming collision is noted (the 'MTI' of SPE/IADC-194099-MS is an unrelated Mapped Tortuosity Index). The corrected 3D computation, the dimensionless form and the non-independence observation were described by the author in open-source form (welleng) and a 2022 blog series; this note consolidates and validates that material.",
+    "license": "cc-by-4.0",
+    "access_right": "open",
+    "keywords": [
+        "tortuosity index",
+        "well trajectory",
+        "directional drilling",
+        "wellbore quality",
+        "minimum curvature method",
+        "dogleg severity",
+        "trajectory smoothness",
+        "modified tortuosity index",
+        "KPI",
+        "torque and drag",
+        "welleng",
+        "SPE"
+    ],
+    "related_identifiers": [
+        {
+            "identifier": "10.2118/178869-MS",
+            "relation": "cites",
+            "scheme": "doi",
+            "resource_type": "publication-conferencepaper"
+        },
+        {
+            "identifier": "10.2118/194099-MS",
+            "relation": "cites",
+            "scheme": "doi",
+            "resource_type": "publication-conferencepaper"
+        },
+        {
+            "identifier": "10.2118/211041-MS",
+            "relation": "cites",
+            "scheme": "doi",
+            "resource_type": "publication-conferencepaper"
+        },
+        {
+            "identifier": "10.1109/TMI.2007.904657",
+            "relation": "cites",
+            "scheme": "doi",
+            "resource_type": "publication-article"
+        },
+        {
+            "identifier": "https://github.com/jonnymaserati/welleng",
+            "relation": "isSupplementedBy",
+            "scheme": "url"
+        },
+        {
+            "identifier": "10.5281/zenodo.20968887",
+            "relation": "isSupplementTo",
+            "scheme": "doi",
+            "resource_type": "software"
+        }
+    ]
+}

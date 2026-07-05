@@ -39,6 +39,10 @@ If your work relies on a specific method, please **also** cite the relevant pape
   *An Open, Vectorized Closed-Form Solver for the 3D Curve-Hold-Curve
   Point-to-Target Problem.* Zenodo.
   [doi:10.5281/zenodo.21130979](https://doi.org/10.5281/zenodo.21130979)
+- **Tortuosity index (non-independence + dimensionless form)** — Corcutt, J.
+  (2026). *A Note on the Well Trajectory Tortuosity Index: Non-Independence of
+  the Inclination–Azimuth Combination, and a Dimensionless Form.* Zenodo.
+  [doi:10.5281/zenodo.21206271](https://doi.org/10.5281/zenodo.21206271)
 
 ## Built on — software dependencies
 

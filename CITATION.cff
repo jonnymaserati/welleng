@@ -66,3 +66,14 @@ references:
         orcid: "https://orcid.org/0009-0008-1953-7760"
     year: 2026
     doi: 10.5281/zenodo.21130979
+  - type: article
+    title: >-
+      A Note on the Well Trajectory Tortuosity Index: Non-Independence of the
+      Inclination–Azimuth Combination, and a Dimensionless Form
+    authors:
+      - family-names: Corcutt
+        given-names: Jonathan
+        affiliation: "Corcutt Beheer B.V., Wassenaar, Netherlands"
+        orcid: "https://orcid.org/0009-0008-1953-7760"
+    year: 2026
+    doi: 10.5281/zenodo.21206271
