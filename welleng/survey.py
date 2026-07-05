@@ -1099,6 +1099,38 @@ class Survey:
         """
         export_csv(self, filename)
 
+    def interpolate_mds(self, md):
+        """
+        Method to interpolate positions at an array of measured depths and
+        return a new `welleng.Survey` object. This is a vectorized equivalent
+        of looping the scalar `interpolate_md`, and produces a survey
+        equivalent to `interpolate_survey` when passed the same station
+        measured depths.
+
+        Parameters
+        ----------
+        md: (,n) list or array of floats
+            The measured depths of the points of interest.
+
+        Returns
+        -------
+        A welleng.survey.Survey object with an `interpolated` property
+        indicating whether each station was interpolated (True) or is an
+        original survey station (False).
+
+        Examples
+        --------
+        >>> import welleng as we
+        >>> import numpy as np
+        >>> survey = we.survey.Survey(
+        ...       md=[0, 500, 1000, 2000, 3000],
+        ...       inc=[0, 0, 30, 90, 90],
+        ...       azi=[0, 0, 45, 135, 180],
+        ...    )
+        >>> survey_interp = survey.interpolate_mds(np.arange(0, 3000, 30))
+        """
+        return interpolate_mds(self, md)
+
     def interpolate_md(self, md):
         """
         Method to interpolate a position based on measured depth and return
@@ -2026,6 +2058,44 @@ def get_node(survey, idx, interpolated=False):
     return node
 
 
+def interpolate_mds(survey, md):
+    """
+    Interpolates a survey at an array of measured depths, returning a new
+    `welleng.survey.Survey` object that includes the original survey stations
+    plus the requested (interpolated) measured depths.
+
+    This is a vectorized equivalent of looping the scalar `interpolate_md`.
+    Any requested depth that coincides with an existing survey station is
+    dropped (the station is already present in the output).
+
+    Parameters
+    ----------
+        survey: welleng.survey.Survey
+            A survey object with at least two survey stations.
+        md: (,n) list or array of floats
+            The measured depths of the points of interest.
+
+    Returns
+    -------
+        survey_interpolated: welleng.survey.Survey object
+    """
+    md = np.array(md)
+    # drop requested depths that coincide with existing stations
+    # (np.setdiff1d returns a sorted, unique array)
+    md = np.setdiff1d(md, survey.md)
+
+    assert md[0] >= survey.md[0], "The shortest md is not within the survey"
+    assert md[-1] <= survey.md[-1], "The largest md is beyond the survey"
+
+    # get the closest (preceding) survey stations
+    idxs = np.searchsorted(survey.md, md, side="left") - 1
+    idxs = np.clip(idxs, 0, len(survey.md) - 2)
+
+    xs = md - survey.md[idxs]
+
+    return _interpolate_surveys(survey, md, xs, idxs)
+
+
 def interpolate_md(survey, md):
     """
     Interpolates a survey at a given measured depth.
@@ -2137,6 +2207,138 @@ def _interpolate_survey(survey, x=0, index=0):
     s.interpolated = [False, interpolated]
 
     return s
+
+
+def _interpolate_surveys(survey, md, xs, indexes):
+    """
+    Interpolate multiple points at distances ``xs`` between their respective
+    pairs of survey stations using minimum curvature. Vectorized equivalent
+    of `_interpolate_survey`.
+
+    Parameters
+    ----------
+        survey: welleng.Survey
+            A survey object with at least two survey stations.
+        md: (,n) array of floats
+            The measured depths of the points of interest. Assumes that
+            each value in md is not already in survey.md.
+        xs: (,n) array of floats
+            Lengths along the well path from each indexed survey station to
+            perform the interpolation at. Must be less than the length to the
+            next survey station.
+        indexes: (,n) array of ints
+            The indexes of the survey station from which to interpolate each
+            x in xs.
+
+    Returns
+    -------
+        survey_interpolated: welleng.survey.Survey object
+            Note that an `interpolated` property is added indicating if the
+            survey station is interpolated (True) or not (False).
+    """
+    assert indexes[-1] < len(survey.md) - 1, "Index is out of range"
+
+    total_doglegs = survey.dogleg[indexes + 1]
+    azi, inc = np.zeros(len(xs)), np.zeros(len(xs))
+
+    # regions which are effectively straight (tangent sections)
+    mask = np.where(total_doglegs < 1e-14)
+    azi[mask] = survey.azi_grid_rad[indexes][mask]
+    inc[mask] = survey.inc_rad[indexes][mask]
+
+    # regions which are not straight
+    mask = np.where(total_doglegs >= 1e-14)
+    t1 = survey.vec_xyz[indexes][mask]
+    t2 = survey.vec_xyz[indexes + 1][mask]
+
+    dogleg = (
+        xs[mask] * (total_doglegs[mask] / survey.delta_md[indexes + 1][mask])
+    )
+
+    t = (
+        t1 * (
+            np.sin(total_doglegs[mask] - dogleg)
+            / np.sin(total_doglegs[mask])
+        )[:, np.newaxis]
+        + t2 * (np.sin(dogleg) / np.sin(total_doglegs[mask]))[:, np.newaxis]
+    )
+
+    # normalise tangent vectors
+    t = t / np.linalg.norm(t, axis=-1).reshape(-1, 1)
+
+    inc_azi = get_angles(t)
+    inc[mask], azi[mask] = inc_azi[:, 0], inc_azi[:, 1]
+
+    # merge the interpolated stations with the original stations and sort on md
+    len_svy = len(survey.md)
+    len_md = len(md)
+    sorted_arr = np.zeros((3, len_svy + len_md))
+    sorted_arr[0, 0:len_svy] = survey.md
+    sorted_arr[0, len_svy:] = md
+    sorted_arr[1, 0:len_svy] = survey.inc_rad
+    sorted_arr[1, len_svy:] = inc
+    sorted_arr[2, 0:len_svy] = survey.azi_grid_rad
+    sorted_arr[2, len_svy:] = azi
+
+    sorted_arr = sorted_arr[:, np.argsort(sorted_arr[0, :])]
+
+    sh = survey.header
+    sh.azi_reference = 'grid'
+
+    survey_interpolated = Survey(
+        md=sorted_arr[0, :],
+        inc=sorted_arr[1, :],
+        azi=sorted_arr[2, :],
+        start_xyz=survey.start_xyz,
+        start_nev=survey.start_nev,
+        header=sh,
+        deg=False,
+        unit=sh.depth_unit,
+        error_model=None
+    )
+
+    survey_interpolated.interpolated = ~np.isin(
+        survey_interpolated.md, survey.md
+    )
+
+    # carry the wellbore radius from the preceding station and, if present,
+    # linearly interpolate the covariance between stations (mirrors the scalar
+    # `_interpolate_survey` covariance interpolation).
+    i = -1
+    radii = []
+    cov_nev = []
+    unit_cov_nev = 0
+    for (station_md, is_interpolated) in zip(
+        survey_interpolated.md,
+        survey_interpolated.interpolated
+    ):
+        if not is_interpolated:
+            i += 1
+            if survey.cov_nev is not None:
+                j = 1 if i < len(survey.md) - 1 else 0
+                if j == 1:
+                    delta_md = survey.md[i + j] - survey.md[i]
+                    unit_cov_nev = (
+                        survey.cov_nev[i + j] - survey.cov_nev[i]
+                    ) / delta_md
+                else:
+                    unit_cov_nev = 0
+        radii.append(survey.radius[i])
+        if survey.cov_nev is not None:
+            cov_nev.append(
+                survey.cov_nev[i]
+                + ((station_md - survey.md[i]) * unit_cov_nev)
+            )
+
+    survey_interpolated.radius = np.array(radii)
+    if bool(cov_nev):
+        survey_interpolated.cov_nev = np.array(cov_nev)
+        survey_interpolated.cov_hla = NEV_to_HLA(
+            survey_interpolated.survey_rad,
+            survey_interpolated.cov_nev
+        )
+
+    return survey_interpolated
 
 
 def _interpolate_pos_nev(survey, x, index):
