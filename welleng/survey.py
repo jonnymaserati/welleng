@@ -10,7 +10,6 @@ import numpy as np
 import math
 import warnings
 import pandas as pd
-from copy import copy
 try:
     from magnetic_field_calculator import MagneticFieldCalculator
     MAG_CALC = True
@@ -1182,7 +1181,11 @@ class Survey:
         return node
 
     def interpolate_tvd(self, tvd):
-        """Interpolate the survey at a given true vertical depth.
+        """Interpolate the survey at a target true vertical depth.
+
+        Reversal-robust (Sawaryn & Thorogood 2005, SPE-84246-PA): returns
+        *every* crossing of ``tvd``, so a target hit twice by a TVD reversal
+        yields two Nodes.
 
         Parameters
         ----------
@@ -1191,11 +1194,17 @@ class Survey:
 
         Returns
         -------
-        Node
-            A Node object at the interpolated TVD position.
+        list of Node
+            Every crossing of ``tvd``, sorted by measured depth (normally a
+            single element; empty if ``tvd`` is outside the well's TVD range).
+
+        Notes
+        -----
+        Breaking change (welleng 0.15.0): returns a ``list`` of Nodes instead
+        of a single Node. Use ``interpolate_tvd(tvd)[0]`` on a monotonic well
+        for the previous behaviour.
         """
-        node = interpolate_tvd(self, tvd=tvd)
-        return node
+        return interpolate_tvd(self, tvd=tvd)
 
     def interpolate_survey_tvd(self, start=None, stop=None, step=10):
         """
@@ -2368,8 +2377,105 @@ def _interpolate_pos_nev(survey, x, index):
     return pos + step
 
 
+def _horizontal_tangent_delta(u1, u2, alpha):
+    """Subtended angle at which a minimum-curvature arc's tangent becomes
+    horizontal (i.e. the arc's TVD turning point), or ``None`` if that does
+    not occur in the open interval ``(0, alpha)``.
+
+    This is the vertical specialisation (target-plane normal ``m = [0, 0, 1]``)
+    of the *Turning Point* construction in Sawaryn & Thorogood (2005,
+    SPE-84246-PA, Eq. 31): the well goes horizontal where the vertical
+    component of the unit tangent vanishes. Along the arc the tangent is the
+    SLERP ``t(d) = [sin(alpha - d) t1 + sin(d) t2] / sin(alpha)``, so its
+    vertical component is zero when
+
+        ``sin(alpha - d) * u1 + sin(d) * u2 = 0``
+
+    i.e. ``tan(d) = -sin(alpha) * u1 / (u2 - cos(alpha) * u1)``, where ``u1``,
+    ``u2`` are the vertical components of the start/end unit tangents. Because
+    a dogleg is at most ``pi``, an arc has at most one such point, splitting it
+    into (up to) two monotonic-TVD spans.
+    """
+    p_term = math.sin(alpha) * u1
+    q_term = u2 - math.cos(alpha) * u1
+    if abs(p_term) < 1e-15 and abs(q_term) < 1e-15:
+        return None
+    base = math.atan2(-p_term, q_term)
+    for cand in (base, base + math.pi, base - math.pi):
+        if 1e-12 < cand < alpha - 1e-12:
+            return cand
+    return None
+
+
+def _arc_tvd_crossings(u1, u2, alpha, delta_md, dvert):
+    """Subtended angles in ``[0, alpha]`` at which a minimum-curvature arc
+    reaches a target true vertical depth.
+
+    Closed-form *Interpolation at a Plane* of Sawaryn & Thorogood (2005,
+    SPE-84246-PA), Eqs. 25-27 and Eq. 1, specialised to a horizontal target
+    plane (normal ``m = [0, 0, 1]``). ``u1``/``u2`` are the vertical components
+    of the unit tangents at the start/end of the arc, ``alpha`` the subtended
+    (dogleg) angle, ``delta_md`` the arc length and ``dvert`` the target TVD
+    minus the arc-start TVD.
+
+    Returns the 0, 1 or 2 real roots. The discriminant ``A**2 + B**2 - C**2``
+    is guarded: a negative value means the arc never reaches the plane, and an
+    empty list is returned rather than a NaN.
+    """
+    a = u1 * math.sin(alpha)
+    b = u1 * math.cos(alpha) - u2
+    c = dvert * alpha * math.sin(alpha) / delta_md + b
+    disc = a * a + b * b - c * c
+    if disc < -1e-12:
+        return []
+    disc = max(disc, 0.0)
+    root = disc ** 0.5
+    out = []
+    for sign in (1.0, -1.0):
+        d = 2.0 * math.atan2(a + sign * root, b + c)
+        # bring into [0, 2*pi); valid solutions on the arc lie in [0, alpha]
+        d %= (2 * math.pi)
+        if d > alpha:
+            if abs(d - 2 * math.pi) < 1e-7:  # tiny negative root wrapped high
+                d = 0.0
+            else:
+                continue
+        out.append(min(max(d, 0.0), alpha))
+        if root == 0.0:  # tangent: the two roots coincide
+            break
+    return out
+
+
+def _subarc_from_node_origin(survey, node_origin):
+    """Two-station survey from ``node_origin`` to the survey station just
+    ahead of it, so a TVD interpolation can be referenced to a previously
+    interpolated point rather than to a survey station."""
+    j = int(np.searchsorted(survey.md, node_origin.md, side="right"))
+    j = min(max(j, 1), len(survey.md) - 1)
+    return Survey(
+        md=[node_origin.md, survey.md[j]],
+        inc=[node_origin.inc_rad, survey.inc_rad[j]],
+        azi=[node_origin.azi_rad, survey.azi_grid_rad[j]],
+        deg=False,
+        start_nev=node_origin.pos_nev,
+    )
+
+
 def interpolate_tvd(survey, tvd, **kwargs):
-    """Interpolate a survey at a given true vertical depth.
+    """Interpolate a survey at a target true vertical depth.
+
+    Reversal-robust: does *not* assume monotonic TVD. The survey is walked
+    segment by segment; each minimum-curvature arc is split at its TVD turning
+    point (where the well goes horizontal) into monotonic spans, and every
+    crossing of the target TVD is solved for in closed form. **All** crossings
+    are returned, sorted by measured depth.
+
+    Method: Sawaryn & Thorogood (2005), "A Compendium of Directional
+    Calculations Based on the Minimum Curvature Method" (SPE-84246-PA),
+    *Interpolation at a Plane* (Eqs. 25-27 and Eq. 1) with the target plane
+    horizontal, plus the *Turning Point* construction (Eq. 31) to segment each
+    arc into monotonic-TVD spans. See also :func:`_arc_tvd_crossings` and
+    :func:`_horizontal_tangent_delta`.
 
     Parameters
     ----------
@@ -2378,114 +2484,92 @@ def interpolate_tvd(survey, tvd, **kwargs):
     tvd : float
         The target true vertical depth.
     **kwargs
-        Optional ``node_origin`` to override the starting node.
+        node_origin : Node, optional
+            Interpolate on the sub-arc that starts at this node (rather than a
+            survey station), spanning to the next survey station. Used to
+            reference the interpolation to a previously interpolated point.
 
     Returns
     -------
-    Node
-        A Node at the interpolated TVD position.
+    list of Node
+        Every crossing of ``tvd``, sorted by measured depth (normally a single
+        element; an empty list if ``tvd`` is outside the well's TVD range).
+
+    Notes
+    -----
+    Breaking change (welleng 0.15.0): this returns a ``list`` of Nodes instead
+    of a single Node. On a monotonic well, ``interpolate_tvd(tvd)[0]`` recovers
+    the previous single-crossing behaviour.
     """
-    # only seem to work with relative small delta_md - re-write with minimize
-    # function?
-
-    def tidy_up_angle(d):
-        """
-        Helper function to handle large angles.
-        """
-        if abs(d) > np.pi:
-            d %= (2 * np.pi)
-        return d
-
-    coeff = 1
-    # find closest point assuming tvd is sorted list
-    idx = np.searchsorted(survey.tvd, tvd, side="right") - 1
-    if idx == len(survey.tvd) - 1:
-        idx = len(survey.tvd) - 2
-    elif idx == -1:
-        idx = len(survey.tvd) - 2
-        coeff = -1
-    pos1, pos2 = np.array([survey.n, survey.e, survey.tvd]).T[idx: idx + 2]
-    vec1, vec2 = survey.vec_nev[idx: idx + 2]
-    dogleg = survey.dogleg[idx + 1]
-    delta_md = survey.delta_md[idx + 1]
-
     node_origin = kwargs.get('node_origin')
-    if node_origin:
-        pos1, vec1 = node_origin.pos_nev, node_origin.vec_nev
-        delta_md = survey.md[idx + 1] - node_origin.md
-        # TODO: need to recalculate the dogleg
-        s_temp = Survey(
-            md=[node_origin.md, survey.md[idx + 1]],
-            inc=[node_origin.inc_rad, survey.inc_rad[idx + 1]],
-            azi=[node_origin.azi_rad, survey.azi_grid_rad[idx + 1]],
-            deg=False
-        )
-        dogleg = s_temp.dogleg[-1]
+    if node_origin is not None:
+        survey = _subarc_from_node_origin(survey, node_origin)
 
-    if np.isnan(dogleg):
-        return _interpolate_survey(survey, x=0, index=idx)
+    tol_md = 1e-6
+    tol_ang = 1e-9
+    crossings = []  # (md, index, x, interpolated)
+    n_stations = len(survey.md)
 
-    if dogleg == 0:
-        x = (
-            (
-                tvd - survey.tvd[idx]
-            )
-            / (survey.tvd[idx + 1] - survey.tvd[idx])
-        ) * (survey.md[idx + 1] - survey.md[idx])
-    else:
-        m = np.array([0., 0., coeff])
-        a = np.dot(m, vec1) * np.sin(dogleg)
-        b = np.dot(m, vec1) * np.cos(dogleg) - np.dot(m, vec2)
-        # p = get_unit_vec(np.array([0., 0., tvd]) - pos1)
-        p = np.array([0., 0., tvd]) - pos1
-        c = (
-            np.dot(m, p)
-            * dogleg
-            * np.sin(dogleg)
-            / delta_md
-        ) + b
+    for i in range(n_stations - 1):
+        alpha = survey.dogleg[i + 1]
+        delta_md = survey.delta_md[i + 1]
+        if delta_md == 0:
+            continue
+        v1 = survey.tvd[i]
+        v2 = survey.tvd[i + 1]
 
-        d1 = 2 * np.arctan2(
-            (
-                a + (a ** 2 + b ** 2 - c ** 2) ** 0.5
-            ),
-            (
-                b + c
-            )
-        )
-        d1 = tidy_up_angle(d1)
+        if np.isnan(alpha) or alpha <= tol_ang:
+            # straight segment: TVD is linear in MD (hold or tangent)
+            dv = v2 - v1
+            if abs(dv) <= tol_ang:
+                # horizontal hold: constant TVD along the whole segment
+                if abs(tvd - v1) <= tol_md:
+                    crossings.append((survey.md[i], i, 0.0, False))
+                continue
+            frac = (tvd - v1) / dv
+            if -1e-9 <= frac <= 1 + 1e-9:
+                frac = min(max(frac, 0.0), 1.0)
+                x = frac * delta_md
+                interp = not (x <= tol_md or abs(x - delta_md) <= tol_md)
+                crossings.append((survey.md[i] + x, i, x, interp))
+            continue
 
-        d2 = 2 * np.arctan2(
-            (
-                a - (a ** 2 + b ** 2 - c ** 2) ** 0.5
-            ),
-            (
-                b + c
-            )
-        )
-        d2 = tidy_up_angle(d2)
+        u1 = survey.vec_nev[i][2]
+        u2 = survey.vec_nev[i + 1][2]
 
-        assert d1 >= 0 or d2 >= 0
-        if d1 < 0:
-            d = d2
-        elif d2 < 0:
-            d = d1
-        else:
-            d = min(d1, d2)
+        # split the arc into monotonic-TVD spans at its turning point
+        d_tp = _horizontal_tangent_delta(u1, u2, alpha)
+        breaks = [0.0, alpha] if d_tp is None else [0.0, d_tp, alpha]
 
-        x = d / dogleg * delta_md
+        for da, db in zip(breaks[:-1], breaks[1:]):
+            va = v1 if da == 0.0 else _interpolate_pos_nev(
+                survey, da / alpha * delta_md, i)[2]
+            vb = v2 if db == alpha else _interpolate_pos_nev(
+                survey, db / alpha * delta_md, i)[2]
+            lo, hi = (va, vb) if va <= vb else (vb, va)
+            if not (lo - tol_md <= tvd <= hi + tol_md):
+                continue
+            for d in _arc_tvd_crossings(u1, u2, alpha, delta_md, tvd - v1):
+                if da - 1e-7 <= d <= db + 1e-7:
+                    x = min(max(d / alpha * delta_md, 0.0), delta_md)
+                    interp = not (
+                        x <= tol_md or abs(x - delta_md) <= tol_md
+                    )
+                    crossings.append((survey.md[i] + x, i, x, interp))
 
-        if node_origin:
-            x -= survey.md[idx] - node_origin.md
+    # sort by MD and de-duplicate coincident crossings (shared station nodes,
+    # or a target grazing a turning point from both adjoining spans)
+    crossings.sort(key=lambda cr: cr[0])
+    nodes = []
+    last_md = None
+    for md, idx, x, interp in crossings:
+        if last_md is not None and abs(md - last_md) <= tol_md:
+            continue
+        s = _interpolate_survey(survey, x=x, index=idx)
+        nodes.append(get_node(s, 1, interpolated=interp))
+        last_md = md
 
-        assert x <= delta_md
-
-    interpolated_survey = _interpolate_survey(survey, x=x, index=idx)
-
-    interpolated = True if x > 0 else False
-    node = get_node(interpolated_survey, 1, interpolated=interpolated)
-
-    return node
+    return nodes
 
 
 def slice_survey(survey: Survey, start: int, stop: int = None):
@@ -3262,69 +3346,65 @@ def get_node_tvd(survey, node1, node2, tvd, node_origin):
     node2.pos_nev, node2.pos_xyz = None, None
     c = Connector(node1=node1, node2=node2, dls_design=1e-8)
     s = from_connections(c, step=None)
-    node_new = interpolate_tvd(s, tvd, node_origin=node_origin)
+    # ``node1``/``node2`` bracket ``tvd`` (the caller checks this), so the
+    # sub-arc has exactly one crossing; take it. ``interpolate_tvd`` now
+    # returns a list (welleng 0.15.0).
+    nodes = interpolate_tvd(s, tvd, node_origin=node_origin)
 
-    return node_new
+    return nodes[0] if nodes else None
 
 
 def interpolate_survey_tvd(survey, start=None, stop=None, step=10):
     """Interpolate a survey at regular TVD intervals.
+
+    Reversal-robust (welleng 0.15.0): builds regular TVD levels spanning the
+    well's full TVD range and inserts a station at *every* crossing of each
+    level (so a level revisited by a TVD reversal is represented at each pass),
+    interleaved with the original survey stations. Crossings are found with the
+    closed-form, turning-point-segmented :func:`interpolate_tvd` (Sawaryn &
+    Thorogood 2005, SPE-84246-PA).
 
     Parameters
     ----------
     survey : Survey
         A Survey object.
     start : float or None
-        Starting TVD. Defaults to the first survey TVD.
+        TVD level anchor. Levels are placed at ``start + k * step``. Defaults
+        to the first survey station's TVD.
     stop : float or None
-        Stopping TVD (not used directly; iteration continues to TD).
+        Upper TVD bound for the levels. Defaults to the well's maximum TVD.
     step : float
-        TVD interval between interpolated stations.
+        TVD interval between interpolated levels.
 
     Returns
     -------
     Survey
-        A Survey object with stations at regular TVD intervals plus the
-        original survey stations.
+        A Survey object with stations at regular TVD levels plus the original
+        survey stations, ordered by measured depth.
     """
-    tvds = [start] if start is not None else [survey.tvd[0]]
-    nodes = []
+    anchor = survey.tvd[0] if start is None else start
+    tvd_lo = min(float(np.min(survey.tvd)), anchor)
+    tvd_hi = float(np.max(survey.tvd)) if stop is None else stop
 
-    for i, md2 in enumerate(survey.md):
-        if i == 0:
-            nodes.append(get_node(survey, i))
-            continue
-        node_origin = nodes[-1]
-        node2_master = survey.interpolate_md(md2)
+    # regular TVD levels at anchor + k * step, within the well's TVD range
+    k_lo = int(np.ceil((tvd_lo - anchor) / step))
+    k_hi = int(np.floor((tvd_hi - anchor) / step))
+    levels = [anchor + k * step for k in range(k_lo, k_hi + 1)]
 
-        while 1:
-            node1 = nodes[-1]
-            node2 = copy(node2_master)
-            if np.isclose(node1.md, md2):
-                node1.interpolated = False
-                break
+    # collect nodes keyed by MD: original stations first, then level crossings
+    nodes_by_md = {}
+    for i in range(len(survey.md)):
+        node = get_node(survey, i)
+        nodes_by_md[round(float(node.md), 6)] = node
+    for level in levels:
+        for node in interpolate_tvd(survey, level):
+            nodes_by_md.setdefault(round(float(node.md), 6), node)
 
-            # check if heading upwards
-            if node1.pos_nev[2] > tvds[-1] >= node2.pos_nev[2]:
-                tvd = tvds[-1]
-                node_new = get_node_tvd(survey, node1, node2, tvd, node_origin)
-                node_new.interpolated = True
-                nodes.append(node_new)
-                tvds.append(tvd - step)
-            elif node1.pos_nev[2] < (tvds[-1] + step) <= node2.pos_nev[2]:
-                tvd = tvds[-1] + step
-                node_new = get_node_tvd(survey, node1, node2, tvd, node_origin)
-                node_new.interpolated = True
-                nodes.append(node_new)
-                tvds.append(tvd)
-            else:
-                nodes.append(node2_master)
-                tvds.append(tvds[-1])
-                break
+    ordered = [nodes_by_md[key] for key in sorted(nodes_by_md)]
 
     md, inc, azi, interpolated = np.array([
         [n.md, n.inc_rad, n.azi_rad, n.interpolated]
-        for n in nodes
+        for n in ordered
     ]).T
 
     s_interp = Survey(
