@@ -55,3 +55,21 @@ approximation — usable as a fast broadphase filter ahead of exact narrowphase 
 
 *Keywords: anti-collision, wellbore clearance, separation factor, ISCWSA, Mahalanobis
 distance, collision avoidance, uncertainty ellipsoid, directional drilling.*
+
+---
+
+## A Note on the Well Trajectory Tortuosity Index
+
+Jonathan Corcutt (2026). **DOI: [10.5281/zenodo.21206271](https://doi.org/10.5281/zenodo.21206271)**.
+
+The Tortuosity Index (TI), a geometric well-trajectory quality metric, is conventionally
+combined across the inclination and azimuth domains as a root-sum-of-squares. This note
+shows that combination is not well-posed — the arc- and chord-length terms are the full
+three-dimensional quantities in both domain sums, so any curve turn detected in both is
+double-counted, over-stating tortuosity by up to √2. It gives the corrected 3D computation
+(sectionizing by curve-turn-plane continuity, capturing torsion) and a dimensionless
+*Modified* Tortuosity Index, both validated against a closed-form solution, invariants, and
+the ISCWSA standard wells in open-source tests.
+
+*Keywords: tortuosity index, well trajectory, directional drilling, wellbore quality,
+minimum curvature, modified tortuosity index, torque and drag, KPI.*
