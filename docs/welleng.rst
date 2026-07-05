@@ -29,6 +29,30 @@ welleng.clearance module
    :undoc-members:
    :show-inheritance:
 
+welleng.conditioning module
+---------------------------
+
+.. automodule:: welleng.conditioning
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+welleng.hierarchy module
+------------------------
+
+.. automodule:: welleng.hierarchy
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+welleng.osdu module
+-------------------
+
+.. automodule:: welleng.osdu
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 welleng.connector module
 ------------------------
 
