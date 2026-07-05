@@ -1,6 +1,10 @@
 """Wellbore survey node representing a position and direction in a well trajectory."""
 
+from typing import Any, Optional
+
 import numpy as np
+from numpy.typing import ArrayLike
+
 from .utils import (
     get_unit_vec, get_vec, get_angles, get_nev, get_xyz,
 )
@@ -40,19 +44,31 @@ class Node:
         3x3 covariance matrix in NEV coordinates.
     """
 
+    pos_nev: Optional[list]
+    pos_xyz: Optional[list]
+    vec_nev: Optional[list]
+    vec_xyz: Optional[list]
+    inc_rad: Optional[float]
+    inc_deg: Optional[float]
+    azi_rad: Optional[float]
+    azi_deg: Optional[float]
+    md: Optional[float]
+    unit: str
+    cov_nev: np.ndarray
+
     def __init__(
         self,
-        pos=None,
-        vec=None,
-        md=None,
-        inc=None,
-        azi=None,
-        unit='meters',
-        degrees=True,
-        nev=True,
-        cov_nev=None,
-        **kwargs
-    ):
+        pos: Optional[ArrayLike] = None,
+        vec: Optional[ArrayLike] = None,
+        md: Optional[float] = None,
+        inc: Optional[float] = None,
+        azi: Optional[float] = None,
+        unit: str = 'meters',
+        degrees: bool = True,
+        nev: bool = True,
+        cov_nev: Optional[np.ndarray] = None,
+        **kwargs: Any
+    ) -> None:
         """Initialize a Node with position and direction.
 
         Parameters
@@ -90,7 +106,14 @@ class Node:
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-    def check_angle_inputs(self, inc, azi, vec, nev, degrees):
+    def check_angle_inputs(
+        self,
+        inc: Optional[float],
+        azi: Optional[float],
+        vec: Optional[ArrayLike],
+        nev: bool,
+        degrees: bool,
+    ) -> None:
         if all(v is None for v in [inc, azi, vec]):
             self.vec_xyz = None
             self.vec_nev = None
@@ -113,13 +136,16 @@ class Node:
                 self.vec_xyz = get_unit_vec(vec).reshape(3).tolist()
                 self.vec_nev = get_nev(self.vec_xyz).reshape(3).tolist()
         self.inc_rad, self.azi_rad = (
-            get_angles(self.vec_xyz).T
+            # utils.get_angles is annotated to require an ndarray but accepts
+            # any array_like at runtime; vec_xyz is a plain list here. Drop
+            # this ignore once get_angles' signature is widened to ArrayLike.
+            get_angles(self.vec_xyz).T  # type: ignore[arg-type]
         ).reshape(2)
         self.inc_deg, self.azi_deg = (
             np.degrees(np.array([self.inc_rad, self.azi_rad]))
         ).reshape(2)
 
-    def get_pos(self, pos, nev):
+    def get_pos(self, pos: Optional[ArrayLike], nev: bool) -> None:
         if pos is None:
             self.pos_xyz = None
             self.pos_nev = None
@@ -131,7 +157,7 @@ class Node:
             self.pos_xyz = np.array(pos).reshape(3).tolist()
             self.pos_nev = get_nev(pos).reshape(3).tolist()
 
-    def properties(self):
+    def properties(self) -> dict:
         """Return all instance attributes as a dictionary.
 
         Returns
@@ -142,7 +168,9 @@ class Node:
         return vars(self)
 
 
-def get_node_params(node):
+def get_node_params(
+    node: Node,
+) -> tuple[Optional[list], Optional[list], Optional[float]]:
     """Extract position, direction, and measured depth from a Node.
 
     Parameters

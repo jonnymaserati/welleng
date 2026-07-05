@@ -93,15 +93,41 @@ packages = ["welleng"]
 [tool.hatch.build.targets.wheel.sources]
 "welleng" = "welleng"
 
+# Ship the PEP 561 marker so downstream type checkers pick up welleng's
+# inline annotations (see docs/dev/TYPING.md, issue #133).
+[tool.hatch.build.targets.wheel.force-include]
+"welleng/py.typed" = "welleng/py.typed"
+
 [tool.hatch.build.targets.sdist]
 include = [
     "welleng/**/*.py",
+    "welleng/py.typed",
     "welleng/errors/*.yaml",
     "welleng/errors/tool_codes/*.yaml",
     "welleng/exchange/*.yaml",
     "README.md",
     "LICENSE",
 ]
+
+[tool.mypy]
+# Lenient baseline for gradual typing adoption (issue #133). Modules are
+# opted into stricter checking one at a time via per-module overrides below
+# as their annotations land. Do NOT enable strict globally: the ~500 as-yet
+# unannotated defs would flood the output and drown real findings.
+# Matches the dev/CI interpreter. Required >= 3.12 because current numpy
+# type stubs use PEP 695 `type` statements that mypy only parses under 3.12+
+# (the runtime floor stays 3.10 per [project].requires-python).
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = true
+check_untyped_defs = false
+warn_redundant_casts = true
+no_implicit_optional = true
+
+# Fully-annotated modules — tighten these as coverage grows.
+[[tool.mypy.overrides]]
+module = "welleng.node"
+disallow_incomplete_defs = true
 
 [dependency-groups]
 dev = [
