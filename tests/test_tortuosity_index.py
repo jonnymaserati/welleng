@@ -199,3 +199,110 @@ def test_regression_anchors():
     # the scientific check.
     assert np.isclose(s2.modified_tortuosity_index(step=None, dls_noise=1.0)[-1], 0.7308, rtol=1e-2)
     assert np.isclose(s2.modified_tortuosity_index(step=30, dls_noise=1.0)[-1], 0.8199, rtol=1e-2)
+
+
+def _build_and_hold():
+    """A build-hold-build survey with distinct slide/rotary candidate legs."""
+    md = np.array([0, 300, 600, 900, 1200, 1500.])
+    inc = np.array([0, 30, 60, 60, 60, 80.])
+    azi = np.zeros(6)
+    return we.survey.Survey(
+        md, inc, azi, header=we.survey.SurveyHeader(name="steer")
+    )
+
+
+def test_maximum_curvature_steering_rotary_no_deflection():
+    """Rotary (RSS) legs get no directional deflection: max-curvature keeps the
+    minimum-curvature position, so an all-rotary well is unchanged."""
+    s = _build_and_hold()
+    mc = s.maximum_curvature(dls_noise=2.0, steering=['rotary'] * len(s.md))
+    assert np.allclose(mc.pos_nev[-1], s.pos_nev[-1], atol=1e-6)
+
+
+def test_maximum_curvature_steering_default_is_slide():
+    """Default (and None) == 'slide' - the conservative choice, since rotary
+    would under-state the directional bias, so rotary is opt-in."""
+    s = _build_and_hold()
+    n = len(s.md)
+    assert np.allclose(
+        s.maximum_curvature(dls_noise=2.0).pos_nev,
+        s.maximum_curvature(dls_noise=2.0, steering=['slide'] * n).pos_nev,
+    )
+    # and the default deflects (bias present), i.e. is not min-curve
+    assert not np.allclose(
+        s.maximum_curvature(dls_noise=2.0).pos_nev[-1], s.pos_nev[-1], atol=1e-6
+    )
+
+
+def test_maximum_curvature_steering_scalar_broadcasts():
+    """A single 'slide'/'rotary' applies to every leg (== the equivalent list)."""
+    s = _build_and_hold()
+    n = len(s.md)
+    assert np.allclose(
+        s.maximum_curvature(dls_noise=2.0, steering='slide').pos_nev,
+        s.maximum_curvature(dls_noise=2.0, steering=['slide'] * n).pos_nev,
+    )
+    assert np.allclose(
+        s.maximum_curvature(dls_noise=2.0, steering='rotary').pos_nev[-1],
+        s.pos_nev[-1], atol=1e-6,   # all rotary -> no deflection
+    )
+
+
+def test_maximum_curvature_steering_mixed_between_bounds():
+    """A mix of slide/rotary legs deflects between all-rotary (0) and all-slide."""
+    s = _build_and_hold()
+    full = np.linalg.norm(
+        s.pos_nev[-1]
+        - s.maximum_curvature(dls_noise=2.0, steering='slide').pos_nev[-1]
+    )
+    mix = ['slide', 'slide', 'slide', 'rotary', 'rotary', 'slide']
+    part = np.linalg.norm(
+        s.pos_nev[-1]
+        - s.maximum_curvature(dls_noise=2.0, steering=mix).pos_nev[-1]
+    )
+    assert 0.0 < part < full
+
+
+def test_maximum_curvature_steering_bool_equals_strings():
+    """A boolean mask (True == slide) matches the equivalent string list."""
+    s = _build_and_hold()
+    mix = ['slide', 'slide', 'slide', 'rotary', 'rotary', 'slide']
+    mask = np.array([True, True, True, False, False, True])
+    assert np.allclose(
+        s.maximum_curvature(dls_noise=2.0, steering=mix).pos_nev,
+        s.maximum_curvature(dls_noise=2.0, steering=mask).pos_nev,
+    )
+
+
+def test_maximum_curvature_steering_attribute_and_param():
+    """steering set on the Survey is used, and the param overrides it."""
+    s = _build_and_hold()
+    s.steering = np.array(['rotary'] * len(s.md))
+    # attribute -> all rotary -> no deflection
+    assert np.allclose(
+        s.maximum_curvature(dls_noise=2.0).pos_nev[-1], s.pos_nev[-1], atol=1e-6
+    )
+    # explicit param overrides the attribute
+    assert not np.allclose(
+        s.maximum_curvature(dls_noise=2.0, steering=['slide'] * len(s.md)).pos_nev[-1],
+        s.pos_nev[-1], atol=1e-6
+    )
+
+
+def test_maximum_curvature_steering_wrong_length_raises():
+    s = _build_and_hold()
+    try:
+        s.maximum_curvature(steering=['slide', 'rotary'])
+    except ValueError:
+        return
+    raise AssertionError("expected ValueError for mismatched steering length")
+
+
+def test_maximum_curvature_rotary_hold_leg_is_finite():
+    """A rotary leg through a hold (surveyed DLS 0) must not produce NaN
+    (infinite radius edge)."""
+    s = _build_and_hold()
+    steer = ['slide', 'slide', 'slide', 'rotary', 'rotary', 'slide']
+    mc = s.maximum_curvature(dls_noise=2.0, steering=steer)
+    assert np.isfinite(mc.pos_nev).all()
+    assert np.isfinite(mc.md).all()
