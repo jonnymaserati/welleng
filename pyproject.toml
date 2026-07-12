@@ -108,6 +108,24 @@ include = [
     "README.md",
     "LICENSE",
 ]
+# Belt-and-suspenders: never ship non-package / internal-process content in the
+# sdist (hatch otherwise pulls tracked root files past the allowlist above).
+exclude = [
+    "papers/**",
+    "data/**",
+    "docs/**",
+    "projects/**",
+    "reference/**",
+    "examples/**",
+    "tests/**",
+    ".gitignore",
+    ".claude/**",
+    "**/.claude/**",
+    "venv/**",
+    ".venv*/**",
+    "**/venv/**",
+    "*.egg-info/**",
+]
 
 [tool.mypy]
 # Lenient baseline for gradual typing adoption (issue #133). Modules are
