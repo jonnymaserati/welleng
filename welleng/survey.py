@@ -1727,6 +1727,73 @@ class Survey:
 
         return survey
 
+    def torsion(self):
+        """Geometric torsion ``τ`` per station (radians per unit length).
+
+        The helical rate of the wellpath — the rate at which the osculating-plane
+        normal (``self.normals``, i.e. the Serret-Frenet binormal direction) rotates
+        along the trajectory. **Zero on a planar (2D) trajectory**; nonzero only where
+        the well turns out of plane. This is a geometric property of the path and is
+        distinct from mechanical drillstring twist.
+
+        Discrete form (Mitchell & Samuel 2009, SPE-105068-PA, Eq. 17):
+
+            τ_j = arccos(b_{j-1} · b_j) / Δs_j
+
+        with ``b`` the unit osculating-plane normal and ``Δs_j`` the central
+        measured-depth spacing about station ``j``. This is the same normal-vector
+        continuity the (modified) tortuosity index uses — a section of constant normal
+        is planar and has zero torsion.
+
+        Returns
+        -------
+        torsion : ndarray of shape (n,)
+            Per-station geometric torsion (rad/unit length), aligned to ``self.md``.
+            The two end stations (undefined) and any straight-hold sections (undefined
+            osculating plane) are set to 0.
+
+        Notes
+        -----
+        Consumers (e.g. the stiff-string T&D 3D contact terms, SPE-105068-PA Eq. 20)
+        should prefer a smooth (spline) trajectory: a minimum-curvature survey gives a
+        bending-moment discontinuity at stations (App. F), so torsion evaluated on raw
+        min-curve stations is a station-spaced approximation.
+        """
+        b = self.normals                                    # (n-1, 3) unit osculating normals
+        dot = np.clip(np.sum(b[:-1] * b[1:], axis=1), -1.0, 1.0)   # (n-2,)
+        ang = np.arccos(dot)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            ds = (self.md[2:] - self.md[:-2]) / 2.0         # central spacing at stations 1..n-2
+            tau_interior = ang / ds
+        torsion = np.zeros(len(self.md), dtype=float)
+        torsion[1:-1] = np.nan_to_num(tau_interior, nan=0.0, posinf=0.0, neginf=0.0)
+        return torsion
+
+    def curvature_rate(self):
+        """Rate of change of curvature ``dκ/ds`` per station (rad per unit length²).
+
+        The along-hole derivative of curvature ``κ = dogleg / Δmd``. With the torsion
+        term it completes the 3D stiff-string contact force (SPE-105068-PA, Eq. 20:
+        the ``EI·τ·dκ/ds`` binormal term). Zero on a constant-curvature (constant-DLS)
+        section.
+
+        Discrete form (SPE-105068-PA, Eq. 18): ``(κ_{j+1} − κ_j) / (s_{j+1} − s_j)``.
+
+        Returns
+        -------
+        dkappa_ds : ndarray of shape (n,)
+            Per-station ``dκ/ds`` aligned to ``self.md``; the final station (undefined
+            forward difference) is 0.
+        """
+        with np.errstate(divide='ignore', invalid='ignore'):
+            kappa = np.where(self.delta_md > 0, self.dogleg / self.delta_md, 0.0)
+            dk = np.diff(kappa)
+            ds = np.diff(self.md)
+            rate = np.where(ds > 0, dk / ds, 0.0)
+        dkappa_ds = np.zeros(len(self.md), dtype=float)
+        dkappa_ds[:-1] = np.nan_to_num(rate, nan=0.0, posinf=0.0, neginf=0.0)
+        return dkappa_ds
+
 
 def modified_tortuosity_index(
     survey, rtol=1.0, dls_tol=1e-3, data=False, **kwargs
