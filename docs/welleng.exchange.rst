@@ -20,6 +20,14 @@ welleng.exchange.edm module
    :undoc-members:
    :show-inheritance:
 
+welleng.exchange.ipm module
+---------------------------
+
+.. automodule:: welleng.exchange.ipm
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 welleng.exchange.wbp module
 ---------------------------
 
