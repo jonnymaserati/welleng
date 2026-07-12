@@ -52,3 +52,13 @@ papers/**/*-NOTES.md
 
 # secrets
 .env
+
+# welleng.schematic example render outputs
+examples/schematic_output/
+
+# local scratch / prototypes (never commit)
+temp/
+.claude/settings.json
+
+# internal publishing tooling — never ship / never public
+papers/deposit-to-zenodo.py
