@@ -1,0 +1,146 @@
+{
+  "_meta": {
+    "class": "tubing",
+    "source": "API Spec 5CT (Specification for Casing and Tubing) - tubing dimensional data (OD, wall, ID, calculated drift)",
+    "edition": "dimensional values per API Spec 5CT (edition-stable geometry)",
+    "values": "as-published imperial (facts; cited). Loader converts to SI at resolve.",
+    "units": {
+      "od_in": "in",
+      "nominal_weight_ppf": "lb/ft (nominal, threads & coupling)",
+      "wall_in": "in",
+      "id_in": "in",
+      "drift_in": "in",
+      "min_yield_psi": "psi"
+    },
+    "to_SI": {
+      "in_to_m": 0.0254,
+      "ppf_to_kgpm": 1.4881639,
+      "psi_to_pa": 6894.757
+    },
+    "notes": [
+      "Geometry (OD/wall/ID/drift) is grade-independent; grade sets minimum yield only (see grades). Wall = (OD-ID)/2 (not stored in OSDU).",
+      "Drift = ID minus API standard drift undersize (3/32 in OD<3-1/2, 1/8 in OD>=3-1/2).",
+      "OSDU TubularComponent.1.0.0 aliases: od_in<->MaximumOuterDiameter/TubularComponentNominalSize, id_in<->InnerDiameter, drift_in<->DriftDiameter, nominal_weight_ppf<->TubularComponentNominalWeight, grade<->TubularComponentTubingGradeID, min_yield_psi<->TubularComponentTubingGradeStrength."
+    ]
+  },
+  "grades": {
+    "J55": {
+      "min_yield_psi": 55000,
+      "max_yield_psi": 80000,
+      "min_uts_psi": 75000
+    },
+    "K55": {
+      "min_yield_psi": 55000,
+      "max_yield_psi": 80000,
+      "min_uts_psi": 95000
+    },
+    "L80": {
+      "min_yield_psi": 80000,
+      "max_yield_psi": 95000,
+      "min_uts_psi": 95000
+    },
+    "N80": {
+      "min_yield_psi": 80000,
+      "max_yield_psi": 110000,
+      "min_uts_psi": 100000
+    },
+    "P110": {
+      "min_yield_psi": 110000,
+      "max_yield_psi": 140000,
+      "min_uts_psi": 125000
+    }
+  },
+  "tubing": [
+    {
+      "od_in": 2.375,
+      "nominal_weight_ppf": 4.6,
+      "wall_in": 0.19,
+      "id_in": 1.995,
+      "drift_in": 1.901
+    },
+    {
+      "od_in": 2.375,
+      "nominal_weight_ppf": 5.8,
+      "wall_in": 0.254,
+      "id_in": 1.867,
+      "drift_in": 1.773
+    },
+    {
+      "od_in": 2.875,
+      "nominal_weight_ppf": 6.5,
+      "wall_in": 0.217,
+      "id_in": 2.441,
+      "drift_in": 2.347
+    },
+    {
+      "od_in": 2.875,
+      "nominal_weight_ppf": 7.9,
+      "wall_in": 0.276,
+      "id_in": 2.323,
+      "drift_in": 2.229
+    },
+    {
+      "od_in": 2.875,
+      "nominal_weight_ppf": 8.7,
+      "wall_in": 0.308,
+      "id_in": 2.259,
+      "drift_in": 2.165
+    },
+    {
+      "od_in": 3.5,
+      "nominal_weight_ppf": 7.7,
+      "wall_in": 0.216,
+      "id_in": 3.068,
+      "drift_in": 2.943
+    },
+    {
+      "od_in": 3.5,
+      "nominal_weight_ppf": 9.3,
+      "wall_in": 0.254,
+      "id_in": 2.992,
+      "drift_in": 2.867
+    },
+    {
+      "od_in": 3.5,
+      "nominal_weight_ppf": 10.2,
+      "wall_in": 0.289,
+      "id_in": 2.922,
+      "drift_in": 2.797
+    },
+    {
+      "od_in": 3.5,
+      "nominal_weight_ppf": 12.7,
+      "wall_in": 0.375,
+      "id_in": 2.75,
+      "drift_in": 2.625
+    },
+    {
+      "od_in": 4.0,
+      "nominal_weight_ppf": 9.5,
+      "wall_in": 0.226,
+      "id_in": 3.548,
+      "drift_in": 3.423
+    },
+    {
+      "od_in": 4.0,
+      "nominal_weight_ppf": 11.0,
+      "wall_in": 0.262,
+      "id_in": 3.476,
+      "drift_in": 3.351
+    },
+    {
+      "od_in": 4.5,
+      "nominal_weight_ppf": 12.6,
+      "wall_in": 0.271,
+      "id_in": 3.958,
+      "drift_in": 3.833
+    },
+    {
+      "od_in": 4.5,
+      "nominal_weight_ppf": 15.2,
+      "wall_in": 0.337,
+      "id_in": 3.826,
+      "drift_in": 3.701
+    }
+  ]
+}
