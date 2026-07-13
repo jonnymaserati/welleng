@@ -80,3 +80,19 @@ tests/data/
 welleng/errors/error_codes.yaml
 welleng/errors/extract_error_codes.py
 probcol_brooks_fig8.png
+
+# max-curve DRAFT figures/scripts — local until the draft gets a DOI (papers/drafts policy)
+papers/figures/design-correction.png
+papers/figures/min-vs-max-section.png
+papers/figures/mode-switch.png
+papers/figures/stiff-pipe-floor.png
+papers/figures/xcl-vs-maxcurve.png
+papers/figures/volve_f2.npz
+papers/figures/fig_*.py
+papers/figures/view_recovery_3d.py
+# orphan/superseded generated figures (unreferenced, regenerable) — local, not deleted
+papers/figures/example2.png
+papers/figures/pedal-false-negative.png
+papers/figures/pedal-false-negative-closeup.png
+papers/figures/recovery-error.png
+papers/figures/ti-recovery-3d.png
