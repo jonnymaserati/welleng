@@ -62,3 +62,10 @@ temp/
 
 # internal publishing tooling — never ship / never public
 papers/deposit-to-zenodo.py
+
+# env / build / local agent state (never tracked)
+.claude/
+venv/
+tectonic
+*.pkl
+projects/
