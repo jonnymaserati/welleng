@@ -69,3 +69,14 @@ venv/
 tectonic
 *.pkl
 projects/
+
+# my generated / local artifacts — regenerable, NOT needed by the package (main
+# builds & runs without them). Kept on disk, just not tracked.
+papers/gyro_appendixE_per_source_diagnostics.csv
+papers/view_clc.py
+papers/zenodo-metadata.json
+examples/data/
+tests/data/
+welleng/errors/error_codes.yaml
+welleng/errors/extract_error_codes.py
+probcol_brooks_fig8.png
