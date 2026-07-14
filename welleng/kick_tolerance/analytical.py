@@ -234,6 +234,17 @@ def analytical_kick_tolerance(
     (:class:`~welleng.kick_tolerance.gas_z_coolprop.ZTable`) to use CoolProp real-EOS
     Z(P,T) for a mixture / CO2 / CCUS influx (built once over the case P,T box, then
     interpolated). Default (neither) = the clean-room Hall-Yarborough methane backend.
+
+    Units (US oilfield -- see the subpackage docstring's UNITS contract):
+        sections     : :class:`WellSection` with TVD ``top``/``bottom`` [ft] and
+                       ``annular_capacity_bbl_per_ft`` [bbl/ft].
+        pp, fp       : pore / fracture profile ``(tvd_ft, ppg)`` tables or callables
+                       -- mud-weight-EQUIVALENT density [ppg] vs TVD [ft].
+        bhp_psi      : bottom-hole (kill) pressure [psi].
+        rho_mud_ppg  : drilling-fluid density [ppg].
+        gas_bh_state : ``(P_bh [psi], T_bh [degR], Z [-], rho_gas [ppg])`` (any None
+                       -> computed). Returns influx / kick tolerance in [bbl], binding
+                       depths in [ft].
     """
     ss = sorted(sections, key=lambda s: s.top_tvd)
     bottom_tvd = max(s.bottom_tvd for s in ss)
