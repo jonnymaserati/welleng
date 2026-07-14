@@ -52,3 +52,22 @@ def test_ztable_disk_cache_roundtrip():
     b = ZTable(COMP, PBOX, TBOX, cache=True)
     assert np.array_equal(a._Z, b._Z)
     assert float(a.z(3200.0, 640.0)) == float(b.z(3200.0, 640.0))
+
+
+def test_analytical_coolprop_route_runs_and_differs_from_methane():
+    """The analytical solver's CoolProp route (gas_composition=) runs end-to-end
+    and gives a physically sensible, different answer from the methane H-Y default:
+    a dense, poorly-expanding CO2-rich influx is less buoyant -> a HIGHER kick
+    tolerance than light methane."""
+    from welleng.kick_tolerance import WellSection, analytical_kick_tolerance
+    secs = [WellSection(0.0, 6500.0, 0.066, False),
+            WellSection(6500.0, 10500.0, 0.046, True)]
+    pp = (np.array([0.0, 10500.0]), np.array([10.5, 11.0]))
+    fp = (np.array([0.0, 10500.0]), np.array([14.0, 14.0]))
+    common = dict(bhp_psi=6402.0, rho_mud_ppg=12.0, gas_bh_state=(None, 660.0, None, None))
+    methane = analytical_kick_tolerance(secs, pp, fp, **common).max_influx_bbl
+    co2rich = analytical_kick_tolerance(
+        secs, pp, fp, gas_composition={"methane": 0.2, "co2": 0.8}, **common).max_influx_bbl
+    assert 30.0 < methane < 90.0
+    assert 30.0 < co2rich < 150.0
+    assert co2rich > methane                      # dense CO2 kick is milder

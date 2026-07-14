@@ -111,7 +111,7 @@ class AnalyticalKickTolerance:
 
 def _top_for_bottom(gas_bottom, influx_bbl_bh, sections_sorted, bottom_tvd, *,
                     bhp_psi, rho_mud_ppg, gas_bh, temp_fn,
-                    gas_density_mode="conservative"):
+                    gas_density_mode="conservative", z_fn=None):
     """Gas TOP when the bubble BOTTOM is pinned at ``gas_bottom`` and holds
     ``influx_bbl_bh`` of bottom-hole gas, in the SAME density convention as
     :func:`~welleng.kick_tolerance.migration.pressure_at_depth` so geometry and
@@ -135,6 +135,7 @@ def _top_for_bottom(gas_bottom, influx_bbl_bh, sections_sorted, bottom_tvd, *,
     """
     P_bh, T_bh_r, Z_bh, rho_bh = gas_bh
     g = G_PSI_PER_PPG_FT
+    zf = z_fn or _z                                       # H-Y default, else provider
     P_gb = max(bhp_psi - g * rho_mud_ppg * (bottom_tvd - gas_bottom), 1.0)
 
     if gas_density_mode == "exact":
@@ -154,7 +155,7 @@ def _top_for_bottom(gas_bottom, influx_bbl_bh, sections_sorted, bottom_tvd, *,
                 cap = sections_sorted[0].annular_capacity_bbl_per_ft
             seg = z - seg_top_limit
             T = float(temp_fn(0.5 * (z + seg_top_limit)))
-            Z = _z(max(P, 1.0), T)
+            Z = zf(max(P, 1.0), T)
             c = rho_bh * Z_bh * T_bh_r / (P_bh * Z * T)    # rho = c.P  [ppg/psi]
             k = g * c
             P_seg_top = P * np.exp(-k * seg)
@@ -172,7 +173,7 @@ def _top_for_bottom(gas_bottom, influx_bbl_bh, sections_sorted, bottom_tvd, *,
     P_gt = P_gb
     for _ in range(30):
         T_gt = float(temp_fn(gas_top))
-        Z_gt = _z(max(P_gt, 1.0), T_gt)
+        Z_gt = zf(max(P_gt, 1.0), T_gt)
         Ve = influx_bbl_bh * (P_bh * Z_gt * T_gt) / (max(P_gt, 1.0) * Z_bh * T_bh_r)
         gas_top = _fill_up(gas_bottom, Ve, sections_sorted)
         rho_top = rho_bh * max(P_gt, 1.0) * Z_bh * T_bh_r / (P_bh * Z_gt * T_gt)  # ppg
@@ -186,7 +187,7 @@ def _top_for_bottom(gas_bottom, influx_bbl_bh, sections_sorted, bottom_tvd, *,
 
 def _min_margin(gas_top, gas_bottom, exposed_depths, pp_psi, fp_psi, *,
                 bottom_tvd, bhp_psi, rho_mud_ppg, gas_bh, gas_density_mode,
-                temp_profile):
+                temp_profile, z_fn=None):
     """(worst margin, binding depth) over the exposed depths for a config.
 
     The margin is the min of the FP margin (``FP-P >= 0``: no breakdown) and the
@@ -196,6 +197,7 @@ def _min_margin(gas_top, gas_bottom, exposed_depths, pp_psi, fp_psi, *,
         exposed_depths, gas_top_tvd=gas_top, gas_bottom_tvd=gas_bottom,
         bottom_tvd=bottom_tvd, bhp_psi=bhp_psi, rho_mud_ppg=rho_mud_ppg,
         gas_bh=gas_bh, gas_density_mode=gas_density_mode, temp_profile=temp_profile,
+        z_fn=z_fn,
     )
     both = np.minimum(fp_psi - P, P - pp_psi)
     j = int(np.argmin(both))
@@ -213,6 +215,8 @@ def analytical_kick_tolerance(
     gas_density_mode: str = "conservative",
     temp_profile: TempProfileLike = None,
     geothermal: TempProfileLike = None,
+    gas_composition=None,
+    fluid_table=None,
 ) -> AnalyticalKickTolerance:
     """Max bottom-hole influx tolerable over the whole migration, by breakpoints.
 
@@ -224,10 +228,36 @@ def analytical_kick_tolerance(
     accurate true-density value (``"exact"``) -- see the module docstring for the
     density convention, the borderline caveat, the geometry assumption and the
     breakpoint families.
+
+    Real-gas backend (optional): pass ``gas_composition`` (mole fractions, e.g.
+    ``{"methane": 0.9, "co2": 0.1}``) or a prebuilt ``fluid_table``
+    (:class:`~welleng.kick_tolerance.gas_z_coolprop.ZTable`) to use CoolProp real-EOS
+    Z(P,T) for a mixture / CO2 / CCUS influx (built once over the case P,T box, then
+    interpolated). Default (neither) = the clean-room Hall-Yarborough methane backend.
     """
     ss = sorted(sections, key=lambda s: s.top_tvd)
     bottom_tvd = max(s.bottom_tvd for s in ss)
+    # Real-gas Z provider (CoolProp) when a composition / table is given, else H-Y.
+    z_fn = None
+    if fluid_table is not None or gas_composition is not None:
+        table = fluid_table
+        if table is None:
+            from .gas_z_coolprop import ZTable
+            t_bh = gas_bh_state[1]
+            t_surf = float(temp_profile(0.0)) if callable(temp_profile) else (
+                float(geothermal(0.0)) if callable(geothermal) else t_bh)
+            table = ZTable(gas_composition,
+                           (14.7, bhp_psi * 1.1),
+                           (min(t_surf, t_bh) - 5.0, max(t_surf, t_bh) + 5.0))
+        z_fn = lambda p, t: float(table.z(p, t))          # noqa: E731
+        # bottom-hole anchor from the same fluid if the user didn't supply Z/rho
+        P_bh0 = gas_bh_state[0] if gas_bh_state[0] is not None else bhp_psi
+        T_bh0 = gas_bh_state[1]
+        Z_bh0 = gas_bh_state[2] if gas_bh_state[2] is not None else float(table.z(P_bh0, T_bh0))
+        rho_bh0 = gas_bh_state[3] if gas_bh_state[3] is not None else float(table.rho_ppg(P_bh0, T_bh0))
+        gas_bh_state = (P_bh0, T_bh0, Z_bh0, rho_bh0)
     gas_bh = _resolve_bh_state(gas_bh_state, bhp_psi)
+    zf = z_fn or _z                                       # Z(P,T): H-Y default, else provider
     if temp_profile is None:
         temp_profile = geothermal
     temp_fn = _as_temp_callable(temp_profile, gas_bh[1])
@@ -283,7 +313,7 @@ def analytical_kick_tolerance(
             return None                                        # already >= FP with no gas
         T_d = float(temp_fn(d))
         if gas_density_mode == "conservative":
-            Z_t = _z(FP, T_d)
+            Z_t = zf(FP, T_d)
             rho_top = rho_bh * FP * Z_bh * T_bh_r / (P_bh * Z_t * T_d)
             if b <= rho_top * g:
                 return None
@@ -291,7 +321,7 @@ def analytical_kick_tolerance(
         else:                                                  # exact exponential column
             L = (FP - A) / b                                   # linear seed
             for _ in range(6):                                 # Newton on FP*exp(kL)=A+bL
-                Z_c = _z(0.5 * (FP + A + b * max(L, 0.0)), T_d)
+                Z_c = zf(0.5 * (FP + A + b * max(L, 0.0)), T_d)
                 k = g * rho_bh * Z_bh * T_bh_r / (P_bh * Z_c * T_d)
                 e = np.exp(k * L)
                 fL, dfL = FP * e - (A + b * L), FP * k * e - b
@@ -314,11 +344,11 @@ def analytical_kick_tolerance(
             if bot <= top:
                 continue
             if gas_density_mode == "conservative":
-                Z_t = _z(FP, T_d)
+                Z_t = zf(FP, T_d)
                 rho_top = rho_bh * FP * Z_bh * T_bh_r / (P_bh * Z_t * T_d)
                 V += rho_top * s.annular_capacity_bbl_per_ft * (bot - top) / rho_bh
             else:
-                Z_c = _z(0.5 * (P + A + b * (bot - d)), T_d)
+                Z_c = zf(0.5 * (P + A + b * (bot - d)), T_d)
                 k = g * rho_bh * Z_bh * T_bh_r / (P_bh * Z_c * T_d)
                 P_bot = P * np.exp(k * (bot - top))
                 V += s.annular_capacity_bbl_per_ft * (P_bot - P) / (g * rho_bh)
@@ -330,14 +360,15 @@ def analytical_kick_tolerance(
         pinned at ``b`` and influx ``V``."""
         gt = _top_for_bottom(b, V, ss, bottom_tvd, bhp_psi=bhp_psi,
                              rho_mud_ppg=rho_mud_ppg, gas_bh=gas_bh, temp_fn=temp_fn,
-                             gas_density_mode=gas_density_mode)
+                             gas_density_mode=gas_density_mode, z_fn=z_fn)
         d = exposed_for(gt, b)
         if not d.size:
             return np.inf, gt, np.nan
         mv, db = _min_margin(gt, b, d, ppg_to_psi(pp_fn(d), d), ppg_to_psi(fp_fn(d), d),
                              bottom_tvd=bottom_tvd, bhp_psi=bhp_psi,
                              rho_mud_ppg=rho_mud_ppg, gas_bh=gas_bh,
-                             gas_density_mode=gas_density_mode, temp_profile=temp_profile)
+                             gas_density_mode=gas_density_mode, temp_profile=temp_profile,
+                             z_fn=z_fn)
         return mv, gt, db
 
     def _breach_v_gas_bottom(b):

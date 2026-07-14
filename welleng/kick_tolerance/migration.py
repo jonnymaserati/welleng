@@ -252,8 +252,15 @@ def pressure_at_depth(
     geothermal: TempProfileLike = None,
     g: float = G_PSI_PER_PPG_FT,
     n_sub: int = 40,
+    z_fn=None,
 ) -> Union[float, np.ndarray]:
     """Imposed pressure at ``depth_ft`` for BHP held constant at the bottom.
+
+    ``z_fn`` (optional): a real-gas Z provider ``(P_psi, T_rankine) -> Z`` -- e.g. a
+    precomputed CoolProp :class:`~welleng.kick_tolerance.gas_z_coolprop.ZTable` for a
+    mixture / CO2 / CCUS influx. When ``None`` (default) the clean-room
+    Hall-Yarborough methane backend is used with a warm-started Newton (behaviour
+    unchanged, bit-for-bit).
 
     Marching UP from the bottom, hydrostatic is removed: a mud gradient outside
     the gas interval and a gas gradient inside [gas_top, gas_bottom]. The local
@@ -334,7 +341,10 @@ def pressure_at_depth(
             dz = zs[k] - zs[k + 1]                       # +ve (going up)
             Pk = max(Ps[k], 1.0)
             Tk = float(temp_fn(zs[k]))                    # local T at sub-step base
-            Zk, y_seed = _z_and_y_at(Pk, Tk, y_seed)      # seed next solve from this y
+            if z_fn is None:
+                Zk, y_seed = _z_and_y_at(Pk, Tk, y_seed)  # seed next solve from this y
+            else:
+                Zk = float(z_fn(Pk, Tk))                  # real-gas provider (CoolProp)
             # rho(P,d) = rho_bh * P*Z_bh*T_bh / (P_bh*Z(P,T(d))*T(d)); the trailing
             # (T_bh/Tk) is EXACTLY 1.0 when isothermal -> old value bit-for-bit.
             rho_local = rho_gas_bh * Pk * Z_bh / (P_bh * Zk) * (T_bh_r / Tk)
@@ -352,7 +362,10 @@ def pressure_at_depth(
             T_top = float(temp_fn(gas_top_tvd))    # local T at the gas top
             y_top = 1.0e-3                          # warm-start across the 3 refreshes
             for _ in range(3):
-                Z_top, y_top = _z_and_y_at(P_top, T_top, y_top)
+                if z_fn is None:
+                    Z_top, y_top = _z_and_y_at(P_top, T_top, y_top)
+                else:
+                    Z_top = float(z_fn(P_top, T_top))
                 # (T_bh/T_top) is EXACTLY 1.0 when isothermal -> old value bit-for-bit.
                 rho_top = rho_gas_bh * P_top * Z_bh / (P_bh * Z_top) * (T_bh_r / T_top)
                 P_top = max(P_gb - rho_top * g * gas_len, 1.0)
