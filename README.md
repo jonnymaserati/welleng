@@ -1,7 +1,9 @@
 # welleng
 
 [![Open Source Love svg2](https://badges.frapsoft.com/os/v2/open-source.svg?v=103)](https://github.com/jonnymaserati/welleng/blob/main/LICENSE)
+[![Status](https://img.shields.io/badge/status-beta-yellow.svg)](https://pypi.org/project/welleng/)
 [![PyPI version](https://img.shields.io/pypi/v/welleng)](https://pypi.org/project/welleng/)
+[![Python](https://img.shields.io/pypi/pyversions/welleng)](https://pypi.org/project/welleng/)
 [![Downloads](https://static.pepy.tech/personalized-badge/welleng?period=total&units=international_system&left_color=grey&right_color=orange&left_text=Downloads&kill_cache=1)](https://pepy.tech/project/welleng)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![welleng-tests Actions Status](https://github.com/jonnymaserati/welleng/workflows/welleng-tests/badge.svg)](https://github.com/jonnymaserati/welleng/actions)
