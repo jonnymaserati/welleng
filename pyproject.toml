@@ -69,6 +69,13 @@ easy = [
 analytical = [
     "python-flint",
 ]
+# Kick-tolerance extras: coolprop = optional CCUS / reference-EOS validation
+# backend; sympy = the envelope/monotonicity analysis. Core kick-tolerance
+# (core.py, gas_z.py) needs neither -- only numpy/scipy.
+kick = [
+    "coolprop",
+    "sympy",
+]
 all = [
     "magnetic_field_calculator",
     "networkx",
@@ -78,6 +85,8 @@ all = [
     "python-fcl",
     "rtree",
     "python-flint",
+    "coolprop",
+    "sympy",
 ]
 
 [project.urls]
