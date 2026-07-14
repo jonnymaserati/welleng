@@ -46,6 +46,7 @@ from .migration import (
     migrate,
     max_influx_circulated,
     pressure_at_depth,
+    linear_temp_profile,
 )
 # Catalogue-backed geometry: true annular capacity (bore - string), casing IDs
 # from the API-5CT catalogue. catalog is imported lazily inside the builders.
@@ -87,6 +88,7 @@ __all__ = [
     "migrate",
     "max_influx_circulated",
     "pressure_at_depth",
+    "linear_temp_profile",
     "annular_capacity",
     "cased_section",
     "open_hole_section",

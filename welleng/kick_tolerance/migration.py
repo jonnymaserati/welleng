@@ -665,6 +665,7 @@ def max_influx_circulated(
     rho_mud_ppg: float,
     gas_bh_state,
     gas_density_mode: str = "conservative",
+    temp_profile: TempProfileLike = None,
     n_steps: int = 100,
     v_cap_bbl: float = 500.0,
     tol_bbl: float = 0.1,
@@ -685,7 +686,8 @@ def max_influx_circulated(
         return migrate(
             sections, pp, fp, bhp_psi=bhp_psi, influx_bbl_bh=v_bbl,
             rho_mud_ppg=rho_mud_ppg, gas_bh_state=gas_bh_state,
-            gas_density_mode=gas_density_mode, n_steps=n_steps,
+            gas_density_mode=gas_density_mode, temp_profile=temp_profile,
+            n_steps=n_steps,
         )
 
     def _tolerable(r: MigrationResult) -> bool:

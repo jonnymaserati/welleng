@@ -236,6 +236,32 @@ def test_max_influx_circulated_is_the_envelope_boundary():
     assert (not over.within_envelope) or over.bha_length_exceeded
 
 
+def test_max_influx_circulated_threads_temp_profile():
+    """temp_profile flows through the inverse (max-influx) solve, safe-side.
+
+    The isothermal-at-660R baseline is the HOTTEST up-hole case (lightest gas
+    column -> highest imposed shoe pressure -> least headroom). A geothermal
+    profile (cooler up-hole, GEO_TEMP) makes the column heavier and the imposed
+    shoe pressure lower, so MORE influx can be circulated out: V*_geo >= V*_iso.
+    temp_profile=None must reproduce the isothermal V* exactly.
+    """
+    common = dict(
+        bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state(),
+        n_steps=120, tol_bbl=0.1,
+    )
+    v_iso = max_influx_circulated(make_sections(), PP_TABLE, FP_TABLE, **common)
+    v_none = max_influx_circulated(
+        make_sections(), PP_TABLE, FP_TABLE, temp_profile=None, **common
+    )
+    v_geo = max_influx_circulated(
+        make_sections(), PP_TABLE, FP_TABLE, temp_profile=GEO_TEMP, **common
+    )
+    # None == isothermal default, and the cooler-up-hole profile gives >= headroom.
+    assert v_none.max_influx_bbl == pytest.approx(v_iso.max_influx_bbl)
+    assert v_geo.max_influx_bbl >= v_iso.max_influx_bbl - 1e-9
+    assert v_geo.max_influx_bbl > v_iso.max_influx_bbl  # strictly, here it moves
+
+
 def test_weak_formation_binds_deeper_than_the_shoe():
     """Answers 'is the casing shoe always the worst point?' -- NO. With a weak
     formation in the open hole below the shoe, the migration binds THERE, not at
