@@ -65,3 +65,26 @@ headroom for a slower cloud instance. Guardrails: the 39-test suite runs in thor
 of thorough. Survey note: the engine consumes piecewise-constant TVD `WellSection`s,
 so interfaces stay discrete even for a deviated `from_survey` build; per-section
 counts bound a survey that spawns many fine sections.
+
+## 2026-07-14 (later) · `feat/kick-tolerance` · march-init fix (safety, not perf)
+
+**Correctness fix** to the migration gas-top march init, surfaced by profiling +
+a resolution sweep (`work/kick_tolerance/bug_resolution_sweep.py`). Old init
+`gas_top_start = bottom - influx/cap_bottom_section` lengthened the bubble using the
+BOTTOM (tight/BHA) section's capacity only; a bubble spilling into the wider open hole
+above was over-lengthened → the march started ABOVE the binding interfaces → the
+min-margin was taken over safe positions only → `max_influx_circulated` returned
+**170 bbl** on a 3-section tight-BHA case when the true first-fracture value is ~55.
+**Resolution-invariant** (identical n=16..900) ⇒ NOT discretization; a logic bug.
+Fixed by `_fill_up` (mirror of `_fill_down`; spills interval-to-interval, general).
+
+| tight-BHA case | before | after |
+|---|---|---|
+| `max_influx_circulated` | 170 bbl (non-conservative) | **55.03 bbl** (fine-scan truth <55; conservative) |
+| margin vs influx | non-monotone (−4 then +16) | monotone decreasing |
+
+Perf unchanged (init-only, O(sections)): thorough 3821→3790 ms, fast 648→652 ms
+(within noise). Validation: 44 passed, 1 skipped (standard-case results identical;
+the fix only moves the tight-BHA answer). Residual (narrow gas-bottom breakpoint
+under-sampling) → the analytical solver with the complete breakpoint set
+(`docs/dev/KICK_ANALYTICAL_PLAN.md`).
