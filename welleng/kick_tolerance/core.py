@@ -134,6 +134,31 @@ class KickInputs:
     kt_threshold: float = 25.0
     inc_shoe: float = 0.0
 
+    @classmethod
+    def from_survey(cls, survey, shoe_md: float, td_md: float, **params):
+        """Build inputs from a welleng ``Survey``, reading the trajectory-derived
+        quantities off the survey so callers don't hand-transcribe them.
+
+        ``D_lot`` / ``D_td`` (true vertical depths at the shoe and TD) and
+        ``inc_shoe`` (hole inclination at the shoe) are interpolated from the
+        survey at ``shoe_md`` / ``td_md`` via min-curvature (``interpolate_md``);
+        every other input (``rho_mud``, ``PP``, ``P_lot``, ``V_dpa``, ...) is
+        passed through in ``params``. The survey is duck-typed — any object with
+        ``interpolate_md(md) -> node`` exposing ``pos_nev`` and ``inc_deg`` works.
+
+        ``Node`` has no direct ``.tvd``; its position is ``pos_nev = [North, East,
+        Vertical]`` (welleng NEV convention), so ``pos_nev[2]`` IS the TVD -- verified
+        to equal ``survey.tvd`` at every station and to reduce to MD for a vertical well.
+        """
+        shoe = survey.interpolate_md(shoe_md)
+        td = survey.interpolate_md(td_md)
+        return cls(
+            D_lot=float(shoe.pos_nev[2]),   # pos_nev = [N, E, TVD] -> [2] is TVD
+            D_td=float(td.pos_nev[2]),
+            inc_shoe=float(shoe.inc_deg),
+            **params,
+        )
+
 
 @dataclass
 class KickResult:
