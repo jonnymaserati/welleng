@@ -343,21 +343,29 @@ def analytical_kick_tolerance(
     def _breach_v_gas_bottom(b):
         """Influx where the config with gas BOTTOM pinned at ``b`` first breaches
         (families 2/3 -- the interior/tight-BHA binding the closed form can't pin).
-        Margin is monotone decreasing in V; bisect in [0, v_hole]. Returns
+        Margin is monotone decreasing in V; a bracketed SECANT on the influx
+        (falls back to bisection if it leaves the bracket). Returns
         ``(V, gas_top, binding_depth)`` or None if it never breaches within the hole."""
         m_hi, _, _ = _margin_bottom(b, v_hole)
         if m_hi > 0.0:
-            return None
+            return None                                   # never breaches in the hole
         lo, hi = 0.0, v_hole
-        for _ in range(44):
-            mid = 0.5 * (lo + hi)
-            m, _, _ = _margin_bottom(b, mid)
+        m_lo = _margin_bottom(b, lo)[0]                   # large positive (no gas)
+        v = hi
+        for _ in range(24):
+            denom = m_hi - m_lo
+            v = hi - m_hi * (hi - lo) / denom if abs(denom) > 1e-9 else 0.5 * (lo + hi)
+            if not (lo < v < hi):
+                v = 0.5 * (lo + hi)
+            m, _, _ = _margin_bottom(b, v)
+            if abs(m) < 0.25 or (hi - lo) < 1e-3:         # 0.25 psi / 0.001 bbl
+                break
             if m > 0.0:
-                lo = mid
+                lo, m_lo = v, m
             else:
-                hi = mid
-        m, gt, db = _margin_bottom(b, lo)
-        return lo, gt, db
+                hi, m_hi = v, m
+        m, gt, db = _margin_bottom(b, v)
+        return v, gt, db
 
     # Per-candidate breach influx; the kick tolerance is the MIN over candidates.
     v_star = np.inf
