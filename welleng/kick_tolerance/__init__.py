@@ -50,6 +50,9 @@ from .migration import (
 # Catalogue-backed geometry: true annular capacity (bore - string), casing IDs
 # from the API-5CT catalogue. catalog is imported lazily inside the builders.
 from .geometry import annular_capacity, cased_section, open_hole_section
+# NOGEPA-50 static single-shoe formula (the mandated baseline the migration
+# engine's static reduction reproduces).
+from .nogepa import nogepa_drilling_kick_tolerance, NogepaResult
 
 try:  # envelope/monotonicity need SymPy (optional 'kick' extra)
     from .envelope import evaluate_envelope, EnvelopeResult
@@ -87,4 +90,6 @@ __all__ = [
     "annular_capacity",
     "cased_section",
     "open_hole_section",
+    "nogepa_drilling_kick_tolerance",
+    "NogepaResult",
 ]
