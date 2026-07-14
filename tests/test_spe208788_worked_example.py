@@ -82,6 +82,25 @@ def test_spe208788_digit_exact_through_A7():
     assert v == pytest.approx(27.86, abs=0.02)
 
 
+def test_deviated_form_matches_nassab_along_hole_conversion():
+    """Deviated (inc_shoe) form vs Nassab et al. (SPE-202426-PA) Eq. 4: the gas
+    column's VERTICAL height H_gas is converted to an ALONG-HOLE length
+    L_gas = H_gas / cos(inc) 'using well trajectory' before it multiplies the
+    per-MD annular capacity. For constant inclination this scales the capacity
+    constant A (and hence the tolerable influx) by exactly 1 / cos(inc_shoe);
+    inc_shoe = 0 recovers the SPE-208788 vertical Table-1 value.
+    """
+    from math import cos, radians
+    A_vert = constant_A(paper_inputs(inc_shoe=0.0))
+    for inc in (15.0, 30.0, 60.0):
+        A_dev = constant_A(paper_inputs(inc_shoe=inc))
+        assert A_dev == pytest.approx(A_vert / cos(radians(inc)), rel=1e-9)
+    # the tolerable influx (A-7) scales the same way (A is its only inc-dependence).
+    v_vert = drill_kick(paper_inputs(inc_shoe=0.0)).capacity
+    v_60 = drill_kick(paper_inputs(inc_shoe=60.0)).capacity
+    assert v_60 == pytest.approx(v_vert / cos(radians(60.0)), rel=1e-9)
+
+
 def test_spe208788_hall_yarborough_backend_reproduces_paper_gas_props():
     """Separately, our clean-room Hall-Yarborough backend reproduces the paper's
     (H-Y-derived) Z and gas density to ~1 % -- so the closed-form validation above
