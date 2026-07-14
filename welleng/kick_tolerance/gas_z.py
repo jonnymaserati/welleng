@@ -94,10 +94,21 @@ def reduced_density(
     t_rankine: float,
     t_pc_rankine: float = METHANE_TPC_RANKINE,
     p_pc_psia: float = METHANE_PPC_PSIA,
+    y0: float = 1.0e-3,
 ) -> float:
     """Solve the Hall-Yarborough implicit equation for reduced density ``y``.
 
-    Newton-Raphson from a small positive seed; ``y`` is confined to (0, 1).
+    Newton-Raphson from the seed ``y0`` (default a small positive value); ``y`` is
+    confined to (0, 1). ``y0`` lets a caller WARM-START from a nearby prior solve
+    (consecutive sub-steps in a gas-column integration have close pressures, so the
+    previous ``y`` converges in ~2 iterations instead of ~5) -- the converged root
+    is identical to 1e-12 regardless of the seed.
+
+    The residual and its analytic derivative are inlined here and the
+    temperature-dependent coefficient groups are precomputed once (not per Newton
+    iteration): this is the same arithmetic as :func:`_hy_residual` /
+    :func:`_hy_residual_derivative` but avoids ~5 Python function calls and repeated
+    power evaluations per solve, which dominate the migration-engine hot path.
 
     Raises
     ------
@@ -111,13 +122,35 @@ def reduced_density(
     ppr = p_psia / p_pc_psia
     a = 0.06125 * ppr * t * math.exp(-1.2 * (1.0 - t) ** 2)
 
-    y = 1.0e-3
+    # t-dependent coefficient groups -- constant across Newton iterations.
+    t2 = t * t
+    t3 = t2 * t
+    c_res = 14.76 * t - 9.76 * t2 + 4.58 * t3          # residual y^2 coefficient
+    c_pow = 90.7 * t - 242.2 * t2 + 42.4 * t3          # residual/derivative power coef
+    expo = 2.18 + 2.82 * t                             # residual power exponent
+    c_der = 29.52 * t - 19.52 * t2 + 9.16 * t3         # derivative linear coefficient
+    dexpo = 1.18 + 2.82 * t                            # derivative power exponent
+
+    y = y0
     for _ in range(_MAX_ITER):
-        f = _hy_residual(y, a, t)
+        omy = 1.0 - y
+        y2 = y * y
+        y3 = y2 * y
+        y4 = y3 * y
+        f = (
+            -a
+            + (y + y2 + y3 - y4) / omy ** 3
+            - c_res * y2
+            + c_pow * y ** expo
+        )
         if abs(f) < _TOL:
             return y
-        dy = f / _hy_residual_derivative(y, t)
-        y -= dy
+        df = (
+            (1.0 + 4.0 * y + 4.0 * y2 - 4.0 * y3 + y4) / omy ** 4
+            - c_der * y
+            + expo * c_pow * y ** dexpo
+        )
+        y -= f / df
         if y <= 0.0:
             y = 1.0e-8
         elif y >= 1.0:
@@ -133,6 +166,7 @@ def hall_yarborough_z(
     t_rankine: float,
     t_pc_rankine: float = METHANE_TPC_RANKINE,
     p_pc_psia: float = METHANE_PPC_PSIA,
+    y0: float = 1.0e-3,
 ) -> float:
     """Real-gas Z-factor by the Hall & Yarborough (1973) correlation.
 
@@ -154,8 +188,28 @@ def hall_yarborough_z(
     t = t_pc_rankine / t_rankine
     ppr = p_psia / p_pc_psia
     a = 0.06125 * ppr * t * math.exp(-1.2 * (1.0 - t) ** 2)
-    y = reduced_density(p_psia, t_rankine, t_pc_rankine, p_pc_psia)
+    y = reduced_density(p_psia, t_rankine, t_pc_rankine, p_pc_psia, y0)
     return a / y
+
+
+def hall_yarborough_z_and_y(
+    p_psia: float,
+    t_rankine: float,
+    t_pc_rankine: float = METHANE_TPC_RANKINE,
+    p_pc_psia: float = METHANE_PPC_PSIA,
+    y0: float = 1.0e-3,
+) -> tuple:
+    """Z factor AND the reduced density ``y`` that produced it.
+
+    ``y`` is returned so a caller stepping through nearby pressures (a gas-column
+    integration) can pass it as the ``y0`` warm-start of the next solve, cutting
+    Newton iterations without changing the converged result.
+    """
+    t = t_pc_rankine / t_rankine
+    ppr = p_psia / p_pc_psia
+    a = 0.06125 * ppr * t * math.exp(-1.2 * (1.0 - t) ** 2)
+    y = reduced_density(p_psia, t_rankine, t_pc_rankine, p_pc_psia, y0)
+    return a / y, y
 
 
 def gas_density_ppg(
