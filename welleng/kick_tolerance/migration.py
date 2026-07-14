@@ -763,6 +763,14 @@ def max_influx_circulated(
     bisect for ``V*``, then report the binding depth/step/mechanism of the breach
     just above it. Generally <= the static single-shoe max (A-7/A-8): the entire
     circulation path is checked, catching **deeper weak zones and the BHA limit**.
+
+    .. warning::
+       The monotonicity assumption above can FAIL for a **tight-annulus / BHA bottom
+       section**, where the migration margin is non-monotone in influx; the bisection
+       then over-estimates ``V*`` (a NON-conservative result). Validated + trusted for
+       standard single- / two-section geometry (the 40-test suite); do NOT rely on it
+       for a tight BHA bottom section until the exact analytical solver lands (min over
+       interfaces of the closed form -- see ``docs/dev/KICK_ANALYTICAL_PLAN.md``).
     """
     if temp_profile is None:
         temp_profile = geothermal          # geothermal is the default when supplied
