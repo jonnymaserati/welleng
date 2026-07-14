@@ -262,6 +262,32 @@ def test_max_influx_circulated_threads_temp_profile():
     assert v_geo.max_influx_bbl > v_iso.max_influx_bbl  # strictly, here it moves
 
 
+def test_max_influx_unlimited_when_hole_fills_without_fracturing():
+    """If the whole exposed hole can be displaced to gas without breaching the
+    FRACTURE envelope, the shoe-fracture tolerance is unlimited (JJ 2026-07-14):
+    reporting a volume >= hole volume is meaningless. Flagged is_unlimited=True,
+    limited_by='hole_volume', max_influx == exposed-hole annular volume. (At full
+    displacement the governing barrier becomes casing burst -- a documented
+    follow-up, not applied here.)"""
+    fp_high = (np.array([0.0, BOTTOM_TVD]), np.array([30.0, 30.0]))  # never fractures
+    r = max_influx_circulated(
+        make_sections(), PP_TABLE, fp_high,
+        bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state(), n_steps=80,
+    )
+    v_hole = OPEN_CAP * OPEN_HOLE_LENGTH
+    assert r.is_unlimited is True
+    assert r.limited_by == "hole_volume"
+    assert r.max_influx_bbl == pytest.approx(v_hole)
+    # a normal (fracturing) well is NOT flagged unlimited and reports a finite limit.
+    r2 = max_influx_circulated(
+        make_sections(), PP_TABLE, FP_TABLE,
+        bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state(), n_steps=80,
+    )
+    assert r2.is_unlimited is False
+    assert r2.limited_by == "fracture"
+    assert r2.max_influx_bbl < v_hole
+
+
 def test_geothermal_is_the_default_temp_when_provided():
     """User-defined temp wins; a provided geothermal is the DEFAULT (not isothermal);
     isothermal only when neither is given.

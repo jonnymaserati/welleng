@@ -666,8 +666,18 @@ class KickToleranceResult:
     max_influx_bbl: float        # V* -- max influx that can be circulated out  [bbl]
     binding_tvd: float           # governing (breach) depth                     [ft]
     binding_step: int            # migration step (animation frame) at the limit
-    limited_by: str              # "fracture" | "bha_length" | "cap"
+    limited_by: str              # "fracture" | "bha_length" | "cap" | "hole_volume"
     min_fp_margin_psi: float     # FP margin at the breach (~0 when fracture-limited)
+    is_unlimited: bool = False   # True when the whole exposed hole can be displaced
+    #                              to gas without fracturing -> the SHOE-FRACTURE
+    #                              tolerance is INFINITE (full displacement permissible);
+    #                              max_influx_bbl is then the exposed-hole volume, not a
+    #                              fracture limit. NOTE: at full displacement the
+    #                              governing barrier becomes CASING BURST when the bubble
+    #                              reaches surface (a casing-design check, and full
+    #                              displacement is the normal casing-design basis). A
+    #                              burst check from the API-5CT burst/IYP ratings is a
+    #                              documented follow-up (task) -- not yet applied here.
 
 
 def max_influx_circulated(
@@ -700,6 +710,17 @@ def max_influx_circulated(
     if temp_profile is None:
         temp_profile = geothermal          # geothermal is the default when supplied
 
+    # Physical ceiling: the exposed open-hole annular volume. An influx cannot
+    # exceed it as a single bubble below the shoe, and if the WHOLE exposed hole
+    # can be displaced to gas without breaching the fracture envelope, the tolerance
+    # is UNLIMITED -- full displacement is permissible and reporting a volume >= the
+    # hole volume is meaningless. (JJ, 2026-07-14.)
+    v_hole = sum(
+        s.annular_capacity_bbl_per_ft * (s.bottom_tvd - s.top_tvd)
+        for s in sections if s.is_open_hole
+    )
+    v_ceiling = min(v_hole, v_cap_bbl)               # never search beyond the hole
+
     def _run(v_bbl: float) -> MigrationResult:
         return migrate(
             sections, pp, fp, bhp_psi=bhp_psi, influx_bbl_bh=v_bbl,
@@ -711,24 +732,30 @@ def max_influx_circulated(
     def _tolerable(r: MigrationResult) -> bool:
         return r.within_envelope and not r.bha_length_exceeded
 
-    def _result(vstar: float, r: MigrationResult, limited_by: str) -> "KickToleranceResult":
+    def _result(vstar, r, limited_by, is_unlimited=False) -> "KickToleranceResult":
         return KickToleranceResult(
             max_influx_bbl=float(vstar),
             binding_tvd=float(r.binding_tvd),
             binding_step=int(r.binding_step),
             limited_by=limited_by,
             min_fp_margin_psi=float(r.min_fp_margin_psi),
+            is_unlimited=is_unlimited,
         )
 
     r_tol = _run(tol_bbl)
     if not _tolerable(r_tol):                       # even a tiny influx breaches
         return _result(0.0, r_tol,
                        "bha_length" if r_tol.bha_length_exceeded else "fracture")
-    r_cap = _run(v_cap_bbl)
-    if _tolerable(r_cap):                           # capped; raise v_cap_bbl
-        return _result(v_cap_bbl, r_cap, "cap")
 
-    lo, hi = tol_bbl, v_cap_bbl                      # lo tolerable, hi not
+    r_ceil = _run(v_ceiling)
+    # UNLIMITED: the whole exposed hole displaced to gas never breaches the FRACTURE
+    # envelope (bha_length is a single-bubble model caveat, not a fracture limit).
+    if r_ceil.within_envelope and v_ceiling >= v_hole - 1e-9:
+        return _result(v_hole, r_ceil, "hole_volume", is_unlimited=True)
+    if _tolerable(r_ceil):                           # compute-capped below hole volume
+        return _result(v_ceiling, r_ceil, "cap")
+
+    lo, hi = tol_bbl, v_ceiling                      # lo tolerable, hi not
     for _ in range(max_iter):
         if hi - lo <= tol_bbl:
             break
