@@ -30,6 +30,10 @@ from .gas_z import (
     gas_density_ppg,
     methane_properties,
 )
+# Optional CoolProp real-EOS mixture backend (CO2 / CCUS). The import itself is
+# safe without CoolProp -- the dependency is only imported when fluid_z_density
+# is actually called (raises a helpful ImportError then, pointing at welleng[kick]).
+from .gas_z_coolprop import fluid_z_density
 
 try:  # envelope/monotonicity need SymPy (optional 'kick' extra)
     from .envelope import evaluate_envelope, EnvelopeResult
@@ -56,4 +60,5 @@ __all__ = [
     "hall_yarborough_z",
     "gas_density_ppg",
     "methane_properties",
+    "fluid_z_density",
 ]

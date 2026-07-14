@@ -159,3 +159,43 @@ if __name__ == "__main__":
           f"(paper 1.165)")
     print(f"Z_s (6402,212F) = {hall_yarborough_z(6402.0, _rankine(212.0)):.4f} "
           f"(paper 1.123)")
+
+
+def test_coolprop_methane_matches_hall_yarborough():
+    """CoolProp pure-methane Z agrees with the clean-room Hall-Yarborough backend
+    within the correlation band (~2%)."""
+    pytest.importorskip("CoolProp")
+    from welleng.kick_tolerance.gas_z_coolprop import fluid_z_density
+    for t_f, p in ((212.0, 6402.0), (302.0, 6893.0), (150.0, 5000.0)):
+        z_cp, _ = fluid_z_density({"Methane": 1.0}, p, _rankine(t_f))
+        z_hy = hall_yarborough_z(p, _rankine(t_f))
+        assert math.isclose(z_cp, z_hy, rel_tol=0.02)
+
+
+def test_coolprop_co2_denser_than_methane_and_mixture_between():
+    """CO2 influx (CCUS) is much denser than methane (MW 44 vs 16); a
+    methane/CO2 mixture sits between the pure fluids -- captured only by the
+    real-EOS backend, not pure-methane Hall-Yarborough."""
+    pytest.importorskip("CoolProp")
+    from welleng.kick_tolerance.gas_z_coolprop import fluid_z_density
+    p, t_r = 5000.0, _rankine(212.0)
+    _, rho_co2 = fluid_z_density({"CO2": 1.0}, p, t_r)
+    _, rho_ch4 = fluid_z_density({"Methane": 1.0}, p, t_r)
+    _, rho_mix = fluid_z_density({"Methane": 0.9, "CO2": 0.1}, p, t_r)
+    assert rho_ch4 < rho_mix < rho_co2
+
+
+def test_kickinputs_fluid_routes_through_coolprop():
+    """Setting KickInputs.fluid computes gas properties via the CoolProp backend."""
+    pytest.importorskip("CoolProp")
+    from welleng.kick_tolerance.core import (
+        KickInputs, resolve_gas_properties, annular_capacity_dpa,
+    )
+    inp = KickInputs(
+        rho_mud=11.9, PP=11.5, kick_intensity=1.1, P_lot=16.0, P_apl=210.0,
+        D_td=10500.0, D_lot=6500.0, T_s=212.0, T_td=302.0,
+        V_dpa=annular_capacity_dpa(6.125, 4.0),
+        fluid={"Methane": 0.85, "CO2": 0.15},
+    )
+    Z_s, Z_td, rho_gas_s = resolve_gas_properties(inp)
+    assert 0.5 < Z_s < 2.0 and 0.5 < Z_td < 2.0 and rho_gas_s > 0.0
