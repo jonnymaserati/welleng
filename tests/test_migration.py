@@ -262,6 +262,22 @@ def test_max_influx_circulated_threads_temp_profile():
     assert v_geo.max_influx_bbl > v_iso.max_influx_bbl  # strictly, here it moves
 
 
+def test_fast_mode_matches_thorough_within_tolerance():
+    """fast mode (interface-anchored coarse grid) defines the same kick-tolerance
+    envelope as thorough (the fine grid) to within ~1 %, at a fraction of the cost --
+    good enough for the API / GUI; thorough remains the definitive check. Same
+    binding region."""
+    common = dict(bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state())
+    thorough = max_influx_circulated(
+        make_sections(), PP_TABLE, FP_TABLE, mode="thorough", **common
+    )
+    fast = max_influx_circulated(
+        make_sections(), PP_TABLE, FP_TABLE, mode="fast", **common
+    )
+    assert fast.max_influx_bbl == pytest.approx(thorough.max_influx_bbl, rel=0.02)
+    assert abs(fast.binding_tvd - thorough.binding_tvd) < 200.0  # same binding region
+
+
 def test_max_influx_unlimited_when_hole_fills_without_fracturing():
     """If the whole exposed hole can be displaced to gas without breaching the
     FRACTURE envelope, the shoe-fracture tolerance is unlimited (JJ 2026-07-14):

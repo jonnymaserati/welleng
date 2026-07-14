@@ -145,6 +145,20 @@ def _as_ppg_callable(profile: ProfileLike) -> Callable[[np.ndarray], np.ndarray]
     return lambda d: np.interp(np.asarray(d, dtype=float), tvd, ppg)
 
 
+def _profile_breakpoints(profile: ProfileLike) -> list:
+    """TVD breakpoints of a PP/FP profile -- the depths where its gradient can turn.
+
+    A ``(tvd, ppg)`` table returns its tvd knots; a callable has no discrete
+    breakpoints (returns ``[]``), so fast mode falls back to its per-section grid.
+    Used to anchor fast-mode check depths / bubble positions to the interfaces where
+    the binding constraint can change.
+    """
+    if callable(profile):
+        return []
+    tvd_arr, _ = profile
+    return [float(x) for x in np.asarray(tvd_arr, dtype=float)]
+
+
 def ppg_to_psi(rho_ppg: np.ndarray, depth_ft: np.ndarray) -> np.ndarray:
     """Gradient pressure of a mud-weight-equivalent column: g * ppg * TVD [psi]."""
     return G_PSI_PER_PPG_FT * np.asarray(rho_ppg) * np.asarray(depth_ft)
@@ -490,6 +504,7 @@ def migrate(
     temp_profile: TempProfileLike = None,
     geothermal: TempProfileLike = None,
     n_steps: int = 100,
+    mode: str = "thorough",
 ) -> MigrationResult:
     """March a single gas bubble up the annulus under constant BHP.
 
@@ -559,15 +574,28 @@ def migrate(
     pp_fn = _as_ppg_callable(pp)
     fp_fn = _as_ppg_callable(fp)
 
-    # Exposed open-hole check depths: a fine grid per open-hole section, section
-    # tops/bottoms (e.g. the shoe) always included.
+    if mode not in ("fast", "thorough"):
+        raise ValueError(f"mode must be 'fast' or 'thorough', got {mode!r}")
+    # Grid resolution. THOROUGH: a fine per-section grid (definitive check). FAST:
+    # anchor to the INTERFACES only -- section boundaries (BHA / shoe / hole changes)
+    # and PP/FP breakpoints -- where the binding constraint can turn, plus a light
+    # per-section fill. The envelope is smooth between interfaces, so this defines it
+    # well enough for the API / GUI at a fraction of the cost. A survey that spawns
+    # many fine sections is bounded by the per-section counts below.
+    per_sec, n_march = (51, n_steps) if mode == "thorough" else (5, 16)
+
+    # Exposed open-hole check depths: per-section grid + interfaces always included.
+    interfaces = _profile_breakpoints(pp) + _profile_breakpoints(fp)
     exposed = []
     for sec in sections_sorted:
         if sec.is_open_hole:
-            exposed.append(np.linspace(sec.top_tvd, sec.bottom_tvd, 51))
+            exposed.append(np.linspace(sec.top_tvd, sec.bottom_tvd, per_sec))
+            exposed.append(np.array(
+                [b for b in interfaces if sec.top_tvd <= b <= sec.bottom_tvd]
+            ))
     if not exposed:
         raise ValueError("no open-hole sections: nothing to check")
-    exposed_depths = np.unique(np.concatenate(exposed))
+    exposed_depths = np.unique(np.concatenate([e for e in exposed if e.size]))
     pp_psi = ppg_to_psi(pp_fn(exposed_depths), exposed_depths)
     fp_psi = ppg_to_psi(fp_fn(exposed_depths), exposed_depths)
 
@@ -580,7 +608,18 @@ def migrate(
     L0 = influx_bbl_bh / bottom_section.annular_capacity_bbl_per_ft
     gas_top_start = max(0.0, bottom_tvd - L0)
 
-    gas_top_march = np.linspace(gas_top_start, 0.0, n_steps)
+    if mode == "thorough":
+        gas_top_march = np.linspace(gas_top_start, 0.0, n_march)  # n_march == n_steps
+    else:  # fast: coarse march, anchored to the interfaces the gas top crosses
+        anchors = [b for b in interfaces if 0.0 <= b <= gas_top_start]
+        for s in sections_sorted:
+            for edge in (s.top_tvd, s.bottom_tvd):
+                if 0.0 <= edge <= gas_top_start:
+                    anchors.append(edge)
+        march = np.concatenate([
+            np.linspace(gas_top_start, 0.0, n_march), np.array(anchors, dtype=float)
+        ])
+        gas_top_march = np.unique(march)[::-1]  # descending: bottom -> surface
 
     steps: list = []
     bha_flag = False
@@ -709,6 +748,7 @@ def max_influx_circulated(
     temp_profile: TempProfileLike = None,
     geothermal: TempProfileLike = None,
     n_steps: int = 100,
+    mode: str = "thorough",
     v_cap_bbl: float = 500.0,
     tol_bbl: float = 0.1,
     max_iter: int = 60,
@@ -743,7 +783,7 @@ def max_influx_circulated(
             sections, pp, fp, bhp_psi=bhp_psi, influx_bbl_bh=v_bbl,
             rho_mud_ppg=rho_mud_ppg, gas_bh_state=gas_bh_state,
             gas_density_mode=gas_density_mode, temp_profile=temp_profile,
-            n_steps=n_steps,
+            n_steps=n_steps, mode=mode,
         )
 
     def _tolerable(r: MigrationResult) -> bool:

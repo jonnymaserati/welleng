@@ -43,3 +43,25 @@ forward-Euler (each pressure depends on the previous), so the solves are sequent
 Validation: `tests/test_migration.py test_nogepa.py test_spe208788_worked_example.py
 test_spe202426_fig12.py test_spe140113_santos.py test_kick_tolerance.py test_gas_z.py`
 = 39 passed, 1 skipped (identical results before/after).
+
+## 2026-07-14 (later) · `feat/kick-tolerance` · fast/thorough mode
+
+Added a `mode="fast"|"thorough"` switch to `migrate` / `max_influx_circulated`
+(thorough is the default; the fine 51-pts/section grid + n_steps march = unchanged
+validated behaviour). **fast** anchors the check depths and the bubble march to the
+INTERFACES — section boundaries (BHA / shoe / hole change) + PP/FP breakpoints, where
+the binding constraint can turn — plus a light per-section fill (5 pts/section, 16
+march steps). The envelope is smooth between interfaces (JJ), so this defines it
+without the fine grid.
+
+| `max_influx_circulated` | thorough | fast |
+|---|---|---|
+| result | 57.84 bbl | 57.57 bbl (**0.47 %**, same binding depth) |
+| time (this host) | 3821 ms | **648 ms** |
+
+**~4× on top of the H-Y 2×** → ~11.5× vs the original 7491 ms; **under 1 s** with
+headroom for a slower cloud instance. Guardrails: the 39-test suite runs in thorough
+(unchanged); `test_fast_mode_matches_thorough_within_tolerance` locks fast within 2 %
+of thorough. Survey note: the engine consumes piecewise-constant TVD `WellSection`s,
+so interfaces stay discrete even for a deviated `from_survey` build; per-section
+counts bound a survey that spawns many fine sections.
