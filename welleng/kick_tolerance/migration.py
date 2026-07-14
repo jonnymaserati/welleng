@@ -531,6 +531,24 @@ def migrate(
 # ============================================================================
 # Inverse: MAX influx that can be circulated out (the migration kick tolerance)
 # ============================================================================
+@dataclass
+class KickToleranceResult:
+    """Migration kick tolerance V* AND where/why it is limited.
+
+    ``max_influx_bbl`` is the largest influx that can be circulated out. The
+    binding fields describe the breach that limits it. ``binding_tvd`` is the
+    governing depth -- which may be a WEAK FORMATION deeper than the casing shoe,
+    NOT the shoe assumed by the static single-shoe check: the migration checks
+    every exposed depth at every bubble position, so it reports the true limit.
+    """
+
+    max_influx_bbl: float        # V* -- max influx that can be circulated out  [bbl]
+    binding_tvd: float           # governing (breach) depth                     [ft]
+    binding_step: int            # migration step (animation frame) at the limit
+    limited_by: str              # "fracture" | "bha_length" | "cap"
+    min_fp_margin_psi: float     # FP margin at the breach (~0 when fracture-limited)
+
+
 def max_influx_circulated(
     sections: Sequence[WellSection],
     pp: "ProfileLike",
@@ -544,41 +562,54 @@ def max_influx_circulated(
     v_cap_bbl: float = 500.0,
     tol_bbl: float = 0.1,
     max_iter: int = 60,
-) -> float:
-    """MAX bottom-hole influx volume [bbl] that can be CIRCULATED OUT while staying
-    within the PP-FP envelope over the whole migration -- the migration-form kick
-    tolerance. This is the INVERSE of :func:`migrate` (which checks a GIVEN influx).
+) -> KickToleranceResult:
+    """MAX bottom-hole influx that can be CIRCULATED OUT within the PP-FP envelope
+    over the whole migration -- the migration-form kick tolerance, WITH where/why
+    it breaches. INVERSE of :func:`migrate` (which checks a GIVEN influx).
 
-    An influx is tolerable when the whole migration keeps ``within_envelope`` True
-    (PP <= P(d) <= FP at every exposed depth+step) AND ``bha_length_exceeded`` False
-    (the bubble can pass the BHA/open hole). ``min_fp_margin`` decreases and the
-    BHA-length limit tightens monotonically with influx, so the tolerable set is
-    ``[0, V*]``; bisect for ``V*``. Returns 0.0 if even ``tol_bbl`` breaches, or
-    ``v_cap_bbl`` if the cap is still tolerable (raise the cap for larger holes).
-
-    Generally <= the static single-shoe max (A-7/A-8) because the ENTIRE circulation
-    path is checked, catching deeper weak zones and the BHA-length limit.
+    An influx is tolerable when the migration keeps ``within_envelope`` True AND
+    ``bha_length_exceeded`` False. ``min_fp_margin`` decreases and the BHA-length
+    limit tightens monotonically with influx, so the tolerable set is ``[0, V*]``;
+    bisect for ``V*``, then report the binding depth/step/mechanism of the breach
+    just above it. Generally <= the static single-shoe max (A-7/A-8): the entire
+    circulation path is checked, catching **deeper weak zones and the BHA limit**.
     """
-    def _tolerable(v_bbl: float) -> bool:
-        r = migrate(
+    def _run(v_bbl: float) -> MigrationResult:
+        return migrate(
             sections, pp, fp, bhp_psi=bhp_psi, influx_bbl_bh=v_bbl,
             rho_mud_ppg=rho_mud_ppg, gas_bh_state=gas_bh_state,
             gas_density_mode=gas_density_mode, n_steps=n_steps,
         )
+
+    def _tolerable(r: MigrationResult) -> bool:
         return r.within_envelope and not r.bha_length_exceeded
 
-    if not _tolerable(tol_bbl):
-        return 0.0
-    if _tolerable(v_cap_bbl):
-        return v_cap_bbl  # capped; the well tolerates at least the cap
+    def _result(vstar: float, r: MigrationResult, limited_by: str) -> "KickToleranceResult":
+        return KickToleranceResult(
+            max_influx_bbl=float(vstar),
+            binding_tvd=float(r.binding_tvd),
+            binding_step=int(r.binding_step),
+            limited_by=limited_by,
+            min_fp_margin_psi=float(r.min_fp_margin_psi),
+        )
 
-    lo, hi = tol_bbl, v_cap_bbl          # lo tolerable, hi not
+    r_tol = _run(tol_bbl)
+    if not _tolerable(r_tol):                       # even a tiny influx breaches
+        return _result(0.0, r_tol,
+                       "bha_length" if r_tol.bha_length_exceeded else "fracture")
+    r_cap = _run(v_cap_bbl)
+    if _tolerable(r_cap):                           # capped; raise v_cap_bbl
+        return _result(v_cap_bbl, r_cap, "cap")
+
+    lo, hi = tol_bbl, v_cap_bbl                      # lo tolerable, hi not
     for _ in range(max_iter):
         if hi - lo <= tol_bbl:
             break
         mid = 0.5 * (lo + hi)
-        if _tolerable(mid):
+        if _tolerable(_run(mid)):
             lo = mid
         else:
             hi = mid
-    return lo
+    breach = _run(hi)                                # first breaching influx = where it fails
+    return _result(lo, breach,
+                   "bha_length" if breach.bha_length_exceeded else "fracture")

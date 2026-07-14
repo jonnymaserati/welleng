@@ -213,12 +213,16 @@ def test_max_influx_circulated_is_the_envelope_boundary():
     It sits between the known passing (3 bbl) and breaching (45 bbl) influxes;
     migrate() at V* is inside the envelope (safe-side boundary) and just above V*
     it fails (breaches FP or the bubble can't pass the BHA)."""
-    vstar = max_influx_circulated(
+    kt = max_influx_circulated(
         make_sections(), PP_TABLE, FP_TABLE,
         bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state(),
         n_steps=120, tol_bbl=0.1,
     )
+    vstar = kt.max_influx_bbl
     assert 3.0 < vstar < 45.0
+    # It reports WHERE/why it breaches: fracture, at/near the shoe here.
+    assert kt.limited_by == "fracture"
+    assert SHOE_TVD <= kt.binding_tvd <= SHOE_TVD + 0.15 * OPEN_HOLE_LENGTH
     at = migrate(
         make_sections(), PP_TABLE, FP_TABLE, bhp_psi=BHP, influx_bbl_bh=vstar,
         rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state(), n_steps=120,
@@ -229,6 +233,26 @@ def test_max_influx_circulated_is_the_envelope_boundary():
         rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state(), n_steps=120,
     )
     assert (not over.within_envelope) or over.bha_length_exceeded
+
+
+def test_weak_formation_binds_deeper_than_the_shoe():
+    """Answers 'is the casing shoe always the worst point?' -- NO. With a weak
+    formation in the open hole below the shoe, the migration binds THERE, not at
+    the shoe: the static top-of-bubble-at-shoe assumption would miss it."""
+    # FP dips to a weak zone at 6500 ft TVD (well below the 5000 ft shoe).
+    weak_tvd = 6500.0
+    fp_weak = (
+        np.array([0.0, SHOE_TVD, weak_tvd - 200, weak_tvd, weak_tvd + 200, BOTTOM_TVD]),
+        np.array([14.0, 14.0, 14.0, 11.6, 14.0, 14.0]),   # a low-FP notch at 6500 ft
+    )
+    kt = max_influx_circulated(
+        make_sections(), PP_TABLE, fp_weak,
+        bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state(), n_steps=150,
+    )
+    # The governing depth is the weak formation, NOT the shoe.
+    assert kt.limited_by == "fracture"
+    assert abs(kt.binding_tvd - weak_tvd) < 0.05 * BOTTOM_TVD
+    assert kt.binding_tvd > SHOE_TVD + 0.1 * OPEN_HOLE_LENGTH   # clearly below the shoe
 
 
 if __name__ == "__main__":
