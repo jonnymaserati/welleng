@@ -232,6 +232,7 @@ def pressure_at_depth(
     gas_bh,
     gas_density_mode: str = "conservative",
     temp_profile: TempProfileLike = None,
+    geothermal: TempProfileLike = None,
     g: float = G_PSI_PER_PPG_FT,
     n_sub: int = 40,
 ) -> Union[float, np.ndarray]:
@@ -259,6 +260,11 @@ def pressure_at_depth(
         ``(tvd, T_rankine)`` table sets a depth-varying temperature (see
         ``linear_temp_profile`` for the basic two-point gradient). Hotter gas
         up-hole is lighter (lower density) -> a HIGHER pressure at/above the gas.
+    geothermal : None | callable | (tvd_array, T_rankine_array)
+        The field geothermal gradient, used as the DEFAULT temperature when
+        ``temp_profile`` is not given. Resolution is three-tier: an explicit
+        ``temp_profile`` wins; else ``geothermal`` (the go-to default when a
+        gradient is known); else isothermal at ``T_bh_rankine``.
     gas_density_mode : {"conservative", "exact"}
         Gas-column density treatment (each evaluated at the local T(d)):
 
@@ -284,7 +290,9 @@ def pressure_at_depth(
             f"gas_density_mode must be 'conservative' or 'exact', got {gas_density_mode!r}"
         )
     P_bh, T_bh_r, Z_bh, rho_gas_bh = gas_bh
-    temp_fn = _as_temp_callable(temp_profile, T_bh_r)  # None -> isothermal at T_bh
+    if temp_profile is None:
+        temp_profile = geothermal          # geothermal is the default when supplied
+    temp_fn = _as_temp_callable(temp_profile, T_bh_r)  # still None -> isothermal at T_bh
     d = np.asarray(depth_ft, dtype=float)
     scalar = d.ndim == 0
 
@@ -463,6 +471,7 @@ def migrate(
     gas_bh_state,
     gas_density_mode: str = "conservative",
     temp_profile: TempProfileLike = None,
+    geothermal: TempProfileLike = None,
     n_steps: int = 100,
 ) -> MigrationResult:
     """March a single gas bubble up the annulus under constant BHP.
@@ -509,6 +518,9 @@ def migrate(
         at its top, not the bottom-hole temperature). ``None`` (DEFAULT) is
         ISOTHERMAL at ``T_bh_rankine`` -- reproduces the previous result exactly.
         See ``linear_temp_profile`` for the basic two-point gradient.
+    geothermal : None | callable | (tvd_array, T_rankine_array)
+        Field geothermal gradient, the DEFAULT temperature when ``temp_profile``
+        is not given (explicit ``temp_profile`` > ``geothermal`` > isothermal).
     n_steps
         Number of migration steps (bottom -> surface).
 
@@ -523,7 +535,9 @@ def migrate(
 
     P_bh, T_bh_r, Z_bh, rho_gas_ppg = _resolve_bh_state(gas_bh_state, bhp_psi)
     gas_bh = (P_bh, T_bh_r, Z_bh, rho_gas_ppg)  # bottom-hole anchor for rho_gas(P)
-    temp_fn = _as_temp_callable(temp_profile, T_bh_r)  # None -> isothermal at T_bh
+    if temp_profile is None:
+        temp_profile = geothermal          # geothermal is the default when supplied
+    temp_fn = _as_temp_callable(temp_profile, T_bh_r)  # still None -> isothermal at T_bh
 
     pp_fn = _as_ppg_callable(pp)
     fp_fn = _as_ppg_callable(fp)
@@ -666,6 +680,7 @@ def max_influx_circulated(
     gas_bh_state,
     gas_density_mode: str = "conservative",
     temp_profile: TempProfileLike = None,
+    geothermal: TempProfileLike = None,
     n_steps: int = 100,
     v_cap_bbl: float = 500.0,
     tol_bbl: float = 0.1,
@@ -682,6 +697,9 @@ def max_influx_circulated(
     just above it. Generally <= the static single-shoe max (A-7/A-8): the entire
     circulation path is checked, catching **deeper weak zones and the BHA limit**.
     """
+    if temp_profile is None:
+        temp_profile = geothermal          # geothermal is the default when supplied
+
     def _run(v_bbl: float) -> MigrationResult:
         return migrate(
             sections, pp, fp, bhp_psi=bhp_psi, influx_bbl_bh=v_bbl,

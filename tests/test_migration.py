@@ -262,6 +262,38 @@ def test_max_influx_circulated_threads_temp_profile():
     assert v_geo.max_influx_bbl > v_iso.max_influx_bbl  # strictly, here it moves
 
 
+def test_geothermal_is_the_default_temp_when_provided():
+    """User-defined temp wins; a provided geothermal is the DEFAULT (not isothermal);
+    isothermal only when neither is given.
+
+    temp_profile=None + geothermal=G  ==  temp_profile=G  (geothermal defaulted in).
+    An explicit temp_profile overrides geothermal. No geothermal, no temp_profile ->
+    isothermal-at-BHT (unchanged legacy default).
+    """
+    common = dict(
+        bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state(),
+        n_steps=120, tol_bbl=0.1,
+    )
+    # geothermal defaulted in == passing it explicitly as temp_profile.
+    v_geo_default = max_influx_circulated(
+        make_sections(), PP_TABLE, FP_TABLE, geothermal=GEO_TEMP, **common
+    )
+    v_geo_explicit = max_influx_circulated(
+        make_sections(), PP_TABLE, FP_TABLE, temp_profile=GEO_TEMP, **common
+    )
+    assert v_geo_default.max_influx_bbl == pytest.approx(v_geo_explicit.max_influx_bbl)
+    # explicit temp_profile OVERRIDES geothermal (isothermal-at-BHT wins here).
+    iso = lambda d: 660.0
+    v_override = max_influx_circulated(
+        make_sections(), PP_TABLE, FP_TABLE,
+        temp_profile=iso, geothermal=GEO_TEMP, **common
+    )
+    v_iso = max_influx_circulated(make_sections(), PP_TABLE, FP_TABLE, **common)
+    assert v_override.max_influx_bbl == pytest.approx(v_iso.max_influx_bbl)
+    # and the geothermal default actually differs from the isothermal fallback.
+    assert v_geo_default.max_influx_bbl != pytest.approx(v_iso.max_influx_bbl)
+
+
 def test_weak_formation_binds_deeper_than_the_shoe():
     """Answers 'is the casing shoe always the worst point?' -- NO. With a weak
     formation in the open hole below the shoe, the migration binds THERE, not at
