@@ -46,6 +46,9 @@ from .migration import (
     max_influx_circulated,
     pressure_at_depth,
 )
+# Catalogue-backed geometry: true annular capacity (bore - string), casing IDs
+# from the API-5CT catalogue. catalog is imported lazily inside the builders.
+from .geometry import annular_capacity, cased_section, open_hole_section
 
 try:  # envelope/monotonicity need SymPy (optional 'kick' extra)
     from .envelope import evaluate_envelope, EnvelopeResult
@@ -79,4 +82,7 @@ __all__ = [
     "migrate",
     "max_influx_circulated",
     "pressure_at_depth",
+    "annular_capacity",
+    "cased_section",
+    "open_hole_section",
 ]
