@@ -81,14 +81,18 @@ def main() -> None:
         lambda: migrate(sections, pp, fp, influx_bbl_bh=25.0, **common), 30
     ) * 1e3
     mx = _time(
-        lambda: max_influx_circulated(sections, pp, fp, **common), 20
+        lambda: max_influx_circulated(sections, pp, fp, mode="thorough", **common), 10
+    ) * 1e3
+    mxf = _time(
+        lambda: max_influx_circulated(sections, pp, fp, mode="fast", **common), 10
     ) * 1e3
 
-    print(f"{'operation':<28}{'time':>12}")
-    print(f"{'-' * 40}")
-    print(f"{'drill_kick (H-Y auto Z)':<28}{dk:>9.1f} us")
-    print(f"{'migrate (n_steps=100)':<28}{mg:>9.1f} ms")
-    print(f"{'max_influx_circulated':<28}{mx:>9.1f} ms")
+    print(f"{'operation':<34}{'time':>12}")
+    print(f"{'-' * 46}")
+    print(f"{'drill_kick (H-Y auto Z)':<34}{dk:>9.1f} us")
+    print(f"{'migrate (n_steps=100)':<34}{mg:>9.1f} ms")
+    print(f"{'max_influx_circulated [thorough]':<34}{mx:>9.1f} ms")
+    print(f"{'max_influx_circulated [fast]':<34}{mxf:>9.1f} ms   <- API/GUI path")
 
 
 if __name__ == "__main__":
