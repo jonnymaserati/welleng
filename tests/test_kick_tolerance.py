@@ -150,6 +150,30 @@ def test_deviated_scales_A_by_inverse_cos_inc_shoe():
     assert dev > vert
 
 
+def test_from_survey_reads_tvd_and_inclination():
+    """KickInputs.from_survey pulls D_lot/D_td (TVD) and inc_shoe off a welleng
+    Survey via min-curvature interpolation, so callers don't hand-transcribe them."""
+    import numpy as np
+    import welleng as we
+
+    survey = we.survey.Survey(
+        md=np.array([0.0, 1000.0, 2000.0, 3000.0]),
+        inc=np.array([0.0, 0.0, 30.0, 60.0]),
+        azi=np.array([0.0, 0.0, 45.0, 45.0]),
+    )
+    params = dict(
+        rho_mud=11.9, PP=11.5, kick_intensity=1.1, P_lot=16.0, P_apl=210.0,
+        T_s=212.0, T_td=302.0, V_dpa=annular_capacity_dpa(6.125, 4.0),
+    )
+    inp = KickInputs.from_survey(survey, shoe_md=2500.0, td_md=3000.0, **params)
+    # deviated section (inc 30@2000 -> 60@3000): inclination at shoe ~45 deg
+    assert math.isclose(inp.inc_shoe, 45.0, abs_tol=1.0)
+    # TVD is shallower than MD for the deviated stations
+    assert inp.D_lot < 2500.0 and inp.D_td < 3000.0
+    # produces a usable inputs object
+    assert drill_kick(inp).case == "drill"
+
+
 if __name__ == "__main__":
     inp = make_inputs()
     d = drill_kick(inp)
