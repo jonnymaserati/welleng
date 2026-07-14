@@ -526,3 +526,59 @@ def migrate(
             open_hole_length=open_hole_length,
         ),
     )
+
+
+# ============================================================================
+# Inverse: MAX influx that can be circulated out (the migration kick tolerance)
+# ============================================================================
+def max_influx_circulated(
+    sections: Sequence[WellSection],
+    pp: "ProfileLike",
+    fp: "ProfileLike",
+    *,
+    bhp_psi: float,
+    rho_mud_ppg: float,
+    gas_bh_state,
+    gas_density_mode: str = "conservative",
+    n_steps: int = 100,
+    v_cap_bbl: float = 500.0,
+    tol_bbl: float = 0.1,
+    max_iter: int = 60,
+) -> float:
+    """MAX bottom-hole influx volume [bbl] that can be CIRCULATED OUT while staying
+    within the PP-FP envelope over the whole migration -- the migration-form kick
+    tolerance. This is the INVERSE of :func:`migrate` (which checks a GIVEN influx).
+
+    An influx is tolerable when the whole migration keeps ``within_envelope`` True
+    (PP <= P(d) <= FP at every exposed depth+step) AND ``bha_length_exceeded`` False
+    (the bubble can pass the BHA/open hole). ``min_fp_margin`` decreases and the
+    BHA-length limit tightens monotonically with influx, so the tolerable set is
+    ``[0, V*]``; bisect for ``V*``. Returns 0.0 if even ``tol_bbl`` breaches, or
+    ``v_cap_bbl`` if the cap is still tolerable (raise the cap for larger holes).
+
+    Generally <= the static single-shoe max (A-7/A-8) because the ENTIRE circulation
+    path is checked, catching deeper weak zones and the BHA-length limit.
+    """
+    def _tolerable(v_bbl: float) -> bool:
+        r = migrate(
+            sections, pp, fp, bhp_psi=bhp_psi, influx_bbl_bh=v_bbl,
+            rho_mud_ppg=rho_mud_ppg, gas_bh_state=gas_bh_state,
+            gas_density_mode=gas_density_mode, n_steps=n_steps,
+        )
+        return r.within_envelope and not r.bha_length_exceeded
+
+    if not _tolerable(tol_bbl):
+        return 0.0
+    if _tolerable(v_cap_bbl):
+        return v_cap_bbl  # capped; the well tolerates at least the cap
+
+    lo, hi = tol_bbl, v_cap_bbl          # lo tolerable, hi not
+    for _ in range(max_iter):
+        if hi - lo <= tol_bbl:
+            break
+        mid = 0.5 * (lo + hi)
+        if _tolerable(mid):
+            lo = mid
+        else:
+            hi = mid
+    return lo

@@ -43,6 +43,7 @@ from .migration import (
     MigrationStep,
     MigrationResult,
     migrate,
+    max_influx_circulated,
     pressure_at_depth,
 )
 
@@ -76,5 +77,6 @@ __all__ = [
     "MigrationStep",
     "MigrationResult",
     "migrate",
+    "max_influx_circulated",
     "pressure_at_depth",
 ]

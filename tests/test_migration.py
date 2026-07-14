@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 
 from welleng.kick_tolerance.migration import (
-    WellSection, migrate, pressure_at_depth, G_PSI_PER_PPG_FT,
+    WellSection, migrate, max_influx_circulated, pressure_at_depth, G_PSI_PER_PPG_FT,
 )
 from welleng.kick_tolerance.gas_z import hall_yarborough_z, gas_density_ppg
 
@@ -205,6 +205,30 @@ def test_backend_computes_bh_state_when_none():
     assert res._ctx["rho_gas_ppg"] == pytest.approx(
         gas_density_ppg(BHP, 660.0, z_expected), rel=1e-9
     )
+
+
+def test_max_influx_circulated_is_the_envelope_boundary():
+    """The migration kick tolerance V* = max influx that can be circulated out.
+
+    It sits between the known passing (3 bbl) and breaching (45 bbl) influxes;
+    migrate() at V* is inside the envelope (safe-side boundary) and just above V*
+    it fails (breaches FP or the bubble can't pass the BHA)."""
+    vstar = max_influx_circulated(
+        make_sections(), PP_TABLE, FP_TABLE,
+        bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state(),
+        n_steps=120, tol_bbl=0.1,
+    )
+    assert 3.0 < vstar < 45.0
+    at = migrate(
+        make_sections(), PP_TABLE, FP_TABLE, bhp_psi=BHP, influx_bbl_bh=vstar,
+        rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state(), n_steps=120,
+    )
+    assert at.within_envelope and not at.bha_length_exceeded
+    over = migrate(
+        make_sections(), PP_TABLE, FP_TABLE, bhp_psi=BHP, influx_bbl_bh=vstar + 1.0,
+        rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state(), n_steps=120,
+    )
+    assert (not over.within_envelope) or over.bha_length_exceeded
 
 
 if __name__ == "__main__":
