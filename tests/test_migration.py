@@ -18,7 +18,8 @@ import numpy as np
 import pytest
 
 from welleng.kick_tolerance.migration import (
-    WellSection, migrate, max_influx_circulated, pressure_at_depth, G_PSI_PER_PPG_FT,
+    WellSection, migrate, max_influx_circulated, pressure_at_depth,
+    linear_temp_profile, G_PSI_PER_PPG_FT,
 )
 from welleng.kick_tolerance.gas_z import hall_yarborough_z, gas_density_ppg
 
@@ -253,6 +254,145 @@ def test_weak_formation_binds_deeper_than_the_shoe():
     assert kt.limited_by == "fracture"
     assert abs(kt.binding_tvd - weak_tvd) < 0.05 * BOTTOM_TVD
     assert kt.binding_tvd > SHOE_TVD + 0.1 * OPEN_HOLE_LENGTH   # clearly below the shoe
+
+
+# ============================================================================
+# Non-isothermal temperature profile (T(depth))
+# ============================================================================
+# The bottom-hole temperature in bh_state() is 660 degR (200 degF), anchored at
+# BOTTOM_TVD. A GEOTHERMAL gradient rises with depth, so it is COOLER up-hole than
+# that bottom-hole value -- the isothermal-at-BH baseline is the hottest case.
+GEO_TEMP = linear_temp_profile(SHOE_TVD, 600.0, BOTTOM_TVD, 660.0)  # cooler up-hole
+
+
+def _gas_bh_tuple():
+    """Explicit bottom-hole tuple with Z/rho filled by the HY backend (T = 660 R)."""
+    P_bh, T = BHP, 660.0
+    Z_bh = hall_yarborough_z(P_bh, T)
+    rho_gas_bh = gas_density_ppg(P_bh, T, Z_bh)
+    return (P_bh, T, Z_bh, rho_gas_bh)
+
+
+def test_temp_profile_none_is_isothermal_identical():
+    """(a) temp_profile=None == the isothermal default, bit-for-bit.
+
+    A constant callable returning exactly the bottom-hole T (660 R) must give the
+    IDENTICAL result too: the T-ratio in the gas density is exactly 1.0 and Z is
+    evaluated at the same T, so nothing changes numerically.
+    """
+    gas_bh = _gas_bh_tuple()
+    depths = np.array([0.0, 2000.0, 4000.0, SHOE_TVD, 6000.0, 8000.0, 9000.0])
+    gt, gb = 4000.0, 8000.0
+    for mode in ("conservative", "exact"):
+        base = pressure_at_depth(
+            depths, gas_top_tvd=gt, gas_bottom_tvd=gb, bottom_tvd=BOTTOM_TVD,
+            bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh=gas_bh, gas_density_mode=mode,
+        )
+        explicit_none = pressure_at_depth(
+            depths, gas_top_tvd=gt, gas_bottom_tvd=gb, bottom_tvd=BOTTOM_TVD,
+            bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh=gas_bh, gas_density_mode=mode,
+            temp_profile=None,
+        )
+        const_tbh = pressure_at_depth(
+            depths, gas_top_tvd=gt, gas_bottom_tvd=gb, bottom_tvd=BOTTOM_TVD,
+            bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh=gas_bh, gas_density_mode=mode,
+            temp_profile=lambda d: 660.0,  # isothermal at the bottom-hole T
+        )
+        assert np.array_equal(base, explicit_none)
+        assert np.array_equal(base, const_tbh)
+
+    # End-to-end: a full migrate() run is identical too (None == constant-T_bh).
+    kwargs = dict(
+        bhp_psi=BHP, influx_bbl_bh=20.0, rho_mud_ppg=RHO_MUD,
+        gas_bh_state=bh_state(), n_steps=120,
+    )
+    r_iso = migrate(make_sections(), PP_TABLE, FP_TABLE, **kwargs)
+    r_const = migrate(
+        make_sections(), PP_TABLE, FP_TABLE, temp_profile=lambda d: 660.0, **kwargs
+    )
+    assert r_iso.min_fp_margin_psi == r_const.min_fp_margin_psi
+    assert r_iso.binding_tvd == r_const.binding_tvd
+    assert [s.p_at_binding_psi for s in r_iso.steps] == \
+           [s.p_at_binding_psi for s in r_const.steps]
+
+
+def test_temp_profile_direction_at_shoe():
+    """(b) A geothermal profile (rises with depth) moves P(shoe) DOWN vs isothermal.
+
+    DIRECTION (documented): the isothermal baseline holds the hot bottom-hole T
+    everywhere; a geothermal gradient makes the gas COOLER up-hole -> DENSER ->
+    a heavier gas column -> a LOWER imposed pressure at the shoe. Equivalently
+    (the converse mechanism), HOTTER gas up-hole is LIGHTER -> a HIGHER pressure
+    at the shoe. Both directions are asserted here. (So the isothermal-at-BH
+    assumption is the higher-shoe-pressure, safe-side case for a fracture barrier;
+    a realistic geothermal correction relaxes it.)
+    """
+    gas_bh = _gas_bh_tuple()
+    gt, gb = 4000.0, 8000.0  # a long bubble spanning the shoe
+
+    def P(temp):
+        return pressure_at_depth(
+            SHOE_TVD, gas_top_tvd=gt, gas_bottom_tvd=gb, bottom_tvd=BOTTOM_TVD,
+            bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh=gas_bh, temp_profile=temp,
+        )
+
+    p_iso = P(None)
+    p_geo = P(GEO_TEMP)                                      # cooler up-hole
+    p_hot = P(linear_temp_profile(SHOE_TVD, 720.0, BOTTOM_TVD, 660.0))  # hotter up-hole
+
+    assert p_geo < p_iso                     # cooler/denser up-hole -> lower P(shoe)
+    assert p_hot > p_iso                     # hotter/lighter up-hole -> higher P(shoe)
+
+
+def test_linear_temp_profile_and_table_forms():
+    """(c) The two-point linear gradient AND a full (tvd, T) table both work."""
+    # Two-point linear gradient: exact straight line, extrapolated outside [shoe, TD].
+    geo = linear_temp_profile(SHOE_TVD, 600.0, BOTTOM_TVD, 660.0)
+    assert float(geo(SHOE_TVD)) == pytest.approx(600.0)
+    assert float(geo(BOTTOM_TVD)) == pytest.approx(660.0)
+    assert float(geo(7500.0)) == pytest.approx(630.0)          # midpoint
+    assert float(geo(0.0)) == pytest.approx(540.0)             # linearly extrapolated
+    # Vectorised.
+    vals = geo(np.array([SHOE_TVD, 7500.0, BOTTOM_TVD]))
+    assert np.allclose(vals, [600.0, 630.0, 660.0])
+    # Degenerate anchors are rejected.
+    with pytest.raises(ValueError):
+        linear_temp_profile(5000.0, 600.0, 5000.0, 660.0)
+
+    # A full (tvd, T_rankine) field-style table is accepted and interpolated. It
+    # agrees with the linear form at the shared anchor depths.
+    table = (np.array([SHOE_TVD, BOTTOM_TVD]), np.array([600.0, 660.0]))
+    gas_bh = _gas_bh_tuple()
+    gt, gb = 4000.0, 8000.0
+    p_table = pressure_at_depth(
+        SHOE_TVD, gas_top_tvd=gt, gas_bottom_tvd=gb, bottom_tvd=BOTTOM_TVD,
+        bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh=gas_bh, temp_profile=table,
+    )
+    p_iso = pressure_at_depth(
+        SHOE_TVD, gas_top_tvd=gt, gas_bottom_tvd=gb, bottom_tvd=BOTTOM_TVD,
+        bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh=gas_bh,
+    )
+    assert p_table < p_iso        # table encodes cooler up-hole too -> lower P(shoe)
+
+
+def test_migrate_runs_end_to_end_with_temp_profile():
+    """(d) A full migration runs with a temperature profile and differs from iso."""
+    kwargs = dict(
+        bhp_psi=BHP, influx_bbl_bh=20.0, rho_mud_ppg=RHO_MUD,
+        gas_bh_state=bh_state(), n_steps=120,
+    )
+    r_iso = migrate(make_sections(), PP_TABLE, FP_TABLE, **kwargs)
+    r_geo = migrate(make_sections(), PP_TABLE, FP_TABLE, temp_profile=GEO_TEMP, **kwargs)
+    # Ran end-to-end: full trajectory, well-formed result.
+    assert len(r_geo.steps) == 120
+    assert isinstance(r_geo.within_envelope, bool)
+    assert r_geo.steps[0].gas_top_tvd > r_geo.steps[-1].gas_top_tvd
+    # And the non-isothermal correction actually moved the answer.
+    assert r_geo.min_fp_margin_psi != r_iso.min_fp_margin_psi
+    # A (tvd, T) table also drives migrate() end-to-end.
+    table = (np.array([SHOE_TVD, BOTTOM_TVD]), np.array([600.0, 660.0]))
+    r_tab = migrate(make_sections(), PP_TABLE, FP_TABLE, temp_profile=table, **kwargs)
+    assert len(r_tab.steps) == 120
 
 
 if __name__ == "__main__":
