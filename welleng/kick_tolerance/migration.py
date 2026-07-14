@@ -488,6 +488,37 @@ def _fill_down(gas_top: float, volume_bbl: float, sections_sorted, bottom_tvd: f
     return gas_bottom, gas_bottom - gas_top
 
 
+def _fill_up(gas_bottom: float, volume_bbl: float, sections_sorted, top_limit: float = 0.0):
+    """Place ``volume_bbl`` of gas from ``gas_bottom`` UPWARD, section by section.
+
+    Mirror of :func:`_fill_down`. Capacity changes discretely per section, so a
+    bubble that exceeds one interval's annular volume SPILLS into the next
+    interval up (general -- not just the bottom section). Returns the gas-top
+    TVD (clamped at ``top_limit``). Used to seed the march's deepest gas-top
+    position (bubble bottom at TD); a bottom-section-only ``V/cap`` estimate
+    over-lengthens the bubble and starts the march above binding interfaces.
+    """
+    remaining = volume_bbl
+    d = gas_bottom
+    for sec in reversed(sections_sorted):  # deep -> shallow
+        if sec.top_tvd >= d:
+            continue  # entirely below the gas bottom
+        seg_bottom = min(sec.bottom_tvd, d)
+        seg_top = max(sec.top_tvd, top_limit)
+        seg_len = seg_bottom - seg_top
+        if seg_len <= 0.0:
+            continue
+        cap = sec.annular_capacity_bbl_per_ft
+        vol_avail = cap * seg_len
+        if remaining <= vol_avail:
+            d = seg_bottom - remaining / cap
+            remaining = 0.0
+            break
+        remaining -= vol_avail
+        d = seg_top
+    return max(d, top_limit)
+
+
 # ============================================================================
 # The engine
 # ============================================================================
@@ -603,10 +634,12 @@ def migrate(
         s.bottom_tvd - s.top_tvd for s in sections_sorted if s.is_open_hole
     )
 
-    # Initial bubble length at bottom-hole (fills the deepest section upward).
-    bottom_section = sections_sorted[-1]
-    L0 = influx_bbl_bh / bottom_section.annular_capacity_bbl_per_ft
-    gas_top_start = max(0.0, bottom_tvd - L0)
+    # Deepest gas-top position: bubble BOTTOM pinned at TD, filled UP across
+    # sections (spills interval-to-interval -- NOT a bottom-section-only
+    # V/cap estimate, which over-lengthens the bubble and starts the march
+    # above binding interfaces, silently skipping the worst gas positions on a
+    # tight/BHA bottom section => non-conservative max_influx). See _fill_up.
+    gas_top_start = _fill_up(bottom_tvd, influx_bbl_bh, sections_sorted)
 
     if mode == "thorough":
         gas_top_march = np.linspace(gas_top_start, 0.0, n_march)  # n_march == n_steps
@@ -764,13 +797,21 @@ def max_influx_circulated(
     just above it. Generally <= the static single-shoe max (A-7/A-8): the entire
     circulation path is checked, catching **deeper weak zones and the BHA limit**.
 
-    .. warning::
-       The monotonicity assumption above can FAIL for a **tight-annulus / BHA bottom
-       section**, where the migration margin is non-monotone in influx; the bisection
-       then over-estimates ``V*`` (a NON-conservative result). Validated + trusted for
-       standard single- / two-section geometry (the 40-test suite); do NOT rely on it
-       for a tight BHA bottom section until the exact analytical solver lands (min over
-       interfaces of the closed form -- see ``docs/dev/KICK_ANALYTICAL_PLAN.md``).
+    .. note::
+       The gas-top march is seeded from the deepest position (bubble BOTTOM at TD,
+       filled UP across sections via :func:`_fill_up`) -- NOT a bottom-section-only
+       ``V/cap`` estimate, which over-lengthened the bubble on a tight/BHA bottom
+       section, started the march above the binding interfaces and silently
+       over-estimated ``V*`` (a NON-conservative result; fixed 2026-07-14). The
+       margin is monotone in influx once the worst gas position is actually visited.
+
+       Residual: the uniform (and fast-mode) march can still slightly UNDER-sample a
+       NARROW breakpoint of ``P(gas_top)`` -- e.g. where the gas BOTTOM crosses a
+       capacity discontinuity and fills the tight section to TD -- so ``V*`` may be
+       marginally non-conservative near such a breakpoint. The exact/conservative
+       value comes from the analytical solver evaluated at the COMPLETE breakpoint
+       set (gas-top- AND gas-bottom-at-boundary + deepest position); see
+       ``docs/dev/KICK_ANALYTICAL_PLAN.md``.
     """
     if temp_profile is None:
         temp_profile = geothermal          # geothermal is the default when supplied
