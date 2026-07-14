@@ -42,12 +42,20 @@ gravity-segregated interfaces. Gas geometry is 1-D along the wellbore axis; in a
 deviated well the along-hole (MD) length maps to a TVD extent by ``cos(inc)`` (a
 later refinement -- this module is TVD-native like the rest of the engine).
 
-Every candidate is located by ONE primitive, :func:`_top_for_bottom`: pin the gas
-BOTTOM at a depth (its pressure is then known from the mud column below the BHP)
-and fill the influx UP the annulus to read off the gas top -- exact mode by a
-closed-form exponential mass integral, conservative mode by a short constant-
-density fixed point. Family (1) inverts the same primitive (bisect the bottom that
-puts the top on a boundary).
+Each candidate's breach influx is solved DIRECTLY (no marching, no outer influx
+bisection):
+
+* families 1/4 (gas TOP at a boundary) -- CLOSED FORM. At breach the gas-top
+  pressure equals FP(d), so the gas length follows from the column pressure
+  balance: conservative = a constant-density (linear) column -> a linear solve;
+  exact = an exponential column ``FP.exp(k.L) = A + b.L`` -> a Lambert-W-form root
+  (a 3-iter Newton, dependency-free). The length is density-driven hence
+  CAP-independent; only the bbl total walks the per-section capacities.
+* families 2/3 (gas BOTTOM at a boundary + TD -- the interior/tight-BHA binding a
+  gas-top pin can't express) -- a secant on the influx, using :func:`_top_for_bottom`
+  to place the gas for each trial influx.
+
+The kick tolerance is the MIN breach influx over all candidates.
 """
 from __future__ import annotations
 
@@ -257,76 +265,117 @@ def analytical_kick_tolerance(
     bottom_pins = [b for b in bset if b > 0.0] + [bottom_tvd]
     top_pins = [b for b in bset if 0.0 < b < bottom_tvd]
 
-    def _top_at(gas_bottom, V):
-        return _top_for_bottom(gas_bottom, V, ss, bottom_tvd, bhp_psi=bhp_psi,
-                               rho_mud_ppg=rho_mud_ppg, gas_bh=gas_bh,
-                               temp_fn=temp_fn, gas_density_mode=gas_density_mode)
+    P_bh, T_bh_r, Z_bh, rho_bh = gas_bh
+    g = G_PSI_PER_PPG_FT
 
-    def worst_margin(V):
-        best_m, best = np.inf, (np.nan, np.nan, np.nan)
-
-        def consider(gt, gb):
-            nonlocal best_m, best
-            d = exposed_for(gt, gb)
-            if not d.size:
-                return
-            mv, db = _min_margin(gt, gb, d, ppg_to_psi(pp_fn(d), d),
-                                 ppg_to_psi(fp_fn(d), d), bottom_tvd=bottom_tvd,
-                                 bhp_psi=bhp_psi, rho_mud_ppg=rho_mud_ppg,
-                                 gas_bh=gas_bh, gas_density_mode=gas_density_mode,
-                                 temp_profile=temp_profile)
-            if mv < best_m:
-                best_m, best = mv, (gt, gb, db)
-
-        # families 2/3: gas BOTTOM pinned at each boundary + TD
-        for b in bottom_pins:
-            consider(_top_at(b, V), b)
-
-        # families 1/4: gas TOP pinned at each boundary -- find the gas bottom that
-        # lands the top there. _top_at is monotone increasing in gas_bottom, so a
-        # secant converges in a few steps (vs a 40-iter bisection); bracket-guarded.
-        for bnd in top_pins:
-            f_hi = _top_at(bottom_tvd, V) - bnd
-            if f_hi < -1e-6:
-                continue  # even the deepest bubble already sits above bnd
-            lo, hi = bnd, bottom_tvd            # f(lo) = _top_at(bnd,V)-bnd <= 0 <= f_hi
-            f_lo = _top_at(lo, V) - bnd
-            gb = hi
-            for _ in range(20):
-                denom = f_hi - f_lo
-                cand = hi - f_hi * (hi - lo) / denom if abs(denom) > 1e-12 else 0.5 * (lo + hi)
-                if not (lo <= cand <= hi):       # secant left the bracket -> bisect
-                    cand = 0.5 * (lo + hi)
-                fc = _top_at(cand, V) - bnd
-                gb = cand
-                if abs(fc) < 0.25:               # top placed within 0.25 ft
+    def _breach_v_gas_top(d):
+        """CLOSED-FORM influx at which the imposed pressure at gas-top depth ``d``
+        reaches FP(d) (families 1/4). The gas length L is density-driven, so it is
+        CAP-INDEPENDENT -- a single closed form even across sections (conservative =
+        constant-density linear column; exact = exponential column, a Lambert-W-form
+        root by a 3-iter Newton, dependency-free). Only the bbl total walks the
+        per-section capacities. Returns ``(V, gas_bottom)`` or None if a gas-top-at-d
+        config cannot reach FP or would not fit above TD."""
+        FP = ppg_to_psi(fp_fn(np.array([d]))[0], d)
+        A = bhp_psi - g * rho_mud_ppg * (bottom_tvd - d)      # mud pressure at d
+        b = g * rho_mud_ppg
+        if FP <= A:
+            return None                                        # already >= FP with no gas
+        T_d = float(temp_fn(d))
+        if gas_density_mode == "conservative":
+            Z_t = _z(FP, T_d)
+            rho_top = rho_bh * FP * Z_bh * T_bh_r / (P_bh * Z_t * T_d)
+            if b <= rho_top * g:
+                return None
+            L = (FP - A) / (b - rho_top * g)                   # constant-density (linear)
+        else:                                                  # exact exponential column
+            L = (FP - A) / b                                   # linear seed
+            for _ in range(6):                                 # Newton on FP*exp(kL)=A+bL
+                Z_c = _z(0.5 * (FP + A + b * max(L, 0.0)), T_d)
+                k = g * rho_bh * Z_bh * T_bh_r / (P_bh * Z_c * T_d)
+                e = np.exp(k * L)
+                fL, dfL = FP * e - (A + b * L), FP * k * e - b
+                if abs(dfL) < 1e-12:
                     break
-                if fc > 0.0:
-                    hi, f_hi = cand, fc
-                else:
-                    lo, f_lo = cand, fc
-            if abs(_top_at(gb, V) - bnd) > 1.0:   # could not place the top -> skip
+                Ln = L - fL / dfL
+                if abs(Ln - L) < 1e-4:
+                    L = Ln
+                    break
+                L = max(Ln, 0.0)
+        gas_bottom = d + L
+        if L <= 0.0 or gas_bottom > bottom_tvd + 1e-6:
+            return None                                        # cannot fit as gas-top-at-d
+        gas_bottom = min(gas_bottom, bottom_tvd)
+        V = 0.0
+        P = FP
+        for s in ss:                                           # bbl total across sections
+            top = max(d, s.top_tvd)
+            bot = min(gas_bottom, s.bottom_tvd)
+            if bot <= top:
                 continue
-            consider(bnd, gb)
+            if gas_density_mode == "conservative":
+                Z_t = _z(FP, T_d)
+                rho_top = rho_bh * FP * Z_bh * T_bh_r / (P_bh * Z_t * T_d)
+                V += rho_top * s.annular_capacity_bbl_per_ft * (bot - top) / rho_bh
+            else:
+                Z_c = _z(0.5 * (P + A + b * (bot - d)), T_d)
+                k = g * rho_bh * Z_bh * T_bh_r / (P_bh * Z_c * T_d)
+                P_bot = P * np.exp(k * (bot - top))
+                V += s.annular_capacity_bbl_per_ft * (P_bot - P) / (g * rho_bh)
+                P = P_bot
+        return V, gas_bottom
 
-        return best_m, best
+    def _margin_bottom(b, V):
+        """(min margin, gas_top, binding depth) for the config with gas BOTTOM
+        pinned at ``b`` and influx ``V``."""
+        gt = _top_for_bottom(b, V, ss, bottom_tvd, bhp_psi=bhp_psi,
+                             rho_mud_ppg=rho_mud_ppg, gas_bh=gas_bh, temp_fn=temp_fn,
+                             gas_density_mode=gas_density_mode)
+        d = exposed_for(gt, b)
+        if not d.size:
+            return np.inf, gt, np.nan
+        mv, db = _min_margin(gt, b, d, ppg_to_psi(pp_fn(d), d), ppg_to_psi(fp_fn(d), d),
+                             bottom_tvd=bottom_tvd, bhp_psi=bhp_psi,
+                             rho_mud_ppg=rho_mud_ppg, gas_bh=gas_bh,
+                             gas_density_mode=gas_density_mode, temp_profile=temp_profile)
+        return mv, gt, db
 
-    # If the whole hole tolerates gas, tolerance is unlimited (full displacement).
-    m_ceil, _ = worst_margin(v_hole)
-    if m_ceil >= 0.0:
+    def _breach_v_gas_bottom(b):
+        """Influx where the config with gas BOTTOM pinned at ``b`` first breaches
+        (families 2/3 -- the interior/tight-BHA binding the closed form can't pin).
+        Margin is monotone decreasing in V; bisect in [0, v_hole]. Returns
+        ``(V, gas_top, binding_depth)`` or None if it never breaches within the hole."""
+        m_hi, _, _ = _margin_bottom(b, v_hole)
+        if m_hi > 0.0:
+            return None
+        lo, hi = 0.0, v_hole
+        for _ in range(44):
+            mid = 0.5 * (lo + hi)
+            m, _, _ = _margin_bottom(b, mid)
+            if m > 0.0:
+                lo = mid
+            else:
+                hi = mid
+        m, gt, db = _margin_bottom(b, lo)
+        return lo, gt, db
+
+    # Per-candidate breach influx; the kick tolerance is the MIN over candidates.
+    v_star = np.inf
+    best = (np.nan, np.nan, np.nan)
+    for d in top_pins:                                    # families 1/4: closed form
+        r = _breach_v_gas_top(d)
+        if r is not None and r[0] < v_star:
+            v_star, best = r[0], (d, r[1], d)
+    for b in bottom_pins:                                 # families 2/3: secant on V
+        r = _breach_v_gas_bottom(b)
+        if r is not None and r[0] < v_star:
+            v_star, best = r[0], (r[1], b, r[2])
+
+    # If nothing breaches within the exposed hole, the tolerance is unlimited.
+    if not np.isfinite(v_star) or v_star >= v_hole - 1e-9:
         return AnalyticalKickTolerance(v_hole, np.nan, np.nan, np.nan, True, {})
 
-    # Bisect the influx to first breach (worst_margin is monotone decreasing in V).
-    lo, hi = 0.0, v_hole
-    for _ in range(44):
-        mid = 0.5 * (lo + hi)
-        m, _ = worst_margin(mid)
-        if m > 0.0:
-            lo = mid
-        else:
-            hi = mid
-    vstar = lo
-    _, (gt, gb, dbind) = worst_margin(vstar)
+    gt, gb, dbind = best
     return AnalyticalKickTolerance(
-        float(vstar), float(gt), float(gb),
+        float(v_star), float(gt), float(gb),
         float(dbind) if dbind == dbind else np.nan, False, {})

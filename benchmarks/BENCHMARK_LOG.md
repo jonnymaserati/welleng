@@ -119,3 +119,23 @@ EXACT/conservative (the march can under-sample a narrow breakpoint). Under the
 API/GUI 1 s target with cloud headroom. Backend note: uses H-Y; the CoolProp
 real-EOS backend (API default for mixtures/CCUS) is NOT yet wired into the column
 integration for either engine — a follow-up needing a precomputed Z(P,T) table.
+
+## 2026-07-14 (later) · `feat/kick-analytical` · closed-form gas-top breach (fast path)
+
+Replaced the outer influx bisection with a per-candidate DIRECT breach-influx solve:
+gas-top families (1/4) are now CLOSED FORM (conservative = linear constant-density
+column; exact = exponential column, a Lambert-W-form root by a 3-iter Newton, no
+scipy dep) -- validated standalone vs the previous solver to ±0.02%; gas-bottom
+families (2/3, interior/tight-BHA) keep a per-candidate secant on influx. Results
+identical to the bisection solver (base -0.16%, weak +0.05%, sloped +0.06%, tight-BHA
+-1.26% vs the march; 9-test CI unchanged).
+
+| analytical_kick_tolerance | before (bisection) | after (closed-form gas-top) |
+|---|---|---|
+| conservative | ~75 ms | **~44 ms** |
+| exact | ~72 ms | **~42 ms** |
+
+611 -> ~42 ms cumulative (~14.5x); ~15x faster than the fast march. The closed form
+also cuts Z-backend calls sharply -- the lever that matters for the slower CoolProp
+backend (still a follow-up). Derivation: SymPy (`FP*exp(k*L)=A+b*L` -> LambertW),
+implemented as a dependency-free Newton.
