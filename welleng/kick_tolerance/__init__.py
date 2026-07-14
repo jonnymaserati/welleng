@@ -24,6 +24,36 @@ model would only RELAX (raise) the tolerance -- a casing-design margin-recovery
 tool, not a safety improvement -- and its transient two-phase hydraulics belong
 with a hydraulics kernel (welleng-drilling), not here.
 
+UNITS -- the field-units contract (READ THIS)
+---------------------------------------------
+**Every input and output of this subpackage is in US oilfield field units**,
+deliberately, to match the validation papers (SPE-208788, NOGEPA, API RP 59) and
+industry KT practice. This diverges from welleng's SI convention: it is the ONE
+field-units subpackage. Unit conversion is a BOUNDARY concern -- a caller (API, GUI,
+notebook) converts to/from these units with Pint (``welleng.units`` = a pint
+registry), the engine itself never converts. The canonical units are:
+
+    quantity              unit        engine parameters (examples)
+    --------------------  ----------  -----------------------------------------
+    density / mud weight  ppg         rho_mud, rho_mud_ppg, rho_gas_s
+    pressure (equiv. MW)  ppg         PP, kick_intensity, P_lot, pp/fp profiles
+    pressure (absolute)   psi         P_apl, bhp_psi, and all returned pressures
+    depth / length        ft          D_td, D_lot, section top/bottom, profile depths
+                                       -- ALL depths are TRUE VERTICAL DEPTH (TVD)
+    temperature           degF        T_s, T_td  (KickInputs)
+    temperature           degR        T_bh in gas_bh_state; temp-profile callables
+    volume                bbl         influx, kick tolerance, kt_threshold
+    annular capacity      bbl/ft      V_dpa, WellSection.annular_capacity_bbl_per_ft
+    inclination           deg         inc_shoe
+    Z factor / fractions  -           Z_s, Z_td, gas mole fractions (dimensionless)
+
+``gas_bh_state`` tuple = ``(P_bh [psi], T_bh [degR], Z [-], rho_gas [ppg])`` (any
+element may be ``None`` -> computed). PP / fracture / kick-intensity are
+mud-weight-EQUIVALENT densities (ppg), NOT absolute pressures. Temperatures are
+degF on ``KickInputs`` but degR inside ``gas_bh_state`` and the temp-profile
+callables -- note the difference. Per-parameter units are also restated in each
+function/dataclass docstring.
+
 Layout
 ------
 * ``core``        -- the margin logic (KickInputs/KickResult, drill/swab cases).
