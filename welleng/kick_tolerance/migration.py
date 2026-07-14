@@ -40,9 +40,15 @@ Modelling stance (safe-side, explicit)
     Z(P) is taken from the clean-room Hall & Yarborough (1973) methane backend
     (``gas_z.py``), so the bubble grows correctly as it rises. This is the
     dominant migration effect and it is modelled pressure-dependently.
-  * GAS-COLUMN HYDROSTATIC uses the LOCAL, pressure-dependent gas density,
-    rho_gas(P) = rho_gas_bh * (P * Z_bh) / (P_bh * Z(P)) (isothermal), which
-    lightens up-hole as P falls. A lighter up-hole column means a SMALLER
+  * GAS-COLUMN HYDROSTATIC uses the LOCAL, pressure- AND temperature-dependent
+    gas density,
+    rho_gas(P, d) = rho_gas_bh * (P * Z_bh * T_bh) / (P_bh * Z(P, T(d)) * T(d)),
+    which lightens up-hole as P falls. The temperature enters via ``temp_profile``
+    (default ``None`` = ISOTHERMAL at the bottom-hole T, so T cancels and this is
+    exactly the previous rho_gas_bh * (P * Z_bh) / (P_bh * Z(P))); a supplied
+    profile (``linear_temp_profile`` two-point gradient, or a full (tvd, T) table)
+    makes Z and density track the true T(depth). A lighter up-hole column means a
+    SMALLER
     pressure drop across the gas and hence a HIGHER imposed pressure at and above
     the gas top (and the shoe) -- the safe-side direction for a fracture barrier.
     ``pressure_at_depth`` / ``migrate`` expose ``gas_density_mode``:
@@ -87,6 +93,12 @@ _HY_MIN_PSI = 100.0
 
 # A ppg profile is either a callable tvd->ppg, or a (tvd_array, ppg_array) table.
 ProfileLike = Union[Callable[[float], float], "tuple[Sequence[float], Sequence[float]]"]
+
+# A temperature profile is a callable tvd->T[degR], a (tvd_array, T_rankine_array)
+# table, or None (ISOTHERMAL at the bottom-hole temperature -- see below).
+TempProfileLike = Union[
+    None, Callable[[float], float], "tuple[Sequence[float], Sequence[float]]"
+]
 
 
 # ============================================================================
@@ -139,6 +151,74 @@ def ppg_to_psi(rho_ppg: np.ndarray, depth_ft: np.ndarray) -> np.ndarray:
 
 
 # ============================================================================
+# Temperature profile (non-isothermal gas) -- callable OR (tvd, degR) table
+# ============================================================================
+def _as_temp_callable(
+    profile: TempProfileLike, t_default: float
+) -> Callable[[np.ndarray], np.ndarray]:
+    """Return a vectorised tvd->T[degR] callable.
+
+    Same coercion pattern as the PP/FP profiles, with one extra case:
+
+      * ``None`` -> ISOTHERMAL: a constant equal to ``t_default`` (the bottom-hole
+        temperature ``T_bh_rankine``). This reproduces the previous isothermal
+        behaviour EXACTLY -- the local temperature equals the bottom-hole
+        temperature everywhere, so the T-ratio in the gas density is exactly 1.
+      * a callable ``tvd -> T_rankine``.
+      * a ``(tvd_array, T_rankine_array)`` table (numpy-interpolated; a full /
+        field profile -- the ADVANCED case).
+    """
+    if profile is None:
+        t = float(t_default)
+        return lambda d: np.full(np.shape(np.asarray(d, dtype=float)), t)
+    if callable(profile):
+        return lambda d: np.asarray(profile(d), dtype=float)
+    tvd_arr, t_arr = profile
+    tvd = np.asarray(tvd_arr, dtype=float)
+    tt = np.asarray(t_arr, dtype=float)
+    order = np.argsort(tvd)
+    tvd, tt = tvd[order], tt[order]
+    return lambda d: np.interp(np.asarray(d, dtype=float), tvd, tt)
+
+
+def linear_temp_profile(
+    shoe_tvd: float,
+    shoe_temp_rankine: float,
+    td_tvd: float,
+    td_temp_rankine: float,
+) -> Callable[[np.ndarray], np.ndarray]:
+    """Two-point (shoe + TD) linear temperature gradient -- the BASIC case.
+
+    Returns a callable ``tvd -> T_rankine`` for a straight-line geothermal
+    gradient anchored at the casing shoe and at TD. Extrapolated linearly outside
+    ``[shoe_tvd, td_tvd]`` (so the gradient continues to surface, TVD=0, as the
+    bubble rises). For a full / field temperature survey pass a
+    ``(tvd_array, T_rankine_array)`` table instead (the ADVANCED case).
+
+    Parameters
+    ----------
+    shoe_tvd, td_tvd
+        Anchor depths [ft TVD]; ``td_tvd`` must differ from ``shoe_tvd``.
+    shoe_temp_rankine, td_temp_rankine
+        Temperatures at those depths [degR]. A geothermal gradient has
+        ``td_temp_rankine > shoe_temp_rankine`` (hotter with depth).
+    """
+    shoe_tvd = float(shoe_tvd)
+    td_tvd = float(td_tvd)
+    if td_tvd == shoe_tvd:
+        raise ValueError("linear_temp_profile: shoe_tvd and td_tvd must differ")
+    t_shoe = float(shoe_temp_rankine)
+    t_td = float(td_temp_rankine)
+    slope = (t_td - t_shoe) / (td_tvd - shoe_tvd)
+
+    def _profile(d):
+        d = np.asarray(d, dtype=float)
+        return t_shoe + slope * (d - shoe_tvd)
+
+    return _profile
+
+
+# ============================================================================
 # Pressure profile (public -- reused by the migration loop AND by callers/tests)
 # ============================================================================
 def pressure_at_depth(
@@ -151,25 +231,36 @@ def pressure_at_depth(
     rho_mud_ppg: float,
     gas_bh,
     gas_density_mode: str = "conservative",
+    temp_profile: TempProfileLike = None,
     g: float = G_PSI_PER_PPG_FT,
     n_sub: int = 40,
 ) -> Union[float, np.ndarray]:
     """Imposed pressure at ``depth_ft`` for BHP held constant at the bottom.
 
     Marching UP from the bottom, hydrostatic is removed: a mud gradient outside
-    the gas interval and a gas gradient inside [gas_top, gas_bottom]. The
-    isothermal local gas density (T cancels) is::
+    the gas interval and a gas gradient inside [gas_top, gas_bottom]. The local
+    gas density is NON-ISOTHERMAL::
 
-        rho_gas(P) = rho_gas_bh * (P * Z_bh) / (P_bh * Z(P))
+        rho_gas(P, d) = rho_gas_bh * (P * Z_bh * T_bh) / (P_bh * Z(P, T(d)) * T(d))
 
-    with ``Z(P)`` from the clean-room Hall & Yarborough (1973) methane backend.
-    ``gas_bh = (P_bh, T_bh_rankine, Z_bh, rho_gas_bh)``. Vectorised over
-    ``depth_ft``.
+    with ``Z(P, T(d))`` from the clean-room Hall & Yarborough (1973) methane
+    backend at the LOCAL temperature ``T(d)``. ``gas_bh = (P_bh, T_bh_rankine,
+    Z_bh, rho_gas_bh)``. When ``temp_profile`` is ``None`` the local temperature
+    equals ``T_bh`` everywhere, T cancels, and this reduces EXACTLY to the
+    previous isothermal density ``rho_gas_bh * (P * Z_bh) / (P_bh * Z(P))``.
+    Vectorised over ``depth_ft``.
 
     Parameters
     ----------
+    temp_profile : None | callable | (tvd_array, T_rankine_array)
+        Temperature profile T(d) [degR]. ``None`` (DEFAULT) is ISOTHERMAL at the
+        bottom-hole temperature ``T_bh_rankine`` (from ``gas_bh``) -- reproduces
+        the previous behaviour exactly. A callable ``tvd -> T_rankine`` or a
+        ``(tvd, T_rankine)`` table sets a depth-varying temperature (see
+        ``linear_temp_profile`` for the basic two-point gradient). Hotter gas
+        up-hole is lighter (lower density) -> a HIGHER pressure at/above the gas.
     gas_density_mode : {"conservative", "exact"}
-        Gas-column density treatment (both isothermal):
+        Gas-column density treatment (each evaluated at the local T(d)):
 
         * ``"conservative"`` (DEFAULT, safe-side) -- use the gas density at the
           gas TOP (the lowest pressure -> lightest gas) as a CONSTANT for the
@@ -193,6 +284,7 @@ def pressure_at_depth(
             f"gas_density_mode must be 'conservative' or 'exact', got {gas_density_mode!r}"
         )
     P_bh, T_bh_r, Z_bh, rho_gas_bh = gas_bh
+    temp_fn = _as_temp_callable(temp_profile, T_bh_r)  # None -> isothermal at T_bh
     d = np.asarray(depth_ft, dtype=float)
     scalar = d.ndim == 0
 
@@ -215,8 +307,11 @@ def pressure_at_depth(
         for k in range(n):
             dz = zs[k] - zs[k + 1]                       # +ve (going up)
             Pk = max(Ps[k], 1.0)
-            Zk = _z_at(Pk, T_bh_r)
-            rho_local = rho_gas_bh * Pk * Z_bh / (P_bh * Zk)
+            Tk = float(temp_fn(zs[k]))                    # local T at sub-step base
+            Zk = _z_at(Pk, Tk)
+            # rho(P,d) = rho_bh * P*Z_bh*T_bh / (P_bh*Z(P,T(d))*T(d)); the trailing
+            # (T_bh/Tk) is EXACTLY 1.0 when isothermal -> old value bit-for-bit.
+            rho_local = rho_gas_bh * Pk * Z_bh / (P_bh * Zk) * (T_bh_r / Tk)
             Ps[k + 1] = Ps[k] - rho_local * g * dz
         P_gt_exact = Ps[-1]
 
@@ -228,9 +323,11 @@ def pressure_at_depth(
             # rho at the gas-top pressure; a couple of refresh iterations make
             # rho_top self-consistent with the updated (lighter) gas-top P.
             P_top = max(P_gt_exact, 1.0)
+            T_top = float(temp_fn(gas_top_tvd))    # local T at the gas top
             for _ in range(3):
-                Z_top = _z_at(P_top, T_bh_r)
-                rho_top = rho_gas_bh * P_top * Z_bh / (P_bh * Z_top)
+                Z_top = _z_at(P_top, T_top)
+                # (T_bh/T_top) is EXACTLY 1.0 when isothermal -> old value bit-for-bit.
+                rho_top = rho_gas_bh * P_top * Z_bh / (P_bh * Z_top) * (T_bh_r / T_top)
                 P_top = max(P_gb - rho_top * g * gas_len, 1.0)
             P_gt = P_gb - rho_top * g * gas_len  # >= exact P_gt (lighter column)
             # Linear profile inside the gas at the constant rho_top.
@@ -365,6 +462,7 @@ def migrate(
     rho_mud_ppg: float,
     gas_bh_state,
     gas_density_mode: str = "conservative",
+    temp_profile: TempProfileLike = None,
     n_steps: int = 100,
 ) -> MigrationResult:
     """March a single gas bubble up the annulus under constant BHP.
@@ -405,6 +503,12 @@ def migrate(
         Default ``"conservative"`` (gas-TOP lightest density, safe-side bound);
         ``"exact"`` integrates the true pressure-dependent local density. See
         ``pressure_at_depth``.
+    temp_profile : None | callable | (tvd_array, T_rankine_array)
+        Temperature profile T(d) [degR], passed through to ``pressure_at_depth``
+        AND used in the Boyle expansion (the gas expands at the LOCAL temperature
+        at its top, not the bottom-hole temperature). ``None`` (DEFAULT) is
+        ISOTHERMAL at ``T_bh_rankine`` -- reproduces the previous result exactly.
+        See ``linear_temp_profile`` for the basic two-point gradient.
     n_steps
         Number of migration steps (bottom -> surface).
 
@@ -419,6 +523,7 @@ def migrate(
 
     P_bh, T_bh_r, Z_bh, rho_gas_ppg = _resolve_bh_state(gas_bh_state, bhp_psi)
     gas_bh = (P_bh, T_bh_r, Z_bh, rho_gas_ppg)  # bottom-hole anchor for rho_gas(P)
+    temp_fn = _as_temp_callable(temp_profile, T_bh_r)  # None -> isothermal at T_bh
 
     pp_fn = _as_ppg_callable(pp)
     fp_fn = _as_ppg_callable(fp)
@@ -459,17 +564,18 @@ def migrate(
         # so the bubble expands correctly as it rises.
         P_rep = bhp_psi - G_PSI_PER_PPG_FT * rho_mud_ppg * (bottom_tvd - gas_top)
         P_rep = max(P_rep, 1.0)
+        T_local = float(temp_fn(gas_top))  # local T at the representative (gas-top) depth
         gas_bottom, gas_len = gas_top, 0.0
         for _ in range(100):
-            Z = _z_at(P_rep, T_bh_r)
-            # V(P,T,Z) = V_bh * (P_bh*Z*T) / (P*Z_bh*T_bh); isothermal T=T_bh.
-            V = influx_bbl_bh * (P_bh * Z * T_bh_r) / (P_rep * Z_bh * T_bh_r)
+            Z = _z_at(P_rep, T_local)
+            # V(P,T,Z) = V_bh * (P_bh*Z*T_local) / (P*Z_bh*T_bh); T_local=T_bh -> old.
+            V = influx_bbl_bh * (P_bh * Z * T_local) / (P_rep * Z_bh * T_bh_r)
             gas_bottom, gas_len = _fill_down(gas_top, V, sections_sorted, bottom_tvd)
             P_new = float(pressure_at_depth(
                 gas_top, gas_top_tvd=gas_top, gas_bottom_tvd=gas_bottom,
                 bottom_tvd=bottom_tvd, bhp_psi=bhp_psi,
                 rho_mud_ppg=rho_mud_ppg, gas_bh=gas_bh,
-                gas_density_mode=gas_density_mode, n_sub=20,
+                gas_density_mode=gas_density_mode, temp_profile=temp_profile, n_sub=20,
             ))
             P_new = max(P_new, 1.0)
             if abs(P_new - P_rep) < 1e-4:
@@ -485,7 +591,7 @@ def migrate(
             exposed_depths, gas_top_tvd=gas_top, gas_bottom_tvd=gas_bottom,
             bottom_tvd=bottom_tvd, bhp_psi=bhp_psi,
             rho_mud_ppg=rho_mud_ppg, gas_bh=gas_bh,
-            gas_density_mode=gas_density_mode,
+            gas_density_mode=gas_density_mode, temp_profile=temp_profile,
         )
         fp_margin = fp_psi - P          # >= 0 required (no breakdown)
         pp_margin = P - pp_psi          # >= 0 required (no further influx)
@@ -522,6 +628,7 @@ def migrate(
             bottom_tvd=bottom_tvd, bhp_psi=bhp_psi,
             rho_mud_ppg=rho_mud_ppg, rho_gas_ppg=rho_gas_ppg,
             gas_bh=gas_bh, gas_density_mode=gas_density_mode,
+            temp_profile=temp_profile,
             P_bh=P_bh, T_bh_rankine=T_bh_r, Z_bh=Z_bh,
             open_hole_length=open_hole_length,
         ),
