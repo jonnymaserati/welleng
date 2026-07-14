@@ -1,0 +1,219 @@
+"""Reasonableness tests for the gas-migration kick-tolerance engine.
+
+This is an ASSEMBLED model (an extension beyond the static NOGEPA single-shoe
+method), not a published worked example -- so the assertions are reasonableness
+checks, not bit-exact targets:
+
+  (a) a small influx stays WITHIN the PP-FP envelope (min FP margin > 0);
+  (b) a large influx BREACHES the fracture pressure (within_envelope False),
+      binding at/near the casing shoe;
+  (c) the imposed pressure AT THE SHOE peaks when the gas top reaches the shoe
+      and falls once the gas passes -- i.e. the max-shoe-pressure step matches
+      the static single-shoe check;
+  (d) the BHA/open-hole length flag fires when the bubble grows longer than the
+      open hole it must migrate through.
+"""
+
+import numpy as np
+import pytest
+
+from welleng.kick_tolerance.migration import (
+    WellSection, migrate, pressure_at_depth, G_PSI_PER_PPG_FT,
+)
+from welleng.kick_tolerance.gas_z import hall_yarborough_z, gas_density_ppg
+
+
+# --- A simple vertical well: open hole below the shoe, casing above ----------
+SHOE_TVD = 5000.0
+BOTTOM_TVD = 10000.0
+RHO_MUD = 12.0            # ppg
+# Constant BHP a little above mud hydrostatic at TD (kill margin).
+BHP = G_PSI_PER_PPG_FT * RHO_MUD * BOTTOM_TVD + 150.0   # ~6402 psi
+
+# 8.5" open hole with 5" pipe; larger cased annulus above the shoe.
+OPEN_CAP = (8.5 ** 2 - 5.0 ** 2) / 1029.4     # ~0.0459 bbl/ft
+CASED_CAP = (9.625 ** 2 - 5.0 ** 2) / 1029.4  # ~0.0657 bbl/ft
+OPEN_HOLE_LENGTH = BOTTOM_TVD - SHOE_TVD       # 5000 ft
+
+
+def make_sections():
+    return [
+        WellSection(0.0, SHOE_TVD, CASED_CAP, is_open_hole=False),
+        WellSection(SHOE_TVD, BOTTOM_TVD, OPEN_CAP, is_open_hole=True),
+    ]
+
+
+def bh_state():
+    # Bottom-hole methane state; Z_bh / rho_gas computed by the HY backend.
+    return (BHP, 660.0, None, None)  # 200 degF = 660 degR
+
+
+# Linear PP / FP profiles in ppg vs TVD (increasing with depth).
+PP_TABLE = (np.array([0.0, BOTTOM_TVD]), np.array([10.5, 11.0]))
+FP_TABLE = (np.array([0.0, BOTTOM_TVD]), np.array([14.0, 14.0]))
+
+
+def test_small_influx_within_envelope():
+    """(a) A small influx stays inside the PP-FP window everywhere."""
+    res = migrate(
+        make_sections(), PP_TABLE, FP_TABLE,
+        bhp_psi=BHP, influx_bbl_bh=3.0, rho_mud_ppg=RHO_MUD,
+        gas_bh_state=bh_state(), n_steps=120,
+    )
+    assert res.within_envelope is True
+    assert res.min_fp_margin_psi > 0.0
+    assert res.bha_length_exceeded is False
+    # The animation trajectory: one frame per step, bottom -> surface.
+    assert len(res.steps) == 120
+    assert res.steps[0].gas_top_tvd > res.steps[-1].gas_top_tvd
+
+
+def test_large_influx_breaches_fp_at_shoe():
+    """(b) A large influx breaches FP, binding at/near the shoe."""
+    res = migrate(
+        make_sections(), PP_TABLE, FP_TABLE,
+        bhp_psi=BHP, influx_bbl_bh=45.0, rho_mud_ppg=RHO_MUD,
+        gas_bh_state=bh_state(), n_steps=120,
+    )
+    assert res.within_envelope is False
+    assert res.min_fp_margin_psi < 0.0
+    # Binding is in the exposed open hole, close to the shoe (top of open hole).
+    assert SHOE_TVD <= res.binding_tvd <= SHOE_TVD + 0.15 * OPEN_HOLE_LENGTH
+
+
+def test_shoe_pressure_peaks_as_gas_top_reaches_shoe():
+    """(c) Max imposed pressure at the shoe occurs when the gas top ~ shoe.
+
+    This is the migration-model recovery of the static single-shoe check: the
+    worst shoe loading is when the light gas column sits just below the shoe.
+    """
+    res = migrate(
+        make_sections(), PP_TABLE, FP_TABLE,
+        bhp_psi=BHP, influx_bbl_bh=20.0, rho_mud_ppg=RHO_MUD,
+        gas_bh_state=bh_state(), n_steps=200,
+    )
+    ctx = res._ctx
+    # Recompute imposed pressure at the shoe for every step (public helper).
+    p_shoe = np.array([
+        pressure_at_depth(
+            SHOE_TVD, gas_top_tvd=s.gas_top_tvd, gas_bottom_tvd=s.gas_bottom_tvd,
+            bottom_tvd=ctx["bottom_tvd"], bhp_psi=ctx["bhp_psi"],
+            rho_mud_ppg=ctx["rho_mud_ppg"], gas_bh=ctx["gas_bh"],
+        )
+        for s in res.steps
+    ])
+    k = int(np.argmax(p_shoe))
+    gas_top_at_peak = res.steps[k].gas_top_tvd
+    # The peak shoe pressure happens with the gas top essentially at the shoe.
+    assert abs(gas_top_at_peak - SHOE_TVD) < 0.03 * BOTTOM_TVD
+    # And it is a genuine peak: pressure rises into it and falls out of it.
+    assert p_shoe[k] > p_shoe[0]
+    assert p_shoe[k] > p_shoe[-1]
+
+
+def test_gas_density_mode_ordering():
+    """Safe-side ordering: P(conservative) >= P(exact) >= P(bottom-hole-const).
+
+    Bottom-hole gas is the densest; using it everywhere (the superseded
+    behaviour) over-states the column weight and UNDER-states the pressure
+    at/above the gas -- non-conservative for a fracture barrier. The "exact"
+    mode integrates the true lighter up-hole density (the correct value); the
+    "conservative" DEFAULT holds the gas-top (lightest) density constant -- the
+    highest-pressure, safe-side bound. Ordering must hold at every depth at or
+    above the gas.
+    """
+    P_bh, T = BHP, 660.0
+    Z_bh = hall_yarborough_z(P_bh, T)
+    rho_gas_bh = gas_density_ppg(P_bh, T, Z_bh)
+    gas_bh = (P_bh, T, Z_bh, rho_gas_bh)
+    gas_top, gas_bottom = 4000.0, 8000.0  # a long bubble spanning the shoe
+
+    def bottom_hole_constant(d):
+        """Superseded (non-conservative) behaviour: constant bottom-hole density."""
+        total = BOTTOM_TVD - d
+        lo = max(d, gas_top)
+        hi = min(BOTTOM_TVD, gas_bottom)
+        gas_len = max(0.0, hi - lo)
+        mud_len = total - gas_len
+        return BHP - G_PSI_PER_PPG_FT * (RHO_MUD * mud_len + rho_gas_bh * gas_len)
+
+    def P(d, mode):
+        return pressure_at_depth(
+            d, gas_top_tvd=gas_top, gas_bottom_tvd=gas_bottom,
+            bottom_tvd=BOTTOM_TVD, bhp_psi=BHP, rho_mud_ppg=RHO_MUD,
+            gas_bh=gas_bh, gas_density_mode=mode,
+        )
+
+    for d in (0.0, 2000.0, gas_top, 6000.0):  # at/above the gas top
+        p_cons = P(d, "conservative")
+        p_exact = P(d, "exact")
+        p_bh = bottom_hole_constant(d)
+        assert p_cons >= p_exact - 1e-6          # conservative is the safe-side bound
+        assert p_exact >= p_bh - 1e-6            # true value >= old non-conservative
+
+    # Strictly separated above the gas (each treatment raises the shallow pressure).
+    assert P(0.0, "conservative") > P(0.0, "exact") + 1e-3
+    assert P(0.0, "exact") > bottom_hole_constant(0.0) + 1.0
+
+    # Default is conservative.
+    assert P(0.0, "conservative") == pytest.approx(
+        pressure_at_depth(
+            0.0, gas_top_tvd=gas_top, gas_bottom_tvd=gas_bottom,
+            bottom_tvd=BOTTOM_TVD, bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh=gas_bh,
+        )
+    )
+
+    # Below the gas all treatments reduce to the same pure-mud column.
+    assert P(9000.0, "conservative") == pytest.approx(bottom_hole_constant(9000.0))
+    assert P(9000.0, "exact") == pytest.approx(bottom_hole_constant(9000.0))
+
+    # An invalid mode is rejected.
+    with pytest.raises(ValueError):
+        P(0.0, "bogus")
+
+
+def test_bha_length_flag_fires_for_oversized_bubble():
+    """(d) The bubble grows longer than the open hole -> flag fires."""
+    res = migrate(
+        make_sections(), PP_TABLE, FP_TABLE,
+        bhp_psi=BHP, influx_bbl_bh=250.0, rho_mud_ppg=RHO_MUD,
+        gas_bh_state=bh_state(), n_steps=120,
+    )
+    assert res.bha_length_exceeded is True
+    assert max(s.gas_length_ft for s in res.steps) > OPEN_HOLE_LENGTH
+
+
+def test_bha_flag_false_for_small_bubble():
+    """Control for (d): a small bubble never exceeds the open hole."""
+    res = migrate(
+        make_sections(), PP_TABLE, FP_TABLE,
+        bhp_psi=BHP, influx_bbl_bh=3.0, rho_mud_ppg=RHO_MUD,
+        gas_bh_state=bh_state(), n_steps=120,
+    )
+    assert res.bha_length_exceeded is False
+
+
+def test_backend_computes_bh_state_when_none():
+    """Z_bh / rho_gas left None are computed by the Hall-Yarborough backend."""
+    res = migrate(
+        make_sections(), PP_TABLE, FP_TABLE,
+        bhp_psi=BHP, influx_bbl_bh=5.0, rho_mud_ppg=RHO_MUD,
+        gas_bh_state=(BHP, 660.0, None, None), n_steps=50,
+    )
+    z_expected = hall_yarborough_z(BHP, 660.0)
+    assert res._ctx["Z_bh"] == pytest.approx(z_expected, rel=1e-9)
+    assert res._ctx["rho_gas_ppg"] == pytest.approx(
+        gas_density_ppg(BHP, 660.0, z_expected), rel=1e-9
+    )
+
+
+if __name__ == "__main__":
+    r = migrate(
+        make_sections(), PP_TABLE, FP_TABLE,
+        bhp_psi=BHP, influx_bbl_bh=20.0, rho_mud_ppg=RHO_MUD,
+        gas_bh_state=bh_state(), n_steps=200,
+    )
+    print(f"within_envelope   = {r.within_envelope}")
+    print(f"min FP margin     = {r.min_fp_margin_psi:.1f} psi")
+    print(f"binding TVD/step  = {r.binding_tvd:.0f} ft / step {r.binding_step}")
+    print(f"bha_length_exceeded = {r.bha_length_exceeded}")
