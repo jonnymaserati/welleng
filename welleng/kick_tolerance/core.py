@@ -65,7 +65,7 @@ from dataclasses import dataclass
 from math import cos, radians
 from typing import Optional
 
-from .gas_z import gas_density_ppg, hall_yarborough_z
+from .gas_z import gas_density_ppg, hall_yarborough_z, methane_properties
 
 # --- Constants (public, oilfield units) -------------------------------------
 G_PSI_PER_PPG_FT = 0.0521      # gravitational constant g  [psi.ppg^-1.ft^-1]
@@ -100,11 +100,16 @@ class KickInputs:
         T_td           : temperature at TD                            [degF]
         V_dpa          : annular capacity, drillpipe-in-hole          [bbl/ft]
 
-    Gas-property inputs (COMPUTED by the clean-room Hall-Yarborough backend when
-    left as ``None``; a numeric value overrides -- e.g. a mixture backend):
+    Gas-property inputs (COMPUTED when left as ``None``; a numeric value
+    overrides). Default backend = clean-room Hall-Yarborough for pure methane;
+    set ``fluid`` to use the CoolProp real-EOS mixture backend instead:
         Z_s        : real-gas Z factor at the shoe station            [-]
         Z_td       : real-gas Z factor at the TD station              [-]
         rho_gas_s  : influx gas density at the shoe station           [ppg]
+        fluid      : optional gas COMPOSITION (mole fractions), e.g.
+                     {"Methane": 0.9, "CO2": 0.1}. When set, Z/density are
+                     computed via CoolProp (real EOS, CO2/CCUS mixtures) --
+                     requires welleng[kick]. None => pure-methane Hall-Yarborough.
 
     Design threshold:
         kt_threshold : required tolerable-kick volume (margin datum)  [bbl]
@@ -131,6 +136,7 @@ class KickInputs:
     Z_s: Optional[float] = None
     Z_td: Optional[float] = None
     rho_gas_s: Optional[float] = None
+    fluid: Optional[dict] = None
     kt_threshold: float = 25.0
     inc_shoe: float = 0.0
 
@@ -217,18 +223,27 @@ def resolve_gas_properties(inp: KickInputs) -> tuple[float, float, float]:
     TD station:   (P_td, T_td)  -> Z_td.
     Shoe station: (P_shoe, T_s) -> Z_s, rho_gas_s.
 
-    Injected numeric values are used verbatim (mixture-backend override).
+    Backend: pure-methane Hall-Yarborough by default; if ``inp.fluid`` is a
+    composition dict, the CoolProp real-EOS mixture backend (CO2 / CCUS) is used.
+    Injected numeric Z_s/Z_td/rho_gas_s values are used verbatim (override).
     """
     P_td = scenario_P_td(inp)
     T_s_r = fahrenheit_to_rankine(inp.T_s)
     T_td_r = fahrenheit_to_rankine(inp.T_td)
 
-    Z_td = inp.Z_td if inp.Z_td is not None else hall_yarborough_z(P_td, T_td_r)
+    if inp.fluid is not None:
+        from .gas_z_coolprop import fluid_z_density   # optional CoolProp backend
+
+        def gas(p_psia, t_r):                          # (Z, rho_ppg) for the mixture
+            return fluid_z_density(inp.fluid, p_psia, t_r)
+    else:
+        gas = methane_properties                       # (Z, rho_ppg) clean-room H-Y
+
+    Z_td = inp.Z_td if inp.Z_td is not None else gas(P_td, T_td_r)[0]
 
     if inp.Z_s is None or inp.rho_gas_s is None:
         P_shoe = _shoe_gas_pressure(inp, P_td)
-        Z_s_c = hall_yarborough_z(P_shoe, T_s_r)
-        rho_gas_s_c = gas_density_ppg(P_shoe, T_s_r, Z_s_c)
+        Z_s_c, rho_gas_s_c = gas(P_shoe, T_s_r)
     else:
         Z_s_c = rho_gas_s_c = None  # not needed; both injected
 
