@@ -4,6 +4,26 @@ Public single-bubble kick-tolerance closed form (Eqs. A-1...A-9 of the public
 SPE paper SPE-208788-PA) with a clean-room Hall & Yarborough (1973) real-gas
 Z-factor backend for the Tier-0 pure-methane influx.
 
+Model class & scope (what this is, and is NOT)
+----------------------------------------------
+This is a **single-bubble, quasi-static, deterministic** kick-tolerance calculator.
+One coherent (insoluble) gas influx is sized by the shoe / weak-zone pressure
+balance (the closed form) and marched up the annulus with Boyle + real-gas Z +
+optional temperature expansion (the migration engine). It is **CONSERVATIVE
+(safe-side)**: a single coherent slug imposes the GREATEST shoe pressure, so the
+tolerable influx it returns is a LOWER BOUND on what a real dispersed / multiphase
+influx would allow. The literature confirms the direction -- dynamic multiphase
+simulators return a HIGHER kick tolerance (SPE-208788-PA; Kiani Nassab et al.,
+SPE-202426-PA, Fig. 12: static single-bubble 13-16 bbl vs dynamic ~17 bbl).
+
+It is **NOT a transient two-phase flow simulator**: no gas/liquid slip or holdup,
+no flow-regime transitions, no gas dissolution into the mud, no transient annulus
+temperature (that is OLGA / Drillbench / "Simulator D" territory). Use this as a
+fast, reproducible, conservative well-control **barrier check**. A full multiphase
+model would only RELAX (raise) the tolerance -- a casing-design margin-recovery
+tool, not a safety improvement -- and its transient two-phase hydraulics belong
+with a hydraulics kernel (welleng-drilling), not here.
+
 Layout
 ------
 * ``core``        -- the margin logic (KickInputs/KickResult, drill/swab cases).
