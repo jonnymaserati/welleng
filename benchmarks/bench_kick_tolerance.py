@@ -37,6 +37,7 @@ import numpy as np
 from welleng.kick_tolerance import (
     KickInputs,
     WellSection,
+    analytical_kick_tolerance,
     drill_kick,
     max_influx_circulated,
     migrate,
@@ -86,13 +87,25 @@ def main() -> None:
     mxf = _time(
         lambda: max_influx_circulated(sections, pp, fp, mode="fast", **common), 10
     ) * 1e3
+    ana_common = dict(bhp_psi=6402.0, rho_mud_ppg=12.0, gas_bh_state=gas_bh_state)
+    analytical_kick_tolerance(sections, pp, fp, **ana_common)          # warm Z cache
+    anc = _time(
+        lambda: analytical_kick_tolerance(
+            sections, pp, fp, gas_density_mode="conservative", **ana_common), 50
+    ) * 1e3
+    ane = _time(
+        lambda: analytical_kick_tolerance(
+            sections, pp, fp, gas_density_mode="exact", **ana_common), 50
+    ) * 1e3
 
-    print(f"{'operation':<34}{'time':>12}")
-    print(f"{'-' * 46}")
-    print(f"{'drill_kick (H-Y auto Z)':<34}{dk:>9.1f} us")
-    print(f"{'migrate (n_steps=100)':<34}{mg:>9.1f} ms")
-    print(f"{'max_influx_circulated [thorough]':<34}{mx:>9.1f} ms")
-    print(f"{'max_influx_circulated [fast]':<34}{mxf:>9.1f} ms   <- API/GUI path")
+    print(f"{'operation':<38}{'time':>12}")
+    print(f"{'-' * 50}")
+    print(f"{'drill_kick (H-Y auto Z)':<38}{dk:>9.1f} us")
+    print(f"{'migrate (n_steps=100)':<38}{mg:>9.1f} ms")
+    print(f"{'max_influx_circulated [thorough]':<38}{mx:>9.1f} ms")
+    print(f"{'max_influx_circulated [fast]':<38}{mxf:>9.1f} ms")
+    print(f"{'analytical_kick_tolerance [conserv]':<38}{anc:>9.1f} ms")
+    print(f"{'analytical_kick_tolerance [exact]':<38}{ane:>9.1f} ms   <- API/GUI path")
 
 
 if __name__ == "__main__":

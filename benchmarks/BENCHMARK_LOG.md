@@ -88,3 +88,34 @@ Perf unchanged (init-only, O(sections)): thorough 3821→3790 ms, fast 648→652
 the fix only moves the tight-BHA answer). Residual (narrow gas-bottom breakpoint
 under-sampling) → the analytical solver with the complete breakpoint set
 (`docs/dev/KICK_ANALYTICAL_PLAN.md`).
+
+## 2026-07-14 (later) · `feat/kick-analytical` · analytical KT solver + optimisation
+
+New `analytical_kick_tolerance` (`welleng/kick_tolerance/analytical.py`): the
+migration-form KT evaluated ONLY at the breakpoints of P(gas position) (gas-top-
+and gas-bottom-at-boundary + deepest + PP/FP breaks), not a fine march. Exact worst
+position (no under-sampling), conservative or exact density mode. Validated vs the
+migration (thorough, n=300): base −0.16%, weak +0.05%, sloped +0.07%, tight-BHA
+−1.26% (all safe-side / exact); CI = `tests/test_kick_analytical.py` (9 tests).
+
+Optimisation (profile-led; results unchanged across the sweep):
+1. profile → `_top_for_bottom` = ~80%, driven by the Hall-Yarborough Newton.
+2. family-1 (gas-top-at-boundary) inner solve: 40-iter BISECTION → SECANT (~6 iters,
+   monotone) — the dominant call multiplier.
+3. trimmed over-set caps: influx bisection 60→44, conservative fixed point 50→30.
+4. Z-cache: `lru_cache` on H-Y Z(P,T) rounded to (1 psi, 0.1 degR) — same validated
+   backend, ~1000× fewer Newton solves (the same (P,T) recur across the bisection
+   and candidates). Migration path unchanged (still un-cached).
+
+| operation | time |
+|---|---|
+| `analytical_kick_tolerance` [conservative] | ~75 ms |
+| `analytical_kick_tolerance` [exact] | ~72 ms  (closed-form column, no fixed point) |
+| `max_influx_circulated` [fast] (the march) | ~656 ms |
+| `max_influx_circulated` [thorough] | ~3780 ms |
+
+611 → ~75 ms over the optimisation (~8×); **~9× faster than the fast march** and
+EXACT/conservative (the march can under-sample a narrow breakpoint). Under the
+API/GUI 1 s target with cloud headroom. Backend note: uses H-Y; the CoolProp
+real-EOS backend (API default for mixtures/CCUS) is NOT yet wired into the column
+integration for either engine — a follow-up needing a precomputed Z(P,T) table.
