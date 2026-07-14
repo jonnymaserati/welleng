@@ -68,6 +68,9 @@ from .migration import (
     pressure_at_depth,
     linear_temp_profile,
 )
+# Analytical (breakpoint) kick-tolerance solver: the migration-form KT evaluated
+# only at the breakpoints of P(gas position) -- the exact worst position, no march.
+from .analytical import analytical_kick_tolerance, AnalyticalKickTolerance
 # Catalogue-backed geometry: true annular capacity (bore - string), casing IDs
 # from the API-5CT catalogue. catalog is imported lazily inside the builders.
 from .geometry import annular_capacity, cased_section, open_hole_section
@@ -109,6 +112,8 @@ __all__ = [
     "max_influx_circulated",
     "pressure_at_depth",
     "linear_temp_profile",
+    "analytical_kick_tolerance",
+    "AnalyticalKickTolerance",
     "annular_capacity",
     "cased_section",
     "open_hole_section",
