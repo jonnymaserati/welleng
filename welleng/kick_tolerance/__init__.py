@@ -34,6 +34,17 @@ from .gas_z import (
 # safe without CoolProp -- the dependency is only imported when fluid_z_density
 # is actually called (raises a helpful ImportError then, pointing at welleng[kick]).
 from .gas_z_coolprop import fluid_z_density
+# Gas-migration engine: bubble migration up the section-wise annulus checked
+# against the pore/fracture (PPFP) envelope at every exposed depth (conservative,
+# safe-side). numpy-only -- no optional dependency. The step trajectory is the
+# animation data.
+from .migration import (
+    WellSection,
+    MigrationStep,
+    MigrationResult,
+    migrate,
+    pressure_at_depth,
+)
 
 try:  # envelope/monotonicity need SymPy (optional 'kick' extra)
     from .envelope import evaluate_envelope, EnvelopeResult
@@ -61,4 +72,9 @@ __all__ = [
     "gas_density_ppg",
     "methane_properties",
     "fluid_z_density",
+    "WellSection",
+    "MigrationStep",
+    "MigrationResult",
+    "migrate",
+    "pressure_at_depth",
 ]
