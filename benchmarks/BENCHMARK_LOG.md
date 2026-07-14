@@ -139,3 +139,24 @@ identical to the bisection solver (base -0.16%, weak +0.05%, sloped +0.06%, tigh
 also cuts Z-backend calls sharply -- the lever that matters for the slower CoolProp
 backend (still a follow-up). Derivation: SymPy (`FP*exp(k*L)=A+b*L` -> LambertW),
 implemented as a dependency-free Newton.
+
+## 2026-07-14 (later) · `feat/kick-analytical` · gas-bottom secant (profiling close-out)
+
+Profiling the closed-form solver showed the residual cost was the gas-bottom
+families' 44-iter influx BISECTION (each step a pressure_at_depth + geometry solve).
+Swapped it for a bracketed SECANT with an early break (0.25 psi / 0.001 bbl) -- the
+margin is monotone in influx so it converges in ~5 iters, not 44. Results identical
+(base -0.16%, weak +0.05%, sloped +0.06%, tight-BHA -1.26%; 9-test CI unchanged).
+
+| analytical_kick_tolerance | closed-form (prev) | + gas-bottom secant |
+|---|---|---|
+| conservative | ~44 ms | **~4.2 ms** |
+| exact | ~42 ms | **~4.1 ms** |
+
+611 -> ~4.1 ms cumulative over the analytical work (~150x); **~155x faster than the
+fast march** (655 ms). Close-out: the remaining cost is the irreducible Hall-Yarborough
+Z kernel (`reduced_density`) + the shared migration `pressure_at_depth` in the
+gas-bottom margin eval. Further gains need caching pressure_at_depth's internal H-Y or
+an analytic conservative margin -- higher-risk edits to shared code for marginal benefit
+far below the 1 s API/GUI target, so STOPPED here. CoolProp backend remains the real
+next perf item (a precomputed Z(P,T) table), tracked separately.
