@@ -80,9 +80,9 @@ from typing import Callable, Optional, Sequence, Union
 import numpy as np
 
 try:  # package-relative import (brief spec: from .gas_z import ...)
-    from .gas_z import hall_yarborough_z, gas_density_ppg
+    from .gas_z import hall_yarborough_z, hall_yarborough_z_and_y, gas_density_ppg
 except ImportError:  # flat-script / pytest-from-directory execution
-    from gas_z import hall_yarborough_z, gas_density_ppg
+    from gas_z import hall_yarborough_z, hall_yarborough_z_and_y, gas_density_ppg
 
 # --- Constant (public, oilfield units) --------------------------------------
 G_PSI_PER_PPG_FT = 0.0521  # gravitational constant g [psi.ppg^-1.ft^-1]
@@ -170,7 +170,10 @@ def _as_temp_callable(
     """
     if profile is None:
         t = float(t_default)
-        return lambda d: np.full(np.shape(np.asarray(d, dtype=float)), t)
+        # Isothermal: return the scalar for scalar/0-d input (the hot-loop case,
+        # called ~1e7 times as float(temp_fn(depth))) instead of allocating a fresh
+        # np.full array each time; still broadcast for genuine array input.
+        return lambda d: t if np.ndim(d) == 0 else np.full(np.shape(d), t)
     if callable(profile):
         return lambda d: np.asarray(profile(d), dtype=float)
     tvd_arr, t_arr = profile
@@ -312,11 +315,12 @@ def pressure_at_depth(
         zs = np.linspace(gas_bottom_tvd, gas_top_tvd, n + 1)  # depth descending
         Ps = np.empty(n + 1)
         Ps[0] = P_gb
+        y_seed = 1.0e-3                                  # warm-start the H-Y Newton
         for k in range(n):
             dz = zs[k] - zs[k + 1]                       # +ve (going up)
             Pk = max(Ps[k], 1.0)
             Tk = float(temp_fn(zs[k]))                    # local T at sub-step base
-            Zk = _z_at(Pk, Tk)
+            Zk, y_seed = _z_and_y_at(Pk, Tk, y_seed)      # seed next solve from this y
             # rho(P,d) = rho_bh * P*Z_bh*T_bh / (P_bh*Z(P,T(d))*T(d)); the trailing
             # (T_bh/Tk) is EXACTLY 1.0 when isothermal -> old value bit-for-bit.
             rho_local = rho_gas_bh * Pk * Z_bh / (P_bh * Zk) * (T_bh_r / Tk)
@@ -332,8 +336,9 @@ def pressure_at_depth(
             # rho_top self-consistent with the updated (lighter) gas-top P.
             P_top = max(P_gt_exact, 1.0)
             T_top = float(temp_fn(gas_top_tvd))    # local T at the gas top
+            y_top = 1.0e-3                          # warm-start across the 3 refreshes
             for _ in range(3):
-                Z_top = _z_at(P_top, T_top)
+                Z_top, y_top = _z_and_y_at(P_top, T_top, y_top)
                 # (T_bh/T_top) is EXACTLY 1.0 when isothermal -> old value bit-for-bit.
                 rho_top = rho_gas_bh * P_top * Z_bh / (P_bh * Z_top) * (T_bh_r / T_top)
                 P_top = max(P_gb - rho_top * g * gas_len, 1.0)
@@ -422,6 +427,18 @@ def _z_at(p_psi: float, t_rankine: float) -> float:
         return hall_yarborough_z(p_psi, t_rankine)
     except ValueError:
         return 1.0
+
+
+def _z_and_y_at(p_psi: float, t_rankine: float, y0: float) -> tuple:
+    """``(Z, y)`` at (P, T), warm-started from ``y0``. Same Z=1 fallback as
+    :func:`_z_at` below the H-Y validity band (``y0`` passed straight through so the
+    next nearby solve still gets a sensible seed)."""
+    if p_psi < _HY_MIN_PSI:
+        return 1.0, y0
+    try:
+        return hall_yarborough_z_and_y(p_psi, t_rankine, y0=y0)
+    except ValueError:
+        return 1.0, y0
 
 
 # ============================================================================
