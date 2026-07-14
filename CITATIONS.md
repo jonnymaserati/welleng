@@ -148,6 +148,13 @@ If your work relies on a specific method, please **also** cite the relevant pape
 - **NOGEPA Industry Standard No. 50** — *Kick Tolerances for Well Design &
   Drilling Operations.* Netherlands Oil and Gas Exploration and Production
   Association — the operational kick-tolerance design basis.
+- **Deviated-well form** — Kiani Nassab, K., Ting, S. Z., Buapha, S., MatNoh, N.,
+  Hemmati, M. N. (2022). *How to Improve Accuracy of a Kick Tolerance Model by
+  Considering the Effects of Kick Classification, Frictional Losses, Pore Pressure
+  Profile, and Influx Temperature.* SPE Drilling & Completion 37(01), 15.
+  SPE 202426-PA. [doi:10.2118/202426-PA](https://doi.org/10.2118/202426-PA) — the
+  single-bubble method with true-vertical-depth pressures and the gas-column
+  vertical-height → along-hole-length conversion (H_gas → L_gas) for deviated wells.
 
 welleng is grateful to these projects, their maintainers, and the authors and
 standards bodies whose methods it implements.

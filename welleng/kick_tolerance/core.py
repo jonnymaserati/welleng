@@ -62,6 +62,7 @@ equation of the closed form -- only rho_gas_s does (via the A-5 constant A).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import cos, radians
 from typing import Optional
 
 from .gas_z import gas_density_ppg, hall_yarborough_z
@@ -107,6 +108,14 @@ class KickInputs:
 
     Design threshold:
         kt_threshold : required tolerable-kick volume (margin datum)  [bbl]
+
+    Trajectory (deviated wells):
+        inc_shoe : hole inclination at the shoe [deg]; 0.0 = vertical (the
+            SPE-208788 Table-1 case). Converts the gas column's VERTICAL height
+            H_gas to an along-hole length L_gas = H_gas / cos(inc) before it
+            multiplies the per-MD annular capacity V_dpa (Nassab et al.,
+            SPE-202426-PA). Net effect: A -> A / cos(inc_shoe). D_td / D_lot are
+            TRUE VERTICAL depths; all hydrostatic terms are TVD-referenced.
     """
 
     rho_mud: float
@@ -123,6 +132,7 @@ class KickInputs:
     Z_td: Optional[float] = None
     rho_gas_s: Optional[float] = None
     kt_threshold: float = 25.0
+    inc_shoe: float = 0.0
 
 
 @dataclass
@@ -211,6 +221,14 @@ def constant_A(inp: KickInputs) -> float:
     P_lot is converted to a pressure at the shoe depth (g * P_lot * D_lot).
     Temperatures are absolute (degR). Gas properties (Z_s, Z_td, rho_gas_s) are
     computed by the clean-room Hall-Yarborough backend unless injected.
+
+    Deviated wells (Nassab et al., SPE-202426-PA): the gas column's vertical
+    height H_gas occupies an along-hole length L_gas = H_gas / cos(inc_shoe),
+    which is what multiplies the per-MD annular capacity V_dpa. This scales A by
+    1 / cos(inc_shoe). inc_shoe = 0 (vertical) recovers the SPE-208788 Table-1
+    form exactly. (Exact survey-integral form -- absorbing BHA change-of-section
+    -- is a documented follow-up; this constant-inclination form is the standard
+    published convention.)
     """
     Z_s, Z_td, rho_gas_s = resolve_gas_properties(inp)
     P_lot_psi = ppg_to_psi(inp.P_lot, inp.D_lot)
@@ -218,7 +236,7 @@ def constant_A(inp: KickInputs) -> float:
     T_td_r = fahrenheit_to_rankine(inp.T_td)
     num = (P_lot_psi - inp.P_apl) * T_td_r * Z_td * inp.V_dpa
     den = G_PSI_PER_PPG_FT * T_s_r * Z_s * (inp.rho_mud - rho_gas_s)
-    return num / den
+    return (num / den) / cos(radians(inp.inc_shoe))
 
 
 def constant_B(inp: KickInputs) -> float:

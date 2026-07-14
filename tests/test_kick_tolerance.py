@@ -28,6 +28,7 @@ do NOT tune any constant/pressure to force a closer match.
 """
 
 import math
+from dataclasses import replace
 
 import pytest
 
@@ -127,6 +128,26 @@ def test_swab_never_overrides_drill_separate_results():
     assert math.isclose(d.A, s.A)
     assert math.isclose(d.B, s.B)
     assert d.capacity != s.capacity
+
+
+def test_deviated_scales_A_by_inverse_cos_inc_shoe():
+    """Deviated form (Nassab et al., SPE-202426-PA): the gas column's vertical
+    height H_gas becomes an along-hole length L_gas = H_gas / cos(inc_shoe), so
+    A scales by 1 / cos(inc_shoe). inc_shoe = 0 recovers the vertical Table-1
+    form; a deviated well tolerates a LARGER influx volume for the same
+    fracture-limiting vertical gas column."""
+    A_vert = constant_A(make_inputs())               # inc_shoe = 0.0 (vertical)
+    for inc in (15.0, 30.0, 45.0, 60.0):
+        A_dev = constant_A(replace(make_inputs(), inc_shoe=inc))
+        assert math.isclose(
+            A_dev, A_vert / math.cos(math.radians(inc)), rel_tol=1e-12
+        )
+    # inc_shoe = 0 is exactly the vertical constant (regression guard)
+    assert math.isclose(constant_A(replace(make_inputs(), inc_shoe=0.0)), A_vert)
+    # deviated -> larger tolerable influx capacity than vertical
+    dev = drill_kick(replace(make_inputs(), inc_shoe=45.0)).capacity
+    vert = drill_kick(make_inputs()).capacity
+    assert dev > vert
 
 
 if __name__ == "__main__":
