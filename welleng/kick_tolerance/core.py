@@ -93,7 +93,11 @@ class KickInputs:
         PP             : formation pore pressure (mud-weight equiv.)  [ppg]
         kick_intensity : kick intensity added to PP for max-credible  [ppg]
         P_lot          : formation strength / LOT at the shoe         [ppg]
-        P_apl          : annular pressure loss                        [psi]
+        P_apl          : surface-side pressure margin at the shoe      [psi]
+                         (applied choke/back pressure + safety margin). Annular
+                         friction is conventionally ZERO here (well killing is
+                         circulated at a reduced/kill rate, so annular dP is small);
+                         a user who wants to include it simply ADDS it to this term.
         D_td           : measured/true depth at TD                    [ft]
         D_lot          : shoe (casing / LOT) depth                    [ft]
         T_s            : temperature at the shoe                      [degF]
