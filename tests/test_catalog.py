@@ -230,10 +230,26 @@ def test_casing_cross_validate_table_e1(od, wt, wall):
     assert spec.id_in == pytest.approx(od - 2 * wall, abs=1e-6)
 
 
-# --- schematic model integration (needs pydantic) ---
+# --- schematic model integration (needs pydantic + the schematic module) ---
 pytest.importorskip("pydantic")
+# schematic lives on its own branch; skip ONLY these integration tests until it
+# merges (the catalog module itself does NOT depend on schematic -- only these
+# tests do). NB: welleng.schematic imports as an (empty) namespace package here,
+# so guard on the Casing symbol, not on module importability. Per-test skipif
+# (not a module-level skip) so the pure-catalogue tests above still run.
+try:
+    from welleng.schematic import Casing as _Casing  # noqa: F401
+    _HAS_SCHEMATIC = True
+except ImportError:
+    _HAS_SCHEMATIC = False
+
+needs_schematic = pytest.mark.skipif(
+    not _HAS_SCHEMATIC,
+    reason="welleng.schematic.Casing not on this branch (schematic module unmerged)",
+)
 
 
+@needs_schematic
 def test_casing_autofills_id_and_drift():
     from welleng.schematic import Casing
 
@@ -242,6 +258,7 @@ def test_casing_autofills_id_and_drift():
     assert c.drift_in == 8.525
 
 
+@needs_schematic
 def test_explicit_id_overrides_catalogue():
     from welleng.schematic import Casing
 
@@ -250,6 +267,7 @@ def test_explicit_id_overrides_catalogue():
     assert c.id_in == 8.5  # explicit wins, no catalogue overwrite
 
 
+@needs_schematic
 def test_casing_grade_carried():
     from welleng.schematic import Casing
 
@@ -259,6 +277,7 @@ def test_casing_grade_carried():
     assert c.grade == "L80"
 
 
+@needs_schematic
 def test_casing_bad_weight_raises_in_model():
     from welleng.schematic import Casing
 
@@ -267,6 +286,7 @@ def test_casing_bad_weight_raises_in_model():
     assert "nearest" in str(exc.value)
 
 
+@needs_schematic
 def test_casing_id_only_still_works():
     """Back-compat: existing callers pass id_in with no weight."""
     from welleng.schematic import Casing
@@ -276,6 +296,7 @@ def test_casing_id_only_still_works():
     assert c.drift_in is None
 
 
+@needs_schematic
 def test_casing_connection_fills_coupling_dims():
     from welleng.schematic import Casing
 
@@ -285,6 +306,7 @@ def test_casing_connection_fills_coupling_dims():
     assert c.coupling_length_in == 10.625  # NL
 
 
+@needs_schematic
 def test_casing_unknown_connection_label_is_noncrashing():
     """A premium/non-API connection label must not break the model."""
     from welleng.schematic import Casing
