@@ -92,6 +92,10 @@ class KickInputs:
         rho_mud        : drilling fluid density                       [ppg]
         PP             : formation pore pressure (mud-weight equiv.)  [ppg]
         kick_intensity : kick intensity added to PP for max-credible  [ppg]
+                         DRILL CASE ONLY. The swab case IGNORES kick_intensity
+                         by design: its bottom-hole pressure is the mud
+                         hydrostatic, independent of PP and KI (Nassab
+                         SPE-202426-PA, Eqs 8-9). See ``swab_kick``.
         P_lot          : formation strength / LOT at the shoe         [ppg]
         P_apl          : surface-side pressure margin at the shoe      [psi]
                          (applied choke/back pressure + safety margin). Annular
@@ -354,6 +358,16 @@ def swab_kick(inp: KickInputs) -> KickResult:
     P_td = g * rho_mud * D_td (pore pressure <= mud hydrostatic). A swab
     failure means "pump out of the hole" -- which is the drill case, assessed
     separately. Swab NEVER overrides drill and is never blind-min'd with it.
+
+    ``kick_intensity`` is DELIBERATELY UNUSED here. For a swabbed kick the
+    bottom-hole pressure is the mud hydrostatic, independent of formation PP
+    (and therefore of any intensity margin added to PP): Nassab SPE-202426-PA,
+    Eqs 8-9 -- "Ptd ... is independent of formation PP and is equal to mud
+    hydrostatic pressure. This concept is misunderstood ... in many KT models
+    that assume Ptd is equal to PP for both underbalanced and swabbed kicks[,]
+    ... [leading] to an overestimated KT value in swabbing conditions." Carrying
+    PP or PP+KI into the swab bottom-hole pressure would over-report swab KT
+    (unsafe); dropping KI for swab is the correct, conservative default.
     """
     A = constant_A(inp)
     B = constant_B(inp)
