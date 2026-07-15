@@ -38,6 +38,8 @@ from welleng.kick_tolerance.core import (
     constant_A,
     constant_B,
     drill_kick,
+    influx_volume_A7,
+    ppg_to_psi,
     resolve_gas_properties,
     swab_kick,
 )
@@ -104,10 +106,33 @@ def test_V_drilled_within_1pct():
     assert math.isclose(res.capacity, 27.86, rel_tol=KICK_VOLUME_REL_TOL)
 
 
-def test_V_swab_within_1pct():
-    """A-8 swabbed free-trip limit ~= 43.79 bbl (~1%)."""
-    res = swab_kick(make_inputs())
-    assert math.isclose(res.capacity, 43.79, rel_tol=KICK_VOLUME_REL_TOL)
+def test_swab_reproduces_spe208788_shared_A():
+    """Reproduce SPE-208788-PA Table-1 swab figure (43.79 bbl) under ITS OWN
+    convention: one A constant shared across A-7/A-8, i.e. swab gas stationed at
+    the drill max-credible pressure (PP+KI). Validation = reproduce the source
+    result with the source method.
+
+    Our shipped model (``swab_kick``) does NOT do this -- it stations the swab
+    gas at mud hydrostatic (KI-independent), a conscious divergence documented
+    in ``swab_kick`` per Nassab SPE-202426-PA. See
+    ``test_swab_kick_is_kick_intensity_invariant``.
+    """
+    inp = make_inputs()
+    A_shared = constant_A(inp)                       # scenario-stationed (208788 shared A)
+    B = constant_B(inp)
+    P_td_swab = ppg_to_psi(inp.rho_mud, inp.D_td)    # A-8 substitution
+    v_swab_208788 = influx_volume_A7(A_shared, B, P_td_swab)
+    assert math.isclose(v_swab_208788, 43.79, rel_tol=KICK_VOLUME_REL_TOL)
+
+
+def test_swab_model_diverges_from_208788_consciously():
+    """Our swab_kick (mud-stationed gas) sits BELOW the 208788 shared-A figure
+    for this underbalanced-KI fixture -- conservative direction, ~1.5%."""
+    inp = make_inputs()
+    assert inp.PP + inp.kick_intensity > inp.rho_mud   # underbalanced-KI: the two diverge
+    ours = swab_kick(inp).capacity
+    assert ours < 43.79
+    assert math.isclose(ours, 43.15, rel_tol=0.01)
 
 
 def test_pp_at_threshold_within_1pct():
@@ -124,10 +149,30 @@ def test_swab_never_overrides_drill_separate_results():
     assert d.case == "drill" and s.case == "swab"
     # Different bottom-hole pressures -> genuinely separate cases.
     assert d.P_td != s.P_td
-    # Same A, same B (shared constants), different capacity.
-    assert math.isclose(d.A, s.A)
+    # B is a gas-free constant (shared); A differs because the influx gas is
+    # stationed at each case's own P_td (drill: PP+KI scenario; swab: mud
+    # hydrostatic) -- make_inputs is underbalanced (PP+KI 12.6 > mud 11.9).
     assert math.isclose(d.B, s.B)
+    assert not math.isclose(d.A, s.A)
     assert d.capacity != s.capacity
+
+
+def test_swab_kick_is_kick_intensity_invariant():
+    """swab_kick must not depend on kick_intensity, INCLUDING via gas stationing.
+
+    Nassab SPE-202426-PA Eqs 8-9: the swab bottom-hole pressure is the mud
+    hydrostatic, independent of PP/KI. Regression for the leak where swab gas
+    Z/rho were stationed at scenario_P_td (PP+KI) -> KI crept in anti-
+    conservatively. make_inputs is underbalanced so the leak, if present, shows.
+    """
+    base = make_inputs()
+    caps = [swab_kick(replace(base, kick_intensity=ki)).capacity
+            for ki in (0.0, 1.1, 2.5, 5.0)]
+    assert max(caps) - min(caps) < 1e-9
+    # sanity: drill DOES respond to KI (the invariance is swab-specific)
+    drills = [drill_kick(replace(base, kick_intensity=ki)).capacity
+              for ki in (0.0, 5.0)]
+    assert abs(drills[0] - drills[1]) > 1.0
 
 
 def test_deviated_scales_A_by_inverse_cos_inc_shoe():

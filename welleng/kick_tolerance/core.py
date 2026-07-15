@@ -192,10 +192,14 @@ class KickResult:
 # --- Gas-property backend (clean-room Hall & Yarborough 1973) ---------------
 
 def scenario_P_td(inp: KickInputs) -> float:
-    """A-1 bottom-hole pressure at the maximum-credible pore pressure [psi].
+    """A-1 DRILL bottom-hole pressure at the maximum-credible pore pressure [psi].
 
-    The single scenario pressure at which the influx gas properties are
-    evaluated (shared by the drill and swab cases).
+    The pressure at which the DRILL influx gas properties are evaluated. This is
+    the drill scenario (PP + kick intensity, floored at mud hydrostatic); the
+    SWAB case stations its gas at its own bottom-hole pressure (mud hydrostatic)
+    instead -- see ``resolve_gas_properties``/``constant_A`` ``P_td`` and
+    ``swab_kick``. (Sharing this pressure with swab leaked kick_intensity into
+    the swab number, anti-conservatively -- Nassab SPE-202426-PA Eqs 8-9.)
     """
     P_pp_psi = ppg_to_psi(inp.PP + inp.kick_intensity, inp.D_td)
     return max(P_pp_psi, ppg_to_psi(inp.rho_mud, inp.D_td))
@@ -225,17 +229,25 @@ def _shoe_gas_pressure(inp: KickInputs, P_td: float) -> float:
     return P_shoe
 
 
-def resolve_gas_properties(inp: KickInputs) -> tuple[float, float, float]:
+def resolve_gas_properties(
+    inp: KickInputs, P_td: Optional[float] = None
+) -> tuple[float, float, float]:
     """Return (Z_s, Z_td, rho_gas_s), computing any left as ``None``.
 
     TD station:   (P_td, T_td)  -> Z_td.
     Shoe station: (P_shoe, T_s) -> Z_s, rho_gas_s.
 
+    ``P_td`` is the bottom-hole pressure the influx gas is stationed at. Default
+    ``None`` uses the DRILL scenario pressure ``scenario_P_td(inp)``; the swab
+    case passes its own P_td (mud hydrostatic) so kick_intensity does not leak
+    into the swab gas properties (Nassab SPE-202426-PA Eqs 8-9).
+
     Backend: pure-methane Hall-Yarborough by default; if ``inp.fluid`` is a
     composition dict, the CoolProp real-EOS mixture backend (CO2 / CCUS) is used.
     Injected numeric Z_s/Z_td/rho_gas_s values are used verbatim (override).
     """
-    P_td = scenario_P_td(inp)
+    if P_td is None:
+        P_td = scenario_P_td(inp)
     T_s_r = fahrenheit_to_rankine(inp.T_s)
     T_td_r = fahrenheit_to_rankine(inp.T_td)
 
@@ -262,13 +274,15 @@ def resolve_gas_properties(inp: KickInputs) -> tuple[float, float, float]:
 
 # --- Closed-form building blocks --------------------------------------------
 
-def constant_A(inp: KickInputs) -> float:
+def constant_A(inp: KickInputs, P_td: Optional[float] = None) -> float:
     """A-5:  A = (P_lot - P_apl) * T_td * Z_td * V_dpa
                  / [ g * T_s * Z_s * (rho_mud - rho_gas_s) ]   [bbl]
 
     P_lot is converted to a pressure at the shoe depth (g * P_lot * D_lot).
     Temperatures are absolute (degR). Gas properties (Z_s, Z_td, rho_gas_s) are
-    computed by the clean-room Hall-Yarborough backend unless injected.
+    computed by the clean-room Hall-Yarborough backend unless injected, stationed
+    at ``P_td`` (default: the drill scenario pressure; swab passes mud
+    hydrostatic -- see ``resolve_gas_properties``).
 
     Deviated wells (Nassab et al., SPE-202426-PA): the gas column's vertical
     height H_gas occupies an along-hole length L_gas = H_gas / cos(inc_shoe),
@@ -278,7 +292,7 @@ def constant_A(inp: KickInputs) -> float:
     -- is a documented follow-up; this constant-inclination form is the standard
     published convention.)
     """
-    Z_s, Z_td, rho_gas_s = resolve_gas_properties(inp)
+    Z_s, Z_td, rho_gas_s = resolve_gas_properties(inp, P_td)
     P_lot_psi = ppg_to_psi(inp.P_lot, inp.D_lot)
     T_s_r = fahrenheit_to_rankine(inp.T_s)
     T_td_r = fahrenheit_to_rankine(inp.T_td)
@@ -367,11 +381,23 @@ def swab_kick(inp: KickInputs) -> KickResult:
     that assume Ptd is equal to PP for both underbalanced and swabbed kicks[,]
     ... [leading] to an overestimated KT value in swabbing conditions." Carrying
     PP or PP+KI into the swab bottom-hole pressure would over-report swab KT
-    (unsafe); dropping KI for swab is the correct, conservative default.
+    (unsafe); dropping KI for swab is the correct, conservative default. This
+    includes the influx gas STATIONING: A is evaluated with the swab P_td (mud
+    hydrostatic), not the drill scenario pressure, so kick_intensity does not
+    leak into Z/rho either.
+
+    CONSCIOUS DIVERGENCE FROM SPE-208788-PA. That paper's worked example shares
+    ONE A constant across A-7 (drill) and A-8 (swab) -- so its published swab
+    figure (43.79 bbl, Table-1) stations the swab gas at the drill max-credible
+    pressure (PP + KI), carrying kick intensity into a swab number. We reproduce
+    that figure under its own convention in the validation suite, but our MODEL
+    does not adopt it: a swab kick is not a drill kick, so it carries no kick
+    intensity (Nassab SPE-202426-PA, Eqs 8-9). The difference is ~1.5% and only
+    when PP+KI > mud (outside the swab model's PP <= mud domain).
     """
-    A = constant_A(inp)
-    B = constant_B(inp)
     P_td = ppg_to_psi(inp.rho_mud, inp.D_td)  # A-8 substitution
+    A = constant_A(inp, P_td)                 # station gas at the swab P_td (no KI leak)
+    B = constant_B(inp)
     capacity = influx_volume_A7(A, B, P_td)   # == A-8 closed form
     margin = capacity - inp.kt_threshold
     P_td_thresh = pp_at_threshold_A9(A, B, inp.kt_threshold)
