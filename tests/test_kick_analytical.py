@@ -80,6 +80,30 @@ def test_weak_zone_binds_at_the_weak_zone():
     assert r.binding_gas_top_tvd == pytest.approx(8001.0, abs=50.0)
 
 
+def test_check_depths_gives_single_shoe_semantics():
+    """``check_depths=[shoe]`` enforces the FP envelope only at the shoe, so a
+    deeper weak zone is NOT binding -- the free-tier single-shoe convention.
+    KT rises vs the full sections-aware check, and the binding depth is the shoe."""
+    shoe = 6500.0
+    full = analytical_kick_tolerance(TWO_SECTION, PP, WEAK_FP,
+                                     gas_density_mode="conservative", **COMMON)
+    shoe_only = analytical_kick_tolerance(TWO_SECTION, PP, WEAK_FP, check_depths=[shoe],
+                                          gas_density_mode="conservative", **COMMON)
+    assert full.binding_depth_tvd == pytest.approx(8001.0, abs=50.0)   # weak zone binds
+    assert shoe_only.binding_depth_tvd == pytest.approx(shoe, abs=1.0)  # shoe binds
+    assert shoe_only.max_influx_bbl > full.max_influx_bbl              # weak zone ignored
+
+
+def test_check_depths_is_noop_when_shoe_already_binds():
+    """With a uniform FP the shoe already binds, so pinning check_depths=[shoe]
+    changes nothing -- the override is backward-compatible where it should be."""
+    default = analytical_kick_tolerance(TWO_SECTION, PP, FP_UNIFORM,
+                                        gas_density_mode="conservative", **COMMON)
+    pinned = analytical_kick_tolerance(TWO_SECTION, PP, FP_UNIFORM, check_depths=[6500.0],
+                                       gas_density_mode="conservative", **COMMON)
+    assert pinned.max_influx_bbl == pytest.approx(default.max_influx_bbl, abs=1e-9)
+
+
 @pytest.mark.parametrize("sections,fp", [
     (TWO_SECTION, FP_UNIFORM),
     (TIGHT_BHA, FP_UNIFORM),

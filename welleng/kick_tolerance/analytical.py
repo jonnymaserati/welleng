@@ -61,7 +61,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Sequence
+from typing import Optional, Sequence
 
 import numpy as np
 
@@ -217,6 +217,7 @@ def analytical_kick_tolerance(
     geothermal: TempProfileLike = None,
     gas_composition=None,
     fluid_table=None,
+    check_depths: Optional[Sequence[float]] = None,
 ) -> AnalyticalKickTolerance:
     """Max bottom-hole influx tolerable over the whole migration, by breakpoints.
 
@@ -245,6 +246,15 @@ def analytical_kick_tolerance(
         gas_bh_state : ``(P_bh [psi], T_bh [degR], Z [-], rho_gas [ppg])`` (any None
                        -> computed). Returns influx / kick tolerance in [bbl], binding
                        depths in [ft].
+        check_depths : optional explicit TVDs [ft] at which to enforce the fracture
+                       envelope, OVERRIDING the auto-enumerated exposed depths
+                       (open-hole boundaries + PP/FP breakpoints + gas faces). Use it
+                       to pin the checked constraint set: e.g. ``[shoe_tvd]`` gives
+                       SINGLE-SHOE semantics (only the casing shoe strength-checked;
+                       deeper FP jumps are not binding), the free-tier convention.
+                       ``None`` (default) = the full sections-aware multi-depth check.
+                       Gas-position enumeration is unaffected -- the gas may still sit
+                       anywhere; FP is simply only enforced at these depths.
     """
     ss = sorted(sections, key=lambda s: s.top_tvd)
     bottom_tvd = max(s.bottom_tvd for s in ss)
@@ -280,10 +290,16 @@ def analytical_kick_tolerance(
     pf_breaks = [b for b in (_profile_breakpoints(pp) + _profile_breakpoints(fp))
                  if 0.0 < b < bottom_tvd]
 
+    # Explicit FP-enforcement depths (single-shoe / pinned-constraint override).
+    check_arr = (None if check_depths is None
+                 else np.array(sorted({float(x) for x in check_depths}), dtype=float))
+
     def exposed_for(gas_top, gas_bottom):
         # FP/PP margin over a mud/gas column is piecewise-monotone; its extremum
         # is at a breakpoint depth: open-hole boundaries, PP/FP breaks, and the
         # gas faces themselves. Enforce the envelope only where formation is open.
+        if check_arr is not None:
+            return check_arr                                  # caller pins the checked set
         cand = set(pf_breaks)
         for s in ss:
             if s.is_open_hole:
@@ -305,6 +321,10 @@ def analytical_kick_tolerance(
     bset = sorted(set(boundaries) | set(pf_breaks))
     bottom_pins = [b for b in bset if b > 0.0] + [bottom_tvd]
     top_pins = [b for b in bset if 0.0 < b < bottom_tvd]
+    if check_arr is not None:
+        # Family 1/4 (gas-top-at-d) enforces FP AT d, so it must also be pinned to
+        # the checked set; gas BOTTOM enumeration (bottom_pins) is left untouched.
+        top_pins = [float(x) for x in check_arr if 0.0 < x < bottom_tvd]
 
     P_bh, T_bh_r, Z_bh, rho_bh = gas_bh
     g = G_PSI_PER_PPG_FT
