@@ -70,16 +70,16 @@ def test_bubble_length_limit_is_casing_burst_regime():
     fracture profile the fracture-only closed form would return an over-length bubble
     (~116 bbl needs a 4112 ft bubble in a 4000 ft open hole). That gas-top-at-shoe
     worst case is UNREACHABLE, so the shoe holds to full open-hole displacement: the
-    result must be flagged is_unlimited / casing-burst (governing barrier is casing
+    result must be flagged open_hole_unconstrained / casing-burst (governing barrier is casing
     burst to surface, higher KT -- not a fracture-limited ~116) with max_influx = the
     full-displacement volume (~109). Analytical and march must agree (JJ 2026-07-16)."""
     a = analytical_kick_tolerance(TWO_SECTION, PP, STRONG_FP,
                                   gas_density_mode="conservative", **COMMON)
     m = max_influx_circulated(TWO_SECTION, PP, STRONG_FP, gas_density_mode="conservative",
                               mode="thorough", n_steps=300, **COMMON)
-    assert a.is_unlimited and m.is_unlimited
-    assert a.breakpoints.get("governing") == "casing_burst"
-    assert m.limited_by == "casing_burst"
+    assert a.open_hole_unconstrained and m.open_hole_unconstrained
+    assert m.limited_by == "open_hole_capacity"
+    assert "not" in a.breakpoints.get("note", "").lower()   # carries the caveat
     assert a.max_influx_bbl == pytest.approx(m.max_influx_bbl, abs=0.5)
     assert a.max_influx_bbl < 112.0              # full displacement, NOT the ~116 fracture value
 
@@ -139,13 +139,15 @@ def test_exact_is_more_accurate_not_less_conservative(sections, fp):
     assert exact >= cons - 0.15
 
 
-def test_unlimited_when_whole_hole_tolerates_gas():
+def test_open_hole_unconstrained_when_whole_hole_tolerates_gas():
     """If the entire exposed hole can be displaced to gas without fracturing, the
-    tolerance is unlimited (full displacement permissible)."""
+    OPEN HOLE does not constrain the KT at the provided FP -- flagged
+    open_hole_unconstrained (NOT 'unlimited': casing burst above the shoe governs,
+    not assessed here)."""
     strong_fp = (np.array([0.0, 10500.0]), np.array([30.0, 30.0]))
     r = analytical_kick_tolerance(TWO_SECTION, PP, strong_fp,
                                   gas_density_mode="conservative", **COMMON)
-    assert r.is_unlimited
+    assert r.open_hole_unconstrained
 
 
 def test_tolerable_set_is_monotone():
