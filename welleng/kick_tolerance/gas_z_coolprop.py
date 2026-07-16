@@ -38,6 +38,46 @@ _ALIASES = {
 }
 
 
+# Curated influx-fluid shortlist for a picker (label + engine-consumable mole-
+# fraction composition, in CoolProp canonical names). The single source of truth
+# for the API's /kick/fluids endpoint -- a thin serializer over this, NOT a table
+# maintained API-side. The full fluid catalogue is CoolProp's own
+# ``get_global_param_string("FluidsList")`` (enumerate live), not curated here.
+# Natural-gas / sour compositions are REPRESENTATIVE EXAMPLES (so labelled), not
+# authoritative standards. Pure methane routes to the free Hall-Yarborough path;
+# any other composition uses the CoolProp real-EOS backend.
+FLUID_PRESETS = (
+    {"label": "Methane (CH4)", "composition": {"Methane": 1.0}},
+    {"label": "Carbon dioxide (CO2)", "composition": {"CarbonDioxide": 1.0}},
+    {"label": "Nitrogen (N2)", "composition": {"Nitrogen": 1.0}},
+    {"label": "Natural gas (example blend)",
+     "composition": {"Methane": 0.90, "Ethane": 0.05, "Propane": 0.02,
+                     "Nitrogen": 0.02, "CarbonDioxide": 0.01}},
+    {"label": "Sour gas (example)",
+     "composition": {"Methane": 0.85, "HydrogenSulfide": 0.10,
+                     "CarbonDioxide": 0.05}},
+)
+
+
+def fluid_presets() -> list:
+    """Curated influx-fluid shortlist: ``[{label, composition}, ...]``.
+
+    ``composition`` is a mole-fraction dict in CoolProp canonical names, consumed
+    as-is by ``KickInputs.fluid`` / ``analytical_kick_tolerance(gas_composition=)``.
+    The natural-gas / sour entries are representative examples, not standards. For
+    the full fluid list use CoolProp's ``get_global_param_string("FluidsList")``.
+    """
+    return [{"label": p["label"], "composition": dict(p["composition"])}
+            for p in FLUID_PRESETS]
+
+
+def fluid_aliases() -> Dict[str, str]:
+    """Friendly component name -> CoolProp fluid name (e.g. ``co2`` ->
+    ``CarbonDioxide``). Case-insensitive keys; the same map used to resolve a
+    composition before it reaches CoolProp."""
+    return dict(_ALIASES)
+
+
 def _coolprop_fluid_string(composition: Dict[str, float]) -> str:
     """Build a CoolProp fluid identifier from mole-fraction composition.
 

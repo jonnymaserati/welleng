@@ -229,3 +229,34 @@ if __name__ == "__main__":
     print(f"P_td(swab) = {s.P_td:.2f} psi")
     print(f"V_swab     = {s.capacity:.4f} bbl")
     print(f"PP @ KT=25 = {d.pp_at_threshold:.4f} ppg")
+
+
+# --- influx-fluid shortlist (single source of truth for the API picker) -------
+def test_fluid_presets_valid_and_copy_safe():
+    """Curated shortlist: normalised compositions, CoolProp-resolvable names,
+    and defensively copied (mutating the return must not corrupt the source)."""
+    from welleng.kick_tolerance import fluid_presets, fluid_aliases, FLUID_PRESETS
+
+    presets = fluid_presets()
+    assert len(presets) == len(FLUID_PRESETS) >= 5
+    aliases = fluid_aliases()
+    known = set(aliases.values()) | {v.lower() for v in aliases}
+    for p in presets:
+        assert p["label"] and isinstance(p["composition"], dict)
+        assert math.isclose(sum(p["composition"].values()), 1.0, abs_tol=1e-9)
+        for name in p["composition"]:
+            # every component is a CoolProp canonical name or a known alias
+            assert name in aliases.values() or name.lower() in aliases, name
+    # copy-safety: the returned structures are independent of the module constant
+    presets[0]["composition"][next(iter(presets[0]["composition"]))] = 0.123
+    assert math.isclose(sum(FLUID_PRESETS[0]["composition"].values()), 1.0, abs_tol=1e-9)
+
+
+def test_fluid_aliases_map_co2():
+    from welleng.kick_tolerance import fluid_aliases
+
+    a = fluid_aliases()
+    assert a["co2"] == "CarbonDioxide" and a["n2"] == "Nitrogen"
+    a["co2"] = "BROKEN"                      # mutating the copy must not leak
+    from welleng.kick_tolerance import fluid_aliases as fa2
+    assert fa2()["co2"] == "CarbonDioxide"
