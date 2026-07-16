@@ -246,15 +246,22 @@ def analytical_kick_tolerance(
         gas_bh_state : ``(P_bh [psi], T_bh [degR], Z [-], rho_gas [ppg])`` (any None
                        -> computed). Returns influx / kick tolerance in [bbl], binding
                        depths in [ft].
-        check_depths : optional explicit TVDs [ft] at which to enforce the fracture
-                       envelope, OVERRIDING the auto-enumerated exposed depths
-                       (open-hole boundaries + PP/FP breakpoints + gas faces). Use it
-                       to pin the checked constraint set: e.g. ``[shoe_tvd]`` gives
-                       SINGLE-SHOE semantics (only the casing shoe strength-checked;
-                       deeper FP jumps are not binding), the free-tier convention.
-                       ``None`` (default) = the full sections-aware multi-depth check.
-                       Gas-position enumeration is unaffected -- the gas may still sit
-                       anywhere; FP is simply only enforced at these depths.
+        check_depths : optional explicit TVDs [ft] at which to enforce the
+                       pore-fracture (PP-FP) envelope, OVERRIDING the auto-enumerated
+                       exposed depths (open-hole boundaries + PP/FP breakpoints + gas
+                       faces). Use it to pin the checked constraint set: e.g.
+                       ``[shoe_tvd]`` gives SINGLE-SHOE semantics (only the casing shoe
+                       strength-checked; deeper FP jumps are not binding), the free-tier
+                       convention. ``None`` (default) = the full sections-aware
+                       multi-depth check. Gas-position enumeration is unaffected -- the
+                       gas may still sit anywhere; the envelope is simply enforced only
+                       at these depths. NOTE: the constraint checked at each depth is
+                       the full envelope ``min(FP - P, P - PP)`` -- the fracture bound
+                       AND the pore bound. For a sane single-shoe well the imposed
+                       pressure P exceeds PP at the shoe, so the fracture bound is the
+                       active (binding) one there; the pore bound rides along and is
+                       slack. If you need a strictly fracture-only check, filter on the
+                       returned binding mechanism.
     """
     ss = sorted(sections, key=lambda s: s.top_tvd)
     bottom_tvd = max(s.bottom_tvd for s in ss)
@@ -336,7 +343,22 @@ def analytical_kick_tolerance(
         constant-density linear column; exact = exponential column, a Lambert-W-form
         root by a 3-iter Newton, dependency-free). Only the bbl total walks the
         per-section capacities. Returns ``(V, gas_bottom)`` or None if a gas-top-at-d
-        config cannot reach FP or would not fit above TD."""
+        config cannot reach FP or would not fit above TD.
+
+        FRACTURE-SIDE ONLY (by design): this closed form solves the FP breach for a
+        gas-top-pinned config; it does not check the pore-side bound (P >= PP). That is
+        complete for the kick-tolerance MINIMUM for two reasons. (1) Physics: a pore-
+        side breach (imposed P falling to PP above the gas) is a LARGE-influx / high-
+        gas-position regime -- the column is heavily gas-lightened -- so it is not the
+        minimum breach influx that sets KT; the KT minimum is the shoe/weak-zone FP
+        limit, caught here, or an interior config caught by the gas-BOTTOM-pinned
+        family (``_breach_v_gas_bottom`` -> ``_min_margin``), which DOES enforce the
+        full ``min(FP - P, P - PP)`` envelope. (2) Empirical guard: the analytical KT is
+        cross-checked against the thorough march (``max_influx_circulated``, which
+        enforces the full PP-FP envelope at every station) in
+        ``test_conservative_matches_migration_standard`` -- analytical <= march + tol.
+        If this FP-only solve ever over-reported by missing a pore-side binding, the
+        analytical result would exceed the march and that test would fail."""
         FP = ppg_to_psi(fp_fn(np.array([d]))[0], d)
         A = bhp_psi - g * rho_mud_ppg * (bottom_tvd - d)      # mud pressure at d
         b = g * rho_mud_ppg
