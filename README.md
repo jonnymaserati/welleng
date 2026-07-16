@@ -119,6 +119,25 @@ cov = survey.err.errors.cov_NEVs       # NEV covariance per station
 > curve. Companion paper:
 > [doi:10.5281/zenodo.21130979](https://doi.org/10.5281/zenodo.21130979).
 
+## Using welleng in production
+
+welleng is free and open-source (**Apache-2.0**) and stays that way — the engine
+implements *public* methods (ISCWSA / SPE / API), openly and inspectably validated
+(conformance suite + CI).
+
+The open version is provided **AS IS, without warranty** — ideal for research,
+evaluation, and building on.
+
+For **production well engineering** — a maintained, version-pinned, validated build
+whose results are stood behind contractually, with support/SLA — a **commercial
+offering is available**. The model is paid maintenance and support for welleng as a
+production dependency: kept patched, conformance-current, and supported under a
+commercial agreement (specific warranty and support terms are negotiated per
+engagement). Get in touch: [jonnycorcutt@gmail.com](mailto:jonnycorcutt@gmail.com).
+
+The maths is open; what's commercial is the **assurance, maintenance, and support**
+around it.
+
 ## Support welleng
 welleng is fuelled by copious amounts of coffee, so if you wish to supercharge development please donate generously:
 
