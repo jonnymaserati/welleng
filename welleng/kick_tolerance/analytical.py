@@ -468,6 +468,44 @@ def analytical_kick_tolerance(
         return AnalyticalKickTolerance(v_hole, np.nan, np.nan, np.nan, True, {})
 
     gt, gb, dbind = best
+
+    # Santos SPE-140113 constraint: a single coherent bubble cannot be LONGER than
+    # the open hole it occupies. The fracture-only closed form above can return an
+    # influx whose maximally-expanded bubble exceeds the open-hole length (physically
+    # impossible), over-reporting KT. Cap v_star at that bubble-length limit. The
+    # gas length grows monotonically with influx, so bisect against the migration's
+    # own validated gas-length check (mode="thorough") -- this reproduces the march
+    # (max_influx_circulated) exactly rather than re-deriving the expansion. It only
+    # engages when v_star is actually in the over-length regime (large influx / weak
+    # fracture), which is rare; the common case pays a single check.
+    from .migration import migrate as _migrate
+
+    oh_len = sum(s.bottom_tvd - s.top_tvd for s in ss if s.is_open_hole)
+
+    def _max_gas_len(v):
+        r = _migrate(ss, pp, fp, bhp_psi=bhp_psi, influx_bbl_bh=v,
+                     rho_mud_ppg=rho_mud_ppg, gas_bh_state=gas_bh_state,
+                     gas_density_mode=gas_density_mode, temp_profile=temp_profile,
+                     n_steps=100, mode="thorough")
+        return max((s.gas_length_ft for s in r.steps), default=0.0), r
+
+    gl_star, _ = _max_gas_len(v_star)
+    if gl_star > oh_len:                                   # over-length -> cap it
+        lo, hi = 0.0, v_star
+        for _ in range(40):
+            if hi - lo <= 1e-2:
+                break
+            mid = 0.5 * (lo + hi)
+            if _max_gas_len(mid)[0] <= oh_len:
+                lo = mid
+            else:
+                hi = mid
+        _, r_cap = _max_gas_len(lo)
+        v_star = lo
+        gt, gb, dbind = (r_cap.steps[r_cap.binding_step].gas_top_tvd,
+                         r_cap.steps[r_cap.binding_step].gas_bottom_tvd,
+                         r_cap.binding_tvd)
+
     return AnalyticalKickTolerance(
         float(v_star), float(gt), float(gb),
         float(dbind) if dbind == dbind else np.nan, False, {})

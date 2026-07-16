@@ -48,10 +48,14 @@ def _analytic(sections, fp, mode="conservative"):
         sections, PP, fp, gas_density_mode=mode, **COMMON).max_influx_bbl
 
 
+STRONG_FP = (np.array([0.0, 10500.0]), np.array([16.0, 16.0]))  # over-length regime
+
+
 @pytest.mark.parametrize("sections,fp", [
     (TWO_SECTION, FP_UNIFORM),
     (TWO_SECTION, WEAK_FP),
     (TWO_SECTION, SLOPED_FP),
+    (TWO_SECTION, STRONG_FP),   # bubble-length regime: bubble would exceed the open hole
 ])
 def test_conservative_matches_migration_standard(sections, fp):
     """On standard geometry the analytical (conservative) reproduces the validated
@@ -59,6 +63,20 @@ def test_conservative_matches_migration_standard(sections, fp):
     a, m = _analytic(sections, fp), _march(sections, fp)
     assert a == pytest.approx(m, rel=0.01)
     assert a <= m + 0.15            # conservative: at or below the march (tol: bisection)
+
+
+def test_bubble_length_limit_caps_analytical():
+    """Santos SPE-140113: a bubble cannot exceed the open-hole length. With a strong
+    fracture profile the fracture-only closed form would return an over-length bubble
+    (~116 bbl needs a 4112 ft bubble in a 4000 ft open hole); the cap must bring it
+    back to the migration's bubble-length limit (~109 bbl), NOT the fracture value."""
+    a = analytical_kick_tolerance(TWO_SECTION, PP, STRONG_FP,
+                                  gas_density_mode="conservative", **COMMON)
+    m = max_influx_circulated(TWO_SECTION, PP, STRONG_FP, gas_density_mode="conservative",
+                              mode="thorough", n_steps=300, **COMMON)
+    assert m.limited_by == "bha_length"          # the migration is bubble-length-limited here
+    assert a.max_influx_bbl == pytest.approx(m.max_influx_bbl, abs=0.5)
+    assert a.max_influx_bbl < 112.0              # well below the ~116 fracture-only value
 
 
 def test_conservative_is_conservative_on_tight_bha():
