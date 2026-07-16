@@ -768,7 +768,13 @@ class KickToleranceResult:
     max_influx_bbl: float        # V* -- max influx that can be circulated out  [bbl]
     binding_tvd: float           # governing (breach) depth                     [ft]
     binding_step: int            # migration step (animation frame) at the limit
-    limited_by: str              # "fracture" | "bha_length" | "cap" | "hole_volume"
+    limited_by: str              # "fracture" | "casing_burst" | "cap"
+    #                              "casing_burst" (with is_unlimited=True): the shoe
+    #                              holds to full open-hole displacement; the bubble
+    #                              outgrows the open hole and the governing barrier
+    #                              becomes casing burst to surface (not modeled -- the
+    #                              true KT is higher). max_influx_bbl is then the
+    #                              full-open-hole-displacement influx, not a fracture limit.
     min_fp_margin_psi: float     # FP margin at the breach (~0 when fracture-limited)
     is_unlimited: bool = False   # True when the whole exposed hole can be displaced
     #                              to gas without fracturing -> the SHOE-FRACTURE
@@ -803,10 +809,13 @@ def max_influx_circulated(
     over the whole migration -- the migration-form kick tolerance, WITH where/why
     it breaches. INVERSE of :func:`migrate` (which checks a GIVEN influx).
 
-    An influx is tolerable when the migration keeps ``within_envelope`` True AND
-    ``bha_length_exceeded`` False. ``min_fp_margin`` decreases and the BHA-length
-    limit tightens monotonically with influx, so the tolerable set is ``[0, V*]``;
-    bisect for ``V*``, then report the binding depth/step/mechanism of the breach
+    An influx is tolerable when the migration keeps ``within_envelope`` True AND the
+    bubble fits the open hole (``bha_length_exceeded`` False). Both tighten monotonically
+    with influx, so the tolerable set is ``[0, V*]``; bisect for ``V*``. If ``V*`` is set
+    by the bubble outgrowing the open hole while the shoe still holds, the result is the
+    full-open-hole-displacement influx flagged ``limited_by="casing_burst"`` /
+    ``is_unlimited=True`` (fracture tolerance is unlimited; casing burst governs to
+    surface -- not modeled). Otherwise report the binding depth/step of the breach
     just above it. Generally <= the static single-shoe max (A-7/A-8): the entire
     circulation path is checked, catching **deeper weak zones and the BHA limit**.
 
@@ -867,12 +876,8 @@ def max_influx_circulated(
                        "bha_length" if r_tol.bha_length_exceeded else "fracture")
 
     r_ceil = _run(v_ceiling)
-    # UNLIMITED: the whole exposed hole displaced to gas never breaches the FRACTURE
-    # envelope (bha_length is a single-bubble model caveat, not a fracture limit).
-    if r_ceil.within_envelope and v_ceiling >= v_hole - 1e-9:
-        return _result(v_hole, r_ceil, "hole_volume", is_unlimited=True)
-    if _tolerable(r_ceil):                           # compute-capped below hole volume
-        return _result(v_ceiling, r_ceil, "cap")
+    if _tolerable(r_ceil):                           # whole searchable volume tolerable
+        return _result(v_ceiling, r_ceil, "cap")     # (fracture holds AND bubble fits)
 
     lo, hi = tol_bbl, v_ceiling                      # lo tolerable, hi not
     for _ in range(max_iter):
@@ -883,6 +888,14 @@ def max_influx_circulated(
             lo = mid
         else:
             hi = mid
-    breach = _run(hi)                                # first breaching influx = where it fails
-    return _result(lo, breach,
-                   "bha_length" if breach.bha_length_exceeded else "fracture")
+    breach = _run(hi)                                # first non-tolerable influx
+    if breach.bha_length_exceeded and breach.within_envelope:
+        # The bubble outgrew the open hole while the SHOE STILL HELD: the gas-top-at-
+        # shoe fracture worst case is unreachable (by the time the bubble tail clears
+        # TD its top is above the shoe), so the open-hole/fracture tolerance is
+        # effectively UNLIMITED. The governing barrier moves to CASING BURST as the gas
+        # is circulated to surface (a casing-design check -- API-5CT burst/IYP -- NOT
+        # modeled here; the true KT is higher). ``lo`` is the full-open-hole-
+        # displacement influx. [JJ, 2026-07-16]
+        return _result(lo, breach, "casing_burst", is_unlimited=True)
+    return _result(lo, breach, "fracture")

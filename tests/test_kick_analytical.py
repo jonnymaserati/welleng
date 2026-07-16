@@ -65,18 +65,23 @@ def test_conservative_matches_migration_standard(sections, fp):
     assert a <= m + 0.15            # conservative: at or below the march (tol: bisection)
 
 
-def test_bubble_length_limit_caps_analytical():
+def test_bubble_length_limit_is_casing_burst_regime():
     """Santos SPE-140113: a bubble cannot exceed the open-hole length. With a strong
     fracture profile the fracture-only closed form would return an over-length bubble
-    (~116 bbl needs a 4112 ft bubble in a 4000 ft open hole); the cap must bring it
-    back to the migration's bubble-length limit (~109 bbl), NOT the fracture value."""
+    (~116 bbl needs a 4112 ft bubble in a 4000 ft open hole). That gas-top-at-shoe
+    worst case is UNREACHABLE, so the shoe holds to full open-hole displacement: the
+    result must be flagged is_unlimited / casing-burst (governing barrier is casing
+    burst to surface, higher KT -- not a fracture-limited ~116) with max_influx = the
+    full-displacement volume (~109). Analytical and march must agree (JJ 2026-07-16)."""
     a = analytical_kick_tolerance(TWO_SECTION, PP, STRONG_FP,
                                   gas_density_mode="conservative", **COMMON)
     m = max_influx_circulated(TWO_SECTION, PP, STRONG_FP, gas_density_mode="conservative",
                               mode="thorough", n_steps=300, **COMMON)
-    assert m.limited_by == "bha_length"          # the migration is bubble-length-limited here
+    assert a.is_unlimited and m.is_unlimited
+    assert a.breakpoints.get("governing") == "casing_burst"
+    assert m.limited_by == "casing_burst"
     assert a.max_influx_bbl == pytest.approx(m.max_influx_bbl, abs=0.5)
-    assert a.max_influx_bbl < 112.0              # well below the ~116 fracture-only value
+    assert a.max_influx_bbl < 112.0              # full displacement, NOT the ~116 fracture value
 
 
 def test_conservative_is_conservative_on_tight_bha():

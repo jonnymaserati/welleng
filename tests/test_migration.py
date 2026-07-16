@@ -279,12 +279,12 @@ def test_fast_mode_matches_thorough_within_tolerance():
 
 
 def test_max_influx_unlimited_when_hole_fills_without_fracturing():
-    """If the whole exposed hole can be displaced to gas without breaching the
-    FRACTURE envelope, the shoe-fracture tolerance is unlimited (JJ 2026-07-14):
-    reporting a volume >= hole volume is meaningless. Flagged is_unlimited=True,
-    limited_by='hole_volume', max_influx == exposed-hole annular volume. (At full
-    displacement the governing barrier becomes casing burst -- a documented
-    follow-up, not applied here.)"""
+    """If the shoe holds through full open-hole displacement, the shoe-fracture
+    tolerance is unlimited (JJ): the gas-top-at-shoe worst case is unreachable and
+    the governing barrier moves to CASING BURST to surface (not modeled -- higher KT).
+    Flagged is_unlimited=True, limited_by='casing_burst', and max_influx is the
+    full-OPEN-HOLE-DISPLACEMENT influx -- LESS than the geometric hole volume, because
+    the influx (measured at bottom hole) expands to fill the hole (JJ 2026-07-16)."""
     fp_high = (np.array([0.0, BOTTOM_TVD]), np.array([30.0, 30.0]))  # never fractures
     r = max_influx_circulated(
         make_sections(), PP_TABLE, fp_high,
@@ -292,8 +292,8 @@ def test_max_influx_unlimited_when_hole_fills_without_fracturing():
     )
     v_hole = OPEN_CAP * OPEN_HOLE_LENGTH
     assert r.is_unlimited is True
-    assert r.limited_by == "hole_volume"
-    assert r.max_influx_bbl == pytest.approx(v_hole)
+    assert r.limited_by == "casing_burst"
+    assert 0.0 < r.max_influx_bbl < v_hole          # expansion-adjusted, below geometric
     # a normal (fracturing) well is NOT flagged unlimited and reports a finite limit.
     r2 = max_influx_circulated(
         make_sections(), PP_TABLE, FP_TABLE,

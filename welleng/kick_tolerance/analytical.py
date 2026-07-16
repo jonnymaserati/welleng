@@ -463,21 +463,24 @@ def analytical_kick_tolerance(
         if r is not None and r[0] < v_star:
             v_star, best = r[0], (r[1], b, r[2])
 
-    # If nothing breaches within the exposed hole, the tolerance is unlimited.
+    # If no fracture breach is reachable within the exposed hole, the shoe holds to
+    # full displacement -- route through the casing-burst / full-displacement handling
+    # below (v_hole caps the displacement bisection).
     if not np.isfinite(v_star) or v_star >= v_hole - 1e-9:
-        return AnalyticalKickTolerance(v_hole, np.nan, np.nan, np.nan, True, {})
+        v_star, best = v_hole, (np.nan, np.nan, np.nan)
 
     gt, gb, dbind = best
 
-    # Santos SPE-140113 constraint: a single coherent bubble cannot be LONGER than
-    # the open hole it occupies. The fracture-only closed form above can return an
-    # influx whose maximally-expanded bubble exceeds the open-hole length (physically
-    # impossible), over-reporting KT. Cap v_star at that bubble-length limit. The
-    # gas length grows monotonically with influx, so bisect against the migration's
-    # own validated gas-length check (mode="thorough") -- this reproduces the march
-    # (max_influx_circulated) exactly rather than re-deriving the expansion. It only
-    # engages when v_star is actually in the over-length regime (large influx / weak
-    # fracture), which is rare; the common case pays a single check.
+    # Santos SPE-140113: a single coherent bubble cannot be LONGER than the open hole
+    # it occupies. If the fracture-breach influx above needs a bubble longer than the
+    # open hole, that gas-top-at-shoe worst case is UNREACHABLE -- by the time the
+    # bubble tail clears TD its top is already above the shoe (in the casing). So the
+    # SHOE HOLDS through full open-hole displacement, and the open-hole/fracture
+    # tolerance is effectively UNLIMITED. The governing barrier then moves to CASING
+    # BURST as the gas is circulated to surface (a casing-design check -- API-5CT
+    # burst/IYP -- NOT modeled here; extending to surface would give a substantially
+    # higher KT). Report the full-open-hole-displacement influx with that flag, NOT a
+    # misleading fracture-limited number. [JJ, 2026-07-16]
     from .migration import migrate as _migrate
 
     oh_len = sum(s.bottom_tvd - s.top_tvd for s in ss if s.is_open_hole)
@@ -489,10 +492,17 @@ def analytical_kick_tolerance(
                      n_steps=100, mode="thorough")
         return max((s.gas_length_ft for s in r.steps), default=0.0), r
 
-    gl_star, _ = _max_gas_len(v_star)
-    if gl_star > oh_len:                                   # over-length -> cap it
-        lo, hi = 0.0, v_star
-        for _ in range(40):
+    _CASING_BURST_NOTE = {
+        "governing": "casing_burst",
+        "note": ("open hole tolerates full gas displacement (shoe holds); the "
+                 "governing barrier is casing burst as the gas is circulated to "
+                 "surface (API-5CT burst/IYP -- not modeled). The true kick tolerance "
+                 "is higher and is a casing-design check."),
+    }
+
+    if _max_gas_len(v_star)[0] > oh_len:                   # fracture breach unreachable
+        lo, hi = 0.0, v_star                              # -> full-displacement regime
+        for _ in range(40):                               # bisect gas_len == oh_len
             if hi - lo <= 1e-2:
                 break
             mid = 0.5 * (lo + hi)
@@ -500,11 +510,11 @@ def analytical_kick_tolerance(
                 lo = mid
             else:
                 hi = mid
-        _, r_cap = _max_gas_len(lo)
-        v_star = lo
-        gt, gb, dbind = (r_cap.steps[r_cap.binding_step].gas_top_tvd,
-                         r_cap.steps[r_cap.binding_step].gas_bottom_tvd,
-                         r_cap.binding_tvd)
+        _, r_fd = _max_gas_len(lo)
+        return AnalyticalKickTolerance(
+            float(lo), float(r_fd.steps[r_fd.binding_step].gas_top_tvd),
+            float(r_fd.steps[r_fd.binding_step].gas_bottom_tvd),
+            float(r_fd.binding_tvd), True, dict(_CASING_BURST_NOTE))
 
     return AnalyticalKickTolerance(
         float(v_star), float(gt), float(gb),
