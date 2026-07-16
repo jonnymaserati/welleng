@@ -282,7 +282,7 @@ def test_max_influx_unlimited_when_hole_fills_without_fracturing():
     """If the shoe holds through full open-hole displacement, the shoe-fracture
     tolerance is unlimited (JJ): the gas-top-at-shoe worst case is unreachable and
     the governing barrier moves to CASING BURST to surface (not modeled -- higher KT).
-    Flagged is_unlimited=True, limited_by='casing_burst', and max_influx is the
+    Flagged open_hole_unconstrained=True, limited_by='open_hole_capacity', and max_influx is the
     full-OPEN-HOLE-DISPLACEMENT influx -- LESS than the geometric hole volume, because
     the influx (measured at bottom hole) expands to fill the hole (JJ 2026-07-16)."""
     fp_high = (np.array([0.0, BOTTOM_TVD]), np.array([30.0, 30.0]))  # never fractures
@@ -291,15 +291,15 @@ def test_max_influx_unlimited_when_hole_fills_without_fracturing():
         bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state(), n_steps=80,
     )
     v_hole = OPEN_CAP * OPEN_HOLE_LENGTH
-    assert r.is_unlimited is True
-    assert r.limited_by == "casing_burst"
+    assert r.open_hole_unconstrained is True
+    assert r.limited_by == "open_hole_capacity"
     assert 0.0 < r.max_influx_bbl < v_hole          # expansion-adjusted, below geometric
     # a normal (fracturing) well is NOT flagged unlimited and reports a finite limit.
     r2 = max_influx_circulated(
         make_sections(), PP_TABLE, FP_TABLE,
         bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state(), n_steps=80,
     )
-    assert r2.is_unlimited is False
+    assert r2.open_hole_unconstrained is False
     assert r2.limited_by == "fracture"
     assert r2.max_influx_bbl < v_hole
 
