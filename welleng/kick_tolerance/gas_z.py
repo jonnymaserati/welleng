@@ -53,6 +53,7 @@ gas constant R = 10.732 psia.ft^3 / (lbmol.degR) and 7.4805 gal/ft^3.
 from __future__ import annotations
 
 import math
+import warnings
 
 # --- Public methane (Tier 0) constants --------------------------------------
 METHANE_GAS_GRAVITY = 0.5539            # air = 1.0
@@ -120,6 +121,18 @@ def reduced_density(
 
     t = t_pc_rankine / t_rankine          # t = 1 / Tpr
     ppr = p_psia / p_pc_psia
+    # Validity-band guard: the H-Y correlation holds for ~0.1<=Ppr<=24, 1.15<=Tpr<=3.0.
+    # Warn (once per call-site, per the warnings filter) on silent extrapolation -- e.g.
+    # a cold shallow station in a migration temperature profile. The check is 4 float
+    # comparisons; the extrapolated Z is still returned (warning, not error).
+    tpr = 1.0 / t
+    if not (0.1 <= ppr <= 24.0 and 1.15 <= tpr <= 3.0):
+        warnings.warn(
+            f"Hall-Yarborough Z evaluated outside its validity band "
+            f"(Ppr={ppr:.3g} in [0.1, 24], Tpr={tpr:.3g} in [1.15, 3.0]); "
+            f"the returned Z is extrapolated.",
+            stacklevel=2,
+        )
     a = 0.06125 * ppr * t * math.exp(-1.2 * (1.0 - t) ** 2)
 
     # t-dependent coefficient groups -- constant across Newton iterations.
