@@ -238,7 +238,7 @@ class SurveyParameters(Proj):
     def transform_coordinates(
         self, coords: ArrayLike, to_projection: str,
         altitude: Optional[float] = None,
-        *args: Any, **kwargs: Any
+        **kwargs: Any
     ) -> ArrayLike:
         """Transforms coordinates from instance's projection to another
         projection.
@@ -273,12 +273,12 @@ class SurveyParameters(Proj):
             self.crs, CRS(to_projection)
         )
         _coords = np.array(coords)
-        result = list(transformer.itransform(  # type: ignore[misc]  # LATENT BUG: *args can collide with the direction= keyword (pyproj itransform)
+        result = list(transformer.itransform(
             (
                 _coords.tolist() if len(_coords.shape) > 1
                 else _coords.reshape((1, -1)).tolist()
             ),
-            direction=TransformDirection('FORWARD'), *args, **kwargs
+            direction=TransformDirection('FORWARD'), **kwargs
         ))
 
         return np.array(result)
@@ -444,11 +444,13 @@ class SurveyHeader:
                 )
             except Exception:
                 try:
+                    # retry with today's date (sets self.survey_date, then use it)
+                    self._get_date(date=None)
                     result = calculator.calculate(
                         latitude=self.latitude,
                         longitude=self.longitude,
                         altitude=self.altitude,
-                        date=self._get_date(date=None)  # type: ignore[func-returns-value]  # LATENT BUG: _get_date only sets self.survey_date and returns None; its value is used here
+                        date=self.survey_date
                     )
                 except Exception as exc:
                     warnings.warn(
@@ -3670,7 +3672,7 @@ def interpolate_survey_tvd(
     ordered = [nodes_by_md[key] for key in sorted(nodes_by_md)]
 
     md, inc, azi, interpolated = np.array([
-        [n.md, n.inc_rad, n.azi_rad, n.interpolated]  # type: ignore[attr-defined]  # LATENT BUG: Node.interpolated is a dynamic (kwargs) attribute, not declared on Node
+        [n.md, n.inc_rad, n.azi_rad, n.interpolated]
         for n in ordered
     ]).T
 
