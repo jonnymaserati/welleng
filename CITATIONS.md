@@ -43,6 +43,10 @@ If your work relies on a specific method, please **also** cite the relevant pape
   (2026). *A Note on the Well Trajectory Tortuosity Index: Non-Independence of
   the Inclination–Azimuth Combination, and a Dimensionless Form.* Zenodo.
   [doi:10.5281/zenodo.21206271](https://doi.org/10.5281/zenodo.21206271)
+- **Kick-tolerance engine (derivation, provenance, validation)** — Corcutt, J.
+  (2026). *The welleng kick-tolerance engine: derivation, provenance and public
+  validation against published methods.* Zenodo.
+  [doi:10.5281/zenodo.21412388](https://doi.org/10.5281/zenodo.21412388)
 
 ## Built on — software dependencies
 
