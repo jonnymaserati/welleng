@@ -6,6 +6,13 @@ Provides classes and functions for creating, manipulating, and interpolating
 well surveys using minimum curvature calculations, error models, and
 coordinate transformations.
 """
+# Typing note (issue #133): this module is fully annotated. The code-scoped
+# `# type: ignore[...]` comments below suppress residual mypy findings that are
+# not annotation errors — Optional attributes/params that are populated at
+# runtime (post-__init__/min-curve) and numpy dtype-narrowness on scalar
+# reductions. `warn_unused_ignores` is enabled, so each ignore must catch a real
+# error. Lines tagged `LATENT BUG` flag genuine pre-existing issues (left as-is,
+# out of typing scope) rather than masking them silently.
 import numpy as np
 import math
 import warnings
@@ -40,7 +47,7 @@ from .connector import Connector, interpolate_well
 from .visual import figure
 from .units import ureg
 
-from typing import List, Union
+from typing import Any, List, Optional, Union
 from numpy.typing import NDArray, ArrayLike
 
 
@@ -94,8 +101,8 @@ class SurveyParameters(Proj):
         super().__init__(self.crs)
 
     def get_factors_from_x_y(
-        self, x: float, y: float, altitude: float = None,
-        date: str = None
+        self, x: float, y: float, altitude: Optional[float] = None,
+        date: Optional[str] = None
     ) -> dict:
         """Calculates the survey header parameters for a given map coordinate.
 
@@ -229,8 +236,9 @@ class SurveyParameters(Proj):
         return data
 
     def transform_coordinates(
-        self, coords: ArrayLike, to_projection: str, altitude: float = None,
-        *args, **kwargs
+        self, coords: ArrayLike, to_projection: str,
+        altitude: Optional[float] = None,
+        *args: Any, **kwargs: Any
     ) -> ArrayLike:
         """Transforms coordinates from instance's projection to another
         projection.
@@ -265,7 +273,7 @@ class SurveyParameters(Proj):
             self.crs, CRS(to_projection)
         )
         _coords = np.array(coords)
-        result = list(transformer.itransform(
+        result = list(transformer.itransform(  # type: ignore[misc]  # LATENT BUG: *args can collide with the direction= keyword (pyproj itransform)
             (
                 _coords.tolist() if len(_coords.shape) > 1
                 else _coords.reshape((1, -1)).tolist()
@@ -286,31 +294,31 @@ class SurveyHeader:
 
     def __init__(
         self,
-        name: str = None,
-        longitude=None,
-        latitude=None,
-        altitude=None,
-        survey_date=None,
-        G=9.80665,
-        b_total=None,
-        earth_rate=0.26251614,
-        dip=None,
-        declination=None,
-        convergence=0,
-        azi_reference="true",
-        vertical_inc_limit=0.0001,
-        deg=True,
-        depth_unit='meters',
-        surface_unit='meters',
-        mag_defaults={
+        name: Optional[str] = None,
+        longitude: Optional[float] = None,
+        latitude: Optional[float] = None,
+        altitude: Optional[float] = None,
+        survey_date: Optional[str] = None,
+        G: float = 9.80665,
+        b_total: Optional[float] = None,
+        earth_rate: float = 0.26251614,
+        dip: Optional[float] = None,
+        declination: Optional[float] = None,
+        convergence: float = 0,
+        azi_reference: str = "true",
+        vertical_inc_limit: float = 0.0001,
+        deg: bool = True,
+        depth_unit: str = 'meters',
+        surface_unit: str = 'meters',
+        mag_defaults: dict = {
             'b_total': 50_000.,
             'dip': 70.,
             'declination': 0.,
         },
-        vertical_section_azimuth=0,
+        vertical_section_azimuth: float = 0,
         grid_scale_factor: float = 1.0
         # **kwargs
-    ):
+    ) -> None:
         """A class for storing header information about a well.
 
         Parameters
@@ -407,7 +415,7 @@ class SurveyHeader:
         self.mag_defaults = mag_defaults
         self._get_mag_data(deg)
 
-    def _get_mag_data(self, deg):
+    def _get_mag_data(self, deg: bool) -> None:
         """
         Initiates b_total if provided, else calculates a value.
         """
@@ -440,7 +448,7 @@ class SurveyHeader:
                         latitude=self.latitude,
                         longitude=self.longitude,
                         altitude=self.altitude,
-                        date=self._get_date(date=None)
+                        date=self._get_date(date=None)  # type: ignore[func-returns-value]  # LATENT BUG: _get_date only sets self.survey_date and returns None; its value is used here
                     )
                 except Exception as exc:
                     warnings.warn(
@@ -454,17 +462,17 @@ class SurveyHeader:
             # if not deg:
             #     self.b_total = math.radians(self.b_total)
         if self.dip is None:
-            self.dip = -result['field-value']['inclination']['value']
+            self.dip = -result['field-value']['inclination']['value']  # type: ignore[operator]
             if not deg:
                 self.dip = math.radians(self.dip)
         if self.declination is None:
             self.declination = result['field-value']['declination']['value']
             if not deg:
-                self.declination = math.radians(self.declination)
+                self.declination = math.radians(self.declination)  # type: ignore[arg-type]
 
         if deg:
             self.dip = math.radians(self.dip)
-            self.declination = math.radians(self.declination)
+            self.declination = math.radians(self.declination)  # type: ignore[arg-type]
             self.convergence = math.radians(self.convergence)
             self.vertical_inc_limit = math.radians(
                 self.vertical_inc_limit
@@ -473,12 +481,12 @@ class SurveyHeader:
                 self.vertical_section_azimuth
             )
 
-    def _get_date(self, date):
+    def _get_date(self, date: Optional[str]) -> None:
         if date is None:
             date = datetime.today().strftime('%Y-%m-%d')
         self.survey_date = date
 
-    def _validate_date(self, date):
+    def _validate_date(self, date: Optional[str]) -> None:
         if date is None:
             return
         try:
@@ -603,32 +611,73 @@ class Survey:
         Calculate the directional difficulty index.
     """
 
+    header: SurveyHeader
+    md: np.ndarray
+    inc_deg: np.ndarray
+    inc_rad: np.ndarray
+    azi_grid_deg: np.ndarray
+    azi_grid_rad: np.ndarray
+    azi_true_deg: np.ndarray
+    azi_true_rad: np.ndarray
+    azi_mag_deg: np.ndarray
+    azi_mag_rad: np.ndarray
+    pos_nev: np.ndarray
+    pos_xyz: np.ndarray
+    vec_nev: np.ndarray
+    vec_xyz: np.ndarray
+    vec_radius_nev: np.ndarray
+    n: np.ndarray
+    e: np.ndarray
+    tvd: np.ndarray
+    x: np.ndarray
+    y: np.ndarray
+    z: np.ndarray
+    dogleg: np.ndarray
+    dls: np.ndarray
+    delta_md: np.ndarray
+    rf: np.ndarray
+    toolface: np.ndarray
+    build_rate: np.ndarray
+    turn_rate: np.ndarray
+    curve_radius: np.ndarray
+    radius: np.ndarray
+    normals: np.ndarray
+    survey_deg: np.ndarray
+    survey_rad: np.ndarray
+    cov_nev: Optional[np.ndarray]
+    cov_hla: Optional[np.ndarray]
+    err: Optional[ErrorModel]
+    error_model: Optional[str]
+    steering: Optional[np.ndarray]
+    unit: str
+    deg: bool
+
     def __init__(
         self,
-        md,
-        inc,
-        azi,
-        n=None,
-        e=None,
-        tvd=None,
-        x=None,
-        y=None,
-        z=None,
-        vec=None,
-        nev=True,
-        header=None,
-        radius=None,
-        cov_nev=None,
-        cov_hla=None,
-        error_model=None,
-        start_xyz=[0., 0., 0.],
-        start_nev=[0., 0., 0.],
-        start_cov_nev=None,
-        deg=True,
-        unit="meters",
-        steering=None,
-        **kwargs
-    ):
+        md: ArrayLike,
+        inc: ArrayLike,
+        azi: ArrayLike,
+        n: Optional[ArrayLike] = None,
+        e: Optional[ArrayLike] = None,
+        tvd: Optional[ArrayLike] = None,
+        x: Optional[ArrayLike] = None,
+        y: Optional[ArrayLike] = None,
+        z: Optional[ArrayLike] = None,
+        vec: Optional[ArrayLike] = None,
+        nev: bool = True,
+        header: Optional[SurveyHeader] = None,
+        radius: Optional[ArrayLike] = None,
+        cov_nev: Optional[np.ndarray] = None,
+        cov_hla: Optional[np.ndarray] = None,
+        error_model: Optional[str] = None,
+        start_xyz: ArrayLike = [0., 0., 0.],
+        start_nev: ArrayLike = [0., 0., 0.],
+        start_cov_nev: Optional[ArrayLike] = None,
+        deg: bool = True,
+        unit: str = "meters",
+        steering: Optional[Union[str, ArrayLike]] = None,
+        **kwargs: Any
+    ) -> None:
         """Initialize a `welleng.Survey` object. Calculations are performed in the
         azi_reference "grid" domain.
 
@@ -742,9 +791,13 @@ class Survey:
         self.survey_deg = np.column_stack([self.md, self.inc_deg, self.azi_grid_deg])
         self.survey_rad = np.column_stack([self.md, self.inc_rad, self.azi_grid_rad])
 
-        self.n = np.array(n) if n is not None else n
-        self.e = np.array(e) if e is not None else e
-        self.tvd = np.array(tvd) if tvd is not None else tvd
+        # n/e/tvd/x/y/z/vec_* may be None here, but are always populated as
+        # ndarrays by _min_curve()/_get_nev() below; the class-level
+        # annotations describe the finished object, so ignore the transient
+        # None assignments during construction.
+        self.n = np.array(n) if n is not None else n  # type: ignore[assignment]
+        self.e = np.array(e) if e is not None else e  # type: ignore[assignment]
+        self.tvd = np.array(tvd) if tvd is not None else tvd  # type: ignore[assignment]
 
         # start_nev will be overwritten if n, e, tvd data provided
         if not all((self.n is None, self.e is None, self.tvd is None)):
@@ -754,18 +807,18 @@ class Survey:
         else:
             self.start_nev = np.array(start_nev)
 
-        self.x = np.array(x) if x is not None else x
-        self.y = np.array(y) if y is not None else y
-        self.z = np.array(z) if z is not None else z
+        self.x = np.array(x) if x is not None else x  # type: ignore[assignment]
+        self.y = np.array(y) if y is not None else y  # type: ignore[assignment]
+        self.z = np.array(z) if z is not None else z  # type: ignore[assignment]
         if vec is not None:
             if nev:
-                self.vec_nev = vec
+                self.vec_nev = vec  # type: ignore[assignment]
                 self.vec_xyz = get_xyz(vec)
             else:
-                self.vec_xyz = vec
+                self.vec_xyz = vec  # type: ignore[assignment]
                 self.vec_nev = get_nev(vec)
         else:
-            self.vec_nev, self.vec_xyz = vec, vec
+            self.vec_nev, self.vec_xyz = vec, vec  # type: ignore[assignment]
 
         self._min_curve(vec)
         self._get_toolface_and_rates()
@@ -793,21 +846,23 @@ class Survey:
 
         self._get_vertical_section()
 
-    def _process_azi_ref(self, inc, azi, deg):
+    def _process_azi_ref(
+        self, inc: ArrayLike, azi: ArrayLike, deg: bool
+    ) -> None:
         if self.header.azi_reference == 'grid':
             self._make_angles(inc, azi, deg)
             self.azi_true_deg = (
                 self.azi_grid_deg + math.degrees(self.header.convergence)
             )
             self.azi_mag_deg = (
-                self.azi_true_deg - math.degrees(self.header.declination)
+                self.azi_true_deg - math.degrees(self.header.declination)  # type: ignore[arg-type]
             )
             self._get_azi_mag_and_true_rad()
         elif self.header.azi_reference == 'true':
             if deg:
                 self.azi_true_deg = np.array(azi).astype('float64')
                 self.azi_mag_deg = (
-                    self.azi_true_deg - math.degrees(self.header.declination)
+                    self.azi_true_deg - math.degrees(self.header.declination)  # type: ignore[arg-type]
                 )
                 self._get_azi_mag_and_true_rad()
                 azi_temp = self._get_azi_temp(deg)
@@ -823,7 +878,7 @@ class Survey:
             if deg:
                 self.azi_mag_deg = np.array(azi).astype('float64')
                 self.azi_true_deg = (
-                    self.azi_mag_deg + math.degrees(self.header.declination)
+                    self.azi_mag_deg + math.degrees(self.header.declination)  # type: ignore[arg-type]
                 )
                 self._get_azi_mag_and_true_rad()
                 azi_temp = self._get_azi_temp(deg)
@@ -836,7 +891,7 @@ class Survey:
                 azi_temp = self._get_azi_temp(deg)
             self._make_angles(inc, azi_temp, deg)
 
-    def _get_azi_temp(self, deg):
+    def _get_azi_temp(self, deg: bool) -> np.ndarray:
         if deg:
             azi_temp = self.azi_true_deg - math.degrees(
                 self.header.convergence
@@ -846,30 +901,30 @@ class Survey:
 
         return azi_temp
 
-    def _get_azi_mag_and_true_rad(self):
+    def _get_azi_mag_and_true_rad(self) -> None:
         self.azi_true_rad, self.azi_mag_rad = (
             np.radians(np.array([
                 self.azi_true_deg, self.azi_mag_deg
             ]))
         )
 
-    def _get_azi_mag_and_true_deg(self):
+    def _get_azi_mag_and_true_deg(self) -> None:
         self.azi_true_deg, self.azi_mag_deg = (
             np.degrees(np.array([
                 self.azi_true_rad, self.azi_mag_rad
             ]))
         )
 
-    def _get_radius(self, radius=None):
+    def _get_radius(self, radius: Optional[ArrayLike] = None) -> None:
         if radius is None:
             self.radius = np.full_like(self.md.astype(float), 0.3048)
         elif np.array([radius]).shape[-1] == 1:
             self.radius = np.full_like(self.md.astype(float), radius)
         else:
-            assert len(radius) == len(self.md), "Check radius"
+            assert len(radius) == len(self.md), "Check radius"  # type: ignore[arg-type]
             self.radius = np.array(radius)
 
-    def _min_curve(self, vec):
+    def _min_curve(self, vec: Optional[ArrayLike]) -> None:
         """
         Get the (x,y,z), (n,e,v), doglegs, rfs, delta_mds, dlss and
         vectors for the well bore if they were not provided, using the
@@ -907,7 +962,7 @@ class Survey:
                 self.inc_rad, self.azi_grid_rad, deg=False, nev=True
             )
 
-    def _get_nev(self):
+    def _get_nev(self) -> None:
         self.n, self.e, self.tvd = get_nev(
             np.array([
                 self.x,
@@ -918,7 +973,9 @@ class Survey:
             start_nev=self.start_nev
         ).reshape(-1, 3).T
 
-    def _make_angles(self, inc, azi, deg=True):
+    def _make_angles(
+        self, inc: ArrayLike, azi: ArrayLike, deg: bool = True
+    ) -> None:
         """
         Calculate angles in radians if they were provided in degrees or
         vice versa.
@@ -934,7 +991,9 @@ class Survey:
             self.inc_deg = np.degrees(inc)
             self.azi_grid_deg = np.degrees(azi)
 
-    def get_error(self, error_model, return_error=False):
+    def get_error(
+        self, error_model: str, return_error: bool = False
+    ) -> Union[ErrorModel, "Survey"]:
         """Apply an error model and compute covariance matrices.
 
         Parameters
@@ -962,11 +1021,12 @@ class Survey:
         self._get_errors()
 
         if return_error:
-            return self.err
+            # error_model was just applied above, so self.err is set (not None)
+            return self.err  # type: ignore[return-value]
         else:
             return self
 
-    def _get_errors(self):
+    def _get_errors(self) -> None:
         """
         Initiate a welleng.error.ErrorModel object and calculate the
         covariance matrices with the specified error model.
@@ -998,7 +1058,7 @@ class Survey:
             self.cov_nev += self.start_cov_nev
             self.cov_hla = NEV_to_HLA(self.survey_rad, self.cov_nev)
 
-    def _curvature_to_rate(self, curvature):
+    def _curvature_to_rate(self, curvature: np.ndarray) -> np.ndarray:
         with np.errstate(divide='ignore', invalid='ignore'):
             radius = 1 / curvature
         circumference = 2 * np.pi * radius
@@ -1010,7 +1070,7 @@ class Survey:
 
         return rate
 
-    def _get_toolface_and_rates(self):
+    def _get_toolface_and_rates(self) -> None:
         """
         Reference SPE-84246.
         theta is inc, phi is azi
@@ -1075,12 +1135,14 @@ class Survey:
                 self.vec_nev
             )
 
-    def _get_sections(self, rtol=0.1, atol=0.1, dls_cont=True):
+    def _get_sections(
+        self, rtol: float = 0.1, atol: float = 0.1, dls_cont: bool = True
+    ) -> list:
         sections = get_sections(self, rtol, atol, dls_cont)
 
         return sections
 
-    def get_nev_arr(self):
+    def get_nev_arr(self) -> np.ndarray:
         """Return survey positions as an (n, 3) array of [N, E, TVD].
 
         Returns
@@ -1094,7 +1156,7 @@ class Survey:
             self.tvd
         ]).T.reshape(-1, 3)
 
-    def save(self, filename):
+    def save(self, filename: str) -> None:
         """
         Saves a minimal (control points) survey listing as a .csv file,
         including the survey header information.
@@ -1106,7 +1168,7 @@ class Survey:
         """
         export_csv(self, filename)
 
-    def interpolate_mds(self, md):
+    def interpolate_mds(self, md: ArrayLike) -> "Survey":
         """
         Method to interpolate positions at an array of measured depths and
         return a new `welleng.Survey` object. This is a vectorized equivalent
@@ -1138,7 +1200,7 @@ class Survey:
         """
         return interpolate_mds(self, md)
 
-    def interpolate_md(self, md):
+    def interpolate_md(self, md: float) -> Optional[Node]:
         """
         Method to interpolate a position based on measured depth and return
         a node.
@@ -1184,11 +1246,11 @@ class Survey:
         s = interpolate_md(self, md)
         if s is None:
             return None
-        node = get_node(s, -1, s.interpolated[-1])
+        node = get_node(s, -1, s.interpolated[-1])  # type: ignore[index]
 
         return node
 
-    def interpolate_tvd(self, tvd):
+    def interpolate_tvd(self, tvd: float) -> list:
         """Interpolate the survey at a target true vertical depth.
 
         Reversal-robust (Sawaryn & Thorogood 2005, SPE-84246-PA): returns
@@ -1214,7 +1276,10 @@ class Survey:
         """
         return interpolate_tvd(self, tvd=tvd)
 
-    def interpolate_survey_tvd(self, start=None, stop=None, step=10):
+    def interpolate_survey_tvd(
+        self, start: Optional[float] = None, stop: Optional[float] = None,
+        step: float = 10
+    ) -> "Survey":
         """
         Convenience method for interpolating a Survey object's TVD.
         """
@@ -1223,14 +1288,16 @@ class Survey:
         )
         return survey_interpolated
 
-    def interpolate_survey(self, step=30, dls=1e-8):
+    def interpolate_survey(
+        self, step: float = 30, dls: float = 1e-8
+    ) -> "Survey":
         """
         Convenience method for interpolating a Survey object's MD.
         """
         survey_interpolated = interpolate_survey(self, step=step, dls=dls)
         return survey_interpolated
 
-    def figure(self, type='scatter3d', **kwargs):
+    def figure(self, type: str = 'scatter3d', **kwargs: Any) -> Any:
         """Generate a plotly figure of the survey trajectory.
 
         Parameters
@@ -1249,7 +1316,10 @@ class Survey:
         fig = figure(self, type, **kwargs)
         return fig
 
-    def project_to_bit(self, delta_md, dls=None, toolface=None):
+    def project_to_bit(
+        self, delta_md: float, dls: Optional[float] = None,
+        toolface: Optional[float] = None
+    ) -> Node:
         """
         Convenience method to project the survey ahead to the bit.
 
@@ -1289,12 +1359,12 @@ class Survey:
 
     def project_to_target(
         self,
-        node_target,
-        dls_design=3.0,
-        delta_md=None,
-        dls=None, toolface=None,
-        step=30
-    ):
+        node_target: Node,
+        dls_design: float = 3.0,
+        delta_md: Optional[float] = None,
+        dls: Optional[float] = None, toolface: Optional[float] = None,
+        step: float = 30
+    ) -> "Survey":
         """Project a wellpath from the end of this survey to a target node.
 
         Parameters
@@ -1329,7 +1399,7 @@ class Survey:
         )
         return survey
 
-    def _get_vertical_section(self, *args, **kwargs):
+    def _get_vertical_section(self, *args: Any, **kwargs: Any) -> None:
         """
         Internal function to initiate the vertical section by calculating
         the magnitude of the lateral displacement and, if a vertical section
@@ -1349,7 +1419,9 @@ class Survey:
         else:
             self.vertical_section = None
 
-    def get_vertical_section(self, vertical_section_azimuth, deg=True):
+    def get_vertical_section(
+        self, vertical_section_azimuth: float, deg: bool = True
+    ) -> np.ndarray:
         """
         Calculate the vertical section.
 
@@ -1387,7 +1459,9 @@ class Survey:
 
         return result
 
-    def set_vertical_section(self, vertical_section_azimuth, deg=True):
+    def set_vertical_section(
+        self, vertical_section_azimuth: float, deg: bool = True
+    ) -> None:
         """
         Sets the vertical_section_azimuth property in the survey header and
         the vertical section data with the data calculated for the input
@@ -1409,9 +1483,11 @@ class Survey:
         )
 
     def modified_tortuosity_index(
-        self, rtol=1.0, dls_tol=1e-3, step=1.0, dls_noise=1.0, data=False,
-        **kwargs
-    ):
+        self, rtol: float = 1.0, dls_tol: Optional[float] = 1e-3,
+        step: Optional[float] = 1.0, dls_noise: Optional[float] = 1.0,
+        data: bool = False,
+        **kwargs: Any
+    ) -> Union[np.ndarray, dict]:
         """
         Convenience method for the Modified Tortuosity Index (MTI): a native-3D,
         *dimensionless* variant of the Tortuosity Index (TI) of Ashok et al.
@@ -1474,12 +1550,12 @@ class Survey:
         """
         # Check whether to pre-process the survey to apply maximum curvature.
         if bool(dls_noise):
-            survey = self.interpolate_survey(step=step)
+            survey = self.interpolate_survey(step=step)  # type: ignore[arg-type]
             # The MTI's max-curvature is the worst-case (all-slide) tortuosity by
             # definition; pass steering explicitly so maximum_curvature does not
             # demand a per-leg mode the MTI intentionally does not model.
             survey = survey.maximum_curvature(
-                dls_noise=dls_noise, steering='slide'
+                dls_noise=dls_noise, steering='slide'  # type: ignore[arg-type]
             )
 
         else:
@@ -1489,7 +1565,10 @@ class Survey:
             survey, rtol=rtol, dls_tol=dls_tol, data=data, **kwargs
         )
 
-    def tortuosity_index(self, rtol=0.01, dls_tol=None, data=False, **kwargs):
+    def tortuosity_index(
+        self, rtol: float = 0.01, dls_tol: Optional[float] = None,
+        data: bool = False, **kwargs: Any
+    ) -> Union[np.ndarray, dict]:
         """
         Convenience method for the Tortuosity Index (TI), a native-3D variant
         of the method presented in the [IADD presentation](https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf)
@@ -1540,7 +1619,10 @@ class Survey:
             self, rtol=rtol, dls_tol=dls_tol, data=data, **kwargs
         )
 
-    def tortuosity_views(self, modified=True, target_md=None, **kwargs):
+    def tortuosity_views(
+        self, modified: bool = True, target_md: Optional[float] = None,
+        **kwargs: Any
+    ) -> dict:
         """Total, remaining and local readings of the tortuosity profile.
 
         The tortuosity index is evaluated at every station, so it is a profile;
@@ -1572,7 +1654,7 @@ class Survey:
         """
         if modified:
             d = self.modified_tortuosity_index(data=True, **kwargs)
-            profile, md = d['mti'], d['survey'].md
+            profile, md = d['mti'], d['survey'].md  # type: ignore[union-attr]
         else:
             d = self.tortuosity_index(data=True, **kwargs)
             profile, md = d['ti'], self.md
@@ -1580,7 +1662,7 @@ class Survey:
         views['md'] = md
         return views
 
-    def directional_difficulty_index(self, **kwargs):
+    def directional_difficulty_index(self, **kwargs: Any) -> np.ndarray:
         """
         Taken from IADC/SPE 59196 The Directional Difficulty Index - A
         New Approach to Performance Benchmarking by Alistair W. Oag et al.
@@ -1593,7 +1675,10 @@ class Survey:
 
         return directional_difficulty_index(self, **kwargs)
 
-    def maximum_curvature(self, dls_noise=1.0, steering=None):
+    def maximum_curvature(
+        self, dls_noise: float = 1.0,
+        steering: Optional[Union[str, ArrayLike]] = None
+    ) -> "Survey":
         """
         Create a well trajectory using the Maximum Curvature method.
 
@@ -1727,7 +1812,7 @@ class Survey:
 
         return survey
 
-    def torsion(self):
+    def torsion(self) -> np.ndarray:
         """Geometric torsion ``τ`` per station (radians per unit length).
 
         The helical rate of the wellpath — the rate at which the osculating-plane
@@ -1769,7 +1854,7 @@ class Survey:
         torsion[1:-1] = np.nan_to_num(tau_interior, nan=0.0, posinf=0.0, neginf=0.0)
         return torsion
 
-    def curvature_rate(self):
+    def curvature_rate(self) -> np.ndarray:
         """Rate of change of curvature ``dκ/ds`` per station (rad per unit length²).
 
         The along-hole derivative of curvature ``κ = dogleg / Δmd``. With the torsion
@@ -1796,8 +1881,9 @@ class Survey:
 
 
 def modified_tortuosity_index(
-    survey, rtol=1.0, dls_tol=1e-3, data=False, **kwargs
-):
+    survey: "Survey", rtol: float = 1.0, dls_tol: Optional[float] = 1e-3,
+    data: bool = False, **kwargs: Any
+) -> Union[np.ndarray, dict]:
     """
     Calculate the Modified Tortuosity Index (MTI): a native-3D, dimensionless
     variant of the Tortuosity Index (TI) of Ashok et al. ([IADD presentation](https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf))
@@ -1877,7 +1963,10 @@ def modified_tortuosity_index(
     return mti
 
 
-def tortuosity_index(survey, rtol=0.01, dls_tol=None, data=False, **kwargs):
+def tortuosity_index(
+    survey: "Survey", rtol: float = 0.01, dls_tol: Optional[float] = None,
+    data: bool = False, **kwargs: Any
+) -> Union[np.ndarray, dict]:
     """
     Calculate the Tortuosity Index (TI), a native-3D variant of the method of
     Ashok et al. ([IADD presentation](https://www.iadd-intl.org/media/files/files/47d68cb4/iadd-luncheon-february-22-2018-v2.pdf))
@@ -1954,7 +2043,9 @@ def tortuosity_index(survey, rtol=0.01, dls_tol=None, data=False, **kwargs):
     return ti
 
 
-def tortuosity_views(profile, md, target_md=None):
+def tortuosity_views(
+    profile: ArrayLike, md: ArrayLike, target_md: Optional[float] = None
+) -> dict:
     """Derive total, remaining and local readings from a tortuosity profile.
 
     Parameters
@@ -1989,7 +2080,7 @@ def tortuosity_views(profile, md, target_md=None):
     }
 
 
-def directional_difficulty_index(survey, **kwargs):
+def directional_difficulty_index(survey: "Survey", **kwargs: Any) -> np.ndarray:
     """
     Taken from IADC/SPE 59196 The Directional Difficulty Index - A
     New Approach to Performance Benchmarking by Alistair W. Oag et al.
@@ -2022,7 +2113,9 @@ def directional_difficulty_index(survey, **kwargs):
     return ddi
 
 
-def _accumulate_sections(b, n_sections_arr):
+def _accumulate_sections(
+    b: ArrayLike, n_sections_arr: np.ndarray
+) -> np.ndarray:
     """Per-section cumulative sum used by the tortuosity indices.
 
     Returns ``a`` where ``a[k] = b[k] + (sum of each prior section's final b)``,
@@ -2049,7 +2142,9 @@ def _accumulate_sections(b, n_sections_arr):
     return b + np.repeat(carry_per_run, run_sizes)
 
 
-def _get_ti_data(survey, rtol, dls_tol=None):
+def _get_ti_data(
+    survey: "Survey", rtol: float, dls_tol: Optional[float] = None
+) -> tuple:
     """Sectionize a survey into curve-turn / hold sections for the TI/MTI.
 
     A section is continuous while successive stations share the same normal
@@ -2127,18 +2222,18 @@ class TurnPoint:
 
     def __init__(
         self,
-        md=None,
-        inc=None,
-        azi=None,
-        build_rate=None,
-        turn_rate=None,
-        dls=None,
-        toolface=None,
-        method=None,
-        target=None,
-        tie_on=False,
-        location=None
-    ):
+        md: Optional[float] = None,
+        inc: Optional[float] = None,
+        azi: Optional[float] = None,
+        build_rate: Optional[float] = None,
+        turn_rate: Optional[float] = None,
+        dls: Optional[float] = None,
+        toolface: Optional[float] = None,
+        method: Optional[str] = None,
+        target: Optional[Any] = None,
+        tie_on: bool = False,
+        location: Optional[list] = None
+    ) -> None:
         """Initialize a TurnPoint.
 
         Parameters
@@ -2179,7 +2274,9 @@ class TurnPoint:
         self.location = location
 
 
-def get_node(survey, idx, interpolated=False):
+def get_node(
+    survey: "Survey", idx: int, interpolated: bool = False
+) -> Node:
     """Extract a Node from a survey at a given index.
 
     Parameters
@@ -2207,7 +2304,7 @@ def get_node(survey, idx, interpolated=False):
     return node
 
 
-def interpolate_mds(survey, md):
+def interpolate_mds(survey: "Survey", md: ArrayLike) -> "Survey":
     """
     Interpolates a survey at an array of measured depths, returning a new
     `welleng.survey.Survey` object that includes the original survey stations
@@ -2245,7 +2342,7 @@ def interpolate_mds(survey, md):
     return _interpolate_surveys(survey, md, xs, idxs)
 
 
-def interpolate_md(survey, md):
+def interpolate_md(survey: "Survey", md: float) -> Optional["Survey"]:
     """
     Interpolates a survey at a given measured depth.
     """
@@ -2256,16 +2353,18 @@ def interpolate_md(survey, md):
         return None  # md is at or beyond the end of the survey
 
     if idx < 0:
-        idx = 0
+        idx = 0  # type: ignore[assignment]
         x = 0
 
     else:
         x = md - survey.md[idx]
 
-    return _interpolate_survey(survey, x=x, index=idx)
+    return _interpolate_survey(survey, x=x, index=idx)  # type: ignore[arg-type]
 
 
-def _interpolate_survey(survey, x=0, index=0):
+def _interpolate_survey(
+    survey: "Survey", x: float = 0, index: int = 0
+) -> "Survey":
     """
     Interpolates a point distance x between two survey stations
     using minimum curvature.
@@ -2290,7 +2389,7 @@ def _interpolate_survey(survey, x=0, index=0):
             2), with the interpolated station between them (index 1)
 
     """
-    index = _ensure_int_or_float(index, int)
+    index = _ensure_int_or_float(index, int)  # type: ignore[assignment]
     x = _ensure_int_or_float(x, float)
 
     assert index < len(survey.md) - 1, "Index is out of range"
@@ -2340,13 +2439,13 @@ def _interpolate_survey(survey, x=0, index=0):
         azi=np.array([survey.azi_grid_rad[index], azi]),
         cov_nev=(
             None if cov_nev is None
-            else np.array([survey.cov_nev[index], cov_nev])
+            else np.array([survey.cov_nev[index], cov_nev])  # type: ignore[index]
         ),
         start_xyz=np.array([survey.x, survey.y, survey.z]).T[index],
         start_nev=np.array([survey.n, survey.e, survey.tvd]).T[index],
         header=sh,
         deg=False,
-        unit=sh.depth_unit,
+        unit=sh.depth_unit,  # type: ignore[arg-type]
     )
 
     interpolated = False if any((
@@ -2358,7 +2457,9 @@ def _interpolate_survey(survey, x=0, index=0):
     return s
 
 
-def _interpolate_surveys(survey, md, xs, indexes):
+def _interpolate_surveys(
+    survey: "Survey", md: np.ndarray, xs: np.ndarray, indexes: np.ndarray
+) -> "Survey":
     """
     Interpolate multiple points at distances ``xs`` between their respective
     pairs of survey stations using minimum curvature. Vectorized equivalent
@@ -2442,7 +2543,7 @@ def _interpolate_surveys(survey, md, xs, indexes):
         start_nev=survey.start_nev,
         header=sh,
         deg=False,
-        unit=sh.depth_unit,
+        unit=sh.depth_unit,  # type: ignore[arg-type]
         error_model=None
     )
 
@@ -2490,7 +2591,9 @@ def _interpolate_surveys(survey, md, xs, indexes):
     return survey_interpolated
 
 
-def _interpolate_pos_nev(survey, x, index):
+def _interpolate_pos_nev(
+    survey: "Survey", x: float, index: int
+) -> np.ndarray:
     """
     Lightweight position-only interpolation: returns the NEV [N, E, TVD]
     position at distance ``x`` from ``survey[index]`` without constructing
@@ -2517,7 +2620,9 @@ def _interpolate_pos_nev(survey, x, index):
     return pos + step
 
 
-def _horizontal_tangent_delta(u1, u2, alpha):
+def _horizontal_tangent_delta(
+    u1: float, u2: float, alpha: float
+) -> Optional[float]:
     """Subtended angle at which a minimum-curvature arc's tangent becomes
     horizontal (i.e. the arc's TVD turning point), or ``None`` if that does
     not occur in the open interval ``(0, alpha)``.
@@ -2547,7 +2652,9 @@ def _horizontal_tangent_delta(u1, u2, alpha):
     return None
 
 
-def _arc_tvd_crossings(u1, u2, alpha, delta_md, dvert):
+def _arc_tvd_crossings(
+    u1: float, u2: float, alpha: float, delta_md: float, dvert: float
+) -> list:
     """Subtended angles in ``[0, alpha]`` at which a minimum-curvature arc
     reaches a target true vertical depth.
 
@@ -2586,22 +2693,24 @@ def _arc_tvd_crossings(u1, u2, alpha, delta_md, dvert):
     return out
 
 
-def _subarc_from_node_origin(survey, node_origin):
+def _subarc_from_node_origin(
+    survey: "Survey", node_origin: Node
+) -> "Survey":
     """Two-station survey from ``node_origin`` to the survey station just
     ahead of it, so a TVD interpolation can be referenced to a previously
     interpolated point rather than to a survey station."""
-    j = int(np.searchsorted(survey.md, node_origin.md, side="right"))
+    j = int(np.searchsorted(survey.md, node_origin.md, side="right"))  # type: ignore[call-overload]
     j = min(max(j, 1), len(survey.md) - 1)
     return Survey(
         md=[node_origin.md, survey.md[j]],
         inc=[node_origin.inc_rad, survey.inc_rad[j]],
         azi=[node_origin.azi_rad, survey.azi_grid_rad[j]],
         deg=False,
-        start_nev=node_origin.pos_nev,
+        start_nev=node_origin.pos_nev,  # type: ignore[arg-type]
     )
 
 
-def interpolate_tvd(survey, tvd, **kwargs):
+def interpolate_tvd(survey: "Survey", tvd: float, **kwargs: Any) -> list:
     """Interpolate a survey at a target true vertical depth.
 
     Reversal-robust: does *not* assume monotonic TVD. The survey is walked
@@ -2712,7 +2821,9 @@ def interpolate_tvd(survey, tvd, **kwargs):
     return nodes
 
 
-def slice_survey(survey: Survey, start: int, stop: int = None):
+def slice_survey(
+    survey: "Survey", start: int, stop: Optional[int] = None
+) -> "Survey":
     """
     Take a slice from a welleng.survey.Survey object.
 
@@ -2763,7 +2874,7 @@ def slice_survey(survey: Survey, start: int, stop: int = None):
     return s
 
 
-def _ensure_int_or_float(val, required_type) -> int | float:
+def _ensure_int_or_float(val: Any, required_type: type) -> int | float:
     if isinstance(val, np.ndarray):
         val = val[0]
 
@@ -2779,8 +2890,8 @@ class SplitSurvey:
 
     def __init__(
         self,
-        survey,
-    ):
+        survey: "Survey",
+    ) -> None:
         self.md1, self.inc1, self.azi1 = survey.survey_rad[:-1].T
         self.md2, self.inc2, self.azi2 = survey.survey_rad[1:].T
         self.delta_azi = self.azi2 - self.azi1
@@ -2793,7 +2904,7 @@ class SplitSurvey:
         self.dogleg = survey.dogleg[1:]
 
 
-def get_circle_radius(survey, **targets):
+def get_circle_radius(survey: "Survey", **targets: Any) -> tuple:
     """Compute curvature circle centers and endpoints for each survey interval.
 
     Parameters
@@ -2835,7 +2946,10 @@ def get_circle_radius(survey, **targets):
     return (starts, ends)
 
 
-def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
+def get_sections(
+    survey: "Survey", rtol: float = 1e-1, atol: float = 1e-1,
+    dls_cont: bool = False, **targets: Any
+) -> list:
     """
     Tries to discretize a survey file into hold or curve sections. These
     sections can then be used to generate a WellPlan object to generate a
@@ -2879,7 +2993,7 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
     # check for DLS continuity
     if not dls_cont:
         # dls_cont = [True] * (len(survey.dls) - 2)
-        dls_cont = np.full(len(survey.dls) - 2, True)
+        dls_cont = np.full(len(survey.dls) - 2, True)  # type: ignore[assignment]
     else:
         upper = np.around(survey.dls[1:-1], decimals=2)
         lower = np.around(survey.dls[2:], decimals=2)
@@ -2887,9 +3001,9 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
         #     True if u == l else False
         #     for u, l in zip(upper, lower)
         # ]
-        dls_cont = np.equal(upper, lower)
+        dls_cont = np.equal(upper, lower)  # type: ignore[assignment]
 
-    continuous = np.all((
+    continuous = np.all((  # type: ignore[arg-type]
         np.all(
             np.isclose(
                 survey.normals[:-1],
@@ -2913,7 +3027,7 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
         for d in survey.dogleg[starts[:-1] + 1]
     ])
 
-    sections = []
+    sections: list = []
     tie_on = True
     # for i, (s, e, a) in enumerate(zip(starts, ends, actions)):
     for i, (s, a) in enumerate(zip(starts, actions)):
@@ -3012,7 +3126,7 @@ def get_sections(survey, rtol=1e-1, atol=1e-1, dls_cont=False, **targets):
     return sections
 
 
-def get_unit(unit):
+def get_unit(unit: str) -> Optional[str]:
     """Normalize a unit string to ``'meters'`` or ``'feet'``.
 
     Parameters
@@ -3033,7 +3147,7 @@ def get_unit(unit):
         return None
 
 
-def make_survey_header(data):
+def make_survey_header(data: dict) -> SurveyHeader:
     """
     Takes a dictionary of survey header data with the same keys as the
     SurveyHeader class properties and returns a SurveyHeader object.
@@ -3089,9 +3203,10 @@ def survey_to_df(survey: Survey) -> pd.DataFrame:
     return df
 
 
-def export_csv(
-    survey, filename, tolerance=0.1, dls_cont=False, decimals=3, **kwargs
-):
+def export_csv(  # type: ignore[return]  # untyped pandas -> Optional[Any] false-positives the missing-return check
+    survey: "Survey", filename: Optional[str], tolerance: float = 0.1,
+    dls_cont: bool = False, decimals: int = 3, **kwargs: Any
+) -> Optional[pd.DataFrame]:
     """
     Function to export a minimalist (only the control points - i.e. the
     begining and end points of hold and/or turn sections) survey to input into
@@ -3158,19 +3273,19 @@ def export_csv(
         f"{k}, {v}\n" for k, v in vars(survey.header).items()
     ])
     comments += "\n"
-    comments = ''.join(comments)
+    comments_str = ''.join(comments)
 
     np.savetxt(
-        filename,
+        filename,  # type: ignore[arg-type]  # filename is not None on this path (the None case returns a DataFrame above)
         data,
         delimiter=',',
         fmt=f"%.{decimals}f",
         header=headers,
-        comments=comments
+        comments=comments_str
     )
 
 
-def get_data(tol, survey, dls_cont):
+def get_data(tol: float, survey: "Survey", dls_cont: bool) -> np.ndarray:
     """Extract control-point data from a survey at a given tolerance.
 
     Parameters
@@ -3192,7 +3307,7 @@ def get_data(tol, survey, dls_cont):
 
     sections = survey._get_sections(rtol=rtol, atol=atol, dls_cont=dls_cont)
 
-    data = [[
+    rows = [[
         tp.md,
         tp.inc,
         tp.azi,
@@ -3205,12 +3320,14 @@ def get_data(tol, survey, dls_cont):
         tp.turn_rate,
     ] for tp in sections]
 
-    data = np.vstack(data[1:])
+    data = np.vstack(rows[1:])
 
     return data
 
 
-def func(x0, survey, dls_cont, tolerance):
+def func(
+    x0: float, survey: "Survey", dls_cont: bool, tolerance: float
+) -> float:
     """Objective function for optimizing control-point tolerance in export_csv.
 
     Parameters
@@ -3252,7 +3369,9 @@ def func(x0, survey, dls_cont, tolerance):
     return diff
 
 
-def _remove_duplicates(md, inc, azi, decimals=4):
+def _remove_duplicates(
+    md: ArrayLike, inc: ArrayLike, azi: ArrayLike, decimals: int = 4
+) -> np.ndarray:
     arr = np.column_stack([md, inc, azi])
     upper = arr[:-1]
     lower = arr[1:]
@@ -3266,14 +3385,15 @@ def _remove_duplicates(md, inc, azi, decimals=4):
 
 
 def from_connections(
-    section_data, step=None, survey_header=None,
-    start_nev=[0., 0., 0.],
-    start_xyz=[0., 0., 0.],
-    start_cov_nev=None,
-    radius=10, deg=False, error_model=None,
-    depth_unit='meters', surface_unit='meters',
+    section_data: Any, step: Optional[float] = None,
+    survey_header: Optional[SurveyHeader] = None,
+    start_nev: ArrayLike = [0., 0., 0.],
+    start_xyz: ArrayLike = [0., 0., 0.],
+    start_cov_nev: Optional[ArrayLike] = None,
+    radius: float = 10, deg: bool = False, error_model: Optional[str] = None,
+    depth_unit: str = 'meters', surface_unit: str = 'meters',
     decimals: int | None = None
-):
+) -> "Survey":
     """
     Constructs a well survey from a list of sections of control points.
 
@@ -3306,7 +3426,7 @@ def from_connections(
     for s in section_data:
         mds_ref.extend([s.md1, s.md_target])
 
-    section_data_interp = interpolate_well(section_data, step)
+    section_data_interp = interpolate_well(section_data, step)  # type: ignore[arg-type]
     # generate lists for survey
     md, inc, azi = np.vstack([np.array(list(zip(
             s['md'].tolist(),
@@ -3346,7 +3466,9 @@ def from_connections(
     return survey
 
 
-def interpolate_survey(survey, step=30, dls=1e-8):
+def interpolate_survey(
+    survey: "Survey", step: float = 30, dls: float = 1e-8
+) -> "Survey":
     '''
     Interpolate a sparse survey with the desired md step.
 
@@ -3378,7 +3500,7 @@ def interpolate_survey(survey, step=30, dls=1e-8):
 
     s_upper = s[:-1]
     s_lower = s[1:]
-    well = []
+    well: list = []
 
     for i, (u, l) in enumerate(zip(s_upper, s_lower)):
         if i == 0:
@@ -3436,7 +3558,7 @@ def interpolate_survey(survey, step=30, dls=1e-8):
                 j = 1 if i < len(survey.md) - 1 else 0
                 delta_md = survey.md[i + j] - survey.md[i]
                 delta_cov_nev = (
-                    survey.cov_nev[i + j] - survey.cov_nev[i]
+                    survey.cov_nev[i + j] - survey.cov_nev[i]  # type: ignore[index]
                 )
                 unit_cov_nev = (
                     delta_cov_nev / delta_md
@@ -3446,7 +3568,7 @@ def interpolate_survey(survey, step=30, dls=1e-8):
         radii.append(survey.radius[i])
         if survey.error_model is not None:
             cov_nev.append(
-                survey.cov_nev[i]
+                survey.cov_nev[i]  # type: ignore[index]
                 + (
                     (md - survey.md[i]) * unit_cov_nev
                 )
@@ -3462,7 +3584,9 @@ def interpolate_survey(survey, step=30, dls=1e-8):
     return survey_interpolated
 
 
-def get_node_tvd(survey, node1, node2, tvd, node_origin):
+def get_node_tvd(
+    survey: "Survey", node1: Node, node2: Node, tvd: float, node_origin: Node
+) -> Optional[Node]:
     """Connect two nodes and interpolate to a target TVD.
 
     Parameters
@@ -3494,7 +3618,10 @@ def get_node_tvd(survey, node1, node2, tvd, node_origin):
     return nodes[0] if nodes else None
 
 
-def interpolate_survey_tvd(survey, start=None, stop=None, step=10):
+def interpolate_survey_tvd(
+    survey: "Survey", start: Optional[float] = None,
+    stop: Optional[float] = None, step: float = 10
+) -> "Survey":
     """Interpolate a survey at regular TVD intervals.
 
     Reversal-robust (welleng 0.15.0): builds regular TVD levels spanning the
@@ -3535,7 +3662,7 @@ def interpolate_survey_tvd(survey, start=None, stop=None, step=10):
     nodes_by_md = {}
     for i in range(len(survey.md)):
         node = get_node(survey, i)
-        nodes_by_md[round(float(node.md), 6)] = node
+        nodes_by_md[round(float(node.md), 6)] = node  # type: ignore[arg-type]
     for level in levels:
         for node in interpolate_tvd(survey, level):
             nodes_by_md.setdefault(round(float(node.md), 6), node)
@@ -3543,7 +3670,7 @@ def interpolate_survey_tvd(survey, start=None, stop=None, step=10):
     ordered = [nodes_by_md[key] for key in sorted(nodes_by_md)]
 
     md, inc, azi, interpolated = np.array([
-        [n.md, n.inc_rad, n.azi_rad, n.interpolated]
+        [n.md, n.inc_rad, n.azi_rad, n.interpolated]  # type: ignore[attr-defined]  # LATENT BUG: Node.interpolated is a dynamic (kwargs) attribute, not declared on Node
         for n in ordered
     ]).T
 
@@ -3559,7 +3686,10 @@ def interpolate_survey_tvd(survey, start=None, stop=None, step=10):
     return s_interp
 
 
-def project_ahead(pos, vec, delta_md, dls, toolface, md=0.0):
+def project_ahead(
+    pos: np.ndarray, vec: np.ndarray, delta_md: float, dls: float,
+    toolface: float, md: float = 0.0
+) -> Node:
     """
     Apply a simple arc or hold from a current position and vector.
 
@@ -3628,13 +3758,13 @@ def project_ahead(pos, vec, delta_md, dls, toolface, md=0.0):
 
 
 def project_to_target(
-    survey,
-    node_target,
-    dls_design=3.0,
-    delta_md=None,
-    dls=None, toolface=None,
-    step=30,
-):
+    survey: "Survey",
+    node_target: Node,
+    dls_design: float = 3.0,
+    delta_md: Optional[float] = None,
+    dls: Optional[float] = None, toolface: Optional[float] = None,
+    step: float = 30,
+) -> "Survey":
     """
     Project a wellpath from the end of a current survey to a target, taking
     account of the location of the bit relative to the surveying tool if the
@@ -3703,8 +3833,8 @@ def project_to_target(
         survey_header=survey.header,
         start_cov_nev=cov_nev,
         radius=survey.radius[-1], deg=False, error_model=survey.error_model,
-        depth_unit=survey.header.depth_unit,
-        surface_unit=survey.header.surface_unit
+        depth_unit=survey.header.depth_unit,  # type: ignore[arg-type]
+        surface_unit=survey.header.surface_unit  # type: ignore[arg-type]
     )
     return survey_to_target
 
@@ -3716,7 +3846,7 @@ class SurveyData:
     to append additional sections and reconstruct a unified Survey.
     """
 
-    def __init__(self, survey):
+    def __init__(self, survey: "Survey") -> None:
         """
         A class for extracting the minimal amount of data from a `Survey`
         object, with methods for combining data from a list of surveys that
@@ -3738,7 +3868,7 @@ class SurveyData:
         self.cov_hla = survey.cov_hla
         self.radius = survey.radius
 
-    def append_survey(self, survey):
+    def append_survey(self, survey: "Survey") -> None:
         """
         Method to extract data from a survey and append it to
         the existing survey data existing in the instance.
@@ -3759,19 +3889,19 @@ class SurveyData:
         )
         self.cov_nev = np.hstack(
             (
-                self.cov_nev.reshape(-1),
-                survey.cov_nev[1:].reshape(-1)
+                self.cov_nev.reshape(-1),  # type: ignore[union-attr]
+                survey.cov_nev[1:].reshape(-1)  # type: ignore[index]
             )
         ).reshape(-1, 3, 3)
         self.cov_hla = np.hstack(
             (
-                self.cov_hla.reshape(-1),
-                survey.cov_hla[1:].reshape(-1)
+                self.cov_hla.reshape(-1),  # type: ignore[union-attr]
+                survey.cov_hla[1:].reshape(-1)  # type: ignore[index]
             )
         ).reshape(-1, 3, 3)
         self.radius = np.hstack((self.radius, survey.radius[1:]))
 
-    def get_survey(self):
+    def get_survey(self) -> "Survey":
         """
         Method to create a `welleng.survey.Survey` object from the survey
         data existing in the instance.
@@ -3795,7 +3925,7 @@ class SurveyData:
         return survey
 
 
-def splice_surveys(surveys):
+def splice_surveys(surveys: list) -> "Survey":
     """
     Join together an ordered list of surveys for a well (for example, a list
     of surveys with a different error model for each survey).
