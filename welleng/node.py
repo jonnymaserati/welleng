@@ -55,6 +55,7 @@ class Node:
     md: Optional[float]
     unit: str
     cov_nev: np.ndarray
+    interpolated: bool
 
     def __init__(
         self,
@@ -67,6 +68,7 @@ class Node:
         degrees: bool = True,
         nev: bool = True,
         cov_nev: Optional[np.ndarray] = None,
+        interpolated: bool = False,
         **kwargs: Any
     ) -> None:
         """Initialize a Node with position and direction.
@@ -94,6 +96,9 @@ class Node:
             otherwise XYZ.
         cov_nev : ndarray, optional
             Covariance matrix (1, 3, 3). Defaults to zeros.
+        interpolated : bool
+            True if this node was interpolated between survey stations
+            (default False).
         **kwargs
             Additional attributes set on the instance.
         """
@@ -102,6 +107,7 @@ class Node:
         self.md = md
         self.unit = unit
         self.cov_nev = np.zeros(shape=(1, 3, 3)) if cov_nev is None else cov_nev
+        self.interpolated = interpolated
 
         for k, v in kwargs.items():
             setattr(self, k, v)
@@ -120,7 +126,7 @@ class Node:
             self.inc_rad = None
             self.inc_deg = None
             self.azi_rad = None
-            self.azi_rad = None
+            self.azi_deg = None
             return
         elif vec is None:
             assert inc is not None and azi is not None, (
