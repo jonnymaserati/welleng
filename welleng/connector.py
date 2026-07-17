@@ -9,13 +9,12 @@ closed form via Sawaryn (2021, SPE-204111-PA) — see ``welleng.sawaryn_analytic
 """
 
 import warnings
-from copy import copy, deepcopy
+from copy import copy
 from typing import Any, Optional, Union
 
 import numpy as np
 from numpy.typing import ArrayLike
 from scipy.optimize import minimize
-from scipy.spatial import distance
 
 from .node import Node, get_node_params
 from .sawaryn_analytical import max_radius, solve_clc
@@ -1936,131 +1935,6 @@ def connect_points(
         connections.append(c)
 
     return connections
-
-
-def survey_to_plan(
-    survey: Any, tolerance: float = 0.2, dls_design: float = 1.,
-    step: float = 30.
-) -> list:
-    """Extracts a minimal well plan from a drilled survey.
-
-    Identifies the minimum number of control points (start/end of hold
-    or build/turn sections) needed to reproduce the survey trajectory
-    within the given tolerance.
-
-    Parameters
-    ----------
-    survey : Survey
-        A welleng Survey object representing the drilled well.
-    tolerance : float
-        Fit tolerance. Higher values produce fewer control
-        points but a looser fit.
-    dls_design : float
-        Minimum design DLS in deg/30m for the planned trajectory.
-    step : float
-        Desired MD step interval for the output survey.
-
-    Returns
-    -------
-    list
-        A list of Connector objects representing the planned sections.
-
-    Raises
-    ------
-    AssertionError
-        If dls_design is not greater than 0.
-    """
-    assert dls_design > 0., "dls_design must be greater than 0"
-
-    idx = [0]
-    end = len(survey.md) - 1
-    md = survey.md[0]
-    node = None
-    sections = []
-
-    while True:
-        section, i = _get_section(
-            survey=survey,
-            start=idx[-1],
-            md=md,
-            node=node,
-            tolerance=tolerance,
-            dls_design=dls_design
-        )
-        sections.append(section)
-        idx.append(i)
-        if idx[-1] >= end:
-            break
-        node = section.node_end
-
-    # data = interpolate_well(sections, step=step)
-
-    return sections
-
-
-def _get_section(
-    survey: Any, start: int, tolerance: float, dls_design: float = 1.,
-    md: float = 0., node: Optional[Node] = None
-) -> tuple:
-    idx = start + 2
-    nev = survey.get_nev_arr()
-
-    if idx > len(nev):
-        idx = len(nev) - 1
-
-    if node is None:
-        node_1 = Node(
-            pos=nev[start],
-            vec=survey.vec_nev[start],
-            md=md
-        )
-    else:
-        node_1 = node
-
-    scores = [0.]
-    delta_scores = []
-    c_old = None
-
-    for i, (p, v) in enumerate(zip(nev[idx:], survey.vec_nev[idx:])):
-        node_2 = Node(
-            pos=p,
-            vec=v,
-        )
-        c = Connector(
-            node1=node_1,
-            node2=node_2,
-            dls_design=dls_design
-        )
-        s = c.survey(step=1.)  # type: ignore[attr-defined]  # legacy survey_to_plan path: Connector.survey not implemented (pre-existing)
-        if c_old is None:
-            c_old = deepcopy(c)
-        nev_new = s.get_nev_arr()
-
-        distances = distance.cdist(
-            nev[start: idx + i],
-            nev_new
-        )
-
-        score = np.sum(np.amin(distances, axis=1)) / (s.md[-1] - s.md[0])
-
-        delta_scores.append(score - scores[-1])
-        scores.append(score)
-
-        if all((
-            abs(delta_scores[-1]) >= tolerance,
-            idx + i < len(nev) - 2
-        )):
-            break
-        elif idx + i == len(nev) - 1:
-            c_old = deepcopy(c)
-            break
-        else:
-            c_old = deepcopy(c)
-
-    return (
-        c_old,
-        idx + i - 1 if idx + i != len(nev) - 1 else idx + i
-    )
 
 
 def drop_off(
