@@ -69,6 +69,21 @@ easy = [
 analytical = [
     "python-flint",
 ]
+# Kick-tolerance extras: coolprop = optional CCUS / reference-EOS mixture gas
+# backend; sympy = the envelope/monotonicity analysis. Core kick-tolerance
+# (core.py, gas_z.py) needs neither -- only numpy/scipy.
+#
+# CoolProp is a LOAD-BEARING dependency for the mixture / CO2 / CCUS gas path
+# (gas_z_coolprop.py) -- it drives the real-EOS Z(P,T) that the influx presets and
+# the metered API tier depend on. It is therefore version-BOUNDED to the tested
+# major (8.x), not floated: patch/minor updates are allowed, the next major is
+# gated. DO NOT raise the upper bound without first re-running the CoolProp gas
+# validation (tests/test_kick_coolprop_ztable.py + the SPE-208788 gas-property
+# check) against the new major and confirming numbers hold. Tested against 8.0.0.
+kick = [
+    "coolprop>=8.0.0,<9",
+    "sympy",
+]
 all = [
     "magnetic_field_calculator",
     "networkx",
@@ -78,6 +93,8 @@ all = [
     "python-fcl",
     "rtree",
     "python-flint",
+    "coolprop>=8.0.0,<9",   # load-bearing; bounded to tested major (see [kick] note)
+    "sympy",
 ]
 
 [project.urls]

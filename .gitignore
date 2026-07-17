@@ -75,7 +75,9 @@ projects/
 papers/gyro_appendixE_per_source_diagnostics.csv
 papers/view_clc.py
 papers/zenodo-metadata.json
-examples/data/
+examples/data/*
+# except the small public Volve KT reproducibility profiles (CC BY 4.0, Equinor)
+!examples/data/volve_f13_kick_tolerance_profiles.npz
 tests/data/
 welleng/errors/error_codes.yaml
 welleng/errors/extract_error_codes.py

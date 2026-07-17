@@ -30,3 +30,4 @@ import welleng.node
 import welleng.architecture
 import welleng.torque_drag
 import welleng.units
+import welleng.kick_tolerance
