@@ -1,0 +1,75 @@
+{
+    "upload_type": "publication",
+    "publication_type": "preprint",
+    "version": "1.0",
+    "title": "The welleng kick-tolerance engine: derivation, provenance and public validation against published methods",
+    "creators": [
+        {
+            "name": "Corcutt, Jonathan",
+            "affiliation": "Corcutt Beheer B.V., Wassenaar, Netherlands",
+            "orcid": "0009-0008-1953-7760"
+        }
+    ],
+    "description": "An open, reproducible derivation and validation of the kick-tolerance engine in welleng. The engine computes the maximum tolerable gas influx for a well design from the pore/fracture-pressure envelope, casing/hole geometry and mud weight, tracking a single migrating gas bubble to the fracture-weakest exposed point. This note is framed as reproduction and validation, not novelty or error critique: it documents what the model is built from (provenance) and shows that the implementation reproduces the worked examples of the established published methods. Validations include the single-bubble closed form of Thorogood et al. (SPE-208788-PA, 2022; intermediates digit-exact, ~1% self-contained), the kick-classification and frictional/thermal effects of Kiani Nassab et al. (SPE-202426-PA, 2022; Fig. 12 static Company-Model points), and the transitional/full-displacement kick-tolerance treatment of Santos et al. (SPE/IADC-140113-MS, 2011; SPE-159175-MS, 2012). Real-gas compressibility uses a clean-room implementation of the Hall & Yarborough (1973) Z-factor correlation, with an optional CoolProp real-EOS backend for mixtures and CO2. The engine is demonstrated end-to-end on public Equinor Volve field data (well F-13, CC BY 4.0). Every quoted validation figure is reproduced by an automated test in the welleng test suite; the Volve demonstration is reproducible via an accompanying open example script. The scope, deliberate conservatism and limitations of the single-bubble model relative to dynamic multiphase simulators are stated explicitly.",
+    "license": "cc-by-4.0",
+    "access_right": "open",
+    "keywords": [
+        "kick tolerance",
+        "well control",
+        "MAASP",
+        "influx",
+        "gas migration",
+        "well design",
+        "pore pressure",
+        "fracture pressure",
+        "casing design",
+        "Hall-Yarborough",
+        "real-gas Z-factor",
+        "directional drilling",
+        "welleng",
+        "SPE"
+    ],
+    "related_identifiers": [
+        {
+            "identifier": "10.2118/208788-PA",
+            "relation": "cites",
+            "scheme": "doi",
+            "resource_type": "publication-article"
+        },
+        {
+            "identifier": "10.2118/202426-PA",
+            "relation": "cites",
+            "scheme": "doi",
+            "resource_type": "publication-article"
+        },
+        {
+            "identifier": "10.2118/140113-MS",
+            "relation": "cites",
+            "scheme": "doi",
+            "resource_type": "publication-conferencepaper"
+        },
+        {
+            "identifier": "10.2118/159175-MS",
+            "relation": "cites",
+            "scheme": "doi",
+            "resource_type": "publication-conferencepaper"
+        },
+        {
+            "identifier": "10.1021/ie4033999",
+            "relation": "cites",
+            "scheme": "doi",
+            "resource_type": "publication-article"
+        },
+        {
+            "identifier": "https://github.com/jonnymaserati/welleng",
+            "relation": "isSupplementedBy",
+            "scheme": "url"
+        },
+        {
+            "identifier": "10.5281/zenodo.20968887",
+            "relation": "isSupplementTo",
+            "scheme": "doi",
+            "resource_type": "software"
+        }
+    ]
+}
