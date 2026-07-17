@@ -408,6 +408,21 @@ If your work uses the **kick-tolerance engine** (`welleng.kick_tolerance`), plea
 }
 ```
 
+If your work uses the **tortuosity index** (`welleng.survey` TI/MTI), please also cite:
+
+> Corcutt, J. (2026). *A Note on the Well Trajectory Tortuosity Index: Non-Independence of the Inclination–Azimuth Combination, and a Dimensionless Form.* Zenodo. <https://doi.org/10.5281/zenodo.21206271>
+
+```bibtex
+@misc{corcutt2026tortuosity,
+  author    = {Corcutt, Jonathan},
+  title     = {A Note on the Well Trajectory Tortuosity Index: Non-Independence of the Inclination--Azimuth Combination, and a Dimensionless Form},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.21206271},
+  url       = {https://doi.org/10.5281/zenodo.21206271}
+}
+```
+
 **Built on:** welleng stands on NumPy, SciPy, pandas, trimesh, FCL and more, and implements published methods (ISCWSA, Brooks, Sawaryn, …) — see [CITATIONS.md](CITATIONS.md) for the dependency and method references to credit.
 
 ## License
