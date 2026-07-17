@@ -69,6 +69,14 @@ If your work relies on a specific method, please **also** cite the relevant pape
 - **Matplotlib** — Hunter, J. D. (2007). *Matplotlib: A 2D Graphics Environment.*
   Computing in Science & Engineering 9(3), 90–95.
   [doi:10.1109/MCSE.2007.55](https://doi.org/10.1109/MCSE.2007.55)
+- **CoolProp** — Bell, I. H., Wronski, J., Quoilin, S., Lemort, V. (2014). *Pure
+  and Pseudo-pure Fluid Thermophysical Property Evaluation and the Open-Source
+  Thermophysical Property Library CoolProp.* Industrial & Engineering Chemistry
+  Research 53(6), 2498–2508.
+  [doi:10.1021/ie4033999](https://doi.org/10.1021/ie4033999) — optional
+  reference-EOS backend for kick-tolerance gas-property validation.
+- **SymPy** — Meurer, A., et al. (2017). *SymPy: symbolic computing in Python.*
+  PeerJ Computer Science 3:e103. [doi:10.7717/peerj-cs.103](https://doi.org/10.7717/peerj-cs.103)
 - **VTK / vedo**, **NetworkX**, **utm**, **magnetic_field_calculator**,
   **tabulate** — acknowledged by name.
 
@@ -123,6 +131,30 @@ If your work relies on a specific method, please **also** cite the relevant pape
   Bang, J. (2017). *Quantification of Wellbore-Collision Probability by Novel
   Analytic Methods.* SPE Drilling & Completion. SPE 184644-PA.
   [doi:10.2118/184644-PA](https://doi.org/10.2118/184644-PA)
+
+### Kick tolerance
+
+- **Single-bubble kick-tolerance closed form** — Thorogood, J. L., Robertson, E.,
+  Castillo, D., Sawaryn, S. J. (2022). *An Assessment of the Kick Tolerance
+  Calculation for Well Design and Drilling Operations.* SPE Drilling &
+  Completion. SPE 208788-PA.
+  [doi:10.2118/208788-PA](https://doi.org/10.2118/208788-PA) — the public
+  Appendix-A closed form (Eqs. A-1…A-9) transcribed for the Tier-0 single-bubble
+  drill/swab margin.
+- **Real-gas Z-factor** — Hall, K. R., Yarborough, L. (1973). *A new equation of
+  state for Z-factor calculations.* Oil & Gas Journal 71(25), 82–92 — the
+  clean-room Hall & Yarborough compressibility-factor backend for the Tier-0
+  pure-methane influx.
+- **NOGEPA Industry Standard No. 50** — *Kick Tolerances for Well Design &
+  Drilling Operations.* Netherlands Oil and Gas Exploration and Production
+  Association — the operational kick-tolerance design basis.
+- **Deviated-well form** — Kiani Nassab, K., Ting, S. Z., Buapha, S., MatNoh, N.,
+  Hemmati, M. N. (2022). *How to Improve Accuracy of a Kick Tolerance Model by
+  Considering the Effects of Kick Classification, Frictional Losses, Pore Pressure
+  Profile, and Influx Temperature.* SPE Drilling & Completion 37(01), 15.
+  SPE 202426-PA. [doi:10.2118/202426-PA](https://doi.org/10.2118/202426-PA) — the
+  single-bubble method with true-vertical-depth pressures and the gas-column
+  vertical-height → along-hole-length conversion (H_gas → L_gas) for deviated wells.
 
 welleng is grateful to these projects, their maintainers, and the authors and
 standards bodies whose methods it implements.

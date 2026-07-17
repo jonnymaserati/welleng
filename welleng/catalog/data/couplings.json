@@ -1,0 +1,93 @@
+{
+  "_meta": {
+    "class": "couplings",
+    "source": "API Spec 5CT (Specification for Casing and Tubing), 11th ed., 2023 - coupling dimensional data (regular OD W, special-clearance OD Wc, minimum coupling length NL).",
+    "tables": {
+      "STC": "Table E.27 (API Round Thread Casing Coupling), Short NL column",
+      "LTC": "Table E.27 (API Round Thread Casing Coupling), Long NL column",
+      "BTC": "Table E.28 (API Buttress Thread Casing Coupling)",
+      "NUE": "Table E.29 (API Non-upset Tubing Coupling)",
+      "EUE": "Table E.30 (API External Upset Tubing Coupling)"
+    },
+    "edition": "API Spec 5CT (11th ed., 2023); USC-unit annex E. SI equivalents are Tables C.27-C.30.",
+    "values": "as-published imperial (facts; cited by table number). Loader converts to SI at resolve.",
+    "units": {
+      "od_in": "in (nominal pipe size the coupling is used on = pipe OD)",
+      "connection": "thread/connection designation (STC/LTC/BTC casing; NUE/EUE tubing)",
+      "coupling_od_in": "in (regular coupling outside diameter W)",
+      "special_clearance_od_in": "in (special-clearance coupling outside diameter Wc; null if not an API special-clearance size)",
+      "coupling_length_in": "in (minimum coupling length NL)"
+    },
+    "to_SI": {
+      "in_to_m": 0.0254
+    },
+    "notes": [
+      "Connection -> kind: STC/LTC/BTC are casing round/buttress; NUE/EUE are non-upset/external-upset tubing.",
+      "STC (Short Thread Coupling) and LTC (Long Thread Coupling) are the same API Round Thread coupling (Table E.27) differing only in minimum length NL (Short vs Long column); the regular OD W is identical. LTC exists only for the sizes API tabulates a Long NL for.",
+      "BTC (Buttress) and EUE additionally carry a special-clearance OD Wc where API tabulates one (Table E.28 / E.30 Special Clearance column); null means no API special-clearance coupling for that size.",
+      "Values are dimensional facts cited by API 5CT table number; no document text/layout is reproduced.",
+      "NL fractions from the tables converted to decimal inches (e.g. 6 1/4 -> 6.25, 3 3/16 -> 3.1875)."
+    ]
+  },
+  "couplings": [
+    {"od_in": 4.5,    "connection": "STC", "kind": "casing", "coupling_od_in": 5.250,  "special_clearance_od_in": null,  "coupling_length_in": 6.25},
+    {"od_in": 5.0,    "connection": "STC", "kind": "casing", "coupling_od_in": 5.800,  "special_clearance_od_in": null,  "coupling_length_in": 6.5},
+    {"od_in": 5.5,    "connection": "STC", "kind": "casing", "coupling_od_in": 6.300,  "special_clearance_od_in": null,  "coupling_length_in": 6.75},
+    {"od_in": 6.625,  "connection": "STC", "kind": "casing", "coupling_od_in": 7.390,  "special_clearance_od_in": null,  "coupling_length_in": 7.25},
+    {"od_in": 7.0,    "connection": "STC", "kind": "casing", "coupling_od_in": 7.875,  "special_clearance_od_in": null,  "coupling_length_in": 7.25},
+    {"od_in": 7.625,  "connection": "STC", "kind": "casing", "coupling_od_in": 8.500,  "special_clearance_od_in": null,  "coupling_length_in": 7.5},
+    {"od_in": 8.625,  "connection": "STC", "kind": "casing", "coupling_od_in": 9.625,  "special_clearance_od_in": null,  "coupling_length_in": 7.75},
+    {"od_in": 9.625,  "connection": "STC", "kind": "casing", "coupling_od_in": 10.625, "special_clearance_od_in": null,  "coupling_length_in": 7.75},
+    {"od_in": 10.75,  "connection": "STC", "kind": "casing", "coupling_od_in": 11.750, "special_clearance_od_in": null,  "coupling_length_in": 8.0},
+    {"od_in": 11.75,  "connection": "STC", "kind": "casing", "coupling_od_in": 12.750, "special_clearance_od_in": null,  "coupling_length_in": 8.0},
+    {"od_in": 13.375, "connection": "STC", "kind": "casing", "coupling_od_in": 14.375, "special_clearance_od_in": null,  "coupling_length_in": 8.0},
+    {"od_in": 16.0,   "connection": "STC", "kind": "casing", "coupling_od_in": 17.000, "special_clearance_od_in": null,  "coupling_length_in": 9.0},
+    {"od_in": 18.625, "connection": "STC", "kind": "casing", "coupling_od_in": 20.000, "special_clearance_od_in": null,  "coupling_length_in": 9.0},
+    {"od_in": 20.0,   "connection": "STC", "kind": "casing", "coupling_od_in": 21.000, "special_clearance_od_in": null,  "coupling_length_in": 9.0},
+
+    {"od_in": 4.5,    "connection": "LTC", "kind": "casing", "coupling_od_in": 5.250,  "special_clearance_od_in": null,  "coupling_length_in": 7.0},
+    {"od_in": 5.0,    "connection": "LTC", "kind": "casing", "coupling_od_in": 5.800,  "special_clearance_od_in": null,  "coupling_length_in": 7.75},
+    {"od_in": 5.5,    "connection": "LTC", "kind": "casing", "coupling_od_in": 6.300,  "special_clearance_od_in": null,  "coupling_length_in": 8.0},
+    {"od_in": 6.625,  "connection": "LTC", "kind": "casing", "coupling_od_in": 7.390,  "special_clearance_od_in": null,  "coupling_length_in": 8.75},
+    {"od_in": 7.0,    "connection": "LTC", "kind": "casing", "coupling_od_in": 7.875,  "special_clearance_od_in": null,  "coupling_length_in": 9.0},
+    {"od_in": 7.625,  "connection": "LTC", "kind": "casing", "coupling_od_in": 8.500,  "special_clearance_od_in": null,  "coupling_length_in": 9.25},
+    {"od_in": 8.625,  "connection": "LTC", "kind": "casing", "coupling_od_in": 9.625,  "special_clearance_od_in": null,  "coupling_length_in": 10.0},
+    {"od_in": 9.625,  "connection": "LTC", "kind": "casing", "coupling_od_in": 10.625, "special_clearance_od_in": null,  "coupling_length_in": 10.5},
+    {"od_in": 20.0,   "connection": "LTC", "kind": "casing", "coupling_od_in": 21.000, "special_clearance_od_in": null,  "coupling_length_in": 11.5},
+
+    {"od_in": 4.5,    "connection": "BTC", "kind": "casing", "coupling_od_in": 5.250,  "special_clearance_od_in": 4.875,  "coupling_length_in": 8.875},
+    {"od_in": 5.0,    "connection": "BTC", "kind": "casing", "coupling_od_in": 5.800,  "special_clearance_od_in": 5.375,  "coupling_length_in": 9.125},
+    {"od_in": 5.5,    "connection": "BTC", "kind": "casing", "coupling_od_in": 6.300,  "special_clearance_od_in": 5.875,  "coupling_length_in": 9.25},
+    {"od_in": 6.625,  "connection": "BTC", "kind": "casing", "coupling_od_in": 7.390,  "special_clearance_od_in": 7.000,  "coupling_length_in": 9.625},
+    {"od_in": 7.0,    "connection": "BTC", "kind": "casing", "coupling_od_in": 7.875,  "special_clearance_od_in": 7.375,  "coupling_length_in": 10.0},
+    {"od_in": 7.625,  "connection": "BTC", "kind": "casing", "coupling_od_in": 8.500,  "special_clearance_od_in": 8.125,  "coupling_length_in": 10.375},
+    {"od_in": 8.625,  "connection": "BTC", "kind": "casing", "coupling_od_in": 9.625,  "special_clearance_od_in": 9.125,  "coupling_length_in": 10.625},
+    {"od_in": 9.625,  "connection": "BTC", "kind": "casing", "coupling_od_in": 10.625, "special_clearance_od_in": 10.125, "coupling_length_in": 10.625},
+    {"od_in": 10.75,  "connection": "BTC", "kind": "casing", "coupling_od_in": 11.750, "special_clearance_od_in": 11.250, "coupling_length_in": 10.625},
+    {"od_in": 11.75,  "connection": "BTC", "kind": "casing", "coupling_od_in": 12.750, "special_clearance_od_in": null,   "coupling_length_in": 10.625},
+    {"od_in": 13.375, "connection": "BTC", "kind": "casing", "coupling_od_in": 14.375, "special_clearance_od_in": null,   "coupling_length_in": 10.625},
+    {"od_in": 16.0,   "connection": "BTC", "kind": "casing", "coupling_od_in": 17.000, "special_clearance_od_in": null,   "coupling_length_in": 10.625},
+    {"od_in": 18.625, "connection": "BTC", "kind": "casing", "coupling_od_in": 20.000, "special_clearance_od_in": null,   "coupling_length_in": 10.625},
+    {"od_in": 20.0,   "connection": "BTC", "kind": "casing", "coupling_od_in": 21.000, "special_clearance_od_in": null,   "coupling_length_in": 10.625},
+
+    {"od_in": 1.05,   "connection": "NUE", "kind": "tubing", "coupling_od_in": 1.313,  "special_clearance_od_in": null,  "coupling_length_in": 3.1875},
+    {"od_in": 1.315,  "connection": "NUE", "kind": "tubing", "coupling_od_in": 1.660,  "special_clearance_od_in": null,  "coupling_length_in": 3.25},
+    {"od_in": 1.66,   "connection": "NUE", "kind": "tubing", "coupling_od_in": 2.054,  "special_clearance_od_in": null,  "coupling_length_in": 3.5},
+    {"od_in": 1.9,    "connection": "NUE", "kind": "tubing", "coupling_od_in": 2.200,  "special_clearance_od_in": null,  "coupling_length_in": 3.75},
+    {"od_in": 2.375,  "connection": "NUE", "kind": "tubing", "coupling_od_in": 2.875,  "special_clearance_od_in": null,  "coupling_length_in": 4.25},
+    {"od_in": 2.875,  "connection": "NUE", "kind": "tubing", "coupling_od_in": 3.500,  "special_clearance_od_in": null,  "coupling_length_in": 5.125},
+    {"od_in": 3.5,    "connection": "NUE", "kind": "tubing", "coupling_od_in": 4.250,  "special_clearance_od_in": null,  "coupling_length_in": 5.625},
+    {"od_in": 4.0,    "connection": "NUE", "kind": "tubing", "coupling_od_in": 4.750,  "special_clearance_od_in": null,  "coupling_length_in": 5.75},
+    {"od_in": 4.5,    "connection": "NUE", "kind": "tubing", "coupling_od_in": 5.200,  "special_clearance_od_in": null,  "coupling_length_in": 6.125},
+
+    {"od_in": 1.05,   "connection": "EUE", "kind": "tubing", "coupling_od_in": 1.660,  "special_clearance_od_in": null,  "coupling_length_in": 3.25},
+    {"od_in": 1.315,  "connection": "EUE", "kind": "tubing", "coupling_od_in": 1.900,  "special_clearance_od_in": null,  "coupling_length_in": 3.5},
+    {"od_in": 1.66,   "connection": "EUE", "kind": "tubing", "coupling_od_in": 2.200,  "special_clearance_od_in": null,  "coupling_length_in": 3.75},
+    {"od_in": 1.9,    "connection": "EUE", "kind": "tubing", "coupling_od_in": 2.500,  "special_clearance_od_in": null,  "coupling_length_in": 3.875},
+    {"od_in": 2.375,  "connection": "EUE", "kind": "tubing", "coupling_od_in": 3.063,  "special_clearance_od_in": 2.910, "coupling_length_in": 4.875},
+    {"od_in": 2.875,  "connection": "EUE", "kind": "tubing", "coupling_od_in": 3.668,  "special_clearance_od_in": 3.460, "coupling_length_in": 5.25},
+    {"od_in": 3.5,    "connection": "EUE", "kind": "tubing", "coupling_od_in": 4.500,  "special_clearance_od_in": 4.180, "coupling_length_in": 5.75},
+    {"od_in": 4.0,    "connection": "EUE", "kind": "tubing", "coupling_od_in": 5.000,  "special_clearance_od_in": null,  "coupling_length_in": 6.0},
+    {"od_in": 4.5,    "connection": "EUE", "kind": "tubing", "coupling_od_in": 5.563,  "special_clearance_od_in": null,  "coupling_length_in": 6.25}
+  ]
+}

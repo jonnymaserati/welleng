@@ -19,6 +19,7 @@
 - **Well path creation** — the `connector` module builds trajectories between start/end locations automatically, backed by an analytic, vectorized closed-form curve-hold-curve (CLC) point-to-target solver (`sawaryn_analytical` — every solution + the minimum-measured-depth path) with radius-sweep and R1×R2 drillable-region tooling
 - **Vertical section, TVD interpolation, project-ahead** — common survey planning tools
 - **Torque and drag** — simple torque/drag model with architecture module
+- **Kick tolerance** — deterministic, conservative single-bubble kick-tolerance engine (drill and swab cases): the mandated NOGEPA-50 static formula, a whole-path gas-migration check over the pore–fracture envelope, and an exact analytical breakpoint solver, reproducing the published worked examples of SPE-208788-PA, SPE-202426-PA (Kiani Nassab) and Santos (SPE/IADC-140113); real-gas *Z* via a clean-room Hall–Yarborough backend with an optional CoolProp EOS backend for CO₂/CCUS mixtures; deviated-well aware
 - **Visualization** — interactive 3D via [vedo]/VTK or browser-based via plotly (requires `easy` install)
 - **Data exchange** — import/export Landmark .wbp files; read EDM datasets
 - **World Magnetic Model** — auto-calculates magnetic field data when not supplied
@@ -117,6 +118,25 @@ cov = survey.err.errors.cov_NEVs       # NEV covariance per station
 > the design DLS; opt-in `on_infeasible='max_radius'` returns the gentlest feasible
 > curve. Companion paper:
 > [doi:10.5281/zenodo.21130979](https://doi.org/10.5281/zenodo.21130979).
+
+## Using welleng in production
+
+welleng is free and open-source (**Apache-2.0**) and stays that way — the engine
+implements *public* methods (ISCWSA / SPE / API), openly and inspectably validated
+(conformance suite + CI).
+
+The open version is provided **AS IS, without warranty** — ideal for research,
+evaluation, and building on.
+
+For **production well engineering** — a maintained, version-pinned, validated build
+whose results are stood behind contractually, with support/SLA — a **commercial
+offering is available**. The model is paid maintenance and support for welleng as a
+production dependency: kept patched, conformance-current, and supported under a
+commercial agreement (specific warranty and support terms are negotiated per
+engagement). Get in touch: [jonnycorcutt@gmail.com](mailto:jonnycorcutt@gmail.com).
+
+The maths is open; what's commercial is the **assurance, maintenance, and support**
+around it.
 
 ## Support welleng
 welleng is fuelled by copious amounts of coffee, so if you wish to supercharge development please donate generously:
