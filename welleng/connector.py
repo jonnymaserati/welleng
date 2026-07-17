@@ -10,8 +10,10 @@ closed form via Sawaryn (2021, SPE-204111-PA) — see ``welleng.sawaryn_analytic
 
 import warnings
 from copy import copy, deepcopy
+from typing import Any, Optional, Union
 
 import numpy as np
+from numpy.typing import ArrayLike
 from scipy.optimize import minimize
 from scipy.spatial import distance
 
@@ -127,32 +129,74 @@ class Connector:
         Interpolate the solved trajectory at regular MD intervals.
     """
 
+    method: str
+    node_start: Node
+    node_end: Node
+    unit: str
+    pos1: np.ndarray
+    vec1: np.ndarray
+    inc1: float
+    azi1: float
+    md1: float
+    pos2: Optional[np.ndarray]
+    vec2: Optional[np.ndarray]
+    inc2: Optional[float]
+    azi2: Optional[float]
+    md2: Optional[float]
+    pos3: Optional[np.ndarray]
+    vec3: Optional[np.ndarray]
+    inc3: Optional[float]
+    azi3: Optional[float]
+    md3: Optional[float]
+    pos_target: np.ndarray
+    vec_target: np.ndarray
+    inc_target: float
+    azi_target: float
+    md_target: float
+    dogleg: Any
+    dogleg2: Any
+    dist_curve: Any
+    dist_curve2: Any
+    func_dogleg: Any
+    func_dogleg2: Any
+    tangent_length: Optional[float]
+    dls: float
+    dls2: float
+    dls_design: float
+    dls_design2: float
+    radius_design: float
+    radius_design2: float
+    radius_critical: float
+    radius_critical2: float
+    distances: tuple
+    radii: list
+
     def __init__(
         self,
-        node1=None,
-        node2=None,
-        pos1=[0., 0., 0.],
-        vec1=None,
-        inc1=None,
-        azi1=None,
-        md1=0,
-        dls_design=3.0,
-        dls_design2=None,
-        md2=None,
-        pos2=None,
-        vec2=None,
-        inc2=None,
-        azi2=None,
-        degrees=True,
-        unit='meters',
-        min_error=1e-5,
-        delta_dls=0.1,
-        min_tangent=0.,
-        max_iterations=1_000,
-        force_min_curve=False,
-        closest_approach=False,
-        on_infeasible='raise'
-    ):
+        node1: Optional[Node] = None,
+        node2: Optional[Node] = None,
+        pos1: ArrayLike = [0., 0., 0.],
+        vec1: Optional[ArrayLike] = None,
+        inc1: Optional[float] = None,
+        azi1: Optional[float] = None,
+        md1: float = 0,
+        dls_design: Optional[float] = 3.0,
+        dls_design2: Optional[float] = None,
+        md2: Optional[float] = None,
+        pos2: Optional[ArrayLike] = None,
+        vec2: Optional[ArrayLike] = None,
+        inc2: Optional[float] = None,
+        azi2: Optional[float] = None,
+        degrees: bool = True,
+        unit: str = 'meters',
+        min_error: float = 1e-5,
+        delta_dls: float = 0.1,
+        min_tangent: float = 0.,
+        max_iterations: int = 1_000,
+        force_min_curve: bool = False,
+        closest_approach: bool = False,
+        on_infeasible: str = 'raise'
+    ) -> None:
         """Initializes the Connector and solves the trajectory.
 
         Only specific combinations of input data are permitted. For example,
@@ -231,7 +275,7 @@ class Connector:
             If input parameter combinations are invalid.
         """
         if node1 is not None:
-            pos1, vec1, md1 = get_node_params(
+            pos1, vec1, md1 = get_node_params(  # type: ignore[assignment]  # node1 Node fields are Optional but populated here
                 node1
             )
         if node2 is not None:
@@ -328,8 +372,8 @@ class Connector:
             self.inc1, self.azi1 = get_angles(self.vec1, nev=True).reshape(2)
 
         self.md1 = md1
-        self.pos_target = None if pos2 is None else np.array(pos2).reshape(3)
-        self.md_target = md2
+        self.pos_target = None if pos2 is None else np.array(pos2).reshape(3)  # type: ignore[assignment]  # transient None; pos_target populated before use per method
+        self.md_target = md2  # type: ignore[assignment]  # md_target set from Optional md2; solve populates it
 
         if vec2 is not None:
             self.vec_target = np.array(vec2).reshape(3)
@@ -354,9 +398,9 @@ class Connector:
         elif inc2 is None:
             self.inc_target = self.inc1
             if degrees:
-                self.azi_target = np.radians(azi2)
+                self.azi_target = np.radians(azi2)  # type: ignore[arg-type]  # azi2 non-None in this input-combination branch (mypy can't narrow)
             else:
-                self.azi_target = azi2
+                self.azi_target = azi2  # type: ignore[assignment]  # azi2 non-None in this branch
             self.vec_target = get_vec(
                 self.inc_target, self.azi_target, nev=True, deg=False
             ).reshape(3)
@@ -370,7 +414,7 @@ class Connector:
                 self.inc_target, self.azi_target, nev=True, deg=False
             ).reshape(3)
         else:
-            self.vec_target = vec2
+            self.vec_target = vec2  # type: ignore[assignment]  # guarded branch: vec2 already validated non-None above
             self.inc_target = inc2
             self.azi_target = azi2
 
@@ -438,7 +482,7 @@ class Connector:
 
         self._get_nodes()
 
-    def _get_nodes(self):
+    def _get_nodes(self) -> None:
         self.node_start = Node(
             pos=self.pos1.reshape(3),
             vec=self.vec1.reshape(3),
@@ -450,7 +494,7 @@ class Connector:
             md=self.md_target
         )
 
-    def _min_dist_to_target(self):
+    def _min_dist_to_target(self) -> None:
         (
             self.tangent_length,
             self.dogleg
@@ -479,7 +523,7 @@ class Connector:
         self.vec2 = self.vec_target
         self.dls = np.degrees(self.dogleg) / abs(self.dist_curve) * 30
 
-    def _min_curve_to_target(self):
+    def _min_curve_to_target(self) -> None:
         (
             self.tangent_length,
             self.radius_critical,
@@ -501,7 +545,7 @@ class Connector:
         self._get_md_target()
         self.dls = np.degrees(self.dogleg) / self.dist_curve * 30
 
-    def _use_method(self):
+    def _use_method(self) -> None:
         if self.method == 'hold':
             self._hold()
         elif self.method == 'min_curve':
@@ -544,7 +588,7 @@ class Connector:
                     self.method = 'min_curve_to_target'
                     self._min_curve_to_target()
 
-    def _get_method(self):
+    def _get_method(self) -> None:
         assert self.initial_method not in [
             'no_input',
             'vec_and_inc_azi',
@@ -569,7 +613,7 @@ class Connector:
         else:
             self.method = self.initial_method
 
-    def _get_initial_methods(self):
+    def _get_initial_methods(self) -> None:
         # TODO: probably better to load this in from a yaml file
         # [md2, inc2, azi2, pos2, vec2] forms the booleans
         self.initial_methods = {
@@ -607,7 +651,7 @@ class Connector:
             '11111': 'md_and_pos'
         }
 
-    def _closest_approach(self):
+    def _closest_approach(self) -> None:
         vec_pos1_pos_target = self.pos_target - self.pos1
         vec_pos1_pos_target /= np.linalg.norm(vec_pos1_pos_target)
 
@@ -635,7 +679,7 @@ class Connector:
 
         self._min_curve_to_target()
 
-    def _min_curve(self):
+    def _min_curve(self) -> None:
         self.dogleg = get_dogleg(
             self.inc1, self.azi1, self.inc_target, self.azi_target
         )
@@ -707,7 +751,7 @@ class Connector:
                     self.func_dogleg
                 ).reshape(3)
 
-    def _hold(self):
+    def _hold(self) -> None:
         if self.pos_target is None:
             self.pos_target = (
                 self.pos1 + self.vec1 * (self.md_target - self.md1)
@@ -719,12 +763,12 @@ class Connector:
             )
         self.dls, self.dls2 = 0.0, 0.0
 
-    def _get_angles_target(self):
+    def _get_angles_target(self) -> None:
         self.inc_target, self.azi_target = get_angles(
             self.vec_target, nev=True
         ).reshape(2)
 
-    def _get_md_target(self):
+    def _get_md_target(self) -> None:
         self.md_target = (
             self.dist_curve
             + self.tangent_length
@@ -732,7 +776,9 @@ class Connector:
             + self.md1
         )
 
-    def _solve_chc_analytical(self, R1=None, R2=None):
+    def _solve_chc_analytical(
+        self, R1: Optional[float] = None, R2: Optional[float] = None
+    ) -> bool:
         """Closed-form curve-hold-curve solve — the primary CHC path.
 
         Solves the curve-hold-curve point-to-target problem analytically via
@@ -863,7 +909,7 @@ class Connector:
 
         return True
 
-    def _solve_chc_max_radius(self):
+    def _solve_chc_max_radius(self) -> bool:
         """Opt-in fallback when no CLC exists at the design radii.
 
         Finds the gentlest feasible curve — the ``beta=0`` biarc at the
@@ -900,7 +946,7 @@ class Connector:
         )
         return True
 
-    def interpolate(self, step=30):
+    def interpolate(self, step: float = 30) -> list:
         """Interpolates the connector trajectory at regular MD intervals.
 
         Parameters
@@ -915,11 +961,13 @@ class Connector:
         """
         return interpolate_well([self], step)
 
-    def _mod_pos(self, pos):
+    def _mod_pos(self, pos: np.ndarray) -> None:
         pos_rand = np.random.random(3)  # * self.delta_radius
         pos += pos_rand
 
-    def _get_distances(self, pos1, vec1, pos_target):
+    def _get_distances(
+        self, pos1: np.ndarray, vec1: np.ndarray, pos_target: np.ndarray
+    ) -> tuple:
         # When initializing a `curve_hold_curve` and pos_target is directly
         # ahead it can cause issues (it's a hold and not a curve). So this code
         # checks for that condition and if it's the case, will move the
@@ -959,7 +1007,7 @@ class Connector:
             )
 
 
-def check_dogleg(dogleg):
+def check_dogleg(dogleg: ArrayLike) -> Union[float, np.ndarray]:
     """Ensures the dogleg angle is positive by wrapping negative values.
 
     Accepts scalar or array-like; output shape matches input.
@@ -982,7 +1030,7 @@ def check_dogleg(dogleg):
     return wrapped
 
 
-def mod_vec(vec, error=1e-5):
+def mod_vec(vec: np.ndarray, error: float = 1e-5) -> tuple:
     """Slightly perturbs a direction vector to avoid exact antiparallel degeneracy.
 
     Parameters
@@ -1005,7 +1053,13 @@ def mod_vec(vec, error=1e-5):
     return vec_mod, inc_mod, azi_mod
 
 
-def get_pos(pos1, vec1, vec2, dist_curve, func_dogleg):
+def get_pos(
+    pos1: np.ndarray,
+    vec1: np.ndarray,
+    vec2: np.ndarray,
+    dist_curve: float,
+    func_dogleg: float,
+) -> np.ndarray:
     """Computes the end position of a minimum-curvature arc.
 
     Parameters
@@ -1030,13 +1084,13 @@ def get_pos(pos1, vec1, vec2, dist_curve, func_dogleg):
 
 
 def get_vec_target(
-    pos1,
-    vec1,
-    pos_target,
-    tangent_length,
-    dist_curve,
-    func_dogleg
-):
+    pos1: ArrayLike,
+    vec1: ArrayLike,
+    pos_target: ArrayLike,
+    tangent_length: ArrayLike,
+    dist_curve: ArrayLike,
+    func_dogleg: ArrayLike
+) -> np.ndarray:
     """Derives the target unit vector from curve geometry and target position.
 
     Solves for the direction vector at the end of a curve-hold section
@@ -1096,7 +1150,9 @@ def get_vec_target(
     return np.where(zero_mask[..., None], vec1, vec_target)
 
 
-def get_curve_hold_data(radius, dogleg):
+def get_curve_hold_data(
+    radius: Union[float, np.ndarray], dogleg: Union[float, np.ndarray]
+) -> tuple:
     """Computes arc length and shape factor for a curve section.
 
     Parameters
@@ -1121,7 +1177,7 @@ def get_curve_hold_data(radius, dogleg):
     )
 
 
-def shape_factor(dogleg):
+def shape_factor(dogleg: ArrayLike) -> Any:
     """Computes the minimum-curvature shape factor for a dogleg angle.
 
     Parameters
@@ -1137,7 +1193,9 @@ def shape_factor(dogleg):
     return get_rf(dogleg)
 
 
-def solve_curve_hold_batch(pos1, vec1, pos_target, radius):
+def solve_curve_hold_batch(
+    pos1: ArrayLike, vec1: ArrayLike, pos_target: ArrayLike, radius: ArrayLike
+) -> dict:
     """Vectorised curve-hold connector: fixed start pose, fixed target pos.
 
     Solves the minimum-MD curve-then-hold geometry from a start pose
@@ -1232,7 +1290,9 @@ def solve_curve_hold_batch(pos1, vec1, pos_target, radius):
     }
 
 
-def min_dist_to_target(radius, distances):
+def min_dist_to_target(
+    radius: Union[float, np.ndarray], distances: tuple
+) -> tuple:
     """Computes tangent length and dogleg for a curve-hold section to a target.
 
     Parameters
@@ -1272,7 +1332,7 @@ def min_dist_to_target(radius, distances):
     return tangent_length, dogleg
 
 
-def min_curve_to_target(distances):
+def min_curve_to_target(distances: tuple) -> tuple:
     """Computes minimum-curvature parameters when the design DLS is insufficient.
 
     Used when the target cannot be reached with the design radius, so the
@@ -1335,7 +1395,9 @@ def min_curve_to_target(distances):
     )
 
 
-def get_radius_critical(radius, distances, min_error):
+def get_radius_critical(
+    radius: float, distances: tuple, min_error: float
+) -> float:
     """Computes the critical radius for a given target geometry.
 
     The critical radius is the minimum curvature radius needed to reach
@@ -1380,7 +1442,9 @@ def get_radius_critical(radius, distances, min_error):
     return radius_critical
 
 
-def interpolate_well(sections, step=30):
+def interpolate_well(
+    sections: Union["Connector", list], step: float = 30
+) -> list:
     """Constructs interpolated survey data from a list of Connector sections.
 
     Parameters
@@ -1414,16 +1478,16 @@ def interpolate_well(sections, step=30):
 
 
 def interpolate_curve(
-    md1,
-    pos1,
-    vec1,
-    vec2,
-    dist_curve,
-    dogleg,
-    func_dogleg,
-    step,
-    endpoint=False
-):
+    md1: float,
+    pos1: np.ndarray,
+    vec1: np.ndarray,
+    vec2: np.ndarray,
+    dist_curve: float,
+    dogleg: float,
+    func_dogleg: float,
+    step: Optional[float],
+    endpoint: bool = False
+) -> dict:
     """Interpolates survey points along a curve section at regular MD intervals.
 
     Uses Rodrigues' rotation formula for numerical stability, especially
@@ -1519,7 +1583,14 @@ def interpolate_curve(
     return data
 
 
-def interpolate_hold(md1, pos1, vec1, md2, step, endpoint=False):
+def interpolate_hold(
+    md1: float,
+    pos1: np.ndarray,
+    vec1: np.ndarray,
+    md2: float,
+    step: Optional[float],
+    endpoint: bool = False
+) -> dict:
     """Interpolates survey points along a hold (tangent) section.
 
     Parameters
@@ -1567,7 +1638,9 @@ def interpolate_hold(md1, pos1, vec1, md2, step, endpoint=False):
     return data
 
 
-def get_min_curve(section, step=30, data=None):
+def get_min_curve(
+    section: "Connector", step: float = 30, data: Optional[list] = None
+) -> list:
     """Interpolates a minimum-curve section, dispatching by sub-method.
 
     Parameters
@@ -1599,7 +1672,9 @@ def get_min_curve(section, step=30, data=None):
     return result
 
 
-def get_interpolate_hold(section, step=30, data=None):
+def get_interpolate_hold(
+    section: "Connector", step: float = 30, data: Optional[list] = None
+) -> list:
     """Interpolates a hold-method Connector section.
 
     Parameters
@@ -1631,7 +1706,9 @@ def get_interpolate_hold(section, step=30, data=None):
     return data
 
 
-def get_interpolate_min_curve_to_target(section, step=30, data=None):
+def get_interpolate_min_curve_to_target(
+    section: "Connector", step: float = 30, data: Optional[list] = None
+) -> list:
     """Interpolates a min-curve-to-target Connector section.
 
     Parameters
@@ -1666,7 +1743,9 @@ def get_interpolate_min_curve_to_target(section, step=30, data=None):
     return data
 
 
-def get_interpolate_min_dist_to_target(section, step=30, data=None):
+def get_interpolate_min_dist_to_target(
+    section: "Connector", step: float = 30, data: Optional[list] = None
+) -> list:
     """Interpolates a min-dist-to-target Connector section (curve + hold).
 
     Parameters
@@ -1691,7 +1770,7 @@ def get_interpolate_min_dist_to_target(section, step=30, data=None):
         md1=section.md1,
         pos1=section.pos1,
         vec1=section.vec1,
-        vec2=section.vec2,
+        vec2=section.vec2,  # type: ignore[arg-type]  # vec2 populated for this method before interpolation
         dist_curve=section.dist_curve,
         dogleg=section.dogleg,
         func_dogleg=section.func_dogleg,
@@ -1700,9 +1779,9 @@ def get_interpolate_min_dist_to_target(section, step=30, data=None):
 
     # the hold section
     data.append(interpolate_hold(
-        md1=section.md2,
-        pos1=section.pos2,
-        vec1=section.vec2,
+        md1=section.md2,  # type: ignore[arg-type]  # md set for this method before interpolation
+        pos1=section.pos2,  # type: ignore[arg-type]  # pos populated for this method before interpolation
+        vec1=section.vec2,  # type: ignore[arg-type]  # vec populated for this method before interpolation
         md2=section.md_target,
         step=step,
         endpoint=True
@@ -1711,7 +1790,9 @@ def get_interpolate_min_dist_to_target(section, step=30, data=None):
     return data
 
 
-def get_interpololate_curve_hold_curve(section, step=30, data=None):
+def get_interpololate_curve_hold_curve(
+    section: "Connector", step: float = 30, data: Optional[list] = None
+) -> list:
     """Interpolates a curve-hold-curve Connector section.
 
     Parameters
@@ -1736,7 +1817,7 @@ def get_interpololate_curve_hold_curve(section, step=30, data=None):
         md1=section.md1,
         pos1=section.pos1,
         vec1=section.vec1,
-        vec2=section.vec2,
+        vec2=section.vec2,  # type: ignore[arg-type]  # vec2 populated for this method before interpolation
         dist_curve=section.dist_curve,
         dogleg=section.dogleg,
         func_dogleg=section.func_dogleg,
@@ -1745,18 +1826,18 @@ def get_interpololate_curve_hold_curve(section, step=30, data=None):
 
     # the hold section
     data.append(interpolate_hold(
-        md1=section.md2,
-        pos1=section.pos2,
-        vec1=section.vec2,
-        md2=section.md3,
+        md1=section.md2,  # type: ignore[arg-type]  # md set for this method before interpolation
+        pos1=section.pos2,  # type: ignore[arg-type]  # pos populated for this method before interpolation
+        vec1=section.vec2,  # type: ignore[arg-type]  # vec populated for this method before interpolation
+        md2=section.md3,  # type: ignore[arg-type]  # md3 populated for curve-hold-curve before interpolation
         step=step
     ))
 
     # the second curve section
     data.append(interpolate_curve(
-        md1=section.md3,
-        pos1=section.pos3,
-        vec1=section.vec3,
+        md1=section.md3,  # type: ignore[arg-type]  # md3 populated for curve-hold-curve before interpolation
+        pos1=section.pos3,  # type: ignore[arg-type]  # pos3 populated for curve-hold-curve before interpolation
+        vec1=section.vec3,  # type: ignore[arg-type]  # vec3 populated for curve-hold-curve before interpolation
         vec2=section.vec_target,
         dist_curve=section.dist_curve2,
         dogleg=section.dogleg2,
@@ -1768,7 +1849,7 @@ def get_interpololate_curve_hold_curve(section, step=30, data=None):
     return data
 
 
-def convert_target_input_to_booleans(*inputs):
+def convert_target_input_to_booleans(*inputs: Any) -> str:
     """Converts target parameters to a binary string for method lookup.
 
     Parameters
@@ -1790,10 +1871,11 @@ def convert_target_input_to_booleans(*inputs):
 
 
 def connect_points(
-    cartesians, vec_start=[0., 0., 1.], dls_design=3.0, nev=True,
+    cartesians: ArrayLike, vec_start: ArrayLike = [0., 0., 1.],
+    dls_design: Union[float, list] = 3.0, nev: bool = True,
     # step=30,
-    md_start=0.
-):
+    md_start: float = 0.
+) -> list:
     """Connects a sequence of Cartesian points with Connector sections.
 
     Parameters
@@ -1829,9 +1911,9 @@ def connect_points(
     if type(dls_design) is float:
         dls = np.full(len(pos_nev), dls_design)
     else:
-        dls = np.array(dls_design).reshape(-1, 1)
+        dls = np.array(dls_design).reshape(-1, 1)  # type: ignore[assignment]  # numpy row broadcast (1,3)->(3,)
 
-    connections = []
+    connections: list = []
     for i, (p, v, d) in enumerate(zip(pos_nev, vec_nev, dls)):
         if i == 0:
             node_1 = Node(
@@ -1856,7 +1938,10 @@ def connect_points(
     return connections
 
 
-def survey_to_plan(survey, tolerance=0.2, dls_design=1., step=30.):
+def survey_to_plan(
+    survey: Any, tolerance: float = 0.2, dls_design: float = 1.,
+    step: float = 30.
+) -> list:
     """Extracts a minimal well plan from a drilled survey.
 
     Identifies the minimum number of control points (start/end of hold
@@ -1914,8 +1999,9 @@ def survey_to_plan(survey, tolerance=0.2, dls_design=1., step=30.):
 
 
 def _get_section(
-    survey, start, tolerance, dls_design=1., md=0., node=None
-):
+    survey: Any, start: int, tolerance: float, dls_design: float = 1.,
+    md: float = 0., node: Optional[Node] = None
+) -> tuple:
     idx = start + 2
     nev = survey.get_nev_arr()
 
@@ -1945,7 +2031,7 @@ def _get_section(
             node2=node_2,
             dls_design=dls_design
         )
-        s = c.survey(step=1.)
+        s = c.survey(step=1.)  # type: ignore[attr-defined]  # legacy survey_to_plan path: Connector.survey not implemented (pre-existing)
         if c_old is None:
             c_old = deepcopy(c)
         nev_new = s.get_nev_arr()
@@ -2009,9 +2095,9 @@ def drop_off(
     """
     def _drop_off(
             x: tuple,
-            node,
+            node: Node,
             return_data: bool = False
-    ) -> tuple:
+    ) -> Any:  # returns arc data (tuple) or the inc residual (float) per flag
         dogleg, toolface = x
         pos2, vec2, arc_length = get_arc(
             dogleg, radius,
@@ -2059,7 +2145,7 @@ def drop_off(
     if tangent_length > tol:
         pos3 = pos2 + tangent_length * vec2
         node3 = Node(
-            pos=pos3, vec=vec2, md=node2.md + tangent_length
+            pos=pos3, vec=vec2, md=node2.md + tangent_length  # type: ignore[operator]  # Node.md is Optional but set on node2 above
         )
         return [node2, node3]
     else:
@@ -2113,15 +2199,16 @@ def extend_to_tvd(
     connections = []
     if target_inc is None:
         def _extend_tvd(
-            delta_md, pos, vec, target_tvd, return_data=False
-        ):
+            delta_md: float, pos: ArrayLike, vec: ArrayLike,
+            target_tvd: float, return_data: bool = False
+        ) -> Any:  # returns pos (ndarray) or the tvd residual (float) per flag
             pos2 = np.array(pos) + delta_md * np.array(vec)
             if return_data:
                 return pos2
             else:
                 return abs(pos2[2] - target_tvd)
 
-        args = (node.pos_nev, node.vec_nev, target_tvd)
+        args: tuple = (node.pos_nev, node.vec_nev, target_tvd)
         bounds = [[0, None]]
         result = minimize(
             _extend_tvd,
@@ -2130,18 +2217,18 @@ def extend_to_tvd(
             bounds=bounds,
             method="Powell"
         )
-        pos2 = _extend_tvd(result.x, *args, return_data=True)
+        pos2 = _extend_tvd(result.x, *args, return_data=True)  # type: ignore[misc]  # star-args expansion into scipy.optimize callback
         connections.append(Connector(
-            pos1=node.pos_nev, vec1=node.vec_nev,
+            pos1=node.pos_nev, vec1=node.vec_nev,  # type: ignore[arg-type]  # node.pos_nev Optional on Node but set here
             md1=0 if node.md is None else node.md,
             pos2=pos2,
             dls_design=dls, force_min_curve=True
         ))
     else:
         def _drop_off(
-            delta_md, target_inc, target_tvd, dls, node,
-            return_data=False
-        ):
+            delta_md: float, target_inc: float, target_tvd: float,
+            dls: float, node: Node, return_data: bool = False
+        ) -> Any:  # returns nodes (list) or the tvd residual (float) per flag
             nodes = drop_off(
                 target_inc, dls, delta_md, node
             )
@@ -2153,7 +2240,7 @@ def extend_to_tvd(
         dls = 2.5 if dls is None else dls
         args = (target_inc, target_tvd, dls, node)
         bounds = [
-            [min(target_tvd - node.pos_nev[2], _delta_md), None]
+            [min(target_tvd - node.pos_nev[2], _delta_md), None]  # type: ignore[index]  # node.pos_nev Optional on Node but set here
         ]
         x0 = _delta_md
         result = minimize(
