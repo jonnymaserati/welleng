@@ -11,6 +11,24 @@ finding that motivated it.
 
 ---
 
+## 2026-07-18 · `feat/kt-batch` · Python 3.12, dev machine
+
+Batch / sweep KT (Phase 1). `sweep_analytical_kick_tolerance` over a 30-point
+design curve (methane / Hall-Yarborough, no CoolProp table):
+
+| operation | result |
+|---|---|
+| 30-case analytical sweep | **199 ms total (6.6 ms/case)**, 30/30 ok |
+
+This is exactly welleng-api's design-curve builder (30 FP-offset re-solves) that it
+currently hand-rolls app-side with a **3 s** time budget — now ~0.2 s in core, so the
+budget/truncation can go. Serial by design (per TA1 steer: no core multiprocessing;
+the API owns the worker pool). The real amortization for CoolProp mixtures is the
+**shared `fluid_table`**: the ZTable (~seconds to build) is built ONCE for the batch
+instead of per case — pass a prebuilt `fluid_table` to `batch_analytical_kick_tolerance`
+/ `sweep_analytical_kick_tolerance`. Per-case error isolation adds no measurable
+overhead (a try/except per case).
+
 ## 2026-07-18 · `fix/kt-unconstrained-closedform` · Python 3.12, dev machine
 
 `analytical_kick_tolerance` on the `open_hole_unconstrained` regime (TWO_SECTION,
