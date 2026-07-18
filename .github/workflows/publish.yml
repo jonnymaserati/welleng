@@ -22,6 +22,27 @@ jobs:
       - name: Build package
         run: uv build
 
+      - name: Verify wheel ships package data
+        # uv builds the wheel FROM the sdist; a missing sdist include silently drops
+        # package data from the published wheel (0.17.0 shipped no *.json -> broke
+        # Catalog.load() and the error models). Fail the release if data is absent.
+        run: |
+          python - <<'PY'
+          import glob, zipfile, sys
+          whl = glob.glob("dist/*.whl")[0]
+          names = zipfile.ZipFile(whl).namelist()
+          required = {
+              "welleng/catalog/data/casing.json",
+              "welleng/catalog/data/tubing.json",
+              "welleng/catalog/data/couplings.json",
+          }
+          missing = sorted(f for f in required if f not in names)
+          njson = sum(n.endswith(".json") for n in names)
+          if missing or njson < 100:
+              sys.exit(f"wheel is missing package data: missing={missing} json_count={njson}")
+          print(f"wheel data OK: {njson} json files, catalog data present")
+          PY
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
