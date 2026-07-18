@@ -11,6 +11,27 @@ finding that motivated it.
 
 ---
 
+## 2026-07-18 · `feat/mincurve-phase1` · Python 3.12, dev machine
+
+`MinCurve` construction (it becomes the foundational geometry kernel — Survey
+inherits it, api/designer use it directly, so it must be hyper-performant):
+
+| stations | before | after | speedup |
+|---|---|---|---|
+| 1,000 | 0.645 ms | **0.175 ms** | 3.7× |
+| 10,000 | 6.24 ms | **1.47 ms** | 4.2× |
+| 100,000 | 70.7 ms | **19.6 ms** | 3.6× |
+
+~0.18 µs/station (was ~0.64). Profile finding: the dominant cost was
+`np.vstack(np.cumsum(...))` for `poss` — the `vstack` wrapper triggered
+`atleast_2d` + a per-row stack dispatcher (~2M `list.append` at 100k stations),
+pure overhead since `cumsum` already returns the (n,3) array. Replaced with
+`np.cumsum(np.column_stack(...))`. Remaining cost is the irreducible trig in
+`min_curve_step` + the Haversine `get_dogleg` (kept Haversine for small-dogleg
+numerical stability; reworking its trig for marginal gain isn't worth the
+precision risk, and a real survey is <2000 stations = <0.4 ms). Heavy coverage
+added in `tests/test_mincurve.py`.
+
 ## 2026-07-18 · `feat/kt-batch` · Python 3.12, dev machine
 
 Batch / sweep KT (Phase 1). `sweep_analytical_kick_tolerance` over a 30-point

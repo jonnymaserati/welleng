@@ -86,11 +86,15 @@ class MinCurve:
         md,
         inc,
         azi,
-        start_xyz=[0., 0., 0.],
-        unit="meters"
     ):
         """
-        Generate geometric data from a well bore survey.
+        Generate LOCAL geometric data from a well bore survey.
+
+        Positions (``poss``) are in local coordinates relative to the origin;
+        MinCurve is azimuth-reference agnostic (the caller knows which reference
+        ``azi`` is in) and holds no surface/start position or datum state -- that
+        belongs to the owning ``Survey``, which applies the start offset, grid
+        scale factor and NEV interpretation to interpret this local geometry.
 
         Parameters
         ----------
@@ -102,15 +106,14 @@ class MinCurve:
         azi: list or 1d array of floats
             Well path azimuth (relative to y/North axis),
             in radians.
-        unit: str
-            Either "meters" or "feet" to determine the unit of the dogleg
-            severity.
 
+        Notes
+        -----
+        MinCurve is units-agnostic: ``md`` may be in any length unit and the
+        geometry is all ratios/angles. Dogleg severity (which needs a per-unit
+        coefficient) is the :meth:`dls` method, into which the caller injects the
+        coefficient for its units.
         """
-
-        assert unit == "meters" or unit == "feet", (
-            'Unknown unit, please select "meters" of "feet"'
-        )
 
         self.md = md
         survey_length = len(self.md)
@@ -118,8 +121,6 @@ class MinCurve:
 
         self.inc = inc
         self.azi = azi
-        self.start_xyz = start_xyz
-        self.unit = unit
 
         inc = np.array(inc)
         azi = np.array(azi)
@@ -134,6 +135,20 @@ class MinCurve:
         self.rf = np.ones(survey_length)
         self.rf[1:] = get_rf(self.dogleg[1:])
 
+        # Curvature radius per station (arc length / dogleg = delta_md / dogleg),
+        # inf where the section is straight. This is the convention-free geometric
+        # quantity MinCurve operates in: its length unit simply follows md, and it
+        # carries no dogleg-severity convention. DLS (deg/30m or deg/100ft) is the
+        # caller's units-aware derivation from this radius (see Survey / utils
+        # dls_from_radius).
+        self.curve_radius = np.full(survey_length, np.inf)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            self.curve_radius[1:] = np.where(
+                self.dogleg[1:] > 0.0,
+                self.delta_md[1:] / self.dogleg[1:],
+                np.inf,
+            )
+
         # compute all three coordinate deltas in a single trig pass
         deltas = min_curve_step(
             self.delta_md[1:], inc_1, azi_1, inc_2, azi_2, self.rf[1:]
@@ -142,18 +157,12 @@ class MinCurve:
         self.delta_x = np.zeros(survey_length); self.delta_x[1:] = deltas[:, 1]
         self.delta_z = np.zeros(survey_length); self.delta_z[1:] = deltas[:, 2]
 
-        # calculate the dog leg severity
-        coeff = 30 if unit == "meters" else 100
-        self.dls = np.zeros(survey_length)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            raw = np.degrees(self.dogleg[1:]) / self.delta_md[1:]
-        self.dls[1:] = np.where(np.isnan(raw), 0.0, raw) * coeff
-
-        # cumulate the coordinates and add surface coordinates
-        self.poss = np.vstack(
-            np.cumsum(
-                np.array([self.delta_x, self.delta_y, self.delta_z]).T, axis=0
-            ) + self.start_xyz
+        # cumulate the coordinates -> LOCAL positions (origin-relative). The
+        # caller applies any start/surface offset; MinCurve holds no datum state.
+        # column_stack + cumsum directly; the previous np.vstack(...) wrapper was
+        # pure overhead (atleast_2d + a per-row stack dispatcher) on the hot path.
+        self.poss = np.cumsum(
+            np.column_stack((self.delta_x, self.delta_y, self.delta_z)), axis=0
         )
 
 
