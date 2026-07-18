@@ -6,6 +6,7 @@ import re
 import yaml
 import os
 from collections import OrderedDict
+from functools import lru_cache
 # import imp
 
 # import welleng.error
@@ -43,6 +44,35 @@ _MAG_UNIT_TO_BASE = {
 }
 
 
+# Tool-model definition files (tool_codes/*.yaml, iscwsa_json/**/*.json) ship in
+# the package and are IMMUTABLE at runtime, but were being re-parsed on every
+# Survey construction (profiling: ~45% of error-model cost was repeated YAML +
+# JSON parsing; the JSON name-resolution walk alone re-read ~100 files per call).
+# Cache the parses process-wide -- the returned dicts are treated as READ-ONLY by
+# ToolError (verified: no in-place mutation; the JSON path hands a fresh adapter
+# dict to `self.em`). Call `clear_error_model_cache()` after swapping a model file
+# on disk mid-process.
+@lru_cache(maxsize=None)
+def _load_yaml_model(path: str) -> dict:
+    with open(path, 'r') as file:
+        return yaml.safe_load(file)
+
+
+@lru_cache(maxsize=None)
+def _load_json_model(path: str) -> dict:
+    with open(path) as file:
+        return json.load(file)
+
+
+def clear_error_model_cache() -> None:
+    """Clear the cached tool-model parses + name resolution (call after editing a
+    model file on disk within a running process)."""
+    _load_yaml_model.cache_clear()
+    _load_json_model.cache_clear()
+    _resolve_json_model.cache_clear()
+
+
+@lru_cache(maxsize=None)
 def _resolve_json_model(model_name: str) -> str | None:
     """Find the ISCWSA-format JSON tool model for the given name.
 
@@ -205,15 +235,15 @@ class ToolError:
         # default), so we walk the iscwsa_json/ tree looking at both
         # the OWSG prefix and the metadata.short_name of each JSON.
         yaml_filename = os.path.join(PATH, 'tool_codes', f"{model}.yaml")
-        json_filename = _resolve_json_model(model)
 
         self._json_path = None
         if os.path.isfile(yaml_filename):
-            with open(yaml_filename, 'r') as file:
-                self.em = yaml.safe_load(file)
-        elif json_filename is not None:
-            with open(json_filename) as file:
-                self._json_model = json.load(file)
+            # Legacy YAML path (e.g. the MWD models). Cached parse; do NOT resolve
+            # the JSON tree here -- the name-resolution walk is only needed when
+            # the YAML is absent (it re-reads ~100 files otherwise).
+            self.em = _load_yaml_model(yaml_filename)
+        elif (json_filename := _resolve_json_model(model)) is not None:
+            self._json_model = _load_json_model(json_filename)
             self._json_path = json_filename
             # Adapter: shape the JSON into a YAML-like dict so the
             # downstream code that expects ``self.em['header']`` and
