@@ -305,7 +305,7 @@ class SurveyHeader:
         dip: Optional[float] = None,
         declination: Optional[float] = None,
         convergence: float = 0,
-        azi_reference: str = "grid",
+        azi_reference: str = "true",
         vertical_inc_limit: float = 0.0001,
         deg: bool = True,
         depth_unit: str = 'meters',
@@ -361,11 +361,14 @@ class SurveyHeader:
         convergence: float (default: 0)
             The angle of convergence between the projection meridian and
             the line from true north through the location of the well.
-        azi_reference: string (default: 'grid')
-            The reference system for the azimuth angles in the survey data,
-            either "true", "magnetic" or "grid". Default is "grid" -- the
-            engine's canonical frame (positions are computed in grid); it equals
-            "true" when convergence is 0 (the default). Note that survey
+        azi_reference: string (default: 'true')
+            The reference system the INPUT azimuths are given in -- "true",
+            "magnetic" or "grid". This is the input frame, NOT the engine's
+            internal geometry frame: positions are always computed in grid (the
+            canonical frame), converting the input via convergence/declination.
+            A magnetic MWD survey MUST set "magnetic" so declination is applied
+            (and its magnetic error terms are framed correctly); the default
+            "true" assumes true-north input. Note that survey
             calculations are performed in the "grid" reference and
             converted to and from the other systems.
         vertical_inc_limit: float (default 0.0001)
