@@ -11,6 +11,25 @@ finding that motivated it.
 
 ---
 
+## 2026-07-18 · `feat/datum-header-transform` · Python 3.12, dev machine
+
+Survey construction after increment B (datum→header, `azi_reference` default→grid,
+positions via the explicit header transform `poss @ Aᵀ + b`):
+
+| stations | before B | after B |
+|---|---|---|
+| 100 | 0.349 ms | 0.334 ms |
+| 1,000 | 0.872 ms | 0.837 ms |
+| 5,000 | 3.324 ms | 3.226 ms |
+
+Modest (~3%): the matrix transform is marginally cheaper than the prior
+`get_nev * scale + start_nev` scatter, but Survey construction is dominated by the
+min-curve kernel + the per-station azi-reference trig + the eager toolface/rates/errors/
+vertical-section work. **The big gains land in increment C** — canonical internals + lazy
+(method-model) derivation, so the per-station azi trig and the eager error/vertical-section
+passes only run when asked. B is primarily architecture (header = georef truth + the
+explicit transform); C is where the perf shows.
+
 ## 2026-07-18 · `feat/units-converter` · Python 3.12, dev machine
 
 `welleng.units.Units` — the generic, cross-module boundary converter (canonical-SI
