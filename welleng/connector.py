@@ -24,6 +24,11 @@ from .utils import (
     radius_from_dls, get_arc
 )
 
+# Module-level Generator for the degeneracy jitter in `_mod_pos` (nudges a
+# straight-ahead target off the hold/curve ambiguity). Uses NumPy's modern
+# `default_rng` rather than the legacy global `np.random.random` singleton.
+_RNG = np.random.default_rng()
+
 
 class Connector:
     """Solves minimum-MD wellbore trajectories between two survey stations.
@@ -961,7 +966,7 @@ class Connector:
         return interpolate_well([self], step)
 
     def _mod_pos(self, pos: np.ndarray) -> None:
-        pos_rand = np.random.random(3)  # * self.delta_radius
+        pos_rand = _RNG.random(3)  # * self.delta_radius
         pos += pos_rand
 
     def _get_distances(
