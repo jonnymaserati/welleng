@@ -935,12 +935,16 @@ class Survey:
         # MinCurve is local + azi-ref agnostic; Survey owns start_xyz and applies
         # it here (the datum/reference context lives on Survey, not the kernel).
         mc = MinCurve(
-            self.md, self.inc_rad, self.azi_grid_rad, self.unit
+            self.md, self.inc_rad, self.azi_grid_rad
         )
         self.dogleg = mc.dogleg
         self.rf = mc.rf
         self.delta_md = mc.delta_md
-        self.dls = mc.dls
+        # MinCurve is units-agnostic and exposes only the convention-free curvature
+        # radius; Survey is units-aware and owns the DLS convention -> deg per
+        # coeff md-units (deg/30m metric, deg/100ft imperial).
+        coeff = 30 if self.unit == "meters" else 100
+        self.dls = np.degrees(coeff / mc.curve_radius)
         self.pos_xyz = mc.poss + self.start_xyz
         self.pos_nev = (
             get_nev(self.pos_xyz)
