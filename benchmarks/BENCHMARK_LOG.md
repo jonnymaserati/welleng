@@ -11,6 +11,25 @@ finding that motivated it.
 
 ---
 
+## 2026-07-18 · `fix/kt-unconstrained-closedform` · Python 3.12, dev machine
+
+`analytical_kick_tolerance` on the `open_hole_unconstrained` regime (TWO_SECTION,
+STRONG_FP), 5-call mean:
+
+| operation | before | after | speedup |
+|---|---|---|---|
+| `analytical_kick_tolerance` (unconstrained regime) | ~5026 ms | **18.2 ms** | ~276× |
+
+Profile finding (welleng-api regression report): the regime ran a 40-iteration bisect
+where **each iteration executed a full `thorough` migration** (`n_steps=100`, all gas-top
+positions) to find the influx whose bubble length fills the open hole. But the bubble is
+longest at a single governing position (gas top at surface), so the detection and the
+capacity bisect only need that ONE position. Replaced the per-iteration full march with a
+single-position evaluation that mirrors the migration's per-step math exactly (same P_rep
+seed, Boyle expansion, `_fill_down`, and damped fixed point via `pressure_at_depth`) —
+identical numbers (golden `test_bubble_length_limit_is_casing_burst_regime`: analytical ≈
+march, abs=0.5 bbl), ~276× faster. Fracture-limited (non-regime) calls unchanged.
+
 ## 2026-07-14 · `feat/kick-tolerance` · Python 3.12, dev machine
 
 `python benchmarks/bench_kick_tolerance.py`
