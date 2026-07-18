@@ -106,14 +106,6 @@ from .migration import (
 # Analytical (breakpoint) kick-tolerance solver: the migration-form KT evaluated
 # only at the breakpoints of P(gas position) -- the exact worst position, no march.
 from .analytical import analytical_kick_tolerance, AnalyticalKickTolerance
-# Batch / sweep entry points (paid API feature): serial + shared-ZTable amortization
-# + per-case error isolation. See batch.py.
-from .batch import (
-    BatchCaseResult,
-    solve_batch,
-    batch_analytical_kick_tolerance,
-    sweep_analytical_kick_tolerance,
-)
 # Catalogue-backed geometry: true annular capacity (bore - string), casing IDs
 # from the API-5CT catalogue. catalog is imported lazily inside the builders.
 from .geometry import annular_capacity, cased_section, open_hole_section
@@ -160,10 +152,6 @@ __all__ = [
     "linear_temp_profile",
     "analytical_kick_tolerance",
     "AnalyticalKickTolerance",
-    "BatchCaseResult",
-    "solve_batch",
-    "batch_analytical_kick_tolerance",
-    "sweep_analytical_kick_tolerance",
     "annular_capacity",
     "cased_section",
     "open_hole_section",
