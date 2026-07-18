@@ -15,8 +15,8 @@ import pytest
 from welleng.sawaryn_analytical import (
     tangent, _scalars, forward, subtended_angles, solve_clc_analytical, eq15,
     solve_clc_resultant,
-    _eq15_coeffs, solve_clc, solve_clc_batch, solve_clc_2d, max_radius,
-    solve_clc_landing, solve_clc_r_sweep, solve_clc_r_grid, _build_r_scales,
+    _eq15_coeffs, solve_clc, solve_clc_2d, max_radius,
+    solve_clc_landing,
 )
 
 P1 = np.array([8000.0, 8000.0, 6000.0])
@@ -140,39 +140,12 @@ def test_corrected_eq15_vanishes_at_example2_roots():
         assert abs(np.polyval(co[::-1], beta / L)) < 1e-4 * scale
 
 
-def test_solve_clc_batch_reproduces_example2():
-    out = solve_clc_batch(P1[None], T1[None], P4[None], T4[None], R1, R2,
-                          return_all=True)
-    betas = sorted(out['beta'][0][out['valid'][0]])
-    assert len(betas) == 4
-    for got, exp in zip(betas, [1072.6, 1630.2, 1789.95, 2356.9]):
-        assert got == pytest.approx(exp, abs=0.2)
-
-
 def test_solve_clc_default_returns_shortest():
     shortest = solve_clc(P1, T1, P4, T4, R1, R2)                 # default
     allsol = solve_clc(P1, T1, P4, T4, R1, R2, return_all=True)
     assert len(allsol) == 4
     assert shortest['total_md'] == pytest.approx(min(s['total_md'] for s in allsol))
     assert shortest['beta'] == pytest.approx(1072.6, abs=0.2)
-
-
-def test_solve_clc_batch_constructed_recovery():
-    # build CLC paths, the solver must return the build tangent length for each.
-    rng = np.random.default_rng(2024)
-    N = 60
-    P4s, T4s, truth = [], [], []
-    for _ in range(N):
-        dl1, tf1, dl2, tf2, d = (rng.uniform(0.3, 2.0), rng.uniform(-np.pi, np.pi),
-                                 rng.uniform(0.3, 2.0), rng.uniform(-np.pi, np.pi),
-                                 rng.uniform(0.3, 1.5))
-        p3, v3 = _build_clc(dl1, tf1, dl2, tf2, d)
-        P4s.append(p3); T4s.append(v3); truth.append(d)
-    O = np.zeros((N, 3)); V = np.tile([0, 0, 1.], (N, 1))
-    out = solve_clc_batch(O, V, np.array(P4s), np.array(T4s), 1.0, 1.0, return_all=True)
-    rec = sum(bool(np.any(out['valid'][i] & (np.abs(out['beta'][i] - truth[i]) < 1e-2)))
-              for i in range(N))
-    assert rec == N
 
 
 def test_solve_clc_2d_handles_planar_and_parallel():
@@ -271,10 +244,6 @@ def test_r2_defaults_to_r1():
     a = solve_clc(O, V, p4, t4, R1, return_all=True)
     b = solve_clc(O, V, p4, t4, R1, R1, return_all=True)
     assert [round(s['beta'], 6) for s in a] == [round(s['beta'], 6) for s in b]
-    P, T = np.array([[0., 0, 0]]), np.array([[0., 0, 1.]])
-    d = solve_clc_batch(P, T, p4[None], t4[None], R1)
-    e = solve_clc_batch(P, T, p4[None], t4[None], R1, R1)
-    assert np.allclose(d['total_md'], e['total_md'], equal_nan=True)
 
 
 def test_max_radius_gentlest_feasible():
@@ -342,17 +311,6 @@ def test_parallel_and_antiparallel_tangents_handled():
         s = solve_clc(O, t1, p4, t4, 1.0, 1.0)                # must not raise
         assert s is not None
         assert recon(t1, t4, p4, s) < 1e-6
-        fb = solve_clc_batch([O], [t1], [p4], [t4], 1.0, 1.0)  # batch must not raise
-        assert fb['found'][0]
-        assert abs(fb['total_md'][0] - s['total_md']) < 1e-6
-    # a mixed batch (antiparallel + general) must not crash on the degenerate row
-    mb = solve_clc_batch(
-        np.array([[0., 0, 0], [8000., 8000, 6000]]),
-        np.array([[0., 0, 1.], tangent(75, 15)]),
-        np.array([[1.5, 0, -1.], [9500., 8800, 6500]]),
-        np.array([[0., 0, -1.], tangent(85, 30)]),
-        np.array([1.0, 1250.]), np.array([1.0, 1750.]))
-    assert mb['found'][0] and mb['found'][1]
 
 
 def test_max_radius_parallel_tangents():
@@ -393,103 +351,3 @@ def test_landing_reproduces_example4():
     assert np.allclose(s['p4'], [533.30, -194.11, 3280.8], atol=0.15)
 
 
-def test_build_r_scales_snaps_design():
-    # linspace of scale factors, with the design (1.0) snapped in when bracketed
-    s = _build_r_scales(0.9, 1.1, 11)
-    assert len(s) == 11
-    assert s[0] == 0.9 and s[-1] == 1.1
-    assert np.any(s == 1.0)                              # design radius present
-    # range not bracketing 1.0 -> no snap
-    assert not np.any(_build_r_scales(1.1, 1.3, 5) == 1.0)
-
-
-def test_r_sweep_feature():
-    # a feature (not new maths): the fixed-radius solver run over a radius range
-    # (given as scale factors on the design radii) in one batched call. The
-    # design radius is always in the sweep; feasible up to max_radius.
-    R1d, R2d = 1250., 1750.
-    sw = solve_clc_r_sweep(P1, T1, P4, T4, R1d, R2d,
-                           scale_min=0.9, scale_max=1.1, n_steps=11)
-    di = sw['design_index']
-    # design row: scale 1.0, actual design radii, matches a direct solve
-    assert sw['scale'][di] == 1.0
-    assert sw['radius1'][di] == R1d and sw['radius2'][di] == R2d
-    s0 = solve_clc(P1, T1, P4, T4, R1d, R2d)
-    assert abs(s0['total_md'] - sw['total_md'][di]) < 1e-6
-    # R2/R1 ratio preserved across the sweep
-    assert np.allclose(sw['radius2'] / sw['radius1'], R2d / R1d)
-    # gentler curve costs MD (monotone in scale); doglegs renderable (<= pi)
-    assert np.all(sw['feasible'])
-    assert np.all(np.diff(sw['total_md']) > 0)
-    assert np.all(sw['alpha1'] <= np.pi + 1e-9)
-    assert np.all(sw['alpha2'] <= np.pi + 1e-9)
-    # every feasible row matches a direct solve at that radius
-    for i in range(len(sw['scale'])):
-        s = solve_clc(P1, T1, P4, T4, sw['radius1'][i], sw['radius2'][i])
-        assert abs(s['total_md'] - sw['total_md'][i]) < 1e-6
-
-    # explicit `values` path: full range incl R=0 and past the critical radius
-    Rmax = max_radius(P1, T1, P4, T4)['radius']
-    chord = np.linalg.norm(P4 - P1)
-    swv = solve_clc_r_sweep(P1, T1, P4, T4, 1250.,
-                            values=[0.0, 500., Rmax * 0.98, Rmax * 1.03])
-    # R = 0 -> pure tangent: beta = MD = chord (arcs collapse to instant turns)
-    assert swv['feasible'][0]
-    assert abs(swv['beta'][0] - chord) < 1e-9
-    assert abs(swv['total_md'][0] - chord) < 1e-9
-    # feasible below the critical radius, infeasible above it
-    assert swv['feasible'][:-1].all()
-    assert not swv['feasible'][-1]
-    assert np.isnan(swv['total_md'][-1])
-
-    # scales and values are mutually exclusive
-    with pytest.raises(ValueError):
-        solve_clc_r_sweep(P1, T1, P4, T4, 1250., scales=[1.0], values=[1250.])
-
-
-def test_r_sweep_planar_vertical_s_trap():
-    # Parallel-tangent (|mu|=1) vertical S: the general form is singular, so the
-    # batch must route these rows to solve_clc_2d (else the sweep wrongly reports
-    # infeasible). And the operational trap: a clean 90/90 S at the design radius
-    # becomes INFEASIBLE if the radius is raised ~10% (the drillable S vanishes;
-    # only >pi loops remain), while reducing R keeps it feasible and simpler.
-    O = np.array([0., 0., 0.]); t1 = np.array([1., 0., 0.]); t4 = np.array([1., 0., 0.])
-    p4 = np.array([2., 0., 3.])                          # a 90/90 S at R = 1.0
-    assert abs(t1 @ t4) == 1.0                           # exactly parallel (mu=1)
-
-    # the singular row is handled, not skipped: batch agrees with the 2D solver
-    fb = solve_clc_batch([O], [t1], [p4], [t4], 1.0, 1.0)
-    s2 = solve_clc_2d(O, t1, p4, t4, 1.0, 1.0)
-    assert fb['found'][0] and s2 is not None
-    assert abs(fb['total_md'][0] - s2['total_md']) < 1e-6
-    assert abs(np.degrees(fb['alpha1'][0]) - 90.0) < 0.5
-
-    sw = solve_clc_r_sweep(O, t1, p4, t4, 1.0, values=[0.8, 1.0, 1.1])
-    # reduce R -> feasible and gentler; design -> feasible ~90 deg
-    assert sw['feasible'][0] and sw['feasible'][1]
-    assert np.degrees(sw['alpha1'][0]) < np.degrees(sw['alpha1'][1])  # smaller R, smaller dogleg
-    assert abs(np.degrees(sw['alpha1'][1]) - 90.0) < 0.5
-    # raise R ~10% -> no drillable S (only >pi loops); the trap
-    assert not sw['feasible'][2]
-    assert np.isnan(sw['total_md'][2])
-
-
-def test_r_grid_independent_axes():
-    # independent R1 x R2 sweep: a 2D grid, one batched solve, design cell exact.
-    R1d, R2d = 1250., 1750.
-    g = solve_clc_r_grid(P1, T1, P4, T4, R1d, R2d,
-                         scale_min=0.8, scale_max=1.2, n_steps=9)
-    i, j = g['design_index']
-    K1, K2 = len(g['r1_scales']), len(g['r2_scales'])
-    assert g['feasible'].shape == (K1, K2) == g['total_md'].shape
-    # design cell = (1.0, 1.0) -> the design radii, matching a direct solve
-    assert g['r1_scales'][i] == 1.0 and g['r2_scales'][j] == 1.0
-    assert g['radius1'][i] == R1d and g['radius2'][j] == R2d
-    s = solve_clc(P1, T1, P4, T4, R1d, R2d)
-    assert g['feasible'][i, j]
-    assert abs(g['total_md'][i, j] - s['total_md']) < 1e-6
-    # axis 0 is R1, axis 1 is R2: an off-diagonal cell matches its direct solve
-    assert abs(g['total_md'][0, -1] -
-               solve_clc(P1, T1, P4, T4, g['radius1'][0], g['radius2'][-1])['total_md']) < 1e-6
-    # NaN exactly where infeasible
-    assert np.all(np.isnan(g['total_md'][~g['feasible']]))
