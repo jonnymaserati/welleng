@@ -485,16 +485,9 @@ def analytical_kick_tolerance(
     # NOT claim what the limit IS: this assessment stops at the shoe. We assert only
     # what we checked -- the open hole is not the constraint here. Report the full
     # open-hole gas capacity with that flag, NOT a misleading fracture KT. [JJ]
-    from .migration import migrate as _migrate
+    from .migration import _fill_down, pressure_at_depth
 
     oh_len = sum(s.bottom_tvd - s.top_tvd for s in ss if s.is_open_hole)
-
-    def _max_gas_len(v):
-        r = _migrate(ss, pp, fp, bhp_psi=bhp_psi, influx_bbl_bh=v,
-                     rho_mud_ppg=rho_mud_ppg, gas_bh_state=gas_bh_state,
-                     gas_density_mode=gas_density_mode, temp_profile=temp_profile,
-                     n_steps=100, mode="thorough")
-        return max((s.gas_length_ft for s in r.steps), default=0.0), r
 
     _OPEN_HOLE_UNCONSTRAINED_NOTE = {
         "note": ("The open hole does not constrain the kick tolerance at the provided "
@@ -507,21 +500,47 @@ def analytical_kick_tolerance(
                  "what is assessed."),
     }
 
-    if _max_gas_len(v_star)[0] > oh_len:                   # fracture breach unreachable
-        lo, hi = 0.0, v_star                              # -> full-displacement regime
+    # Open-hole capacity WITHOUT a full march (was ~5 s of thorough marches per call;
+    # welleng-api perf regression). The bubble is longest at its most-expanded
+    # position -- gas top at surface -- so a single-position evaluation there gives the
+    # max gas length. This mirrors the migration's per-position calc EXACTLY (same
+    # P_rep seed, Boyle expansion, _fill_down and damped fixed point on the gas-top
+    # pressure via pressure_at_depth), just at the one governing position instead of
+    # marching all of them -- ~100x cheaper, same numbers (cross-checked analytical vs
+    # march in test_kick_analytical).
+    def _gas_len_at_surface(v_bh: float) -> float:
+        gas_top = 0.0
+        P_rep = max(bhp_psi - g * rho_mud_ppg * (bottom_tvd - gas_top), 1.0)
+        T_local = float(temp_fn(gas_top))
+        gas_len = 0.0
+        for _ in range(100):
+            Z = zf(P_rep, T_local)
+            V = v_bh * (P_bh * Z * T_local) / (P_rep * Z_bh * T_bh_r)
+            gas_bottom, gas_len = _fill_down(gas_top, V, ss, bottom_tvd)
+            P_new = max(float(pressure_at_depth(
+                gas_top, gas_top_tvd=gas_top, gas_bottom_tvd=gas_bottom,
+                bottom_tvd=bottom_tvd, bhp_psi=bhp_psi, rho_mud_ppg=rho_mud_ppg,
+                gas_bh=gas_bh, gas_density_mode=gas_density_mode,
+                temp_profile=temp_profile, n_sub=20, z_fn=z_fn)), 1.0)
+            if abs(P_new - P_rep) < 1e-4:
+                break
+            P_rep = 0.5 * (P_rep + P_new)
+        return gas_len
+
+    if _gas_len_at_surface(v_star) > oh_len:               # fracture breach unreachable
+        lo, hi = 0.0, v_star                              # -> full open-hole displacement
         for _ in range(40):                               # bisect gas_len == oh_len
             if hi - lo <= 1e-2:
                 break
             mid = 0.5 * (lo + hi)
-            if _max_gas_len(mid)[0] <= oh_len:
+            if _gas_len_at_surface(mid) <= oh_len:
                 lo = mid
             else:
                 hi = mid
-        _, r_fd = _max_gas_len(lo)
+        shoe = min((s.top_tvd for s in ss if s.is_open_hole), default=np.nan)
         return AnalyticalKickTolerance(
-            float(lo), float(r_fd.steps[r_fd.binding_step].gas_top_tvd),
-            float(r_fd.steps[r_fd.binding_step].gas_bottom_tvd),
-            float(r_fd.binding_tvd), True, dict(_OPEN_HOLE_UNCONSTRAINED_NOTE))
+            float(lo), 0.0, float(oh_len),
+            float(shoe), True, dict(_OPEN_HOLE_UNCONSTRAINED_NOTE))
 
     return AnalyticalKickTolerance(
         float(v_star), float(gt), float(gb),
