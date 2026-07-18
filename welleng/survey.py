@@ -843,7 +843,8 @@ class Survey(MinCurve):
             self.vec_nev, self.vec_xyz = vec, vec  # type: ignore[assignment]
 
         self._min_curve(vec)
-        self._get_toolface_and_rates()
+        # toolface/build-turn rates are ~half of construction and often unused --
+        # deferred (lazy) via __getattr__; computed on first access.
 
         # initialize errors (ERROR_MODELS is derived from errors/tool_index.yaml)
         error_models = ERROR_MODELS
@@ -865,8 +866,30 @@ class Survey(MinCurve):
             if kwargs.get('interpolated') is None
             else kwargs.get('interpolated')
         )
-
+        # Kept EAGER: it canonicalises the azimuth at vertical stations (azi is
+        # undefined when inc == 0), which interpolation relies on. It's cheap
+        # (~4%) and uses only n/e -- it does NOT touch the deferred toolface/rates.
         self._get_vertical_section()
+
+    # Lazily-derived toolface/build-turn rates: computed on first access, not
+    # eagerly in __init__ (the method-model perf lever -- ~45% of construction and
+    # frequently unused; side-effect-free on the survey azimuths).
+    _TOOLFACE_ATTRS = frozenset(
+        {"toolface", "turn_rate", "build_rate", "normals", "vec_radius_nev"}
+    )
+
+    def __getattr__(self, name: str) -> Any:
+        # __getattr__ runs ONLY when normal lookup fails (attr not yet computed).
+        # Trigger the toolface/rates computation once; it populates self.__dict__,
+        # so subsequent accesses hit the stored value directly. The `dls` guard
+        # avoids firing before geometry is built (construction / unpickling):
+        # everything it depends on is present once _min_curve has run.
+        if name in Survey._TOOLFACE_ATTRS:
+            if "dls" not in self.__dict__:
+                raise AttributeError(name)
+            self._get_toolface_and_rates()
+            return self.__dict__[name]
+        raise AttributeError(name)
 
     def _process_azi_ref(
         self, inc: ArrayLike, azi: ArrayLike, deg: bool

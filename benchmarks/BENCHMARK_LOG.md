@@ -11,6 +11,34 @@ finding that motivated it.
 
 ---
 
+## 2026-07-18 · `feat/survey-lazy-canonical` · Python 3.12, dev machine
+
+Survey construction after increment C (lazy method-model): toolface/build-turn
+rates + vertical section are deferred out of `__init__` and computed on first
+access via `__getattr__`.
+
+| stations | original | after B | after C | vs original |
+|---|---|---|---|---|
+| 100 | 0.349 ms | 0.334 ms | **0.189 ms** | ~1.8× |
+| 1,000 | 0.872 ms | 0.837 ms | **0.448 ms** | ~1.9× |
+| 5,000 | 3.324 ms | 3.226 ms | **1.840 ms** | ~1.8× |
+
+Profile finding: after the needed `_min_curve` geometry (~47%),
+`_get_toolface_and_rates` was ~45% of construction (a SplitSurvey + toolface
+trig + build/turn rates + plane normals) and is frequently unused. Deferred it
+(lazy via `__getattr__`) -> ~**1.8×** faster construction for the common case
+that never touches it. First access computes the whole group once (`__getattr__`
+populates `self.__dict__`, so subsequent reads are direct); values are identical
+to the eager computation (`test_survey_lazy`), and pickle / deepcopy are safe (a
+`dls` guard prevents firing before geometry is built).
+
+`_get_vertical_section` (~4%) is kept EAGER on purpose: it canonicalises the
+azimuth at vertical stations (azi is undefined when inc==0), which the
+interpolation paths rely on -- deferring it left the raw azimuth and diverged
+`interpolate_mds` vs `interpolate_survey` (caught by the suite; regression-pinned
+in `test_survey_lazy`). It uses only n/e, so it doesn't re-trigger toolface. This
+is the "method model" perf lever -- the big gain B set up.
+
 ## 2026-07-18 · `feat/datum-header-transform` · Python 3.12, dev machine
 
 Survey construction after increment B (datum→header, `azi_reference` default→grid,
