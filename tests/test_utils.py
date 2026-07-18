@@ -43,15 +43,16 @@ def test_mincurve(decimals=2):
                 survey.get('TVD')[0]
             ])
 
+        # MinCurve returns LOCAL positions; the caller applies the start offset.
+        start_xyz = _get_start_xyz(survey)
         mc = MinCurve(
             md=survey.get('MD'),
             inc=np.radians(survey.get('IncDeg')),
             azi=np.radians(survey.get('AziDeg')),
-            start_xyz=_get_start_xyz(survey)
         )
 
         assert np.allclose(
-            np.round(mc.poss, decimals), np.round(np.array([
+            np.round(mc.poss + start_xyz, decimals), np.round(np.array([
                 survey.get('E'), survey.get('N'), survey.get('TVD')
             ]).T, decimals)
         ), "Unexpected position."
