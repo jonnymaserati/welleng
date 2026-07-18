@@ -11,6 +11,23 @@ finding that motivated it.
 
 ---
 
+## 2026-07-18 · `feat/units-converter` · Python 3.12, dev machine
+
+`welleng.units.Units` — the generic, cross-module boundary converter (canonical-SI
+internals; user I/O at the edge; performance-critical callers bypass it entirely):
+
+| operation | Units | pint `Quantity.to()` | speedup |
+|---|---|---|---|
+| scalar convert (ft→m) | **0.24 µs** | 12.1 µs | ~50× |
+
+Design: pint computes the affine `(factor, offset)` per unit pair ONCE at first use
+and caches it; conversion is then pure numpy arithmetic (`value * factor (+ offset)`),
+scalar or array, with **no pint on the hot path**. For 1M-element arrays pint's own
+`.to()` is already numpy-backed (~3 ms, comparable), so the win is on the common
+scalar / small-input boundary case (a header datum, a single DLS) — 50×. Affine units
+(temperature) carry the offset; multiplicative units skip it. Same-unit convert is an
+identity no-op.
+
 ## 2026-07-18 · `feat/mincurve-phase1` · Python 3.12, dev machine
 
 `MinCurve` construction (it becomes the foundational geometry kernel — Survey

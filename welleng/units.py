@@ -20,12 +20,16 @@ Examples
 >>> round(units.to_rad(units.deg(180)), 6)
 3.141593
 """
-from typing import Union
+from typing import Tuple, Union
 
+import numpy as np
 import pint
 
 ureg: pint.UnitRegistry = pint.UnitRegistry()
 Q_ = ureg.Quantity
+
+# scalar or array value moving through the boundary converter
+Numeric = Union[float, np.ndarray]
 
 # --- custom units -------------------------------------------------------------
 # TODO import custom units from file instead of defining here
@@ -155,3 +159,86 @@ def mud_weight_from_gradient(
 ) -> pint.Quantity:
     """Equivalent mud weight (density) of a hydrostatic gradient, ρ = (dP/dz)/g."""
     return (gradient_q / ureg('standard_gravity')).to(unit)
+
+
+# --- fast boundary converter --------------------------------------------------
+# Canonical SI unit per named quantity. welleng engines compute in these; the
+# `Units` boundary converts user I/O to/from them. Performance-critical callers
+# work in canonical units directly and skip the converter entirely (zero cost);
+# a single-well / interactive user pays one trivial conversion at each edge.
+CANONICAL: dict = {
+    "length": "meter",
+    "angle": "radian",
+    "pressure": "pascal",
+    "density": "kilogram / meter ** 3",
+    "force": "newton",
+    "torque": "newton * meter",
+    "temperature": "kelvin",
+}
+
+# Default user system (metric-ish field defaults); override per-quantity.
+_DEFAULT_SYSTEM: dict = {
+    "length": "meter",
+    "angle": "degree",
+    "pressure": "pascal",
+    "density": "kilogram / meter ** 3",
+    "force": "newton",
+    "torque": "newton * meter",
+    "temperature": "kelvin",
+}
+
+
+class Units:
+    """Fast, generic unit-conversion boundary — pint at setup, numpy at runtime.
+
+    welleng engines compute in canonical SI (see :data:`CANONICAL`). This converts
+    user inputs to canonical on ingest and canonical to user units on output, and
+    ONLY there — performance-critical callers use the canonical core directly and
+    bypass this entirely.
+
+    Speed: the affine ``(factor, offset)`` for each unit pair is computed ONCE via
+    pint and cached; conversion is then pure numpy arithmetic (``value * factor
+    (+ offset)``), scalar or array, with no pint on the hot path. Affine units
+    (e.g. temperature) carry a non-zero offset; multiplicative units do not.
+
+    Generic + reusable across welleng modules (survey, drilling, kick, api).
+
+    Examples
+    --------
+    >>> u = Units(length="ft", angle="degree")
+    >>> round(u.to_canonical(1000.0, "length"), 4)        # ft -> m
+    304.8
+    >>> round(u.from_canonical(3.14159265, "angle"), 3)   # rad -> deg
+    180.0
+    >>> round(u.convert(100.0, "psi", "bar"), 6)          # generic pair
+    6.894757
+    """
+
+    def __init__(self, **system: str) -> None:
+        self.system: dict = {**_DEFAULT_SYSTEM, **system}
+        self._cache: dict = {}
+
+    def _factor_offset(self, src: UnitLike, dst: UnitLike) -> Tuple[float, float]:
+        key = (str(src), str(dst))
+        fo = self._cache.get(key)
+        if fo is None:
+            zero = float(ureg.Quantity(0.0, src).to(dst).magnitude)
+            one = float(ureg.Quantity(1.0, src).to(dst).magnitude)
+            fo = (one - zero, zero)   # affine: y = x * factor + offset
+            self._cache[key] = fo
+        return fo
+
+    def convert(self, value: Numeric, src: UnitLike, dst: UnitLike) -> Numeric:
+        """Convert ``value`` (scalar or ndarray) from ``src`` to ``dst`` units."""
+        if str(src) == str(dst):
+            return value
+        factor, offset = self._factor_offset(src, dst)
+        return value * factor + offset if offset else value * factor
+
+    def to_canonical(self, value: Numeric, quantity: str) -> Numeric:
+        """User-units ``value`` -> canonical SI for the named ``quantity``."""
+        return self.convert(value, self.system[quantity], CANONICAL[quantity])
+
+    def from_canonical(self, value: Numeric, quantity: str) -> Numeric:
+        """Canonical-SI ``value`` -> the user's units for the named ``quantity``."""
+        return self.convert(value, CANONICAL[quantity], self.system[quantity])
