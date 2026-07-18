@@ -116,12 +116,18 @@ packages = ["welleng"]
 "welleng/py.typed" = "welleng/py.typed"
 
 [tool.hatch.build.targets.sdist]
+# NOTE: `uv build` (and the publish workflow) builds the WHEEL FROM THE SDIST, so
+# any package data omitted here is ALSO missing from the published wheel. Ship ALL
+# package data recursively (json/yaml/md), not per-directory globs — the previous
+# allowlist dropped every *.json (catalog/data + errors/iscwsa_json + iscwsa_schema),
+# so 0.17.0's PyPI wheel raised FileNotFoundError on Catalog.load() and the error
+# models. Keep the exclude list below as the guard against internal/root content.
 include = [
     "welleng/**/*.py",
+    "welleng/**/*.json",
+    "welleng/**/*.yaml",
+    "welleng/**/*.md",
     "welleng/py.typed",
-    "welleng/errors/*.yaml",
-    "welleng/errors/tool_codes/*.yaml",
-    "welleng/exchange/*.yaml",
     "README.md",
     "LICENSE",
 ]
