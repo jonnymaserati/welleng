@@ -1158,6 +1158,25 @@ class Survey:
             self.tvd
         ]).T.reshape(-1, 3)
 
+    def highside_vec_nev(self) -> np.ndarray:
+        """Unit high-side vector at each station, as an (n, 3) [N, E, V] array.
+
+        The high side is perpendicular to the wellbore axis, in the vertical
+        plane containing it, pointing to the high side of the hole (up-dip). It
+        is the high-side (H) basis vector of the NEV->HLA transform, expressed in
+        NEV, using the grid azimuth (consistent with :meth:`get_nev_arr`). For a
+        horizontal well it points straight up ([0, 0, -1]); for a vertical well
+        the high side is undefined and this returns the azimuth direction.
+
+        Returns
+        -------
+        ndarray
+            Array of shape (n, 3) of unit high-side vectors in [N, E, V].
+        """
+        ci, si = np.cos(self.inc_rad), np.sin(self.inc_rad)
+        ca, sa = np.cos(self.azi_grid_rad), np.sin(self.azi_grid_rad)
+        return np.stack([ci * ca, ci * sa, -si], axis=-1)
+
     def save(self, filename: str) -> None:
         """
         Saves a minimal (control points) survey listing as a .csv file,
