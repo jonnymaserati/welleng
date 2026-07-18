@@ -497,7 +497,7 @@ class SurveyHeader:
             raise ValueError("incorrect data format, should be YYYY-MM-DD")
 
 
-class Survey:
+class Survey(MinCurve):
     """Directional well survey with positions, vectors, errors, and trajectory properties.
 
     Computes wellbore positions via minimum curvature, converts between azimuth
@@ -932,20 +932,17 @@ class Survey:
         vectors for the well bore if they were not provided, using the
         minimum curvature method.
         """
-        # MinCurve is local + azi-ref agnostic; Survey owns start_xyz and applies
-        # it here (the datum/reference context lives on Survey, not the kernel).
-        mc = MinCurve(
-            self.md, self.inc_rad, self.azi_grid_rad
-        )
-        self.dogleg = mc.dogleg
-        self.rf = mc.rf
-        self.delta_md = mc.delta_md
+        # Survey IS a MinCurve: initialise the (local, azi-ref-agnostic) geometry
+        # base on self -> populates self.dogleg/rf/delta_md/curve_radius/poss/etc.
+        # Survey owns the datum/units context and layers it on below.
+        MinCurve.__init__(self, self.md, self.inc_rad, self.azi_grid_rad)
         # MinCurve is units-agnostic and exposes only the convention-free curvature
         # radius; Survey is units-aware and owns the DLS convention -> deg per
         # coeff md-units (deg/30m metric, deg/100ft imperial).
         coeff = 30 if self.unit == "meters" else 100
-        self.dls = np.degrees(coeff / mc.curve_radius)
-        self.pos_xyz = mc.poss + self.start_xyz
+        with np.errstate(divide='ignore'):   # inf where curve_radius==0 (degenerate)
+            self.dls = np.degrees(coeff / self.curve_radius)
+        self.pos_xyz = self.poss + self.start_xyz
         self.pos_nev = (
             get_nev(self.pos_xyz)
             * np.full_like(
@@ -960,7 +957,7 @@ class Survey:
         )
 
         if self.x is None:
-            self.x, self.y, self.z = (mc.poss + self.start_xyz).T
+            self.x, self.y, self.z = (self.poss + self.start_xyz).T
         if self.n is None:
             self._get_nev()
         if vec is None:
