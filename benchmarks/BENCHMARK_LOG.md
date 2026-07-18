@@ -254,3 +254,30 @@ gas-bottom margin eval. Further gains need caching pressure_at_depth's internal 
 an analytic conservative margin -- higher-risk edits to shared code for marginal benefit
 far below the 1 s API/GUI target, so STOPPED here. CoolProp backend remains the real
 next perf item (a precomputed Z(P,T) table), tracked separately.
+
+## 2026-07-18 · `perf/cache-error-model-defs` · Python 3.12, dev machine
+
+Cache the ISCWSA tool-model definition parses. Profiling `Survey(error_model=...)
+.cov_nev` (5000 stn) showed **~45% of the error path was repeated file parsing**:
+YAML `safe_load` of the model (~34%) + a JSON name-resolution walk that re-read
+~100 files (~11%) — both re-run on EVERY Survey. The parsed dicts are read-only
+(ToolError never mutates them; verified). Fix: `@lru_cache` on `_load_yaml_model`
+/ `_load_json_model` / `_resolve_json_model`, plus a lazy reorder so the JSON walk
+runs ONLY when the YAML is absent (the MWD default no longer walks the JSON tree
+at all). `clear_error_model_cache()` for the mid-process model-file-swap edge.
+
+Cold (per-survey re-parse = old) vs warm (cached = new steady state):
+
+| stations | cold (old) | warm (new) | speedup |
+|---|---|---|---|
+| 100 | 9.52 ms | **3.08 ms** | **3.09×** |
+| 500 | 11.80 ms | **6.64 ms** | 1.78× |
+| 5,000 | 50.98 ms | **30.41 ms** | 1.68× |
+
+The saving is a ~fixed parse cost (~6–20 ms), so it dominates SMALL/typical
+surveys most (3.1× at 100 stn) and compounds across a batch (the same MWD model
+was re-parsed N times). `cov_nev` is **bit-identical** cold vs warm
+(`test_error_model_cache::test_cached_cov_identical_to_cold`). OPEN + non-breaking
+(fixes repeated I/O, not a commercial capability); feeds the lazy error-class
+redesign (parse model defs once, reuse per section). Regression:
+`tests/test_error_model_cache.py` (4).
