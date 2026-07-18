@@ -86,11 +86,16 @@ class MinCurve:
         md,
         inc,
         azi,
-        start_xyz=[0., 0., 0.],
         unit="meters"
     ):
         """
-        Generate geometric data from a well bore survey.
+        Generate LOCAL geometric data from a well bore survey.
+
+        Positions (``poss``) are in local coordinates relative to the origin;
+        MinCurve is azimuth-reference agnostic (the caller knows which reference
+        ``azi`` is in) and holds no surface/start position or datum state -- that
+        belongs to the owning ``Survey``, which applies the start offset, grid
+        scale factor and NEV interpretation to interpret this local geometry.
 
         Parameters
         ----------
@@ -118,7 +123,6 @@ class MinCurve:
 
         self.inc = inc
         self.azi = azi
-        self.start_xyz = start_xyz
         self.unit = unit
 
         inc = np.array(inc)
@@ -149,11 +153,12 @@ class MinCurve:
             raw = np.degrees(self.dogleg[1:]) / self.delta_md[1:]
         self.dls[1:] = np.where(np.isnan(raw), 0.0, raw) * coeff
 
-        # cumulate the coordinates and add surface coordinates
+        # cumulate the coordinates -> LOCAL positions (origin-relative). The
+        # caller applies any start/surface offset; MinCurve holds no datum state.
         self.poss = np.vstack(
             np.cumsum(
                 np.array([self.delta_x, self.delta_y, self.delta_z]).T, axis=0
-            ) + self.start_xyz
+            )
         )
 
 

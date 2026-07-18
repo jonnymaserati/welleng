@@ -932,14 +932,16 @@ class Survey:
         vectors for the well bore if they were not provided, using the
         minimum curvature method.
         """
+        # MinCurve is local + azi-ref agnostic; Survey owns start_xyz and applies
+        # it here (the datum/reference context lives on Survey, not the kernel).
         mc = MinCurve(
-            self.md, self.inc_rad, self.azi_grid_rad, self.start_xyz, self.unit
+            self.md, self.inc_rad, self.azi_grid_rad, self.unit
         )
         self.dogleg = mc.dogleg
         self.rf = mc.rf
         self.delta_md = mc.delta_md
         self.dls = mc.dls
-        self.pos_xyz = mc.poss
+        self.pos_xyz = mc.poss + self.start_xyz
         self.pos_nev = (
             get_nev(self.pos_xyz)
             * np.full_like(
@@ -954,8 +956,7 @@ class Survey:
         )
 
         if self.x is None:
-            # self.x, self.y, self.z = (mc.poss + self.start_xyz).T
-            self.x, self.y, self.z = (mc.poss).T
+            self.x, self.y, self.z = (mc.poss + self.start_xyz).T
         if self.n is None:
             self._get_nev()
         if vec is None:
