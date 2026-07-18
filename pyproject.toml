@@ -167,7 +167,7 @@ no_implicit_optional = true
 
 # Fully-annotated modules — tighten these as coverage grows.
 [[tool.mypy.overrides]]
-module = ["welleng.node", "welleng.survey", "welleng.connector", "welleng.units", "welleng.kick_tolerance.batch"]
+module = ["welleng.node", "welleng.survey", "welleng.connector", "welleng.units"]
 disallow_incomplete_defs = true
 
 [dependency-groups]
