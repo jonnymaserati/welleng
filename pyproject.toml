@@ -66,6 +66,13 @@ easy = [
     "vedo",
     "vtk",
 ]
+# The 3D renderer (welleng.visual) -- vedo + the VTK backend. Guarded/optional:
+# `import welleng` runs without it (visual.py catches the ImportError), so
+# API/headless/CI installs stay VTK-free. Install `welleng[viz]` for plotting.
+viz = [
+    "vedo",
+    "vtk",
+]
 analytical = [
     "python-flint",
 ]
@@ -90,6 +97,8 @@ all = [
     "tabulate",
     "trimesh",
     "utm",
+    "vedo",                 # viz renderer (was missing from [all])
+    "vtk",
     "python-fcl",
     "rtree",
     "python-flint",
