@@ -305,7 +305,7 @@ class SurveyHeader:
         dip: Optional[float] = None,
         declination: Optional[float] = None,
         convergence: float = 0,
-        azi_reference: str = "true",
+        azi_reference: str = "grid",
         vertical_inc_limit: float = 0.0001,
         deg: bool = True,
         depth_unit: str = 'meters',
@@ -361,9 +361,11 @@ class SurveyHeader:
         convergence: float (default: 0)
             The angle of convergence between the projection meridian and
             the line from true north through the location of the well.
-        azi_reference: string (default: 'true')
+        azi_reference: string (default: 'grid')
             The reference system for the azimuth angles in the survey data,
-            either "true", "magnetic" or "grid". Note that survey
+            either "true", "magnetic" or "grid". Default is "grid" -- the
+            engine's canonical frame (positions are computed in grid); it equals
+            "true" when convergence is 0 (the default). Note that survey
             calculations are performed in the "grid" reference and
             converted to and from the other systems.
         vertical_inc_limit: float (default 0.0001)
@@ -405,6 +407,11 @@ class SurveyHeader:
         self.declination = declination
         self.vertical_inc_limit = vertical_inc_limit
         self.grid_scale_factor = grid_scale_factor
+        # Global datum (georeferencing truth lives on the header). Survey resolves
+        # these from its data/args and writes them here; the position transform
+        # reads them. Default is the origin.
+        self.start_nev = np.array([0.0, 0.0, 0.0])
+        self.start_xyz = np.array([0.0, 0.0, 0.0])
 
         self.depth_unit = get_unit(depth_unit)
         self.surface_unit = get_unit(surface_unit)
@@ -809,6 +816,11 @@ class Survey(MinCurve):
         else:
             self.start_nev = np.array(start_nev)
 
+        # Georeferencing truth lives on the header: mirror the resolved global
+        # datum there (the position transform reads it from the header).
+        self.header.start_nev = self.start_nev
+        self.header.start_xyz = np.asarray(self.start_xyz, dtype=float)
+
         self.x = np.array(x) if x is not None else x  # type: ignore[assignment]
         self.y = np.array(y) if y is not None else y  # type: ignore[assignment]
         self.z = np.array(z) if z is not None else z  # type: ignore[assignment]
@@ -942,19 +954,18 @@ class Survey(MinCurve):
         coeff = 30 if self.unit == "meters" else 100
         with np.errstate(divide='ignore'):   # inf where curve_radius==0 (degenerate)
             self.dls = np.degrees(coeff / self.curve_radius)
+        # Explicit georeferencing transform (built from the header + datum): local
+        # MinCurve positions -> global NEV. `A` = the XYZ->NEV axis swap scaled by
+        # the grid scale factor; `b` = the datum move. `pos_nev = poss @ A.T + b` is
+        # bit-identical to the prior `get_nev(pos_xyz) * scale + start_nev`, as one
+        # move+rotate+scale transform (the header owns the georef state).
+        sc = self.header.grid_scale_factor
+        _A = np.array([[0.0, sc, 0.0], [sc, 0.0, 0.0], [0.0, 0.0, 1.0]])
+        _sx = np.asarray(self.header.start_xyz, dtype=float)
+        _sn = np.asarray(self.header.start_nev, dtype=float)
+        _b = np.array([_sx[1] * sc + _sn[0], _sx[0] * sc + _sn[1], _sx[2] + _sn[2]])
         self.pos_xyz = self.poss + self.start_xyz
-        self.pos_nev = (
-            get_nev(self.pos_xyz)
-            * np.full_like(
-                self.pos_xyz,
-                np.array([
-                    self.header.grid_scale_factor,
-                    self.header.grid_scale_factor,
-                    1
-                ])
-            )
-            + self.start_nev
-        )
+        self.pos_nev = self.poss @ _A.T + _b
 
         if self.x is None:
             self.x, self.y, self.z = (self.poss + self.start_xyz).T
