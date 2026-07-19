@@ -348,6 +348,7 @@ class ToolError:
         self.cov_NEVs_random = np.zeros(shape)
         self.cov_NEVs_systematic = np.zeros(shape)
         self.cov_NEVs_global = np.zeros(shape)
+        self.cov_NEVs_well = np.zeros(shape)
         self.cov_NEVs_within_pad = np.zeros(shape)
         for _, value in self.errors.items():
             self.cov_NEVs += value.cov_NEV
@@ -357,6 +358,12 @@ class ToolError:
                 self.cov_NEVs_systematic += value.cov_NEV
             elif value.propagation == 'global':
                 self.cov_NEVs_global += value.cov_NEV
+            elif value.propagation == 'well':
+                # 'well' (COMPASS tie W): systematic throughout the WELL —
+                # one realisation across every run/tool in the wellbore.
+                # Without its own bucket these terms are in the total but
+                # invisible to bucket consumers (composition dropped them).
+                self.cov_NEVs_well += value.cov_NEV
             elif value.propagation == 'within_pad':
                 self.cov_NEVs_within_pad += value.cov_NEV
 
