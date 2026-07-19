@@ -351,3 +351,27 @@ def test_landing_reproduces_example4():
     assert np.allclose(s['p4'], [533.30, -194.11, 3280.8], atol=0.15)
 
 
+def test_landing_branch_closure_is_unit(seed=3):
+    # Regression for the razor-edge branch flip (fixed via chord-identity
+    # arbitration): every returned landing solution must have a
+    # UNIT middle tangent v = (p4-p1 - R1 T1 t1 - R2 T2 t4)/(R1 T1 + R2 T2) -- a
+    # wrong branch (the failure mode) gives |v| far from 1.
+    rng = np.random.default_rng(seed)
+    checked = 0
+    for _ in range(200):
+        p1 = rng.normal(scale=300, size=3)
+        t1 = tangent(rng.uniform(5, 175), rng.uniform(0, 360))
+        p0 = rng.normal(scale=300, size=3)
+        t4 = tangent(rng.uniform(5, 175), rng.uniform(0, 360))
+        R1, R2 = rng.uniform(200, 600), rng.uniform(200, 600)
+        for s in solve_clc_landing(p1, t1, p0, t4, R1, R2, return_all=True):
+            T1, T2 = np.tan(s['alpha1'] / 2), np.tan(s['alpha2'] / 2)
+            denom = R1 * T1 + R2 * T2
+            if abs(denom) < 1e-9:
+                continue
+            v = (s['p4'] - p1 - R1 * T1 * t1 - R2 * T2 * t4) / denom
+            assert abs(np.linalg.norm(v) - 1.0) < 1e-4, (R1, R2, s['k'])
+            checked += 1
+    assert checked > 50   # the battery actually exercised landings
+
+
