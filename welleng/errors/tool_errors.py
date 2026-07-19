@@ -184,7 +184,13 @@ def _json_to_em_adapter(model: dict) -> dict:
             # Carry through the formula strings for the interpreter.
             "_iscwsa_term": term,
         }
-    return {"header": header, "codes": codes}
+    em = {"header": header, "codes": codes}
+    # EDM/COMPASS IPM models (welleng/errors/edm_ipm.py) carry named
+    # intermediate values (tie-type 'n' rows) that later formulas reference;
+    # they are evaluated into the interpreter bindings in sequence order.
+    if model.get("edm_intermediates"):
+        em["edm_intermediates"] = model["edm_intermediates"]
+    return em
 
 # since this is running on different OS flavors
 PATH = os.path.dirname(__file__)
@@ -233,10 +239,16 @@ class ToolError:
         # Some JSON files are named by Short Name (the converter's
         # default), so we walk the iscwsa_json/ tree looking at both
         # the OWSG prefix and the metadata.short_name of each JSON.
-        yaml_filename = os.path.join(PATH, 'tool_codes', f"{model}.yaml")
-
         self._json_path = None
-        if os.path.isfile(yaml_filename):
+        if isinstance(model, dict):
+            # A prebuilt model dict (ISCWSA-JSON-shaped) — e.g. an EDM/COMPASS
+            # IPM converted by welleng.errors.edm_ipm. No file resolution.
+            self._json_model = model
+            self.em = _json_to_em_adapter(model)
+            yaml_filename = None
+        elif os.path.isfile(
+            yaml_filename := os.path.join(PATH, 'tool_codes', f"{model}.yaml")
+        ):
             # Legacy YAML path (e.g. the MWD models). Cached parse; do NOT resolve
             # the JSON tree here -- the name-resolution walk is only needed when
             # the YAML is absent (it re-reads ~100 files otherwise).
@@ -444,6 +456,24 @@ class ToolError:
         _xcl_tort = hdr.get("Default Tortusity (rad/m)")
         if _xcl_tort is not None:
             bindings["XCLTortuosity"] = float(_xcl_tort)
+
+        # COMPASS/EDM IPM vocabulary (welleng/errors/edm_ipm.py): those
+        # formulas speak lowercase names. All lengths in metres (COMPASS's
+        # feet-internal mtf conversion is identity in SI evaluation).
+        bindings.update({
+            "inc": inc, "azm": azm, "azt": azt, "azi": azg,
+            "tmd": md, "dmd": md - _prev(md),
+            "tvd": bindings["TVD"],
+            "gtot": bindings["Gfield"], "mtot": bindings["BField"],
+            "dip": bindings["Dip"], "lat": bindings["Latitude"],
+            "erot": earth_rate, "mtf": 1.0,
+        })
+        # Named intermediates (COMPASS tie-type 'n' rows), evaluated in
+        # sequence order so later ones may reference earlier ones.
+        for interm in self.em.get("edm_intermediates", []):
+            bindings[interm["name"]] = (
+                interm["value"] * evaluate_formula(interm["formula"], bindings)
+            )
 
         # Recurrence terms (continuous gyro): the azimuth formula references
         # its own accumulated state from the previous station

@@ -157,11 +157,32 @@ class ErrorModel():
         ----------
         survey : welleng.survey.Survey
             The survey to compute errors for.
-        error_model : str, optional
+        error_model : str or dict, optional
             Name of the error model to apply. Defaults to the Rev 5.11
             compliant ``"ISCWSA MWD Rev5.11"``. The legacy name
             ``"ISCWSA MWD Rev5"`` is accepted as a deprecated alias.
+            Alternatively a prebuilt ISCWSA-JSON-shaped model dict — e.g.
+            a COMPASS IPM imported from an EDM export by
+            ``welleng.errors.edm_ipm`` — evaluated by the formula
+            interpreter without any file resolution.
         """
+
+        if isinstance(error_model, dict):
+            self.error_model = error_model.get(
+                'metadata', {}
+            ).get('short_name', 'custom-dict-model')
+            self.survey = survey
+            self.survey_rad = np.stack((
+                self.survey.md,
+                self.survey.inc_rad,
+                self.survey.azi_true_rad
+            ), axis=-1)
+            self.survey_drdp = self.survey_rad
+            self.drdp = self._drdp(self.survey_drdp)
+            self.drdp_sing = self._drdp_sing(self.survey_drdp)
+            self._validate_mag_reference(error_model)
+            self.errors = ToolError(error=self, model=error_model)
+            return
 
         if error_model in _DEPRECATED_ERROR_MODEL_ALIASES:
             replacement = _DEPRECATED_ERROR_MODEL_ALIASES[error_model]
@@ -207,24 +228,32 @@ class ErrorModel():
             model=model
         )
 
-    def _validate_mag_reference(self, model: str) -> None:
+    def _validate_mag_reference(self, model) -> None:
         """Magnetic models need a real geomagnetic reference — refuse package
         defaults.
 
         Magnetic-compass models' weighting functions consume the header's
         ``b_total``/``dip``/``declination``; gyro models (OWSG ``A<nn>G*``,
-        the GYRO short names, the SPE-90408 example model) do not. Those
-        values must be either user-provided or looked up for a user-provided
-        location — the header's fallback values (or a lookup at the fallback
-        location) are placeholders, not a geomagnetic reference, and would
-        silently bias every magnetic term. Unclassified models are treated
-        as magnetic (the strict direction). See ``SurveyHeader.mag_source``.
+        the GYRO short names, the SPE-90408 example model, and dict models
+        whose ``metadata.tool_type`` says gyro / inclination-only) do not.
+        Those values must be either user-provided or looked up for a
+        user-provided location — the header's fallback values (or a lookup at
+        the fallback location) are placeholders, not a geomagnetic reference,
+        and would silently bias every magnetic term. Unclassified models are
+        treated as magnetic (the strict direction). See
+        ``SurveyHeader.mag_source``.
         """
-        is_gyro = (
-            re.match(r"^A\d+G", model) is not None
-            or 'GYRO' in self.error_model.upper()
-            or '90408' in model
-        )
+        if isinstance(model, dict):
+            tool_type = str(
+                model.get('metadata', {}).get('tool_type', '')
+            ).lower()
+            is_gyro = tool_type in ('gyro', 'inclination_only')
+        else:
+            is_gyro = (
+                re.match(r"^A\d+G", model) is not None
+                or 'GYRO' in self.error_model.upper()
+                or '90408' in model
+            )
         if is_gyro:
             return
         sources = getattr(self.survey.header, 'mag_source', None)

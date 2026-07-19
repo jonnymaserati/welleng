@@ -897,7 +897,7 @@ class Survey(MinCurve):
 
         # initialize errors (ERROR_MODELS is derived from errors/tool_index.yaml)
         error_models = ERROR_MODELS
-        if error_model is not None:
+        if error_model is not None and not isinstance(error_model, dict):
             assert error_model in error_models, "Unrecognized error model"
         self.error_model = error_model
 
@@ -1120,7 +1120,8 @@ class Survey(MinCurve):
         AssertionError
             If ``error_model`` is not a recognized model name.
         """
-        assert error_model in ERROR_MODELS, "Undefined error model"
+        if not isinstance(error_model, dict):
+            assert error_model in ERROR_MODELS, "Undefined error model"
 
         self.error_model = error_model
         self._get_errors()
