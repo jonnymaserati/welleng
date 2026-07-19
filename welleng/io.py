@@ -1,5 +1,4 @@
 import numbers
-import numpy as np
 from .survey import Survey
 from .utils import get_xyz
 

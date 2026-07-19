@@ -27,7 +27,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-import welleng as we
 
 from .copsegrove import parse_copsegrove
 from .interpreter import evaluate_formula
@@ -214,8 +213,8 @@ DEFAULT_PAIRINGS = [
 
 
 def main() -> None:
-    print(f"Validating JSON+interpreter Random-prop terms against\n"
-          f"Copsegrove .txt diagnostics (4-dp precision):\n")
+    print("Validating JSON+interpreter Random-prop terms against\n"
+          "Copsegrove .txt diagnostics (4-dp precision):\n")
     for json_path, txt_path in DEFAULT_PAIRINGS:
         if not os.path.isfile(txt_path):
             print(f"  ! Copsegrove file missing: {txt_path}")

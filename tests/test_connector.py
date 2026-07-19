@@ -162,7 +162,7 @@ def test_extend_to_tvd(tol=1e-4):
         connectors[1].node_end.vec_nev, rtol=tol, atol=tol
     ), "Unexpected tangent section."
     assert connectors[1].node_end.pos_nev[2] - 3500 < tol, "Unexpected tvd."
-    
+
     connectors = extend_to_tvd(
         target_tvd=3500, node=node
     )

@@ -164,7 +164,7 @@ def test_func_dict_msixy_entries_are_distinct():
     Issue #163: MSIXY_TI1, MSIXY_TI2, and MSIXY_TI3 must each point to their
     own function, not all to MSIXY_TI1.
     """
-    from welleng.errors.tool_errors import ToolError, MSIXY_TI1, MSIXY_TI2, MSIXY_TI3
+    from welleng.errors.tool_errors import MSIXY_TI1, MSIXY_TI2, MSIXY_TI3
 
     # ToolError._initiate_func_dict is called during __init__; we instantiate
     # it with a minimal error/model pair via ErrorModel so we can inspect
