@@ -156,11 +156,31 @@ class ErrorModel():
         ----------
         survey : welleng.survey.Survey
             The survey to compute errors for.
-        error_model : str, optional
+        error_model : str or dict, optional
             Name of the error model to apply. Defaults to the Rev 5.11
             compliant ``"ISCWSA MWD Rev5.11"``. The legacy name
             ``"ISCWSA MWD Rev5"`` is accepted as a deprecated alias.
+            Alternatively a prebuilt ISCWSA-JSON-shaped model dict — e.g.
+            a COMPASS IPM imported from an EDM export by
+            ``welleng.errors.edm_ipm`` — evaluated by the formula
+            interpreter without any file resolution.
         """
+
+        if isinstance(error_model, dict):
+            self.error_model = error_model.get(
+                'metadata', {}
+            ).get('short_name', 'custom-dict-model')
+            self.survey = survey
+            self.survey_rad = np.stack((
+                self.survey.md,
+                self.survey.inc_rad,
+                self.survey.azi_true_rad
+            ), axis=-1)
+            self.survey_drdp = self.survey_rad
+            self.drdp = self._drdp(self.survey_drdp)
+            self.drdp_sing = self._drdp_sing(self.survey_drdp)
+            self.errors = ToolError(error=self, model=error_model)
+            return
 
         if error_model in _DEPRECATED_ERROR_MODEL_ALIASES:
             replacement = _DEPRECATED_ERROR_MODEL_ALIASES[error_model]

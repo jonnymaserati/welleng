@@ -30,7 +30,8 @@ Columns
   ``dip``, ``gtot``, ``mtot``, ``tmd``, ``tvd`` ...). Stored verbatim; this reader does
   not evaluate it.
 
-This module only *parses* the file into :class:`IPMModel` / :class:`IPMTerm`; mapping the
+This module only *parses* the file into :class:`IPMModel` / :class:`IPMTerm`;
+mapping the
 terms onto a propagation engine is left to the caller.
 """
 from __future__ import annotations
@@ -70,7 +71,8 @@ class IPMModel:
         return sorted({t.name for t in self.terms})
 
     def by_tie_on(self, tie_on: str) -> List[IPMTerm]:
-        """All terms with the given propagation mode (``'s'``/``'r'``/``'g'``/``'w'``)."""
+        """All terms with the given propagation mode
+        (``'s'``/``'r'``/``'g'``/``'w'``)."""
         return [t for t in self.terms if t.tie_on == tie_on]
 
     def to_dict(self) -> dict:
@@ -94,7 +96,8 @@ def _parse_lines(lines) -> IPMModel:
             continue
         if line.startswith("#"):
             body = line[1:]
-            # the column-header row (starts with 'Name', contains 'Vector') is not metadata
+            # the column-header row (starts with 'Name', contains
+            # 'Vector') is not metadata
             if re.match(r"\s*Name\b", body) and "Vector" in body:
                 continue
             if ":" in body:

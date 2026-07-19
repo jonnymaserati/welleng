@@ -102,18 +102,27 @@ def classify_tool(
     classified as :attr:`ToolKind.GYRO` -- the gyro sensor governs the error
     behaviour even though the tool is conveyed on an MWD string.
     """
-    text = " ".join(t for t in (name, description) if t).lower().strip()
-    if not text:
+    def _classify(text: Optional[str]) -> ToolKind:
+        text = (text or "").lower().strip()
+        if not text:
+            return ToolKind.OTHER
+        if any(k in text for k in _GYRO_KEYWORDS):
+            return ToolKind.GYRO
+        if any(k in text for k in _INC_ONLY_KEYWORDS):
+            return ToolKind.INCLINATION_ONLY
+        if any(k in text for k in _DEFINITIVE_KEYWORDS):
+            return ToolKind.DEFINITIVE
+        if any(k in text for k in _MWD_KEYWORDS):
+            return ToolKind.MWD
         return ToolKind.OTHER
-    if any(k in text for k in _GYRO_KEYWORDS):
-        return ToolKind.GYRO
-    if any(k in text for k in _INC_ONLY_KEYWORDS):
-        return ToolKind.INCLINATION_ONLY
-    if any(k in text for k in _DEFINITIVE_KEYWORDS):
-        return ToolKind.DEFINITIVE
-    if any(k in text for k in _MWD_KEYWORDS):
-        return ToolKind.MWD
-    return ToolKind.OTHER
+
+    # Classify the NAME on its own first; the description only breaks a tie
+    # when the name is inconclusive. (A description like "Magnetic tools
+    # without gyro-verification" must not turn a magnetic tool into a gyro.)
+    kind = _classify(name)
+    if kind is ToolKind.OTHER:
+        kind = _classify(description)
+    return kind
 
 
 # ---------------------------------------------------------------------------
