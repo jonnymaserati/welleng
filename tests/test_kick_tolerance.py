@@ -30,7 +30,6 @@ do NOT tune any constant/pressure to force a closer match.
 import math
 from dataclasses import replace
 
-import pytest
 
 from welleng.kick_tolerance.core import (
     KickInputs,

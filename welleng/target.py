@@ -1,6 +1,5 @@
 """Drilling target definitions for wellbore trajectory visualization."""
 
-import numpy as np
 try:
     from vedo import Circle
     VEDO = True

@@ -27,6 +27,8 @@ from welleng.exchange.edm_stream import (
 )
 import welleng.composition
 import welleng.conditioning
+import welleng.hierarchy
+import welleng.osdu
 from welleng.composition import SurveyComposition, SurveySection
 import welleng.fluid
 import welleng.node

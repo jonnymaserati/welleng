@@ -1,6 +1,5 @@
 import numpy as np
 from numpy import sin, cos, tan, pi, sqrt
-from numpy.char import index
 import json
 import re
 import yaml

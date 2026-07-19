@@ -3,7 +3,6 @@
 Requires welleng.catalog (the API-5CT tubular catalogue); on the integration
 branch that carries both subpackages.
 """
-import math
 
 import pytest
 

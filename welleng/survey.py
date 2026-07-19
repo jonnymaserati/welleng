@@ -37,7 +37,6 @@ from .utils import (
     HLA_to_NEV,
     NEV_to_HLA,
     get_xyz,
-    make_long_cov,
     min_curve_step,
     radius_from_dls,
 )
@@ -47,8 +46,8 @@ from .connector import Connector, interpolate_well
 from .visual import figure
 from .units import ureg
 
-from typing import Any, List, Optional, Union
-from numpy.typing import NDArray, ArrayLike
+from typing import Any, Optional, Union
+from numpy.typing import ArrayLike
 
 
 AZI_REF = ["true", "magnetic", "grid"]
@@ -2916,7 +2915,7 @@ def slice_survey(
     s: welleng.survey.Survey object
         A survey object of the desired slice is returned.
     """
-    # Removing this start + 2 code - define this explicitly when making call 
+    # Removing this start + 2 code - define this explicitly when making call
     # if stop is None:
     #     stop = start + 2
     md, inc, azi = survey.survey_rad[start:stop].T

@@ -19,9 +19,8 @@ from scipy.optimize import minimize
 from .node import Node, get_node_params
 from .sawaryn_analytical import max_radius, solve_clc
 from .utils import (
-    NEV_to_HLA, dls_from_radius, get_angles,
-    get_dogleg, get_nev, get_rf, get_unit_vec, get_vec, get_xyz,
-    radius_from_dls, get_arc
+    dls_from_radius, get_angles,
+    get_dogleg, get_nev, get_rf, get_vec, radius_from_dls, get_arc
 )
 
 
