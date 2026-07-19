@@ -690,8 +690,13 @@ class Survey(MinCurve):
         steering: Optional[Union[str, ArrayLike]] = None,
         **kwargs: Any
     ) -> None:
-        """Initialize a `welleng.Survey` object. Calculations are performed in the
-        azi_reference "grid" domain.
+        """Initialize a `welleng.Survey` object.
+
+        Geometry is computed INTERNALLY in the grid-azimuth domain (the canonical
+        engine frame); the header's ``azi_reference`` names the INPUT azimuth frame
+        and is converted to grid on construction. The input-reference default is
+        ``"true"`` (see ``SurveyHeader``), not grid -- the "grid" here is the
+        internal calculation domain, not the expected input.
 
         Parameters
         ----------
