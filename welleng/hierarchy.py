@@ -12,7 +12,8 @@ OSDU schema source (the canonical Well-Known-Schemas this maps to):
 Hierarchy (maps to OSDU master-data — see that doc for the field-level mapping,
 grounded separately):
 
-    Organisation -> Field -> Site(WellSiteStructure) -> Well(slot + Datum) -> Wellbore* -> Survey
+    Organisation -> Field -> Site(WellSiteStructure) -> Well(slot + Datum)
+        -> Wellbore* -> Survey
 
 The **wellbore graph** is a *forest*: every wellbore section has a parent — a
 parent wellbore (a sidetrack/lateral kicked off at ``kickoff_md``) or, for a
@@ -20,7 +21,8 @@ parent wellbore (a sidetrack/lateral kicked off at ``kickoff_md``) or, for a
 share the site's geodetic CRS + convergence (common systematic -> cancels in
 relative use); each Well carries its own slot position (+ ``slot_radial_error``)
 and local datum (RKB). EDM cross-check confirms the spine
-``CD_PROJECT(CRS) -> CD_SITE -> CD_WELL(slot,datum) -> CD_WELLBORE(parent_wellbore_id) -> survey``.
+``CD_PROJECT(CRS) -> CD_SITE -> CD_WELL(slot,datum)
+-> CD_WELLBORE(parent_wellbore_id) -> survey``.
 
 Why a graph (the load-bearing reason). For relative error between two
 wellbores (e.g. two laterals off one parent, or two sidetracks) you must NOT
@@ -35,7 +37,7 @@ between wells of common ancestry.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterator, Optional
 
 
@@ -144,7 +146,7 @@ class Site(_Node):
     uncertainty sense. Only the per-well slot offsets differ (see
     :class:`Well`).
     """
-    crs: Optional[str] = None               # geodetic CRS (zone/datum), shared reference
+    crs: Optional[str] = None          # geodetic CRS (zone/datum), shared ref
     convergence: Optional[float] = None      # grid vs true north (rad)
     is_field_centre: bool = False
     location: Optional[tuple[float, float]] = None   # (northing, easting) map location
@@ -182,7 +184,7 @@ class Well(_Node):
     their slot offsets and ``slot_radial_error`` differ — the shared CRS /
     convergence cancels (see :class:`Site`).
     """
-    slot: Optional[tuple[float, float]] = None   # (ns, ew) slot offset from the site origin
+    slot: Optional[tuple[float, float]] = None   # (ns, ew) offset from site origin
     slot_radial_error: float = 0.0               # slot-position uncertainty
     wellhead_depth: Optional[float] = None
     datum: Optional[Datum] = None                # per-well RKB/rotary datum
@@ -248,8 +250,8 @@ class Wellbore(_Node):
     # *trajectories* are independent (divergent branches). Sections that share a
     # key share that systematic error SOURCE -> it partly correlates between
     # them (reduces relative independence), orthogonal to the graph ancestry.
-    survey_date: Optional[str] = None       # acquisition date -> geomag (declination/dip/B)
-                                            #   is date+location dependent (secular variation)
+    survey_date: Optional[str] = None   # acquisition date -> geomag terms are
+                                        #   date+location dependent (secular var.)
     tool_id: Optional[str] = None           # same tool RUN -> shared tool systematic
     geomag_model: Optional[str] = None      # geomag model/IFR/IIFR reference used
     # (datum + grid convergence come from the parent Well/Site; also shared keys)
@@ -264,7 +266,8 @@ class WellNetwork:
     A lightweight forest (single parent per node) whose nodes are the
     master-data entities (Wellbores and their Well / Site / Field /
     Organisation ancestors) and whose parent -> child links encode "child
-    kicks off / hangs off parent". Provides the ancestry queries (roots, leaves, lowest common
+    kicks off / hangs off parent". Provides the ancestry queries (roots,
+    leaves, lowest common
     ancestor) and the shared / divergent split that relative-error propagation
     needs, plus native JSON persistence.
 
@@ -451,7 +454,8 @@ class WellNetwork:
         chain, cur = [], id_
         seen: set[str] = set()
         while cur is not None and cur not in seen:
-            seen.add(cur); chain.append(cur)
+            seen.add(cur)
+            chain.append(cur)
             cur = self._parent_id(cur)
         return chain
 
@@ -494,7 +498,9 @@ class WellNetwork:
                 return node
         return None
 
-    def shared_and_divergent(self, a: str, b: str) -> tuple[list[str], list[str], list[str]]:
+    def shared_and_divergent(
+        self, a: str, b: str
+    ) -> tuple[list[str], list[str], list[str]]:
         """Split the two ancestry paths at their lowest common ancestor.
 
         Partitions the ancestry of ``a`` and ``b`` into the shared trunk (the
@@ -839,7 +845,8 @@ class WellNetwork:
                 "azi": list(np.asarray(getattr(s, f"azi_{azi_ref}_rad")).tolist()),
                 "azi_reference": azi_ref,
                 "header": {k: v for k, v in vars(hdr).items()
-                           if isinstance(v, (str, int, float, bool, type(None)))} if hdr else None,
+                           if isinstance(v, (str, int, float, bool,
+                                             type(None)))} if hdr else None,
                 "start_nev": list(np.asarray(s.start_nev).tolist()),
                 "error_model": getattr(getattr(s, "header", None), "error_model", None),
             }
@@ -907,15 +914,21 @@ class WellNetwork:
                          wellhead_depth=d.get("wellhead_depth"),
                          datum=Datum(**dm) if dm else None)
             elif kind == "Wellbore":
-                sv = d.get("survey"); survey = None
+                sv = d.get("survey")
+                survey = None
                 if sv:
-                    survey = Survey(md=sv["md"], inc=sv["inc"], azi=sv["azi"], deg=sv.get("deg", False),
-                                    header=SurveyHeader(**sv["header"]) if sv.get("header") else None,
+                    survey = Survey(
+                        md=sv["md"], inc=sv["inc"], azi=sv["azi"],
+                        deg=sv.get("deg", False),
+                        header=(SurveyHeader(**sv["header"])
+                                if sv.get("header") else None),
                                     start_nev=sv.get("start_nev", [0., 0., 0.]),
                                     error_model=sv.get("error_model"))
                 n = Wellbore(id=d["id"], name=d["name"], parent=parent,
-                             kickoff_md=d.get("kickoff_md"), survey_date=d.get("survey_date"),
-                             tool_id=d.get("tool_id"), geomag_model=d.get("geomag_model"),
+                             kickoff_md=d.get("kickoff_md"),
+                             survey_date=d.get("survey_date"),
+                             tool_id=d.get("tool_id"),
+                             geomag_model=d.get("geomag_model"),
                              survey=survey)
             else:
                 n = _classes[kind](id=d["id"], name=d["name"], parent=parent)

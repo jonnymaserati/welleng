@@ -8,9 +8,8 @@ import warnings
 import numpy as np
 import pytest
 
-import welleng as we
 from welleng.hierarchy import (
-    Datum, Field, Organisation, Site, Well, Wellbore, WellNetwork,
+    Well, Wellbore, WellNetwork,
 )
 from welleng import osdu
 from welleng.survey import Survey, SurveyHeader
@@ -102,7 +101,7 @@ def test_relative_covariance_grows_below_kickoff_and_beats_naive():
     C_s = net.node("S1").survey.cov_nev[-1]
     s_naive = _sig(np.asarray(C_p) + np.asarray(C_s))
     assert s_rel > 0.0
-    assert s_rel < s_naive                                # shared trunk cancels -> smaller
+    assert s_rel < s_naive               # shared trunk cancels -> smaller
 
 
 def test_relative_covariance_ancestor_matches_manual():

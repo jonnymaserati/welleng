@@ -326,7 +326,9 @@ def from_osdu(record: dict[str, Any]) -> Any:
         vm = (data.get("VerticalMeasurements") or [{}])[0]
         return Well(
             id=rid, name=data.get("FacilityName", ""),
-            wellhead_depth=_to_m(vm.get("VerticalMeasurement"), vm.get("VerticalMeasurementUnitOfMeasureID") or uom),
+            wellhead_depth=_to_m(
+                vm.get("VerticalMeasurement"),
+                vm.get("VerticalMeasurementUnitOfMeasureID") or uom),
             datum=Datum(name=vm.get("VerticalMeasurementPathID", "datum"),
                         elevation=_to_m(vm.get("VerticalMeasurement"), uom) or 0.0),
         )
@@ -340,8 +342,11 @@ def from_osdu(record: dict[str, Any]) -> Any:
             "azimuth_reference": data.get("AzimuthReferenceType"),
         }
     if entity in ("Organisation", "Field", "WellSiteStructure"):
-        cls = {"Organisation": Organisation, "Field": Field, "WellSiteStructure": Site}[entity]
-        return cls(id=rid, name=data.get("FacilityName") or data.get("OrganisationName") or data.get("FieldName", ""))
+        cls = {"Organisation": Organisation, "Field": Field,
+               "WellSiteStructure": Site}[entity]
+        return cls(id=rid, name=(data.get("FacilityName")
+                                 or data.get("OrganisationName")
+                                 or data.get("FieldName", "")))
     raise ValueError(f"no from_osdu mapper for entity {entity!r}")
 
 
@@ -382,8 +387,10 @@ def to_osdu(entity: Any, *, version: Optional[str] = None,
     >>> top = Wellbore(id='WB1', name='TopHole', parent=Well(id='W1', name='W1'))
     >>> lat = Wellbore(id='WB2', name='Lat1', parent=top, kickoff_md=1000.0)
     >>> rec = to_osdu(lat)
-    >>> rec['kind'], rec['id'], rec['data']
-    ('osdu:wks:master-data--Wellbore:1.1.0', 'WB2', {'FacilityName': 'Lat1', 'KickOffWellbore': 'WB1'})
+    >>> rec['kind']
+    'osdu:wks:master-data--Wellbore:1.1.0'
+    >>> rec['id'], rec['data']
+    ('WB2', {'FacilityName': 'Lat1', 'KickOffWellbore': 'WB1'})
     """
     if isinstance(entity, Wellbore):
         parent = entity.parent
@@ -398,13 +405,15 @@ def to_osdu(entity: Any, *, version: Optional[str] = None,
         if entity.wellhead_depth is not None or entity.datum is not None:
             vm = [{
                 "VerticalMeasurement": _from_m(
-                    entity.datum.elevation if entity.datum else entity.wellhead_depth, uom),
+                    (entity.datum.elevation if entity.datum
+                     else entity.wellhead_depth), uom),
                 "VerticalMeasurementUnitOfMeasureID": uom,
             }]
         return {"kind": build_kind("Well", version), "id": entity.id,
                 "data": {"FacilityName": entity.name, "VerticalMeasurements": vm}}
     if isinstance(entity, (Organisation, Field, Site)):
-        ent = {"Organisation": "Organisation", "Field": "Field", "Site": "WellSiteStructure"}[type(entity).__name__]
+        ent = {"Organisation": "Organisation", "Field": "Field",
+               "Site": "WellSiteStructure"}[type(entity).__name__]
         return {"kind": build_kind(ent, version), "id": entity.id,
                 "data": {"FacilityName": entity.name}}
     raise ValueError(f"no to_osdu mapper for {type(entity).__name__}")
@@ -448,6 +457,6 @@ def network_from_osdu(records: list[dict[str, Any]]) -> WellNetwork:
         parent_of[wb.id] = d.get("KickOffWellbore") or d.get("WellID") or ""
     for wid, wb in wellbores.items():
         pid = parent_of.get(wid)
-        wb.parent = wellbores.get(pid)           # None if parent is a Well (root) not yet added
+        wb.parent = wellbores.get(pid)   # None if parent is a Well (root)
         net.add(wb)
     return net
