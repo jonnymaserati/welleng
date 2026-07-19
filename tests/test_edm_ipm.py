@@ -417,15 +417,23 @@ def test_f15d_ew_high_inc_no_lateral_underrun(ipm):
     gyro = ipm.error_model("Wellbore Surveyor, stat")
     mwd1 = ipm.error_model("Magn, IFR, mag-corr, dual incl")
     mwd2 = ipm.error_model("Magn, IFR, non-mag, dual incl")
-    i1 = int(np.argmin(np.abs(md - 1310.0)))
-    i2 = int(np.argmin(np.abs(md - 3220.0)))
+    # The ACTUAL survey program (CD_SURVEY_PROGRAM) — four runs. Composing
+    # with a simplified 3-section split (both mag-corr runs merged) leaves a
+    # +10% sigma_E excess through the turn: the mid-leg systematic restart
+    # is real information. Use the program's own boundaries.
+    i1 = int(np.argmin(np.abs(md - 1310.0)))   # drop-gyro end
+    i1b = int(np.argmin(np.abs(md - 2560.0)))  # mag-corr run 1 -> run 2
+    i2 = int(np.argmin(np.abs(md - 3220.0)))   # mag-corr -> non-mag
     comp = SurveyComposition(sections=[
         SurveySection(md=md[:i1 + 1], inc=inc[:i1 + 1], azi=azi[:i1 + 1],
                       header=sh, error_model=gyro, tool_id="gyro"),
-        SurveySection(md=md[i1:i2 + 1], inc=inc[i1:i2 + 1],
-                      azi=azi[i1:i2 + 1], header=sh, error_model=mwd1,
-                      tool_id="mwd1", share_mode="all_independent"),
-        # both MWD runs reference the same IFR geomag realisation
+        SurveySection(md=md[i1:i1b + 1], inc=inc[i1:i1b + 1],
+                      azi=azi[i1:i1b + 1], header=sh, error_model=mwd1,
+                      tool_id="mwd1a", share_mode="all_independent"),
+        # same-tool second run: fresh systematic, shared IFR geomag globals
+        SurveySection(md=md[i1b:i2 + 1], inc=inc[i1b:i2 + 1],
+                      azi=azi[i1b:i2 + 1], header=sh, error_model=mwd1,
+                      tool_id="mwd1b", share_mode="globals_shared"),
         SurveySection(md=md[i2:], inc=inc[i2:], azi=azi[i2:], header=sh,
                       error_model=mwd2, tool_id="mwd2",
                       share_mode="globals_shared"),
@@ -437,11 +445,10 @@ def test_f15d_ew_high_inc_no_lateral_underrun(ipm):
     sig_cp = np.sqrt(np.stack([cc[:, 3], cc[:, 0], cc[:, 5]], axis=1))
     td = sig_we[-1] / sig_cp[-1]
 
-    # N (perpendicular to the E-W heading — the axis that under-ran)
+    # with the true program, every axis reproduces COMPASS at TD
     assert 0.95 < td[0] < 1.05, f"sigma_N TD ratio {td[0]:.3f}"
-    # E and V: bounded, conservative-side residuals (open items)
-    assert 0.95 < td[1] < 1.25, f"sigma_E TD ratio {td[1]:.3f}"
-    assert 0.90 < td[2] < 1.20, f"sigma_V TD ratio {td[2]:.3f}"
+    assert 0.95 < td[1] < 1.05, f"sigma_E TD ratio {td[1]:.3f}"
+    assert 0.95 < td[2] < 1.08, f"sigma_V TD ratio {td[2]:.3f}"
     # nothing materially under COMPASS anywhere sigma is macroscopic.
     # sigma_V's floor is wider: the characterised well-level vertical
     # reference term (documented on F-12) that the export does not carry
