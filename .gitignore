@@ -56,6 +56,9 @@ papers/**/*-NOTES.md
 # welleng.schematic example render outputs
 examples/schematic_output/
 
+# volve_field_network.py render output
+examples/volve_field_network.html
+
 # local scratch / prototypes (never commit)
 temp/
 .claude/settings.json
