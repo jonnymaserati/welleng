@@ -60,6 +60,25 @@ __all__ = ["SurveySection", "SurveyComposition"]
 #: Default ISCWSA error model when a section does not name one.
 DEFAULT_ERROR_MODEL = "ISCWSA MWD Rev5.11"
 
+
+def _model_key(error_model) -> object:
+    """Hashable identity for a section's error model.
+
+    Named models are their string; prebuilt model DICTS (e.g. an EDM/COMPASS
+    IPM from ``welleng.errors.edm_ipm``) are unhashable, so key on the
+    object's identity — two sections share a tool run only when they carry
+    the SAME model object, which is the correct correlation semantics for a
+    tool-specific imported IPM.
+    """
+    return error_model if isinstance(error_model, str) else id(error_model)
+
+
+def _model_name(error_model) -> str:
+    """Display name for a section's error model (str or model dict)."""
+    if isinstance(error_model, str):
+        return error_model
+    return error_model.get('metadata', {}).get('short_name', 'custom-dict-model')
+
 #: Survey-date gap (years) beyond which an unspecified tie auto-defaults to
 #: ``all_independent`` (geomag secular variation makes the global realisation
 #: effectively independent between campaigns this far apart).
@@ -250,7 +269,7 @@ class SurveyComposition:
             md, inc_rad, azi_grid_rad, header, error_model = (
                 self._section_grid(section)
             )
-            key = (error_model, section.tool_id)
+            key = (_model_key(error_model), section.tool_id)
             same_tool = bool(groups) and key == prev_key
 
             if same_tool:
@@ -314,7 +333,7 @@ class SurveyComposition:
         last = self.sections[0]
         for section in self.sections:
             error_model = section.error_model or DEFAULT_ERROR_MODEL
-            key = (error_model, section.tool_id)
+            key = (_model_key(error_model), section.tool_id)
             if not (gi >= 0 and key == prev_key):
                 gi += 1
             if gi == group_index:
@@ -506,12 +525,12 @@ class SurveyComposition:
         station, so without this the tie station would be mis-computed.
         """
         groups = self._groups[k:j + 1]
-        models = {g.error_model for g in groups}
+        models = {_model_key(g.error_model) for g in groups}
         if len(models) > 1:
             warnings.warn(
-                "shared-error tie spans multiple error models "
-                f"{sorted(models)}; the shared component uses "
-                f"{groups[0].error_model!r} as the reference model",
+                "shared-error tie spans multiple error models; the shared "
+                f"component uses {_model_name(groups[0].error_model)!r} as "
+                "the reference model",
                 RuntimeWarning,
             )
         md = self._stitch_1d([g.md for g in groups])
