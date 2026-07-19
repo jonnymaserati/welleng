@@ -280,3 +280,17 @@ was re-parsed N times). `cov_nev` is **bit-identical** cold vs warm
 (fixes repeated I/O, not a commercial capability); feeds the lazy error-class
 redesign (parse model defs once, reuse per section). Regression:
 `tests/test_error_model_cache.py` (4).
+
+## 2026-07-19 · `feat/arc-inc-azi-extrema` · Python 3.12, dev machine
+
+`welleng.utils.arc_inc_azi_extrema` — exact inclination/azimuth extrema over
+min-curvature arcs. Replaces a 96-sample/arc envelope test with a closed form.
+
+| operation | result |
+|---|---|
+| vectorized over 100k arcs | 72.8 ms (**1.4M arcs/s**) |
+
+Exactness (vs 4000-sample/arc reference over 3000 random arcs incl. reflex):
+inclination extrema max err 2.8e-5 rad; azimuth swing max err 1.8e-15 (azimuth is
+strictly monotonic along a circular arc -> extrema at endpoints, signed swing via
+an analytic branch-crossing count). `tests/test_arc_extrema.py` (6).
