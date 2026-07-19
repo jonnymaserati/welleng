@@ -10,6 +10,8 @@ import pytest
 from welleng.survey import Survey, SurveyHeader
 from welleng.errors import tool_errors as te
 
+MAG_REF = dict(b_total=50_000., dip=72., declination=-2.)
+
 
 def _survey():
     n = 200
@@ -17,7 +19,7 @@ def _survey():
     inc = np.clip(np.linspace(0, 90, n), 0, 60)
     azi = np.linspace(0, 120, n) % 360
     return Survey(
-        md=md, inc=inc, azi=azi, header=SurveyHeader(),
+        md=md, inc=inc, azi=azi, header=SurveyHeader(**MAG_REF),
         error_model="ISCWSA MWD Rev5.11",
     )
 

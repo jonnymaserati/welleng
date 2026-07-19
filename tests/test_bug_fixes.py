@@ -67,6 +67,9 @@ def _make_survey_with_errors():
             md=[0, 500, 1000, 2000, 3000],
             inc=[0, 0, 30, 90, 90],
             azi=[0, 0, 45, 135, 180],
+            header=we.survey.SurveyHeader(
+                b_total=50_000., dip=72., declination=-2.
+            ),
             error_model='ISCWSA MWD Rev4',
         ),
         step=300,
@@ -169,7 +172,10 @@ def test_func_dict_msixy_entries_are_distinct():
     # ToolError._initiate_func_dict is called during __init__; we instantiate
     # it with a minimal error/model pair via ErrorModel so we can inspect
     # func_dict directly without running the full model.
-    survey = we.survey.Survey(md=[0, 100], inc=[0, 10], azi=[0, 0])
+    survey = we.survey.Survey(
+        md=[0, 100], inc=[0, 10], azi=[0, 0],
+        header=we.survey.SurveyHeader(b_total=50_000., dip=72., declination=-2.),
+    )
     error = we.error.ErrorModel(survey, error_model='ISCWSA MWD Rev4')
     te = error.errors  # ToolError instance
 
@@ -189,7 +195,10 @@ def test_func_dict_dbhr_present():
     """Issue #163: DBHR must be present in func_dict."""
     from welleng.errors.tool_errors import DBHR
 
-    survey = we.survey.Survey(md=[0, 100], inc=[0, 10], azi=[0, 0])
+    survey = we.survey.Survey(
+        md=[0, 100], inc=[0, 10], azi=[0, 0],
+        header=we.survey.SurveyHeader(b_total=50_000., dip=72., declination=-2.),
+    )
     error = we.error.ErrorModel(survey, error_model='ISCWSA MWD Rev4')
     te = error.errors  # ToolError instance
 
