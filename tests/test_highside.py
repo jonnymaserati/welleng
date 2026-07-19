@@ -1,4 +1,4 @@
-"""Tests for Survey.highside_vec_nev (welleng-api wellpath-designer high-side lock)."""
+"""Tests for Survey.highside_vec_nev (wellpath-designer high-side lock)."""
 import numpy as np
 import pytest
 
