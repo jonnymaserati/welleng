@@ -43,6 +43,31 @@ jobs:
           print(f"wheel data OK: {njson} json files, catalog data present")
           PY
 
+      - name: Smoke-test the built wheel (clean install + exercise)
+        # Data PRESENCE (above) isn't sufficient -- a shipped-but-broken data file or
+        # a packaging regression only surfaces at runtime. Install the built wheel
+        # into a CLEAN venv and exercise the data-backed paths (error models +
+        # catalog) plus a couple of core APIs, so a functional break fails the
+        # release, not the user's first import.
+        run: |
+          uv venv /tmp/smoke --python 3.12
+          uv pip install --python /tmp/smoke/bin/python dist/*.whl
+          /tmp/smoke/bin/python - <<'PY'
+          import numpy as np
+          from welleng.version import __version__
+          from welleng.survey import Survey, SurveyHeader
+          from welleng.catalog import Catalog
+          from welleng.utils import arc_inc_azi_extrema
+          s = Survey(md=[0, 500, 1000, 2000], inc=[0, 10, 45, 90],
+                     azi=[0, 20, 90, 90], header=SurveyHeader(),
+                     error_model="ISCWSA MWD Rev5.11")
+          assert s.cov_nev.shape == (4, 3, 3)            # error-model json/yaml data
+          assert Catalog.load("casing") is not None       # catalog json data
+          arc_inc_azi_extrema(np.array([[0, 0, 1.]]),
+                              np.array([[0.3, 0, 0.95]]), np.array([0.3]))
+          print(f"wheel smoke OK: welleng {__version__}")
+          PY
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
