@@ -44,7 +44,6 @@ wellbores with correct cancellation of shared global terms.
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Optional, Sequence
@@ -71,13 +70,6 @@ def _model_key(error_model) -> object:
     tool-specific imported IPM.
     """
     return error_model if isinstance(error_model, str) else id(error_model)
-
-
-def _model_name(error_model) -> str:
-    """Display name for a section's error model (str or model dict)."""
-    if isinstance(error_model, str):
-        return error_model
-    return error_model.get('metadata', {}).get('short_name', 'custom-dict-model')
 
 #: Survey-date gap (years) beyond which an unspecified tie auto-defaults to
 #: ``all_independent`` (geomag secular variation makes the global realisation
@@ -387,13 +379,21 @@ class SurveyComposition:
         # per-group instead would inject a small propagation-context artifact
         # at every tool change.
         share_random = [
-            groups[k].error_model == groups[k - 1].error_model
+            _model_key(groups[k].error_model)
+            == _model_key(groups[k - 1].error_model)
             for k in range(len(groups))
         ]
         # k=0 has no tie before it.
         share_global[0] = False
         share_systematic[0] = False
         share_random[0] = False
+
+        # 'well' terms (COMPASS tie W — e.g. a depth-scale error): correlated
+        # while the same measurement SYSTEM continues (same tool run), reset
+        # at a tool change — a wireline gyro's depth and an MWD pipe tally
+        # are different realisations. Validated empirically on the Volve
+        # composed wells (chaining across tool changes overstates sigma_V).
+        share_well = list(share_systematic)
 
         glob = self._compose_component(
             "cov_nev_global", share_global, start_nevs
@@ -404,12 +404,16 @@ class SurveyComposition:
         rand = self._compose_component(
             "cov_nev_random", share_random, start_nevs
         )
+        well = self._compose_component(
+            "cov_nev_well", share_well, start_nevs
+        )
 
         # 3. Stitch per-group arrays (drop duplicate tie station of each
         #    subsequent group) into unified per-station arrays.
         cov_global = self._stitch(glob)
         cov_systematic = self._stitch(syst)
         cov_random = self._stitch(rand)
+        cov_well = self._stitch(well)
 
         # 3a. Re-bucket the non-cancellable global. The ``cov_nev_global``
         #     bucket is what cancels against another wellbore that shares the
@@ -424,7 +428,7 @@ class SurveyComposition:
         cov_global, cov_systematic = self._rebucket_global(
             cov_global, cov_systematic, share_global
         )
-        cov_nev = cov_global + cov_systematic + cov_random
+        cov_nev = cov_global + cov_systematic + cov_random + cov_well
 
         # 4. Unified geometry -> one Survey with the composed covariance.
         md = self._stitch_1d([g.md for g in groups])
@@ -446,6 +450,7 @@ class SurveyComposition:
         survey.cov_nev_global = cov_global
         survey.cov_nev_systematic = cov_systematic
         survey.cov_nev_random = cov_random
+        survey.cov_nev_well = cov_well
         return survey
 
     def _rebucket_global(self, cov_global, cov_systematic, share_global):
@@ -527,12 +532,12 @@ class SurveyComposition:
         groups = self._groups[k:j + 1]
         models = {_model_key(g.error_model) for g in groups}
         if len(models) > 1:
-            warnings.warn(
-                "shared-error tie spans multiple error models; the shared "
-                f"component uses {_model_name(groups[0].error_model)!r} as "
-                "the reference model",
-                RuntimeWarning,
-            )
+            # Different models sharing a realisation cannot be built as one
+            # reference-model survey (that evaluates the wrong weights over
+            # the other runs' spans and badly overstates the shared growth).
+            # Chain per-term instead: each run with its OWN model, same-name
+            # error sources continuing one realisation across the ties.
+            return self._run_component_per_term(attr, k, j, start_nev)
         md = self._stitch_1d([g.md for g in groups])
         inc = self._stitch_1d([g.inc_rad for g in groups])
         azi = self._stitch_1d([g.azi_grid_rad for g in groups])
@@ -547,6 +552,78 @@ class SurveyComposition:
             error_model=groups[0].error_model, start_nev=start_nev,
         )
         return getattr(run, attr)[:n_real]
+
+    #: composed-covariance attribute -> the term propagation mode it holds
+    _ATTR_TO_PROPAGATION = {
+        "cov_nev_global": "global",
+        "cov_nev_systematic": "systematic",
+        "cov_nev_well": "well",
+    }
+
+    def _run_component_per_term(self, attr, k, j, start_nev):
+        """Shared component of a MULTI-MODEL run, chained per error source.
+
+        Same-name error sources share ONE physical realisation across the
+        runs (the COMPASS convention — e.g. ``dbh`` in two IFR-referenced
+        MWD runs is the same geomagnetic reference error; ``dsf`` is the
+        same rig depth-scale error), but each run's weighting must be
+        evaluated with that run's OWN model. So, per term name, the
+        cumulative error vector continues across the tie:
+
+            v_name(station in run g) = sum of run-end vectors of every
+            earlier run carrying the name  +  the in-run cumulative vector
+
+        and each station's covariance is the sum over names of the outer
+        product of ``v_name`` (independent sources; correlation coefficient
+        one within a source across runs). A source absent from the current
+        run keeps contributing its frozen accumulated vector — a position
+        error, once made, persists. A single-model run degenerates to the
+        existing continuous-survey result.
+
+        Random components never take this path (``share_random`` requires an
+        identical model).
+        """
+        prop = self._ATTR_TO_PROPAGATION[attr]
+        frozen: dict = {}                     # name -> accumulated (3,) vector
+        parts: List[NDArray[np.float64]] = []
+        for gi in range(k, j + 1):
+            g = self._groups[gi]
+            md, inc, azi = g.md, g.inc_rad, g.azi_grid_rad
+            n_g = len(md)
+            # ghost continuation station (see _run_component)
+            if gi + 1 < len(self._groups) and len(self._groups[gi + 1].md) > 1:
+                nxt = self._groups[gi + 1]
+                md = np.append(md, nxt.md[1])
+                inc = np.append(inc, nxt.inc_rad[1])
+                azi = np.append(azi, nxt.azi_grid_rad[1])
+            run = Survey(
+                md=md, inc=inc, azi=azi, deg=False, header=g.header,
+                error_model=g.error_model, start_nev=start_nev,
+            )
+            errors = run.err.errors.errors
+            cov = np.zeros((n_g, 3, 3))
+            names_here = set()
+            for name, term in errors.items():
+                if term.propagation != prop:
+                    continue
+                names_here.add(name)
+                v = np.asarray(term.sigma_e_NEV[:n_g], dtype=float)
+                base = frozen.get(name)
+                if base is not None:
+                    v = v + base[None, :]
+                cov += v[:, :, None] * v[:, None, :]
+            for name, base in frozen.items():
+                if name not in names_here:
+                    cov += np.outer(base, base)[None]
+            for name in names_here:
+                end = np.asarray(
+                    errors[name].sigma_e_NEV[n_g - 1], dtype=float
+                )
+                frozen[name] = frozen.get(name, 0.0) + end
+            parts.append(cov)
+        return np.concatenate(
+            [parts[0]] + [p[1:] for p in parts[1:]], axis=0
+        )
 
     # ------------------------------------------------------------------ #
     # stitching helpers (drop the duplicate tie station of each next group)
