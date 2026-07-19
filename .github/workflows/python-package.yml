@@ -31,10 +31,11 @@ jobs:
         sudo apt-get update -qq -y
         sudo apt-get install -qq -y build-essential libspatialindex-dev
 
-    - name: Lint with flake8
-      run: |
-        uv run --with flake8 flake8 . --exclude=.venv --count --select=E9,F63,F7,F82 --show-source --statistics
-        uv run --with flake8 flake8 . --exclude=.venv --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    - name: Lint with ruff
+      # Config lives in pyproject [tool.ruff]: E/W/F at line-length 88; legacy
+      # files carry an explicit per-file baseline (burn-down list) so this gate
+      # holds NEW code to the full standard without a mass legacy refactor.
+      run: uvx ruff check welleng/ tests/
 
     - name: Test a minimal install
       run: |

@@ -250,7 +250,7 @@ class EDM:
             wellbore_id,
             wellbore_name,
             self.get_wellbore_data(wellbore_id)
-        )        
+        )
 
         return well
 
@@ -430,7 +430,7 @@ class Well:
                             if (
                                 station['survey_header_id'] == current_survey_id
                                 and float(station['md']) >= float(v)
-                                and float(station['md']) <= current_md 
+                                and float(station['md']) <= current_md
                             ):
                                 try:
                                     survey[item[0]].append(station)

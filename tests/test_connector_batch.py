@@ -6,7 +6,6 @@ checks that the array-safety patch on ``get_vec_target`` preserves scalar
 behaviour exactly.
 """
 import numpy as np
-import pytest
 
 from welleng.connector import (
     Connector,

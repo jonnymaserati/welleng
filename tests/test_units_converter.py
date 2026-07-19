@@ -4,7 +4,7 @@ import math
 import numpy as np
 import pytest
 
-from welleng.units import Units, CANONICAL, ureg
+from welleng.units import Units, ureg
 
 
 def test_to_and_from_canonical_roundtrip():

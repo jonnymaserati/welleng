@@ -12,7 +12,6 @@ from ..connector import (
     # interpolate_well,
     # get_survey
 )
-from ..survey import from_connections
 
 try:
     import utm
@@ -319,7 +318,7 @@ class WellPlan:
             self.dirty_flag = None
         self.sidetrack_id = string_strip(data[14:22])
         self.plan_name = string_strip(data[23:84])
-        self.parent_name = string_strip(data[84:144])    
+        self.parent_name = string_strip(data[84:144])
         self.dls = string_strip(data[144:151], is_float=True)
         self.extension = string_strip(data[151:160], is_float=True)
         self.dls_kickoff = string_strip(data[160:171], is_float=True)

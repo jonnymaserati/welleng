@@ -1,6 +1,5 @@
 import welleng as we
 import numpy as np
-import pytest
 
 REFERENCE = {
     'x': 588319.02, 'y': 5770571.03, 'northing': 5770571.03,
