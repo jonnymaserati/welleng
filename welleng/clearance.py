@@ -247,6 +247,35 @@ class Clearance:
         c = (1.0 - f) * cov[i] + f * cov[i + 1]
         return p, c, float((1.0 - f) * rad[i] + f * rad[i + 1])
 
+    def _quad_form_inv(self, S, dp):
+        """The combined-metric quadratic form ``dp^T S^{-1} dp`` (batched or
+        scalar via ``...`` broadcasting) — the core of the Mahalanobis SF.
+
+        Two paths, same result:
+
+        - ``sigma_pa > 0``: ``S = (PSD covariances) + sigma_pa**2 I`` is strictly
+          positive-definite, so ``S^{-1} dp`` is a direct linear solve (LU) — much
+          cheaper than the eigendecomposition and giving the identical quadratic
+          form to floating tolerance. This is the operational path.
+        - ``sigma_pa == 0``: ``S`` can be semidefinite, so keep the eigen path with
+          its degenerate semantics — a zero-variance direction with a non-zero
+          projection is +inf ("clear"), a zero projection contributes 0.
+
+        Equal to the previous eigh implementation in the semidefinite path;
+        equal to floating tolerance in the PD path.
+        """
+        if self.sigma_pa > 0.0:
+            sol = np.linalg.solve(S, dp[..., None])[..., 0]
+            return np.einsum('...i,...i->...', dp, sol)
+        # Degenerate-safe fallback (sigma_pa == 0): a zero eigenvalue with a
+        # non-zero projection -> +inf (clear), not 0.
+        vals, vecs = np.linalg.eigh(S)
+        proj = np.einsum('...ji,...j->...i', vecs, dp)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            terms = np.where(vals > 0, proj ** 2 / vals, np.inf)
+        terms = np.where(np.isclose(proj, 0.0), 0.0, terms)
+        return np.sum(terms, axis=-1)
+
     def _sf_point(self, pr, cr, rr, po, co, ro):
         """Radii-adjusted Mahalanobis separation factor between two single
         uncertain points — the general kernel (scalar; used by the narrowphase).
@@ -278,14 +307,7 @@ class Clearance:
             return 0.0
         S = cr + co + (self.sigma_pa ** 2) * np.eye(3)
         dp = d * (max(D - (rr + ro + self.Sm), 0.0) / D)
-        # eigen-decomposition (consistent with _sf_row, robust to degenerate S):
-        # a zero eigenvalue with a non-zero projection -> +inf (clear), not 0.
-        vals, vecs = np.linalg.eigh(S)
-        proj = vecs.T @ dp
-        with np.errstate(divide='ignore', invalid='ignore'):
-            terms = np.where(vals > 0, proj ** 2 / vals, np.inf)
-        terms = np.where(np.isclose(proj, 0.0), 0.0, terms)
-        return float(np.sqrt(np.sum(terms))) / self.k
+        return float(np.sqrt(self._quad_form_inv(S, dp))) / self.k
 
     def _sf_row(self, pr, cr, rr, Op, Oc, Ro):
         """Exact (Mahalanobis) separation factor of one reference point against
@@ -296,12 +318,7 @@ class Clearance:
         scale = np.divide(np.maximum(D - (rr + Ro + self.Sm), 0.0), D,
                           out=np.zeros_like(D), where=D > 0)
         dp = d * scale[:, None]
-        vals, vecs = np.linalg.eigh(S)            # robust to degenerate S
-        proj = np.einsum('oji,oj->oi', vecs, dp)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            terms = np.where(vals > 0, proj ** 2 / vals, np.inf)
-        terms = np.where(np.isclose(proj, 0.0), 0.0, terms)
-        m = np.sqrt(np.sum(terms, axis=1))
+        m = np.sqrt(self._quad_form_inv(S, dp))
         m[D == 0] = 0.0
         return m / self.k
 

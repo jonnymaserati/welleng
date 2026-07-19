@@ -294,3 +294,24 @@ Exactness (vs 4000-sample/arc reference over 3000 random arcs incl. reflex):
 inclination extrema max err 2.8e-5 rad; azimuth swing max err 1.8e-15 (azimuth is
 strictly monotonic along a circular arc -> extrema at endpoints, signed swing via
 an analytic branch-crossing count). `tests/test_arc_extrema.py` (6).
+
+## 2026-07-19 · `perf/mahalanobis-solve` · Python 3.12, dev machine
+
+MahalanobisClearance combined-metric quadratic form dp^T S^{-1} dp: was a full
+eigendecomposition per station (`np.linalg.eigh`, ~85% of the 4.1 s/pair path at
+N=2000). When sigma_pa > 0 (operational default 0.5), S = (PSD covariances) +
+sigma_pa^2 I is strictly positive-definite, so the form is a direct batched
+`np.linalg.solve` — identical to floating tolerance, ~3x cheaper. The eigh path
+is kept only for sigma_pa == 0 (a zero-variance direction must read +inf =
+"clear"); a shared `_quad_form_inv` branches on sigma_pa.
+
+| N (station pair) | eigh (old) | solve (new) | speedup |
+|---|---|---|---|
+| 800 | 754.1 ms | **247.1 ms** | **3.05×** |
+
+Parity (tests/test_clearance_mahalanobis_solve, 5): the solve form equals the
+eigh form for random SPD S (max rel err 5e-15); end-to-end SF is unchanged vs a
+forced-eigh reference (max abs err 1.8e-15, +inf clear-direction mask identical);
+the sigma_pa == 0 fallback preserves the degenerate +inf semantics. The remaining
+clearance lever (the O(n^2) broadphase + the IscwsaClearance per-station scipy
+closest-point search) is tracked separately.
