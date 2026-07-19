@@ -180,6 +180,7 @@ disallow_incomplete_defs = true
 [dependency-groups]
 dev = [
     "pytest>=9.0",
+    "pytest-xdist",
     "networkx",
     "trimesh",
 ]

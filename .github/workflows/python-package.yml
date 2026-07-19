@@ -44,4 +44,4 @@ jobs:
     - name: Install welleng with all extras and run tests
       run: |
         uv sync --extra all
-        uv run pytest tests
+        uv run pytest tests -n auto
