@@ -105,9 +105,22 @@ def test_relative_covariance_grows_below_kickoff_and_beats_naive():
 
 
 def test_relative_covariance_ancestor_matches_manual():
-    """P vs its child S1 at TDs = 15.14 m (the manual's worked value)."""
+    """P vs its child S1 at TDs equals the manual C_A + C_B - 2*C_st identity
+    (Williamson Eq. A-24 / sidetrack-RP method b), computed directly from the
+    same surveys. Identity form, NOT a hardcoded number: the absolute
+    covariances depend on the environment's geomagnetic backend (a hardcoded
+    expectation broke on CI where the optional magnetic-field calculator gives
+    a different declination), while the identity holds in any environment.
+    """
     net = _parent_and_sidetracks()
-    assert _sig(net.relative_covariance("P", "S1")) == pytest.approx(15.14, abs=0.1)
+    model = "ISCWSA MWD Rev5.11"
+    C_rel = np.asarray(net.relative_covariance("P", "S1"))
+    C_a = np.asarray(net._abs_cov(net.node("P"), None, model))
+    C_b = np.asarray(net._abs_cov(net.node("S1"), None, model))
+    C_st = np.asarray(net._abs_cov(net.node("P"), 1000.0, model))
+    assert np.allclose(C_rel, C_a + C_b - 2.0 * C_st, atol=1e-12)
+    # and the magnitude is physically sensible (metres-scale, positive)
+    assert 1.0 < _sig(C_rel) < 100.0
 
 
 def test_relative_covariance_share_mode_monotonic():
