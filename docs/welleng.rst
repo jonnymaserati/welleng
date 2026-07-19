@@ -29,6 +29,22 @@ welleng.clearance module
    :undoc-members:
    :show-inheritance:
 
+welleng.composition module
+--------------------------
+
+.. automodule:: welleng.composition
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+welleng.conditioning module
+---------------------------
+
+.. automodule:: welleng.conditioning
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 welleng.connector module
 ------------------------
 
@@ -49,6 +65,14 @@ welleng.fluid module
 --------------------
 
 .. automodule:: welleng.fluid
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+welleng.hierarchy module
+------------------------
+
+.. automodule:: welleng.hierarchy
    :members:
    :undoc-members:
    :show-inheritance:
@@ -81,6 +105,14 @@ welleng.sawaryn\_analytical module
 ----------------------------------
 
 .. automodule:: welleng.sawaryn_analytical
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+welleng.osdu module
+-------------------
+
+.. automodule:: welleng.osdu
    :members:
    :undoc-members:
    :show-inheritance:
