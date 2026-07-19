@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 
 from welleng.connector import Connector, drop_off, extend_to_tvd
@@ -309,6 +310,21 @@ def test_clc_connector(n=1000, seed=42, radius=1.0, tol=1e-3):
         f"(local-minimum baseline 0; threshold {MD_SUBOPTIMAL_THRESHOLD}):\n"
         + "\n".join(str(f) for f in md_suboptimal[:10])
     )
+
+
+def test_precise_alignment_is_deterministic_hold():
+    # A target PRECISELY along vec1 is a pure hold. The old code nudged it by a
+    # random amount (_mod_pos) to dodge the sqrt-of-tiny-negative singularity in
+    # _get_distances; that made the result non-deterministic and injected error.
+    # Now the radicand is clamped >= 0 and the degenerate case routes as a hold.
+    tgt = [0.0, 0.0, 1000.0]
+    a = Connector(pos1=[0.0, 0.0, 0.0], vec1=[0.0, 0.0, 1.0],
+                  pos2=tgt, vec2=[0.0, 0.0, 1.0])
+    b = Connector(pos1=[0.0, 0.0, 0.0], vec1=[0.0, 0.0, 1.0],
+                  pos2=tgt, vec2=[0.0, 0.0, 1.0])
+    assert np.isfinite(a.pos_target).all()          # no NaN from sqrt(neg)
+    assert a.md_target == pytest.approx(1000.0)     # exact hold, no random error
+    assert a.md_target == b.md_target               # deterministic (was random)
 
 
 def main():
