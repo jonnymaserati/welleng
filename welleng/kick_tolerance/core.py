@@ -161,8 +161,13 @@ class KickInputs:
         ``interpolate_md(md) -> node`` exposing ``pos_nev`` and ``inc_deg`` works.
 
         ``Node`` has no direct ``.tvd``; its position is ``pos_nev = [North, East,
-        Vertical]`` (welleng NEV convention), so ``pos_nev[2]`` IS the TVD -- verified
-        to equal ``survey.tvd`` at every station and to reduce to MD for a vertical well.
+        Vertical]`` (welleng NEV convention), so ``pos_nev[2]`` IS the TVD. This is
+        the GLOBAL (datum-referenced, ``start_nev``-inclusive) TVD -- which is the
+        correct depth for the hydrostatic terms (the mud column is referenced to the
+        surface datum, not the survey start). It equals ``survey.tvd`` only at a zero
+        datum (``survey.tvd`` is the LOCAL depth, per the ``Survey`` docstring); on a
+        datum-shifted / sidetrack survey they differ by ``start_nev``, and the global
+        ``pos_nev[2]`` is the one KT wants. Reduces to MD for a vertical well.
         """
         shoe = survey.interpolate_md(shoe_md)
         td = survey.interpolate_md(td_md)
