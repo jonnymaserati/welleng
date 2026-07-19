@@ -729,13 +729,23 @@ def solve_clc_landing(p1, t1, p0, t4, R1, R2=None, return_all=False):
         psi2 = psi0_2 + 2 * eps4 * k + k * k
         g1, g4 = eps1 + mu * k, eps4 + k
         a1s, a2s = subtended_angles(0.0, psi2, g1, g4, eps14, mu, R1, R2)
+        # Branch selection by CHORD-IDENTITY CLOSURE, not the forward-residual.
+        # The middle tangent v = (delta - R1 T1 t1 - R2 T2 t4)/(R1 T1 + R2 T2)
+        # (beta = 0 on the landing biarc) must be a UNIT vector for a valid
+        # solution. This is decisive at the razor-edge (|v|-1 ~ 1e-5 for the true
+        # branch vs ~1 for the alternate), where the forward-residual flips with
+        # the last bits of k: forward()'s Eq.13 surd sits at +/-1e-16 at the root
+        # and its strict surd<0 -> None rejects the true branch on rounding.
         best = (np.inf, None, None)
+        delta = (p0 + k * t4) - p1
         for x1 in a1s:
             for x2 in a2s:
-                f = forward(x1, x2, 0.0, mu, R1, R2)
-                if f is None:
+                T1, T2 = np.tan(x1 / 2), np.tan(x2 / 2)
+                denom = R1 * T1 + R2 * T2
+                if abs(denom) < 1e-12:
                     continue
-                r = abs(f[0] - g1) + abs(f[1] - g4) + abs(abs(f[2]) - abs(eps14))
+                v = (delta - R1 * T1 * t1 - R2 * T2 * t4) / denom
+                r = abs(float(np.linalg.norm(v)) - 1.0)
                 if r < best[0]:
                     best = (r, x1, x2)
         if best[1] is None:
