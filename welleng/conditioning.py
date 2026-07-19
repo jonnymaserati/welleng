@@ -1,8 +1,8 @@
 """Shared-error conditioning of two wells' combined covariance.
 
-The standard ISCWSA pair calculation assumes the two wells' position-error vectors are entirely
-independent — combined covariance ``Σ_A + Σ_B``. This is correct
-between geographically and temporally separated wells, where the
+The standard ISCWSA pair calculation assumes the two wells' position-error
+vectors are entirely independent — combined covariance ``Σ_A + Σ_B``. This
+is correct between geographically and temporally separated wells, where the
 underlying error sources (magnetic declination, geomagnetic reference
 field, sensor biases, …) really do realise independently. It is *not*
 correct for two wells drilled from the same platform within a short
@@ -43,7 +43,9 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-ShareMode = Literal["all_independent", "globals_shared", "globals_and_systematic_shared"]
+ShareMode = Literal[
+    "all_independent", "globals_shared", "globals_and_systematic_shared"
+]
 
 
 @dataclass(frozen=True)
@@ -101,7 +103,8 @@ def combine_covariances(
         misalignment). Required when share_mode is
         ``'globals_and_systematic_shared'``. ISCWSA exposes this as
         ``Survey.cov_nev_systematic``.
-    share_mode : {'all_independent', 'globals_shared', 'globals_and_systematic_shared'}
+    share_mode : {'all_independent', 'globals_shared', \
+'globals_and_systematic_shared'}
         Which components are realised identically in the two wells:
 
         - ``'all_independent'``: classical naive
@@ -183,7 +186,9 @@ def combine_covariances(
     sigma_naive = np.sqrt(np.linalg.eigvalsh(cov_naive).max(axis=-1))
     sigma_combined = np.sqrt(np.linalg.eigvalsh(cov_combined).max(axis=-1))
     with np.errstate(divide="ignore", invalid="ignore"):
-        reduction = np.where(sigma_combined > 0, sigma_naive / sigma_combined, np.nan)
+        reduction = np.where(
+            sigma_combined > 0, sigma_naive / sigma_combined, np.nan
+        )
 
     return CombinedCovariance(
         cov_combined=cov_combined,
