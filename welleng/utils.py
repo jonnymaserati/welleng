@@ -246,6 +246,122 @@ def _get_angles(vec):
     return np.stack((inc, azi), axis=1)
 
 
+def arc_inc_azi_extrema(vec_a, vec_b, dogleg, vertical_eps=1e-4):
+    """Exact inclination + azimuth extrema over minimum-curvature arcs.
+
+    A minimum-curvature segment is a planar circular arc whose unit tangent
+    sweeps ``t(theta) = vec_a * cos(theta) + u * sin(theta)`` for
+    ``theta in [0, dogleg]``, where ``u`` is the in-plane unit vector
+    perpendicular to ``vec_a`` (so ``t(0) = vec_a``, ``t(dogleg) = vec_b``).
+    All inputs/outputs are in the NEV (north, east, tvd-down) frame.
+
+    Two closed-form results (verified against dense sampling):
+
+    - **Inclination** ``inc = acos(t_V)`` with ``t_V = A cos + B sin``
+      (``A = vec_a_V``, ``B = u_V``); its extrema are at the arc ends plus the
+      interior critical points ``theta = phi (+/- pi, + 2pi)`` that fall in
+      ``[0, dogleg]``, ``phi = atan2(B, A)``. Exact, <=6 evaluations/arc.
+    - **Azimuth** ``azi = atan2(t_E, t_N)`` is **strictly monotonic** along any
+      circular arc: ``d(azi)/dtheta`` numerator ``= vec_a_N u_E - vec_a_E u_N``
+      is constant (the ``cos^2 + sin^2`` cross-terms cancel identically). So its
+      extrema are the two ENDPOINTS, swept in direction ``sign(K)``; the total
+      signed swing can exceed 2*pi (arc covers all azimuths).
+
+    Parameters
+    ----------
+    vec_a, vec_b : (n, 3) array — unit start/end tangents (NEV).
+    dogleg : (n,) array — subtended (dogleg) angle of each arc, radians.
+    vertical_eps : float — arcs whose minimum inclination is below this (radians)
+        pass through vertical, where azimuth is singular; ``passes_vertical`` is
+        flagged and the azimuth span should be treated as full-wrap by callers.
+
+    Notes
+    -----
+    At ``dogleg`` exactly ``pi`` (antiparallel tangents, ``vec_b = -vec_a``) the
+    arc plane -- hence ``u`` -- is not recoverable from ``vec_a``/``vec_b`` alone;
+    such arcs are treated as degenerate (constant inc/azi, zero swing). This is a
+    measure-zero case for real min-curvature/CLC arcs; near-``pi`` is exact.
+
+    Returns
+    -------
+    dict with (n,)-arrays: ``inc_min``, ``inc_max`` (radians); ``azi_start``,
+    ``azi_end`` (radians, in (-pi, pi]); ``azi_swing`` (signed total azimuth
+    change, radians; ``abs >= 2*pi`` => all azimuths covered);
+    ``passes_vertical`` (bool).
+    """
+    vec_a = np.atleast_2d(np.asarray(vec_a, dtype=float))
+    vec_b = np.atleast_2d(np.asarray(vec_b, dtype=float))
+    dogleg = np.atleast_1d(np.asarray(dogleg, dtype=float))
+
+    # In-plane unit perpendicular u such that t(theta)=vec_a*cos+u*sin reaches
+    # vec_b at theta=dogleg: u = (vec_b - cos(dogleg) vec_a) / sin(dogleg). The
+    # SIGN of sin(dogleg) is what orients the sweep for REFLEX arcs (dogleg > pi,
+    # as the CLC solver produces) -- a norm-only recovery would flip it.
+    dot = np.einsum('ij,ij->i', vec_a, vec_b)          # = cos(dogleg)
+    sin_dl = np.sin(dogleg)
+    w = vec_b - dot[:, None] * vec_a
+    nw = np.linalg.norm(w, axis=1)
+    # degenerate when sin(dogleg)~0: dogleg ~ 0 (straight) or ~ pi (antiparallel
+    # tangents, u unrecoverable from vec_a/vec_b alone).
+    straight = (np.abs(dogleg) < 1e-9) | (nw < 1e-12)
+    safe_nw = np.where(nw < 1e-12, 1.0, nw)
+    u = np.sign(np.where(sin_dl == 0.0, 1.0, sin_dl))[:, None] * (w / safe_nw[:, None])
+
+    # --- inclination extrema (critical points of t_V) ---
+    A, B = vec_a[:, 2], u[:, 2]
+    phi = np.arctan2(B, A)
+    cand = np.stack([
+        np.zeros_like(dogleg), dogleg,
+        phi, phi + np.pi, phi - np.pi, phi + 2.0 * np.pi
+    ], axis=1)
+    in_range = (cand >= 0.0) & (cand <= dogleg[:, None])
+    tV = A[:, None] * np.cos(cand) + B[:, None] * np.sin(cand)
+    tV = np.where(in_range, tV, np.nan)
+    tV_min = np.nanmin(tV, axis=1)
+    tV_max = np.nanmax(tV, axis=1)
+    inc_min = np.arccos(np.clip(tV_max, -1.0, 1.0))
+    inc_max = np.arccos(np.clip(tV_min, -1.0, 1.0))
+    inc_a = np.arccos(np.clip(vec_a[:, 2], -1.0, 1.0))
+    inc_min = np.where(straight, inc_a, inc_min)
+    inc_max = np.where(straight, inc_a, inc_max)
+
+    # --- azimuth: monotonic; endpoints + signed swing ---
+    azi_start = np.arctan2(vec_a[:, 1], vec_a[:, 0])
+    azi_end = np.arctan2(vec_b[:, 1], vec_b[:, 0])
+    K = vec_a[:, 0] * u[:, 1] - vec_a[:, 1] * u[:, 0]  # t_N u_E - t_E u_N, constant
+
+    # Signed swing = continuous (unwrapped) atan2(t_E, t_N) over [0, dogleg].
+    # atan2 wraps by 2*pi each time the projection crosses the -N axis
+    # (t_E = 0 while t_N < 0). Count those crossings analytically: zeros of
+    # t_E(theta) = vec_a_E cos + u_E sin are theta0 + k*pi, theta0 = atan2(-vec_a_E, u_E).
+    cE, sE = vec_a[:, 1], u[:, 1]
+    cN, sN = vec_a[:, 0], u[:, 0]
+    theta0 = np.arctan2(-cE, sE)
+    n = len(dogleg)
+    wraps = np.zeros(n)
+    kmax = int(np.ceil(np.nanmax(dogleg) / np.pi)) + 2 if n else 0
+    for k in range(-1, kmax + 1):
+        th = theta0 + k * np.pi
+        hit = (th > 1e-12) & (th < dogleg - 1e-12)
+        tN_here = cN * np.cos(th) + sN * np.sin(th)
+        cross = hit & (tN_here < 0.0)
+        wraps += np.where(cross, np.sign(K), 0.0)
+    azi_swing = (azi_end - azi_start) + 2.0 * np.pi * wraps
+    # snap toward the monotonic direction when the raw endpoint diff disagrees
+    disagree = (np.abs(azi_swing) > 1e-9) & (np.sign(azi_swing) != np.sign(K)) \
+        & (np.abs(K) > 1e-12)
+    azi_swing = np.where(disagree, azi_swing + np.sign(K) * 2.0 * np.pi, azi_swing)
+    azi_swing = np.where(straight, 0.0, azi_swing)
+
+    passes_vertical = inc_min < vertical_eps
+
+    return {
+        'inc_min': inc_min, 'inc_max': inc_max,
+        'azi_start': azi_start, 'azi_end': azi_end,
+        'azi_swing': azi_swing, 'passes_vertical': passes_vertical,
+    }
+
+
 def get_angles(
     vec: Annotated[NDArray, Literal["N", 3]], nev: bool = False
 ):
