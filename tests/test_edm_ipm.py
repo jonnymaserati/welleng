@@ -309,11 +309,12 @@ def test_f14_actual_composed_multi_tool_vs_compass(ipm):
     with SurveyComposition using the per-section ACTUAL tool IPMs and
     compared against COMPASS's own composed covariances.
 
-    Result: sigma_N and sigma_E within a few percent of COMPASS at every
-    covariance-bearing station (a single standard model misses the composed
-    covariance by tens of percent); sigma_V carries the same well-level
-    vertical-reference residual documented on the F-12 case (largest in the
-    vertical gyro section), asserted as a band pending its resolution.
+    With per-term cross-run realisation sharing and the 'well' bucket
+    composed (both landed after probcol's multi-well lateral-under-run
+    report), the perpendicular-to-heading axes sit within ~1% of COMPASS at
+    TD and NOTHING runs materially under — the residuals are on the
+    conservative side (sigma_V up to ~+28% mid-well). Bands assert exactly
+    that: no non-conservative under-run, bounded overshoot.
     """
     from welleng.composition import SurveyComposition, SurveySection
     from welleng.exchange.edm_stream import EDMReader, FEET_TO_METERS
@@ -366,11 +367,83 @@ def test_f14_actual_composed_multi_tool_vs_compass(ipm):
         [cov[:, 0, 0], cov[:, 1, 1], cov[:, 2, 2]], axis=1))
     sig_cp = np.sqrt(np.stack([cc[:, 3], cc[:, 0], cc[:, 5]], axis=1))
 
-    diff = np.abs(sig_we - sig_cp)
-    tol = np.maximum(0.04 * sig_cp, 0.02)   # 4% or 2 cm (shallow stations)
-    assert np.all(diff[:, 0] <= tol[:, 0]), "sigma_N outside 4% of COMPASS"
-    assert np.all(diff[:, 1] <= tol[:, 1]), "sigma_E outside 4% of COMPASS"
-    m = sig_cp[:, 2] > 0.05
-    v_ratio = sig_we[m, 2] / sig_cp[m, 2]
-    assert np.all((v_ratio > 0.50) & (v_ratio < 1.02)), \
-        "sigma_V outside the open vertical-reference residual band"
+    m = sig_cp > 0.05
+    for col, label, lo, hi in ((0, "N", 0.95, 1.12), (1, "E", 0.95, 1.12)):
+        ratio = sig_we[m[:, col], col] / sig_cp[m[:, col], col]
+        assert np.all((ratio > lo) & (ratio < hi)), \
+            f"sigma_{label} outside [{lo}, {hi}] of COMPASS"
+    v_ratio = sig_we[m[:, 2], 2] / sig_cp[m[:, 2], 2]
+    assert np.all((v_ratio > 0.90) & (v_ratio < 1.30)), \
+        "sigma_V outside the conservative-side band"
+
+
+def test_f15d_ew_high_inc_no_lateral_underrun(ipm):
+    """F-15D — the E-W high-inclination case (azi ~106 deg holding while
+    building to ~80 deg inc): the well that exposed the systematic lateral
+    under-run (sigma_N -11% at TD, the NON-conservative direction for
+    anti-collision). With per-term cross-run global sharing (the IFR
+    reference is ONE realisation across both MWD runs) the
+    perpendicular-to-heading axis is within ~1% at TD and nothing runs
+    materially under COMPASS.
+    """
+    from welleng.composition import SurveyComposition, SurveySection
+    from welleng.exchange.edm_stream import EDMReader, FEET_TO_METERS
+
+    r = EDMReader(VOLVE)
+    st = None
+    for hid, stations in r._def_stations.items():
+        h = r.headers[hid]
+        wb = r.wellbores.get(h.wellbore_id)
+        if wb and wb.name == "F-15D" and h.phase == "ACTUAL":
+            st = sorted(stations, key=lambda s: s["md"])
+            header = h
+    assert st is not None
+    mag = [m for m in ipm.magnetics
+           if m.get("wellbore_id") == header.wellbore_id][0]
+
+    F = FEET_TO_METERS
+    md = np.array([s["md"] for s in st]) * F
+    inc = np.array([s["inc"] for s in st])
+    azi = np.array([s["azi"] for s in st])
+    cc = np.array([s["cov"] for s in st]) * F ** 2
+
+    sh = we.survey.SurveyHeader(
+        name="F-15D", azi_reference="grid",
+        latitude=58.4416, longitude=1.8875,
+        b_total=float(mag["field_strength"]),
+        dip=float(mag["dip_angle"]),
+        declination=float(mag["declination"]),
+    )
+    gyro = ipm.error_model("Wellbore Surveyor, stat")
+    mwd1 = ipm.error_model("Magn, IFR, mag-corr, dual incl")
+    mwd2 = ipm.error_model("Magn, IFR, non-mag, dual incl")
+    i1 = int(np.argmin(np.abs(md - 1310.0)))
+    i2 = int(np.argmin(np.abs(md - 3220.0)))
+    comp = SurveyComposition(sections=[
+        SurveySection(md=md[:i1 + 1], inc=inc[:i1 + 1], azi=azi[:i1 + 1],
+                      header=sh, error_model=gyro, tool_id="gyro"),
+        SurveySection(md=md[i1:i2 + 1], inc=inc[i1:i2 + 1],
+                      azi=azi[i1:i2 + 1], header=sh, error_model=mwd1,
+                      tool_id="mwd1", share_mode="all_independent"),
+        # both MWD runs reference the same IFR geomag realisation
+        SurveySection(md=md[i2:], inc=inc[i2:], azi=azi[i2:], header=sh,
+                      error_model=mwd2, tool_id="mwd2",
+                      share_mode="globals_shared"),
+    ]).survey()
+    cov = comp.cov_nev
+
+    sig_we = np.sqrt(np.stack(
+        [cov[:, 0, 0], cov[:, 1, 1], cov[:, 2, 2]], axis=1))
+    sig_cp = np.sqrt(np.stack([cc[:, 3], cc[:, 0], cc[:, 5]], axis=1))
+    td = sig_we[-1] / sig_cp[-1]
+
+    # N (perpendicular to the E-W heading — the axis that under-ran)
+    assert 0.95 < td[0] < 1.05, f"sigma_N TD ratio {td[0]:.3f}"
+    # E and V: bounded, conservative-side residuals (open items)
+    assert 0.95 < td[1] < 1.25, f"sigma_E TD ratio {td[1]:.3f}"
+    assert 0.90 < td[2] < 1.20, f"sigma_V TD ratio {td[2]:.3f}"
+    # nothing materially under COMPASS anywhere sigma is macroscopic
+    m = sig_cp > 0.5
+    for col in range(3):
+        ratio = sig_we[m[:, col], col] / sig_cp[m[:, col], col]
+        assert np.all(ratio > 0.90), "non-conservative under-run returned"
