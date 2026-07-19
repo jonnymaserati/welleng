@@ -352,11 +352,11 @@ def test_f14_actual_composed_multi_tool_vs_compass(ipm):
     comp = SurveyComposition(sections=[
         SurveySection(md=md[:i1 + 1], inc=inc[:i1 + 1], azi=azi[:i1 + 1],
                       header=sh, error_model=gyro, tool_id="gyro"),
-        # a gyro and an MWD share no error realisations
+        # flag-faithful ties: g/w realisations chain (per-term,
+        # telescoping-exact), s re-realises per leg
         SurveySection(md=md[i1:i2 + 1], inc=inc[i1:i2 + 1],
                       azi=azi[i1:i2 + 1], header=sh, error_model=mwd,
-                      tool_id="mwd1", share_mode="all_independent"),
-        # same magnetic reference across the two MWD runs
+                      tool_id="mwd1", share_mode="globals_shared"),
         SurveySection(md=md[i2:], inc=inc[i2:], azi=azi[i2:], header=sh,
                       error_model=mwd, tool_id="mwd2",
                       share_mode="globals_shared"),
