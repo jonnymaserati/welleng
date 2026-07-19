@@ -25,7 +25,9 @@ from welleng.exchange.edm_stream import (
     SurveyStation,
     WellboreSurvey,
 )
+import welleng.composition
 import welleng.conditioning
+from welleng.composition import SurveyComposition, SurveySection
 import welleng.fluid
 import welleng.node
 import welleng.architecture
