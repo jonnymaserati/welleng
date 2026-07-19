@@ -120,6 +120,7 @@ def test_drdp_single_pass_matches_column_methods():
         inc=[0, 15, 45, 60, 80],
         azi=[0, 30, 90, 150, 270],
         unit='meters',
+        header=SurveyHeader(b_total=50_000., dip=72., declination=-2.),
     )
     for model in ('ISCWSA MWD Rev4', 'ISCWSA MWD Rev5.11'):
         em = ErrorModel(s, error_model=model)

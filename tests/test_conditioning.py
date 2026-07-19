@@ -16,6 +16,8 @@ from welleng.conditioning import (
 )
 from welleng.survey import Survey, SurveyHeader
 
+MAG_REF = dict(b_total=50_000., dip=72., declination=-2.)
+
 
 def _spd(rng, n, scale=1.0):
     """Random (n, 3, 3) SPD stack."""
@@ -114,7 +116,7 @@ def test_end_to_end_two_error_modelled_surveys():
         md = np.linspace(0, 2400, 40)
         inc = np.clip(np.linspace(0, 80, 40), 0, 60)
         azi = (np.linspace(0, 90, 40) + shift) % 360
-        return Survey(md=md, inc=inc, azi=azi, header=SurveyHeader(),
+        return Survey(md=md, inc=inc, azi=azi, header=SurveyHeader(**MAG_REF),
                       error_model="ISCWSA MWD Rev5.11")
     a, b = make(0.0), make(12.0)
     assert a.cov_nev_global is not None          # the 0.19 Survey contract

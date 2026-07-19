@@ -14,6 +14,8 @@ from welleng.hierarchy import (
 from welleng import osdu
 from welleng.survey import Survey, SurveyHeader
 
+MAG_REF = dict(b_total=50_000., dip=72., declination=-2.)
+
 
 # --------------------------------------------------------------------------- #
 # helpers
@@ -27,7 +29,7 @@ def _parent_and_sidetracks():
     md_p = list(range(0, 2001, 100))
     parent = Survey(
         md=md_p, inc=[min(0.03 * m, 40) for m in md_p], azi=[45.0] * len(md_p),
-        header=SurveyHeader(name="P"), error_model="ISCWSA MWD Rev5.11",
+        header=SurveyHeader(name="P", **MAG_REF), error_model="ISCWSA MWD Rev5.11",
     )
     i = md_p.index(1000.0)
     pos, cst = parent.pos_nev[i], parent.cov_nev[i]
@@ -37,7 +39,7 @@ def _parent_and_sidetracks():
         return Survey(
             md=md, inc=[40.0] * len(md),
             azi=[45.0 + sign * 1.2 * (m - 1000) / 100 for m in md],
-            header=SurveyHeader(name="S"), error_model="ISCWSA MWD Rev5.11",
+            header=SurveyHeader(name="S", **MAG_REF), error_model="ISCWSA MWD Rev5.11",
             start_nev=pos, start_cov_nev=cst,
         )
 

@@ -17,11 +17,6 @@ import numpy as np
 import math
 import warnings
 import pandas as pd
-try:
-    from magnetic_field_calculator import MagneticFieldCalculator
-    MAG_CALC = True
-except ImportError:
-    MAG_CALC = False
 from datetime import datetime
 from pyproj import CRS, Proj, Transformer
 from pyproj.enums import TransformDirection
@@ -41,6 +36,7 @@ from .utils import (
     radius_from_dls,
 )
 from .error import ErrorModel, ERROR_MODELS
+from .geomag import GeomagLookupError, lookup_field
 from .node import Node
 from .connector import Connector, interpolate_well
 from .visual import figure
@@ -61,8 +57,8 @@ class SurveyParameters(Proj):
 
     Notes
     -----
-    Requires ``pyproj`` and ``magnetic_field_calculator`` to be installed and
-    access to the internet.
+    Requires ``pyproj``; the magnetic-field values need internet access (the
+    BGS geomagnetic web service, via ``welleng.geomag``).
 
     For reference, here's some EPSG codes:
     {
@@ -112,8 +108,10 @@ class SurveyParameters(Proj):
         y: float
             The y or North/South coordinate.
         altitude: float (default: None)
-            The altitude or z value coordinate. If none is provided this will
-            default to zero (sea level).
+            The altitude or z value coordinate in metres above mean sea
+            level (negative for below MSL). If none is provided this will
+            default to zero (sea level). Converted to km at the BGS
+            magnetic-lookup boundary.
         date: str (default: None)
             The date of the survey, used when calculating the magnetic
             parameters. Will default to the current date.
@@ -180,26 +178,16 @@ class SurveyParameters(Proj):
             datetime.today().strftime('%Y-%m-%d') if date is None
             else date
         )
-        if MAG_CALC:
-            magnetic_calculator = MagneticFieldCalculator()
-            try:
-                result_magnetic = magnetic_calculator.calculate(
-                    latitude=latitude, longitude=longitude,
-                    altitude=0 if altitude is None else altitude,
-                    date=date
-                )
-            except Exception as exc:
-                warnings.warn(
-                    f"Magnetic-field lookup failed ({exc}); declination, dip and "
-                    "field intensity set to None (no connection to the BGS service?)."
-                )
-                result_magnetic = None
-        else:
+        try:
+            result_magnetic = lookup_field(
+                latitude=latitude, longitude=longitude,
+                altitude=0 if altitude is None else altitude,
+                date=date
+            )
+        except GeomagLookupError as exc:
             warnings.warn(
-                "Magnetic-field parameters (declination, dip, field intensity) need "
-                "the optional 'magnetic_field_calculator' package -- install with "
-                "`pip install welleng[all]` (or `pip install magnetic_field_calculator`). "
-                "Returning None for those fields."
+                f"Magnetic-field lookup failed ({exc}); declination, dip and "
+                "field intensity set to None (no connection to the BGS service?)."
             )
             result_magnetic = None
 
@@ -289,7 +277,25 @@ class SurveyHeader:
     Stores the geographic position, magnetic field parameters (total field,
     dip, declination), convergence, azimuth reference system, and unit
     conventions needed to interpret and process directional survey data.
+
+    ``mag_source`` tracks the provenance of each geomagnetic reference value
+    (``'user'`` / ``'lookup'`` / ``'default'``); magnetic error models refuse
+    ``'default'`` (see ``ErrorModel``). Assigning ``b_total``, ``dip`` or
+    ``declination`` — at construction or any time after — marks that field
+    ``'user'``.
     """
+
+    #: geomagnetic reference fields whose provenance is tracked
+    _MAG_FIELDS = ('b_total', 'dip', 'declination')
+
+    def __setattr__(self, name, value):
+        super().__setattr__(name, value)
+        if name in self._MAG_FIELDS:
+            # copy-on-write: shallow header copies share the dict; never
+            # mutate it in place or the copy's provenance leaks to the source
+            src = dict(self.__dict__.get('mag_source', {}))
+            src[name] = 'default' if value is None else 'user'
+            self.__dict__['mag_source'] = src
 
     def __init__(
         self,
@@ -333,8 +339,10 @@ class SurveyHeader:
             default (None) then it will be assigned to Grenwich, the
             undisputed center of the universe.
         altitude: float (default: None)
-            The altitude of the surface location. If left defaults (None)
-            then it will be assigned to 0.
+            The altitude of the surface location in METRES above mean sea
+            level (negative for below MSL, e.g. a subsea wellhead). If left
+            default (None) then it will be assigned to 0. Converted to km at
+            the BGS magnetic-lookup boundary.
         survey_date: YYYY-mm-dd (default: None)
             The date on which the survey data was recorded. If left
             default then the current date is assigned.
@@ -398,6 +406,9 @@ class SurveyHeader:
 
         self._validate_date(survey_date)
         self.name = name
+        # A geomag lookup at the fallback location is as fictitious as the
+        # package default values — the provenance tracking below treats it so.
+        self._location_defaulted = latitude is None or longitude is None
         self.latitude = latitude if latitude is not None else 51.4934
         self.longitude = longitude if longitude is not None else 0.0098
         self.altitude = altitude if altitude is not None else 0.
@@ -427,7 +438,17 @@ class SurveyHeader:
     def _get_mag_data(self, deg: bool) -> None:
         """
         Initiates b_total if provided, else calculates a value.
+
+        Records the provenance of each geomagnetic reference value in
+        ``self.mag_source`` (``'user'``, ``'lookup'`` or ``'default'``).
+        Magnetic error models require every value to be ``'user'`` or
+        ``'lookup'`` — a package default (or a lookup at the defaulted
+        location) is not a valid geomagnetic reference for error modelling
+        and ``ErrorModel`` raises on it. Assigning ``b_total``/``dip``/
+        ``declination`` on the header at any time marks that field ``'user'``
+        (see ``__setattr__``).
         """
+        lookup_ok = False
         result = {
             'field-value': {
                 'total-intensity': {
@@ -442,42 +463,62 @@ class SurveyHeader:
             }
         }
 
-        if MAG_CALC:
-            calculator = MagneticFieldCalculator()
+        # Look up only when something is missing AND the location is real:
+        # user-supplied values make the result unused, and a lookup at the
+        # defaulted location is as fictitious as the package defaults — no
+        # point paying a network round-trip for either.
+        need_lookup = (
+            (self.b_total is None or self.dip is None
+             or self.declination is None)
+            and not self._location_defaulted
+        )
+        if need_lookup:
             try:
-                result = calculator.calculate(
+                result = lookup_field(
                     latitude=self.latitude,
                     longitude=self.longitude,
                     altitude=self.altitude,
                     date=self.survey_date
                 )
-            except Exception:
+                lookup_ok = True
+            except GeomagLookupError:
+                # The default model (WMM) only covers a ~10-year window around
+                # the present; historic survey dates 400 on it. IGRF covers
+                # historic epochs, so retry there with the SAME date rather
+                # than silently substituting today's field.
                 try:
-                    # retry with today's date (sets self.survey_date, then use it)
-                    self._get_date(date=None)
-                    result = calculator.calculate(
+                    result = lookup_field(
                         latitude=self.latitude,
                         longitude=self.longitude,
                         altitude=self.altitude,
-                        date=self.survey_date
+                        date=self.survey_date,
+                        model='igrf'
                     )
-                except Exception as exc:
+                    lookup_ok = True
+                except GeomagLookupError as exc:
                     warnings.warn(
-                        f"Magnetic-field lookup failed ({exc}); using the header's "
-                        "default magnetic parameters (no connection to the BGS "
-                        "service?)."
+                        f"Magnetic-field lookup failed for survey_date "
+                        f"{self.survey_date} ({exc}); using the header's "
+                        "default magnetic parameters (no connection to the "
+                        "BGS service, or a date outside the models' range?)."
                     )
+
+        looked_up = 'lookup' if lookup_ok else 'default'
+        filled = []
 
         if self.b_total is None:
             self.b_total = result['field-value']['total-intensity']['value']
+            filled.append('b_total')
             # if not deg:
             #     self.b_total = math.radians(self.b_total)
         if self.dip is None:
             self.dip = -result['field-value']['inclination']['value']  # type: ignore[operator]
+            filled.append('dip')
             if not deg:
                 self.dip = math.radians(self.dip)
         if self.declination is None:
             self.declination = result['field-value']['declination']['value']
+            filled.append('declination')
             if not deg:
                 self.declination = math.radians(self.declination)  # type: ignore[arg-type]
 
@@ -491,6 +532,12 @@ class SurveyHeader:
             self.vertical_section_azimuth = math.radians(
                 self.vertical_section_azimuth
             )
+
+        # Stamp provenance LAST — the unit conversions above re-assign the
+        # fields, which __setattr__ marks 'user'; lookup-filled fields must
+        # end up marked with the lookup's own provenance.
+        for field in filled:
+            self.mag_source[field] = looked_up
 
     def _get_date(self, date: Optional[str]) -> None:
         if date is None:
