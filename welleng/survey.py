@@ -208,13 +208,11 @@ class SurveyParameters(Proj):
                 None if result_magnetic is None
                 else result_magnetic.get('field-value').get('declination').get('value')
             ),
+            # dip positive-DOWN (ISCWSA/BGS convention; the service reports
+            # 'deg (down)' units already, so the value passes straight through)
             dip=(
                 None if result_magnetic is None
                 else result_magnetic.get('field-value').get('inclination').get('value')
-                * (
-                    -1 if "down" in result_magnetic.get('field-value').get('inclination').get('units')
-                    else 1
-                )
             ),
             date=date,
             srs=self.crs.srs
@@ -515,7 +513,15 @@ class SurveyHeader:
             # if not deg:
             #     self.b_total = math.radians(self.b_total)
         if self.dip is None:
-            self.dip = -result['field-value']['inclination']['value']  # type: ignore[operator]
+            # BGS 'inclination' is the magnetic dip, positive DOWN — the same
+            # convention the ISCWSA weighting functions (tan(dip), cos(dip))
+            # and COMPASS use. It was historically negated here, silently
+            # sign-flipping tan(dip) in every axial-interference term for
+            # lookup users; proven against the operator-stored covariances
+            # in the public Volve dataset (positive-down reproduces them,
+            # negated degrades machine-precision matches by orders of
+            # magnitude).
+            self.dip = result['field-value']['inclination']['value']
             filled.append('dip')
             if not deg:
                 self.dip = math.radians(self.dip)
