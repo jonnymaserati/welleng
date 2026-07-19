@@ -103,7 +103,8 @@ class SurveySection:
     geomag_model : str, optional
         Name of the geomagnetic reference model (e.g. ``"BGGM2020"``). Used only
         to auto-pick a default ``share_mode``.
-    share_mode : {'all_independent', 'globals_shared', 'globals_and_systematic_shared'}, optional
+    share_mode : {'all_independent', 'globals_shared', \
+'globals_and_systematic_shared'}, optional
         Explicit override for how the tie *before* this section shares error
         components with the previous group. If ``None``, auto-picked from the
         context keys (see :class:`SurveyComposition`).
@@ -245,7 +246,6 @@ class SurveyComposition:
     def _build_groups(self) -> List[_Group]:
         groups: List[_Group] = []
         prev_key = None
-        prev_tool_id = None
         for section in self.sections:
             md, inc_rad, azi_grid_rad, header, error_model = (
                 self._section_grid(section)
@@ -270,7 +270,6 @@ class SurveyComposition:
                     share_mode=share_mode,
                 ))
             prev_key = key
-            prev_tool_id = section.tool_id
         return groups
 
     @staticmethod
