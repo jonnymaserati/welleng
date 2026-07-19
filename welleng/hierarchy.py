@@ -37,6 +37,7 @@ between wells of common ancestry.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Iterator, Optional
 
@@ -1152,6 +1153,194 @@ class WellNetwork:
 
     def _parent_id(self, id_: str) -> Optional[str]:
         return self._parents.get(id_)
+
+
+def network_from_edm(reader, *, surveys: bool = False) -> WellNetwork:
+    """Build a :class:`WellNetwork` from a parsed EDM/COMPASS export.
+
+    Maps the EDM master-data spine indexed by
+    :class:`welleng.exchange.edm_stream.EDMReader` onto the hierarchy
+    entities and wires the wellbore forest (parent-wellbore sidetrack edges,
+    root wellbores parented by their Well). All lengths are converted from
+    the reader's source units (feet for the public Volve export) to metres
+    at this boundary; angles arrive in degrees and convergence is stored in
+    radians.
+
+    The table -> entity mapping:
+
+    ========================  =================================================
+    EDM table                 Hierarchy entity
+    ========================  =================================================
+    ``CD_PROJECT``            :class:`Field` (``project_name``); also supplies
+                              the site CRS (geo datum + zone) when derivable
+    ``CD_SITE``               :class:`Site` (name, convergence [deg -> rad],
+                              ``is_field_center``, map location [-> metres])
+    ``CD_WELL``               :class:`Well` (name, slot ``(ns, ew)`` + radial
+                              error, wellhead depth [-> metres])
+    ``CD_DATUM``              :class:`Datum` on its Well (elevation
+                              [-> metres]; the default datum is preferred)
+    ``CD_WELLBORE``           :class:`Wellbore`; ``parent_wellbore_id`` is the
+                              sidetrack edge, ``ko_md`` [-> metres] the
+                              kickoff; root wellbores parent to their Well
+    ========================  =================================================
+
+    Parameters
+    ----------
+    reader : welleng.exchange.edm_stream.EDMReader
+        An indexed EDM reader (or any object exposing the same ``projects``
+        / ``sites`` / ``wells`` / ``datums`` / ``wellbores`` /
+        ``source_units`` / ``survey()`` surface).
+    surveys : bool, keyword-only, default False
+        When ``True``, attach each wellbore's definitive ACTUAL survey
+        (converted to metres, grid azimuth reference) via
+        ``reader.survey(...)``. A wellbore whose survey is missing or fails
+        to assemble is skipped with a :class:`UserWarning` — the import
+        never aborts on a single wellbore. The default (``False``) builds
+        the cheap structure-only network.
+
+    Returns
+    -------
+    WellNetwork
+        The assembled network: Field -> Site -> Well (+ Datum) -> Wellbore
+        forest, with surveys attached when requested.
+
+    Warns
+    -----
+    UserWarning
+        Per wellbore whose survey cannot be assembled (``surveys=True``
+        only), and per wellbore whose ``parent_wellbore_id`` cannot be
+        resolved (it is rooted to its Well instead).
+    """
+    import warnings
+
+    src = str(getattr(reader, "source_units", "feet")).lower()
+    length = 0.3048 if src in ("feet", "ft") else 1.0
+
+    def _f(row: dict, key: str) -> Optional[float]:
+        v = row.get(key)
+        if v in (None, ""):
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    # -- CD_PROJECT -> Field (+ derivable site CRS) ------------------------- #
+    fields: dict[str, Field] = {}
+    project_crs: dict[str, Optional[str]] = {}
+    for pid, row in reader.projects.items():
+        fields[pid] = Field(id=pid, name=row.get("project_name", pid))
+        # Only the empirically-confirmed combination maps to an EPSG code;
+        # anything else is left unset rather than guessed.
+        if (row.get("geo_datum_id") == "ED50"
+                and row.get("geo_zone_id") == "UTM-31N"):
+            project_crs[pid] = "EPSG:23031"
+        else:
+            project_crs[pid] = None
+
+    # -- CD_SITE -> Site ---------------------------------------------------- #
+    sites: dict[str, Site] = {}
+    for sid, row in reader.sites.items():
+        conv = _f(row, "convergence")
+        northing = _f(row, "geo_map_northing")
+        easting = _f(row, "geo_map_easting")
+        location = (
+            (northing * length, easting * length)
+            if northing is not None and easting is not None else None
+        )
+        sites[sid] = Site(
+            id=sid,
+            name=row.get("site_name", sid),
+            parent=fields.get(row.get("project_id")),
+            crs=project_crs.get(row.get("project_id")),
+            convergence=None if conv is None else math.radians(conv),
+            is_field_centre=row.get("is_field_center") == "Y",
+            location=location,
+        )
+
+    # -- CD_WELL (+ CD_DATUM) -> Well --------------------------------------- #
+    wells: dict[str, Well] = {}
+    for wid, row in reader.wells.items():
+        slot_ns, slot_ew = _f(row, "slot_ns"), _f(row, "slot_ew")
+        slot = (
+            (slot_ns * length, slot_ew * length)
+            if slot_ns is not None and slot_ew is not None else None
+        )
+        radial = _f(row, "slot_radial_error")
+        wellhead = _f(row, "wellhead_depth")
+        # Prefer the well's default datum row; fall back to the first.
+        datum = None
+        datum_rows = reader.datums.get(wid, [])
+        if datum_rows:
+            row_d = next(
+                (d for d in datum_rows if d.get("is_default") == "Y"),
+                datum_rows[0],
+            )
+            elevation = _f(row_d, "datum_elevation")
+            datum = Datum(
+                name=row_d.get("datum_name", row_d.get("datum_id", "datum")),
+                elevation=0.0 if elevation is None else elevation * length,
+                reference="MSL",
+            )
+        wells[wid] = Well(
+            id=wid,
+            name=row.get("well_common_name", wid),
+            parent=sites.get(row.get("site_id")),
+            slot=slot,
+            slot_radial_error=0.0 if radial is None else radial * length,
+            wellhead_depth=None if wellhead is None else wellhead * length,
+            datum=datum,
+        )
+
+    # -- CD_WELLBORE -> Wellbore forest ------------------------------------- #
+    net = WellNetwork()
+    wellbores: dict[str, Wellbore] = {}
+    for wbid, wb in reader.wellbores.items():
+        ko_md = _f(wb.raw, "ko_md")
+        wellbores[wbid] = Wellbore(
+            id=wbid,
+            name=wb.name,
+            kickoff_md=None if ko_md is None else ko_md * length,
+        )
+    for wbid, wb in reader.wellbores.items():
+        node = wellbores[wbid]
+        pid = wb.parent_wellbore_id
+        if pid == wbid:                      # self-reference guard
+            pid = None
+        if pid and pid in wellbores:
+            node.parent = wellbores[pid]
+        else:
+            if pid:
+                warnings.warn(
+                    f"wellbore {wb.name!r}: parent wellbore id {pid!r} not "
+                    "in the export; rooting it to its well",
+                    stacklevel=2,
+                )
+            node.parent = wells.get(wb.well_id)
+        net.add(node)
+
+    # -- optional survey attachment ----------------------------------------- #
+    if surveys:
+        for wbid, node in wellbores.items():
+            try:
+                edm_survey = reader.survey(
+                    wbid, kind="definitive", phase="ACTUAL"
+                )
+                node.survey = edm_survey.to_welleng(
+                    units="meters", azi_reference="grid"
+                )
+            except Exception as exc:
+                warnings.warn(
+                    f"wellbore {node.name!r}: no definitive survey attached "
+                    f"({exc})",
+                    stacklevel=2,
+                )
+
+    # register any well/site/field that has no wellbore (net.add only walks
+    # ancestors of added wellbores)
+    for entity in (*fields.values(), *sites.values(), *wells.values()):
+        net._nodes.setdefault(entity.id, entity)
+    return net
 
 
 def _datum_dict(datum: Optional[Datum]) -> Optional[dict]:
