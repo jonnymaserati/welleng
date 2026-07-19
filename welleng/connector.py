@@ -24,11 +24,6 @@ from .utils import (
     radius_from_dls, get_arc
 )
 
-# Module-level Generator for the degeneracy jitter in `_mod_pos` (nudges a
-# straight-ahead target off the hold/curve ambiguity). Uses NumPy's modern
-# `default_rng` rather than the legacy global `np.random.random` singleton.
-_RNG = np.random.default_rng()
-
 
 class Connector:
     """Solves minimum-MD wellbore trajectories between two survey stations.
@@ -965,50 +960,37 @@ class Connector:
         """
         return interpolate_well([self], step)
 
-    def _mod_pos(self, pos: np.ndarray) -> None:
-        pos_rand = _RNG.random(3)  # * self.delta_radius
-        pos += pos_rand
-
     def _get_distances(
         self, pos1: np.ndarray, vec1: np.ndarray, pos_target: np.ndarray
     ) -> tuple:
-        # When initializing a `curve_hold_curve` and pos_target is directly
-        # ahead it can cause issues (it's a hold and not a curve). So this code
-        # checks for that condition and if it's the case, will move the
-        # target_pos a sufficient amount to prevent issues.
-        vec_temp = np.array(pos_target - pos1)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            vec_temp = vec_temp / np.linalg.norm(vec_temp)
-        if np.array_equal(vec1, vec_temp):
-            self._mod_pos(pos_target)
+        # Decompose the start->target vector into components along (perp) and
+        # normal to the start tangent vec1. As the target approaches PRECISE
+        # alignment with vec1 the connection degenerates to a pure hold
+        # (dist_norm -> 0); this is handled DETERMINISTICALLY by clamping the
+        # radicand to >= 0 (float rounding can otherwise make it tiny-negative
+        # -> sqrt NaN) and letting the dist_norm == 0 branches downstream
+        # (min_curve_to_target / get_radius_critical -> radius_critical inf/0)
+        # route it as a hold. No random target nudge (the previous `_mod_pos`
+        # jiggle) -- that injected non-reproducible position error to dodge this
+        # exact-alignment singularity; the clamp resolves it without any error.
         if np.allclose(pos1, pos_target):
             return (0, 0, 0)
 
-        else:
-            dist_to_target = (
-                np.linalg.norm((pos_target - pos1))
-            )
+        dist_to_target = np.linalg.norm((pos_target - pos1))
+        dist_perp_to_target = np.dot((pos_target - pos1), vec1)
+        if dist_perp_to_target > dist_to_target:
+            # a tolerance is in play; keep the radicand non-negative
+            dist_perp_to_target = dist_to_target
 
-            dist_perp_to_target = (
-                np.dot((pos_target - pos1), vec1)
-            )
-            if dist_perp_to_target > dist_to_target:
-                # since a tolerance is being used, occasionally things can go
-                # wrong and need to be caught.
-                dist_perp_to_target = dist_to_target
+        dist_norm_to_target = (
+            max(dist_to_target ** 2 - dist_perp_to_target ** 2, 0.0)
+        ) ** 0.5
 
-            dist_norm_to_target = (
-                (
-                    dist_to_target ** 2
-                    - dist_perp_to_target ** 2
-                ) ** 0.5
-            )
-
-            return (
-                dist_to_target,
-                dist_perp_to_target,
-                dist_norm_to_target
-            )
+        return (
+            dist_to_target,
+            dist_perp_to_target,
+            dist_norm_to_target
+        )
 
 
 def check_dogleg(dogleg: ArrayLike) -> Union[float, np.ndarray]:
