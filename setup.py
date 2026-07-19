@@ -38,7 +38,6 @@ requirements_default = set([
 
 # these can be installed without compiling required
 requirements_easy = set([
-    'magnetic_field_calculator',    # used to get default mag data for survey
     'networkx',
     'tabulate',
     'trimesh',

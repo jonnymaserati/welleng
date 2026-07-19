@@ -22,7 +22,7 @@
 - **Kick tolerance** — deterministic, conservative single-bubble kick-tolerance engine (drill and swab cases): the mandated NOGEPA-50 static formula, a whole-path gas-migration check over the pore–fracture envelope, and an exact analytical breakpoint solver, reproducing the published worked examples of SPE-208788-PA, SPE-202426-PA (Kiani Nassab) and Santos (SPE/IADC-140113); real-gas *Z* via a clean-room Hall–Yarborough backend with an optional CoolProp EOS backend for CO₂/CCUS mixtures; deviated-well aware
 - **Visualization** — interactive 3D via [vedo]/VTK or browser-based via plotly (requires `easy` install)
 - **Data exchange** — import/export Landmark .wbp files; read EDM datasets
-- **World Magnetic Model** — auto-calculates magnetic field data when not supplied
+- **Geomagnetic reference lookup** — fetches WMM/IGRF field values from the BGS web service when not supplied (given a real well location)
 
 ### Selecting an error model
 
@@ -36,6 +36,12 @@ import welleng as we
 
 we.error.get_error_models()            # -> list every available model name
 
+# magnetic models need a real geomagnetic reference: set b_total/dip/
+# declination on the header, or give latitude/longitude (+ survey_date)
+# for an automatic lookup — package defaults are refused
+header = we.survey.SurveyHeader(
+    name="my well", b_total=50_800., dip=72., declination=-1.5,
+)
 survey = we.survey.Survey(
     md, inc, azi, header=header,
     error_model="ISCWSA MWD Rev5.11",  # the standard; change this string to switch
@@ -168,11 +174,10 @@ See the [interactive docs](https://api.welleng.org/api/docs) to try it out.
 * [numpy] — scientific computing
 * [scipy] — mathematics, science, and engineering
 * [vedo] — 3D visualization based on VTK
-* [magnetic-field-calculator] — BGS magnetic field calculator API
 
 ## Installation
 
-The default install includes core dependencies (numpy, scipy, pandas, etc.) and covers survey generation, error models, and trajectory design. The `easy` extras add 3D visualization (vedo/VTK), magnetic field lookup, network analysis, and mesh import. The `all` extras add mesh-based collision detection, which requires compiled dependencies.
+The default install includes core dependencies (numpy, scipy, pandas, etc.) and covers survey generation, error models, and trajectory design. Geomagnetic reference lookup (BGS web service) is built in. The `easy` extras add 3D visualization (vedo/VTK), network analysis, and mesh import. The `all` extras add mesh-based collision detection, which requires compiled dependencies.
 
 You'll receive an `ImportError` with a suggested install tag if a required optional dependency is missing.
 
@@ -181,7 +186,7 @@ You'll receive an `ImportError` with a suggested install tag if a required optio
 pip install welleng
 ```
 
-### Easy install (recommended — adds 3D visualization, magnetic field calculator, trimesh, networkx)
+### Easy install (recommended — adds 3D visualization, trimesh, networkx)
 ```
 pip install welleng[easy]
 ```
@@ -446,6 +451,5 @@ Please note the terms of the license. Although this software endeavors to be acc
    [volve]: <https://www.equinor.com/en/how-and-why/digitalisation-in-our-dna/volve-field-data-village-download.html>
    [ISCWSA]: <https://www.iscwsa.net/>
    [build_a_well_from_sections.py]: <https://github.com/jonnymaserati/welleng/tree/main/examples/build_a_well_from_sections.py>
-   [magnetic-field-calculator]: <https://pypi.org/project/magnetic-field-calculator/>
    [jonnymaserati]: <https://jonnymaserati.github.io/>
    [documentation]: <https://jonnymaserati.github.io/welleng/>

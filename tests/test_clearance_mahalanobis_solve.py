@@ -14,12 +14,14 @@ import pytest
 from welleng.survey import Survey, SurveyHeader
 from welleng.clearance import MahalanobisClearance
 
+MAG_REF = dict(b_total=50_000., dip=72., declination=-2.)
+
 
 def _survey(n, shift):
     md = np.linspace(0, 30 * (n - 1), n)
     inc = np.clip(np.linspace(0, 90, n), 0, 60)
     azi = (np.linspace(0, 120, n) + shift) % 360
-    return Survey(md=md, inc=inc, azi=azi, header=SurveyHeader(),
+    return Survey(md=md, inc=inc, azi=azi, header=SurveyHeader(**MAG_REF),
                   error_model="ISCWSA MWD Rev5.11")
 
 

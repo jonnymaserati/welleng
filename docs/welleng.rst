@@ -69,6 +69,14 @@ welleng.fluid module
    :undoc-members:
    :show-inheritance:
 
+welleng.geomag module
+---------------------
+
+.. automodule:: welleng.geomag
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 welleng.hierarchy module
 ------------------------
 

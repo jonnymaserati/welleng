@@ -44,10 +44,15 @@ connector_offset = we.survey.from_connections(
 )
 
 # make survey objects and calculate the uncertainty covariances
+# magnetic error models need a real geomagnetic reference: provide
+# b_total/dip/declination explicitly, or give the well's latitude/longitude
+# (+ survey_date) so they can be looked up
 print("Making surveys...")
+MAG_REF = dict(b_total=50_800., dip=72., declination=-1.5)
 sh_reference = we.survey.SurveyHeader(
     name="reference",
-    azi_reference="grid"
+    azi_reference="grid",
+    **MAG_REF
 )
 survey_reference = we.survey.Survey(
     md=connector_reference.md,
@@ -58,7 +63,8 @@ survey_reference = we.survey.Survey(
 )
 sh_offset = we.survey.SurveyHeader(
     name="offset",
-    azi_reference="grid"
+    azi_reference="grid",
+    **MAG_REF
 )
 survey_offset = we.survey.Survey(
     md=connector_offset.md,

@@ -58,7 +58,6 @@ dependencies = [
 
 [project.optional-dependencies]
 easy = [
-    "magnetic_field_calculator",
     "networkx",
     "tabulate",
     "trimesh",
@@ -92,7 +91,6 @@ kick = [
     "sympy",
 ]
 all = [
-    "magnetic_field_calculator",
     "networkx",
     "tabulate",
     "trimesh",
@@ -182,7 +180,6 @@ disallow_incomplete_defs = true
 [dependency-groups]
 dev = [
     "pytest>=9.0",
-    "magnetic_field_calculator",
     "networkx",
     "trimesh",
 ]

@@ -34,7 +34,7 @@ N = 6
 
 def _vertical_highfreq_err(dmd=DMD, n=N, model=MODEL):
     md = np.arange(n) * dmd
-    sh = SurveyHeader()
+    sh = SurveyHeader(b_total=50_000., dip=72., declination=-2.)
     sh.error_model = model
     survey = Survey(
         md=md, inc=np.zeros(n), azi=np.zeros(n),
@@ -125,7 +125,7 @@ def test_highfreq_sing_covariance_matches_propagation():
 def _err(md, inc, azi, model):
     """Build an Error for an arbitrary geometry with magnetic params set, so
     field-dependent terms (ABXY/MBXY/...) evaluate on non-vertical wells."""
-    sh = SurveyHeader()
+    sh = SurveyHeader(b_total=50_000., dip=72., declination=-2.)
     sh.error_model = model
     sh.latitude = 60.0
     sh.b_total = 50000.0
