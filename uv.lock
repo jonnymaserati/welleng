@@ -297,6 +297,15 @@ wheels = [
 ]
 
 [[package]]
+name = "execnet"
+version = "2.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bf/89/780e11f9588d9e7128a3f87788354c7946a9cbb1401ad38a48c4db9a4f07/execnet-2.1.2.tar.gz", hash = "sha256:63d83bfdd9a23e35b9c6a3261412324f964c2ec8dcd8d3c6916ee9373e0befcd", size = 166622, upload-time = "2025-11-12T09:56:37.75Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ab/84/02fc1827e8cdded4aa65baef11296a9bbe595c474f0d6d758af082d849fd/execnet-2.1.2-py3-none-any.whl", hash = "sha256:67fba928dd5a544b783f6056f449e5e3931a5c378b128bc18501f7ea79e296ec", size = 40708, upload-time = "2025-11-12T09:56:36.333Z" },
+]
+
+[[package]]
 name = "flexcache"
 version = "0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -508,15 +517,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/48/44/2b5b95b7aa39fb2d8d9d956e0f3d5d45aef2ae1d942d4c3ffac2f9cfed1a/kiwisolver-1.5.0-pp311-pypy311_pp73-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:be4a51a55833dc29ab5d7503e7bcb3b3af3402d266018137127450005cdfe737", size = 79892, upload-time = "2026-03-09T13:15:49.694Z" },
     { url = "https://files.pythonhosted.org/packages/52/7d/7157f9bba6b455cfb4632ed411e199fc8b8977642c2b12082e1bd9e6d173/kiwisolver-1.5.0-pp311-pypy311_pp73-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:daae526907e262de627d8f70058a0f64acc9e2641c164c99c8f594b34a799a16", size = 77603, upload-time = "2026-03-09T13:15:50.945Z" },
     { url = "https://files.pythonhosted.org/packages/0a/dd/8050c947d435c8d4bc94e3252f4d8bb8a76cfb424f043a8680be637a57f1/kiwisolver-1.5.0-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:59cd8683f575d96df5bb48f6add94afc055012c29e28124fcae2b63661b9efb1", size = 73558, upload-time = "2026-03-09T13:15:52.112Z" },
-]
-
-[[package]]
-name = "magnetic-field-calculator"
-version = "1.0.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/63/f3/25fa90ec750d2c969b0e3c5ec2e45f60c98774ad0c67bfb8619ee31530ad/magnetic-field-calculator-1.0.2.tar.gz", hash = "sha256:52d5cfa8df609d5343bc7a761fbcd58cf0ec2ff771b0fe97a1c0b33c84aaae89", size = 19767, upload-time = "2020-01-23T20:52:07.754Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5e/64/e102ce910e533895af7f81e07fd56931932720bbc1cc20e4227cbc400eb5/magnetic_field_calculator-1.0.2-py3-none-any.whl", hash = "sha256:dfbb23e73369ba18a00c750ebb79ec8190b697b57757ddbf4ebeef0c89700f6f", size = 18610, upload-time = "2020-01-23T20:52:06.43Z" },
 ]
 
 [[package]]
@@ -1265,6 +1265,19 @@ wheels = [
 ]
 
 [[package]]
+name = "pytest-xdist"
+version = "3.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "execnet" },
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/78/b4/439b179d1ff526791eb921115fca8e44e596a13efeda518b9d845a619450/pytest_xdist-3.8.0.tar.gz", hash = "sha256:7e578125ec9bc6050861aa93f2d59f1d8d085595d6551c2c90b6f4fad8d3a9f1", size = 88069, upload-time = "2025-07-01T13:30:59.346Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ca/31/d4e37e9e550c2b92a9cbc2e4d0b7420a27224968580b5a447f420847c975/pytest_xdist-3.8.0-py3-none-any.whl", hash = "sha256:202ca578cfeb7370784a8c33d6d05bc6e13b4f25b5053c30a152269fd10f0b88", size = 46396, upload-time = "2025-07-01T13:30:56.632Z" },
+]
+
+[[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
 source = { registry = "https://pypi.org/simple" }
@@ -1786,7 +1799,6 @@ dependencies = [
 [package.optional-dependencies]
 all = [
     { name = "coolprop" },
-    { name = "magnetic-field-calculator" },
     { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "python-fcl" },
@@ -1796,12 +1808,13 @@ all = [
     { name = "tabulate" },
     { name = "trimesh" },
     { name = "utm" },
+    { name = "vedo" },
+    { name = "vtk" },
 ]
 analytical = [
     { name = "python-flint" },
 ]
 easy = [
-    { name = "magnetic-field-calculator" },
     { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "tabulate" },
@@ -1814,13 +1827,17 @@ kick = [
     { name = "coolprop" },
     { name = "sympy" },
 ]
+viz = [
+    { name = "vedo" },
+    { name = "vtk" },
+]
 
 [package.dev-dependencies]
 dev = [
-    { name = "magnetic-field-calculator" },
     { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pytest" },
+    { name = "pytest-xdist" },
     { name = "trimesh" },
 ]
 
@@ -1828,8 +1845,6 @@ dev = [
 requires-dist = [
     { name = "coolprop", marker = "extra == 'all'", specifier = ">=8.0.0,<9" },
     { name = "coolprop", marker = "extra == 'kick'", specifier = ">=8.0.0,<9" },
-    { name = "magnetic-field-calculator", marker = "extra == 'all'" },
-    { name = "magnetic-field-calculator", marker = "extra == 'easy'" },
     { name = "networkx", marker = "extra == 'all'" },
     { name = "networkx", marker = "extra == 'easy'" },
     { name = "numpy" },
@@ -1852,15 +1867,19 @@ requires-dist = [
     { name = "trimesh", marker = "extra == 'easy'" },
     { name = "utm", marker = "extra == 'all'" },
     { name = "utm", marker = "extra == 'easy'" },
+    { name = "vedo", marker = "extra == 'all'" },
     { name = "vedo", marker = "extra == 'easy'" },
+    { name = "vedo", marker = "extra == 'viz'" },
+    { name = "vtk", marker = "extra == 'all'" },
     { name = "vtk", marker = "extra == 'easy'" },
+    { name = "vtk", marker = "extra == 'viz'" },
 ]
-provides-extras = ["all", "analytical", "easy", "kick"]
+provides-extras = ["all", "analytical", "easy", "kick", "viz"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "magnetic-field-calculator" },
     { name = "networkx" },
     { name = "pytest", specifier = ">=9.0" },
+    { name = "pytest-xdist" },
     { name = "trimesh" },
 ]
