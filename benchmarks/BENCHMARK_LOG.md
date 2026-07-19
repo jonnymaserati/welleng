@@ -401,3 +401,20 @@ errors stay lazy at the Survey level. Structural validation: same-tool sections
 compose EXACTLY equal to the single continuous survey (the tie/leg formulation
 of the ISCWSA error-model definition, §4.7), tool-change carry + systematic
 independence + sidetrack ties pinned in tests/test_survey_composition.py (16).
+
+## 2026-07-19 · `feat/edm-ipm-parser` · Python 3.12, dev machine
+
+EDM/COMPASS IPM import: DP_TOOL_TERM -> live error models (interpreter path)
++ per-section IPM dicts in SurveyComposition.
+
+| operation | result |
+|---|---|
+| `parse_edm_ipm` (Volve.xml, 211 MB, streaming regex) | 2.0 s cold / 0.2 s warm |
+| standard `ISCWSA MWD Rev5.11`, 100 stations (regression check) | 3.2 ms/survey (baseline 3.8 ms — no regression) |
+| EDM IPM dict model (23 grouped terms, interpreter), 100 stations | 7.1 ms/survey |
+
+The dict-model path costs ~2x the native hand-coded MWD path (every term goes
+through the formula interpreter + intermediates) — new functionality, not a
+regression of an existing path; the standard-model hot path is unchanged. The
+lowercase-vocabulary bindings additions to `_call_interpreter` are dict inserts,
+not measurable at this scale.
