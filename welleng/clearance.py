@@ -282,8 +282,11 @@ class Clearance:
         Position is interpolated by **minimum curvature** (SLERP of the unit
         tangents, via ``_interpolate_pos_nev``) — the same wellpath the
         separation rule uses, so the between-station closest approach follows the
-        true arc, not the chord. Covariance and radius are interpolated linearly
-        (the standard approximation; cf. Brooks SPE-116155)."""
+        true arc, not the chord. Covariance and radius are interpolated linearly —
+        adequate between adjacent stations of one well, where the eigenbasis
+        rotation is small (Brooks SPE-116155 gives the exact recipe:
+        eigendecompose, interpolate the rotation and the principal-axis sigmas,
+        reassemble; after Woodburn & Tangyin)."""
         md, pos, cov, rad, survey = curve
         i = int(np.clip(np.searchsorted(md, q, side="right") - 1, 0, len(md) - 2))
         p = _interpolate_pos_nev(survey, float(q - md[i]), i)   # min-curvature

@@ -21,6 +21,8 @@ from welleng.hierarchy import (
 )
 from welleng.survey import Survey, SurveyHeader
 
+MAG_REF = dict(b_total=50_000., dip=72., declination=-2.)
+
 
 def _chain():
     d = Datum(name="PlatformA-RKB")
@@ -85,7 +87,7 @@ def _net(pin_a="v1", pin_b="v1"):
         md = np.linspace(0, 2400, 40)
         inc = np.clip(np.linspace(0, 80, 40), 0, 60)
         azi = (np.linspace(0, 90, 40) + shift) % 360
-        return Survey(md=md, inc=inc, azi=azi, header=SurveyHeader(),
+        return Survey(md=md, inc=inc, azi=azi, header=SurveyHeader(**MAG_REF),
                       error_model="ISCWSA MWD Rev5.11")
 
     net = WellNetwork()
