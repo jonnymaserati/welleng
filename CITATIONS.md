@@ -81,8 +81,12 @@ If your work relies on a specific method, please **also** cite the relevant pape
   reference-EOS backend for kick-tolerance gas-property validation.
 - **SymPy** — Meurer, A., et al. (2017). *SymPy: symbolic computing in Python.*
   PeerJ Computer Science 3:e103. [doi:10.7717/peerj-cs.103](https://doi.org/10.7717/peerj-cs.103)
-- **VTK / vedo**, **NetworkX**, **utm**, **magnetic_field_calculator**,
+- **VTK / vedo**, **NetworkX**, **utm**,
   **tabulate** — acknowledged by name.
+- **BGS Geomagnetism web service** — geomagnetic reference values (WMM /
+  IGRF) are looked up from the British Geological Survey's
+  [geomagnetic model web service](https://geomag.bgs.ac.uk/web_service/GMModels/help/general)
+  (`welleng.geomag`).
 
 ## Methods & standards welleng implements
 

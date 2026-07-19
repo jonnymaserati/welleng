@@ -9,6 +9,7 @@ correct) covariance output. ``"ISCWSA MWD Rev4"`` is unchanged.
 """
 
 import os
+import re
 import warnings
 
 import numpy as np
@@ -199,10 +200,46 @@ class ErrorModel():
                 model = k
                 break
 
+        self._validate_mag_reference(model)
+
         self.errors = ToolError(
             error=self,
             model=model
         )
+
+    def _validate_mag_reference(self, model: str) -> None:
+        """Magnetic models need a real geomagnetic reference — refuse package
+        defaults.
+
+        Magnetic-compass models' weighting functions consume the header's
+        ``b_total``/``dip``/``declination``; gyro models (OWSG ``A<nn>G*``,
+        the GYRO short names, the SPE-90408 example model) do not. Those
+        values must be either user-provided or looked up for a user-provided
+        location — the header's fallback values (or a lookup at the fallback
+        location) are placeholders, not a geomagnetic reference, and would
+        silently bias every magnetic term. Unclassified models are treated
+        as magnetic (the strict direction). See ``SurveyHeader.mag_source``.
+        """
+        is_gyro = (
+            re.match(r"^A\d+G", model) is not None
+            or 'GYRO' in self.error_model.upper()
+            or '90408' in model
+        )
+        if is_gyro:
+            return
+        sources = getattr(self.survey.header, 'mag_source', None)
+        if sources is None:     # header predates provenance tracking
+            return
+        bad = sorted(f for f, s in sources.items() if s == 'default')
+        if bad:
+            raise ValueError(
+                f"error_model {self.error_model!r} is a magnetic model but "
+                f"the survey header's {', '.join(bad)} came from package "
+                "defaults. Provide b_total, dip and declination on the "
+                "SurveyHeader, or provide the well's latitude/longitude "
+                "(+ survey_date) so they can be looked up from the BGS "
+                "geomagnetic web service."
+            )
 
     def _e_NEV(self, e_DIA):
         D, I, A = e_DIA.T

@@ -17,7 +17,7 @@ WELL_DATA = "tests/test_data/clearance_iscwsa_well_data.json"
 
 
 def _header():
-    sh = SurveyHeader()
+    sh = SurveyHeader(b_total=50_000., dip=72., declination=-2.)
     sh.azi_reference = "grid"
     sh.b_total = 50000.0
     sh.dip = 70.0
@@ -257,7 +257,7 @@ def _load_wells():
     wells = json.load(open(WELL_DATA))["wells"]
 
     def mk_header(h):
-        sh = SurveyHeader()
+        sh = SurveyHeader(b_total=50_000., dip=72., declination=-2.)
         for k, v in h.items():
             if k != "name":
                 setattr(sh, k, v)
