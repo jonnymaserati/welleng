@@ -349,22 +349,25 @@ class SurveyHeader:
         G: float (default: 9.80665)
             The gravitational field strength in m/s^2.
         b_total: float (default: None)
-            The gravitation field strength in nT. If left default, then
-            the value is calculated from the longitude, latitude, altitude
-            and survey_data properties using the magnetic_field_calculator.
+            The total magnetic field strength in nT. If left default, the
+            value is looked up from the BGS geomagnetic web service
+            (``welleng.geomag``) using the longitude, latitude, altitude
+            and survey_date properties — a real latitude/longitude must be
+            provided for the result to count as a valid reference (see
+            ``mag_source``).
         earth_rate: float (default: 0.26249751949994715)
             The rate of rotation of the earth in radians per hour.
         noise_reduction_factor: float (default: 1.0)
             A fiddle factor for random gyro noise.
         dip: float (default: None)
             The dip (inclination) of the magnetic field relative to the
-            earth's horizontal. If left default, then the value is
-            calculated using the magnetic_field_calculator. The unit (deg
-            of rad) is determined by the deg property.
+            earth's horizontal. If left default, the value is looked up
+            from the BGS geomagnetic web service (``welleng.geomag``). The
+            unit (deg or rad) is determined by the deg property.
         declination: float (default: None)
             The angle between true north and magnetic north at the well
-            location. If left default, then the value is calculated
-            using the magnetic_field_calculator.
+            location. If left default, the value is looked up from the
+            BGS geomagnetic web service (``welleng.geomag``).
         convergence: float (default: 0)
             The angle of convergence between the projection meridian and
             the line from true north through the location of the well.

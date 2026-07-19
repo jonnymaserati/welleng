@@ -237,8 +237,8 @@ class ErrorModel():
                 f"the survey header's {', '.join(bad)} came from package "
                 "defaults. Provide b_total, dip and declination on the "
                 "SurveyHeader, or provide the well's latitude/longitude "
-                "(+ survey_date) so they can be looked up (requires the "
-                "optional 'magnetic_field_calculator' package)."
+                "(+ survey_date) so they can be looked up from the BGS "
+                "geomagnetic web service."
             )
 
     def _e_NEV(self, e_DIA):
