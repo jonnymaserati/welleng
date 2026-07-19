@@ -997,8 +997,9 @@ class WellNetwork:
                 "azi": list(np.asarray(getattr(s, f"azi_{azi_ref}_rad")).tolist()),
                 "azi_reference": azi_ref,
                 "header": {k: v for k, v in vars(hdr).items()
-                           if isinstance(v, (str, int, float, bool,
-                                             type(None)))} if hdr else None,
+                           if not k.startswith("_")
+                           and isinstance(v, (str, int, float, bool,
+                                              type(None)))} if hdr else None,
                 "start_nev": list(np.asarray(s.start_nev).tolist()),
                 "error_model": getattr(getattr(s, "header", None), "error_model", None),
             }

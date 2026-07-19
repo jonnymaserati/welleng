@@ -22,10 +22,16 @@ Requirements: pip install welleng[easy]
 import welleng as we
 
 # create a sparse survey with only 4 stations
+# magnetic error models need a real geomagnetic reference: provide
+# b_total/dip/declination explicitly, or give the well's latitude/longitude
+# (+ survey_date) so they can be looked up
 s_ref = we.survey.Survey(
     md=[0., 1000., 2000., 5000.],
     inc=[0., 0., 30., 90.],
     azi=[0., 10., 20., 30.],
+    header=we.survey.SurveyHeader(
+        b_total=50_800., dip=72., declination=-1.5
+    ),
     error_model='ISCWSA MWD Rev4'
 )
 
