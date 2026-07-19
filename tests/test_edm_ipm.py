@@ -172,6 +172,23 @@ def test_all_volve_tools_run(ipm):
     assert not failures, failures
 
 
+def test_dict_models_respect_the_mag_reference_gate(ipm):
+    """A magnetic IPM dict refuses a default-reference header (the 0.21 gate);
+    a gyro IPM dict is exempt — classification from metadata.tool_type."""
+    bare = we.survey.SurveyHeader()      # no mag data, no location
+    mwd = ipm.error_model("Magnetic, std, non-mag")
+    with pytest.raises(ValueError, match="magnetic model"):
+        we.survey.Survey(
+            md=[0., 500., 1000.], inc=[0., 30., 60.], azi=[45.] * 3,
+            header=bare, error_model=mwd,
+        ).err
+    gyro = ipm.error_model("Wellbore Surveyor, stat")
+    we.survey.Survey(     # bare header: no lookup fires, gyro is exempt
+        md=[0., 500., 1000.], inc=[0., 30., 60.], azi=[45.] * 3,
+        header=we.survey.SurveyHeader(), error_model=gyro,
+    ).err
+
+
 def test_dict_model_equivalent_via_error_model_class(ipm):
     model = ipm.error_model("e3rtk")
     s = _survey(model)
