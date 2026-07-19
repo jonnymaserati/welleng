@@ -56,7 +56,7 @@ def test_mincurve(decimals=2):
                 survey.get('E'), survey.get('N'), survey.get('TVD')
             ]).T, decimals)
         ), "Unexpected position."
-    
+
     pass
 
 

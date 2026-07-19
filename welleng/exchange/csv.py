@@ -1,6 +1,3 @@
-import numpy as np
-from scipy.optimize import minimize
-from ..version import __version__
 from ..survey import export_csv as x_csv
 
 
