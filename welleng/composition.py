@@ -547,8 +547,19 @@ class SurveyComposition:
             md = np.append(md, nxt.md[1])
             inc = np.append(inc, nxt.inc_rad[1])
             azi = np.append(azi, nxt.azi_grid_rad[1])
+        header = groups[0].header
+        if attr in ("cov_nev_systematic", "cov_nev_well") and k > 0:
+            # A severed run's own systematic/well realisations act on the
+            # depth measured BY THAT RUN. COMPASS-formula terms weighted by
+            # ``tmd`` (e.g. a dsf depth-scale error) must see run-relative
+            # depth — depth-from-surface transferred at the tie, so the new
+            # realisation carries none of it. (Named ISCWSA models bind
+            # ``MD`` and are unaffected.)
+            import copy
+            header = copy.copy(header)
+            header._tmd_datum = float(groups[0].md[0])
         run = Survey(
-            md=md, inc=inc, azi=azi, deg=False, header=groups[0].header,
+            md=md, inc=inc, azi=azi, deg=False, header=header,
             error_model=groups[0].error_model, start_nev=start_nev,
         )
         return getattr(run, attr)[:n_real]

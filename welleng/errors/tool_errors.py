@@ -469,7 +469,15 @@ class ToolError:
         # feet-internal mtf conversion is identity in SI evaluation).
         bindings.update({
             "inc": inc, "azm": azm, "azt": azt, "azi": azg,
-            "tmd": md, "dmd": md - _prev(md),
+            # tmd may carry a run datum: a survey leg computed as its own
+            # severed run (composition tie) measures depth only over ITS OWN
+            # interval — its depth-scale realisation acts on run-relative
+            # depth, not depth-from-surface (the tally transfers at the tie).
+            # Default datum 0.0 = absolute (standalone surveys unchanged).
+            "tmd": md - float(
+                getattr(survey.header, "_tmd_datum", 0.0) or 0.0
+            ),
+            "dmd": md - _prev(md),
             "tvd": bindings["TVD"],
             "gtot": bindings["Gfield"], "mtot": bindings["BField"],
             "dip": bindings["Dip"], "lat": bindings["Latitude"],
