@@ -315,3 +315,40 @@ forced-eigh reference (max abs err 1.8e-15, +inf clear-direction mask identical)
 the sigma_pa == 0 fallback preserves the degenerate +inf semantics. The remaining
 clearance lever (the O(n^2) broadphase + the IscwsaClearance per-station scipy
 closest-point search) is tracked separately.
+## 2026-07-19 · `feat/iscwsa-analytic-closest-point` · Python 3.12, dev machine
+
+IscwsaClearance found the closest point on the offset well per reference station
+by a scipy Powell search over MD (two segments each), re-interpolating the
+min-curvature arc many times -- ~85% of the ~5 s/pair path at N=2000. A
+min-curvature segment is a planar circular arc, so the closest point is
+closed-form (`_closest_x_on_arc`): maximise (Q-C)·(sin th * t0 - cos th * b) over
+the arc, th* = atan2(qa, -qb) with an explicit endpoint pick when the optimum is
+off-arc (a naive clamp lands on the wrong end when it wraps past +/-pi).
+
+| N (station pair) | scipy (old) | analytic (new) | speedup |
+|---|---|---|---|
+| 2,000 (minimize_sf=False) | 5310 ms | **974 ms** | **5.5×** |
+| 2,000 (minimize_sf=True)  | 5337 ms | **972 ms** | 5.5× |
+| 3-case ISCWSA-like battery | 1180 ms | 367 ms | 3.2× |
+
+Correctness: the ISCWSA reference-value validation (tests/test_clearance_iscwsa,
+all 10 ACR wells, both minimize_sf, incl. the datum-shifted well 10) passes
+unchanged; the analytic point is the true minimum so its achieved distance is
+never worse than scipy's (which under-converges on flat minima).
+
+Two subtleties that had to be right (pinned in tests/test_clearance_closest_point):
+- FRAME: build the arc in the local (n, e, tvd) frame that `_get_nevs` /
+  `_interpolate_pos_nev` use -- NOT `pos_nev`/`vec_nev`, which the header transform
+  datum/grid-shifts (they coincide only for a default header; well 10's `pos_nev`
+  tvd was 900 m off the local tvd).
+- ENDPOINT WRAP: off-arc optima need an explicit f(0) vs f(dogleg) pick.
+
+BOTH inner closest-point searches are now analytic -- `_get_closest_points` AND
+the `get_sf_mins` interpolated-minimum refinement. (An earlier cut left the latter
+on scipy after it "diverged from the ISCWSA reference"; that divergence was the
+SAME pos_nev-vs-local FRAME BUG, not a real difference -- the analytic point is
+the true minimum, so once re-applied in the local frame it matches the reference
+exactly.) Only the OUTER `get_sf_mins` optimisation stays scipy: it minimises the
+*separation factor* over reference MD (dist/EOU with a covariance projection), a
+genuine 1-D optimisation with no clean closed form, and fires only at local SF
+minima. The O(n^2) broadphase remains a separately-tracked lever.
