@@ -906,6 +906,7 @@ class Survey(MinCurve):
         self.cov_nev_random = None
         self.cov_nev_systematic = None
         self.cov_nev_global = None
+        self.cov_nev_well = None
         self.cov_nev_within_pad = None
 
         self._get_errors()
@@ -1148,6 +1149,7 @@ class Survey(MinCurve):
             self.cov_nev_random = self.err.errors.cov_NEVs_random
             self.cov_nev_systematic = self.err.errors.cov_NEVs_systematic
             self.cov_nev_global = self.err.errors.cov_NEVs_global
+            self.cov_nev_well = self.err.errors.cov_NEVs_well
             self.cov_nev_within_pad = self.err.errors.cov_NEVs_within_pad
         else:
             if self.cov_nev is not None and self.cov_hla is None:
