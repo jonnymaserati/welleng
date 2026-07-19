@@ -501,7 +501,7 @@ def analytical_kick_tolerance(
     }
 
     # Open-hole capacity WITHOUT a full march (was ~5 s of thorough marches per call;
-    # welleng-api perf regression). The bubble is longest at its most-expanded
+    # a downstream perf regression). The bubble is longest at its most-expanded
     # position -- gas top at surface -- so a single-position evaluation there gives the
     # max gas length. This mirrors the migration's per-position calc EXACTLY (same
     # P_rep seed, Boyle expansion, _fill_down and damped fixed point on the gas-top

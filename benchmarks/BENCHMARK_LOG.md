@@ -50,7 +50,7 @@ identity no-op.
 ## 2026-07-18 · `feat/mincurve-phase1` · Python 3.12, dev machine
 
 `MinCurve` construction (it becomes the foundational geometry kernel — Survey
-inherits it, api/designer use it directly, so it must be hyper-performant):
+inherits it, and downstream consumers use it directly, so it must be hyper-performant):
 
 | stations | before | after | speedup |
 |---|---|---|---|
@@ -77,10 +77,9 @@ design curve (methane / Hall-Yarborough, no CoolProp table):
 |---|---|
 | 30-case analytical sweep | **199 ms total (6.6 ms/case)**, 30/30 ok |
 
-This is exactly welleng-api's design-curve builder (30 FP-offset re-solves) that it
-currently hand-rolls app-side with a **3 s** time budget — now ~0.2 s in core, so the
-budget/truncation can go. Serial by design (per TA1 steer: no core multiprocessing;
-the API owns the worker pool). The real amortization for CoolProp mixtures is the
+This is exactly a design-curve builder (30 FP-offset re-solves) that a downstream
+caller would otherwise hand-roll with a **3 s** time budget — now ~0.2 s in core, so the
+budget/truncation can go. Serial by design (no core multiprocessing; the caller owns any worker pool). The real amortization for CoolProp mixtures is the
 **shared `fluid_table`**: the ZTable (~seconds to build) is built ONCE for the batch
 instead of per case — pass a prebuilt `fluid_table` to `batch_analytical_kick_tolerance`
 / `sweep_analytical_kick_tolerance`. Per-case error isolation adds no measurable
@@ -95,7 +94,7 @@ STRONG_FP), 5-call mean:
 |---|---|---|---|
 | `analytical_kick_tolerance` (unconstrained regime) | ~5026 ms | **18.2 ms** | ~276× |
 
-Profile finding (welleng-api regression report): the regime ran a 40-iteration bisect
+Profile finding (from a downstream regression report): the regime ran a 40-iteration bisect
 where **each iteration executed a full `thorough` migration** (`n_steps=100`, all gas-top
 positions) to find the influx whose bubble length fills the open hole. But the bubble is
 longest at a single governing position (gas top at surface), so the detection and the
