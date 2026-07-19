@@ -388,12 +388,14 @@ class SurveyComposition:
         share_systematic[0] = False
         share_random[0] = False
 
-        # 'well' terms (COMPASS tie W — e.g. a depth-scale error): correlated
-        # while the same measurement SYSTEM continues (same tool run), reset
-        # at a tool change — a wireline gyro's depth and an MWD pipe tally
-        # are different realisations. Validated empirically on the Volve
-        # composed wells (chaining across tool changes overstates sigma_V).
-        share_well = list(share_systematic)
+        # 'well' terms (COMPASS tie W): systematic throughout the WELL —
+        # ONE realisation chained across every tie (severed only by an
+        # explicit all_independent campaign break), as the flag says. An
+        # earlier empirical rejection of this rule was an artifact of the
+        # non-telescoping chained evaluation this module used to have; with
+        # the Williamson A-14-exact per-term path the chained form
+        # reproduces the operator-stored covariances.
+        share_well = list(share_global)
 
         glob = self._compose_component(
             "cov_nev_global", share_global, start_nevs
@@ -572,69 +574,82 @@ class SurveyComposition:
     }
 
     def _run_component_per_term(self, attr, k, j, start_nev):
-        """Shared component of a MULTI-MODEL run, chained per error source.
+        """Shared component of a MULTI-MODEL run, chained per error source
+        (Williamson SPE-67616-PA Eq. A-14: one realisation, e-vectors summed
+        linearly across legs, each leg under its OWN model's weights).
 
-        Same-name error sources share ONE physical realisation across the
-        runs (the COMPASS convention — e.g. ``dbh`` in two IFR-referenced
-        MWD runs is the same geomagnetic reference error; ``dsf`` is the
-        same rig depth-scale error), but each run's weighting must be
-        evaluated with that run's OWN model. So, per term name, the
-        cumulative error vector continues across the tie:
+        Implementation note — why full-geometry evaluation. A leg evaluated
+        as a standalone survey zeroes its tie station, which DISCARDS that
+        endpoint's telescoped contribution: for scale-type weights
+        (e.g. depth-scale, ``w ~ tmd``) the two-sided station differentials
+        (Eqs. A-4a/A-4b) cancel at interior stations, so the leg total is an
+        ENDPOINT DIFFERENCE — drop the tie endpoint and every chained leg
+        re-counts the full accumulated magnitude (measured: x2 per leg on a
+        straight well, xN_legs on the composed covariance). So instead each
+        leg's model is evaluated over the FULL run geometry (every station
+        interior, telescoping intact) and the per-station sigma increments
+        are mixed by the station's OWNING leg:
 
-            v_name(station in run g) = sum of run-end vectors of every
-            earlier run carrying the name  +  the in-run cumulative vector
+            v(s) = sum_{k<=s} (sigma_own(k)[k] - sigma_own(k)[k-1])
 
-        and each station's covariance is the sum over names of the outer
-        product of ``v_name`` (independent sources; correlation coefficient
-        one within a source across runs). A source absent from the current
-        run keeps contributing its frozen accumulated vector — a position
-        error, once made, persists. A single-model run degenerates to the
-        existing continuous-survey result.
+        which reduces to the engine's own accumulation when one model owns
+        every station, and gives each tie interval one half from each of its
+        two tools (the physically measured split). Covariance is the sum
+        over source names of the outer product of ``v`` (independent
+        sources; correlation one within a source across legs — Eq. A-14).
 
         Random components never take this path (``share_random`` requires an
         identical model).
         """
         prop = self._ATTR_TO_PROPAGATION[attr]
-        frozen: dict = {}                     # name -> accumulated (3,) vector
-        parts: List[NDArray[np.float64]] = []
-        for gi in range(k, j + 1):
-            g = self._groups[gi]
-            md, inc, azi = g.md, g.inc_rad, g.azi_grid_rad
-            n_g = len(md)
-            # ghost continuation station (see _run_component)
-            if gi + 1 < len(self._groups) and len(self._groups[gi + 1].md) > 1:
-                nxt = self._groups[gi + 1]
-                md = np.append(md, nxt.md[1])
-                inc = np.append(inc, nxt.inc_rad[1])
-                azi = np.append(azi, nxt.azi_grid_rad[1])
+        groups = self._groups[k:j + 1]
+        md = self._stitch_1d([g.md for g in groups])
+        inc = self._stitch_1d([g.inc_rad for g in groups])
+        azi = self._stitch_1d([g.azi_grid_rad for g in groups])
+        n_real = len(md)
+        # ghost continuation station (see _run_component)
+        if j + 1 < len(self._groups) and len(self._groups[j + 1].md) > 1:
+            nxt = self._groups[j + 1]
+            md = np.append(md, nxt.md[1])
+            inc = np.append(inc, nxt.inc_rad[1])
+            azi = np.append(azi, nxt.azi_grid_rad[1])
+
+        # owner[s] = index into `groups` of the leg that measured station s
+        # (the tie station belongs to the EARLIER leg; its following interval
+        # is split between the two tools by the two-sided differentials).
+        owner = np.zeros(len(md), dtype=int)
+        pos = len(groups[0].md)
+        for gi in range(1, len(groups)):
+            n_g = len(groups[gi].md)
+            owner[pos:pos + n_g - 1] = gi
+            pos += n_g - 1
+        owner[pos:] = len(groups) - 1          # ghost rides the last leg
+
+        # per-model sigma profiles over the full geometry, per term name
+        sigmas: List[dict] = []
+        for g in groups:
             run = Survey(
                 md=md, inc=inc, azi=azi, deg=False, header=g.header,
                 error_model=g.error_model, start_nev=start_nev,
             )
-            errors = run.err.errors.errors
-            cov = np.zeros((n_g, 3, 3))
-            names_here = set()
-            for name, term in errors.items():
-                if term.propagation != prop:
-                    continue
-                names_here.add(name)
-                v = np.asarray(term.sigma_e_NEV[:n_g], dtype=float)
-                base = frozen.get(name)
-                if base is not None:
-                    v = v + base[None, :]
-                cov += v[:, :, None] * v[:, None, :]
-            for name, base in frozen.items():
-                if name not in names_here:
-                    cov += np.outer(base, base)[None]
-            for name in names_here:
-                end = np.asarray(
-                    errors[name].sigma_e_NEV[n_g - 1], dtype=float
-                )
-                frozen[name] = frozen.get(name, 0.0) + end
-            parts.append(cov)
-        return np.concatenate(
-            [parts[0]] + [p[1:] for p in parts[1:]], axis=0
-        )
+            sigmas.append({
+                name: np.asarray(term.sigma_e_NEV, dtype=float)
+                for name, term in run.err.errors.errors.items()
+                if term.propagation == prop
+            })
+
+        names = sorted({n for s in sigmas for n in s})
+        cov = np.zeros((n_real, 3, 3))
+        zero = np.zeros((len(md), 3))
+        for name in names:
+            profiles = [s.get(name, zero) for s in sigmas]
+            # mixed per-station increments, chained (one realisation)
+            v = np.zeros((n_real, 3))
+            for s_i in range(1, n_real):
+                sig_own = profiles[owner[s_i]]
+                v[s_i] = v[s_i - 1] + (sig_own[s_i] - sig_own[s_i - 1])
+            cov += v[:, :, None] * v[:, None, :]
+        return cov
 
     # ------------------------------------------------------------------ #
     # stitching helpers (drop the duplicate tie station of each next group)

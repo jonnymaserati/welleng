@@ -349,3 +349,62 @@ def test_section_from_survey_object():
     comp = SurveyComposition([SurveySection(survey=s)]).survey()
     single = Survey(md=md, inc=inc, azi=azi, header=sh, error_model=EM)
     assert np.allclose(comp.cov_nev, single.cov_nev, atol=1e-9)
+
+
+def test_chained_global_component_is_telescoping_exact():
+    """Williamson SPE-67616-PA Eq. A-14: a global source chained across legs
+    must equal the SAME source evaluated over one continuous survey — the
+    two-sided station differentials telescope, so a leg-wise evaluation that
+    zeroes its tie station over-counts (historically ~x2 per leg for
+    depth-scale weights). Split one synthetic tool into three legs with
+    distinct model objects (forcing the per-term chained path) and require
+    exact agreement with the continuous survey.
+    """
+    import warnings
+
+    import numpy as np
+
+    import welleng as we
+    from welleng.composition import SurveyComposition, SurveySection
+
+    def toy(name):
+        return {
+            "metadata": {"model_id": name, "short_name": name,
+                         "tool_type": "MWD"},
+            "parameters": {"inc_min": 0, "inc_max": 180},
+            "edm_intermediates": [],
+            "terms": [
+                {"name": "dsf", "value": 6e-4, "units": "-",
+                 "propagation_mode": "Global", "depth_formula": "tmd",
+                 "inclination_formula": "0", "azimuth_formula": "0",
+                 "north_singularity": None, "east_singularity": None,
+                 "vertical_singularity": None},
+                {"name": "dstb", "value": 2.5e-7, "units": "1/m",
+                 "propagation_mode": "Global", "depth_formula": "tmd*tvd",
+                 "inclination_formula": "0", "azimuth_formula": "0",
+                 "north_singularity": None, "east_singularity": None,
+                 "vertical_singularity": None},
+            ],
+        }
+
+    sh = we.survey.SurveyHeader(b_total=50000., dip=72., declination=-2.)
+    md = np.arange(0., 3001., 100.)
+    inc = np.full_like(md, 60.)
+    inc[0] = 0
+    azi = np.full_like(md, 90.)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        ref = we.survey.Survey(
+            md=md, inc=inc, azi=azi, header=sh, error_model=toy("T")
+        ).err.errors.cov_NEVs
+        com = SurveyComposition(sections=[
+            SurveySection(md=md[:11], inc=inc[:11], azi=azi[:11], header=sh,
+                          error_model=toy("A"), tool_id="a"),
+            SurveySection(md=md[10:21], inc=inc[10:21], azi=azi[10:21],
+                          header=sh, error_model=toy("B"), tool_id="b",
+                          share_mode="globals_shared"),
+            SurveySection(md=md[20:], inc=inc[20:], azi=azi[20:], header=sh,
+                          error_model=toy("C"), tool_id="c",
+                          share_mode="globals_shared"),
+        ]).survey().cov_nev
+    assert np.allclose(com, ref, atol=1e-10)
