@@ -6,7 +6,7 @@ REFERENCE = {
     'easting': 588319.02, 'latitude': 52.077583926214494,
     'longitude': 4.288694821453205, 'convergence': 1.0166440347220762,
     'scale_factor': 0.9996957469340422, 'magnetic_field_intensity': 49421,
-    'declination': 2.356, 'dip': -67.224, 'date': '2025-06-01',
+    'declination': 2.356, 'dip': 67.224, 'date': '2025-06-01',
     'srs': 'EPSG:23031',
     'wgs84-utm31': [588225.162, 5770360.512]
 }
@@ -18,15 +18,15 @@ def test_known_location(monkeypatch):
     # Always runs -- no live BGS network call needed. Stub the BGS client to
     # return the known response for this location/date, so we deterministically
     # validate welleng's own code: the projection factors (real pyproj) and the
-    # magnetic-field processing (dip sign from the "down" units, nested-field
-    # extraction). The external service's values are not welleng's to test.
+    # magnetic-field processing (dip positive-DOWN, the ISCWSA/BGS
+    # convention; nested-field extraction). The external service's values
+    # are not welleng's to test.
     def _stub_lookup(**kwargs):
         return {"field-value": {
             "total-intensity": {"value": REFERENCE["magnetic_field_intensity"]},
             "declination": {"value": REFERENCE["declination"]},
-            # welleng negates a "down" inclination -> dip; feed +intensity so
-            # the sign handling is what's under test.
-            "inclination": {"value": -REFERENCE["dip"], "units": "deg (down)"},
+            # dip stored positive-down, straight from the service
+            "inclination": {"value": REFERENCE["dip"], "units": "deg (down)"},
         }}
     monkeypatch.setattr(we.survey, "lookup_field", _stub_lookup)
 
