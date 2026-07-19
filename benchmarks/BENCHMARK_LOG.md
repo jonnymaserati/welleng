@@ -381,3 +381,23 @@ exactly.) Only the OUTER `get_sf_mins` optimisation stays scipy: it minimises th
 *separation factor* over reference MD (dist/EOU with a covariance projection), a
 genuine 1-D optimisation with no clean closed form, and fires only at local SF
 minima. The O(n^2) broadphase remains a separately-tracked lever.
+
+## 2026-07-19 · `feat/survey-composition-0.19` · Python 3.12, dev machine
+
+`SurveyComposition` — tie a wellbore's ordered survey sections (per-section
+tool/error model) into one Survey with per-component-correct covariance carry
+(systematic stays correlated within a tool run, restarts at a tool change;
+global geomag carries per share-mode; random correlates per error model).
+
+| operation | result |
+|---|---|
+| compose 3-tool / 202-station wellbore | **16.4 ms** |
+| single-survey error model, same geometry | 3.8 ms |
+
+~4x a single survey — the compose builds each error component as its correlated
+run (multiple Survey+error evaluations; model-definition parses are cached from
+the 0.19 cache). Absolute cost is interactive-fine for the single-wellbore path;
+errors stay lazy at the Survey level. Structural validation: same-tool sections
+compose EXACTLY equal to the single continuous survey (the tie/leg formulation
+of the ISCWSA error-model definition, §4.7), tool-change carry + systematic
+independence + sidetrack ties pinned in tests/test_survey_composition.py (16).
