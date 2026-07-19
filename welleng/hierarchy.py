@@ -37,13 +37,55 @@ between wells of common ancestry.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterator, Optional
 
 
 # --------------------------------------------------------------------------- #
 # master-data hierarchy (OSDU-aligned; exact kind/field names wired separately)
 # --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class DatumRealisation:
+    """One survey-in of a datum's position — a link in the datum's document
+    chain.
+
+    A platform / wellhead location is not a fact, it is a *measurement*, and
+    it gets re-measured: an installed platform is often re-surveyed years
+    later with better technology, moving the reference every well on it hangs
+    off. The industry habit of silently overwriting the wellhead coordinates
+    destroys the audit trail and mixes wells computed under different origin
+    realisations. A ``DatumRealisation`` is one such measurement, kept
+    forever: what was measured, when, by which source document, how far it
+    moved the datum, and how well it is now known.
+
+    Parameters
+    ----------
+    id : str
+        Unique realisation identifier (e.g. ``"D1-v2"``).
+    date : str or None, default None
+        Survey date, ``YYYY-MM-DD``.
+    document : str or None, default None
+        Reference to the source document (survey report number / URI) — the
+        provenance link of the chain.
+    shift : tuple of float, default (0, 0, 0)
+        Position shift ``(dN, dE, dV)`` in metres FROM the superseded
+        realisation to this one (the original realisation carries zeros).
+    radial_error : float, default 0.0
+        1-sigma horizontal position uncertainty of THIS realisation, metres.
+        A re-survey usually *reduces* this — the new realisation's value
+        replaces (not adds to) the old one for absolute-positioning use.
+    supersedes : str or None, default None
+        The ``id`` of the realisation this one supersedes; ``None`` for the
+        original. Enforced append-only by :meth:`Datum.add_realisation`.
+    """
+    id: str
+    date: Optional[str] = None
+    document: Optional[str] = None
+    shift: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    radial_error: float = 0.0
+    supersedes: Optional[str] = None
+
+
 @dataclass
 class Datum:
     """A local spatial / depth datum (e.g. a platform RKB / wellhead reference).
@@ -63,16 +105,105 @@ class Datum:
     reference : str, default "MSL"
         The elevation reference frame — one of ``"MSL"``, ``"RKB"``, ``"RT"``,
         ``"wellhead"``, etc.
+    realisations : list of DatumRealisation, optional
+        The datum's position-survey history, oldest first — an APPEND-ONLY
+        document chain (see :class:`DatumRealisation`). Manage it through
+        :meth:`add_realisation`; never overwrite an entry.
 
     Notes
     -----
     Because the datum is shared by every wellbore on a platform, the datum's
     own position error is a *common* systematic term between those wellbores
     and therefore cancels in relative (wellbore-to-wellbore) uncertainty use.
+    **This is what makes a datum re-survey benign for on-platform work**: all
+    wells on the platform move together under a datum shift, so their
+    relative positions and relative covariance are invariant. Only absolute
+    positioning — and relative work against wells NOT on this datum — changes.
+
+    A wellbore records which realisation its positions were computed under via
+    ``Wellbore.datum_realisation``; :meth:`shift_between` composes the chain's
+    shifts so positions quoted under an old realisation can be re-referenced,
+    and mixed-realisation comparisons become detectable instead of silent.
     """
     name: str
     elevation: float = 0.0                 # above MSL (or the field reference)
     reference: str = "MSL"                 # MSL | RKB | RT | wellhead | ...
+    realisations: list[DatumRealisation] = field(default_factory=list)
+
+    # -- the document chain ------------------------------------------------- #
+    def add_realisation(self, realisation: DatumRealisation) -> DatumRealisation:
+        """Append a new position realisation to the chain (append-only).
+
+        The first realisation may carry ``supersedes=None``; every subsequent
+        one must supersede the current head, so the chain stays a single
+        unbroken document trail.
+
+        Raises
+        ------
+        ValueError
+            If ``realisation.supersedes`` does not reference the current head,
+            or its ``id`` already exists in the chain.
+        """
+        if any(r.id == realisation.id for r in self.realisations):
+            raise ValueError(
+                f"datum realisation id {realisation.id!r} already in the chain"
+            )
+        head = self.realisations[-1].id if self.realisations else None
+        if realisation.supersedes != head:
+            raise ValueError(
+                f"realisation {realisation.id!r} must supersede the current "
+                f"head {head!r}, got supersedes={realisation.supersedes!r} "
+                "(the chain is append-only; do not rewrite history)"
+            )
+        self.realisations.append(realisation)
+        return realisation
+
+    @property
+    def current_realisation(self) -> Optional[DatumRealisation]:
+        """The head (most recent) realisation, or ``None`` if no chain."""
+        return self.realisations[-1] if self.realisations else None
+
+    def realisation(self, id_: str) -> DatumRealisation:
+        """Return the realisation with ``id_``.
+
+        Raises
+        ------
+        KeyError
+            If the id is not in the chain.
+        """
+        for r in self.realisations:
+            if r.id == id_:
+                return r
+        raise KeyError(f"no datum realisation {id_!r}")
+
+    def shift_between(
+        self, from_id: str, to_id: str
+    ) -> tuple[float, float, float]:
+        """Composed position shift ``(dN, dE, dV)`` from one realisation's
+        frame to another's, in metres.
+
+        Walks the chain: consecutive shifts add; walking backwards negates.
+        Add the result to a position quoted under ``from_id`` to express it
+        under ``to_id``.
+        """
+        ids = [r.id for r in self.realisations]
+        i, j = ids.index(from_id), ids.index(to_id)
+        lo, hi = sorted((i, j))
+        # sum of shifts of realisations (lo, hi] — each realisation's shift is
+        # FROM its predecessor, so the walk lo -> hi accumulates them.
+        dn = de = dv = 0.0
+        for r in self.realisations[lo + 1:hi + 1]:
+            dn += r.shift[0]
+            de += r.shift[1]
+            dv += r.shift[2]
+        if i > j:                       # walking backwards down the chain
+            dn, de, dv = -dn, -de, -dv
+        return (dn, de, dv)
+
+    def provenance(self) -> list[tuple[str, Optional[str], Optional[str]]]:
+        """The document chain as ``[(id, date, document), ...]``, oldest
+        first — the audit trail of every position survey of this datum."""
+        return [(r.id, r.date, r.document) for r in self.realisations]
 
 
 @dataclass
@@ -255,6 +386,9 @@ class Wellbore(_Node):
     tool_id: Optional[str] = None           # same tool RUN -> shared tool systematic
     geomag_model: Optional[str] = None      # geomag model/IFR/IIFR reference used
     # (datum + grid convergence come from the parent Well/Site; also shared keys)
+    datum_realisation: Optional[str] = None  # which DatumRealisation (id) this
+    #   wellbore's positions were computed under -- pins the origin frame so a
+    #   later datum re-survey never silently mixes frames (see Datum)
 
 
 # --------------------------------------------------------------------------- #
@@ -637,8 +771,26 @@ class WellNetwork:
         from the error engine.
         """
         import numpy as np
-        C_a = self._abs_cov(self.node(a), md_a, error_model)
-        C_b = self._abs_cov(self.node(b), md_b, error_model)
+        # Mixed datum-realisation guard: if both wellbores pin an origin
+        # realisation and they differ, their absolute positions are quoted in
+        # DIFFERENT frames (a datum re-survey happened between them). The
+        # relative covariance itself is frame-invariant, but any absolute
+        # positions being differenced alongside it are not -- warn so the
+        # caller re-references one side (Datum.shift_between) first.
+        wb_a, wb_b = self.node(a), self.node(b)
+        ra = getattr(wb_a, "datum_realisation", None)
+        rb = getattr(wb_b, "datum_realisation", None)
+        if ra is not None and rb is not None and ra != rb:
+            import warnings
+            warnings.warn(
+                f"wellbores {a!r} and {b!r} pin different datum realisations "
+                f"({ra!r} vs {rb!r}): their absolute positions are in "
+                "different origin frames. Re-reference one side with "
+                "Datum.shift_between before differencing positions.",
+                stacklevel=2,
+            )
+        C_a = self._abs_cov(wb_a, md_a, error_model)
+        C_b = self._abs_cov(wb_b, md_b, error_model)
         lca = self.lowest_common_ancestor(a, b)
         if lca is None:                          # no shared ancestry -> independent
             return C_a + C_b
@@ -861,10 +1013,11 @@ class WellNetwork:
             elif isinstance(n, Well):
                 d.update(slot=n.slot, slot_radial_error=n.slot_radial_error,
                          wellhead_depth=n.wellhead_depth,
-                         datum=vars(n.datum) if n.datum else None)
+                         datum=_datum_dict(n.datum))
             elif isinstance(n, Wellbore):
                 d.update(kickoff_md=n.kickoff_md, survey_date=n.survey_date,
                          tool_id=n.tool_id, geomag_model=n.geomag_model,
+                         datum_realisation=n.datum_realisation,
                          survey=_survey_dict(n.survey))
             nodes.append(d)
         return {"welleng_hierarchy_version": 1, "nodes": nodes}
@@ -912,7 +1065,7 @@ class WellNetwork:
                          slot=tuple(d["slot"]) if d.get("slot") else None,
                          slot_radial_error=d.get("slot_radial_error", 0.0),
                          wellhead_depth=d.get("wellhead_depth"),
-                         datum=Datum(**dm) if dm else None)
+                         datum=_datum_from_dict(dm))
             elif kind == "Wellbore":
                 sv = d.get("survey")
                 survey = None
@@ -929,6 +1082,7 @@ class WellNetwork:
                              survey_date=d.get("survey_date"),
                              tool_id=d.get("tool_id"),
                              geomag_model=d.get("geomag_model"),
+                             datum_realisation=d.get("datum_realisation"),
                              survey=survey)
             else:
                 n = _classes[kind](id=d["id"], name=d["name"], parent=parent)
@@ -997,3 +1151,36 @@ class WellNetwork:
 
     def _parent_id(self, id_: str) -> Optional[str]:
         return self._parents.get(id_)
+
+
+def _datum_dict(datum: Optional[Datum]) -> Optional[dict]:
+    """JSON-safe dict for a :class:`Datum`, realisation chain included."""
+    if datum is None:
+        return None
+    return {
+        "name": datum.name,
+        "elevation": datum.elevation,
+        "reference": datum.reference,
+        "realisations": [
+            {"id": r.id, "date": r.date, "document": r.document,
+             "shift": list(r.shift), "radial_error": r.radial_error,
+             "supersedes": r.supersedes}
+            for r in datum.realisations
+        ],
+    }
+
+
+def _datum_from_dict(dm: Optional[dict]) -> Optional[Datum]:
+    """Rebuild a :class:`Datum` (+ its realisation chain) from a dict."""
+    if not dm:
+        return None
+    datum = Datum(name=dm["name"], elevation=dm.get("elevation", 0.0),
+                  reference=dm.get("reference", "MSL"))
+    for r in dm.get("realisations", []):
+        datum.add_realisation(DatumRealisation(
+            id=r["id"], date=r.get("date"), document=r.get("document"),
+            shift=tuple(r.get("shift", (0.0, 0.0, 0.0))),
+            radial_error=r.get("radial_error", 0.0),
+            supersedes=r.get("supersedes"),
+        ))
+    return datum
