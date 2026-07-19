@@ -1037,6 +1037,16 @@ class Survey(MinCurve):
             self.inc_deg = np.degrees(inc)
             self.azi_grid_deg = np.degrees(azi)
 
+        # Canonicalise the azimuth at vertical stations (inc == 0): azimuth is
+        # undefined there (no toolface has evolved yet), so default it to 0 -- a
+        # clear "vertical / not yet steered" sentinel -- rather than carrying the
+        # arbitrary input azimuth through. inc == 0 => no N/E displacement, so this
+        # never changes geometry; it only makes the stored azimuth meaningful.
+        vertical = self.inc_rad == 0.0
+        if np.any(vertical):
+            self.azi_grid_rad = np.where(vertical, 0.0, self.azi_grid_rad)
+            self.azi_grid_deg = np.where(vertical, 0.0, self.azi_grid_deg)
+
     def get_error(
         self, error_model: str, return_error: bool = False
     ) -> Union[ErrorModel, "Survey"]:

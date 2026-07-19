@@ -32,12 +32,13 @@ populates `self.__dict__`, so subsequent reads are direct); values are identical
 to the eager computation (`test_survey_lazy`), and pickle / deepcopy are safe (a
 `dls` guard prevents firing before geometry is built).
 
-`_get_vertical_section` (~4%) is kept EAGER on purpose: it canonicalises the
-azimuth at vertical stations (azi is undefined when inc==0), which the
-interpolation paths rely on -- deferring it left the raw azimuth and diverged
-`interpolate_mds` vs `interpolate_survey` (caught by the suite; regression-pinned
-in `test_survey_lazy`). It uses only n/e, so it doesn't re-trigger toolface. This
-is the "method model" perf lever -- the big gain B set up.
+`_get_vertical_section` (~4%) is kept EAGER on purpose (it uses only n/e, so it
+doesn't re-trigger the deferred toolface). Separately, the azimuth at vertical
+stations (inc == 0, where azi is undefined) is canonicalised to 0 in
+`_make_angles` -- a clear "vertical / not yet steered" sentinel rather than the
+arbitrary input azimuth; inc == 0 means no N/E displacement, so it never changes
+geometry. Regression-pinned in `test_survey_lazy`. This is the "method model"
+perf lever -- the big gain B set up.
 
 ## 2026-07-18 · `feat/datum-header-transform` · Python 3.12, dev machine
 
