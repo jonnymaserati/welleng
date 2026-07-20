@@ -415,6 +415,22 @@ def convert_sheet(
             term["azimuth_formula"] = f"-({azi})" if code == "XYM3E" else azi
         terms.append(term)
 
+    # A sheet may list the Codling XCLA/XCLH terms without carrying an
+    # "XCL Tortuosity" cell (the OWSG INC-ONLY sheets do exactly this). The
+    # XCL weight formulas bind XCLTortuosity, so a missing value would leave it
+    # unbound. Inject the ISCWSA/OWSG standard default (1 deg / 100 ft) so the
+    # generated model is self-contained and regeneration is stable; flag it as
+    # a DEFAULT (not sheet-sourced) in the warnings/tags for traceability. The
+    # engine carries the same fallback as a last resort (tool_errors).
+    if "XCLTortuosity" not in parameters and any(
+        str(t.get("name", "")).startswith("XCL") for t in terms
+    ):
+        parameters["XCLTortuosity"] = _parse_tortuosity("1 deg / 100 ft")
+        warnings.append(
+            "XCLTortuosity: sheet has XCL terms but no 'XCL Tortuosity' cell; "
+            "defaulted to the ISCWSA standard 1 deg / 100 ft (not sheet-sourced)"
+        )
+
     if warnings:
         metadata["tags"].extend(f"warn:{w}" for w in warnings[:5])
 
