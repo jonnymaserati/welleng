@@ -22,12 +22,14 @@
       "warn:tool_type 'Utility' not in OWSG→ISCWSA map; inferred 'Unknown'",
       "warn:term 'DSFS': unit '-' not in ISCWSA enum ['1/m', 'deg', 'deg/hr', 'deg/nT', 'm', 'm/s2', 'nT', 'rad']",
       "warn:term 'XCLA': unit '-' not in ISCWSA enum ['1/m', 'deg', 'deg/hr', 'deg/nT', 'm', 'm/s2', 'nT', 'rad']",
-      "warn:term 'XCLH': unit '-' not in ISCWSA enum ['1/m', 'deg', 'deg/hr', 'deg/nT', 'm', 'm/s2', 'nT', 'rad']"
+      "warn:term 'XCLH': unit '-' not in ISCWSA enum ['1/m', 'deg', 'deg/hr', 'deg/nT', 'm', 'm/s2', 'nT', 'rad']",
+      "warn:XCLTortuosity: sheet has XCL terms but no 'XCL Tortuosity' cell; defaulted to the ISCWSA standard 1 deg / 100 ft (not sheet-sourced)"
     ]
   },
   "parameters": {
     "inc_min": 0,
-    "inc_max": 5
+    "inc_max": 5,
+    "XCLTortuosity": 0.000572614583987641
   },
   "terms": [
     {
