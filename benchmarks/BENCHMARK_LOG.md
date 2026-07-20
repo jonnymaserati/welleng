@@ -418,3 +418,8 @@ through the formula interpreter + intermediates) — new functionality, not a
 regression of an existing path; the standard-model hot path is unchanged. The
 lowercase-vocabulary bindings additions to `_call_interpreter` are dict inserts,
 not measurable at this scale.
+
+## 2026-07-20 — branch fix/ipm-units-gating (deg.nT unit fix + IPM inc-gating + Rot6Axis model)
+- ISCWSA MWD Rev5.11, 167 stations, 20 reps: **3.6 ms/survey** (in line with prior baseline;
+  the changes add one dict-lookup wrapper per term evaluation and a converter-side key rename —
+  no hot-path regression). Machine: miner5, .venv312.
