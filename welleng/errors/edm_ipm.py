@@ -389,7 +389,13 @@ def ipm_to_error_model(tool: IPMTool) -> dict:
             "vertical_singularity": "0" if has_sing else None,
         }
         if ref.max_inc > ref.min_inc:
-            entry["inc_range"] = [ref.min_inc, ref.max_inc]
+            # COMPASS min_range/max_range: the term is active only within
+            # this inclination window (deg) -- e.g. mutually-exclusive gyro
+            # mode terms. Emit the keys the evaluation engine's per-term
+            # gating reads (window semantics, no carry); outside the window
+            # the term contributes zero.
+            entry["inc_min_deg"] = ref.min_inc
+            entry["inc_max_deg"] = ref.max_inc
         terms.append(entry)
 
     return {
