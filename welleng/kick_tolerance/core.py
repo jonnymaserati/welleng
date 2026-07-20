@@ -147,6 +147,14 @@ class KickInputs:
     fluid: Optional[dict] = None
     kt_threshold: float = 25.0
     inc_shoe: float = 0.0
+    ideal_gas: bool = False
+    # Ideal-gas REFERENCE mode: Z == 1 everywhere and isothermal (the influx-gas
+    # column and expansion use a single temperature). Reproduces a textbook
+    # single-bubble Boyle's-law kick-tolerance hand-calc / spreadsheet exactly,
+    # for cross-checking welleng against ideal-gas references. NOT for design:
+    # it discards real-gas compressibility (Hall-Yarborough / CoolProp), which
+    # is the physically correct default. An explicit Z_s/Z_td/rho_gas_s override
+    # still wins over this flag.
 
     @classmethod
     def from_survey(cls, survey, shoe_md: float, td_md: float, **params):
@@ -219,12 +227,13 @@ def _shoe_gas_pressure(inp: KickInputs, P_td: float) -> float:
     """
     T_s_r = fahrenheit_to_rankine(inp.T_s)
     T_td_r = fahrenheit_to_rankine(inp.T_td)
+    # Ideal-gas reference mode: Z == 1, isothermal (single temperature T_s).
+    t_mean = T_s_r if inp.ideal_gas else 0.5 * (T_td_r + T_s_r)
     interval = inp.D_td - inp.D_lot
     P_shoe = P_td
     for _ in range(64):
         p_mean = 0.5 * (P_td + P_shoe)
-        t_mean = 0.5 * (T_td_r + T_s_r)
-        z_mean = hall_yarborough_z(p_mean, t_mean)
+        z_mean = 1.0 if inp.ideal_gas else hall_yarborough_z(p_mean, t_mean)
         rho_mean = gas_density_ppg(p_mean, t_mean, z_mean)
         P_new = P_td - G_PSI_PER_PPG_FT * rho_mean * interval
         if abs(P_new - P_shoe) < 1e-6:
@@ -256,7 +265,13 @@ def resolve_gas_properties(
     T_s_r = fahrenheit_to_rankine(inp.T_s)
     T_td_r = fahrenheit_to_rankine(inp.T_td)
 
-    if inp.fluid is not None:
+    if inp.ideal_gas:
+        # Ideal-gas reference: Z == 1 everywhere, isothermal (single T_s). An
+        # explicit numeric override still wins.
+        def gas(p_psia, t_r):                          # (Z=1, ideal rho_ppg)
+            return 1.0, gas_density_ppg(p_psia, T_s_r, 1.0)
+        T_td_r = T_s_r                                 # isothermal
+    elif inp.fluid is not None:
         from .gas_z_coolprop import fluid_z_density   # optional CoolProp backend
 
         def gas(p_psia, t_r):                          # (Z, rho_ppg) for the mixture
@@ -300,7 +315,8 @@ def constant_A(inp: KickInputs, P_td: Optional[float] = None) -> float:
     Z_s, Z_td, rho_gas_s = resolve_gas_properties(inp, P_td)
     P_lot_psi = ppg_to_psi(inp.P_lot, inp.D_lot)
     T_s_r = fahrenheit_to_rankine(inp.T_s)
-    T_td_r = fahrenheit_to_rankine(inp.T_td)
+    # Ideal-gas reference mode is isothermal: the T_td/T_s expansion ratio -> 1.
+    T_td_r = T_s_r if inp.ideal_gas else fahrenheit_to_rankine(inp.T_td)
     num = (P_lot_psi - inp.P_apl) * T_td_r * Z_td * inp.V_dpa
     den = G_PSI_PER_PPG_FT * T_s_r * Z_s * (inp.rho_mud - rho_gas_s)
     return (num / den) / cos(radians(inp.inc_shoe))
