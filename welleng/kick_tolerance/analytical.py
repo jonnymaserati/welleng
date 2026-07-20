@@ -222,6 +222,7 @@ def analytical_kick_tolerance(
     geothermal: TempProfileLike = None,
     gas_composition=None,
     fluid_table=None,
+    gas_model: str = "real",
     check_depths: Optional[Sequence[float]] = None,
 ) -> AnalyticalKickTolerance:
     """Max bottom-hole influx tolerable over the whole migration, by breakpoints.
@@ -268,11 +269,26 @@ def analytical_kick_tolerance(
                        slack. If you need a strictly fracture-only check, filter on the
                        returned binding mechanism.
     """
+    if gas_model not in ("real", "ideal"):
+        raise ValueError(f"gas_model must be 'real' or 'ideal', got {gas_model!r}")
     ss = sorted(sections, key=lambda s: s.top_tvd)
     bottom_tvd = max(s.bottom_tvd for s in ss)
+    # Ideal-gas REFERENCE mode: Z == 1 everywhere and isothermal. Reproduces a
+    # textbook single-bubble Boyle's-law result for cross-checking welleng
+    # against ideal-gas references; NOT for design (discards real-gas
+    # compressibility). Overrides any gas_composition/fluid_table.
+    if gas_model == "ideal":
+        if gas_composition is not None or fluid_table is not None:
+            raise ValueError("gas_model='ideal' cannot be combined with a "
+                             "real-gas composition / fluid_table")
+        P_bh0 = gas_bh_state[0] if gas_bh_state[0] is not None else bhp_psi
+        T_bh0 = gas_bh_state[1]
+        gas_bh_state = (P_bh0, T_bh0, 1.0, gas_bh_state[3])   # Z_bh := 1
+        temp_profile = ([0.0, bottom_tvd], [T_bh0, T_bh0])     # isothermal
+        geothermal = None
     # Real-gas Z provider (CoolProp) when a composition / table is given, else H-Y.
-    z_fn = None
-    if fluid_table is not None or gas_composition is not None:
+    z_fn = (lambda p, t: 1.0) if gas_model == "ideal" else None
+    if gas_model == "real" and (fluid_table is not None or gas_composition is not None):
         table = fluid_table
         if table is None:
             from .gas_z_coolprop import ZTable
