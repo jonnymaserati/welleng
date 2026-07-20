@@ -223,10 +223,20 @@ class ErrorModel():
 
         self._validate_mag_reference(model)
 
-        self.errors = ToolError(
-            error=self,
-            model=model
-        )
+        try:
+            self.errors = ToolError(
+                error=self,
+                model=model
+            )
+        except FileNotFoundError:
+            # JSON-only floating-rig variants share their base model's OWSG
+            # prefix (e.g. GYRO-MWD_Fl.json carries model_id 'A019Gb'), so
+            # the index key 'A019Gb_Fl' resolves no file. The JSON walk
+            # matches metadata.short_name, so retry with the Short Name.
+            self.errors = ToolError(
+                error=self,
+                model=self.error_model
+            )
 
     def _validate_mag_reference(self, model) -> None:
         """Magnetic models need a real geomagnetic reference — refuse package

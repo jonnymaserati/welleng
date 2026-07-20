@@ -307,13 +307,12 @@ class ToolError:
                 # Fallback: the ISCWSA/OWSG default tortuosity, 1 deg/100 ft.
                 self.tortuosity = (np.radians(1.) / 100) * 3.281
         else:
-            self.tortuosity = None
-
-        # if model == "iscwsa_mwd_rev5":
-        # if model == "ISCWSA MWD Rev5":
-        # assert self.tortuosity is not None, (
-        #     "No default tortuosity defined in model header"
-        # )
+            # No tortuosity in the model header. Models carrying XCL terms
+            # (SPE 187249 XCLA/XCLH) need one; the OWSG INC-ONLY sheets omit
+            # the cell while still listing the terms, which crashed here.
+            # Fall back to the ISCWSA/OWSG default (1 deg / 100 ft) instead
+            # of None -- models without XCL terms never read it.
+            self.tortuosity = (np.radians(1.) / 100) * 3.281
 
         if "Inclination Range Max" in self.em['header'].keys():
             value = np.radians(float(
