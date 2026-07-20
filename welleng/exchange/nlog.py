@@ -219,7 +219,8 @@ class NLOGClient:
         WELLBORE / NITG_NR / UWI and carries no borehole id) and the
         API (which keys on the numeric id in the map-viewer URL).
         """
-        url = f"{BASE}/nlog-mapviewer/rest/search/suggest/brh/{urllib.parse.quote(query)}"
+        url = (f"{BASE}/nlog-mapviewer/rest/search/suggest/brh/"
+               f"{urllib.parse.quote(query)}")
         req = urllib.request.Request(
             url, headers={"Accept": "application/json",
                           "User-Agent": self.user_agent})
@@ -232,8 +233,9 @@ class NLOGClient:
     def id_for_name(self, wellbore_name: str) -> int | None:
         """Resolve a bulk-dump WELLBORE name to a borehole id, exact
         match on title. Returns None if the portal does not know it."""
+        target = wellbore_name.strip().upper()
         for hit in self.suggest(wellbore_name):
-            if str(hit.get("title", "")).strip().upper() == wellbore_name.strip().upper():
+            if str(hit.get("title", "")).strip().upper() == target:
                 return int(hit["objectId"])
         return None
 
@@ -278,7 +280,9 @@ class NLOGClient:
             return r.read()
 
     # -- convenience --------------------------------------------------
-    def survey_documents(self, borehole_id: int, pattern: str = r"dip|survey|devi|direction") -> list[dict]:
+    def survey_documents(
+        self, borehole_id: int, pattern: str = r"dip|survey|devi|direction"
+    ) -> list[dict]:
         """Documents whose title suggests a directional or dipmeter
         record — used to check whether an unmeasured azimuth could be
         recovered from an archived report."""
