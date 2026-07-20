@@ -106,6 +106,11 @@ If your work relies on a specific method, please **also** cite the relevant pape
   (2004). *Prediction of Wellbore Position Accuracy When Surveyed With
   Gyroscopic Tools.* SPE 90408.
   [doi:10.2118/90408-MS](https://doi.org/10.2118/90408-MS)
+- **Rotating 6-axis MWD** — ISCWSA Rotating Survey Workgroup (2026).
+  *Rotating Six-Axis Magnetic Survey Error Model V1* (2026-06-02).
+  <https://www.iscwsa.net> (model `ISCWSA Rot 6Axis MWD+SRGM`; published
+  magnitudes are software-testing values — supply vendor magnitudes for
+  operational use)
 - **Survey quality** — Ekseth, R., et al. (2010). *High-Integrity Wellbore
   Surveying.* SPE Drilling & Completion 25(4). SPE 133417-PA.
   [doi:10.2118/133417-PA](https://doi.org/10.2118/133417-PA)

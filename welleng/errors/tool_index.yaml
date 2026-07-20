@@ -483,3 +483,11 @@ spe-90408-ma_example_table_3:
   OWSG Prefix: None
   Rev.: 5
   Short Name: spe-90408-ma_example_table_3
+D007Ma:
+  Application: Rotating Six-Axis Magnetic Survey Template
+  Long Name: Rotating Six-Axis Magnetic Measurements with a Standard Resolution
+    Magnetic Model
+  'No': 63
+  OWSG Prefix: D007Ma
+  Rev.: 5
+  Short Name: ISCWSA Rot 6Axis MWD+SRGM
