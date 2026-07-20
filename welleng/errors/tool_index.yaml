@@ -477,12 +477,6 @@ ISCWSA MWD Rev5.11:
   OWSG Prefix: None
   Rev.: 5.11
   Short Name: ISCWSA MWD Rev5.11
-spe-90408-ma_example_table_3:
-  Application: None
-  Long Name: spe-90408-ma_example_table_3
-  OWSG Prefix: None
-  Rev.: 5
-  Short Name: spe-90408-ma_example_table_3
 D007Ma:
   Application: Rotating Six-Axis Magnetic Survey Template
   Long Name: Rotating Six-Axis Magnetic Measurements with a Standard Resolution

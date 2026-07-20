@@ -50,6 +50,7 @@ codes:
     propagation: systematic
     unit: rad
 header:
+  Default Tortusity (rad/m): 0.000572614583987641
   A027Ub: INC-ONLY_Fl
   Application: Inclination only surveys for vertical wells with inclinations less
     than 5 deg (e.g. Totco Teledrift and Anderdrift) on a Floating Rig
