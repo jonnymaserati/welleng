@@ -11,7 +11,6 @@ Reference case (ideal, single-shoe, vertical): TD 10000 ft, MW 10 ppg,
 BHP 5400 psi, shoe 6000 ft, 8.5 in hole x 5 in DP, MAASP 900 psi (FP 12.885 ppg
 at shoe), gas 2.0 ppg at BHP. Textbook single-bubble Boyle -> 56.06 bbl.
 """
-import numpy as np
 import pytest
 
 from welleng.kick_tolerance.core import KickInputs, drill_kick
