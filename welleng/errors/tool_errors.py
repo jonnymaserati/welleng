@@ -1,4 +1,6 @@
 import numpy as np
+
+import warnings
 from numpy import sin, cos, tan, pi, sqrt
 import json
 import re
@@ -38,9 +40,24 @@ _MAG_UNIT_TO_BASE = {
     "deg/hr":  np.pi / 180.0,  # gyro rate: deg/hr -> rad/hr
     "deg/sqr(hr)": np.pi / 180.0,  # gyro random-walk coeff: deg/sqrt(hr) -> rad/sqrt(hr)
     "deg/nT":  np.pi / 180.0,  # B-field-coupled angle gradient
+    "deg.nT":  np.pi / 180.0,  # OWSG DBH-family notation: value in deg*nT,
+                               # weight divides by BField -> degrees out
     "-":       1.0,            # dimensionless (scale factors)
     "":        1.0,            # missing unit treated as dimensionless
 }
+
+
+def _unit_scale(unit):
+    """Magnitude multiplier for a declared unit; warns once per unknown
+    unit rather than silently treating it as dimensionless (a silent miss
+    on ``deg.nT`` scaled every OWSG DBH term by 57.3x)."""
+    try:
+        return _MAG_UNIT_TO_BASE[unit]
+    except KeyError:
+        warnings.warn(
+            f"unknown error-term unit {unit!r}: treated as dimensionless "
+            "(no conversion applied)", stacklevel=2)
+        return 1.0
 
 
 # Tool-model definition files (tool_codes/*.yaml, iscwsa_json/**/*.json) ship in
@@ -561,7 +578,7 @@ class ToolError:
         # rad/hr internally. The legacy YAML tools shipped pre-converted
         # values, so this conversion only fires for JSON-driven tools.
         unit = term.get("units") or term.get("unit") or "-"
-        scale = _MAG_UNIT_TO_BASE.get(unit, 1.0)
+        scale = _unit_scale(unit)
         e_DIA = dpde * (mag * scale)
         # ISCWSA v5.13 Sec 7.3 pt14 / eqs 44-46: a RANDOM carried init seed
         # re-randomises at every re-initialisation, so its covariance is the
@@ -776,7 +793,7 @@ class ToolError:
             states[k] = state
 
         unit = term.get("units") or term.get("unit") or "-"
-        scale = _MAG_UNIT_TO_BASE.get(unit, 1.0)
+        scale = _unit_scale(unit)
         # The magnitude multiplies the accumulated coefficient `state` (h_i)
         # LINEARLY for both drift and random walk. Per SPE 90408-PA
         # (Torkildsen et al. 2008) Eqs 5a-5c / 6a-6c, the azimuth error is
