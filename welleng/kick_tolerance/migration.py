@@ -399,6 +399,22 @@ class MigrationStep:
     min_fp_margin_psi: float    # min over exposed depths of FP(d) - P(d) [psi]
     binding_tvd: float          # exposed depth achieving that minimum    [ft]
     p_at_binding_psi: float     # imposed pressure at binding_tvd          [psi]
+    # Shut-in gauge readings for THIS bubble position (well-control kill sheet):
+    sidp_psi: float             # shut-in drill-pipe pressure [psi]
+    sicp_psi: float             # shut-in casing (annulus) pressure [psi]
+    #  SIDP = BHP - g.rho_mud.bottom_tvd -- drill pipe full of MUD (influx in the
+    #    annulus, not the string: the standard kick-in-annulus assumption). It is
+    #    position-INDEPENDENT, so it is constant across the walk; out of scope if
+    #    the influx entered the drill string.
+    #  SICP = imposed pressure evaluated at surface (depth 0) for this step -- the
+    #    existing annulus profile at the top. Per step it equals
+    #    SIDP + (g_mud - g_gas).h_gas with the CURRENT gas length/density. Under
+    #    constant BHP the bubble EXPANDS as it rises (h_gas grows, rho_gas falls),
+    #    so SICP RISES up the walk -- the steps are a SICP schedule, not a flat
+    #    line. IDEAL gas (Z=1, isothermal) expands by Boyle only; REAL gas adds the
+    #    Z(P,T) correction -- the two give different schedules (the differentiator),
+    #    and agree at the initial (deepest) bubble position where no expansion has
+    #    happened yet (the well-control single-bubble hand-calc value).
 
 
 @dataclass
@@ -549,6 +565,7 @@ def migrate(
     geothermal: TempProfileLike = None,
     n_steps: int = 100,
     mode: str = "thorough",
+    ideal_gas: bool = False,
 ) -> MigrationResult:
     """March a single gas bubble up the annulus under constant BHP.
 
@@ -611,7 +628,15 @@ def migrate(
 
     P_bh, T_bh_r, Z_bh, rho_gas_ppg = _resolve_bh_state(gas_bh_state, bhp_psi)
     gas_bh = (P_bh, T_bh_r, Z_bh, rho_gas_ppg)  # bottom-hole anchor for rho_gas(P)
-    if temp_profile is None:
+    # Ideal gas (Z=1, isothermal): forces Z=1 everywhere (expansion + column) and
+    # isothermal at T_bh. The bubble STILL expands (Boyle), so SICP still rises up
+    # the walk -- ideal vs real differ in the expansion Z (Boyle vs Boyle+Z), i.e.
+    # the SICP schedule shape, and agree at the initial bubble position. Real gas
+    # (default) keeps the Hall-Yarborough Z + any temperature profile.
+    z_ideal = (lambda _p, _t: 1.0) if ideal_gas else None
+    if ideal_gas:
+        temp_profile = None                # isothermal at T_bh
+    elif temp_profile is None:
         temp_profile = geothermal          # geothermal is the default when supplied
     temp_fn = _as_temp_callable(temp_profile, T_bh_r)  # still None -> isothermal at T_bh
 
@@ -674,6 +699,11 @@ def migrate(
     global_binding_step = 0
     all_within = True
 
+    # SIDP -- drill pipe full of mud, influx in the annulus (kick-in-annulus).
+    # Position-independent, so constant across the whole walk: BHP minus the mud
+    # hydrostatic over the full TVD to the bit.
+    sidp_psi = bhp_psi - G_PSI_PER_PPG_FT * rho_mud_ppg * bottom_tvd
+
     for i, gas_top in enumerate(gas_top_march):
         # Fixed-point on the representative bubble pressure P_rep (at the gas
         # top -- the lowest pressure / largest, safe-side bubble). Boyle uses Z(P)
@@ -683,7 +713,7 @@ def migrate(
         T_local = float(temp_fn(gas_top))  # local T at the representative (gas-top) depth
         gas_bottom, gas_len = gas_top, 0.0
         for _ in range(100):
-            Z = _z_at(P_rep, T_local)
+            Z = 1.0 if ideal_gas else _z_at(P_rep, T_local)
             # V(P,T,Z) = V_bh * (P_bh*Z*T_local) / (P*Z_bh*T_bh); T_local=T_bh -> old.
             V = influx_bbl_bh * (P_bh * Z * T_local) / (P_rep * Z_bh * T_bh_r)
             gas_bottom, gas_len = _fill_down(gas_top, V, sections_sorted, bottom_tvd)
@@ -691,7 +721,8 @@ def migrate(
                 gas_top, gas_top_tvd=gas_top, gas_bottom_tvd=gas_bottom,
                 bottom_tvd=bottom_tvd, bhp_psi=bhp_psi,
                 rho_mud_ppg=rho_mud_ppg, gas_bh=gas_bh,
-                gas_density_mode=gas_density_mode, temp_profile=temp_profile, n_sub=20,
+                gas_density_mode=gas_density_mode, temp_profile=temp_profile,
+                n_sub=20, z_fn=z_ideal,
             ))
             P_new = max(P_new, 1.0)
             if abs(P_new - P_rep) < 1e-4:
@@ -708,6 +739,7 @@ def migrate(
             bottom_tvd=bottom_tvd, bhp_psi=bhp_psi,
             rho_mud_ppg=rho_mud_ppg, gas_bh=gas_bh,
             gas_density_mode=gas_density_mode, temp_profile=temp_profile,
+            z_fn=z_ideal,
         )
         fp_margin = fp_psi - P          # >= 0 required (no breakdown)
         pp_margin = P - pp_psi          # >= 0 required (no further influx)
@@ -715,6 +747,18 @@ def migrate(
         step_min = float(fp_margin[j])
         step_binding_tvd = float(exposed_depths[j])
         step_p_binding = float(P[j])
+
+        # SICP = the same imposed annulus profile evaluated at surface (depth 0)
+        # for this bubble position (no new physics -- the existing profile at the
+        # top). Ideal gas -> flat across the walk; real gas -> varies as the
+        # bubble expands. SIDP is position-independent (computed once, above).
+        sicp = float(pressure_at_depth(
+            0.0, gas_top_tvd=gas_top, gas_bottom_tvd=gas_bottom,
+            bottom_tvd=bottom_tvd, bhp_psi=bhp_psi,
+            rho_mud_ppg=rho_mud_ppg, gas_bh=gas_bh,
+            gas_density_mode=gas_density_mode, temp_profile=temp_profile,
+            z_fn=z_ideal,
+        ))
 
         if not (np.all(fp_margin >= 0.0) and np.all(pp_margin >= 0.0)):
             all_within = False
@@ -726,6 +770,8 @@ def migrate(
             min_fp_margin_psi=step_min,
             binding_tvd=step_binding_tvd,
             p_at_binding_psi=step_p_binding,
+            sidp_psi=sidp_psi,
+            sicp_psi=sicp,
         ))
 
         if step_min < global_min:
