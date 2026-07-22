@@ -789,15 +789,17 @@ class Connector:
         exactly as the inherited iterative scheme would, but directly and to
         machine precision.
 
-        Among all CLCs at the design radii it takes the shortest whose two arc
-        doglegs are each ``<= pi`` — the connector's minimum-curvature renderer
-        (:func:`interpolate_curve`) takes the short way round, so a ``> pi`` arc
-        is a non-physical loop it cannot reproduce. If no such CLC exists (the
-        target needs tighter curvature than ``dls_design``, only loop solutions
-        exist, or a degenerate geometry), this method returns ``False`` and the
-        caller (``_use_method``) raises ``ValueError`` — there is no CHC at the
-        design radii. The reconstructed state is finiteness-checked (the
-        minimum-curvature shape factor is singular at a 180° arc); any
+        Among all CLCs at the design radii it prefers the shortest whose two arc
+        doglegs are each ``<= pi``. When the geometry admits only ``> pi`` arcs
+        (the target tangent can be reached at the design radius only by turning
+        more than 180°), that arc is still a valid circular curve and is
+        rendered correctly — :func:`interpolate_curve` sweeps the long way round
+        — so the shortest such solution is used rather than rejected. Only a
+        genuinely empty solution set (no CLC at any turn at the design radii, so
+        the target needs tighter curvature than ``dls_design``) or a degenerate
+        reconstruction returns ``False``; the caller (``_use_method``) then
+        raises ``ValueError``. The reconstructed state is finiteness-checked (the
+        minimum-curvature shape factor is singular exactly at a 180° arc); any
         non-finite result also returns ``False``.
 
         Returns
@@ -826,13 +828,18 @@ class Connector:
             )
         if not sols:
             return False
-        # Keep only renderable (each arc dogleg <= pi) CLCs, then the shortest.
+        # Prefer short-way CLCs (each arc dogleg <= pi); among them take the
+        # shortest. When NONE exist the geometry requires an arc that turns more
+        # than pi -- still a valid circular curve, and it now renders correctly
+        # (interpolate_curve sweeps the long way round), so fall back to the
+        # shortest overall rather than rejecting. Preferring the <=pi set keeps
+        # every previously-solved case bit-identical.
         _PI = np.pi + 1e-9
         candidates = [
             s for s in sols if s['alpha1'] <= _PI and s['alpha2'] <= _PI
         ]
         if not candidates:
-            return False
+            candidates = sols
         sol = min(candidates, key=lambda s: s['total_md'])
 
         beta = float(sol['beta'])
@@ -1547,6 +1554,13 @@ def interpolate_curve(
         vec = np.tile(vec1, (len(md), 1))
     else:
         rot_axis = cross / cross_norm          # unit rotation axis ⊥ arc plane
+        # cross(vec1, vec2) is the SHORT-way (<= pi) rotation axis. When the arc
+        # dogleg exceeds pi the arc sweeps the LONG way round the same plane, so
+        # flip the axis: the Rodrigues sweep of the full `dogleg` then lands on
+        # vec2 and visits the correct far-side intermediate tangents (without the
+        # flip a > pi sweep about the short axis overshoots to the mirror vector).
+        if dogleg > np.pi:
+            rot_axis = -rot_axis
         in_plane = np.cross(rot_axis, vec1)    # unit vector in arc plane, ⊥ vec1
         vec = (
             np.cos(dogleg_interp) * vec1

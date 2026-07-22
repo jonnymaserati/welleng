@@ -85,18 +85,19 @@ def test_dls2():
     )
     assert c.radius_design2 < c.radius_design
 
-def test_tight_chc_target_raises():
-    # Tight curve-hold-curve target: needs tighter curvature than the design DLS,
-    # so no CLC exists at the design radii. The connector no longer silently
-    # tightens (the old iterative behaviour) -- it raises; the caller sweeps the
-    # radius / raises dls_design (see the max-radius-solver TODO).
+def test_no_clc_target_raises():
+    # A target with NO curve-hold-curve solution at the design radii raises.
+    # (Since arcs may turn > 180deg, a CLC exists for almost every geometry --
+    # see test_long_arc_solves_at_design_dls -- so this needs a genuinely
+    # unreachable pose: a target on the start axis but with a reversed tangent,
+    # i.e. a U-turn on the spot that no radius-R curve-hold-curve can make.)
     import pytest
     with pytest.raises(ValueError):
         Connector(
-            pos1=[0., 0., 0],
+            pos1=[0., 0., 0.],
             vec1=[0., 0., 1.],
-            pos2=[0., 100., 100.],
-            vec2=[0., 0., 1.],
+            pos2=[0., 0., 50.],
+            vec2=[0., 0., -1.],
         )
 
 def test_min_curve():
