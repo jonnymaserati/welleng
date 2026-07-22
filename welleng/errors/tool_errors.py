@@ -2330,8 +2330,13 @@ def XYM3E(code, error, mag=0.00524, propagation='random', NEV=True, **kwargs):
     ), axis=-1), axis=-1)
 
     dpde = np.zeros((len(error.survey.md), 3))
-    dpde[1:, 1] = np.absolute(
-        cos(error.survey.inc_rad[1:])
+    # ISCWSA v5.13 §5.1.2 (XYM3E): M.Abs(Cos(I)) * Cos(AzT) -- Abs wraps Cos(I)
+    # ONLY; Cos(AzT) keeps its sign. Matches the XYM3 base fn (above) and the
+    # JSON inclination_formula. (Previously Abs wrapped the whole product,
+    # dropping the Cos(AzT) sign for azi in 90-270 deg -- invisible on the
+    # single ISCWSA test well, which stays azi<=75 deg.)
+    dpde[1:, 1] = (
+        np.absolute(cos(error.survey.inc_rad[1:]))
         * cos(error.survey.azi_true_rad[1:])
         * coeff[1:]
     )
@@ -2448,8 +2453,13 @@ def XYM4E(code, error, mag=0.00524, propagation='random', NEV=True, **kwargs):
     ), axis=-1), axis=-1)
 
     dpde = np.zeros((len(error.survey.md), 3))
+    # ISCWSA v5.13 §5.1.2 (XYM4E): M.Abs(Cos(I)) * Sin(AzT) and
+    # M.(Abs(Cos(I)) * Cos(AzT)) / Sin(I) -- Abs wraps Cos(I) ONLY. Matches the
+    # XYM4 base fn (above) and the JSON formulas. (Previously Cos(I) had no Abs,
+    # giving the wrong sign for inc>90 deg -- invisible on the ISCWSA test well,
+    # which stays inc<=90 deg.)
     dpde[1:, 1] = (
-        cos(error.survey.inc_rad[1:])
+        np.absolute(cos(error.survey.inc_rad[1:]))
         * sin(error.survey.azi_true_rad[1:])
         * coeff[1:]
     )
@@ -2458,7 +2468,7 @@ def XYM4E(code, error, mag=0.00524, propagation='random', NEV=True, **kwargs):
         dpde[1:, 2] = np.nan_to_num(
             (
                 (
-                    cos(error.survey.inc_rad[1:])
+                    np.absolute(cos(error.survey.inc_rad[1:]))
                     * cos(error.survey.azi_true_rad[1:])
                     / sin(error.survey.inc_rad[1:])
                 )
