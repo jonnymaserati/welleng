@@ -88,6 +88,18 @@ def clear_error_model_cache() -> None:
     _resolve_json_model.cache_clear()
 
 
+# Legacy welleng model names (tool_index.yaml) -> OWSG Short Name of the
+# equivalent shipped JSON. welleng's canonical 'ISCWSA MWD Rev5.11' and the
+# OWSG 'MWD+SRGM' are the SAME Rev5.11 SRGM MWD model: identical 35-term set and
+# identical per-term covariance (validated against the ISCWSA diagnostics --
+# tests/test_iscwsa_diagnostics.py). The JSON files are named by OWSG Short
+# Name, so the legacy name resolves to nothing without this alias. Add an entry
+# here only after confirming term-set + covariance equivalence for that model.
+_MODEL_NAME_ALIASES = {
+    "ISCWSA MWD Rev5.11": "MWD+SRGM",
+}
+
+
 @lru_cache(maxsize=None)
 def _resolve_json_model(model_name: str) -> str | None:
     """Find the ISCWSA-format JSON tool model for the given name.
@@ -97,9 +109,14 @@ def _resolve_json_model(model_name: str) -> str | None:
     welleng/errors/iscwsa_json/ and matches against the file basename,
     its metadata.model_id, and its metadata.short_name.
 
+    A legacy welleng model name (e.g. 'ISCWSA MWD Rev5.11') is first mapped to
+    its OWSG Short Name via ``_MODEL_NAME_ALIASES`` so the canonical name
+    resolves to the shipped JSON.
+
     Returns the absolute path of the first match, or None if no JSON
     file matches.
     """
+    model_name = _MODEL_NAME_ALIASES.get(model_name, model_name)
     json_root = os.path.join(PATH, 'iscwsa_json')
     if not os.path.isdir(json_root):
         return None
