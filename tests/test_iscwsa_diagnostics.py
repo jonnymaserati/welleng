@@ -29,12 +29,13 @@ from welleng.error import get_errors
 
 DIAG_DIR = Path(__file__).parent / "test_data"
 
-# Known welleng-vs-ISCWSA differences pending a fix. TA0 ruled 2026-07-21:
-# match ISCWSA. DRFR (random depth) carries no variance at the surface station
-# in welleng (drk_dDepth zeros station 0), where ISCWSA gives mag^2. Fix is a
-# foundational datum change (must not disturb the systematic depth terms that
-# correctly match at station 0), tracked separately. Keyed (source, station).
-KNOWN_DIFFS = {("DRFR", 0)}
+# Known welleng-vs-ISCWSA differences pending a fix, keyed (source, station).
+# Empty: the DRFR station-0 gap (random depth carried no surface variance where
+# ISCWSA gives mag^2) was fixed in 0.25.0 -- ``_drdp`` now seeds the station-0
+# depth column with the wellbore tangent so the random depth source's own
+# measurement error propagates at the surface, without disturbing the
+# systematic depth terms (whose weight vanishes at md=0). See ``error.py``.
+KNOWN_DIFFS = set()
 
 
 def _parse_dat(path: Path):
@@ -124,9 +125,11 @@ def test_per_term_covariance_matches_iscwsa_diagnostics(dat_name):
     )
 
 
-def test_known_diff_is_actually_present():
-    """Guard: the DRFR station-0 gap we're excluding must still be real, so the
-    KNOWN_DIFFS waiver can't silently mask a later regression / accidental fix."""
+def test_drfr_station0_matches_iscwsa():
+    """Regression for the 0.25.0 DRFR station-0 fix: a random depth source must
+    carry its full variance at the surface (cov_VV(0) = mag^2 = 0.35^2 = 0.1225),
+    matching the ISCWSA diagnostics. Guards against reverting to the old
+    station-0-zeroed datum."""
     path = DIAG_DIR / "iscwsa_diagnostics_3.dat"
     if not path.exists():
         pytest.skip("diagnostic #3 not shipped")
@@ -134,7 +137,7 @@ def test_known_diff_is_actually_present():
     s = _survey(ref, stations)
     got = np.array(get_errors(np.asarray(s.err.errors.errors["DRFR"].cov_NEV[0])))
     exp = np.array(stations[0]["src"]["DRFR"])
-    # if this ever starts matching, DRFR was fixed -> drop it from KNOWN_DIFFS.
-    assert not np.allclose(got, exp, atol=1e-3), (
-        "DRFR station-0 now matches ISCWSA -- remove ('DRFR', 0) from KNOWN_DIFFS"
+    assert np.allclose(got, exp, atol=1e-3), (
+        f"DRFR station-0 must match ISCWSA (mag^2 at the surface); got {got}, "
+        f"expected {exp}"
     )
