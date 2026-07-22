@@ -789,15 +789,17 @@ class Connector:
         exactly as the inherited iterative scheme would, but directly and to
         machine precision.
 
-        Among all CLCs at the design radii it takes the shortest whose two arc
-        doglegs are each ``<= pi`` — the connector's minimum-curvature renderer
-        (:func:`interpolate_curve`) takes the short way round, so a ``> pi`` arc
-        is a non-physical loop it cannot reproduce. If no such CLC exists (the
-        target needs tighter curvature than ``dls_design``, only loop solutions
-        exist, or a degenerate geometry), this method returns ``False`` and the
-        caller (``_use_method``) raises ``ValueError`` — there is no CHC at the
-        design radii. The reconstructed state is finiteness-checked (the
-        minimum-curvature shape factor is singular at a 180° arc); any
+        Among all CLCs at the design radii it prefers the shortest whose two arc
+        doglegs are each ``<= pi``. When the geometry admits only ``> pi`` arcs
+        (the target tangent can be reached at the design radius only by turning
+        more than 180°), that arc is still a valid circular curve and is
+        rendered correctly — :func:`interpolate_curve` sweeps the long way round
+        — so the shortest such solution is used rather than rejected. Only a
+        genuinely empty solution set (no CLC at any turn at the design radii, so
+        the target needs tighter curvature than ``dls_design``) or a degenerate
+        reconstruction returns ``False``; the caller (``_use_method``) then
+        raises ``ValueError``. The reconstructed state is finiteness-checked (the
+        minimum-curvature shape factor is singular exactly at a 180° arc); any
         non-finite result also returns ``False``.
 
         Returns
@@ -826,13 +828,18 @@ class Connector:
             )
         if not sols:
             return False
-        # Keep only renderable (each arc dogleg <= pi) CLCs, then the shortest.
+        # Prefer short-way CLCs (each arc dogleg <= pi); among them take the
+        # shortest. When NONE exist the geometry requires an arc that turns more
+        # than pi -- still a valid circular curve, and it now renders correctly
+        # (interpolate_curve sweeps the long way round), so fall back to the
+        # shortest overall rather than rejecting. Preferring the <=pi set keeps
+        # every previously-solved case bit-identical.
         _PI = np.pi + 1e-9
         candidates = [
             s for s in sols if s['alpha1'] <= _PI and s['alpha2'] <= _PI
         ]
         if not candidates:
-            return False
+            candidates = sols
         sol = min(candidates, key=lambda s: s['total_md'])
 
         beta = float(sol['beta'])
@@ -1530,28 +1537,28 @@ def interpolate_curve(
         md = np.concatenate((md, [end_md]))
     dogleg_interp = (dogleg / dist_curve * md).reshape(-1, 1)
 
-    # Rodrigues' rotation formula is numerically superior to SLERP when dogleg
-    # is near π.  SLERP weights contain 1/sin(dogleg) which amplifies errors
-    # by ~1/sin(π-ε) ≈ 1/ε for near-180° arcs (e.g. case #492 with dogleg≈179°
-    # amplifies errors 44×, producing spiralling visualisation paths).
+    # Tangent along the arc:  vec(t) = cos(t)*vec1 + sin(t)*u,  where u is the
+    # in-plane unit vector fixed by the arc's OWN end tangent and angle:
     #
-    # Rodrigues: vec(t) = cos(t)*vec1 + sin(t)*in_plane
-    # where in_plane is the unit vector in the arc plane, perpendicular to vec1.
-    # The formula never divides by sin(dogleg) during evaluation — only during
-    # the one-time setup of in_plane — so numerical errors do not accumulate.
-    cross = np.cross(vec1, vec2)
-    cross_norm = float(np.linalg.norm(cross))
-    if cross_norm < 1e-10:
-        # vec1 ≈ vec2 (zero dogleg) or exactly antiparallel (degenerate arc):
-        # return the start direction for all points.
+    #     u = (vec2 - cos(dogleg)*vec1) / sin(dogleg)
+    #
+    # This is exact and unit for ANY arc angle (vec1·vec2 == cos(dogleg) makes
+    # |u| == 1), so a dogleg > pi renders correctly with no short-way/long-way
+    # special case: sin(dogleg) < 0 flips u so the sweep goes the long way round
+    # and still lands on vec2. (This is the Sawaryn-bridge ``_arc_axis`` form the
+    # api uses to render every CLC result, incl. loops.) The 1/sin(dogleg) is a
+    # one-time setup of u, not a per-point divide, so — like the previous
+    # Rodrigues form — it does not amplify errors during evaluation (SLERP's
+    # per-weight 1/sin was the ~44x near-180° amplifier we avoid). sin(dogleg)
+    # vanishes only at a zero turn (straight -> vec1) or an exact pi turn
+    # (antiparallel tangents, arc plane undetermined by the tangents alone: a
+    # measure-zero singularity left as the start direction).
+    sin_dl = np.sin(dogleg)
+    if abs(sin_dl) < 1e-10:
         vec = np.tile(vec1, (len(md), 1))
     else:
-        rot_axis = cross / cross_norm          # unit rotation axis ⊥ arc plane
-        in_plane = np.cross(rot_axis, vec1)    # unit vector in arc plane, ⊥ vec1
-        vec = (
-            np.cos(dogleg_interp) * vec1
-            + np.sin(dogleg_interp) * in_plane
-        )
+        u = (vec2 - np.cos(dogleg) * vec1) / sin_dl
+        vec = np.cos(dogleg_interp) * vec1 + np.sin(dogleg_interp) * u
     vec = vec / np.linalg.norm(vec, axis=1).reshape(-1, 1)
     inc, azi = get_angles(vec, nev=True).T
 
