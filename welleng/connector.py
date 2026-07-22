@@ -1537,35 +1537,28 @@ def interpolate_curve(
         md = np.concatenate((md, [end_md]))
     dogleg_interp = (dogleg / dist_curve * md).reshape(-1, 1)
 
-    # Rodrigues' rotation formula is numerically superior to SLERP when dogleg
-    # is near π.  SLERP weights contain 1/sin(dogleg) which amplifies errors
-    # by ~1/sin(π-ε) ≈ 1/ε for near-180° arcs (e.g. case #492 with dogleg≈179°
-    # amplifies errors 44×, producing spiralling visualisation paths).
+    # Tangent along the arc:  vec(t) = cos(t)*vec1 + sin(t)*u,  where u is the
+    # in-plane unit vector fixed by the arc's OWN end tangent and angle:
     #
-    # Rodrigues: vec(t) = cos(t)*vec1 + sin(t)*in_plane
-    # where in_plane is the unit vector in the arc plane, perpendicular to vec1.
-    # The formula never divides by sin(dogleg) during evaluation — only during
-    # the one-time setup of in_plane — so numerical errors do not accumulate.
-    cross = np.cross(vec1, vec2)
-    cross_norm = float(np.linalg.norm(cross))
-    if cross_norm < 1e-10:
-        # vec1 ≈ vec2 (zero dogleg) or exactly antiparallel (degenerate arc):
-        # return the start direction for all points.
+    #     u = (vec2 - cos(dogleg)*vec1) / sin(dogleg)
+    #
+    # This is exact and unit for ANY arc angle (vec1·vec2 == cos(dogleg) makes
+    # |u| == 1), so a dogleg > pi renders correctly with no short-way/long-way
+    # special case: sin(dogleg) < 0 flips u so the sweep goes the long way round
+    # and still lands on vec2. (This is the Sawaryn-bridge ``_arc_axis`` form the
+    # api uses to render every CLC result, incl. loops.) The 1/sin(dogleg) is a
+    # one-time setup of u, not a per-point divide, so — like the previous
+    # Rodrigues form — it does not amplify errors during evaluation (SLERP's
+    # per-weight 1/sin was the ~44x near-180° amplifier we avoid). sin(dogleg)
+    # vanishes only at a zero turn (straight -> vec1) or an exact pi turn
+    # (antiparallel tangents, arc plane undetermined by the tangents alone: a
+    # measure-zero singularity left as the start direction).
+    sin_dl = np.sin(dogleg)
+    if abs(sin_dl) < 1e-10:
         vec = np.tile(vec1, (len(md), 1))
     else:
-        rot_axis = cross / cross_norm          # unit rotation axis ⊥ arc plane
-        # cross(vec1, vec2) is the SHORT-way (<= pi) rotation axis. When the arc
-        # dogleg exceeds pi the arc sweeps the LONG way round the same plane, so
-        # flip the axis: the Rodrigues sweep of the full `dogleg` then lands on
-        # vec2 and visits the correct far-side intermediate tangents (without the
-        # flip a > pi sweep about the short axis overshoots to the mirror vector).
-        if dogleg > np.pi:
-            rot_axis = -rot_axis
-        in_plane = np.cross(rot_axis, vec1)    # unit vector in arc plane, ⊥ vec1
-        vec = (
-            np.cos(dogleg_interp) * vec1
-            + np.sin(dogleg_interp) * in_plane
-        )
+        u = (vec2 - np.cos(dogleg) * vec1) / sin_dl
+        vec = np.cos(dogleg_interp) * vec1 + np.sin(dogleg_interp) * u
     vec = vec / np.linalg.norm(vec, axis=1).reshape(-1, 1)
     inc, azi = get_angles(vec, nev=True).T
 
