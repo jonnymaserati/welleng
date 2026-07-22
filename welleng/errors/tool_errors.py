@@ -208,8 +208,17 @@ def _json_to_em_adapter(model: dict) -> dict:
     codes = OrderedDict()
     for term in model.get("terms", []):
         name = term["name"]
+        # XCLA/XCLH (extended course length, Codling SPE-187249) are GEOMETRIC,
+        # tool-independent terms whose weight is a CROSS-STATION recurrence
+        # (Max(Δangle, tortuosity·course-length)). The pointwise interpreter cannot
+        # express that recurrence (the silent-zero/constant XCL gap), so on JSON
+        # models it produced a DIFFERENT, unvalidated XCLA than the legacy MWD path
+        # -- which IS validated against the ISCWSA diagnostics. Route XCLA/XCLH
+        # through the hand-coded weight functions for ALL models so gyro/SRGM XCLA
+        # == MWD XCLA == the ISCWSA-validated form (tool-independence).
+        func = name if name in ("XCLA", "XCLH") else "_INTERPRETER_"
         codes[name] = {
-            "function": "_INTERPRETER_",
+            "function": func,
             "magnitude": float(term["value"]),
             "propagation": _JSON_PROP_TO_LEGACY.get(
                 term["propagation_mode"], "systematic"
