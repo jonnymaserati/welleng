@@ -455,6 +455,14 @@ class ErrorModel():
         -------
         numpy.ndarray
             Shape (n, 3) array of NEV derivatives.
+
+        Note
+        ----
+        The N/E columns are azimuth-dependent even at ``inc == 0`` (½·Δmd·cos(inc)
+        ·{cos,sin}(azi)). ``Survey`` canonicalises azimuth to 0 at vertical
+        stations (see ``Survey._make_angles``); a consumer feeding this model
+        WITHOUT that preprocessing must apply ``azi = where(inc == 0, 0, azi)``
+        first, or the covariance diverges at vertical stations.
         """
         md1, inc1, azi1 = np.array(survey[:-1]).T
         md2, inc2, azi2 = np.array(survey[1:]).T
