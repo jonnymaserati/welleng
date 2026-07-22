@@ -1097,7 +1097,17 @@ class Survey(MinCurve):
         # undefined there (no toolface has evolved yet), so default it to 0 -- a
         # clear "vertical / not yet steered" sentinel -- rather than carrying the
         # arbitrary input azimuth through. inc == 0 => no N/E displacement, so this
-        # never changes geometry; it only makes the stored azimuth meaningful.
+        # never changes the survey GEOMETRY.
+        #
+        # PRECONDITION for the error model (not merely cosmetic): the ISCWSA
+        # weight-function Jacobian is azimuth-dependent even at inc == 0 --
+        # ``drk_dInc`` N/E columns are ½·Δmd·cos(inc)·{cos,sin}(azi) (error.py) --
+        # so a vertical station carrying a raw non-zero azimuth perturbs the
+        # covariance (a systematic term then taints every downstream station via
+        # the cumsum). Any consumer that evaluates the error model WITHOUT going
+        # through Survey (e.g. a vectorised/batched covariance backend) MUST
+        # replicate this ``azi = where(inc == 0, 0, azi)`` step, or it diverges
+        # from the reference at vertical stations.
         vertical = self.inc_rad == 0.0
         if np.any(vertical):
             self.azi_grid_rad = np.where(vertical, 0.0, self.azi_grid_rad)
