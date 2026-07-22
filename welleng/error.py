@@ -316,7 +316,13 @@ class ErrorModel():
             + self.drdp[:, 8] * A
         ])
 
-        arr[0] = 0
+        # NB: station 0 is NOT blanket-zeroed here (unlike ``_e_NEV``). ``drdp``
+        # seeds the station-0 depth column with the wellbore tangent (see
+        # ``_drdp``), so a random depth source's own measurement error carries
+        # its full variance at the surface (ISCWSA DRFR cov_VV(0) = mag^2).
+        # inc/azi columns are zero at station 0 -> every non-depth term (and any
+        # systematic depth term, whose weight vanishes at md=0) stays 0 there,
+        # exactly matching the ISCWSA diagnostics.
 
         return arr
 
@@ -419,7 +425,14 @@ class ErrorModel():
 
         Equal to 0.5 * (unit_vec[i] + unit_vec[i+1]) in NEV coordinates --
         the direction-cosine part of minimum curvature without the RF or
-        delta_md.
+        delta_md. When the survey starts at the zero datum (md[0] == 0) station
+        0 has no segment above it and takes the full station-0 wellbore tangent
+        instead of the half-segment average: a depth error at the first station
+        shifts the along-hole position by the full tangent (ISCWSA random depth
+        carries its full variance at the surface, DRFR cov_VV(0) = mag^2). A
+        survey that starts below the datum (md[0] != 0) is tied on, so its
+        station 0 stays zero (see ``_drdp``). This row-0 value is consumed only
+        by ``_e_NEV_star`` (``drkplus1_dDepth`` slices ``[1:]``).
 
         Parameters
         ----------
@@ -441,7 +454,16 @@ class ErrorModel():
             si1 * sa1 + si2 * sa2,       # E
             np.cos(inc1) + np.cos(inc2), # V
         ), axis=-1)
-        return np.vstack((np.zeros((1, 3)), NEV))
+        md0, i0, a0 = np.array(survey[0]).T
+        if md0 == 0.0:
+            row0 = np.array([
+                np.sin(i0) * np.cos(a0),
+                np.sin(i0) * np.sin(a0),
+                np.cos(i0),
+            ])
+        else:
+            row0 = np.zeros(3)
+        return np.vstack((row0, NEV))
 
     def drk_dInc(self, survey):
         """Derivative of position with respect to inclination at each station.
@@ -621,6 +643,27 @@ class ErrorModel():
         result[1:, 0] = dc_N
         result[1:, 1] = dc_E
         result[1:, 2] = dc_V
+
+        # Station-0 direct depth-measurement derivative -- ONLY for a survey
+        # that starts at the zero datum (md[0] == 0, a true surface root). A
+        # depth error at that first station shifts the along-hole position by
+        # the FULL wellbore tangent (not the half-segment min-curvature average
+        # -- there is no segment above station 0), so the ISCWSA random-depth
+        # source carries its full variance at the surface: DRFR cov_VV(0) =
+        # mag^2. Only the depth column is seeded -- inc/azi errors have zero
+        # lever arm at station 0.
+        #
+        # When md[0] != 0 the survey starts BELOW the datum: station 0 is a
+        # tie-on whose uncertainty is carried externally (a composed section's
+        # freeze-carry tie, or a hierarchy sidetrack inheriting its parent), so
+        # NO fresh direct-depth term is added -- the row-0 depth column stays 0,
+        # exactly as the pre-0.25.0 datum. This keeps the station-0 term local
+        # to the random branch AND preserves the composition/hierarchy tie
+        # invariant that a sub-run's station 0 injects no new error.
+        if md[0] == 0.0:
+            result[0, 0] = si[0] * ca[0]
+            result[0, 1] = si[0] * sa[0]
+            result[0, 2] = ci[0]
 
         # drk_dInc: rows 1..n-1 (wrt inc at station i+1)
         result[1:, 3] = half_dmd * ci[1:] * ca[1:]
