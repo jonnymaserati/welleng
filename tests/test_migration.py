@@ -505,3 +505,60 @@ if __name__ == "__main__":
     print(f"min FP margin     = {r.min_fp_margin_psi:.1f} psi")
     print(f"binding TVD/step  = {r.binding_tvd:.0f} ft / step {r.binding_step}")
     print(f"bha_length_exceeded = {r.bha_length_exceeded}")
+
+
+# --- SIDP / SICP on MigrationStep: Rada Jancic ideal-gas hand-calc -----------
+# Well-control single-bubble reference (welleng-api spec 2026-07-22):
+#   MW 10 ppg, vertical TVD 10000 ft, annular capacity 0.0459 bbl/ft,
+#   influx 5 bbl -> 108.9 ft gas column, gas gradient 0.1 psi/ft, SIDP 200 psi.
+# Ideal gas (Z=1, isothermal), bubble at bottom:
+#   SIDP = 200.00, SICP = 245.87 (at welleng's native g=0.0521).
+# Rada's hand-calc gives 200.00 / 245.75 at his rounded g=0.052 -- the 0.12 psi
+# is purely that gravitational-constant rounding, not a modelling difference.
+def test_rada_ideal_sidp_sicp_bubble_at_bottom():
+    G = G_PSI_PER_PPG_FT                       # 0.0521
+    MW, TVD, CAP, INFLUX, GGRAD = 10.0, 10000.0, 0.0459, 5.0, 0.1
+    bhp = 200.0 + G * MW * TVD                 # BHP consistent with SIDP=200
+    rho_gas = GGRAD / G                        # 0.1 psi/ft gas gradient -> ppg
+    T_bh = 560.0                               # rankine (isothermal, ideal)
+    sections = [WellSection(0.0, TVD, CAP, True)]
+
+    res = migrate(
+        sections, pp=([0, TVD], [8.0, 8.0]), fp=([0, TVD], [16.0, 16.0]),
+        bhp_psi=bhp, influx_bbl_bh=INFLUX, rho_mud_ppg=MW,
+        gas_bh_state=(bhp, T_bh, 1.0, rho_gas), gas_density_mode="exact",
+        n_steps=50, ideal_gas=True,
+    )
+    bottom = res.steps[0]                       # march starts with the bubble at TD
+    assert bottom.gas_length_ft == pytest.approx(108.9, abs=0.5)
+    assert bottom.sidp_psi == pytest.approx(200.00, abs=0.05)
+    assert bottom.sicp_psi == pytest.approx(245.87, abs=0.1)   # 245.75 @ g=0.052
+    # the ideal single-bubble identity SICP = SIDP + (g_mud - g_gas)*h_gas
+    assert bottom.sicp_psi == pytest.approx(
+        200.0 + (G * MW - GGRAD) * bottom.gas_length_ft, abs=0.05)
+
+
+def test_sidp_constant_sicp_is_a_rising_schedule():
+    # SIDP is position-independent -> constant across the walk. SICP rises as the
+    # bubble expands (Boyle), even in ideal mode -- it is a schedule, not flat.
+    G = G_PSI_PER_PPG_FT
+    MW, TVD, CAP, INFLUX = 10.0, 10000.0, 0.0459, 5.0
+    bhp = 200.0 + G * MW * TVD
+    sections = [WellSection(0.0, TVD, CAP, True)]
+    kw = dict(
+        pp=([0, TVD], [8.0, 8.0]), fp=([0, TVD], [16.0, 16.0]),
+        bhp_psi=bhp, influx_bbl_bh=INFLUX, rho_mud_ppg=MW,
+        gas_density_mode="exact", n_steps=40,
+    )
+    ideal = migrate(sections, gas_bh_state=(bhp, 560.0, 1.0, 0.1 / G),
+                    ideal_gas=True, **kw)
+    sidp = [s.sidp_psi for s in ideal.steps]
+    sicp = [s.sicp_psi for s in ideal.steps]
+    assert max(sidp) - min(sidp) < 1e-6            # SIDP constant
+    assert sicp[-1] > sicp[0] + 50.0               # SICP rises up the walk
+
+    # real gas (HY Z) gives a DIFFERENT schedule but the SAME deepest value
+    real = migrate(sections, gas_bh_state=(bhp, 560.0, None, None), **kw)
+    assert real.steps[0].sicp_psi == pytest.approx(ideal.steps[0].sicp_psi, abs=1.0)
+    real_sicp = [s.sicp_psi for s in real.steps]
+    assert abs(real_sicp[-1] - sicp[-1]) > 1.0     # schedules diverge up the walk
