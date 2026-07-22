@@ -80,9 +80,17 @@ def _survey(ref, stations):
     )
 
 
-# Wells #2/#3 -- the wide-regime wells (azi>90, inc>90) the benign well #1 in
-# test_iscwsa_mwd_error.py cannot exercise. Verbatim ISCWSA diagnostics.
-DIAG_FILES = ["iscwsa_diagnostics_2.dat", "iscwsa_diagnostics_3.dat"]
+# The full ISCWSA MWD example-well suite (#1/#2/#3), verbatim diagnostics. The
+# README claims "validated 35/35 sources against all three ISCWSA example
+# workbooks" -- this test is what ENFORCES that claim in CI (per-term, per-station,
+# against ISCWSA's own numbers). #1 is the benign standard well (also covered by
+# test_iscwsa_mwd_error.py's vd block, which matches this .dat); #2/#3 add the wide
+# regime (azi>90, inc>90) that #1 cannot exercise.
+DIAG_FILES = [
+    "iscwsa_diagnostics_1.dat",
+    "iscwsa_diagnostics_2.dat",
+    "iscwsa_diagnostics_3.dat",
+]
 
 
 @pytest.mark.parametrize("dat_name", DIAG_FILES, ids=lambda s: s.replace(".dat", ""))
