@@ -2,10 +2,10 @@
 
 The ``Connector`` now solves the curve-hold-curve (CHC) point-to-target
 problem with the closed-form solution of Sawaryn (2021), SPE-204111-PA
-(``Connector._solve_chc_analytical``). When no renderable CLC exists at the
-design radii it raises by default; the inherited Sawaryn & Thorogood (2005)
-iterative scheme has been removed. Opt-in ``on_infeasible='max_radius'`` instead
-falls back to the gentlest feasible curve (the beta=0 biarc at the max radius).
+(``Connector._solve_chc_analytical``). Arcs may turn more than 180deg (rendered
+the long way round), so a CLC exists and is used at the design DLS for almost
+every geometry; only a genuinely unreachable pose (no CLC at all) raises. The
+inherited Sawaryn & Thorogood (2005) iterative scheme has been removed.
 
 These tests prove the port:
 
@@ -151,64 +151,91 @@ def test_chc_analytical_is_used_simple():
     assert np.allclose(c.vec_target, vec2, atol=TIGHT_TOL)
 
 
-def test_tight_target_raises():
-    """A target needing tighter curvature than the design DLS has no CLC at the
-    design radii. The iterative auto-tighten is gone, so the connector raises
-    ValueError rather than silently exceeding the design DLS -- the caller sweeps
-    the radius / raises dls_design (see the max-radius-solver TODO)."""
+def test_no_clc_target_raises():
+    """A target with NO curve-hold-curve solution at the design radii raises.
+    Because arcs may turn > 180deg a CLC exists for almost every geometry
+    (see test_long_arc_solves_at_design_dls), so a genuine no-solution case needs
+    an unreachable pose: a target on the start axis with a reversed tangent -- a
+    U-turn on the spot no radius-R curve-hold-curve can make."""
     import pytest
     with pytest.raises(ValueError):
         Connector(
             pos1=[0., 0., 0.], vec1=[0., 0., 1.],
-            pos2=[0., 100., 100.], vec2=[0., 0., 1.],
+            pos2=[0., 0., 50.], vec2=[0., 0., -1.],
         )
 
 
-def test_tight_target_max_radius_fallback():
-    """Opt-in ``on_infeasible='max_radius'`` falls back to the gentlest feasible
-    curve when no CLC exists at the design DLS. A tight target (raises by default,
-    like ``test_tight_target_raises``) is solved as the beta~0 biarc at the maximum
-    feasible radius: the hold vanishes, both arc doglegs <= pi, the endpoint is
-    reached to ~1e-6, the critical radius is tighter than the design radius, and a
-    UserWarning is emitted flagging the design-DLS exceedance.
-
-    The target position is the tight ``[0, 100, 100]`` case; its tangent is turned
-    45 deg off the start tangent because ``max_radius``'s general closed form is
-    singular for exactly (anti)parallel tangents (|mu|=1) and has no 2D auto-route,
-    so it returns None for the fully-vertical ``vec2=[0,0,1]`` variant."""
-    import pytest
+def test_long_arc_solves_at_design_dls():
+    """A target whose only CLC at the design DLS turns an arc > 180deg is solved
+    at the design DLS (the > pi arc is a valid circular curve, rendered the long
+    way round) -- it is NOT rejected and does NOT need a tighter (design-DLS-
+    exceeding) radius. This is the ``[0, 100, 100]`` vertical->vertical case that
+    previously had no <= pi CLC: it now returns a curve-hold-curve at the design
+    radius with a > pi second arc, hitting the target to machine precision without
+    exceeding the design dogleg severity."""
     target = [0., 100., 100.]
-    vec2 = list(np.array([0., 1., 1.]) / np.sqrt(2))
-    with pytest.warns(UserWarning):
-        c = Connector(
-            pos1=[0., 0., 0.], vec1=[0., 0., 1.],
-            pos2=target, vec2=vec2,
-            on_infeasible='max_radius',
-        )
-
+    c = Connector(
+        pos1=[0., 0., 0.], vec1=[0., 0., 1.],
+        pos2=target, vec2=[0., 0., 1.],
+    )
     assert c.method == 'curve_hold_curve'
-    assert c._chc_solver == 'max_radius'
+    assert c._chc_solver == 'analytical'
 
-    # beta~0 biarc: the hold vanishes (negligible vs the ~140 m path length).
-    assert abs(c.tangent_length) < 1e-4, c.tangent_length
+    # A long arc (> pi) is used -- the whole point of this case.
+    assert max(c.dogleg, c.dogleg2) > np.pi
 
-    # Both arcs are renderable (dogleg <= pi).
-    assert c.dogleg <= np.pi + 1e-9
-    assert c.dogleg2 <= np.pi + 1e-9
-
-    # Endpoint reconstructed from public state hits the target tightly.
+    # Endpoint reconstructed from public state hits the target to machine prec.
     _, _, pos_end = _reconstruct_endpoint(c)
     assert np.allclose(pos_end, target, atol=TIGHT_TOL), (
         float(np.linalg.norm(np.array(pos_end) - np.array(target)))
     )
 
-    # The fallback tightened the curvature: critical radius < design radius.
-    assert c.radius_critical < c.radius_design
+    # Solved AT the design DLS -- no critical-radius override, design not exceeded.
+    assert c.radius_critical == np.inf
+    assert c.radius_critical2 == np.inf
+
+
+def test_random_pose_battery_no_spurious_rejection():
+    """Regression for the ~22% spurious CHC rejection: a random pose-to-pose
+    battery that ``sawaryn_analytical.solve_clc`` solves 400/400 at DLS 3.0 must
+    also be solved 400/400 by the Connector. Previously the Connector rejected
+    ~1 in 5 (every geometry whose only CLC needs a > pi arc), silently shrinking
+    a planner's candidate set. Each solve must hit the target and respect the
+    design DLS."""
+    from welleng.utils import get_vec, radius_from_dls
+
+    rng = np.random.default_rng(0)
+    R = radius_from_dls(3.0)
+    p1 = np.array([0., 0., 0.])
+    v1 = np.array([0., 0., 1.])
+    solved = long_arc = 0
+    for _ in range(400):
+        p2 = np.array([rng.uniform(200, 800), rng.uniform(-400, 400),
+                       rng.uniform(900, 2000)])
+        inc = rng.uniform(20, 70)
+        azi = rng.uniform(0, 360)
+        v2 = np.asarray(get_vec(inc, azi, nev=True, deg=True)).reshape(3)
+        c = Connector(pos1=p1, vec1=v1, pos2=p2, vec2=v2,
+                      dls_design=3.0, on_infeasible='raise')
+        solved += 1
+        if max(c.dogleg, c.dogleg2) > np.pi:
+            long_arc += 1
+        # hits the target
+        _, _, pos_end = _reconstruct_endpoint(c)
+        assert np.allclose(pos_end, p2, atol=1e-4), (
+            float(np.linalg.norm(pos_end - p2))
+        )
+        # at the design radius (no curvature traded for MD)
+        assert np.isclose(c.dist_curve / c.dogleg, R, rtol=1e-6)
+        assert np.isclose(c.dist_curve2 / c.dogleg2, R, rtol=1e-6)
+    assert solved == 400, solved
+    # the point of the fix: a big chunk genuinely need the > pi long arc.
+    assert long_arc > 50, long_arc
 
 
 if __name__ == "__main__":
     test_chc_analytical_roundtrip()
     test_chc_analytical_is_used_simple()
-    test_tight_target_raises()
-    test_tight_target_max_radius_fallback()
+    test_no_clc_target_raises()
+    test_long_arc_solves_at_design_dls()
     print("ok")
