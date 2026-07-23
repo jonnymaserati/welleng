@@ -494,8 +494,14 @@ class ErrorModel():
         E = np.array(0.5 * ((delta_md) * np.cos(inc2) * np.sin(azi2)))
         V = np.array(0.5 * (-delta_md * np.sin(inc2)))
 
+        # Rev5+ surface tie-on (Def. of ISCWSA Error Model §4.7.1.1, eq. 32):
+        # double the FIRST station's full inc column (N,E,V), not just inc-N.
+        # ISCWSA well #1 is vertical-North at station 1 so only N is non-zero
+        # there, but E/V bite for a deviated slot. rev4 predates the tie-on.
         if self.error_model.lower().split()[-1] != 'rev4':
             N[0] *= 2
+            E[0] *= 2
+            V[0] *= 2
 
         return np.vstack(
             (
@@ -524,6 +530,12 @@ class ErrorModel():
         N = np.array(-0.5 * ((delta_md) * np.sin(inc2) * np.sin(azi2)))
         E = np.array(0.5 * ((delta_md) * np.sin(inc2) * np.cos(azi2)))
         V = np.zeros_like(N)
+
+        # Rev5+ surface tie-on (Def. of ISCWSA Error Model §4.7.1.1, eq. 32):
+        # double the FIRST station's azi column (N,E; azi-V is identically 0).
+        if self.error_model.lower().split()[-1] != 'rev4':
+            N[0] *= 2
+            E[0] *= 2
 
         return np.vstack(
             (
@@ -669,12 +681,25 @@ class ErrorModel():
         result[1:, 3] = half_dmd * ci[1:] * ca[1:]
         result[1:, 4] = half_dmd * ci[1:] * sa[1:]
         result[1:, 5] = -half_dmd * si[1:]
-        if self.error_model.lower().split()[-1] != 'rev4':
-            result[1, 3] *= 2
 
         # drk_dAz: rows 1..n-1 (wrt azi at station i+1)
         result[1:, 6] = -half_dmd * si[1:] * sa[1:]
         result[1:, 7] = half_dmd * si[1:] * ca[1:]
+
+        # Rev5+ surface tie-on (Definition of ISCWSA Error Model §4.7.1.1,
+        # eq. 32): from Revision 5 the slot attitude is allowed its own
+        # measurement error, of the same magnitude as a downhole survey. This is
+        # modelled by doubling the FIRST station's inc AND azi weighting columns
+        # -- the full middle and right-hand columns of eq. (10), i.e. inc-{N,E,V}
+        # and azi-{N,E} (azi-V is identically 0). Applied after both columns are
+        # populated. rev4 predates the surface tie-on, so it is excluded.
+        #
+        # NB the ISCWSA reference well #1 is vertical-North at station 1
+        # (inc=azi=0), so only the inc-N term is non-zero there; doubling inc-N
+        # alone reproduces the reference, but the E/V/azi terms matter for a
+        # deviated first survey (see tests/test_iscwsa_surface_tieon.py).
+        if self.error_model.lower().split()[-1] != 'rev4':
+            result[1, 3:9] *= 2
 
         # drkplus1_dDepth: rows 0..n-2 (negated dc)
         result[:-1, 9]  = -dc_N
