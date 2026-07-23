@@ -497,8 +497,10 @@ class ErrorModel():
         # Rev5+ surface tie-on (Def. of ISCWSA Error Model §4.7.1.1, eq. 32):
         # double the FIRST station's full inc column (N,E,V), not just inc-N.
         # ISCWSA well #1 is vertical-North at station 1 so only N is non-zero
-        # there, but E/V bite for a deviated slot. rev4 predates the tie-on.
-        if self.error_model.lower().split()[-1] != 'rev4':
+        # there, but E/V bite for a deviated slot. Only at a true surface root
+        # (md[0] == 0); a below-datum tie-on carries station 0 externally. rev4
+        # predates the tie-on.
+        if md1[0] == 0.0 and self.error_model.lower().split()[-1] != 'rev4':
             N[0] *= 2
             E[0] *= 2
             V[0] *= 2
@@ -533,7 +535,9 @@ class ErrorModel():
 
         # Rev5+ surface tie-on (Def. of ISCWSA Error Model §4.7.1.1, eq. 32):
         # double the FIRST station's azi column (N,E; azi-V is identically 0).
-        if self.error_model.lower().split()[-1] != 'rev4':
+        # Only at a true surface root (md[0] == 0); a below-datum tie-on carries
+        # station 0 externally.
+        if md1[0] == 0.0 and self.error_model.lower().split()[-1] != 'rev4':
             N[0] *= 2
             E[0] *= 2
 
@@ -698,7 +702,13 @@ class ErrorModel():
         # (inc=azi=0), so only the inc-N term is non-zero there; doubling inc-N
         # alone reproduces the reference, but the E/V/azi terms matter for a
         # deviated first survey (see tests/test_iscwsa_surface_tieon.py).
-        if self.error_model.lower().split()[-1] != 'rev4':
+        #
+        # Only at a true surface root (md[0] == 0). A sub-survey starting below
+        # the datum (md[0] != 0 -- a composed/hierarchy tie-on) carries its
+        # station-0 attitude uncertainty externally, so no fresh slot allowance
+        # is injected. Mirrors the station-0 depth (DRFR) gate above and the
+        # composition/hierarchy tie invariant.
+        if md[0] == 0.0 and self.error_model.lower().split()[-1] != 'rev4':
             result[1, 3:9] *= 2
 
         # drkplus1_dDepth: rows 0..n-2 (negated dc)

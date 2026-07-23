@@ -56,6 +56,25 @@ def test_rev4_has_no_surface_tieon():
     np.testing.assert_allclose(row4[3:9], expect, rtol=1e-9, atol=1e-12)
 
 
+def test_surface_tieon_only_at_true_surface_root():
+    """The tie-on applies only at a true surface root (md[0] == 0). A survey
+    starting below the datum (md[0] != 0, e.g. a composed/hierarchy sub-survey)
+    carries station 0 externally and gets NO slot allowance -- mirroring the
+    station-0 depth (DRFR) gate. Same geometry rooted at md=0 IS doubled, so the
+    below-datum row is exactly half the surface-rooted row on cols 3:9."""
+    model = "ISCWSA MWD Rev5.11"
+    surf = Survey(md=[0., 30., 100., 200.], inc=[0., 20., 30., 45.],
+                  azi=[0., 45., 40., 50.], header=SurveyHeader(**MAG),
+                  error_model=model)
+    deep = Survey(md=[1000., 1030., 1100., 1200.], inc=[0., 20., 30., 45.],
+                  azi=[0., 45., 40., 50.], header=SurveyHeader(**MAG),
+                  error_model=model)
+    r_surf = np.asarray(surf.err.drdp, float)[1, 3:9]
+    r_deep = np.asarray(deep.err.drdp, float)[1, 3:9]
+    np.testing.assert_allclose(r_deep, 0.5 * r_surf, rtol=1e-9, atol=1e-12)
+    assert np.any(np.abs(r_deep) > 1e-6)   # base weighting present, undoubled
+
+
 def test_vertical_north_slot_reproduces_reference_behaviour():
     """ISCWSA #1 geometry at station 1 (inc=azi=0): only inc-N is non-zero, so
     the completed doubling reproduces the historical inc-N-only result -> the
