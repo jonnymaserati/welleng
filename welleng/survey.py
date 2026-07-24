@@ -311,6 +311,7 @@ class SurveyHeader:
         azi_reference: str = "true",
         vertical_inc_limit: float = 0.0001,
         xcl_representation: str = "nev_direct",
+        dp_basis: str = "balanced_tangent",
         deg: bool = True,
         depth_unit: str = 'meters',
         surface_unit: str = 'meters',
@@ -422,6 +423,7 @@ class SurveyHeader:
         self.declination = declination
         self.vertical_inc_limit = vertical_inc_limit
         self.xcl_representation = xcl_representation
+        self.dp_basis = dp_basis
         self.grid_scale_factor = grid_scale_factor
         # Global datum (georeferencing truth lives on the header). Survey resolves
         # these from its data/args and writes them here; the position transform
