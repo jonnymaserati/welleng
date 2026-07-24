@@ -66,6 +66,34 @@ def test_interior_is_positive_semidefinite(err):
         assert np.min(np.linalg.eigvalsh(cov)) > -1e-9
 
 
+def _build(rep):
+    wd = json.load(open(DATA))
+    sh = SurveyHeader()
+    for k, v in wd["header"].items():
+        setattr(sh, k, v)
+    sh.xcl_representation = rep
+    return Survey(
+        md=wd["survey"]["md"], inc=wd["survey"]["inc"],
+        azi=wd["survey"]["azi"], header=sh, error_model=MODEL,
+    )
+
+
+def test_xcl_dia_representation_matches_nev_direct():
+    """The DIA (angle-error) recast of XCLA/XCLH reproduces the NEV-direct station
+    covariance to machine precision (conformance), and exposes a samplable e_DIA
+    perturbation (the MC-surface benefit) the NEV-direct form does not."""
+    nev = _build("nev_direct").err
+    dia = _build("dia").err
+    assert np.max(np.abs(nev.errors.cov_NEVs - dia.errors.cov_NEVs)) < 1e-9
+    for name, comp in (("XCLA", 2), ("XCLH", 1)):
+        assert np.max(np.abs(
+            nev.errors.errors[name].cov_NEV - dia.errors.errors[name].cov_NEV
+        )) < 1e-9
+        # DIA form carries a real inc/azi (DIA) perturbation -- the MC-samplable
+        # quantity that folds XCL into the standard measurement-error surface.
+        assert np.count_nonzero(dia.errors.errors[name].e_DIA[:, comp]) > 0
+
+
 def test_term_classification(err):
     """XCLA/XCLH are course-length; the residual non-standard terms fall to linear."""
     classes, xcl_mag, _, _ = err._interior_prep()
