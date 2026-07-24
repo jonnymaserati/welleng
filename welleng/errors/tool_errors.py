@@ -2600,7 +2600,7 @@ def XCLA(code, error, mag=0.167, propagation='random', NEV=True, **kwargs):
     )
 
 
-def XCLH(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
+def XCLH(code, error, mag=0.167, propagation='random', NEV=True, **kwargs):
     dpde = np.zeros((len(error.survey_rad), 3))
     dpde[1:, 0] = (
         (error.survey.md[1:] - error.survey.md[0:-1])

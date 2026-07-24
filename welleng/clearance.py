@@ -606,6 +606,21 @@ class IscwsaClearance(Clearance):
         if minimize_sf:
             self.get_sf_mins()
 
+    @staticmethod
+    def _interior_cov(survey, idx, x, mult):
+        """Covariance at an interior point ``x`` along the leg starting at
+        station ``idx`` of ``survey``. Uses the arc-faithful analytical
+        ``ErrorModel.cov_nev_at`` when the survey carries an error model
+        (the ~25%-near-doglegs fix); falls back to linear covariance
+        interpolation (``mult`` = arc fraction) when it does not -- e.g. a
+        KOP-sliced reference or a survey supplied with a bare ``cov_nev``.
+        """
+        err = getattr(survey, 'err', None)
+        if err is not None:
+            return err.cov_nev_at(survey.md[idx] + x).reshape(3, 3)
+        cov = survey.cov_nev
+        return (cov[idx] + mult * (cov[idx + 1] - cov[idx])).reshape(3, 3)
+
     def _get_sf_min(self, x, i, delta_md):
         # scipy.optimize.minimize passes x as a 1-element array; extract scalar
         x = float(np.asarray(x).ravel()[0])
@@ -627,14 +642,10 @@ class IscwsaClearance(Clearance):
 
         # Interpolated reference position and covariance — no Survey needed
         ref_pos = _interpolate_pos_nev(self.ref, xx, ii)
-        ref_cov = (
-            self.ref.cov_nev[ii]
-            + mult * (self.ref.cov_nev[ii + 1] - self.ref.cov_nev[ii])
-        ).reshape(3, 3)
+        ref_cov = self._interior_cov(self.ref, ii, xx, mult)
         ref_r = self.Rr[ii + 1]
 
         # Find closest point on offset in the two intervals around self.idx[i]
-        off_cov_src = self.offset.cov_nev
         off_idx = self.idx[i]
         n_off = len(self.offset.md)
 
@@ -657,10 +668,7 @@ class IscwsaClearance(Clearance):
                 best_dist = res_fun
                 t_mult = xo / bound if bound > 0 else 0.0
                 best_u = off_pos - ref_pos
-                best_off_cov = (
-                    off_cov_src[oi]
-                    + t_mult * (off_cov_src[oi + 1] - off_cov_src[oi])
-                ).reshape(3, 3)
+                best_off_cov = self._interior_cov(self.offset, oi, xo, t_mult)
                 best_off_r = self.Ro[oi] + t_mult * (self.Ro[oi + 1] - self.Ro[oi])
 
         dist = best_dist
