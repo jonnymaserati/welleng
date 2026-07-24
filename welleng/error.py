@@ -617,7 +617,10 @@ class ErrorModel():
                 cov += src.cov_NEV[i] + np.outer(enq, enq)
             else:  # "linear"
                 cov += src.cov_NEV[i] + f * (src.cov_NEV[i + 1] - src.cov_NEV[i])
-        return cov
+        # A covariance is symmetric; enforce it against floating-point drift from
+        # the outer-product sums so downstream (e.g. the Mahalanobis solve) sees
+        # a clean symmetric matrix.
+        return 0.5 * (cov + cov.T)
 
     def _cov_NEV_carry_per_section(self, e_NEV, e_NEV_star, sections):
         """Per-continuous-section RSS of the systematic running-sum outer
