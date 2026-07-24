@@ -193,7 +193,8 @@ class Connector:
         max_iterations: int = 1_000,
         force_min_curve: bool = False,
         closest_approach: bool = False,
-        on_infeasible: str = 'raise'
+        on_infeasible: str = 'raise',
+        direct_only: bool = False
     ) -> None:
         """Initializes the Connector and solves the trajectory.
 
@@ -266,6 +267,21 @@ class Connector:
             the beta=0 biarc at the largest radius admitting a valid CLC
             (see :func:`welleng.sawaryn_analytical.max_radius`) — and
             emits a ``UserWarning`` that the design DLS is exceeded.
+        direct_only : bool
+            Reject solutions in which either arc turns through more than
+            pi (180 deg) — i.e. accept only the "direct" way round, never a
+            long-way loop. Default ``False`` (any arc angle is rendered).
+
+            .. warning::
+               A successful solve is **NOT** a dogleg-severity feasibility
+               test unless ``direct_only=True``. A long-way (>pi) arc exists
+               at essentially any radius, so a search of the form "does a
+               CLC exist at this DLS" succeeds at almost ANY DLS — it will
+               happily return a multi-kilometre corkscrew for a short
+               pose-to-pose move. Any code that infers reachability from
+               solver success (a DLS bisection, a ``feasible`` flag, an
+               input gate) must set ``direct_only=True`` or check
+               :attr:`dogleg` / :attr:`dogleg2` against pi itself.
 
         Raises
         ------
@@ -455,6 +471,7 @@ class Connector:
             "on_infeasible must be 'raise' or 'max_radius'"
         )
         self.on_infeasible = on_infeasible
+        self.direct_only = bool(direct_only)
 
         # Things fall apart if the start and end vectors exactly equal
         # one another, so need to check for this and if this is the
@@ -585,6 +602,38 @@ class Connector:
                 else:
                     self.method = 'min_curve_to_target'
                     self._min_curve_to_target()
+
+        if self.direct_only:
+            self._assert_direct()
+
+    def _assert_direct(self) -> None:
+        """Reject a solved trajectory that loops the long way round.
+
+        Called after the solve when ``direct_only=True``. Since PR #305 the
+        renderer handles arcs of any angle, so a long-way (>pi) arc is a valid
+        solution at essentially any radius -- which means solver success alone
+        cannot certify that a pose pair is reachable at a given dogleg
+        severity. Callers using the solve as a feasibility predicate opt in
+        here and get a ``ValueError`` instead of a corkscrew.
+        """
+        arcs = [
+            a for a in (getattr(self, 'dogleg', None),
+                        getattr(self, 'dogleg2', None))
+            if a is not None
+        ]
+        # tolerance: a hair over pi is a numerical artefact of a half-turn,
+        # not a deliberate loop
+        over = [abs(float(a)) for a in arcs if abs(float(a)) > np.pi + 1e-9]
+        if over:
+            raise ValueError(
+                "No DIRECT curve-hold-curve solution at the design radii "
+                f"(R1={self.radius_design:.6g}, R2={self.radius_design2:.6g}): "
+                "the solution turns through "
+                + ", ".join(f"{np.degrees(a):.2f} deg" for a in over)
+                + " (> 180 deg), i.e. the long way round. The pose pair needs "
+                "a larger dls_design to be reachable directly. Pass "
+                "direct_only=False to allow looping solutions."
+            )
 
     def _get_method(self) -> None:
         assert self.initial_method not in [
