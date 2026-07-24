@@ -282,19 +282,22 @@ class Clearance:
         Position is interpolated by **minimum curvature** (SLERP of the unit
         tangents, via ``_interpolate_pos_nev``) — the same wellpath the
         separation rule uses, so the between-station closest approach follows the
-        true arc, not the chord. Covariance and radius are interpolated linearly —
-        adequate between adjacent stations of one well, where the eigenbasis
-        rotation is small (Brooks SPE-116155 gives the exact recipe:
-        eigendecompose, interpolate the rotation and the principal-axis sigmas,
-        reassemble; after Woodburn & Tangyin)."""
+        true arc, not the chord. Covariance is the **arc-faithful**
+        ``ErrorModel.cov_nev_at`` when the survey carries an error model (the same
+        interior EOU the separation-factor path uses -- one model, so the
+        Mahalanobis narrowphase and the SF rule agree); it falls back to linear
+        interpolation for a survey supplied with a bare ``cov_nev``. Radius is
+        interpolated linearly."""
         md, pos, cov, rad, survey = curve
         i = int(np.clip(np.searchsorted(md, q, side="right") - 1, 0, len(md) - 2))
         p = _interpolate_pos_nev(survey, float(q - md[i]), i)   # min-curvature
-        # covariance/radius linearly within the bracketing interval — one blend,
-        # reusing the position index (np.interp's end-clamp == f clipped to [0, 1]).
         dm = md[i + 1] - md[i]
         f = 0.0 if dm == 0 else float(np.clip((q - md[i]) / dm, 0.0, 1.0))
-        c = (1.0 - f) * cov[i] + f * cov[i + 1]
+        err = getattr(survey, 'err', None)
+        if err is not None:
+            c = err.cov_nev_at(q).reshape(3, 3)                 # arc-faithful EOU
+        else:
+            c = (1.0 - f) * cov[i] + f * cov[i + 1]             # linear fallback
         return p, c, float((1.0 - f) * rad[i] + f * rad[i + 1])
 
     def _quad_form_inv(self, S, dp):
@@ -357,7 +360,9 @@ class Clearance:
             return 0.0
         S = cr + co + (self.sigma_pa ** 2) * np.eye(3)
         dp = d * (max(D - (rr + ro + self.Sm), 0.0) / D)
-        return float(np.sqrt(self._quad_form_inv(S, dp))) / self.k
+        # the quadratic form is a squared Mahalanobis distance (>= 0); clamp a
+        # floating-point-negative to 0 (matches _get_sf_min), conservative.
+        return float(np.sqrt(max(0.0, self._quad_form_inv(S, dp)))) / self.k
 
     def _sf_row(self, pr, cr, rr, Op, Oc, Ro):
         """Exact (Mahalanobis) separation factor of one reference point against
