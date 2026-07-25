@@ -345,7 +345,13 @@ class ToolError:
                 self.em['header']['Inclination Range Max'].split(" ")[0]
             ))
             assert np.amax(self.e.survey.inc_rad) < value, (
-                "Model not suitable for this well path inclination"
+                "Model not suitable for this well path inclination "
+                f"(max {np.degrees(np.amax(self.e.survey.inc_rad)):.1f} deg vs "
+                f"model limit {np.degrees(value):.1f} deg). If this path came "
+                "from a CLC solve, a long-way (>180 deg) connector arc sweeps "
+                "over vertical and reaches inc 180 deg -- such a path is "
+                "outside every standard ISCWSA model's validity and cannot "
+                "carry an EOU. Re-solve with Connector(direct_only=True)."
             )
 
         # SPE 90408 App. C box-11 periodic re-initialisation (opt-in, default
