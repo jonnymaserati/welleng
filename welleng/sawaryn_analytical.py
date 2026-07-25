@@ -513,7 +513,20 @@ def _clc_solutions(P1, T1, P4, T4, R1, R2):
         co[10, bad] = 1.0                            # dummy monic -> finite roots
     roots = _companion_roots(co) * L[:, None]
     b, bi = roots.real, roots.imag
-    ok = (np.abs(bi) < 1e-4 * (np.abs(b) + 1)) & (b > 1e-6)
+    # A near-real root must not be discarded on an ABSOLUTE imaginary tolerance.
+    # Eq. 15 is ill-conditioned, so two nearby real roots collide into a conjugate
+    # pair under tiny coefficient error (textbook Wilkinson). Measured on a
+    # 56.8 m throw with 0.64 deg of turn: at DLS 0.79 the roots are 25.82 and
+    # 16.71 (giving the trivial 56.8 m connection); at DLS 0.80 they are
+    # 23.7737 +/- 5.053i and BOTH were dropped, so the solver silently returned a
+    # 13,557 m corkscrew instead. Scattered across radii that reads to a caller as
+    # an intermittently-failing solver, and it corrupted every consumer bisection
+    # in the family.
+    #
+    # So admit the REAL PART of a near-real pair (imaginary part small RELATIVE to
+    # the root) and let the closure refinement adjudicate -- that is what it is
+    # for, and a genuinely spurious candidate still fails the residual test.
+    ok = (np.abs(bi) < 0.5 * (np.abs(b) + 1e-9)) & (b > 1e-6)
     R1b, R2b = R1a[:, None], R2a[:, None]
     ps, e1, e4 = psi2[:, None], eta1[:, None], eta4[:, None]
     e14, M, psb = eta14[:, None], mu[:, None], psi2[:, None] - b**2
