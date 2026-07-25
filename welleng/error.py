@@ -589,7 +589,8 @@ class ErrorModel():
             if cls == "standard":
                 Di, Ii, Ai = src.e_DIA[i]
                 Dj, Ij, Aj = src.e_DIA[i + 1]
-                coup = pd * Di + pi_ * Ii + pa * Ai          # station-i partial coupling
+                # station-i partial coupling
+                coup = pd * Di + pi_ * Ii + pa * Ai
                 qi = dd * Di + di * Ii + da * Ai             # drk(i->q) . e_DIA[i]
                 qj = dd * Dj + di * Ij + da * Aj             # drk(i->q) . e_DIA[i+1]
                 if src.propagation == 'random':
@@ -987,7 +988,8 @@ class ErrorModel():
         its Monte-Carlo. Opt-in: the default ``'balanced_tangent'`` reproduces the
         published ISCWSA numbers exactly.
 
-        A leg's displacement is ``D = 0.5 * dmd * RF * (t1 + t2)`` (:meth:`_mc_leg_disp`).
+        A leg's displacement is ``D = 0.5 * dmd * RF * (t1 + t2)``
+        (:meth:`_mc_leg_disp`).
         Differentiating wrt an angle ``th`` of a bounding station, with
         ``u = t1.t2 = cos(DL)`` so ``dDL/dth = -(du/dth)/sin(DL)``:
 
