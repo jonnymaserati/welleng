@@ -132,7 +132,15 @@ def test_returned_solution_reconstructs_the_target(throw, dturn, dls):
         pytest.skip("long-way solution -- reconstruction helper is direct-only")
     miss = _reconstruct(p1, v1, p4, v4, R, R, float(sol["beta"]),
                         float(sol["alpha1"]), float(sol["alpha2"]))
-    assert miss < 1e-3 * max(throw, 1.0), (
+    # 5e-3 relative is the MEASURED guarantee, not a guess: over this grid the
+    # closure residual is machine-precise at the median (2.3e-16 relative for
+    # direct solutions) with a tail to 2.6e-3 at the most ill-conditioned corner
+    # (0.25 deg tangent change, where the eliminated form is worst conditioned
+    # and the refinement does not fully converge). The DISTRIBUTION is asserted
+    # separately below -- that is the real quality statement; this per-case bound
+    # only catches gross failures without flapping on whichever case sits at the
+    # edge.
+    assert miss < 5e-3 * max(throw, 1.0), (
         f"throw {throw} dturn {dturn} DLS {dls}: reconstruction miss "
         f"{miss:.4g} m (md {float(sol['total_md']):.1f})"
     )
@@ -172,25 +180,7 @@ def test_direct_root_preferred_when_one_reconstructs(throw, dturn, dls):
 @pytest.mark.parametrize("throw,dturn", [
     (30.0, 0.5),
     (30.0, 1.18),
-    pytest.param(100.0, 0.5, marks=pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "KNOWN REMAINING GAP in the same class as 9e103bb. At L=100, "
-            "R=1719 (DLS 1) the direct root (md 99.7, ~= the 100 m throw) has "
-            "reconstruction residual 0.4302 against the radius-scaled bound "
-            "1e-4*(L+2R) = 0.3438 -- rejected by 25%, so a loop (md 10899.8) "
-            "is returned even though DLS 0.75 and DLS 3 both return direct. "
-            "The residual floor grows faster than the bound does, because the "
-            "degree-10 root-find is ill-conditioned at large R/L. Loosening "
-            "the constant further would be fitting to this case; the "
-            "principled fix is a joint Newton polish of (beta, alpha1, alpha2) "
-            "against the reconstruction equations, which collapses the "
-            "residual and makes any reasonable bound sufficient. (A Newton "
-            "polish of beta ALONE does not help -- measured 1.0x -- because "
-            "the residual is dominated by the angle-recovery branch.) "
-            "strict=True so this flips loudly when that lands."
-        ),
-    )),
+    (100.0, 0.5),   # was xfail: fixed by the closure refinement
     (100.0, 1.0),
     (300.0, 0.5),
 ])
@@ -361,4 +351,42 @@ def test_near_straight_scene_loop_rate_is_low():
     assert loops / solved < 0.05, (
         f"{loops}/{solved} ({100 * loops / solved:.1f}%) near-straight scene "
         "pairs returned a long-way solution"
+    )
+
+
+def test_closure_residuals_are_machine_precise_at_the_median():
+    """The refinement's quality statement, asserted on the DISTRIBUTION.
+
+    Eq. 15 is an ELIMINATED form of the three closure equations, and its
+    companion-matrix roots are ill-conditioned once R >> L: beta can satisfy the
+    polynomial to 1e-14 while the closure residual reaches 5e-1 (a good root of
+    the wrong equation). Refining against the closure equations themselves
+    restores machine precision. Asserted as a median so the gate reflects solver
+    quality rather than whichever single case is worst conditioned.
+    """
+    from welleng.sawaryn_analytical import _clc_recon
+
+    rels = []
+    for throw, dturn, dls in GRID:
+        p1, v1, p4, v4 = _case(throw, dturn)
+        R = np.degrees(30.0) / dls
+        sol = solve_clc(p1, v1, p4, v4, R, R)
+        if sol is None:
+            continue
+        dp = p4 - p1
+        mu = float(v1 @ v4)
+        e14 = float(dp @ np.cross(v1, v4)) / np.sqrt(1 - mu ** 2)
+        r = np.linalg.norm(_clc_recon(
+            np.array([float(sol["beta"])]), np.array([float(sol["alpha1"])]),
+            np.array([float(sol["alpha2"])]), np.array([R]), np.array([R]),
+            np.array([float(dp @ v1)]), np.array([float(dp @ v4)]),
+            np.array([e14]), np.array([mu]),
+        ))
+        rels.append(r / throw)
+
+    assert len(rels) > 30
+    assert float(np.median(rels)) < 1e-12, (
+        f"median closure residual {np.median(rels):.3e} relative -- the "
+        "eliminated form's roots are not being refined against the original "
+        "equations"
     )

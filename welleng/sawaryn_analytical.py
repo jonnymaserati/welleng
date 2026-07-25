@@ -375,6 +375,108 @@ def _companion_roots(co):
     return np.linalg.eigvals(C)
 
 
+def _clc_recon(b, a1, a2, R1, R2, e1, e4, e14, M):
+    """The three CLC closure residuals at (beta, alpha1, alpha2).
+
+    These are the ORIGINAL equations the closed form is derived from -- the
+    degree-10 polynomial (Eq. 15) is an ELIMINATED form of them. Returned
+    stacked on the last axis so a refinement step can drive them to zero.
+    """
+    c1, s1 = np.cos(a1), np.sin(a1)
+    c2, s2 = np.cos(a2), np.sin(a2)
+    t1h, t2h = np.tan(a1 / 2), np.tan(a2 / 2)
+    f1 = R1 * s1 + b * c1 + R2 * t2h * (M + c1)
+    f4 = R1 * t1h * (M + c2) + b * c2 + R2 * s2
+    with np.errstate(divide="ignore", invalid="ignore"):
+        sd = (1 - M ** 2 - c1 ** 2 - c2 ** 2 + 2 * M * c1 * c2) / (1 - M ** 2)
+    f14 = (R1 * t1h + b + R2 * t2h) * np.sqrt(np.maximum(sd, 0.0))
+    return np.stack([f1 - e1, f4 - e4, np.abs(f14) - np.abs(e14)], axis=-1)
+
+
+def _clc_refine(b, a1, a2, R1, R2, e1, e4, e14, M, mask, iters=12):
+    """Gauss-Newton the closure residuals to machine precision, in place.
+
+    WHY THIS EXISTS. The closed form is exact, but this evaluation path is not:
+    Eq. 15 is reached by ELIMINATION, and its companion-matrix roots are
+    ill-conditioned once R >> L. Measured on a 100 m throw with a 0.5 deg
+    tangent change: beta satisfies the polynomial to 1e-14 at EVERY radius,
+    yet the closure residual grows 3e-4 (R=286) -> 2.2e-3 (573) -> 2.2e-1
+    (1719) -> 5.0e-1 (2292), because a polynomial-residual of 1e-14 maps to a
+    beta error amplified by ~R. So the root is a good root of the WRONG
+    equation. Refining against the original equations restores machine
+    precision (5.6e-14) and recovers md 100.00 for a 100 m throw.
+
+    NB polishing beta against the POLYNOMIAL does nothing (measured 1.0x) --
+    it is already at 1e-14. The target has to be the closure residuals.
+
+    Only the entries flagged by ``mask`` are refined, so well-conditioned
+    solves (the common case) pay nothing.
+    """
+    if not mask.any():
+        return b, a1, a2
+    idx = np.nonzero(mask)
+    x = np.stack([b[idx], a1[idx], a2[idx]], axis=-1)          # (m, 3)
+    R1m, R2m = np.broadcast_to(R1, b.shape)[idx], np.broadcast_to(R2, b.shape)[idx]
+    e1m = np.broadcast_to(e1, b.shape)[idx]
+    e4m = np.broadcast_to(e4, b.shape)[idx]
+    e14m = np.broadcast_to(e14, b.shape)[idx]
+    Mm = np.broadcast_to(M, b.shape)[idx]
+
+    def f(v):
+        return _clc_recon(v[..., 0], v[..., 1], v[..., 2],
+                          R1m, R2m, e1m, e4m, e14m, Mm)
+
+    scale = np.maximum(np.abs(e1m) + np.abs(e4m) + R1m + R2m, 1.0)
+    for _ in range(iters):
+        r = f(x)
+        if not np.isfinite(r).all():
+            break
+        if (np.linalg.norm(r, axis=-1) < 1e-13 * scale).all():
+            break                       # converged -- stop paying for iterations
+        J = np.empty(r.shape + (3,))
+        for j in range(3):
+            h = 1e-7 * np.maximum(np.abs(x[..., j]), 1e-3)
+            xp = x.copy(); xp[..., j] += h
+            J[..., j] = (f(xp) - r) / h[..., None]
+        try:
+            dx = np.linalg.solve(J, -r[..., None])[..., 0]
+        except np.linalg.LinAlgError:
+            dx = np.einsum('...ij,...j->...i', np.linalg.pinv(J), -r)
+        step = np.where(np.isfinite(dx), dx, 0.0)
+        # A refinement is a PRECISION operation, never a search: cap each step
+        # hard so it cannot walk into a neighbouring basin. Without this, an
+        # angle near zero can absorb a ~0.5 rad step and land on a co-terminal
+        # long-way root, which silently changes WHICH solution is returned and
+        # breaks monotonicity in the radius.
+        lim = np.stack([
+            np.maximum(np.abs(x[..., 0]), 1.0) * 0.05,       # beta: 5%
+            np.full(x.shape[:-1], 0.02),                     # alpha1: ~1.1 deg
+            np.full(x.shape[:-1], 0.02),                     # alpha2
+        ], axis=-1)
+        x = x + np.clip(step, -lim, lim)
+
+    # Accept per-entry only when the refinement genuinely IMPROVED the closure
+    # residual AND left the solution in its own basin -- same arc branch
+    # (direct stays direct, long-way stays long-way) and beta still positive.
+    # Anything else keeps the seed, so refinement can only sharpen a solution,
+    # never substitute a different one.
+    seed = np.stack([b[idx], a1[idx], a2[idx]], axis=-1)
+    r_seed = np.linalg.norm(f(seed), axis=-1)
+    r_new = np.linalg.norm(f(x), axis=-1)
+    same_branch = (
+        ((np.abs(x[..., 1]) > np.pi) == (np.abs(seed[..., 1]) > np.pi))
+        & ((np.abs(x[..., 2]) > np.pi) == (np.abs(seed[..., 2]) > np.pi))
+    )
+    keep = (np.isfinite(x).all(-1) & (r_new < r_seed) & same_branch
+            & (x[..., 0] > 0))
+    b, a1, a2 = b.copy(), a1.copy(), a2.copy()
+    for arr, j in ((b, 0), (a1, 1), (a2, 2)):
+        vals = arr[idx]
+        vals[keep] = x[..., j][keep]
+        arr[idx] = vals
+    return b, a1, a2
+
+
 def _clc_solutions(P1, T1, P4, T4, R1, R2):
     """Core engine: every CLC solution per pair (general, non-degenerate case).
 
@@ -445,7 +547,32 @@ def _clc_solutions(P1, T1, P4, T4, R1, R2):
     # for a 30 m throw at R=573 has res 3.2e-2 vs a 1e-4*L bound of 3e-3).
     # Scale by the characteristic length of the compared quantities so
     # acceptance cannot depend on the R/L ratio.
-    valid = ok & (res < 1e-4 * np.maximum(L[:, None], R1b + R2b))
+    # Refine against the ORIGINAL closure equations wherever the eliminated
+    # form's root is not already precise (see _clc_refine). Scale-free trigger:
+    # the residual relative to the magnitudes being compared.
+    denom = np.abs(e1) + np.abs(e4) + np.abs(e14) + R1b + R2b + np.abs(b) + L[:, None]
+    need = ok & (res > 1e-9 * denom)
+    if need.any():
+        b, a1b, a2b = _clc_refine(
+            b, a1b, a2b, R1b, R2b, e1, e4, e14, M, need
+        )
+        res = np.linalg.norm(
+            _clc_recon(b, a1b, a2b, R1b, R2b, e1, e4, e14, M), axis=-1
+        )
+        denom = (np.abs(e1) + np.abs(e4) + np.abs(e14) + R1b + R2b
+                 + np.abs(b) + L[:, None])
+    # Acceptance. The relative test is the principled one -- the solve is
+    # scale-free (the polynomial is formed in units of L), so the bound must be
+    # too; an absolute bound tied to any single length made acceptance depend on
+    # the L:R ratio. It is UNIONED with the previous radius-scaled bound so this
+    # change is strictly ADDITIVE: since refinement only ever lowers a residual
+    # (it is accepted per-entry only when it improves), no root that was
+    # accepted before can be dropped now, and the newly-precise roots are
+    # additionally admitted.
+    valid = ok & (
+        (res < 1e-6 * denom)
+        | (res < 1e-4 * np.maximum(L[:, None], R1b + R2b))
+    )
     if bad.any():
         valid[bad] = False                          # degenerate pairs -> use solve_clc_2d
     # subtended_angles returns 2*arctan2(...) in (-2pi, 2pi]; a co-terminal value
