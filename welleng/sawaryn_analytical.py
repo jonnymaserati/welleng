@@ -113,6 +113,39 @@ def subtended_angles(beta, psi2, eta1, eta4, eta14, mu, R1, R2):
     return _roots(A1, B1, C1), _roots(A2, B2, C2)
 
 
+def _gram_det(mu, alpha1, alpha2):
+    """Gram determinant of (t1, t_hold, t4) from their pairwise cosines.
+
+    ``1 - mu**2 - c1**2 - c2**2 + 2*mu*c1*c2`` is the determinant of the Gram
+    matrix of three unit vectors with pairwise cosines (mu, c1, c2). It is >= 0
+    for any realisable configuration and 0 exactly when the three are coplanar --
+    so a negative value means either rounding noise or a genuinely unrealisable
+    angle triple, and the naive form CANNOT distinguish them: at a near-planar
+    solution it carries 8.6e-08 relative error, ample to flip the sign of a
+    quantity whose true value is -2.5e-09.
+
+    Evaluated instead by the spherical Heron identity, with sides
+    ``a = arccos(mu)``, ``b = alpha1``, ``c = alpha2`` and ``s = (a+b+c)/2``:
+
+        det G = 4 sin(s) sin(s-a) sin(s-b) sin(s-c)
+
+    A PRODUCT of sines rather than a difference of near-equal squares, so the
+    small-angle regime stays accurate -- measured 6.2e-16 relative against
+    60-digit arithmetic on the same case. A negative result is then trustworthy:
+    it means the spherical triangle inequality is violated and NO hold direction
+    exists for that angle pair.
+    """
+    # The determinant depends only on the COSINES, so map every side to its
+    # principal value in [0, pi] before applying Heron -- a spherical triangle
+    # side of 359 deg is not a side, and feeding a long-way arc in directly
+    # makes the identity report a spurious negative.
+    a = np.arccos(np.clip(mu, -1.0, 1.0))
+    b = np.arccos(np.clip(np.cos(np.asarray(alpha1, float)), -1.0, 1.0))
+    c = np.arccos(np.clip(np.cos(np.asarray(alpha2, float)), -1.0, 1.0))
+    sp = 0.5 * (a + b + c)
+    return 4.0 * np.sin(sp) * np.sin(sp - a) * np.sin(sp - b) * np.sin(sp - c)
+
+
 def forward(alpha1, alpha2, beta, mu, R1, R2):
     """Forward model (Eqs. 11-13): (eta1, eta4, eta14) from the path parameters.
 
@@ -124,7 +157,9 @@ def forward(alpha1, alpha2, beta, mu, R1, R2):
     T1, T2 = np.tan(alpha1/2), np.tan(alpha2/2)
     eta1 = R1*s1 + beta*c1 + R2*T2*(mu + c1)                     # Eq. 11
     eta4 = R1*T1*(mu + c2) + beta*c2 + R2*s2                     # Eq. 12
-    surd = (1 - mu**2 - c1**2 - c2**2 + 2*mu*c1*c2) / (1 - mu**2)
+    # Accurate Gram determinant (see _gram_det): the naive difference-of-squares
+    # form cannot tell rounding noise from a genuinely unrealisable angle triple.
+    surd = float(_gram_det(mu, alpha1, alpha2)) / (1 - mu**2)
     if surd < 0:
         return None
     eta14 = (R1*T1 + beta + R2*T2) * np.sqrt(surd)               # Eq. 13
@@ -543,12 +578,25 @@ def _clc_solutions(P1, T1, P4, T4, R1, R2):
             f1 = R1b*sn1 + b*c1 + R2b*t2h*(M+c1)
             f4 = R1b*t1h*(M+c2) + b*c2 + R2b*sn2
             with np.errstate(divide='ignore', invalid='ignore'):
-                sd = (1-M**2 - c1**2 - c2**2 + 2*M*c1*c2)/(1-M**2)
-            # clamp a tiny-negative surd to 0 -- at eta14~0 (planar) the true
-            # solution's surd sits at ~0- numerically; rejecting it on surd<0
-            # drops a valid root. eta1/eta4 still filter genuinely-bad branches.
+                # Accurate Gram determinant via the spherical Heron identity
+                # (see _gram_det). The naive difference-of-squares form carries
+                # ~1e-07 relative error in near-planar geometry -- enough to flip
+                # the sign of a quantity whose true value is ~-2.5e-09 -- so the
+                # old code could not tell rounding noise from a genuinely
+                # unrealisable angle triple and clamped BOTH to zero. That
+                # admitted phantom solutions: triples satisfying Eqs 11-12 to
+                # machine precision for which NO hold direction exists, because
+                # the spherical triangle inequality is violated. Measured on a
+                # near-planar pose pair, EVERY returned solution was of this kind.
+                sd = _gram_det(M, a1, a2)/(1-M**2)
+            # A negative Gram determinant is now trustworthy: reject rather than
+            # clamp, so an unrealisable triple cannot reach a caller. Genuine
+            # coplanarity sits at sd = 0 and still passes.
             f14 = (R1b*t1h + b + R2b*t2h) * np.sqrt(np.maximum(sd, 0.0))
-            res4.append(np.sqrt((f1-e1)**2 + (f4-e4)**2 + (np.abs(f14)-np.abs(e14))**2))
+            sd_bad = sd < -1e-12
+            res4.append(np.where(
+                sd_bad, np.inf,
+                np.sqrt((f1-e1)**2 + (f4-e4)**2 + (np.abs(f14)-np.abs(e14))**2)))
             a1_4.append(a1); a2_4.append(a2)
     res4 = np.stack(res4, -1); a1_4 = np.stack(a1_4, -1); a2_4 = np.stack(a2_4, -1)
     k = np.argmin(res4, -1)                          # best-matching angle branch
@@ -642,9 +690,26 @@ def solve_clc(p1, t1, p4, t4, R1, R2=None, return_all=False):
         ``return_all=True``: list of such dicts, shortest first.
     """
     R2 = R1 if R2 is None else R2
-    mu = float(np.asarray(t1, float) @ np.asarray(t4, float))
+    t1a, t4a = np.asarray(t1, float), np.asarray(t4, float)
+    mu = float(t1a @ t4a)
     if abs(mu) > 1 - 1e-9:                           # parallel/antiparallel: use 2D form
         return solve_clc_2d(p1, t1, p4, t4, R1, R2, return_all=return_all)
+    # PLANAR (g14 = 0): route to the 2D form, per Sawaryn (2021) -- "Setting
+    # g14 = 0 causes Eq. 15 to degenerate to the 2D general equation Eq. 33",
+    # an 8th-order form quartic in b^2, and the paper explicitly recommends the
+    # degenerate cases be implemented. Running the general degree-10 Eq. 15 on a
+    # degenerate configuration is what produced unrealisable answers here: for a
+    # target displaced along the entry tangent (what a wellbore does between
+    # adjacent stations) it returned angle triples whose spherical triangle
+    # inequality is violated, i.e. no hold direction exists for them.
+    # The docstring has always claimed this routing; the code only fell back to
+    # the 2D form when the general one returned NOTHING, so it almost never ran.
+    dpa = np.asarray(p4, float) - np.asarray(p1, float)
+    _L = np.sqrt(float(dpa @ dpa))
+    if _L > 0:
+        eta14 = float(dpa @ np.cross(t1a, t4a)) / np.sqrt(1 - mu ** 2)
+        if abs(eta14) < 1e-8 * _L:
+            return solve_clc_2d(p1, t1, p4, t4, R1, R2, return_all=return_all)
     b, a1, a2, md, valid = (x[0] for x in _clc_solutions([p1], [t1], [p4], [t4], R1, R2))
     sols = [dict(beta=float(b[k]), alpha1=float(a1[k]), alpha2=float(a2[k]),
                  total_md=float(md[k])) for k in range(len(b)) if valid[k]]
@@ -706,6 +771,16 @@ def solve_clc_2d(p1, t1, p4, t4, R1, R2=None, return_all=False):
                 continue
             b = float(np.sqrt(u))
             r, x1, x2 = _branch(b)
+            # Realisability: this form verifies on Eqs 11-12 only (the
+            # out-of-plane surd sits at 0 numerically in the planar case it is
+            # written for), so on its own it will happily return an angle triple
+            # for which NO hold direction exists -- alpha2 > theta + alpha1, the
+            # spherical triangle inequality violated. Those satisfy Eqs 11-12 to
+            # machine precision and are still not paths. Gate on the accurate
+            # Gram determinant (see _gram_det); genuine coplanarity sits at 0 and
+            # still passes.
+            if x1 is not None and _gram_det(mu, x1, x2) < -1e-12:
+                continue
             if r < tol and not any(abs(b - s['beta']) < 1e-2 for s in sols):
                 x1, x2 = x1 % (2 * np.pi), x2 % (2 * np.pi)   # true arc turn
                 sols.append(dict(beta=b, alpha1=x1, alpha2=x2,

@@ -23,7 +23,7 @@ that reconstructs exists, a direct root must be the one selected.
 import numpy as np
 import pytest
 
-from welleng.sawaryn_analytical import solve_clc
+from welleng.sawaryn_analytical import _gram_det, solve_clc
 
 def _uv(inc, azi):
     i, a = np.radians(inc), np.radians(azi)
@@ -178,35 +178,41 @@ def test_direct_root_preferred_when_one_reconstructs(throw, dturn, dls):
 
 
 @pytest.mark.parametrize("throw,dturn", [
-    (30.0, 0.5),
-    (30.0, 1.18),
-    (100.0, 0.5),   # was xfail: fixed by the closure refinement
-    (100.0, 1.0),
-    (300.0, 0.5),
+    (30.0, 0.5), (30.0, 1.18), (100.0, 0.5), (100.0, 1.0), (300.0, 0.5),
 ])
-def test_direct_solution_persists_as_the_radius_tightens(throw, dturn):
-    """Once a direct solution appears, tightening the radius must not lose it.
+def test_returned_solutions_are_geometrically_REALISABLE(throw, dturn):
+    """Never return an angle triple for which no hold direction exists.
 
-    The physically-sound half of the monotonicity criterion. (The converse is
-    NOT required: at a gentle enough limit the direct solution genuinely ceases
-    to exist -- turning 1.18 deg at R=1719 m needs 35.4 m of arc against a 30 m
-    throw -- so the root set may legitimately shrink as R grows.)
+    Replaces an earlier monotonicity test that asserted a direct solution
+    persists as the radius tightens. That assertion was WRONG for this geometry,
+    and the reason is the substantive finding: ``_case`` puts the target exactly
+    along ``v1`` (what a wellbore does between adjacent stations), and to arrive
+    ON-axis with a slightly different heading the path must deviate and return --
+    an S-curve, i.e. OPPOSITE-sense arcs. A same-sense curve-hold-curve cannot
+    trace one, so no direct CLC exists here at all.
+
+    The solver used to report one anyway: triples satisfying Eqs 11-12 to machine
+    precision whose spherical triangle inequality is violated (alpha2 > theta +
+    alpha1), so no hold direction exists. Measured at throw=100, dturn=0.5,
+    DLS 1.0: a returned md=100.0 with Gram determinant -6.29e-11. The old test
+    passed because it was asserting those phantoms persisted.
+
+    The invariant that IS true, and the one worth pinning: whatever comes back
+    must be realisable.
     """
     p1, v1, p4, v4 = _case(throw, dturn)
-    seen_direct_at = None
-    for dls in (0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 10.0, 20.0, 40.0):
+    for dls in (0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 6.0, 10.0, 20.0):
         R = np.degrees(30.0) / dls
         sol = solve_clc(p1, v1, p4, v4, R, R)
         if sol is None:
             continue
-        if _is_direct(sol):
-            seen_direct_at = dls
-        elif seen_direct_at is not None:
-            pytest.fail(
-                f"throw {throw} dturn {dturn}: direct at DLS {seen_direct_at} "
-                f"but a loop at the TIGHTER DLS {dls} "
-                f"(md {float(sol['total_md']):.1f})"
-            )
+        g = float(_gram_det(float(v1 @ v4), float(sol["alpha1"]),
+                            float(sol["alpha2"])))
+        assert g >= -1e-12, (
+            f"throw {throw} dturn {dturn} DLS {dls}: returned an UNREALISABLE "
+            f"triple (Gram det {g:.3e}, md {float(sol['total_md']):.1f}) -- no "
+            "hold direction exists for those arc angles"
+        )
 
 
 def test_the_field_case_is_a_short_connection():
