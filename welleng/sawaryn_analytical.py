@@ -764,7 +764,9 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
 
     Notes
     -----
-    Closed-form condition of Sawaryn (2021, SPE-204111-PA); no iteration. Parallel
+    Closed-form CONDITION of Sawaryn (2021, SPE-204111-PA) -- the roots of c0 --
+    located by a bracketing scan plus Brent, so the condition is analytic but its
+    solution is not iteration-free. Parallel
     tangents (``|mu| = 1``) — where the general form is singular — are handled by a
     2D feasibility bisection (:func:`solve_clc_2d`). See :func:`solve_clc` for the
     general (fixed-design-radius) solve.
@@ -778,8 +780,20 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
     def _c0(R):
         return _eq15_coeffs(1.0, e1 / L, e4 / L, mu, R / L, ratio * R / L)[0]
 
-    grid = np.linspace(1e-3 * L, 5.0 * L, 600)
-    cv = np.array([_c0(r) for r in grid])
+    # Bracket the roots of c0. The upper limit CANNOT be a fixed multiple of L:
+    # the gentlest feasible radius scales with how nearly collinear the poses are,
+    # so R_max/L grows without bound as the tangent change shrinks. A hard 5*L cap
+    # silently returned None for exactly the near-straight geometry this function
+    # exists to serve (measured: R_max/L of 5.1, 6.7 and 10.5 on random scene pose
+    # pairs, all reported unreachable). Extend geometrically until c0 brackets a
+    # root, then scan that range.
+    hi = 5.0 * L
+    for _ in range(12):
+        grid = np.linspace(1e-3 * L, hi, 600)
+        cv = np.array([_c0(r) for r in grid])
+        if np.any(cv[:-1] * cv[1:] < 0):
+            break
+        hi *= 4.0
     best = None
     for i in range(len(grid) - 1):
         if cv[i] * cv[i + 1] >= 0:
