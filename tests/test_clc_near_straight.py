@@ -234,3 +234,131 @@ def test_the_field_case_is_a_short_connection():
     assert sol is not None
     assert float(sol["total_md"]) == pytest.approx(30.0, abs=0.5)
     assert _is_direct(sol)
+
+
+# ---------------------------------------------------------------------------
+# Scene-scaled coverage.
+#
+# The grid above is ANCHORED: one origin, one base attitude, target exactly
+# along v1, zero lateral offset. That is not what a caller submits -- an online
+# CLC endpoint or a planner hands over arbitrary poses anywhere in space. A CLC
+# solve is pure geometry and must be ambivalent to scene placement, so these
+# cases vary position, attitude and lateral offset.
+#
+# Endpoint fidelity is deliberately NOT re-tested here: it is already covered
+# through welleng's own renderer by
+# test_connector_analytical.test_random_pose_battery_no_spurious_rejection
+# (which is what caught an incorrect arc normalisation at 86 cases). These
+# tests cover the properties that battery does NOT: scene invariance, direct
+# preference, and the near-straight long-way rate.
+# ---------------------------------------------------------------------------
+
+def _scene_case(rng):
+    """A near-straight pose pair anywhere in a scene, any attitude, WITH lateral
+    offset -- i.e. what an online CLC caller or a planner actually submits."""
+    inc0 = rng.uniform(0.5, 92.0)
+    azi0 = rng.uniform(0.0, 360.0)
+    v1 = _uv(inc0, azi0)
+    v4 = _uv(np.clip(inc0 + rng.uniform(-2.5, 2.5), 0.05, 179.0),
+             azi0 + rng.uniform(-2.5, 2.5))
+    throw = rng.uniform(20.0, 150.0)
+    p1 = rng.normal(scale=2000.0, size=3) + np.array([0.0, 0.0, 2500.0])
+    lat = np.cross(v1, [0.0, 0.0, 1.0])
+    lat = (np.array([1.0, 0.0, 0.0]) if np.linalg.norm(lat) < 1e-9
+           else lat / np.linalg.norm(lat))
+    return p1, v1, p1 + throw * v1 + rng.uniform(-5.0, 5.0) * lat, v4
+
+
+def _rand_rot(rng):
+    q, _ = np.linalg.qr(rng.normal(size=(3, 3)))
+    if np.linalg.det(q) < 0:
+        q[:, 0] *= -1
+    return q
+
+
+@pytest.mark.parametrize("seed", range(12))
+def test_solution_is_invariant_to_scene_placement(seed):
+    """Rigidly moving the whole problem must not change the solution.
+
+    Translating and rotating (p1, v1, p4, v4) together must leave beta, both arc
+    angles and the measured depth unchanged -- pure geometry has no preferred
+    origin or axis. Guards against origin-dependence creeping into the closed
+    form: the bare Sawaryn form drops the p1 offset and is valid only at the
+    origin, which is why connector._solve_chc_analytical carries an explicit
+    "dp = pos_target - pos1 keeps this frame-free" note.
+    """
+    rng = np.random.default_rng(seed)
+    p1, v1, p4, v4 = _scene_case(rng)
+    R = np.degrees(30.0) / 3.0
+    base = solve_clc(p1, v1, p4, v4, R, R)
+    if base is None:
+        pytest.skip("no CLC for this pair")
+    scale = max(float(base["total_md"]), 1.0)
+    for _ in range(3):
+        t, q = rng.normal(scale=5000.0, size=3), _rand_rot(rng)
+        moved = solve_clc(q @ p1 + t, q @ v1, q @ p4 + t, q @ v4, R, R)
+        assert moved is not None, "solvable in place but not when moved"
+        assert abs(float(moved["beta"]) - float(base["beta"])) < 1e-6 * scale
+        assert abs(float(moved["total_md"])
+                   - float(base["total_md"])) < 1e-6 * scale
+        for k in ("alpha1", "alpha2"):
+            # rotation round-off, absolute, on angles up to 2*pi
+            assert abs(float(moved[k]) - float(base[k])) < 1e-6
+
+
+@pytest.mark.parametrize("seed", range(24))
+def test_scene_direct_root_preferred_over_a_loop(seed):
+    """Anywhere in the scene: if an accepted direct root of sane length exists,
+    the solver must not return a long-way one instead."""
+    rng = np.random.default_rng(1000 + seed)
+    p1, v1, p4, v4 = _scene_case(rng)
+    R = np.degrees(30.0) / 3.0
+    every = solve_clc(p1, v1, p4, v4, R, R, return_all=True)
+    if not every:
+        pytest.skip("no CLC for this pair")
+    L = float(np.linalg.norm(p4 - p1))
+    sane_direct = [s for s in every
+                   if _is_direct(s) and float(s["total_md"]) < 1.5 * L]
+    if not sane_direct:
+        pytest.skip("no sane direct root accepted at this radius")
+    chosen = solve_clc(p1, v1, p4, v4, R, R)
+    assert _is_direct(chosen), (
+        f"seed {seed}: direct root available (md "
+        f"{min(float(s['total_md']) for s in sane_direct):.1f}, L {L:.1f}) but "
+        f"got a loop (md {float(chosen['total_md']):.1f})"
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "KNOWN GAP, same class as the L=100/R=1719 case above and MUCH broader than "
+    "the anchored grid suggested. Over 300 scene-realistic near-straight pairs "
+    "(any attitude, any scene position, 20-150 m throw, <=2.5 deg tangent "
+    "change, <=5 m lateral) the long-way rate is 47.0% at DLS 3 (28.7% at DLS 6, "
+    "17.3% at DLS 10), worst md/L 167x. These are a planner's ordinary local "
+    "connections, so the residual-vs-bound gap is not a corner case. Contrast "
+    "welleng-pathfinder's 400-pair battery at R/L ~ 0.5-2.9, where an 87.8% loop "
+    "rate is GENUINE geometry and unchanged by 9e103bb: loops are real in tight "
+    "geometry and largely artefact in near-straight geometry. Fix is the joint "
+    "Newton polish of (beta, alpha1, alpha2) noted above."
+))
+def test_near_straight_scene_loop_rate_is_low():
+    """Long-way solutions should be rare when the poses are nearly collinear."""
+    rng = np.random.default_rng(7)
+    R = np.degrees(30.0) / 3.0
+    solved = loops = 0
+    for _ in range(300):
+        p1, v1, p4, v4 = _scene_case(rng)
+        try:
+            sol = solve_clc(p1, v1, p4, v4, R, R)
+        except Exception:
+            continue
+        if sol is None:
+            continue
+        solved += 1
+        if not _is_direct(sol):
+            loops += 1
+    assert solved > 200
+    assert loops / solved < 0.05, (
+        f"{loops}/{solved} ({100 * loops / solved:.1f}%) near-straight scene "
+        "pairs returned a long-way solution"
+    )
