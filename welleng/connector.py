@@ -605,6 +605,35 @@ class Connector:
 
         if self.direct_only:
             self._assert_direct()
+        else:
+            self._warn_if_looping()
+
+    def _warn_if_looping(self) -> None:
+        """Warn once when a solution loops the long way round.
+
+        A >pi arc is a legitimate CLC (the renderer draws it correctly since
+        PR #305), but it is rarely what a caller wants and it CANNOT be error
+        modelled: sweeping over vertical reaches inc 180 deg, outside every
+        standard ISCWSA model's stated validity, so the path can carry no EOU,
+        separation factor or collision probability. Callers in an uncertainty
+        pipeline want ``direct_only=True``; this warning stops the choice being
+        silent for callers who did not know it existed.
+        """
+        arcs = [
+            abs(float(a)) for a in (getattr(self, 'dogleg', None),
+                                    getattr(self, 'dogleg2', None))
+            if a is not None
+        ]
+        if any(a > np.pi + 1e-9 for a in arcs):
+            warnings.warn(
+                "CLC solution loops the long way round (arc "
+                + ", ".join(f"{np.degrees(a):.1f} deg" for a in arcs
+                            if a > np.pi + 1e-9)
+                + f"); md {getattr(self, 'md_target', float('nan')):.0f}. "
+                "Such a path reaches inc 180 deg and cannot be error modelled "
+                "(no EOU/SF/P). Pass direct_only=True to reject it.",
+                UserWarning, stacklevel=3,
+            )
 
     def _assert_direct(self) -> None:
         """Reject a solved trajectory that loops the long way round.
