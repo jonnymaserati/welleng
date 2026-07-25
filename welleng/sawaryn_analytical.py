@@ -787,59 +787,50 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
     # exists to serve (measured: R_max/L of 5.1, 6.7 and 10.5 on random scene pose
     # pairs, all reported unreachable). Extend geometrically until c0 brackets a
     # root, then scan that range.
-    hi = 5.0 * L
+    hi, grid, cv = 5.0 * L, None, None
     for _ in range(12):
-        grid = np.linspace(1e-3 * L, hi, 600)
-        cv = np.array([_c0(r) for r in grid])
-        if np.any(cv[:-1] * cv[1:] < 0):
+        g = np.linspace(1e-3 * L, hi, 600)
+        v = np.array([_c0(r) for r in g])
+        if np.any(v[:-1] * v[1:] < 0):
+            grid, cv = g, v
             break
         hi *= 4.0
-    best = None
-    for i in range(len(grid) - 1):
-        if cv[i] * cv[i + 1] >= 0:
-            continue
-        R = brentq(_c0, grid[i], grid[i + 1])
-        R1, R2 = R, ratio * R
-        a1s, a2s = subtended_angles(0.0, psi2, e1, e4, e14, mu, R1, R2)
+    def _admissible(R):
+        """Best-closing branch pair at R with BOTH arcs <= pi, else (None, None).
+
+        The ``<= pi`` constraint is applied INSIDE the branch selection, not to the
+        winner of an unconstrained selection: otherwise a row whose best-residual
+        branch is a long-way one is rejected even though an admissible branch also
+        closes there.
+        """
+        a1s, a2s = subtended_angles(0.0, psi2, e1, e4, e14, mu, R, ratio * R)
+        bestr, ang = np.inf, None
         for x1 in a1s:
             for x2 in a2s:
-                f = forward(x1, x2, 0.0, mu, R1, R2)
+                m1, m2 = x1 % (2 * np.pi), x2 % (2 * np.pi)
+                if not (m1 <= np.pi + 1e-9 and m2 <= np.pi + 1e-9):
+                    continue
+                f = forward(x1, x2, 0.0, mu, R, ratio * R)
                 if f is None:
                     continue
-                if (abs(f[0] - e1) < 1e-4 * L and abs(f[1] - e4) < 1e-4 * L
-                        and abs(abs(f[2]) - abs(e14)) < 1e-4 * L):
-                    a1, a2 = x1 % (2 * np.pi), x2 % (2 * np.pi)
-                    if a1 <= np.pi + 1e-9 and a2 <= np.pi + 1e-9 and (
-                            best is None or R > best['radius']):
-                        best = dict(radius=R1, radius2=R2, beta=0.0,
-                                    alpha1=a1, alpha2=a2, total_md=R1 * a1 + R2 * a2)
+                r = max(abs(f[0] - e1), abs(f[1] - e4),
+                        abs(abs(f[2]) - abs(e14))) / L
+                if r < bestr:
+                    bestr, ang = r, (m1, m2)
+        return ang if ang is not None else (None, None)
 
-    # --- exact-model refinement -------------------------------------------
-    # c0 is a ~4000-term expansion whose terms scale like (R/L)^4, so once
-    # R >> L (the near-collinear regime) it sums enormous cancelling terms and
-    # degenerates to noise: measured at R/L 76.9 it reads 2.0e1 / 1.4e2 / 1.6e1 /
-    # 4.0e1 / 1.1e2 across the true root, integer-quantised, with NO sign change.
-    # brentq then roots noise, or finds nothing at all -- 61 of 280 pose pairs in
-    # the welleng-api gate battery had a provable critical radius reported as None.
-    #
-    # So do not trust c0's root as the answer: treat it as a SEED and minimise the
-    # exact beta = 0 closure residual. Technique handed over by welleng-api (their
-    # vectorised batch, written scalar-ly); their gate is the acceptance test.
     def _closure(R):
-        # exact beta=0 residual at R, relative to L; inf if no admissible branch.
-        # BOTH arcs must be <= pi -- that is what a critical radius means here.
-        # Without the constraint a long-way biarc closes the invariants happily at
-        # radii far above the critical one, inventing critical radii that do not
-        # exist (it roughly doubled the apparent defect count on general poses).
-        R1b, R2b = R, ratio * R
-        a1s, a2s = subtended_angles(0.0, psi2, e1, e4, e14, mu, R1b, R2b)
+        a1c, a2c = _admissible(R)
+        if a1c is None:
+            return np.inf
+        a1s, a2s = subtended_angles(0.0, psi2, e1, e4, e14, mu, R, ratio * R)
         out = np.inf
         for x1 in a1s:
             for x2 in a2s:
                 if not (x1 % (2 * np.pi) <= np.pi + 1e-9
                         and x2 % (2 * np.pi) <= np.pi + 1e-9):
                     continue
-                f = forward(x1, x2, 0.0, mu, R1b, R2b)
+                f = forward(x1, x2, 0.0, mu, R, ratio * R)
                 if f is None:
                     continue
                 out = min(out, max(abs(f[0] - e1), abs(f[1] - e4),
@@ -847,14 +838,15 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
         return out
 
     def _polish(R):
-        # Ternary search over successively narrower windows. The residual is not a
-        # signed function and beta=0 holds at a SINGLE radius, so it must be
-        # MINIMISED, not bracketed by sign. Adopts only a strict improvement, so
-        # where c0 is well conditioned its root is returned untouched and the
-        # general regime cannot regress (same guard shape as the closure-refine).
-        bestR, bestr = R, _closure(R)
-        for w in (1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10):
-            lo_w, hi_w = bestR * (1 - w), bestR * (1 + w)
+        """Minimise the exact beta=0 residual around ``R`` (ternary search).
+
+        The residual is not a signed function and beta = 0 holds at a SINGLE
+        radius, so it must be MINIMISED, not bracketed by sign. Adopts only a
+        strict improvement, so a well-conditioned c0 root is returned untouched.
+        """
+        bR, br = R, _closure(R)
+        for w in (1e-2, 1e-4, 1e-6, 1e-8, 1e-10):
+            lo_w, hi_w = bR * (1 - w), bR * (1 + w)
             for _ in range(40):
                 m1 = lo_w + (hi_w - lo_w) / 3.0
                 m2 = hi_w - (hi_w - lo_w) / 3.0
@@ -864,53 +856,64 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
                     lo_w = m1
             cand = 0.5 * (lo_w + hi_w)
             rc = _closure(cand)
-            if rc < bestr:
-                bestR, bestr = cand, rc
-        return bestR, bestr
+            if rc < br:
+                bR, br = cand, rc
+        return bR, br
 
-    def _report(R):
-        R1b, R2b = R, ratio * R
-        a1s, a2s = subtended_angles(0.0, psi2, e1, e4, e14, mu, R1b, R2b)
-        pick = None
-        for x1 in a1s:
-            for x2 in a2s:
-                a1b, a2b = x1 % (2 * np.pi), x2 % (2 * np.pi)
-                if a1b > np.pi + 1e-9 or a2b > np.pi + 1e-9:
-                    continue
-                f = forward(x1, x2, 0.0, mu, R1b, R2b)
-                if f is None:
-                    continue
-                res = max(abs(f[0] - e1), abs(f[1] - e4),
-                          abs(abs(f[2]) - abs(e14))) / L
-                if pick is None or res < pick[0]:
-                    pick = (res, a1b, a2b)
-        if pick is None:
-            return None
-        _res, a1b, a2b = pick
-        return dict(radius=R1b, radius2=R2b, beta=0.0, alpha1=a1b, alpha2=a2b,
-                    total_md=R1b * a1b + R2b * a2b, closure=_res)
-
+    # ORDER IS THE WHOLE FIX:  bracket -> POLISH -> verify.
+    # Verifying the RAW c0 root loses valid solutions: it can sit a hair PAST the
+    # both-arcs <= pi boundary, so no admissible biarc exists AT that radius, the
+    # closure check returns inf, and the row is reported unreachable. Measured on
+    # a pose pair at R/L = 9.8 -- where c0 is perfectly well conditioned, so this
+    # is a DISTINCT failure mode from the (R/L)^4 cancellation and survives any
+    # amount of conditioning work: raw root R = 6972.6564 closes to inf, polished
+    # R = 6972.6391 closes to 1.705e-12.
+    # Seed the polish from the brentq root, NEVER from a coarse sweep: a coarse
+    # seed can be ~1.5% off, outside the first window, and converges into the
+    # wrong basin.
+    # Ported verbatim from welleng-api's reference_max_radius (their vectorised
+    # batch written scalar-ly); their 63 pinned fixtures are the acceptance test.
+    best = None
+    for i in ([] if grid is None
+              else np.nonzero(cv[:-1] * cv[1:] < 0)[0]):
+        R0 = brentq(_c0, grid[i], grid[i + 1])
+        R, res = _polish(R0)
+        if not np.isfinite(res) or res >= 1e-4:
+            continue
+        a1, a2 = _admissible(R)
+        if a1 is None:
+            continue
+        if best is None or R > best["radius"]:          # the MAXIMUM radius
+            best = dict(radius=R, radius2=ratio * R, beta=0.0,
+                        alpha1=a1, alpha2=a2,
+                        total_md=R * a1 + ratio * R * a2, closure=res)
     if best is not None:
-        Rp, _rp = _polish(best['radius'])
-        return _report(Rp) or best
+        return best
 
-    # c0 gave nothing usable. Find the basin geometrically, then polish into it.
-    # A coarse sweep ALONE cannot do this: the closure basin is orders of
-    # magnitude narrower than any practical grid spacing, so sweeping without
-    # polishing silently reports the defect as absent.
-    grid = np.geomspace(0.05 * L, 400.0 * L, 400)
-    resid = np.array([_closure(r) for r in grid])
-    if not np.any(np.isfinite(resid)):
+    # c0 never bracketed a root at all -- the (R/L)^4 cancellation, where c0 is
+    # pure noise (measured at R/L 76.9: 2.0e1/1.4e2/1.6e1/4.0e1/1.1e2 across the
+    # true root, integer-quantised, no sign change). A c0-SEEDED search cannot
+    # reach these by construction, so locate the basin geometrically and polish
+    # into it. A sweep ALONE cannot do it either -- the basin is orders of
+    # magnitude narrower than any practical grid -- hence sweep THEN polish.
+    # Strictly additive: only runs when the c0 path yielded nothing.
+    sweep = np.geomspace(0.05 * L, 400.0 * L, 400)
+    sres = np.array([_closure(r) for r in sweep])
+    if not np.any(np.isfinite(sres)):
         return None
-    order = np.argsort(np.where(np.isfinite(resid), resid, np.inf))[:5]
-    found = None
+    order = np.argsort(np.where(np.isfinite(sres), sres, np.inf))[:5]
     for j in sorted(order, reverse=True):
-        Rp, rp = _polish(float(grid[j]))
-        if found is None or rp < found[1]:
-            found = (Rp, rp)
-    if found is None or not np.isfinite(found[1]) or found[1] > 1e-3:
-        return None
-    return _report(found[0])
+        R, res = _polish(float(sweep[j]))
+        if not np.isfinite(res) or res >= 1e-4:
+            continue
+        a1, a2 = _admissible(R)
+        if a1 is None:
+            continue
+        if best is None or R > best["radius"]:
+            best = dict(radius=R, radius2=ratio * R, beta=0.0,
+                        alpha1=a1, alpha2=a2,
+                        total_md=R * a1 + ratio * R * a2, closure=res)
+    return best
 
 
 def solve_clc_landing(p1, t1, p0, t4, R1, R2=None, return_all=False):
