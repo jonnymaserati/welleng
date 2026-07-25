@@ -813,7 +813,104 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
                             best is None or R > best['radius']):
                         best = dict(radius=R1, radius2=R2, beta=0.0,
                                     alpha1=a1, alpha2=a2, total_md=R1 * a1 + R2 * a2)
-    return best
+
+    # --- exact-model refinement -------------------------------------------
+    # c0 is a ~4000-term expansion whose terms scale like (R/L)^4, so once
+    # R >> L (the near-collinear regime) it sums enormous cancelling terms and
+    # degenerates to noise: measured at R/L 76.9 it reads 2.0e1 / 1.4e2 / 1.6e1 /
+    # 4.0e1 / 1.1e2 across the true root, integer-quantised, with NO sign change.
+    # brentq then roots noise, or finds nothing at all -- 61 of 280 pose pairs in
+    # the welleng-api gate battery had a provable critical radius reported as None.
+    #
+    # So do not trust c0's root as the answer: treat it as a SEED and minimise the
+    # exact beta = 0 closure residual. Technique handed over by welleng-api (their
+    # vectorised batch, written scalar-ly); their gate is the acceptance test.
+    def _closure(R):
+        # exact beta=0 residual at R, relative to L; inf if no admissible branch.
+        # BOTH arcs must be <= pi -- that is what a critical radius means here.
+        # Without the constraint a long-way biarc closes the invariants happily at
+        # radii far above the critical one, inventing critical radii that do not
+        # exist (it roughly doubled the apparent defect count on general poses).
+        R1b, R2b = R, ratio * R
+        a1s, a2s = subtended_angles(0.0, psi2, e1, e4, e14, mu, R1b, R2b)
+        out = np.inf
+        for x1 in a1s:
+            for x2 in a2s:
+                if not (x1 % (2 * np.pi) <= np.pi + 1e-9
+                        and x2 % (2 * np.pi) <= np.pi + 1e-9):
+                    continue
+                f = forward(x1, x2, 0.0, mu, R1b, R2b)
+                if f is None:
+                    continue
+                out = min(out, max(abs(f[0] - e1), abs(f[1] - e4),
+                                   abs(abs(f[2]) - abs(e14))) / L)
+        return out
+
+    def _polish(R):
+        # Ternary search over successively narrower windows. The residual is not a
+        # signed function and beta=0 holds at a SINGLE radius, so it must be
+        # MINIMISED, not bracketed by sign. Adopts only a strict improvement, so
+        # where c0 is well conditioned its root is returned untouched and the
+        # general regime cannot regress (same guard shape as the closure-refine).
+        bestR, bestr = R, _closure(R)
+        for w in (1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10):
+            lo_w, hi_w = bestR * (1 - w), bestR * (1 + w)
+            for _ in range(40):
+                m1 = lo_w + (hi_w - lo_w) / 3.0
+                m2 = hi_w - (hi_w - lo_w) / 3.0
+                if _closure(m1) <= _closure(m2):
+                    hi_w = m2
+                else:
+                    lo_w = m1
+            cand = 0.5 * (lo_w + hi_w)
+            rc = _closure(cand)
+            if rc < bestr:
+                bestR, bestr = cand, rc
+        return bestR, bestr
+
+    def _report(R):
+        R1b, R2b = R, ratio * R
+        a1s, a2s = subtended_angles(0.0, psi2, e1, e4, e14, mu, R1b, R2b)
+        pick = None
+        for x1 in a1s:
+            for x2 in a2s:
+                a1b, a2b = x1 % (2 * np.pi), x2 % (2 * np.pi)
+                if a1b > np.pi + 1e-9 or a2b > np.pi + 1e-9:
+                    continue
+                f = forward(x1, x2, 0.0, mu, R1b, R2b)
+                if f is None:
+                    continue
+                res = max(abs(f[0] - e1), abs(f[1] - e4),
+                          abs(abs(f[2]) - abs(e14))) / L
+                if pick is None or res < pick[0]:
+                    pick = (res, a1b, a2b)
+        if pick is None:
+            return None
+        _res, a1b, a2b = pick
+        return dict(radius=R1b, radius2=R2b, beta=0.0, alpha1=a1b, alpha2=a2b,
+                    total_md=R1b * a1b + R2b * a2b, closure=_res)
+
+    if best is not None:
+        Rp, _rp = _polish(best['radius'])
+        return _report(Rp) or best
+
+    # c0 gave nothing usable. Find the basin geometrically, then polish into it.
+    # A coarse sweep ALONE cannot do this: the closure basin is orders of
+    # magnitude narrower than any practical grid spacing, so sweeping without
+    # polishing silently reports the defect as absent.
+    grid = np.geomspace(0.05 * L, 400.0 * L, 400)
+    resid = np.array([_closure(r) for r in grid])
+    if not np.any(np.isfinite(resid)):
+        return None
+    order = np.argsort(np.where(np.isfinite(resid), resid, np.inf))[:5]
+    found = None
+    for j in sorted(order, reverse=True):
+        Rp, rp = _polish(float(grid[j]))
+        if found is None or rp < found[1]:
+            found = (Rp, rp)
+    if found is None or not np.isfinite(found[1]) or found[1] > 1e-3:
+        return None
+    return _report(found[0])
 
 
 def solve_clc_landing(p1, t1, p0, t4, R1, R2=None, return_all=False):
