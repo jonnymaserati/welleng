@@ -855,19 +855,31 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
         approach +/-1, leaving a seed error of 4e-6..2e-3 in the worst rows. Far
         less work than the old search -- three narrow windows, not a bracket hunt.
         """
+        # Windows start WIDE. At mu -> 1 the admissible region can sit tens of
+        # percent from the root, not ppm: a ladder starting at 1e-2 never reaches
+        # it and every one of welleng-pathfinder's 7 false-None cases died here.
+        # And the search must tolerate an INFEASIBLE start -- the root itself
+        # often has no admissible branch, so `_closure` is inf there. Treat inf as
+        # a large finite sentinel (welleng-api's own batch convention) so the
+        # ternary can descend out of the infeasible region instead of comparing
+        # inf <= inf and shrinking arbitrarily.
+        def _cl(R_):
+            c = _closure(R_)
+            return 1e30 if not np.isfinite(c) else c
+
         bR, br = R, _closure(R)
-        for wdw in (1e-2, 1e-5, 1e-8):
+        for wdw in (0.9, 0.5, 0.2, 1e-1, 1e-2, 1e-5, 1e-8):
             lo_w, hi_w = bR * (1 - wdw), bR * (1 + wdw)
             for _ in range(30):
                 m1 = lo_w + (hi_w - lo_w) / 3.0
                 m2 = hi_w - (hi_w - lo_w) / 3.0
-                if _closure(m1) <= _closure(m2):
+                if _cl(m1) <= _cl(m2):
                     hi_w = m2
                 else:
                     lo_w = m1
             cand = 0.5 * (lo_w + hi_w)
             rc = _closure(cand)
-            if rc < br:
+            if np.isfinite(rc) and (not np.isfinite(br) or rc < br):
                 bR, br = cand, rc
         return bR, br
 
@@ -875,8 +887,15 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
             _eq15_c0_quartic(1.0, e1 / L, e4 / L, w, ratio)]
     sc = max(abs(x) for x in coef) or 1.0
     coef = [x / sc for x in coef]
-    poly = coef[::-1] if abs(coef[4]) > 0 else coef[3::-1]
-    roots = np.roots(np.array(poly))
+    # Degeneracy must be judged RELATIVELY. The leading coefficient carries w**2,
+    # so at mu > 0.999994 it collapses to |a4|/max|a| ~ 1e-21..1e-24 -- still
+    # nonzero, so an `abs(coef[4]) > 0` test happily solves a quartic whose
+    # companion matrix is hopeless and returns garbage or complex roots. Deflate
+    # to the true working degree instead.
+    deg = 4
+    while deg > 1 and abs(coef[deg]) < 1e-12:
+        deg -= 1
+    roots = np.roots(np.array(coef[deg::-1]))
     cands = sorted((r.real for r in roots
                     if abs(r.imag) <= 1e-8 * max(1.0, abs(r.real))
                     and r.real > 0), reverse=True)
