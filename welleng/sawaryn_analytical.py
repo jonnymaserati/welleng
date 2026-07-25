@@ -438,7 +438,14 @@ def _clc_solutions(P1, T1, P4, T4, R1, R2):
     res = np.take_along_axis(res4, k[..., None], -1)[..., 0]
     a1b = np.take_along_axis(a1_4, k[..., None], -1)[..., 0]
     a2b = np.take_along_axis(a2_4, k[..., None], -1)[..., 0]
-    valid = ok & (res < 1e-4 * L[:, None])
+    # The residual is built from R-scale terms (f1 = R1*sin(a1) + b*cos(a1)
+    # + R2*tan(a2/2)*(mu + cos(a1))), so it CANNOT be compared against an
+    # L-scaled bound: when R >> L the tolerance falls below the residual's own
+    # floor and the CORRECT root is rejected (measured: the genuine 30 m root
+    # for a 30 m throw at R=573 has res 3.2e-2 vs a 1e-4*L bound of 3e-3).
+    # Scale by the characteristic length of the compared quantities so
+    # acceptance cannot depend on the R/L ratio.
+    valid = ok & (res < 1e-4 * np.maximum(L[:, None], R1b + R2b))
     if bad.any():
         valid[bad] = False                          # degenerate pairs -> use solve_clc_2d
     # subtended_angles returns 2*arctan2(...) in (-2pi, 2pi]; a co-terminal value
