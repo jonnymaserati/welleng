@@ -61,6 +61,8 @@ four decades.
 import numpy as np
 from scipy.optimize import minimize_scalar, brentq
 
+from ._eq15_c0_quartic import eq15_c0_quartic as _eq15_c0_quartic
+
 
 def tangent(inc_deg, azi_deg):
     """Unit tangent [N, E, V] from inclination + azimuth (degrees)."""
@@ -780,28 +782,40 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
     def _c0(R):
         return _eq15_coeffs(1.0, e1 / L, e4 / L, mu, R / L, ratio * R / L)[0]
 
-    # Bracket the roots of c0. The upper limit CANNOT be a fixed multiple of L:
-    # the gentlest feasible radius scales with how nearly collinear the poses are,
-    # so R_max/L grows without bound as the tangent change shrinks. A hard 5*L cap
-    # silently returned None for exactly the near-straight geometry this function
-    # exists to serve (measured: R_max/L of 5.1, 6.7 and 10.5 on random scene pose
-    # pairs, all reported unreachable). Extend geometrically until c0 brackets a
-    # root, then scan that range.
-    hi, grid, cv = 5.0 * L, None, None
-    for _ in range(12):
-        g = np.linspace(1e-3 * L, hi, 600)
-        v = np.array([_c0(r) for r in g])
-        if np.any(v[:-1] * v[1:] < 0):
-            grid, cv = g, v
-            break
-        hi *= 4.0
+    # c0 = 0 IS A CLOSED FORM, not a search.
+    #
+    # c0 contains R1 and R2 only at EVEN powers -- the monomials present are
+    # exactly R1^{0,2,4} x R2^{0,2,4} -- so with R2 = ratio*R1 and u = R**2 the
+    # condition c0(R) = 0 is an exact QUARTIC in u, with closed-form roots. An
+    # earlier ruling here said c0 was "not low-degree in R, so bracket and bisect
+    # the evaluated function": that came from fitting in R, where a degree-8
+    # Vandermonde over R = 50..3000 spans 13 orders of magnitude and fails
+    # NUMERICALLY -- the failure was mistaken for a property of the algebra. In
+    # u the same structure is degree 4, well scaled, and exact.
+    #
+    # The quartic is also MORE accurate than evaluating c0 directly. Against
+    # 60-digit arithmetic at R/L ~ 10, mu ~ 0.9975: quartic 2.6e-8 relative,
+    # direct float64 c0 4.5e-7 -- the ~4000-term expansion loses digits, which is
+    # the same cancellation that made the old bracketing search fail at all.
+    #
+    # Coefficients MUST be evaluated in w = 1 - mu, never in mu: the leading
+    # coefficient carries w**2 and vanishes as the poses approach collinear, so
+    # from mu it degenerates into cancellation noise (measured a4 ~ +/-5.7e-14
+    # sign-flipping against a0 = 2.0, which corrupts every root -- one row whose
+    # true u was 5921 returned -1708 +/- 2000i). For unit tangents
+    # 1 - t1.t4 == |t1 - t4|**2 / 2 exactly, so w is computed that way.
+    #
+    # Closed form + coefficient extraction handed over by welleng-api at TA0's
+    # direction; their 63 pinned fixtures are the acceptance test.
+    t1a, t4a = np.asarray(t1, float), np.asarray(t4, float)
+    w = 0.5 * float((t1a - t4a) @ (t1a - t4a))          # == 1 - mu, exactly
+
     def _admissible(R):
         """Best-closing branch pair at R with BOTH arcs <= pi, else (None, None).
 
-        The ``<= pi`` constraint is applied INSIDE the branch selection, not to the
-        winner of an unconstrained selection: otherwise a row whose best-residual
-        branch is a long-way one is rejected even though an admissible branch also
-        closes there.
+        The constraint is applied INSIDE the selection, not to the winner of an
+        unconstrained one, so a row whose best-residual branch is a long-way
+        member is not rejected when an admissible branch also closes there.
         """
         a1s, a2s = subtended_angles(0.0, psi2, e1, e4, e14, mu, R, ratio * R)
         bestr, ang = np.inf, None
@@ -820,9 +834,6 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
         return ang if ang is not None else (None, None)
 
     def _closure(R):
-        a1c, a2c = _admissible(R)
-        if a1c is None:
-            return np.inf
         a1s, a2s = subtended_angles(0.0, psi2, e1, e4, e14, mu, R, ratio * R)
         out = np.inf
         for x1 in a1s:
@@ -838,16 +849,16 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
         return out
 
     def _polish(R):
-        """Minimise the exact beta=0 residual around ``R`` (ternary search).
+        """Short refinement of a closed-form root. Adopts only improvements.
 
-        The residual is not a signed function and beta = 0 holds at a SINGLE
-        radius, so it must be MINIMISED, not bracketed by sign. Adopts only a
-        strict improvement, so a well-conditioned c0 root is returned untouched.
+        Still needed: the LOWER quartic coefficients cancel as the invariants
+        approach +/-1, leaving a seed error of 4e-6..2e-3 in the worst rows. Far
+        less work than the old search -- three narrow windows, not a bracket hunt.
         """
         bR, br = R, _closure(R)
-        for w in (1e-2, 1e-4, 1e-6, 1e-8, 1e-10):
-            lo_w, hi_w = bR * (1 - w), bR * (1 + w)
-            for _ in range(40):
+        for wdw in (1e-2, 1e-5, 1e-8):
+            lo_w, hi_w = bR * (1 - wdw), bR * (1 + wdw)
+            for _ in range(30):
                 m1 = lo_w + (hi_w - lo_w) / 3.0
                 m2 = hi_w - (hi_w - lo_w) / 3.0
                 if _closure(m1) <= _closure(m2):
@@ -860,24 +871,19 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
                 bR, br = cand, rc
         return bR, br
 
-    # ORDER IS THE WHOLE FIX:  bracket -> POLISH -> verify.
-    # Verifying the RAW c0 root loses valid solutions: it can sit a hair PAST the
-    # both-arcs <= pi boundary, so no admissible biarc exists AT that radius, the
-    # closure check returns inf, and the row is reported unreachable. Measured on
-    # a pose pair at R/L = 9.8 -- where c0 is perfectly well conditioned, so this
-    # is a DISTINCT failure mode from the (R/L)^4 cancellation and survives any
-    # amount of conditioning work: raw root R = 6972.6564 closes to inf, polished
-    # R = 6972.6391 closes to 1.705e-12.
-    # Seed the polish from the brentq root, NEVER from a coarse sweep: a coarse
-    # seed can be ~1.5% off, outside the first window, and converges into the
-    # wrong basin.
-    # Ported verbatim from welleng-api's reference_max_radius (their vectorised
-    # batch written scalar-ly); their 63 pinned fixtures are the acceptance test.
+    coef = [float(x) for x in
+            _eq15_c0_quartic(1.0, e1 / L, e4 / L, w, ratio)]
+    sc = max(abs(x) for x in coef) or 1.0
+    coef = [x / sc for x in coef]
+    poly = coef[::-1] if abs(coef[4]) > 0 else coef[3::-1]
+    roots = np.roots(np.array(poly))
+    cands = sorted((r.real for r in roots
+                    if abs(r.imag) <= 1e-8 * max(1.0, abs(r.real))
+                    and r.real > 0), reverse=True)
+
     best = None
-    for i in ([] if grid is None
-              else np.nonzero(cv[:-1] * cv[1:] < 0)[0]):
-        R0 = brentq(_c0, grid[i], grid[i + 1])
-        R, res = _polish(R0)
+    for v in cands:
+        R, res = _polish(L * np.sqrt(v))
         if not np.isfinite(res) or res >= 1e-4:
             continue
         a1, a2 = _admissible(R)
@@ -890,19 +896,18 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
     if best is not None:
         return best
 
-    # c0 never bracketed a root at all -- the (R/L)^4 cancellation, where c0 is
-    # pure noise (measured at R/L 76.9: 2.0e1/1.4e2/1.6e1/4.0e1/1.1e2 across the
-    # true root, integer-quantised, no sign change). A c0-SEEDED search cannot
-    # reach these by construction, so locate the basin geometrically and polish
-    # into it. A sweep ALONE cannot do it either -- the basin is orders of
-    # magnitude narrower than any practical grid -- hence sweep THEN polish.
-    # Strictly additive: only runs when the c0 path yielded nothing.
+    # No acceptable quartic root. The lower coefficients cancel as the invariants
+    # approach +/-1, so a seed can be lost entirely -- locate the basin
+    # geometrically and polish into it. A sweep ALONE cannot do this (the closure
+    # basin is orders of magnitude narrower than any practical grid), hence sweep
+    # THEN polish. Strictly additive: only runs when the closed form yields
+    # nothing, so it cannot perturb a row the quartic already answers.
     sweep = np.geomspace(0.05 * L, 400.0 * L, 400)
     sres = np.array([_closure(r) for r in sweep])
     if not np.any(np.isfinite(sres)):
         return None
-    order = np.argsort(np.where(np.isfinite(sres), sres, np.inf))[:5]
-    for j in sorted(order, reverse=True):
+    for j in sorted(np.argsort(np.where(np.isfinite(sres), sres, np.inf))[:5],
+                    reverse=True):
         R, res = _polish(float(sweep[j]))
         if not np.isfinite(res) or res >= 1e-4:
             continue
