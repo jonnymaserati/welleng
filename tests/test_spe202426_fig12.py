@@ -29,6 +29,11 @@ CASE1 = dict(
     P_lot=16.0, P_apl=160.0,
     D_lot=1500.0 * M_TO_FT, D_td=3200.0 * M_TO_FT,
     V_dpa=(HOLE_IN ** 2 - DP_IN ** 2) / 1029.4,
+    # Fig. 12 is a published-result reproduction, so it runs the published
+    # model. test_fig12_sign_survives_the_column_mean_revision checks that the
+    # SIGN -- the physics claim, as opposed to the magnitudes -- is unchanged
+    # under the shipped default.
+    model_revision="spe-208788",
 )
 T_SHOE_GEO, T_TD_GEO = _c2f(100.0), _c2f(150.0)    # geothermal 100/150 degC
 T_ISO = _c2f(150.0)                                 # isothermal = TD temp everywhere
@@ -49,6 +54,24 @@ def test_fig12_geothermal_greater_than_isothermal():
     assert iso == pytest.approx(13.28, abs=0.15)
     # ~15% apart, matching Fig. 12's ~16 vs ~13 dots.
     assert (geo - iso) / geo == pytest.approx(0.148, abs=0.02)
+
+
+def test_fig12_sign_survives_the_column_mean_revision():
+    """The SIGN is physics, not a convention, so it must hold under the default
+    revision too -- where the influx state moves to the gas-column mean
+    temperature. Magnitudes drop (a warmer influx is lighter, which shrinks A);
+    geothermal > isothermal does not."""
+    kw = {k: v for k, v in CASE1.items() if k != "model_revision"}
+
+    def kt(t_s, t_td):
+        return drill_kick(KickInputs(T_s=t_s, T_td=t_td, **kw)).capacity
+
+    geo, iso = kt(T_SHOE_GEO, T_TD_GEO), kt(T_ISO, T_ISO)
+    assert geo > iso
+    # Isothermal has no column gradient, so the revision cannot move it.
+    assert iso == pytest.approx(_kt(T_ISO, T_ISO), rel=1e-12)
+    # Geothermal does, and only downwards.
+    assert geo < _kt(T_SHOE_GEO, T_TD_GEO)
 
 
 def test_fig12_matches_static_company_model_dots():

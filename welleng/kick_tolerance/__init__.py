@@ -69,6 +69,8 @@ API is exposed as a stub that raises a helpful ImportError on use, so that
 """
 
 from .core import (
+    DEFAULT_MODEL_REVISION,
+    MODEL_REVISIONS,
     KickInputs,
     KickResult,
     drill_kick,
@@ -128,6 +130,8 @@ except ImportError as _envelope_import_error:  # pragma: no cover - optional dep
     EnvelopeResult = None
 
 __all__ = [
+    "MODEL_REVISIONS",
+    "DEFAULT_MODEL_REVISION",
     "KickInputs",
     "KickResult",
     "drill_kick",

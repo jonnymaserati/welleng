@@ -25,10 +25,17 @@ cases (as in the reference derivation):
 
   * TD station -- (P_td, T_td), with P_td the A-1 bottom-hole pressure at the
     maximum-credible pore pressure. Gives ``Z_td`` and (unused) ``rho_gas_td``.
-  * Shoe station -- (P_shoe, T_s). ``P_shoe`` is the influx-gas pressure at the
-    casing shoe: the bottom-hole pressure reduced by the static influx-gas
-    column over the open-hole section (a standard, source-free gas-gradient
-    step). Gives ``Z_s`` and ``rho_gas_s``.
+  * Influx station -- (P_shoe, T_influx). ``P_shoe`` is the influx-gas pressure
+    at the casing shoe: the bottom-hole pressure reduced by the static
+    influx-gas column over the open-hole section (a standard, source-free
+    gas-gradient step). Gives ``Z_s`` and ``rho_gas_s``.
+
+    ``T_influx`` is REVISION-DEPENDENT (see ``MODEL_REVISIONS``). As published
+    it is the shoe temperature ``T_s``; from welleng 0.26.0 the default is the
+    INFLUX COLUMN's mean temperature, because the column hangs BELOW the shoe
+    and the shoe is its cool end. Evaluating at the shoe made the gas denser
+    than the column, inflating A and OVERSTATING the tolerable influx by ~3% on
+    the Table-1 case (anti-conservative). See ``_influx_temperature``.
 
 Note on the reference case: the reference paper's printed shoe Z (1.123) sits
 above the value at the shoe *fracture* pressure P_lot - P_apl (~1.04); it
@@ -62,6 +69,7 @@ equation of the closed form -- only rho_gas_s does (via the A-5 constant A).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from math import cos, radians
 from typing import Optional
 
@@ -72,6 +80,36 @@ G_PSI_PER_PPG_FT = 0.0521      # gravitational constant g  [psi.ppg^-1.ft^-1]
 P_ATM_PSI = 14.7               # atmospheric pressure P_atm [psi]
 RANKINE_OFFSET = 460.0         # degF -> degR (paper convention; A back-solves
                                #               to ~241.2 with this offset)
+
+
+# --- Model revisions --------------------------------------------------------
+#
+# A kick-tolerance number ends up in a signed-off well programme, so a result
+# computed under an earlier model must stay reproducible EXACTLY after the model
+# changes, by naming the revision it was computed under (TA0 requirement,
+# 2026-07-26). Hence a named, FROZEN revision rather than a boolean: a boolean
+# cannot carry a second change, and a revision identifier is what a report can
+# cite. The revision travels on ``KickResult``, so a stored calculation records
+# what produced it.
+#
+# Published revisions are FROZEN. Never re-tune one; add a new identifier.
+#
+# This is deliberately NOT folded into ``ideal_gas`` or ``gas_density_mode``.
+# Those are user-selectable PHYSICS OPTIONS chosen on the merits of a case; a
+# revision is a REPRODUCIBILITY ANCHOR that freezes every semantic in the path.
+# Overloading them would let pinning a revision silently override a physics
+# choice the user made deliberately.
+MODEL_REVISIONS = {
+    # As published: the influx state is lumped at the SHOE temperature T_s.
+    # Reproduces SPE-208788-PA Table 1 and is the validation anchor.
+    "spe-208788": "influx gas state evaluated at the shoe temperature T_s",
+    # The influx column hangs BELOW the shoe, so the shoe is its COOL end. The
+    # state is lumped at the column-mean temperature instead. See
+    # ``_influx_temperature``.
+    "column-mean-2026": "influx gas state evaluated at the gas-column mean "
+                        "temperature (default from welleng 0.26.0)",
+}
+DEFAULT_MODEL_REVISION = "column-mean-2026"
 
 
 def ppg_to_psi(rho_ppg: float, depth_ft: float) -> float:
@@ -147,6 +185,9 @@ class KickInputs:
     fluid: Optional[dict] = None
     kt_threshold: float = 25.0
     inc_shoe: float = 0.0
+    model_revision: str = DEFAULT_MODEL_REVISION
+    # Frozen model revision (see MODEL_REVISIONS). Pin ``"spe-208788"`` to
+    # reproduce a number computed before welleng 0.26.0, or the paper's Table 1.
     ideal_gas: bool = False
     # Ideal-gas REFERENCE mode: Z == 1 everywhere and isothermal (the influx-gas
     # column and expansion use a single temperature). Reproduces a textbook
@@ -200,6 +241,16 @@ class KickResult:
     margin: float        # capacity - threshold                  [bbl]
     passed: bool         # margin >= 0
     pp_at_threshold: float  # A-9 pore pressure at kt_threshold  [ppg]
+    model_revision: str = DEFAULT_MODEL_REVISION
+    # The frozen revision that PRODUCED this number. Travels with the result so
+    # a stored calculation can be re-run verbatim; cite it in any report.
+    T_influx: Optional[float] = None
+    # Influx temperature the gas state was evaluated at [degF] -- T_s under
+    # "spe-208788", the column mean under "column-mean-2026". Reported because
+    # it is the quantity the revision changes.
+    H_gas: Optional[float] = None
+    # Converged influx-column height [ft TVD] (None under "spe-208788", which
+    # does not need it).
 
 
 # --- Gas-property backend (clean-room Hall & Yarborough 1973) ---------------
@@ -243,6 +294,100 @@ def _shoe_gas_pressure(inp: KickInputs, P_td: float) -> float:
     return P_shoe
 
 
+def _influx_temperature(inp: KickInputs, P_td: float) -> tuple[float, float]:
+    """Temperature the influx gas state is evaluated at [degR], and H_gas [ft].
+
+    The A-5 constant's ``T_s``, ``Z_s`` and ``rho_gas_s`` describe the INFLUX,
+    at the condition A-2 defines: gas top at the casing shoe. The column
+    therefore hangs BELOW the shoe, over the interval that carries the
+    geothermal gradient -- so the shoe is its COOL END, not a representative
+    value for it. Evaluating there makes the gas denser than the column, which
+    SHRINKS the ``(rho_mud - rho_gas_s)`` deficit in A-5's denominator, inflates
+    A, and passes straight through A-7 as an OVERSTATED tolerable influx. The
+    error is anti-conservative (welleng-api, external reviewer, 2026-07-26).
+
+    Note the asymmetry this removes: the pressure side already integrates the
+    column (``_shoe_gas_pressure``); only the temperature side did not.
+
+    Support in the primary sources: SPE-202426-PA (Nassab et al.) evaluates its
+    worked influx at the AVERAGE across the influx -- 89 degC at the top and
+    92 degC at the bottom giving "an average influx temperature of approximately
+    91 degC" -- i.e. the symbol denotes the influx's state, not the temperature
+    at the shoe depth. NOGEPA-50 Section 5.4.3's "constant temperature is
+    conservative" is a DIFFERENT comparison (holding the influx at bottomhole
+    temperature as it migrates up the hole) and does not bear on which
+    temperature represents the static column.
+
+    The column height is an OUTPUT -- ``H = (B - P_td) / [g (rho_mud -
+    rho_gas)]`` from A-2, and ``rho_gas`` depends on the temperature at the
+    column's mid-depth -- so this is a fixed point. It converges monotonically
+    in a handful of iterations from H = 0 (the shoe value, i.e. the previous
+    model), and the correction is signed: a warmer column always gives a
+    SMALLER A.
+
+    The ``"spe-208788"`` revision (and ``ideal_gas``, which is isothermal by
+    definition) returns ``T_s`` unchanged.
+    """
+    T_s_r = fahrenheit_to_rankine(inp.T_s)
+    if inp.model_revision == "spe-208788" or inp.ideal_gas:
+        return T_s_r, None
+    interval = inp.D_td - inp.D_lot
+    if interval <= 0.0 or inp.T_td == inp.T_s:
+        return T_s_r, None                             # nothing to average over
+    # A single evaluation costs ~7 gas-property solves, and the closed form asks
+    # for the same station three times per case (constant_A, its
+    # resolve_gas_properties, and the result's own reporting). Memoised on the
+    # scalars it actually depends on, which also keeps an envelope sweep cheap.
+    return _influx_temperature_impl(
+        inp.T_s, inp.T_td, inp.D_lot, inp.D_td, inp.rho_mud, inp.P_lot,
+        inp.P_apl, P_td,
+        None if inp.fluid is None else tuple(sorted(inp.fluid.items())),
+    )
+
+
+@lru_cache(maxsize=8192)
+def _influx_temperature_impl(T_s, T_td, D_lot, D_td, rho_mud, P_lot, P_apl,
+                             P_td, fluid_key):
+    """Fixed point behind :func:`_influx_temperature` (scalars only, cacheable)."""
+    fluid = None if fluid_key is None else dict(fluid_key)
+    inp = KickInputs(
+        rho_mud=rho_mud, PP=0.0, kick_intensity=0.0, P_lot=P_lot, P_apl=P_apl,
+        D_td=D_td, D_lot=D_lot, T_s=T_s, T_td=T_td, V_dpa=1.0, fluid=fluid,
+    )
+    interval = D_td - D_lot
+    grad = (T_td - T_s) / interval                     # degF/ft
+    B = constant_B(inp)
+    P_shoe = _shoe_gas_pressure(inp, P_td)
+    H = 0.0
+    T_r = fahrenheit_to_rankine(T_s)
+    for _ in range(64):
+        T_r = fahrenheit_to_rankine(T_s + grad * 0.5 * H)
+        rho = _influx_density(inp, P_shoe, T_r)
+        deficit = rho_mud - rho
+        if deficit <= 0.0:
+            break                                      # no buoyant column
+        H_new = (B - P_td) / (G_PSI_PER_PPG_FT * deficit)
+        H_new = min(max(H_new, 0.0), interval)         # the column is IN the
+        #                                                open hole (A-2's
+        #                                                simplification (1))
+        if abs(H_new - H) < 1e-9:
+            H = H_new
+            break
+        H = H_new
+    return T_r, H
+
+
+def _influx_density(inp: KickInputs, p_psia: float, t_r: float) -> float:
+    """Influx gas density [ppg] at ``(p_psia, t_r)`` on the active backend."""
+    if inp.ideal_gas:
+        return gas_density_ppg(p_psia, t_r, 1.0)
+    if inp.fluid is not None:
+        from .gas_z_coolprop import fluid_z_density
+
+        return fluid_z_density(inp.fluid, p_psia, t_r)[1]
+    return methane_properties(p_psia, t_r)[1]
+
+
 def resolve_gas_properties(
     inp: KickInputs, P_td: Optional[float] = None
 ) -> tuple[float, float, float]:
@@ -260,9 +405,16 @@ def resolve_gas_properties(
     composition dict, the CoolProp real-EOS mixture backend (CO2 / CCUS) is used.
     Injected numeric Z_s/Z_td/rho_gas_s values are used verbatim (override).
     """
+    if inp.model_revision not in MODEL_REVISIONS:
+        raise ValueError(
+            f"unknown kick-tolerance model_revision {inp.model_revision!r}; "
+            f"known revisions: {sorted(MODEL_REVISIONS)}"
+        )
     if P_td is None:
         P_td = scenario_P_td(inp)
-    T_s_r = fahrenheit_to_rankine(inp.T_s)
+    # The influx station's temperature is revision-dependent -- T_s as
+    # published, the gas-column mean thereafter (see _influx_temperature).
+    T_s_r, _ = _influx_temperature(inp, P_td)
     T_td_r = fahrenheit_to_rankine(inp.T_td)
 
     if inp.ideal_gas:
@@ -312,9 +464,13 @@ def constant_A(inp: KickInputs, P_td: Optional[float] = None) -> float:
     -- is a documented follow-up; this constant-inclination form is the standard
     published convention.)
     """
+    if P_td is None:
+        P_td = scenario_P_td(inp)
     Z_s, Z_td, rho_gas_s = resolve_gas_properties(inp, P_td)
     P_lot_psi = ppg_to_psi(inp.P_lot, inp.D_lot)
-    T_s_r = fahrenheit_to_rankine(inp.T_s)
+    # SAME influx temperature the Z_s / rho_gas_s above were evaluated at --
+    # this and resolve_gas_properties must never disagree on the station.
+    T_s_r, _ = _influx_temperature(inp, P_td)
     # Ideal-gas reference mode is isothermal: the T_td/T_s expansion ratio -> 1.
     T_td_r = T_s_r if inp.ideal_gas else fahrenheit_to_rankine(inp.T_td)
     num = (P_lot_psi - inp.P_apl) * T_td_r * Z_td * inp.V_dpa
@@ -370,6 +526,7 @@ def drill_kick(inp: KickInputs) -> KickResult:
     B = constant_B(inp)
     P_pp_psi = ppg_to_psi(inp.PP + inp.kick_intensity, inp.D_td)
     P_td = P_td_from_A1(inp, P_pp_psi)
+    T_influx_r, H_gas = _influx_temperature(inp, scenario_P_td(inp))
     capacity = influx_volume_A7(A, B, P_td)
     margin = capacity - inp.kt_threshold
     P_td_thresh = pp_at_threshold_A9(A, B, inp.kt_threshold)
@@ -383,6 +540,9 @@ def drill_kick(inp: KickInputs) -> KickResult:
         margin=margin,
         passed=margin >= 0.0,
         pp_at_threshold=_psi_to_ppg(P_td_thresh, inp.D_td),
+        model_revision=inp.model_revision,
+        T_influx=T_influx_r - RANKINE_OFFSET,
+        H_gas=H_gas,
     )
 
 
@@ -419,6 +579,7 @@ def swab_kick(inp: KickInputs) -> KickResult:
     P_td = ppg_to_psi(inp.rho_mud, inp.D_td)  # A-8 substitution
     A = constant_A(inp, P_td)                 # station gas at the swab P_td (no KI leak)
     B = constant_B(inp)
+    T_influx_r, H_gas = _influx_temperature(inp, P_td)
     capacity = influx_volume_A7(A, B, P_td)   # == A-8 closed form
     margin = capacity - inp.kt_threshold
     P_td_thresh = pp_at_threshold_A9(A, B, inp.kt_threshold)
@@ -432,6 +593,9 @@ def swab_kick(inp: KickInputs) -> KickResult:
         margin=margin,
         passed=margin >= 0.0,
         pp_at_threshold=_psi_to_ppg(P_td_thresh, inp.D_td),
+        model_revision=inp.model_revision,
+        T_influx=T_influx_r - RANKINE_OFFSET,
+        H_gas=H_gas,
     )
 
 
