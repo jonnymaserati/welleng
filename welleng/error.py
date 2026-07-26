@@ -622,29 +622,37 @@ class ErrorModel():
         welleng-assay's continuous transport are FIRST-ORDER interior
         approximations of a nonlinear propagation; the interpolated-position
         Monte Carlo is the oracle, and the two forms diverge from it most where
-        the ``1/sin(inc)`` azimuth weights are ill-conditioned. Measured against
-        MC on a build well at ``f = 0.5``:
+        the ``1/sin(inc)`` azimuth weights are ill-conditioned.
 
-            inc 18 deg (low-inc build)   core 19.2%
-            inc 36 deg                   core  2.6%
-            inc 60 deg                   core 0.33%
+        Both columns below are from ONE run against the SAME MC realisation
+        (welleng-assay ``280ada4``, core ``0.26.0rc14``): 30 m survey 0-3000 m
+        building vertical to 60 deg over 300-1800 m, interior point ``f = 0.5``,
+        interpolated-position MC at N = 300,000 seed 7, ``dp_basis`` balanced
+        tangent, smooth measurement terms only (XCLA/XCLH excluded — an
+        NEV-direct ``e_DIA`` has no clean measurement-space MC):
 
-        So this form OVER-states relative to MC, and by a wide margin at low
-        inclination. Station values (``f = 0`` and ``f = 1``) are unaffected —
-        those are exact. Aligning the boundary form to a continuous transport is
-        tracked for 0.27; until then, treat sub-30 deg inclination interiors as
+            inc 18 deg (low-inc build)   core 19.03%   continuous 2.87%
+            inc 36 deg                   core  2.73%   continuous 0.56%
+            inc 60 deg                   core  0.38%   continuous 0.21%
+
+        Read it as: the two forms STRADDLE the MC, the continuous one closer,
+        and the gap is largest at low inclination (~6-7x at 18 deg, seed-stable)
+        and CLOSES toward the MC noise floor (~0.4% at this N) by 40-60 deg.
+        **Not a flat ratio** — the 36 and 60 deg rows are both at the noise
+        floor, so the ratio there is noise-limited rather than a real 5x.
+
+        So this form OVER-states relative to MC, materially below ~30 deg.
+        Station values (``f = 0`` and ``f = 1``) are unaffected — those are
+        exact. Aligning the boundary form to the continuous transport is tracked
+        for 0.27; until then, treat sub-30 deg inclination interiors as
         indicative and take a station value, or welleng-assay's continuous form,
         where the number is load-bearing.
 
-        A comparison column for welleng-assay's form was published here in
-        0.26.0rc9 and is WITHDRAWN pending re-measurement: it was taken before
-        their 2026-07-26 ``dref`` fix removed a constant VV double-count, so it
-        overstated their error and understated the gap. Core's figures above are
-        core-vs-MC and cannot be affected by a fix on assay's side, so they
-        stand; the DIRECTION of the guidance (prefer a station value or the
-        continuous form at low inclination) is unchanged and if anything
-        stronger. Do not quote a ratio between the two forms until the corrected
-        column lands.
+        (An earlier version of this table shipped in 0.26.0rc9 with a stale
+        continuous column — 9.1 / 1.6 / 0.16 — measured before assay's
+        ``dref`` fix removed a constant VV double-count. It overstated their
+        error, so the published "~2x closer" UNDER-sold the gap. Withdrawn in
+        rc14, replaced here with the provenance above.)
 
         Parameters
         ----------
