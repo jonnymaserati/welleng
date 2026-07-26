@@ -332,7 +332,7 @@ def test_scene_direct_root_preferred_over_a_loop(seed):
     "change, <=5 m lateral) the long-way rate is 47.0% at DLS 3 (28.7% at DLS 6, "
     "17.3% at DLS 10), worst md/L 167x. These are a planner's ordinary local "
     "connections, so the residual-vs-bound gap is not a corner case. Contrast "
-    "welleng-pathfinder's 400-pair battery at R/L ~ 0.5-2.9, where an 87.8% loop "
+    "a consumer's 400-pair battery at R/L ~ 0.5-2.9, where an 87.8% loop "
     "rate is GENUINE geometry and unchanged by 9e103bb: loops are real in tight "
     "geometry and largely artefact in near-straight geometry. Fix is the joint "
     "Newton polish of (beta, alpha1, alpha2) noted above."

@@ -562,7 +562,7 @@ class SurveyComposition:
         # TWO propagations (with and without the override), not one per
         # component. Un-cached, a 2-section compose ran EIGHT full ErrorModel
         # propagations where 2-3 suffice, discarding three quarters of each
-        # result (welleng-probcol's profile: 93% of their programme setup).
+        # result (measured at 93% of a downstream consumer's programme setup).
         severed = attr in ("cov_nev_systematic", "cov_nev_well") and k > 0
         cache = getattr(self, "_run_cache", None)
         if cache is None:

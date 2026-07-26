@@ -447,13 +447,13 @@ and monotonicity sweeps' existing budget. Machine: this dev box, .venv312.
 
 ## 2026-07-26 — `ErrorModel.cov_nev_at` source-stacked evaluation (0.26.0rc12)
 
-welleng-pathfinder profiled `MahalanobisClearance` in `mode="exact"`: one check on a real path
+a downstream consumer profiled `MahalanobisClearance` in `mode="exact"`: one check on a real path
 (124 candidate stations x 12 Volve offsets) spent **2.98 s of 3.67 s — 81% — inside 8906 SCALAR
 `cov_nev_at` calls**, issuing 219k `np.outer` products. It is the binding constraint of every
 `plan()` call that reports an oracle SF.
 
 They asked for a batched `cov_nev_at(md_array)`. **Refused — that is a vectorised public entry
-point, which is welleng-api's / welleng-assay's, not open core's (CLAUDE.md HARD RULE).** What core
+point, which is a batch consumer's / outside this module's scope -- the public entry point is scalar by design.** What core
 CAN do is make the SCALAR call faster, and almost all of the win was available there: a single
 interior evaluation touches all 35 sources of the default MWD model, and at 3-vector sizes numpy's
 per-call overhead dominated the arithmetic.
@@ -482,7 +482,7 @@ API. Machine: this dev box, .venv312.
 
 ## 2026-07-26 — `SurveyComposition` propagation sharing (0.26.0rc13)
 
-welleng-probcol profiled their programme setup and found `SurveyComposition` was **93% of it**
+a downstream consumer profiled their programme setup and found `SurveyComposition` was **93% of it**
 (28.71 ms of 30.95 ms), running **8 full `ErrorModel` propagations for a 2-section compose**.
 
 Cause: `_compose_component` is called once per covariance component (global / systematic / random /
@@ -507,5 +507,5 @@ so a mutated composition can never read a stale run.
 `covariances_at(programme=)` anchors on, so a change that merely agreed closely would be a parity
 failure. Pinned by `test_composition_does_not_re_propagate_per_covariance_component`.
 
-Not "chasing performance" — computing the same thing four times is a defect (TA0, 2026-07-26).
+Not "chasing performance" — computing the same thing four times is a defect (project-owner ruling, 2026-07-26).
 Machine: this dev box, .venv312.

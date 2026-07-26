@@ -419,7 +419,7 @@ def test_composition_does_not_re_propagate_per_covariance_component():
     the result must be BIT-IDENTICAL to computing each separately -- this is an
     efficiency fix on an MC-gated path, so "close" is not good enough.
 
-    welleng-probcol's profile: `SurveyComposition` was 93% of their programme
+    a consumer's profile: `SurveyComposition` was 93% of their programme
     setup, running 8 full ErrorModel propagations for a 2-section compose and
     discarding three quarters of each result.
     """

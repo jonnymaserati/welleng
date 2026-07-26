@@ -86,8 +86,8 @@ RANKINE_OFFSET = 460.0         # degF -> degR (paper convention; A back-solves
 #
 # A kick-tolerance number ends up in a signed-off well programme, so a result
 # computed under an earlier model must stay reproducible EXACTLY after the model
-# changes, by naming the revision it was computed under (TA0 requirement,
-# 2026-07-26). Hence a named, FROZEN revision rather than a boolean: a boolean
+# changes, by naming the revision it was computed under (a well-control
+# reproducibility requirement). Hence a named, FROZEN revision rather than a boolean: a boolean
 # cannot carry a second change, and a revision identifier is what a report can
 # cite. The revision travels on ``KickResult``, so a stored calculation records
 # what produced it.
@@ -313,7 +313,7 @@ def _influx_temperature(inp: KickInputs, P_td: float) -> tuple[float, float]:
     value for it. Evaluating there makes the gas denser than the column, which
     SHRINKS the ``(rho_mud - rho_gas_s)`` deficit in A-5's denominator, inflates
     A, and passes straight through A-7 as an OVERSTATED tolerable influx. The
-    error is anti-conservative (welleng-api, external reviewer, 2026-07-26).
+    error is anti-conservative (raised by an external reviewer, 2026-07-26).
 
     Note the asymmetry this removes: the pressure side already integrates the
     column (``_shoe_gas_pressure``); only the temperature side did not.

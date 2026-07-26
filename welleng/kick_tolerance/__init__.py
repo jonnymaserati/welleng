@@ -22,7 +22,7 @@ temperature (that is OLGA / Drillbench / "Simulator D" territory). Use this as a
 fast, reproducible, conservative well-control **barrier check**. A full multiphase
 model would only RELAX (raise) the tolerance -- a casing-design margin-recovery
 tool, not a safety improvement -- and its transient two-phase hydraulics belong
-with a hydraulics kernel (welleng-drilling), not here.
+with a hydraulics kernel, not here.
 
 UNITS -- the field-units contract (READ THIS)
 ---------------------------------------------

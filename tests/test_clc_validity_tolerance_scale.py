@@ -8,7 +8,7 @@ small. That residual is built from R-scale terms::
 so comparing it against an L-scaled bound (``1e-4 * L``, L = |p4 - p1|) fails
 whenever R >> L: the bound falls below the residual's own floor and the CORRECT
 root is discarded, leaving a long-way (>pi) root as the "shortest valid"
-solution. Reported by welleng-pathfinder from a real relief-well sweep, where a
+solution. Reported by a downstream consumer from a real relief-well sweep, where a
 30 m near-collinear move at DLS 3 returned a 7230 m double-loop (240x).
 
 NB the arcs of the surviving long-way root are genuine >pi arcs, not a wrap
