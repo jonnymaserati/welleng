@@ -151,18 +151,23 @@ def test_chc_analytical_is_used_simple():
     assert np.allclose(c.vec_target, vec2, atol=TIGHT_TOL)
 
 
-def test_no_clc_target_raises():
-    """A target with NO curve-hold-curve solution at the design radii raises.
-    Because arcs may turn > 180deg a CLC exists for almost every geometry
-    (see test_long_arc_solves_at_design_dls), so a genuine no-solution case needs
-    an unreachable pose: a target on the start axis with a reversed tangent -- a
-    U-turn on the spot no radius-R curve-hold-curve can make."""
+def test_no_direct_clc_target_raises():
+    """A U-turn on the spot has no DIRECT curve-hold-curve, so direct_only raises.
+
+    It is reachable the long way round -- two arcs totalling 540 deg end on the
+    target with the reversed tangent (reconstructed to 5e-07 m) -- and the
+    default Connector returns that loop. It was previously refused outright only
+    because the arc quadratic's discriminant rounds negative at that tangency.
+    """
     import pytest
+    kwargs = dict(
+        pos1=[0., 0., 0.], vec1=[0., 0., 1.],
+        pos2=[0., 0., 50.], vec2=[0., 0., -1.],
+    )
     with pytest.raises(ValueError):
-        Connector(
-            pos1=[0., 0., 0.], vec1=[0., 0., 1.],
-            pos2=[0., 0., 50.], vec2=[0., 0., -1.],
-        )
+        Connector(direct_only=True, **kwargs)
+    with pytest.warns(UserWarning, match="long way"):
+        Connector(**kwargs)
 
 
 def test_long_arc_solves_at_design_dls():
@@ -236,6 +241,6 @@ def test_random_pose_battery_no_spurious_rejection():
 if __name__ == "__main__":
     test_chc_analytical_roundtrip()
     test_chc_analytical_is_used_simple()
-    test_no_clc_target_raises()
+    test_no_direct_clc_target_raises()
     test_long_arc_solves_at_design_dls()
     print("ok")

@@ -2,7 +2,8 @@
 
 Guards the interior-covariance evaluation used by clearance / pathfinder EOU:
 - endpoint recovery (f->0 == cov_NEV[i], f->1 == cov_NEV[i+1]) to machine precision
-  -- the regression test for the f->0 option-c bug (partial out-leg coupling was dropped);
+  -- the regression test for the f->0 option-c bug (partial out-leg
+  coupling was dropped);
 - continuity across a station;
 - the term classification (standard / course_length XCLA-XCLH / linear residual).
 """
@@ -39,10 +40,14 @@ def test_endpoint_recovery(err):
         eps = 1e-9 * max(1.0, md[i + 1])
         c1 = err.cov_nev_at(md[i + 1] - eps)
         ref1 = err.errors.cov_NEVs[i + 1]
-        worst_1 = max(worst_1, np.max(np.abs(c1 - ref1)) / max(1e-9, np.max(np.abs(ref1))))
+        worst_1 = max(
+            worst_1,
+            np.max(np.abs(c1 - ref1)) / max(1e-9, np.max(np.abs(ref1))))
         c0 = err.cov_nev_at(md[i] + 1e-9 * max(1.0, md[i]))
         ref0 = err.errors.cov_NEVs[i]
-        worst_0 = max(worst_0, np.max(np.abs(c0 - ref0)) / max(1e-9, np.max(np.abs(ref0))))
+        worst_0 = max(
+            worst_0,
+            np.max(np.abs(c0 - ref0)) / max(1e-9, np.max(np.abs(ref0))))
     assert worst_1 < 1e-7, f"f->1 recovery {worst_1:.2e}"
     assert worst_0 < 1e-7, f"f->0 recovery {worst_0:.2e} (partial-coupling regression)"
 
@@ -99,6 +104,7 @@ def test_term_classification(err):
     classes, xcl_mag, _, _ = err._interior_prep()
     assert classes["XCLA"] == "course_length"
     assert classes["XCLH"] == "course_length"
-    # XCLA/XCLH magnitude reconstructed from stored e_NEV (model-general, = ISCWSA 0.167)
+    # XCLA/XCLH magnitude reconstructed from stored e_NEV (model-general,
+    # = ISCWSA 0.167)
     assert abs(xcl_mag["XCLA"] - 0.167) < 1e-6
     assert abs(xcl_mag["XCLH"] - 0.167) < 1e-6
