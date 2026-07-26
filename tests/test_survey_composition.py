@@ -408,3 +408,72 @@ def test_chained_global_component_is_telescoping_exact():
                           share_mode="globals_shared"),
         ]).survey().cov_nev
     assert np.allclose(com, ref, atol=1e-10)
+
+
+def test_composition_does_not_re_propagate_per_covariance_component():
+    """One propagation per (run, depth datum) -- not one per component.
+
+    `_run_component`'s `attr` selects which covariance to READ off a build; it
+    does not change the build. The only thing that does is the severed-run
+    `_tmd_datum` override. So the four components must share propagations, and
+    the result must be BIT-IDENTICAL to computing each separately -- this is an
+    efficiency fix on an MC-gated path, so "close" is not good enough.
+
+    a consumer's profile: `SurveyComposition` was 93% of their programme
+    setup, running 8 full ErrorModel propagations for a 2-section compose and
+    discarding three quarters of each result.
+    """
+    import welleng.error as error_module
+
+    md, inc, azi = _geometry()
+    sh = _header()
+    i = 6
+
+    def build(model_a, model_b):
+        return SurveyComposition([
+            SurveySection(md=md[:i + 1], inc=inc[:i + 1], azi=azi[:i + 1],
+                          header=sh, error_model=model_a, tool_id="T1"),
+            SurveySection(md=md[i:], inc=inc[i:], azi=azi[i:],
+                          header=sh, error_model=model_b, tool_id="T2"),
+        ])
+
+    def count(model_a, model_b):
+        n = [0]
+        original = error_module.ErrorModel.__init__
+
+        def counted(self, *args, **kwargs):
+            n[0] += 1
+            return original(self, *args, **kwargs)
+
+        error_module.ErrorModel.__init__ = counted
+        try:
+            survey = build(model_a, model_b).survey()
+        finally:
+            error_module.ErrorModel.__init__ = original
+        return n[0], survey
+
+    # single-model (shared realisation) and multi-model (per-term chaining)
+    for a, b in ((EM, EM), ("ISCWSA MWD Rev4", EM)):
+        n, _ = count(a, b)
+        # 2 groups x 4 components = 8 if nothing is shared. The floor is a
+        # handful; assert well below the un-shared count so a regression that
+        # re-introduces per-component propagation fails here.
+        assert n <= 6, f"{a}/{b}: {n} propagations, components are not shared"
+
+
+def test_run_cache_does_not_leak_between_calls():
+    """The cache is scoped to one `survey()` call, so a mutated composition can
+    never read a stale run."""
+    md, inc, azi = _geometry()
+    sh = _header()
+    i = 6
+    comp = SurveyComposition([
+        SurveySection(md=md[:i + 1], inc=inc[:i + 1], azi=azi[:i + 1],
+                      header=sh, error_model=EM, tool_id="T1"),
+        SurveySection(md=md[i:], inc=inc[i:], azi=azi[i:],
+                      header=sh, error_model=EM, tool_id="T2"),
+    ])
+    first = comp.survey()
+    assert comp._run_cache == {}
+    second = comp.survey()
+    assert np.array_equal(first.cov_nev, second.cov_nev)

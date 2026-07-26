@@ -42,6 +42,10 @@ def paper_inputs(**overrides):
         rho_mud=11.90, PP=11.50, kick_intensity=1.10, P_lot=16.00, P_apl=210.0,
         D_td=10500.0, D_lot=6500.0, T_s=212.0, T_td=302.0, V_dpa=V_DPA,
         Z_s=1.1230, Z_td=1.1650, rho_gas_s=1.710, kt_threshold=25.0, inc_shoe=0.0,
+        # Reproducing the paper's table means reproducing its MODEL. The shipped
+        # default revision deliberately differs (influx state at the gas-column
+        # mean temperature, not at the shoe) -- see MODEL_REVISIONS.
+        model_revision="spe-208788",
     )
     kw.update(overrides)
     return KickInputs(**kw)

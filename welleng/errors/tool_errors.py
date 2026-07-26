@@ -345,7 +345,13 @@ class ToolError:
                 self.em['header']['Inclination Range Max'].split(" ")[0]
             ))
             assert np.amax(self.e.survey.inc_rad) < value, (
-                "Model not suitable for this well path inclination"
+                "Model not suitable for this well path inclination "
+                f"(max {np.degrees(np.amax(self.e.survey.inc_rad)):.1f} deg vs "
+                f"model limit {np.degrees(value):.1f} deg). If this path came "
+                "from a CLC solve, a long-way (>180 deg) connector arc sweeps "
+                "over vertical and reaches inc 180 deg -- such a path is "
+                "outside every standard ISCWSA model's validity and cannot "
+                "carry an EOU. Re-solve with Connector(direct_only=True)."
             )
 
         # SPE 90408 App. C box-11 periodic re-initialisation (opt-in, default
@@ -1277,7 +1283,7 @@ class ToolError:
           - CNA, CNI: only in the BLIND/UNKNOWN/FINDS/TREND special models
             (gyro "Linear Cone").
           - ASIXY, ABIXY, MBIXY: in no current JSON model at all -- legacy-only.
-        See docs/dev/ERROR_MODEL_ENGINE.md S6. The base-ISCWSA terms that DO have
+        See the welleng error-model engine notes S6. The base-ISCWSA terms that DO have
         reference data (XYM3E/XYM4E/DBHR) are validated per-source to 5e-5 by
         tests/test_iscwsa_mwd_error.py and are no longer flagged.
         """
@@ -2550,7 +2556,72 @@ def XCL(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
         )
 
 
+def _xcl_dia(code, error, name, mag, propagation, NEV, tortuosity):
+    """DIA (measurement-error) representation of an XCL course-length term.
+
+    Codling's XCL (SPE-187249, Eq. 1) is ``0.167 * DL * course-length`` with ``DL``
+    the surveyed angle change -- i.e. an effective ANGLE error. This recasts it as
+    such: XCLH as an inclination error, XCLA as an azimuth error, both propagated
+    OWN-ONLY through the standard ``drk`` (a course-length path error does not couple
+    to the prior station's measurement). Reproduces the NEV-direct station covariance
+    to machine precision. Unlike the NEV-direct form it exposes a real DIA
+    perturbation (``e_DIA`` inc/azi component) that maps into the Monte-Carlo surface;
+    XCLA keeps a lateral-direct branch near vertical (the tortuosity floor is a lateral
+    uncertainty azimuth cannot carry -- the ``e_DIA`` there is 0, handled as a lateral
+    primitive by the MC). Selected by ``SurveyHeader.xcl_representation == 'dia'``.
+    """
+    md = np.asarray(error.survey.md, dtype=float)
+    inc = np.asarray(error.survey.inc_rad, dtype=float)
+    azt = np.asarray(error.survey.azi_true_rad, dtype=float)
+    vlim = float(getattr(error.survey.header, 'vertical_inc_limit', 0.0))
+    n = len(md)
+    dmd = md[1:] - md[:-1]
+    e_DIA = np.zeros((n, 3))
+    e_NEV = np.zeros((n, 3))
+
+    if name == "XCLH":
+        # inclination error 2*mag*Max(|dinc|, tort*dmd), own leg via drk_dInc
+        e_I = 2.0 * mag * np.maximum(np.abs(inc[1:] - inc[:-1]), tortuosity * dmd)
+        e_DIA[1:, 1] = e_I
+        drk_dInc = 0.5 * dmd[:, None] * np.stack([
+            np.cos(inc[1:]) * np.cos(azt[1:]),
+            np.cos(inc[1:]) * np.sin(azt[1:]),
+            -np.sin(inc[1:]),
+        ], axis=-1)
+        e_NEV[1:] = drk_dInc * e_I[:, None]
+    else:  # XCLA
+        azw = ((azt[1:] - azt[:-1] + pi) % (2 * pi)) - pi
+        sA = np.abs(np.sin(inc[1:]) * np.sin(np.abs(azw)))
+        sA[inc[:-1] < vlim] = 0.0
+        wA = np.maximum(sA, tortuosity * dmd)
+        sin_i = np.sin(inc[1:])
+        drk_dAz = 0.5 * dmd[:, None] * np.stack([
+            -sin_i * np.sin(azt[1:]),
+            sin_i * np.cos(azt[1:]),
+            np.zeros_like(dmd),
+        ], axis=-1)
+        # azimuth-error branch where inc is away from vertical
+        away = sin_i > 1e-6
+        e_A = np.zeros_like(wA)
+        e_A[away] = 2.0 * mag * wA[away] / sin_i[away]
+        e_DIA[1:, 2] = np.where(away, e_A, 0.0)
+        nev = drk_dAz * e_A[:, None]
+        # lateral-direct floor near vertical (the tortuosity lateral primitive)
+        lateral = mag * (dmd * wA)[:, None] * np.stack([
+            -np.sin(azt[1:]), np.cos(azt[1:]), np.zeros_like(dmd)
+        ], axis=-1)
+        e_NEV[1:] = np.where(away[:, None], nev, lateral)
+
+    return error._generate_error(
+        code, e_DIA, propagation, NEV, e_NEV=e_NEV, e_NEV_star=e_NEV
+    )
+
+
 def XCLA(code, error, mag=0.167, propagation='random', NEV=True, **kwargs):
+    if getattr(error.survey.header, 'xcl_representation', 'nev_direct') == 'dia':
+        return _xcl_dia(
+            code, error, "XCLA", mag, propagation, NEV, kwargs['tortuosity']
+        )
     dpde = np.zeros((len(error.survey_rad), 3))
 
     def manage_sing(error, kwargs):
@@ -2600,7 +2671,11 @@ def XCLA(code, error, mag=0.167, propagation='random', NEV=True, **kwargs):
     )
 
 
-def XCLH(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
+def XCLH(code, error, mag=0.167, propagation='random', NEV=True, **kwargs):
+    if getattr(error.survey.header, 'xcl_representation', 'nev_direct') == 'dia':
+        return _xcl_dia(
+            code, error, "XCLH", mag, propagation, NEV, kwargs['tortuosity']
+        )
     dpde = np.zeros((len(error.survey_rad), 3))
     dpde[1:, 0] = (
         (error.survey.md[1:] - error.survey.md[0:-1])

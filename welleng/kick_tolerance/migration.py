@@ -883,7 +883,7 @@ def max_influx_circulated(
        marginally non-conservative near such a breakpoint. The exact/conservative
        value comes from the analytical solver evaluated at the COMPLETE breakpoint
        set (gas-top- AND gas-bottom-at-boundary + deepest position); see
-       ``docs/dev/KICK_ANALYTICAL_PLAN.md``.
+       the welleng kick-tolerance design notes (not shipped).
     """
     if temp_profile is None:
         temp_profile = geothermal          # geothermal is the default when supplied

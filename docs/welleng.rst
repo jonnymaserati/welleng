@@ -7,8 +7,10 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
+   welleng.catalog
    welleng.errors
    welleng.exchange
+   welleng.kick_tolerance
 
 Submodules
 ----------

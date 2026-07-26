@@ -71,6 +71,6 @@ Conversions applied by the loader (from each file's `_meta.to_SI`):
 
 Wall thickness is derived ((OD−ID)/2) and is **not** stored in OSDU.
 
-These catalogues are the casing/tubing siblings of the `welleng-drilling`
+These catalogues are the casing/tubing counterparts of the drilling-mechanics
 drill-string catalogues (`drillpipe.json`, `tooljoints.json`, `drillcollar.json`,
 `hwdp.json`) and share their `_meta` + rows format.

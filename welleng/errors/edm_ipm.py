@@ -51,6 +51,12 @@ from typing import Dict, List
 
 from ..exchange.edm_stream import ToolKind, classify_tool
 
+# a formula identifier token (a survey variable, math function, or an EDM
+# intermediate name); used by ``normalise_edm_model`` to inline intermediates
+# by whole-token replacement (never a substring, so ``dinit`` is not hit
+# inside ``deltad`` and ``ainit`` is not hit inside a longer name).
+_IDENT = re.compile(r"[A-Za-z_]\w*")
+
 # COMPASS c_units -> the ISCWSA-JSON units enum welleng's engine converts
 # from (see tool_errors._MAG_UNIT_TO_BASE). COMPASS 'm'/'im' encode the
 # metres<->feet conversions of its feet-internal engine; welleng evaluates
@@ -161,10 +167,16 @@ class EDMIPM:
             )
         return matches[0]
 
-    def error_model(self, key: str) -> dict:
+    def error_model(self, key: str, normalise: bool = False) -> dict:
         """Build the welleng error-model dict for a tool (see
-        :func:`ipm_to_error_model`)."""
-        return ipm_to_error_model(self.tool(key))
+        :func:`ipm_to_error_model`).
+
+        ``normalise=True`` inlines the EDM intermediates into the term formulas
+        (:func:`normalise_edm_model`), yielding a self-contained ISCWSA-JSON
+        model for a generic/symbolic formula engine; the covariance is
+        unchanged.
+        """
+        return ipm_to_error_model(self.tool(key), normalise=normalise)
 
 
 def tool_from_ipm_model(model) -> IPMTool:
@@ -269,11 +281,15 @@ def parse_edm_ipm(path: str) -> EDMIPM:
     )
 
 
-def ipm_to_error_model(tool: IPMTool) -> dict:
+def ipm_to_error_model(tool: IPMTool, normalise: bool = False) -> dict:
     """Convert one tool's IPM to the welleng (ISCWSA-JSON-shaped) model dict.
 
     The dict can be passed straight to ``Survey(..., error_model=model)`` /
     ``ErrorModel(survey, error_model=model)``.
+
+    With ``normalise=True`` the EDM intermediates are inlined into the term
+    formulas (:func:`normalise_edm_model`) so the model is self-contained for a
+    generic/symbolic formula engine; the covariance is unchanged.
 
     Conversion rules
     ----------------
@@ -398,7 +414,7 @@ def ipm_to_error_model(tool: IPMTool) -> dict:
             entry["inc_max_deg"] = ref.max_inc
         terms.append(entry)
 
-    return {
+    model = {
         "metadata": {
             "model_id": tool.tool_id,
             "short_name": tool.name,
@@ -411,6 +427,86 @@ def ipm_to_error_model(tool: IPMTool) -> dict:
         "edm_intermediates": intermediates,
         "terms": terms,
     }
+    return normalise_edm_model(model) if normalise else model
+
+
+# the formula-bearing keys of a term dict, in the order the engine reads them
+_FORMULA_FIELDS = (
+    "depth_formula", "inclination_formula", "azimuth_formula",
+    "north_singularity", "east_singularity", "vertical_singularity",
+)
+
+
+def normalise_edm_model(model: dict) -> dict:
+    """Inline a model's EDM intermediates into its term formulas.
+
+    :func:`ipm_to_error_model` emits COMPASS ``tie_type='n'`` rows as a
+    separate ``edm_intermediates`` list — per-station computed sub-expressions
+    (e.g. ``deltad = abs(tmd - dinit)``, ``ainit = 45 deg``) that the term
+    formulas reference by name and welleng's own engine evaluates once into the
+    formula namespace (``tool_errors``). That is an EDM-specific convention: the
+    ISCWSA-JSON/OSDU schema has no per-station intermediate mechanism — a term
+    is a *self-contained* inclination/azimuth/depth formula plus scalar
+    parameters. A generic engine reading the model (e.g. the symbolic compiler
+    behind the vectorised EOU path) therefore cannot resolve ``ainit`` and
+    friends, and rejects the model.
+
+    This function returns an equivalent model in which every intermediate is
+    inlined into the formulas that reference it, and the ``edm_intermediates``
+    section is dropped. The result references only base survey variables
+    (``inc``, ``azi``, ``gtot``, ``erot`` …) and numeric constants — a
+    self-contained ISCWSA-JSON model any standard formula engine can consume.
+
+    The transform is an exact algebraic substitution, so the covariance is
+    unchanged: welleng's own engine gives the *identical* result on the
+    normalised model (validated bit-for-bit on every Volve gyro/MWD-gyro tool;
+    see ``tests/test_edm_ipm_normalise.py``). Degree→radian conversion is
+    carried by each intermediate's already-SI ``value`` (set from its unit code
+    in :func:`ipm_to_error_model`), so inlining ``(value)*(formula)`` preserves
+    it. Intermediates are resolved in sequence order — a later one may
+    reference an earlier one (``w_34 = sqrt(1 - w_12**2)``) — so each
+    expansion is itself already free of intermediate names before it is
+    substitved onward.
+
+    Parameters
+    ----------
+    model : dict
+        A model dict from :func:`ipm_to_error_model` /
+        :meth:`EDMIPM.error_model`. A model without an ``edm_intermediates``
+        section is returned unchanged (a shallow copy).
+
+    Returns
+    -------
+    dict
+        The equivalent model with intermediates inlined and no
+        ``edm_intermediates`` key.
+    """
+    intermediates = model.get("edm_intermediates") or []
+    if not intermediates:
+        return {k: v for k, v in model.items() if k != "edm_intermediates"}
+
+    def _inline(formula: str, resolved: Dict[str, str]) -> str:
+        return _IDENT.sub(
+            lambda m: resolved.get(m.group(0), m.group(0)), formula
+        )
+
+    # resolve each intermediate against the ones already resolved before it,
+    # so every stored expansion references only base variables/constants
+    resolved: Dict[str, str] = {}
+    for interm in intermediates:
+        body = _inline(interm["formula"], resolved)
+        resolved[interm["name"]] = f"(({interm['value']!r})*({body}))"
+
+    out = {k: v for k, v in model.items() if k != "edm_intermediates"}
+    out["terms"] = []
+    for term in model["terms"]:
+        new_term = dict(term)
+        for field_name in _FORMULA_FIELDS:
+            formula = new_term.get(field_name)
+            if formula not in (None, ""):
+                new_term[field_name] = _inline(formula, resolved)
+        out["terms"].append(new_term)
+    return out
 
 
 def _unit_multiplier(units: str) -> float:

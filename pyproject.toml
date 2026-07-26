@@ -193,6 +193,8 @@ line-length = 88
 select = ["E", "W", "F"]
 
 [tool.ruff.lint.per-file-ignores]
+# machine-generated coefficient expansion, kept verbatim (see module docstring)
+"welleng/_eq15_c0_quartic.py" = ["E501"]
 # __init__ re-exports are the public convenience API (pre-existing pattern)
 "**/__init__.py" = ["F401"]
 
