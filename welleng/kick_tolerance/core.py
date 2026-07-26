@@ -248,9 +248,18 @@ class KickResult:
     # Influx temperature the gas state was evaluated at [degF] -- T_s under
     # "spe-208788", the column mean under "column-mean-2026". Reported because
     # it is the quantity the revision changes.
+    rho_influx: Optional[float] = None
+    # Influx gas density the A-5 constant ACTUALLY used [ppg]. NOT necessarily
+    # the density at the shoe: under "column-mean-2026" it is the column-mean
+    # value, and an injected ``rho_gas_s`` overrides either.
     H_gas: Optional[float] = None
-    # Converged influx-column height [ft TVD] (None under "spe-208788", which
-    # does not need it).
+    # Influx-column height at this capacity [ft TVD], from A-2 with
+    # ``rho_influx``. Reported under BOTH revisions.
+    #
+    # ``(H_gas, rho_influx)`` are the pair a caller needs to draw the limiting
+    # pressure profile, and they are the ONLY pair that closes on the fracture
+    # pressure exactly -- see ``influx_column`` for the identity and for why
+    # back-deriving H from ``capacity`` instead does not close.
 
 
 # --- Gas-property backend (clean-room Hall & Yarborough 1973) ---------------
@@ -509,6 +518,47 @@ def pp_at_threshold_A9(A: float, B: float, V_threshold: float) -> float:
     return (A * B - V_threshold * P_ATM_PSI) / (V_threshold + A)
 
 
+def influx_column(
+    inp: KickInputs, P_td: Optional[float] = None
+) -> tuple[float, float, float]:
+    """The limiting influx column: ``(T_influx [degF], H_gas [ft], rho_influx)``.
+
+    The three quantities A-5 was actually evaluated with. Use these to draw or
+    check the limiting pressure profile -- they are the only set that closes.
+
+    THE IDENTITY. Reconstructing the shoe pressure from this column,
+
+        P_shoe = P_td - g [ rho_influx * H + rho_mud * (D_td - D_lot - H) ]
+
+    returns the binding fracture pressure ``g * P_lot * D_lot - P_apl``
+    EXACTLY, for any ``rho_influx``, because A-2 defines H as
+    ``(B - P_td) / [g (rho_mud - rho_influx)]`` and B carries the mud column
+    over the same interval. That is the definition of the limiting condition:
+    at the tolerable influx the shoe sits ON the fracture pressure. Verified to
+    0.00 psi under both revisions by ``test_kick_model_revision.py``.
+
+    DO NOT back-derive H from ``KickResult.capacity`` instead. Expanding the
+    capacity to the shoe goes through A-4, whose pressure bookkeeping is not
+    algebraically identical to A-5/A-7 as printed (A-4 pairs
+    ``P_lot - P_apl + P_atm`` with ``P_td``, while A-7 pairs ``P_lot - P_apl``
+    with ``P_td + P_atm``). On the Table-1 case that route misses the fracture
+    pressure by -3.93 psi -- IDENTICALLY under both revisions, so it is the
+    paper's own bookkeeping and not the influx-temperature correction. A
+    profile built that way was already off before 0.26.0; it just did not move.
+
+    ``rho_influx`` respects an injected ``rho_gas_s``, so the identity holds for
+    a caller supplying its own gas properties too.
+    """
+    if P_td is None:
+        P_td = scenario_P_td(inp)
+    T_r, _ = _influx_temperature(inp, P_td)
+    _, _, rho_influx = resolve_gas_properties(inp, P_td)
+    deficit = inp.rho_mud - rho_influx
+    H = ((constant_B(inp) - P_td) / (G_PSI_PER_PPG_FT * deficit)
+         if deficit > 0.0 else 0.0)
+    return T_r - RANKINE_OFFSET, H, rho_influx
+
+
 def _psi_to_ppg(p_psi: float, depth_ft: float) -> float:
     """Inverse gradient: pressure -> equivalent mud weight [ppg] at depth."""
     return p_psi / (G_PSI_PER_PPG_FT * depth_ft)
@@ -526,7 +576,7 @@ def drill_kick(inp: KickInputs) -> KickResult:
     B = constant_B(inp)
     P_pp_psi = ppg_to_psi(inp.PP + inp.kick_intensity, inp.D_td)
     P_td = P_td_from_A1(inp, P_pp_psi)
-    T_influx_r, H_gas = _influx_temperature(inp, scenario_P_td(inp))
+    T_influx, H_gas, rho_influx = influx_column(inp, P_td)
     capacity = influx_volume_A7(A, B, P_td)
     margin = capacity - inp.kt_threshold
     P_td_thresh = pp_at_threshold_A9(A, B, inp.kt_threshold)
@@ -541,7 +591,8 @@ def drill_kick(inp: KickInputs) -> KickResult:
         passed=margin >= 0.0,
         pp_at_threshold=_psi_to_ppg(P_td_thresh, inp.D_td),
         model_revision=inp.model_revision,
-        T_influx=T_influx_r - RANKINE_OFFSET,
+        T_influx=T_influx,
+        rho_influx=rho_influx,
         H_gas=H_gas,
     )
 
@@ -579,7 +630,7 @@ def swab_kick(inp: KickInputs) -> KickResult:
     P_td = ppg_to_psi(inp.rho_mud, inp.D_td)  # A-8 substitution
     A = constant_A(inp, P_td)                 # station gas at the swab P_td (no KI leak)
     B = constant_B(inp)
-    T_influx_r, H_gas = _influx_temperature(inp, P_td)
+    T_influx, H_gas, rho_influx = influx_column(inp, P_td)
     capacity = influx_volume_A7(A, B, P_td)   # == A-8 closed form
     margin = capacity - inp.kt_threshold
     P_td_thresh = pp_at_threshold_A9(A, B, inp.kt_threshold)
@@ -594,7 +645,8 @@ def swab_kick(inp: KickInputs) -> KickResult:
         passed=margin >= 0.0,
         pp_at_threshold=_psi_to_ppg(P_td_thresh, inp.D_td),
         model_revision=inp.model_revision,
-        T_influx=T_influx_r - RANKINE_OFFSET,
+        T_influx=T_influx,
+        rho_influx=rho_influx,
         H_gas=H_gas,
     )
 
