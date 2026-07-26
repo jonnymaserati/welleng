@@ -56,22 +56,23 @@ def test_fig12_geothermal_greater_than_isothermal():
     assert (geo - iso) / geo == pytest.approx(0.148, abs=0.02)
 
 
-def test_fig12_sign_survives_the_column_mean_revision():
-    """The SIGN is physics, not a convention, so it must hold under the default
-    revision too -- where the influx state moves to the gas-column mean
-    temperature. Magnitudes drop (a warmer influx is lighter, which shrinks A);
-    geothermal > isothermal does not."""
+def test_fig12_sign_survives_every_revision():
+    """The SIGN is physics, not a convention, so it must hold under EVERY
+    revision -- including the default, where the influx is evaluated at the
+    bubble's own state (mud beneath it) rather than after a whole-open-hole gas
+    gradient. Magnitudes move; geothermal > isothermal does not."""
     kw = {k: v for k, v in CASE1.items() if k != "model_revision"}
 
     def kt(t_s, t_td):
         return drill_kick(KickInputs(T_s=t_s, T_td=t_td, **kw)).capacity
 
-    geo, iso = kt(T_SHOE_GEO, T_TD_GEO), kt(T_ISO, T_ISO)
-    assert geo > iso
-    # Isothermal has no column gradient, so the revision cannot move it.
-    assert iso == pytest.approx(_kt(T_ISO, T_ISO), rel=1e-12)
-    # Geothermal does, and only downwards.
-    assert geo < _kt(T_SHOE_GEO, T_TD_GEO)
+    from welleng.kick_tolerance.core import MODEL_REVISIONS
+    for revision in sorted(MODEL_REVISIONS):
+        g = drill_kick(KickInputs(T_s=T_SHOE_GEO, T_td=T_TD_GEO,
+                                  model_revision=revision, **kw)).capacity
+        i = drill_kick(KickInputs(T_s=T_ISO, T_td=T_ISO,
+                                  model_revision=revision, **kw)).capacity
+        assert g > i, f"{revision}: geothermal {g:.4f} !> isothermal {i:.4f}"
 
 
 def test_fig12_matches_static_company_model_dots():
