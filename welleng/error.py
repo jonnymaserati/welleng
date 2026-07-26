@@ -447,6 +447,94 @@ class ErrorModel():
         self._interior_prep_cache = cached
         return cached
 
+    def _interior_angles(self, i, f):
+        """Interior (inc, azi) at arc-fraction ``f`` on leg ``[i, i+1]``, radians.
+
+        The same minimum-curvature slerp the position interpolation uses,
+        ``sin((1-f)a)/sin(a) t_i + sin(f a)/sin(a) t_{i+1}``.
+        """
+        smd, sinc, sazi = self.survey_rad.T
+        dogleg = float(self.survey.dogleg[i + 1])
+        if dogleg < 1e-9:
+            return sinc[i], sazi[i]
+        vec_i = np.array([
+            np.sin(sinc[i]) * np.cos(sazi[i]),
+            np.sin(sinc[i]) * np.sin(sazi[i]),
+            np.cos(sinc[i]),
+        ])
+        vec_j = np.array([
+            np.sin(sinc[i + 1]) * np.cos(sazi[i + 1]),
+            np.sin(sinc[i + 1]) * np.sin(sazi[i + 1]),
+            np.cos(sinc[i + 1]),
+        ])
+        theta = dogleg * f
+        u = (vec_j - np.cos(dogleg) * vec_i) / np.sin(dogleg)
+        vec_q = np.cos(theta) * vec_i + np.sin(theta) * u
+        vec_q = vec_q / np.linalg.norm(vec_q)
+        return (
+            float(np.arccos(np.clip(vec_q[2], -1.0, 1.0))),
+            float(np.arctan2(vec_q[1], vec_q[0])) % (2 * np.pi),
+        )
+
+    def _interior_stacks(self):
+        """Per-class source arrays, stacked once per model, for :meth:`cov_nev_at`.
+
+        A single interior evaluation touches every error source -- 35 on the
+        default MWD model -- and looping them in Python costs more than the
+        arithmetic does: at 3-vector sizes numpy's per-call overhead dominates,
+        and the loop issued ~37 separate ``np.outer`` products per query. These
+        stacks let one query be evaluated with a handful of array ops over the
+        SOURCE axis instead.
+
+        This vectorises over SOURCES within a single scalar query. It does NOT
+        make the public entry point batched -- ``cov_nev_at`` takes one measured
+        depth and returns one (3, 3) -- and there is deliberately no per-leg or
+        per-query cache here: everything below is model-invariant, built once and
+        indexed. The batched/vectorised form of the interior covariance is
+        welleng-api's and welleng-assay's, not open core's.
+
+        Returns a dict with, for the ``"standard"`` sources, ``e_DIA`` (S, n, 3),
+        ``e_NEV_star`` (S, n, 3), ``sigma_e_NEV`` (S, n, 3) and the boolean
+        ``random`` mask (S,), plus ``cov_random`` (n, 3, 3), the per-station sum
+        of the random sources' ``cov_NEV - outer(e_NEV_star, e_NEV_star)``, which
+        is the query-independent part of their contribution.
+        """
+        cached = getattr(self, "_interior_stacks_cache", None)
+        if cached is not None:
+            return cached
+        classes, _, _, _ = self._interior_prep()
+        std = [s for n, s in self.errors.errors.items()
+               if classes[n] == "standard"]
+        lin = [s for n, s in self.errors.errors.items()
+               if classes[n] == "linear"]
+        n = len(self.survey_rad)
+        z3 = np.zeros((0, n, 3))
+        e_dia = np.array([s.e_DIA for s in std]) if std else z3
+        e_star = np.array([s.e_NEV_star for s in std]) if std else z3
+        rand = np.array([s.propagation == 'random' for s in std], dtype=bool)
+        # sigma_e_NEV is the correlated running sum, so it is only read on the
+        # NON-random branch. A random source may carry a per-section (n, 3, 3)
+        # form instead of (n, 3) (the carried-init terms -- DBHR / DECR / DRFR),
+        # which will not stack; those rows are zero-filled and never indexed.
+        sig = np.zeros((len(std), n, 3))
+        for k, s in enumerate(std):
+            if not rand[k]:
+                sig[k] = s.sigma_e_NEV
+        cov_random = np.zeros((n, 3, 3))
+        for s, is_rand in zip(std, rand):
+            if is_rand:
+                cov_random += s.cov_NEV - np.einsum(
+                    'ki,kj->kij', s.e_NEV_star, s.e_NEV_star
+                )
+        cov_linear = (np.sum([s.cov_NEV for s in lin], axis=0)
+                      if lin else np.zeros((n, 3, 3)))
+        cached = dict(
+            e_DIA=e_dia, e_NEV_star=e_star, sigma_e_NEV=sig, random=rand,
+            cov_random=cov_random, cov_linear=cov_linear,
+        )
+        self._interior_stacks_cache = cached
+        return cached
+
     @staticmethod
     def _reconstruct_xcl_mag(name, src, md, inc, azt, dmd, tort, vlim):
         """Recover an XCLA/XCLH term's magnitude from its stored ``e_NEV`` (the
@@ -565,28 +653,7 @@ class ErrorModel():
         seg = smd[i + 1] - smd[i]
         f = 0.0 if seg == 0.0 else float((md - smd[i]) / seg)
 
-        # interior angles on the minimum-curvature arc (same slerp the position
-        # interpolation uses: sin((1-f)a)/sin(a) t_i + sin(f a)/sin(a) t_{i+1}).
-        dogleg = float(self.survey.dogleg[i + 1])
-        if dogleg < 1e-9:
-            inc_q, azi_q = sinc[i], sazi[i]
-        else:
-            vec_i = np.array([
-                np.sin(sinc[i]) * np.cos(sazi[i]),
-                np.sin(sinc[i]) * np.sin(sazi[i]),
-                np.cos(sinc[i]),
-            ])
-            vec_j = np.array([
-                np.sin(sinc[i + 1]) * np.cos(sazi[i + 1]),
-                np.sin(sinc[i + 1]) * np.sin(sazi[i + 1]),
-                np.cos(sinc[i + 1]),
-            ])
-            theta = dogleg * f
-            u = (vec_j - np.cos(dogleg) * vec_i) / np.sin(dogleg)
-            vec_q = np.cos(theta) * vec_i + np.sin(theta) * u
-            vec_q = vec_q / np.linalg.norm(vec_q)
-            inc_q = float(np.arccos(np.clip(vec_q[2], -1.0, 1.0)))
-            azi_q = float(np.arctan2(vec_q[1], vec_q[0])) % (2 * np.pi)
+        inc_q, azi_q = self._interior_angles(i, f)
 
         Lq = md - smd[i]
         # partial-leg weights [i -> q]: drk (own, far station = q) and drkplus1
@@ -602,40 +669,45 @@ class ErrorModel():
         # convergence is carried at station i and applied to the interior grid azi.
         azt = self.survey.azi_true_rad
         azt_q = azi_q + (azt[i] - sazi[i])
-        cov = np.zeros((3, 3))
+        # STANDARD sources, all at once over the source axis (see
+        # _interior_stacks): the physics below is identical to the per-source
+        # form, only the loop is gone. J maps a source's (D, I, A) to NEV
+        # through the partial-leg weights, so `E @ J` is `dd*D + di*I + da*A`
+        # for every source in one product.
+        st = self._interior_stacks()
+        J = np.stack((dd, di, da))                   # drk(i->q),      (3, 3)
+        Jp = np.stack((pd, pi_, pa))                 # drkplus1(i->q), (3, 3)
+        E_i, E_j = st["e_DIA"][:, i], st["e_DIA"][:, i + 1]
+        qi = E_i @ J                                 # drk(i->q) . e_DIA[i]
+        qj = E_j @ J                                 # drk(i->q) . e_DIA[i+1]
+        coup = E_i @ Jp                              # station-i partial coupling
+        rand = st["random"]
+        # random: two INDEPENDENT measurements -> two outer products. The partial
+        # q-own term splits (1-f)/f between stations i and i+1 (slerp-Jacobian
+        # ~ f; exact at both ends, ~slerp tolerance in the interior -- assay's
+        # symbolic is the exact oracle). Both endpoints recover
+        # cov_NEV[i]/[i+1] exactly. The query-independent
+        # `cov_NEV - outer(e_NEV_star, e_NEV_star)` part is pre-summed.
+        g_i = st["e_NEV_star"][rand, i] + coup[rand] + (1.0 - f) * qi[rand]
+        g_j = f * qj[rand]
+        # systematic / global / well / within_pad: correlated vector sum.
+        sg = ((1.0 - f) * qi[~rand] + f * qj[~rand]
+              + st["sigma_e_NEV"][~rand, i] + coup[~rand])
+        cov = (
+            st["cov_random"][i]
+            + np.einsum('si,sj->ij', g_i, g_i)
+            + np.einsum('si,sj->ij', g_j, g_j)
+            + np.einsum('si,sj->ij', sg, sg)
+        )
         for name, src in self.errors.errors.items():
             cls = classes[name]
-            if cls == "standard":
-                Di, Ii, Ai = src.e_DIA[i]
-                Dj, Ij, Aj = src.e_DIA[i + 1]
-                # station-i partial coupling
-                coup = pd * Di + pi_ * Ii + pa * Ai
-                qi = dd * Di + di * Ii + da * Ai             # drk(i->q) . e_DIA[i]
-                qj = dd * Dj + di * Ij + da * Aj             # drk(i->q) . e_DIA[i+1]
-                if src.propagation == 'random':
-                    # two INDEPENDENT measurements -> two outer products. The
-                    # partial q-own term splits (1-f)/f between stations i and
-                    # i+1 (slerp-Jacobian ~ f; exact at both ends, ~slerp
-                    # tolerance in the interior -- assay's symbolic is the exact
-                    # oracle). Both endpoints recover cov_NEV[i]/[i+1] exactly.
-                    g_i = src.e_NEV_star[i] + coup + (1.0 - f) * qi
-                    g_j = f * qj
-                    cov += (
-                        src.cov_NEV[i]
-                        - np.outer(src.e_NEV_star[i], src.e_NEV_star[i])
-                        + np.outer(g_i, g_i) + np.outer(g_j, g_j)
-                    )
-                else:
-                    enq = (1.0 - f) * qi + f * qj             # e_NEV_star(q)
-                    sig = enq + src.sigma_e_NEV[i] + coup
-                    cov += np.outer(sig, sig)
-            elif cls == "course_length":
+            if cls == "course_length":
                 enq = self._xcl_partial_enev(
                     name, xcl_mag[name], tort, vlim,
                     sinc[i], azt[i], inc_q, azt_q, Lq
                 )
                 cov += src.cov_NEV[i] + np.outer(enq, enq)
-            else:  # "linear"
+            elif cls == "linear":
                 cov += src.cov_NEV[i] + f * (src.cov_NEV[i + 1] - src.cov_NEV[i])
         # A covariance is symmetric; enforce it against floating-point drift from
         # the outer-product sums so downstream (e.g. the Mahalanobis solve) sees

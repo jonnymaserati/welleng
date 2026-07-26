@@ -108,3 +108,84 @@ def test_term_classification(err):
     # = ISCWSA 0.167)
     assert abs(xcl_mag["XCLA"] - 0.167) < 1e-6
     assert abs(xcl_mag["XCLH"] - 0.167) < 1e-6
+
+
+def test_source_stacked_form_matches_a_per_source_reference():
+    """``cov_nev_at`` evaluates all sources at once over the source axis.
+
+    That is a PERFORMANCE change (0.540 -> 0.097 ms/call, 5.6x) and must not be
+    a numerical one, so it is checked against a literal per-source
+    reimplementation of the loop it replaced. Agreement is ~1 ulp (2.7e-16
+    relative), not bit-exact, purely because einsum accumulates the sum in a
+    different order than a sequential ``+=``.
+
+    NB this vectorises over SOURCES within one scalar query. The public entry
+    point stays scalar -- one measured depth in, one (3, 3) out. The batched
+    form over query depths is welleng-api's and welleng-assay's.
+    """
+    import numpy as np
+    import welleng as we
+
+    md = np.arange(0, 3000, 30.)
+    inc = np.clip((md - 300) / 1500 * 60, 0, 60)
+    azi = np.linspace(10., 80., len(md))
+    header = we.survey.SurveyHeader(
+        azi_reference='true', b_total=50000., dip=60., declination=0.
+    )
+    em = we.error.ErrorModel(
+        we.survey.Survey(md=md, inc=inc, azi=azi, header=header)
+    )
+    classes, xcl_mag, tort, vlim = em._interior_prep()
+    smd, sinc, sazi = em.survey_rad.T
+    azt = em.survey.azi_true_rad
+
+    def reference(q):
+        """The pre-0.26 per-source loop, verbatim."""
+        i = int(np.searchsorted(smd, q) - 1)
+        i = max(0, min(i, len(smd) - 2))
+        f = float((q - smd[i]) / (smd[i + 1] - smd[i]))
+        inc_q, azi_q = em._interior_angles(i, f)
+        Lq = q - smd[i]
+        dd, di, da = em._partial_star_drk(sinc[i], sazi[i], inc_q, azi_q, Lq)
+        pd, pi_, pa = em._partial_plus1_drk(sinc[i], sazi[i], dd, Lq)
+        azt_q = azi_q + (azt[i] - sazi[i])
+        cov = np.zeros((3, 3))
+        for name, src in em.errors.errors.items():
+            cls = classes[name]
+            if cls == "standard":
+                Di, Ii, Ai = src.e_DIA[i]
+                Dj, Ij, Aj = src.e_DIA[i + 1]
+                coup = pd * Di + pi_ * Ii + pa * Ai
+                qi = dd * Di + di * Ii + da * Ai
+                qj = dd * Dj + di * Ij + da * Aj
+                if src.propagation == 'random':
+                    g_i = src.e_NEV_star[i] + coup + (1.0 - f) * qi
+                    g_j = f * qj
+                    cov += (
+                        src.cov_NEV[i]
+                        - np.outer(src.e_NEV_star[i], src.e_NEV_star[i])
+                        + np.outer(g_i, g_i) + np.outer(g_j, g_j)
+                    )
+                else:
+                    sig = (1.0 - f) * qi + f * qj + src.sigma_e_NEV[i] + coup
+                    cov += np.outer(sig, sig)
+            elif cls == "course_length":
+                enq = em._xcl_partial_enev(
+                    name, xcl_mag[name], tort, vlim,
+                    sinc[i], azt[i], inc_q, azt_q, Lq
+                )
+                cov += src.cov_NEV[i] + np.outer(enq, enq)
+            else:
+                cov += src.cov_NEV[i] + f * (
+                    src.cov_NEV[i + 1] - src.cov_NEV[i]
+                )
+        return 0.5 * (cov + cov.T)
+
+    worst = 0.0
+    for q in np.linspace(smd[0] + 1e-3, smd[-1] - 1e-3, 97):
+        got, ref = em.cov_nev_at(float(q)), reference(float(q))
+        worst = max(
+            worst,
+            np.max(np.abs(got - ref)) / max(1e-30, np.max(np.abs(ref)))
+        )
+    assert worst < 1e-14, f"source-stacked form drifted: {worst:.2e} relative"
