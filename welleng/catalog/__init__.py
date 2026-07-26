@@ -6,7 +6,7 @@ resolver that fills derived tubular dimensions (ID, wall, drift, yield) from
 ``(OD, weight[, grade])``.
 
 Data lives in ``data/{casing,tubing}.json`` - factual, cited-by-number API 5CT
-values in the same ``_meta`` + rows layout as the sibling ``welleng-drilling``
+values in the same ``_meta`` + rows layout as the companion drilling-mechanics
 catalogues. The loader converts to SI via each file's ``to_SI`` factors, so a
 resolved :class:`TubularSpec` carries both imperial and SI values.
 

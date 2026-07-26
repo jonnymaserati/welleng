@@ -7,9 +7,9 @@ on a shared welleng Survey, and reports per-term per-station agreement.
 
 A clean run on every shared term across every model is the
 quantitative foundation of the "welleng is the conformance suite for
-the ISCWSA JSON schema" claim. Discrepancies are findings — see the
-project's CLAUDE.md (``## In progress: ISCWSA JSON conformance
-suite``) for the strategic context and what to do with them.
+the ISCWSA JSON schema" claim. Discrepancies are findings: each is
+either a converter defect or a genuine divergence in the published
+model, and both need resolving rather than tolerancing away.
 """
 
 from __future__ import annotations

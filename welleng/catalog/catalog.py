@@ -2,7 +2,7 @@
 
 The JSON data files (``data/casing.json``, ``data/tubing.json``) carry the
 as-published imperial dimensional facts (cited to API Spec 5CT) in the same
-``_meta`` + ``grades`` + rows layout as the sibling ``welleng-drilling``
+``_meta`` + ``grades`` + rows layout as the companion drilling-mechanics
 catalogues (``drillpipe.json`` et al.). This module parses them, indexes the
 rows by ``(od_in, nominal_weight_ppf)`` and resolves a tubular's derived
 dimensions (ID, wall, drift) plus - when a grade is given - its minimum yield.

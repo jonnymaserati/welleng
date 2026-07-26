@@ -47,10 +47,17 @@ from welleng.kick_tolerance.core import (
 KICK_VOLUME_REL_TOL = 0.013
 
 
-def make_inputs() -> KickInputs:
+def make_inputs(model_revision: str = "spe-208788") -> KickInputs:
     # Table-1 published fixtures (public SPE-208788-PA). Gas properties are
     # COMPUTED by the Hall-Yarborough backend (Z_s / Z_td / rho_gas_s = None).
+    #
+    # PINNED to the "spe-208788" revision. Reproducing the paper's table means
+    # reproducing its MODEL, and the shipped default ("column-mean-2026")
+    # deliberately differs from it -- it evaluates the influx state at the
+    # gas-column mean temperature rather than at the shoe. That is exactly what
+    # a frozen revision is for; see test_model_revision.py for the delta.
     return KickInputs(
+        model_revision=model_revision,
         rho_mud=11.9,
         PP=11.5,
         kick_intensity=1.1,

@@ -61,6 +61,8 @@ four decades.
 import numpy as np
 from scipy.optimize import minimize_scalar, brentq
 
+from ._eq15_c0_quartic import eq15_c0_quartic as _eq15_c0_quartic
+
 
 def tangent(inc_deg, azi_deg):
     """Unit tangent [N, E, V] from inclination + azimuth (degrees)."""
@@ -102,13 +104,94 @@ def subtended_angles(beta, psi2, eta1, eta4, eta14, mu, R1, R2):
 
     def _roots(A, B, C):
         disc = B*B - 4*A*C
-        if A == 0 or disc < 0:
+        if A == 0:
             return []
+        # A TANGENCY (double root) is a real solution, not an infeasibility --
+        # and it is exactly the alpha2 = 0 single-arc boundary a planner lands
+        # on whenever it restates a pose-to-point result as a pose constraint.
+        # There the discriminant's true value is 0 and it is formed as a
+        # difference of two ~4e24 quantities: measured -5.4e08, i.e. -1.2e-16
+        # RELATIVE, pure rounding. An absolute ``disc < 0`` test reads that as
+        # infeasible and drops BOTH roots, so the whole single-arc solution
+        # disappears and the solver returns a multi-km corkscrew instead.
+        # Reject only a discriminant negative relative to the terms it was
+        # formed from; a genuine infeasibility is O(1) relative.
+        if disc < 0:
+            if disc < -1e-12 * max(abs(B*B), abs(4*A*C)):
+                return []
+            disc = 0.0
         sq = np.sqrt(disc)
         return [2*np.arctan2((-B + sq), 2*A),     # Eqs. 21 / 25
                 2*np.arctan2((-B - sq), 2*A)]
 
     return _roots(A1, B1, C1), _roots(A2, B2, C2)
+
+
+# A turn within this of a full loop is the co-terminal image of a zero turn.
+# 1e-5 rad is 0.00057 deg -- 2.5 cm of arc at R = 2500 m, i.e. below any
+# meaningful turn -- while a genuine near-full arc (359.99 deg) sits 1.7e-4 rad
+# away and is untouched. Sized to swallow the root error at beta -> 0, where the
+# zero turn came back as 2*pi - 3.1e-08 rather than machine-zero.
+_TURN_SNAP = 1e-5
+
+
+def _wrap_turn(x):
+    """Co-terminal arc angle -> the TRUE turn in [0, 2pi).
+
+    ``subtended_angles`` solves for ``tan(alpha/2)``, so 0 and 2pi are the same
+    root and Eqs 11-12 cannot tell them apart: both satisfy the closure
+    equations identically. The physical answer is the shorter one, so the
+    smallest non-negative representative is taken.
+
+    Plain ``x % (2*pi)`` gets that right everywhere EXCEPT at the zero-arc
+    boundary, where a numerically-zero turn comes out slightly NEGATIVE
+    (-1.2e-13 rad measured) and wraps to 2pi -- adding a phantom full loop,
+    e.g. a 822 m single-arc-plus-hold reported as 7094 m. Snap that back.
+    """
+    x = np.mod(x, 2 * np.pi)
+    return np.where(2 * np.pi - x < _TURN_SNAP, 0.0, x)
+
+
+# Below this the Gram determinant is exact coplanarity, not an infeasibility.
+# The Heron product form is accurate to 6.2e-16 relative, so a genuinely
+# unrealisable triple lands orders of magnitude below -1e-12. ONE tolerance,
+# used by every site that gates on the determinant -- `forward`,
+# `_clc_solutions` and `solve_clc_2d` disagreeing on it is what let a planar
+# pose solve on one path and be refused on another.
+_GRAM_TOL = 1e-12
+
+
+def _gram_det(mu, alpha1, alpha2):
+    """Gram determinant of (t1, t_hold, t4) from their pairwise cosines.
+
+    ``1 - mu**2 - c1**2 - c2**2 + 2*mu*c1*c2`` is the determinant of the Gram
+    matrix of three unit vectors with pairwise cosines (mu, c1, c2). It is >= 0
+    for any realisable configuration and 0 exactly when the three are coplanar --
+    so a negative value means either rounding noise or a genuinely unrealisable
+    angle triple, and the naive form CANNOT distinguish them: at a near-planar
+    solution it carries 8.6e-08 relative error, ample to flip the sign of a
+    quantity whose true value is -2.5e-09.
+
+    Evaluated instead by the spherical Heron identity, with sides
+    ``a = arccos(mu)``, ``b = alpha1``, ``c = alpha2`` and ``s = (a+b+c)/2``:
+
+        det G = 4 sin(s) sin(s-a) sin(s-b) sin(s-c)
+
+    A PRODUCT of sines rather than a difference of near-equal squares, so the
+    small-angle regime stays accurate -- measured 6.2e-16 relative against
+    60-digit arithmetic on the same case. A negative result is then trustworthy:
+    it means the spherical triangle inequality is violated and NO hold direction
+    exists for that angle pair.
+    """
+    # The determinant depends only on the COSINES, so map every side to its
+    # principal value in [0, pi] before applying Heron -- a spherical triangle
+    # side of 359 deg is not a side, and feeding a long-way arc in directly
+    # makes the identity report a spurious negative.
+    a = np.arccos(np.clip(mu, -1.0, 1.0))
+    b = np.arccos(np.clip(np.cos(np.asarray(alpha1, float)), -1.0, 1.0))
+    c = np.arccos(np.clip(np.cos(np.asarray(alpha2, float)), -1.0, 1.0))
+    sp = 0.5 * (a + b + c)
+    return 4.0 * np.sin(sp) * np.sin(sp - a) * np.sin(sp - b) * np.sin(sp - c)
 
 
 def forward(alpha1, alpha2, beta, mu, R1, R2):
@@ -122,9 +205,21 @@ def forward(alpha1, alpha2, beta, mu, R1, R2):
     T1, T2 = np.tan(alpha1/2), np.tan(alpha2/2)
     eta1 = R1*s1 + beta*c1 + R2*T2*(mu + c1)                     # Eq. 11
     eta4 = R1*T1*(mu + c2) + beta*c2 + R2*s2                     # Eq. 12
-    surd = (1 - mu**2 - c1**2 - c2**2 + 2*mu*c1*c2) / (1 - mu**2)
-    if surd < 0:
+    # Accurate Gram determinant (see _gram_det): the naive difference-of-squares
+    # form cannot tell rounding noise from a genuinely unrealisable angle triple.
+    # Exact coplanarity sits AT zero and comes back either side of it, so the
+    # test must match the one in _clc_solutions -- an absolute `surd < 0` here
+    # rejected all four branches of a planar pose at -5.5e-14 and lost a genuine
+    # max_radius (reported on a planar pose, |eta14|/L = 8.8e-17).
+    # Gate the DETERMINANT, not the quotient: 1/(1-mu^2) is an amplifier that
+    # diverges as the tangents become (anti)parallel, and it turns a -4.5e-17
+    # determinant into a -2.4e-12 surd. The determinant is the well-scaled
+    # quantity -- bounded by 1, accurate to 6.2e-16 -- so the tolerance belongs
+    # on it.
+    det = float(_gram_det(mu, alpha1, alpha2))
+    if det < -_GRAM_TOL:
         return None
+    surd = max(det, 0.0) / (1 - mu**2)
     eta14 = (R1*T1 + beta + R2*T2) * np.sqrt(surd)               # Eq. 13
     return np.array([eta1, eta4, eta14])
 
@@ -332,6 +427,46 @@ def solve_clc_resultant(p1, t1, p4, t4, R1, R2=None):
 # ----------------------------------------------------------------------------
 # Vectorised closed-form solver -- corrected Sawaryn (2021) Eq. 15.
 # ----------------------------------------------------------------------------
+def _eq15_coeff(k, psi2, g1, g4, l, R1, R2):
+    """ONE coefficient ``c<k>`` of Eq. 15 (see :func:`_eq15_coeffs`).
+
+    A caller that needs a single coefficient should not pay for the other ten.
+    The critical-radius solve needs only ``c0``, and evaluating all eleven cost
+    it 2.5x -- measured at 33.3 vs 14.0 ms for N = 10,000 and
+    1004.6 vs 386.5 ms for N = 200,000. They had worked around it by extracting
+    ``c0`` into generated modules of their own, which had to be regenerated on
+    every pin bump; this removes that seam.
+
+    The expressions are the machine-generated ones from ``_eq15_coeffs``, moved
+    mechanically and verified BIT-IDENTICAL over random invariants -- these are
+    ~4000-term expansions no human edits by hand, so the move was scripted and
+    checked rather than typed.
+    """
+    if k == 0:
+        return 2*g1*g4*psi2**4+psi2**5-l*psi2**5+16*g1**3*g4*psi2**2*R1**2+8*g1**2*psi2**3*R1**2-16*g1*g4*psi2**3*R1**2-8*g1**2*l*psi2**3*R1**2-8*psi2**4*R1**2+8*l*psi2**4*R1**2+32*g1**5*g4*R1**4+16*g1**4*psi2*R1**4-64*g1**3*g4*psi2*R1**4-16*g1**4*l*psi2*R1**4-32*g1**2*psi2**2*R1**4+32*g1*g4*psi2**2*R1**4+32*g1**2*l*psi2**2*R1**4+16*psi2**3*R1**4-16*l*psi2**3*R1**4+16*g1*g4**3*psi2**2*R2**2-16*g1*g4*psi2**3*R2**2+8*g4**2*psi2**3*R2**2-8*g4**2*l*psi2**3*R2**2-8*psi2**4*R2**2+8*l*psi2**4*R2**2-64*g1**3*g4**3*R1**2*R2**2-64*g1**3*g4*psi2*R1**2*R2**2+96*g1**2*g4**2*psi2*R1**2*R2**2-64*g1*g4**3*psi2*R1**2*R2**2+160*g1**2*g4**2*l*psi2*R1**2*R2**2-64*g1**2*psi2**2*R1**2*R2**2+112*g1*g4*psi2**2*R1**2*R2**2-64*g4**2*psi2**2*R1**2*R2**2+32*g1**2*l*psi2**2*R1**2*R2**2-32*g1*g4*l*psi2**2*R1**2*R2**2+32*g4**2*l*psi2**2*R1**2*R2**2-80*g1*g4*l**2*psi2**2*R1**2*R2**2+56*psi2**3*R1**2*R2**2-72*l*psi2**3*R1**2*R2**2+8*l**2*psi2**3*R1**2*R2**2+8*l**3*psi2**3*R1**2*R2**2-128*g1**4*R1**4*R2**2+192*g1**3*g4*R1**4*R2**2-128*g1**2*g4**2*R1**4*R2**2+128*g1*g4**3*R1**4*R2**2+128*g1**3*g4*l*R1**4*R2**2-256*g1**2*g4**2*l*R1**4*R2**2+64*g1**3*g4*l**2*R1**4*R2**2+224*g1**2*psi2*R1**4*R2**2-192*g1*g4*psi2*R1**4*R2**2+64*g4**2*psi2*R1**4*R2**2-160*g1**2*l*psi2*R1**4*R2**2-64*g4**2*l*psi2*R1**4*R2**2-32*g1**2*l**2*psi2*R1**4*R2**2+192*g1*g4*l**2*psi2*R1**4*R2**2-32*g1**2*l**3*psi2*R1**4*R2**2-96*psi2**2*R1**4*R2**2+160*l*psi2**2*R1**4*R2**2-32*l**2*psi2**2*R1**4*R2**2-32*l**3*psi2**2*R1**4*R2**2+32*g1*g4**5*R2**4-64*g1*g4**3*psi2*R2**4+16*g4**4*psi2*R2**4-16*g4**4*l*psi2*R2**4+32*g1*g4*psi2**2*R2**4-32*g4**2*psi2**2*R2**4+32*g4**2*l*psi2**2*R2**4+16*psi2**3*R2**4-16*l*psi2**3*R2**4+128*g1**3*g4*R1**2*R2**4-128*g1**2*g4**2*R1**2*R2**4+192*g1*g4**3*R1**2*R2**4-128*g4**4*R1**2*R2**4-256*g1**2*g4**2*l*R1**2*R2**4+128*g1*g4**3*l*R1**2*R2**4+64*g1*g4**3*l**2*R1**2*R2**4+64*g1**2*psi2*R1**2*R2**4-192*g1*g4*psi2*R1**2*R2**4+224*g4**2*psi2*R1**2*R2**4-64*g1**2*l*psi2*R1**2*R2**4-160*g4**2*l*psi2*R1**2*R2**4+192*g1*g4*l**2*psi2*R1**2*R2**4-32*g4**2*l**2*psi2*R1**2*R2**4-32*g4**2*l**3*psi2*R1**2*R2**4-96*psi2**2*R1**2*R2**4+160*l*psi2**2*R1**2*R2**4-32*l**2*psi2**2*R1**2*R2**4-32*l**3*psi2**2*R1**2*R2**4-128*g1**2*R1**4*R2**4+32*g1*g4*R1**4*R2**4-128*g4**2*R1**4*R2**4+256*g1**2*l*R1**4*R2**4+128*g1*g4*l*R1**4*R2**4+256*g4**2*l*R1**4*R2**4-128*g1**2*l**2*R1**4*R2**4-320*g1*g4*l**2*R1**4*R2**4-128*g4**2*l**2*R1**4*R2**4+128*g1*g4*l**3*R1**4*R2**4+32*g1*g4*l**4*R1**4*R2**4+144*psi2*R1**4*R2**4-336*l*psi2*R1**4*R2**4+160*l**2*psi2*R1**4*R2**4+96*l**3*psi2*R1**4*R2**4-48*l**4*psi2*R1**4*R2**4-16*l**5*psi2*R1**4*R2**4
+    elif k == 1:
+        return 2*g1*psi2**4+2*g4*psi2**4+16*g1**3*psi2**2*R1**2+16*g1**2*g4*psi2**2*R1**2-16*g1*psi2**3*R1**2-16*g4*psi2**3*R1**2+32*g1**5*R1**4+32*g1**4*g4*R1**4-64*g1**3*psi2*R1**4-64*g1**2*g4*psi2*R1**4+32*g1*psi2**2*R1**4+32*g4*psi2**2*R1**4+16*g1*g4**2*psi2**2*R2**2+16*g4**3*psi2**2*R2**2-16*g1*psi2**3*R2**2-16*g4*psi2**3*R2**2-64*g1**3*g4**2*R1**2*R2**2-64*g1**2*g4**3*R1**2*R2**2-64*g1**3*psi2*R1**2*R2**2+64*g1**2*g4*psi2*R1**2*R2**2+64*g1*g4**2*psi2*R1**2*R2**2-64*g4**3*psi2*R1**2*R2**2+128*g1**2*g4*l*psi2*R1**2*R2**2+128*g1*g4**2*l*psi2*R1**2*R2**2+48*g1*psi2**2*R1**2*R2**2+48*g4*psi2**2*R1**2*R2**2-96*g1*l*psi2**2*R1**2*R2**2-96*g4*l*psi2**2*R1**2*R2**2-16*g1*l**2*psi2**2*R1**2*R2**2-16*g4*l**2*psi2**2*R1**2*R2**2-64*g1**3*R1**4*R2**2+192*g1**2*g4*R1**4*R2**2-128*g1*g4**2*R1**4*R2**2+128*g4**3*R1**4*R2**2-128*g1**3*l*R1**4*R2**2+128*g1**2*g4*l*R1**4*R2**2-256*g1*g4**2*l*R1**4*R2**2+64*g1**3*l**2*R1**4*R2**2+64*g1**2*g4*l**2*R1**4*R2**2+64*g1*psi2*R1**4*R2**2-192*g4*psi2*R1**4*R2**2+128*g1*l*psi2*R1**4*R2**2+128*g4*l*psi2*R1**4*R2**2-192*g1*l**2*psi2*R1**4*R2**2+64*g4*l**2*psi2*R1**4*R2**2+32*g1*g4**4*R2**4+32*g4**5*R2**4-64*g1*g4**2*psi2*R2**4-64*g4**3*psi2*R2**4+32*g1*psi2**2*R2**4+32*g4*psi2**2*R2**4+128*g1**3*R1**2*R2**4-128*g1**2*g4*R1**2*R2**4+192*g1*g4**2*R1**2*R2**4-64*g4**3*R1**2*R2**4-256*g1**2*g4*l*R1**2*R2**4+128*g1*g4**2*l*R1**2*R2**4-128*g4**3*l*R1**2*R2**4+64*g1*g4**2*l**2*R1**2*R2**4+64*g4**3*l**2*R1**2*R2**4-192*g1*psi2*R1**2*R2**4+64*g4*psi2*R1**2*R2**4+128*g1*l*psi2*R1**2*R2**4+128*g4*l*psi2*R1**2*R2**4+64*g1*l**2*psi2*R1**2*R2**4-192*g4*l**2*psi2*R1**2*R2**4+32*g1*R1**4*R2**4+32*g4*R1**4*R2**4-128*g1*l*R1**4*R2**4-128*g4*l*R1**4*R2**4+192*g1*l**2*R1**4*R2**4+192*g4*l**2*R1**4*R2**4-128*g1*l**3*R1**4*R2**4-128*g4*l**3*R1**4*R2**4+32*g1*l**4*R1**4*R2**4+32*g4*l**4*R1**4*R2**4
+    elif k == 2:
+        return -8*g1*g4*psi2**3-3*psi2**4+5*l*psi2**4-32*g1**3*g4*psi2*R1**2-8*g1**2*psi2**2*R1**2+32*g1*g4*psi2**2*R1**2+24*g1**2*l*psi2**2*R1**2+8*psi2**3*R1**2-24*l*psi2**3*R1**2+16*g1**4*R1**4+16*g1**4*l*R1**4-32*g1**2*psi2*R1**4-32*g1**2*l*psi2*R1**4+16*psi2**2*R1**4+16*l*psi2**2*R1**4-32*g1*g4**3*psi2*R2**2+32*g1*g4*psi2**2*R2**2-8*g4**2*psi2**2*R2**2+24*g4**2*l*psi2**2*R2**2+8*psi2**3*R2**2-24*l*psi2**3*R2**2+128*g1**3*g4*R1**2*R2**2-160*g1**2*g4**2*R1**2*R2**2+128*g1*g4**3*R1**2*R2**2-160*g1**2*g4**2*l*R1**2*R2**2+96*g1**2*psi2*R1**2*R2**2-96*g1*g4*psi2*R1**2*R2**2+96*g4**2*psi2*R1**2*R2**2-96*g1**2*l*psi2*R1**2*R2**2+64*g1*g4*l*psi2*R1**2*R2**2-96*g4**2*l*psi2*R1**2*R2**2+160*g1*g4*l**2*psi2*R1**2*R2**2-88*psi2**2*R1**2*R2**2+56*l*psi2**2*R1**2*R2**2-8*l**2*psi2**2*R1**2*R2**2-24*l**3*psi2**2*R1**2*R2**2-32*g1**2*R1**4*R2**2-64*g4**2*R1**4*R2**2+32*g1**2*l*R1**4*R2**2+128*g1*g4*l*R1**4*R2**2+64*g4**2*l*R1**4*R2**2-32*g1**2*l**2*R1**4*R2**2-128*g1*g4*l**2*R1**4*R2**2+32*g1**2*l**3*R1**4*R2**2+32*psi2*R1**4*R2**2-32*l*psi2*R1**4*R2**2-32*l**2*psi2*R1**4*R2**2+32*l**3*psi2*R1**4*R2**2+16*g4**4*R2**4+16*g4**4*l*R2**4-32*g4**2*psi2*R2**4-32*g4**2*l*psi2*R2**4+16*psi2**2*R2**4+16*l*psi2**2*R2**4-64*g1**2*R1**2*R2**4-32*g4**2*R1**2*R2**4+64*g1**2*l*R1**2*R2**4+128*g1*g4*l*R1**2*R2**4+32*g4**2*l*R1**2*R2**4-128*g1*g4*l**2*R1**2*R2**4-32*g4**2*l**2*R1**2*R2**4+32*g4**2*l**3*R1**2*R2**4+32*psi2*R1**2*R2**4-32*l*psi2*R1**2*R2**4-32*l**2*psi2*R1**2*R2**4+32*l**3*psi2*R1**2*R2**4+16*R1**4*R2**4-48*l*R1**4*R2**4+32*l**2*R1**4*R2**4+32*l**3*R1**4*R2**4-48*l**4*R1**4*R2**4+16*l**5*R1**4*R2**4
+    elif k == 3:
+        return -8*g1*psi2**3-8*g4*psi2**3-32*g1**3*psi2*R1**2-32*g1**2*g4*psi2*R1**2+32*g1*psi2**2*R1**2+32*g4*psi2**2*R1**2-32*g1*g4**2*psi2*R2**2-32*g4**3*psi2*R2**2+32*g1*psi2**2*R2**2+32*g4*psi2**2*R2**2+128*g1**3*R1**2*R2**2+128*g4**3*R1**2*R2**2-128*g1**2*g4*l*R1**2*R2**2-128*g1*g4**2*l*R1**2*R2**2-96*g1*psi2*R1**2*R2**2-96*g4*psi2*R1**2*R2**2+64*g1*l*psi2*R1**2*R2**2+64*g4*l*psi2*R1**2*R2**2+32*g1*l**2*psi2*R1**2*R2**2+32*g4*l**2*psi2*R1**2*R2**2
+    elif k == 4:
+        return 12*g1*g4*psi2**2+2*psi2**3-10*l*psi2**3+16*g1**3*g4*R1**2-8*g1**2*psi2*R1**2-16*g1*g4*psi2*R1**2-24*g1**2*l*psi2*R1**2+8*psi2**2*R1**2+24*l*psi2**2*R1**2+16*g1*g4**3*R2**2-16*g1*g4*psi2*R2**2-8*g4**2*psi2*R2**2-24*g4**2*l*psi2*R2**2+8*psi2**2*R2**2+24*l*psi2**2*R2**2+32*g1**2*R1**2*R2**2-80*g1*g4*R1**2*R2**2+32*g4**2*R1**2*R2**2+64*g1**2*l*R1**2*R2**2-32*g1*g4*l*R1**2*R2**2+64*g4**2*l*R1**2*R2**2-80*g1*g4*l**2*R1**2*R2**2-24*psi2*R1**2*R2**2+8*l*psi2*R1**2*R2**2-8*l**2*psi2*R1**2*R2**2+24*l**3*psi2*R1**2*R2**2
+    elif k == 5:
+        return 12*g1*psi2**2+12*g4*psi2**2+16*g1**3*R1**2+16*g1**2*g4*R1**2-16*g1*psi2*R1**2-16*g4*psi2*R1**2+16*g1*g4**2*R2**2+16*g4**3*R2**2-16*g1*psi2*R2**2-16*g4*psi2*R2**2-16*g1*R1**2*R2**2-16*g4*R1**2*R2**2+32*g1*l*R1**2*R2**2+32*g4*l*R1**2*R2**2-16*g1*l**2*R1**2*R2**2-16*g4*l**2*R1**2*R2**2
+    elif k == 6:
+        return -8*g1*g4*psi2+2*psi2**2+10*l*psi2**2+8*g1**2*R1**2+8*g1**2*l*R1**2-8*psi2*R1**2-8*l*psi2*R1**2+8*g4**2*R2**2+8*g4**2*l*R2**2-8*psi2*R2**2-8*l*psi2*R2**2-8*R1**2*R2**2+8*l*R1**2*R2**2+8*l**2*R1**2*R2**2-8*l**3*R1**2*R2**2
+    elif k == 7:
+        return -8*g1*psi2-8*g4*psi2
+    elif k == 8:
+        return 2*g1*g4-3*psi2-5*l*psi2
+    elif k == 9:
+        return 2*g1+2*g4
+    elif k == 10:
+        return 1+l
+    raise IndexError(f"Eq. 15 has coefficients c0..c10, not c{k}")
+
+
 def _eq15_coeffs(psi2, g1, g4, l, R1, R2):
     """Corrected Sawaryn (2021) Eq. 15 -- the degree-10 closed-form polynomial in
     beta. Coefficients c0..c10 as functions of the frame-invariants
@@ -342,24 +477,7 @@ def _eq15_coeffs(psi2, g1, g4, l, R1, R2):
     printed Eq. 15, which carries transcription errors. Reproducible in any CAS.
     Evaluate with scale-normalised invariants (psi2=1, g/L, R/L) for conditioning;
     roots are beta/L."""
-    # Machine-generated by symbolic resultant elimination; one un-wrapped
-    # expression per coefficient c0..c10 -- kept verbatim and inline so the engine
-    # has a single source of truth (wrapping or splitting out would only invite
-    # transcription error in a ~4000-term expansion no human edits by hand).
-    return [
-        2*g1*g4*psi2**4+psi2**5-l*psi2**5+16*g1**3*g4*psi2**2*R1**2+8*g1**2*psi2**3*R1**2-16*g1*g4*psi2**3*R1**2-8*g1**2*l*psi2**3*R1**2-8*psi2**4*R1**2+8*l*psi2**4*R1**2+32*g1**5*g4*R1**4+16*g1**4*psi2*R1**4-64*g1**3*g4*psi2*R1**4-16*g1**4*l*psi2*R1**4-32*g1**2*psi2**2*R1**4+32*g1*g4*psi2**2*R1**4+32*g1**2*l*psi2**2*R1**4+16*psi2**3*R1**4-16*l*psi2**3*R1**4+16*g1*g4**3*psi2**2*R2**2-16*g1*g4*psi2**3*R2**2+8*g4**2*psi2**3*R2**2-8*g4**2*l*psi2**3*R2**2-8*psi2**4*R2**2+8*l*psi2**4*R2**2-64*g1**3*g4**3*R1**2*R2**2-64*g1**3*g4*psi2*R1**2*R2**2+96*g1**2*g4**2*psi2*R1**2*R2**2-64*g1*g4**3*psi2*R1**2*R2**2+160*g1**2*g4**2*l*psi2*R1**2*R2**2-64*g1**2*psi2**2*R1**2*R2**2+112*g1*g4*psi2**2*R1**2*R2**2-64*g4**2*psi2**2*R1**2*R2**2+32*g1**2*l*psi2**2*R1**2*R2**2-32*g1*g4*l*psi2**2*R1**2*R2**2+32*g4**2*l*psi2**2*R1**2*R2**2-80*g1*g4*l**2*psi2**2*R1**2*R2**2+56*psi2**3*R1**2*R2**2-72*l*psi2**3*R1**2*R2**2+8*l**2*psi2**3*R1**2*R2**2+8*l**3*psi2**3*R1**2*R2**2-128*g1**4*R1**4*R2**2+192*g1**3*g4*R1**4*R2**2-128*g1**2*g4**2*R1**4*R2**2+128*g1*g4**3*R1**4*R2**2+128*g1**3*g4*l*R1**4*R2**2-256*g1**2*g4**2*l*R1**4*R2**2+64*g1**3*g4*l**2*R1**4*R2**2+224*g1**2*psi2*R1**4*R2**2-192*g1*g4*psi2*R1**4*R2**2+64*g4**2*psi2*R1**4*R2**2-160*g1**2*l*psi2*R1**4*R2**2-64*g4**2*l*psi2*R1**4*R2**2-32*g1**2*l**2*psi2*R1**4*R2**2+192*g1*g4*l**2*psi2*R1**4*R2**2-32*g1**2*l**3*psi2*R1**4*R2**2-96*psi2**2*R1**4*R2**2+160*l*psi2**2*R1**4*R2**2-32*l**2*psi2**2*R1**4*R2**2-32*l**3*psi2**2*R1**4*R2**2+32*g1*g4**5*R2**4-64*g1*g4**3*psi2*R2**4+16*g4**4*psi2*R2**4-16*g4**4*l*psi2*R2**4+32*g1*g4*psi2**2*R2**4-32*g4**2*psi2**2*R2**4+32*g4**2*l*psi2**2*R2**4+16*psi2**3*R2**4-16*l*psi2**3*R2**4+128*g1**3*g4*R1**2*R2**4-128*g1**2*g4**2*R1**2*R2**4+192*g1*g4**3*R1**2*R2**4-128*g4**4*R1**2*R2**4-256*g1**2*g4**2*l*R1**2*R2**4+128*g1*g4**3*l*R1**2*R2**4+64*g1*g4**3*l**2*R1**2*R2**4+64*g1**2*psi2*R1**2*R2**4-192*g1*g4*psi2*R1**2*R2**4+224*g4**2*psi2*R1**2*R2**4-64*g1**2*l*psi2*R1**2*R2**4-160*g4**2*l*psi2*R1**2*R2**4+192*g1*g4*l**2*psi2*R1**2*R2**4-32*g4**2*l**2*psi2*R1**2*R2**4-32*g4**2*l**3*psi2*R1**2*R2**4-96*psi2**2*R1**2*R2**4+160*l*psi2**2*R1**2*R2**4-32*l**2*psi2**2*R1**2*R2**4-32*l**3*psi2**2*R1**2*R2**4-128*g1**2*R1**4*R2**4+32*g1*g4*R1**4*R2**4-128*g4**2*R1**4*R2**4+256*g1**2*l*R1**4*R2**4+128*g1*g4*l*R1**4*R2**4+256*g4**2*l*R1**4*R2**4-128*g1**2*l**2*R1**4*R2**4-320*g1*g4*l**2*R1**4*R2**4-128*g4**2*l**2*R1**4*R2**4+128*g1*g4*l**3*R1**4*R2**4+32*g1*g4*l**4*R1**4*R2**4+144*psi2*R1**4*R2**4-336*l*psi2*R1**4*R2**4+160*l**2*psi2*R1**4*R2**4+96*l**3*psi2*R1**4*R2**4-48*l**4*psi2*R1**4*R2**4-16*l**5*psi2*R1**4*R2**4,  # c0
-        2*g1*psi2**4+2*g4*psi2**4+16*g1**3*psi2**2*R1**2+16*g1**2*g4*psi2**2*R1**2-16*g1*psi2**3*R1**2-16*g4*psi2**3*R1**2+32*g1**5*R1**4+32*g1**4*g4*R1**4-64*g1**3*psi2*R1**4-64*g1**2*g4*psi2*R1**4+32*g1*psi2**2*R1**4+32*g4*psi2**2*R1**4+16*g1*g4**2*psi2**2*R2**2+16*g4**3*psi2**2*R2**2-16*g1*psi2**3*R2**2-16*g4*psi2**3*R2**2-64*g1**3*g4**2*R1**2*R2**2-64*g1**2*g4**3*R1**2*R2**2-64*g1**3*psi2*R1**2*R2**2+64*g1**2*g4*psi2*R1**2*R2**2+64*g1*g4**2*psi2*R1**2*R2**2-64*g4**3*psi2*R1**2*R2**2+128*g1**2*g4*l*psi2*R1**2*R2**2+128*g1*g4**2*l*psi2*R1**2*R2**2+48*g1*psi2**2*R1**2*R2**2+48*g4*psi2**2*R1**2*R2**2-96*g1*l*psi2**2*R1**2*R2**2-96*g4*l*psi2**2*R1**2*R2**2-16*g1*l**2*psi2**2*R1**2*R2**2-16*g4*l**2*psi2**2*R1**2*R2**2-64*g1**3*R1**4*R2**2+192*g1**2*g4*R1**4*R2**2-128*g1*g4**2*R1**4*R2**2+128*g4**3*R1**4*R2**2-128*g1**3*l*R1**4*R2**2+128*g1**2*g4*l*R1**4*R2**2-256*g1*g4**2*l*R1**4*R2**2+64*g1**3*l**2*R1**4*R2**2+64*g1**2*g4*l**2*R1**4*R2**2+64*g1*psi2*R1**4*R2**2-192*g4*psi2*R1**4*R2**2+128*g1*l*psi2*R1**4*R2**2+128*g4*l*psi2*R1**4*R2**2-192*g1*l**2*psi2*R1**4*R2**2+64*g4*l**2*psi2*R1**4*R2**2+32*g1*g4**4*R2**4+32*g4**5*R2**4-64*g1*g4**2*psi2*R2**4-64*g4**3*psi2*R2**4+32*g1*psi2**2*R2**4+32*g4*psi2**2*R2**4+128*g1**3*R1**2*R2**4-128*g1**2*g4*R1**2*R2**4+192*g1*g4**2*R1**2*R2**4-64*g4**3*R1**2*R2**4-256*g1**2*g4*l*R1**2*R2**4+128*g1*g4**2*l*R1**2*R2**4-128*g4**3*l*R1**2*R2**4+64*g1*g4**2*l**2*R1**2*R2**4+64*g4**3*l**2*R1**2*R2**4-192*g1*psi2*R1**2*R2**4+64*g4*psi2*R1**2*R2**4+128*g1*l*psi2*R1**2*R2**4+128*g4*l*psi2*R1**2*R2**4+64*g1*l**2*psi2*R1**2*R2**4-192*g4*l**2*psi2*R1**2*R2**4+32*g1*R1**4*R2**4+32*g4*R1**4*R2**4-128*g1*l*R1**4*R2**4-128*g4*l*R1**4*R2**4+192*g1*l**2*R1**4*R2**4+192*g4*l**2*R1**4*R2**4-128*g1*l**3*R1**4*R2**4-128*g4*l**3*R1**4*R2**4+32*g1*l**4*R1**4*R2**4+32*g4*l**4*R1**4*R2**4,  # c1
-        -8*g1*g4*psi2**3-3*psi2**4+5*l*psi2**4-32*g1**3*g4*psi2*R1**2-8*g1**2*psi2**2*R1**2+32*g1*g4*psi2**2*R1**2+24*g1**2*l*psi2**2*R1**2+8*psi2**3*R1**2-24*l*psi2**3*R1**2+16*g1**4*R1**4+16*g1**4*l*R1**4-32*g1**2*psi2*R1**4-32*g1**2*l*psi2*R1**4+16*psi2**2*R1**4+16*l*psi2**2*R1**4-32*g1*g4**3*psi2*R2**2+32*g1*g4*psi2**2*R2**2-8*g4**2*psi2**2*R2**2+24*g4**2*l*psi2**2*R2**2+8*psi2**3*R2**2-24*l*psi2**3*R2**2+128*g1**3*g4*R1**2*R2**2-160*g1**2*g4**2*R1**2*R2**2+128*g1*g4**3*R1**2*R2**2-160*g1**2*g4**2*l*R1**2*R2**2+96*g1**2*psi2*R1**2*R2**2-96*g1*g4*psi2*R1**2*R2**2+96*g4**2*psi2*R1**2*R2**2-96*g1**2*l*psi2*R1**2*R2**2+64*g1*g4*l*psi2*R1**2*R2**2-96*g4**2*l*psi2*R1**2*R2**2+160*g1*g4*l**2*psi2*R1**2*R2**2-88*psi2**2*R1**2*R2**2+56*l*psi2**2*R1**2*R2**2-8*l**2*psi2**2*R1**2*R2**2-24*l**3*psi2**2*R1**2*R2**2-32*g1**2*R1**4*R2**2-64*g4**2*R1**4*R2**2+32*g1**2*l*R1**4*R2**2+128*g1*g4*l*R1**4*R2**2+64*g4**2*l*R1**4*R2**2-32*g1**2*l**2*R1**4*R2**2-128*g1*g4*l**2*R1**4*R2**2+32*g1**2*l**3*R1**4*R2**2+32*psi2*R1**4*R2**2-32*l*psi2*R1**4*R2**2-32*l**2*psi2*R1**4*R2**2+32*l**3*psi2*R1**4*R2**2+16*g4**4*R2**4+16*g4**4*l*R2**4-32*g4**2*psi2*R2**4-32*g4**2*l*psi2*R2**4+16*psi2**2*R2**4+16*l*psi2**2*R2**4-64*g1**2*R1**2*R2**4-32*g4**2*R1**2*R2**4+64*g1**2*l*R1**2*R2**4+128*g1*g4*l*R1**2*R2**4+32*g4**2*l*R1**2*R2**4-128*g1*g4*l**2*R1**2*R2**4-32*g4**2*l**2*R1**2*R2**4+32*g4**2*l**3*R1**2*R2**4+32*psi2*R1**2*R2**4-32*l*psi2*R1**2*R2**4-32*l**2*psi2*R1**2*R2**4+32*l**3*psi2*R1**2*R2**4+16*R1**4*R2**4-48*l*R1**4*R2**4+32*l**2*R1**4*R2**4+32*l**3*R1**4*R2**4-48*l**4*R1**4*R2**4+16*l**5*R1**4*R2**4,  # c2
-        -8*g1*psi2**3-8*g4*psi2**3-32*g1**3*psi2*R1**2-32*g1**2*g4*psi2*R1**2+32*g1*psi2**2*R1**2+32*g4*psi2**2*R1**2-32*g1*g4**2*psi2*R2**2-32*g4**3*psi2*R2**2+32*g1*psi2**2*R2**2+32*g4*psi2**2*R2**2+128*g1**3*R1**2*R2**2+128*g4**3*R1**2*R2**2-128*g1**2*g4*l*R1**2*R2**2-128*g1*g4**2*l*R1**2*R2**2-96*g1*psi2*R1**2*R2**2-96*g4*psi2*R1**2*R2**2+64*g1*l*psi2*R1**2*R2**2+64*g4*l*psi2*R1**2*R2**2+32*g1*l**2*psi2*R1**2*R2**2+32*g4*l**2*psi2*R1**2*R2**2,  # c3
-        12*g1*g4*psi2**2+2*psi2**3-10*l*psi2**3+16*g1**3*g4*R1**2-8*g1**2*psi2*R1**2-16*g1*g4*psi2*R1**2-24*g1**2*l*psi2*R1**2+8*psi2**2*R1**2+24*l*psi2**2*R1**2+16*g1*g4**3*R2**2-16*g1*g4*psi2*R2**2-8*g4**2*psi2*R2**2-24*g4**2*l*psi2*R2**2+8*psi2**2*R2**2+24*l*psi2**2*R2**2+32*g1**2*R1**2*R2**2-80*g1*g4*R1**2*R2**2+32*g4**2*R1**2*R2**2+64*g1**2*l*R1**2*R2**2-32*g1*g4*l*R1**2*R2**2+64*g4**2*l*R1**2*R2**2-80*g1*g4*l**2*R1**2*R2**2-24*psi2*R1**2*R2**2+8*l*psi2*R1**2*R2**2-8*l**2*psi2*R1**2*R2**2+24*l**3*psi2*R1**2*R2**2,  # c4
-        12*g1*psi2**2+12*g4*psi2**2+16*g1**3*R1**2+16*g1**2*g4*R1**2-16*g1*psi2*R1**2-16*g4*psi2*R1**2+16*g1*g4**2*R2**2+16*g4**3*R2**2-16*g1*psi2*R2**2-16*g4*psi2*R2**2-16*g1*R1**2*R2**2-16*g4*R1**2*R2**2+32*g1*l*R1**2*R2**2+32*g4*l*R1**2*R2**2-16*g1*l**2*R1**2*R2**2-16*g4*l**2*R1**2*R2**2,  # c5
-        -8*g1*g4*psi2+2*psi2**2+10*l*psi2**2+8*g1**2*R1**2+8*g1**2*l*R1**2-8*psi2*R1**2-8*l*psi2*R1**2+8*g4**2*R2**2+8*g4**2*l*R2**2-8*psi2*R2**2-8*l*psi2*R2**2-8*R1**2*R2**2+8*l*R1**2*R2**2+8*l**2*R1**2*R2**2-8*l**3*R1**2*R2**2,  # c6
-        -8*g1*psi2-8*g4*psi2,  # c7
-        2*g1*g4-3*psi2-5*l*psi2,  # c8
-        2*g1+2*g4,  # c9
-        1+l,  # c10
-    ]
-
+    return [_eq15_coeff(k, psi2, g1, g4, l, R1, R2) for k in range(11)]
 
 def _companion_roots(co):
     """Roots of a batch of degree-10 polynomials via companion-matrix eigenvalues.
@@ -373,6 +491,108 @@ def _companion_roots(co):
     C[:, 1:, :-1] = np.eye(9)[None]
     C[:, :, -1] = -(co[:10] / co[10]).T
     return np.linalg.eigvals(C)
+
+
+def _clc_recon(b, a1, a2, R1, R2, e1, e4, e14, M):
+    """The three CLC closure residuals at (beta, alpha1, alpha2).
+
+    These are the ORIGINAL equations the closed form is derived from -- the
+    degree-10 polynomial (Eq. 15) is an ELIMINATED form of them. Returned
+    stacked on the last axis so a refinement step can drive them to zero.
+    """
+    c1, s1 = np.cos(a1), np.sin(a1)
+    c2, s2 = np.cos(a2), np.sin(a2)
+    t1h, t2h = np.tan(a1 / 2), np.tan(a2 / 2)
+    f1 = R1 * s1 + b * c1 + R2 * t2h * (M + c1)
+    f4 = R1 * t1h * (M + c2) + b * c2 + R2 * s2
+    with np.errstate(divide="ignore", invalid="ignore"):
+        sd = (1 - M ** 2 - c1 ** 2 - c2 ** 2 + 2 * M * c1 * c2) / (1 - M ** 2)
+    f14 = (R1 * t1h + b + R2 * t2h) * np.sqrt(np.maximum(sd, 0.0))
+    return np.stack([f1 - e1, f4 - e4, np.abs(f14) - np.abs(e14)], axis=-1)
+
+
+def _clc_refine(b, a1, a2, R1, R2, e1, e4, e14, M, mask, iters=12):
+    """Gauss-Newton the closure residuals to machine precision, in place.
+
+    WHY THIS EXISTS. The closed form is exact, but this evaluation path is not:
+    Eq. 15 is reached by ELIMINATION, and its companion-matrix roots are
+    ill-conditioned once R >> L. Measured on a 100 m throw with a 0.5 deg
+    tangent change: beta satisfies the polynomial to 1e-14 at EVERY radius,
+    yet the closure residual grows 3e-4 (R=286) -> 2.2e-3 (573) -> 2.2e-1
+    (1719) -> 5.0e-1 (2292), because a polynomial-residual of 1e-14 maps to a
+    beta error amplified by ~R. So the root is a good root of the WRONG
+    equation. Refining against the original equations restores machine
+    precision (5.6e-14) and recovers md 100.00 for a 100 m throw.
+
+    NB polishing beta against the POLYNOMIAL does nothing (measured 1.0x) --
+    it is already at 1e-14. The target has to be the closure residuals.
+
+    Only the entries flagged by ``mask`` are refined, so well-conditioned
+    solves (the common case) pay nothing.
+    """
+    if not mask.any():
+        return b, a1, a2
+    idx = np.nonzero(mask)
+    x = np.stack([b[idx], a1[idx], a2[idx]], axis=-1)          # (m, 3)
+    R1m, R2m = np.broadcast_to(R1, b.shape)[idx], np.broadcast_to(R2, b.shape)[idx]
+    e1m = np.broadcast_to(e1, b.shape)[idx]
+    e4m = np.broadcast_to(e4, b.shape)[idx]
+    e14m = np.broadcast_to(e14, b.shape)[idx]
+    Mm = np.broadcast_to(M, b.shape)[idx]
+
+    def f(v):
+        return _clc_recon(v[..., 0], v[..., 1], v[..., 2],
+                          R1m, R2m, e1m, e4m, e14m, Mm)
+
+    scale = np.maximum(np.abs(e1m) + np.abs(e4m) + R1m + R2m, 1.0)
+    for _ in range(iters):
+        r = f(x)
+        if not np.isfinite(r).all():
+            break
+        if (np.linalg.norm(r, axis=-1) < 1e-13 * scale).all():
+            break                       # converged -- stop paying for iterations
+        J = np.empty(r.shape + (3,))
+        for j in range(3):
+            h = 1e-7 * np.maximum(np.abs(x[..., j]), 1e-3)
+            xp = x.copy(); xp[..., j] += h
+            J[..., j] = (f(xp) - r) / h[..., None]
+        try:
+            dx = np.linalg.solve(J, -r[..., None])[..., 0]
+        except np.linalg.LinAlgError:
+            dx = np.einsum('...ij,...j->...i', np.linalg.pinv(J), -r)
+        step = np.where(np.isfinite(dx), dx, 0.0)
+        # A refinement is a PRECISION operation, never a search: cap each step
+        # hard so it cannot walk into a neighbouring basin. Without this, an
+        # angle near zero can absorb a ~0.5 rad step and land on a co-terminal
+        # long-way root, which silently changes WHICH solution is returned and
+        # breaks monotonicity in the radius.
+        lim = np.stack([
+            np.maximum(np.abs(x[..., 0]), 1.0) * 0.05,       # beta: 5%
+            np.full(x.shape[:-1], 0.02),                     # alpha1: ~1.1 deg
+            np.full(x.shape[:-1], 0.02),                     # alpha2
+        ], axis=-1)
+        x = x + np.clip(step, -lim, lim)
+
+    # Accept per-entry only when the refinement genuinely IMPROVED the closure
+    # residual AND left the solution in its own basin -- same arc branch
+    # (direct stays direct, long-way stays long-way) and beta still positive.
+    # Anything else keeps the seed, so refinement can only sharpen a solution,
+    # never substitute a different one.
+    seed = np.stack([b[idx], a1[idx], a2[idx]], axis=-1)
+    r_seed = np.linalg.norm(f(seed), axis=-1)
+    r_new = np.linalg.norm(f(x), axis=-1)
+    same_branch = (
+        ((np.abs(x[..., 1]) > np.pi) == (np.abs(seed[..., 1]) > np.pi))
+        & ((np.abs(x[..., 2]) > np.pi) == (np.abs(seed[..., 2]) > np.pi))
+    )
+    keep = (np.isfinite(x).all(-1) & (r_new < r_seed) & same_branch
+            & (x[..., 0] > 0))
+    b, a1, a2 = b.copy(), a1.copy(), a2.copy()
+    for arr, j in ((b, 0), (a1, 1), (a2, 2)):
+        vals = arr[idx]
+        vals[keep] = x[..., j][keep]
+        arr[idx] = vals
+    return b, a1, a2
 
 
 def _clc_solutions(P1, T1, P4, T4, R1, R2):
@@ -409,7 +629,20 @@ def _clc_solutions(P1, T1, P4, T4, R1, R2):
         co[10, bad] = 1.0                            # dummy monic -> finite roots
     roots = _companion_roots(co) * L[:, None]
     b, bi = roots.real, roots.imag
-    ok = (np.abs(bi) < 1e-4 * (np.abs(b) + 1)) & (b > 1e-6)
+    # A near-real root must not be discarded on an ABSOLUTE imaginary tolerance.
+    # Eq. 15 is ill-conditioned, so two nearby real roots collide into a conjugate
+    # pair under tiny coefficient error (textbook Wilkinson). Measured on a
+    # 56.8 m throw with 0.64 deg of turn: at DLS 0.79 the roots are 25.82 and
+    # 16.71 (giving the trivial 56.8 m connection); at DLS 0.80 they are
+    # 23.7737 +/- 5.053i and BOTH were dropped, so the solver silently returned a
+    # 13,557 m corkscrew instead. Scattered across radii that reads to a caller as
+    # an intermittently-failing solver, and it corrupted every consumer bisection
+    # in the family.
+    #
+    # So admit the REAL PART of a near-real pair (imaginary part small RELATIVE to
+    # the root) and let the closure refinement adjudicate -- that is what it is
+    # for, and a genuinely spurious candidate still fails the residual test.
+    ok = (np.abs(bi) < 0.5 * (np.abs(b) + 1e-9)) & (b > 1e-6)
     R1b, R2b = R1a[:, None], R2a[:, None]
     ps, e1, e4 = psi2[:, None], eta1[:, None], eta4[:, None]
     e14, M, psb = eta14[:, None], mu[:, None], psi2[:, None] - b**2
@@ -426,26 +659,75 @@ def _clc_solutions(P1, T1, P4, T4, R1, R2):
             f1 = R1b*sn1 + b*c1 + R2b*t2h*(M+c1)
             f4 = R1b*t1h*(M+c2) + b*c2 + R2b*sn2
             with np.errstate(divide='ignore', invalid='ignore'):
-                sd = (1-M**2 - c1**2 - c2**2 + 2*M*c1*c2)/(1-M**2)
-            # clamp a tiny-negative surd to 0 -- at eta14~0 (planar) the true
-            # solution's surd sits at ~0- numerically; rejecting it on surd<0
-            # drops a valid root. eta1/eta4 still filter genuinely-bad branches.
-            f14 = (R1b*t1h + b + R2b*t2h) * np.sqrt(np.maximum(sd, 0.0))
-            res4.append(np.sqrt((f1-e1)**2 + (f4-e4)**2 + (np.abs(f14)-np.abs(e14))**2))
+                # Accurate Gram determinant via the spherical Heron identity
+                # (see _gram_det). The naive difference-of-squares form carries
+                # ~1e-07 relative error in near-planar geometry -- enough to flip
+                # the sign of a quantity whose true value is ~-2.5e-09 -- so the
+                # old code could not tell rounding noise from a genuinely
+                # unrealisable angle triple and clamped BOTH to zero. That
+                # admitted phantom solutions: triples satisfying Eqs 11-12 to
+                # machine precision for which NO hold direction exists, because
+                # the spherical triangle inequality is violated. Measured on a
+                # near-planar pose pair, EVERY returned solution was of this kind.
+                det = _gram_det(M, a1, a2)
+                sd = np.maximum(det, 0.0)/(1-M**2)
+            # A negative Gram determinant is now trustworthy: reject rather than
+            # clamp, so an unrealisable triple cannot reach a caller. Genuine
+            # coplanarity sits at det = 0 and still passes. Gate the DETERMINANT
+            # and not the quotient -- 1/(1-mu^2) amplifies without bound as the
+            # tangents become (anti)parallel (a -4.5e-17 determinant becomes a
+            # -2.4e-12 surd), and the determinant is the well-scaled quantity.
+            f14 = (R1b*t1h + b + R2b*t2h) * np.sqrt(sd)
+            sd_bad = det < -_GRAM_TOL
+            res4.append(np.where(
+                sd_bad, np.inf,
+                np.sqrt((f1-e1)**2 + (f4-e4)**2 + (np.abs(f14)-np.abs(e14))**2)))
             a1_4.append(a1); a2_4.append(a2)
     res4 = np.stack(res4, -1); a1_4 = np.stack(a1_4, -1); a2_4 = np.stack(a2_4, -1)
     k = np.argmin(res4, -1)                          # best-matching angle branch
     res = np.take_along_axis(res4, k[..., None], -1)[..., 0]
     a1b = np.take_along_axis(a1_4, k[..., None], -1)[..., 0]
     a2b = np.take_along_axis(a2_4, k[..., None], -1)[..., 0]
-    valid = ok & (res < 1e-4 * L[:, None])
+    # The residual is built from R-scale terms (f1 = R1*sin(a1) + b*cos(a1)
+    # + R2*tan(a2/2)*(mu + cos(a1))), so it CANNOT be compared against an
+    # L-scaled bound: when R >> L the tolerance falls below the residual's own
+    # floor and the CORRECT root is rejected (measured: the genuine 30 m root
+    # for a 30 m throw at R=573 has res 3.2e-2 vs a 1e-4*L bound of 3e-3).
+    # Scale by the characteristic length of the compared quantities so
+    # acceptance cannot depend on the R/L ratio.
+    # Refine against the ORIGINAL closure equations wherever the eliminated
+    # form's root is not already precise (see _clc_refine). Scale-free trigger:
+    # the residual relative to the magnitudes being compared.
+    denom = np.abs(e1) + np.abs(e4) + np.abs(e14) + R1b + R2b + np.abs(b) + L[:, None]
+    need = ok & (res > 1e-9 * denom)
+    if need.any():
+        b, a1b, a2b = _clc_refine(
+            b, a1b, a2b, R1b, R2b, e1, e4, e14, M, need
+        )
+        res = np.linalg.norm(
+            _clc_recon(b, a1b, a2b, R1b, R2b, e1, e4, e14, M), axis=-1
+        )
+        denom = (np.abs(e1) + np.abs(e4) + np.abs(e14) + R1b + R2b
+                 + np.abs(b) + L[:, None])
+    # Acceptance. The relative test is the principled one -- the solve is
+    # scale-free (the polynomial is formed in units of L), so the bound must be
+    # too; an absolute bound tied to any single length made acceptance depend on
+    # the L:R ratio. It is UNIONED with the previous radius-scaled bound so this
+    # change is strictly ADDITIVE: since refinement only ever lowers a residual
+    # (it is accepted per-entry only when it improves), no root that was
+    # accepted before can be dropped now, and the newly-precise roots are
+    # additionally admitted.
+    valid = ok & (
+        (res < 1e-6 * denom)
+        | (res < 1e-4 * np.maximum(L[:, None], R1b + R2b))
+    )
     if bad.any():
         valid[bad] = False                          # degenerate pairs -> use solve_clc_2d
     # subtended_angles returns 2*arctan2(...) in (-2pi, 2pi]; a co-terminal value
     # (same tan(alpha/2), same path) inflates |alpha|. Normalise to the TRUE arc
     # turn in [0, 2pi) so the measured depth -- and any drawing -- is correct.
-    a1b = a1b % (2 * np.pi)
-    a2b = a2b % (2 * np.pi)
+    a1b = _wrap_turn(a1b)
+    a2b = _wrap_turn(a2b)
     md = R1b * a1b + b + R2b * a2b
     return b, a1b, a2b, md, valid
 
@@ -493,9 +775,26 @@ def solve_clc(p1, t1, p4, t4, R1, R2=None, return_all=False):
         ``return_all=True``: list of such dicts, shortest first.
     """
     R2 = R1 if R2 is None else R2
-    mu = float(np.asarray(t1, float) @ np.asarray(t4, float))
+    t1a, t4a = np.asarray(t1, float), np.asarray(t4, float)
+    mu = float(t1a @ t4a)
     if abs(mu) > 1 - 1e-9:                           # parallel/antiparallel: use 2D form
         return solve_clc_2d(p1, t1, p4, t4, R1, R2, return_all=return_all)
+    # PLANAR (g14 = 0): route to the 2D form, per Sawaryn (2021) -- "Setting
+    # g14 = 0 causes Eq. 15 to degenerate to the 2D general equation Eq. 33",
+    # an 8th-order form quartic in b^2, and the paper explicitly recommends the
+    # degenerate cases be implemented. Running the general degree-10 Eq. 15 on a
+    # degenerate configuration is what produced unrealisable answers here: for a
+    # target displaced along the entry tangent (what a wellbore does between
+    # adjacent stations) it returned angle triples whose spherical triangle
+    # inequality is violated, i.e. no hold direction exists for them.
+    # The docstring has always claimed this routing; the code only fell back to
+    # the 2D form when the general one returned NOTHING, so it almost never ran.
+    dpa = np.asarray(p4, float) - np.asarray(p1, float)
+    _L = np.sqrt(float(dpa @ dpa))
+    if _L > 0:
+        eta14 = float(dpa @ np.cross(t1a, t4a)) / np.sqrt(1 - mu ** 2)
+        if abs(eta14) < 1e-8 * _L:
+            return solve_clc_2d(p1, t1, p4, t4, R1, R2, return_all=return_all)
     b, a1, a2, md, valid = (x[0] for x in _clc_solutions([p1], [t1], [p4], [t4], R1, R2))
     sols = [dict(beta=float(b[k]), alpha1=float(a1[k]), alpha2=float(a2[k]),
                  total_md=float(md[k])) for k in range(len(b)) if valid[k]]
@@ -557,8 +856,18 @@ def solve_clc_2d(p1, t1, p4, t4, R1, R2=None, return_all=False):
                 continue
             b = float(np.sqrt(u))
             r, x1, x2 = _branch(b)
+            # Realisability: this form verifies on Eqs 11-12 only (the
+            # out-of-plane surd sits at 0 numerically in the planar case it is
+            # written for), so on its own it will happily return an angle triple
+            # for which NO hold direction exists -- alpha2 > theta + alpha1, the
+            # spherical triangle inequality violated. Those satisfy Eqs 11-12 to
+            # machine precision and are still not paths. Gate on the accurate
+            # Gram determinant (see _gram_det); genuine coplanarity sits at 0 and
+            # still passes.
+            if x1 is not None and _gram_det(mu, x1, x2) < -_GRAM_TOL:
+                continue
             if r < tol and not any(abs(b - s['beta']) < 1e-2 for s in sols):
-                x1, x2 = x1 % (2 * np.pi), x2 % (2 * np.pi)   # true arc turn
+                x1, x2 = float(_wrap_turn(x1)), float(_wrap_turn(x2))
                 sols.append(dict(beta=b, alpha1=x1, alpha2=x2,
                                  total_md=R1 * x1 + b + R2 * x2))
     sols.sort(key=lambda s: s['total_md'])
@@ -630,7 +939,9 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
 
     Notes
     -----
-    Closed-form condition of Sawaryn (2021, SPE-204111-PA); no iteration. Parallel
+    Closed-form CONDITION of Sawaryn (2021, SPE-204111-PA) -- the roots of c0 --
+    located by a bracketing scan plus Brent, so the condition is analytic but its
+    solution is not iteration-free. Parallel
     tangents (``|mu| = 1``) — where the general form is singular — are handled by a
     2D feasibility bisection (:func:`solve_clc_2d`). See :func:`solve_clc` for the
     general (fixed-design-radius) solve.
@@ -644,27 +955,161 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
     def _c0(R):
         return _eq15_coeffs(1.0, e1 / L, e4 / L, mu, R / L, ratio * R / L)[0]
 
-    grid = np.linspace(1e-3 * L, 5.0 * L, 600)
-    cv = np.array([_c0(r) for r in grid])
-    best = None
-    for i in range(len(grid) - 1):
-        if cv[i] * cv[i + 1] >= 0:
-            continue
-        R = brentq(_c0, grid[i], grid[i + 1])
-        R1, R2 = R, ratio * R
-        a1s, a2s = subtended_angles(0.0, psi2, e1, e4, e14, mu, R1, R2)
+    # c0 = 0 IS A CLOSED FORM, not a search.
+    #
+    # c0 contains R1 and R2 only at EVEN powers -- the monomials present are
+    # exactly R1^{0,2,4} x R2^{0,2,4} -- so with R2 = ratio*R1 and u = R**2 the
+    # condition c0(R) = 0 is an exact QUARTIC in u, with closed-form roots. An
+    # earlier ruling here said c0 was "not low-degree in R, so bracket and bisect
+    # the evaluated function": that came from fitting in R, where a degree-8
+    # Vandermonde over R = 50..3000 spans 13 orders of magnitude and fails
+    # NUMERICALLY -- the failure was mistaken for a property of the algebra. In
+    # u the same structure is degree 4, well scaled, and exact.
+    #
+    # The quartic is also MORE accurate than evaluating c0 directly. Against
+    # 60-digit arithmetic at R/L ~ 10, mu ~ 0.9975: quartic 2.6e-8 relative,
+    # direct float64 c0 4.5e-7 -- the ~4000-term expansion loses digits, which is
+    # the same cancellation that made the old bracketing search fail at all.
+    #
+    # Coefficients MUST be evaluated in w = 1 - mu, never in mu: the leading
+    # coefficient carries w**2 and vanishes as the poses approach collinear, so
+    # from mu it degenerates into cancellation noise (measured a4 ~ +/-5.7e-14
+    # sign-flipping against a0 = 2.0, which corrupts every root -- one row whose
+    # true u was 5921 returned -1708 +/- 2000i). For unit tangents
+    # 1 - t1.t4 == |t1 - t4|**2 / 2 exactly, so w is computed that way.
+    #
+    # Closed form + coefficient extraction contributed at the project owner's
+    # direction; their 63 pinned fixtures are the acceptance test.
+    t1a, t4a = np.asarray(t1, float), np.asarray(t4, float)
+    w = 0.5 * float((t1a - t4a) @ (t1a - t4a))          # == 1 - mu, exactly
+
+    def _admissible(R):
+        """Best-closing branch pair at R with BOTH arcs <= pi, else (None, None).
+
+        The constraint is applied INSIDE the selection, not to the winner of an
+        unconstrained one, so a row whose best-residual branch is a long-way
+        member is not rejected when an admissible branch also closes there.
+        """
+        a1s, a2s = subtended_angles(0.0, psi2, e1, e4, e14, mu, R, ratio * R)
+        bestr, ang = np.inf, None
         for x1 in a1s:
             for x2 in a2s:
-                f = forward(x1, x2, 0.0, mu, R1, R2)
+                m1, m2 = x1 % (2 * np.pi), x2 % (2 * np.pi)
+                if not (m1 <= np.pi + 1e-9 and m2 <= np.pi + 1e-9):
+                    continue
+                f = forward(x1, x2, 0.0, mu, R, ratio * R)
                 if f is None:
                     continue
-                if (abs(f[0] - e1) < 1e-4 * L and abs(f[1] - e4) < 1e-4 * L
-                        and abs(abs(f[2]) - abs(e14)) < 1e-4 * L):
-                    a1, a2 = x1 % (2 * np.pi), x2 % (2 * np.pi)
-                    if a1 <= np.pi + 1e-9 and a2 <= np.pi + 1e-9 and (
-                            best is None or R > best['radius']):
-                        best = dict(radius=R1, radius2=R2, beta=0.0,
-                                    alpha1=a1, alpha2=a2, total_md=R1 * a1 + R2 * a2)
+                r = max(abs(f[0] - e1), abs(f[1] - e4),
+                        abs(abs(f[2]) - abs(e14))) / L
+                if r < bestr:
+                    bestr, ang = r, (m1, m2)
+        return ang if ang is not None else (None, None)
+
+    def _closure(R):
+        a1s, a2s = subtended_angles(0.0, psi2, e1, e4, e14, mu, R, ratio * R)
+        out = np.inf
+        for x1 in a1s:
+            for x2 in a2s:
+                if not (x1 % (2 * np.pi) <= np.pi + 1e-9
+                        and x2 % (2 * np.pi) <= np.pi + 1e-9):
+                    continue
+                f = forward(x1, x2, 0.0, mu, R, ratio * R)
+                if f is None:
+                    continue
+                out = min(out, max(abs(f[0] - e1), abs(f[1] - e4),
+                                   abs(abs(f[2]) - abs(e14))) / L)
+        return out
+
+    def _polish(R):
+        """Short refinement of a closed-form root. Adopts only improvements.
+
+        Still needed: the LOWER quartic coefficients cancel as the invariants
+        approach +/-1, leaving a seed error of 4e-6..2e-3 in the worst rows. Far
+        less work than the old search -- three narrow windows, not a bracket hunt.
+        """
+        # Windows start WIDE. At mu -> 1 the admissible region can sit tens of
+        # percent from the root, not ppm: a ladder starting at 1e-2 never reaches
+        # it and every one of a consumer's 7 reported false-None cases died here.
+        # And the search must tolerate an INFEASIBLE start -- the root itself
+        # often has no admissible branch, so `_closure` is inf there. Treat inf as
+        # a large finite sentinel (a standard batch convention) so the
+        # ternary can descend out of the infeasible region instead of comparing
+        # inf <= inf and shrinking arbitrarily.
+        def _cl(R_):
+            c = _closure(R_)
+            return 1e30 if not np.isfinite(c) else c
+
+        bR, br = R, _closure(R)
+        for wdw in (0.9, 0.5, 0.2, 1e-1, 1e-2, 1e-5, 1e-8):
+            lo_w, hi_w = bR * (1 - wdw), bR * (1 + wdw)
+            for _ in range(30):
+                m1 = lo_w + (hi_w - lo_w) / 3.0
+                m2 = hi_w - (hi_w - lo_w) / 3.0
+                if _cl(m1) <= _cl(m2):
+                    hi_w = m2
+                else:
+                    lo_w = m1
+            cand = 0.5 * (lo_w + hi_w)
+            rc = _closure(cand)
+            if np.isfinite(rc) and (not np.isfinite(br) or rc < br):
+                bR, br = cand, rc
+        return bR, br
+
+    coef = [float(x) for x in
+            _eq15_c0_quartic(1.0, e1 / L, e4 / L, w, ratio)]
+    sc = max(abs(x) for x in coef) or 1.0
+    coef = [x / sc for x in coef]
+    # Degeneracy must be judged RELATIVELY. The leading coefficient carries w**2,
+    # so at mu > 0.999994 it collapses to |a4|/max|a| ~ 1e-21..1e-24 -- still
+    # nonzero, so an `abs(coef[4]) > 0` test happily solves a quartic whose
+    # companion matrix is hopeless and returns garbage or complex roots. Deflate
+    # to the true working degree instead.
+    deg = 4
+    while deg > 1 and abs(coef[deg]) < 1e-12:
+        deg -= 1
+    roots = np.roots(np.array(coef[deg::-1]))
+    cands = sorted((r.real for r in roots
+                    if abs(r.imag) <= 1e-8 * max(1.0, abs(r.real))
+                    and r.real > 0), reverse=True)
+
+    best = None
+    for v in cands:
+        R, res = _polish(L * np.sqrt(v))
+        if not np.isfinite(res) or res >= 1e-4:
+            continue
+        a1, a2 = _admissible(R)
+        if a1 is None:
+            continue
+        if best is None or R > best["radius"]:          # the MAXIMUM radius
+            best = dict(radius=R, radius2=ratio * R, beta=0.0,
+                        alpha1=a1, alpha2=a2,
+                        total_md=R * a1 + ratio * R * a2, closure=res)
+    if best is not None:
+        return best
+
+    # No acceptable quartic root. The lower coefficients cancel as the invariants
+    # approach +/-1, so a seed can be lost entirely -- locate the basin
+    # geometrically and polish into it. A sweep ALONE cannot do this (the closure
+    # basin is orders of magnitude narrower than any practical grid), hence sweep
+    # THEN polish. Strictly additive: only runs when the closed form yields
+    # nothing, so it cannot perturb a row the quartic already answers.
+    sweep = np.geomspace(0.05 * L, 400.0 * L, 400)
+    sres = np.array([_closure(r) for r in sweep])
+    if not np.any(np.isfinite(sres)):
+        return None
+    for j in sorted(np.argsort(np.where(np.isfinite(sres), sres, np.inf))[:5],
+                    reverse=True):
+        R, res = _polish(float(sweep[j]))
+        if not np.isfinite(res) or res >= 1e-4:
+            continue
+        a1, a2 = _admissible(R)
+        if a1 is None:
+            continue
+        if best is None or R > best["radius"]:
+            best = dict(radius=R, radius2=ratio * R, beta=0.0,
+                        alpha1=a1, alpha2=a2,
+                        total_md=R * a1 + ratio * R * a2, closure=res)
     return best
 
 

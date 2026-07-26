@@ -22,7 +22,7 @@ temperature (that is OLGA / Drillbench / "Simulator D" territory). Use this as a
 fast, reproducible, conservative well-control **barrier check**. A full multiphase
 model would only RELAX (raise) the tolerance -- a casing-design margin-recovery
 tool, not a safety improvement -- and its transient two-phase hydraulics belong
-with a hydraulics kernel (welleng-drilling), not here.
+with a hydraulics kernel, not here.
 
 UNITS -- the field-units contract (READ THIS)
 ---------------------------------------------
@@ -69,10 +69,13 @@ API is exposed as a stub that raises a helpful ImportError on use, so that
 """
 
 from .core import (
+    DEFAULT_MODEL_REVISION,
+    MODEL_REVISIONS,
     KickInputs,
     KickResult,
     drill_kick,
     swab_kick,
+    influx_column,
     resolve_gas_properties,
 )
 from .gas_z import (
@@ -128,10 +131,13 @@ except ImportError as _envelope_import_error:  # pragma: no cover - optional dep
     EnvelopeResult = None
 
 __all__ = [
+    "MODEL_REVISIONS",
+    "DEFAULT_MODEL_REVISION",
     "KickInputs",
     "KickResult",
     "drill_kick",
     "swab_kick",
+    "influx_column",
     "resolve_gas_properties",
     "evaluate_envelope",
     "EnvelopeResult",
