@@ -623,18 +623,28 @@ class ErrorModel():
         approximations of a nonlinear propagation; the interpolated-position
         Monte Carlo is the oracle, and the two forms diverge from it most where
         the ``1/sin(inc)`` azimuth weights are ill-conditioned. Measured against
-        MC on a build well at ``f = 0.5`` (welleng-assay, 2026-07-26):
+        MC on a build well at ``f = 0.5``:
 
-            inc 18 deg (low-inc build)   core 19.2%   assay 9.1%
-            inc 36 deg                   core  2.6%   assay 1.6%
-            inc 60 deg                   core  0.33%  assay 0.16%
+            inc 18 deg (low-inc build)   core 19.2%
+            inc 36 deg                   core  2.6%
+            inc 60 deg                   core 0.33%
 
-        So this form OVER-states relative to MC, consistently by ~2x more than
-        the continuous form. Station values (``f = 0`` and ``f = 1``) are
-        unaffected — those are exact. Aligning the boundary form to the
-        continuous transport is tracked for 0.27; until then, treat sub-30 deg
-        inclination interiors as indicative and take a station value, or
-        welleng-assay's form, where the number is load-bearing.
+        So this form OVER-states relative to MC, and by a wide margin at low
+        inclination. Station values (``f = 0`` and ``f = 1``) are unaffected —
+        those are exact. Aligning the boundary form to a continuous transport is
+        tracked for 0.27; until then, treat sub-30 deg inclination interiors as
+        indicative and take a station value, or welleng-assay's continuous form,
+        where the number is load-bearing.
+
+        A comparison column for welleng-assay's form was published here in
+        0.26.0rc9 and is WITHDRAWN pending re-measurement: it was taken before
+        their 2026-07-26 ``dref`` fix removed a constant VV double-count, so it
+        overstated their error and understated the gap. Core's figures above are
+        core-vs-MC and cannot be affected by a fix on assay's side, so they
+        stand; the DIRECTION of the guidance (prefer a station value or the
+        continuous form at low inclination) is unchanged and if anything
+        stronger. Do not quote a ratio between the two forms until the corrected
+        column lands.
 
         Parameters
         ----------
