@@ -88,11 +88,38 @@ def test_pose_to_point_result_restated_as_a_pose_still_solves():
     assert c2.md_target == pytest.approx(c1.md_target, rel=1e-6)
 
 
+def test_forward_accepts_every_exactly_coplanar_triple():
+    """``forward`` must gate the Gram determinant the same way the solvers do.
+
+    A coplanar triple (``mu = cos(alpha1 + alpha2)``) has determinant exactly 0,
+    so it comes back either side of zero -- 8567 of the 57600 triples below
+    evaluate NEGATIVE, down to -2.0e-15. An absolute ``surd < 0`` test rejected
+    every one of them, which is how ``max_radius`` lost a genuine radius on a
+    planar pose (welleng-api, ``|eta14|/L = 8.8e-17``, all four branches
+    refused at -5.5e-14). Aligning the test on ``_GRAM_TOL`` also took the
+    collinear batteries' median closure from 8.0e-09 to 4.2e-14.
+    """
+    from welleng.sawaryn_analytical import forward
+
+    grid = np.radians(np.linspace(1.0, 120.0, 240))
+    rejected = [
+        (a1, a2)
+        for a1 in grid
+        for a2 in grid
+        if forward(a1, a2, 500.0, np.cos(a1 + a2), 1000.0, 1000.0) is None
+    ]
+    assert not rejected, (
+        f"{len(rejected)} coplanar triples refused, e.g. {rejected[:5]}")
+
+
 @pytest.mark.xfail(
     reason="OPEN: near-straight regime (turn < ~1 deg with R/L >> 1). Eq 34's "
            "biquadratic loses the true beta root to cancellation in K, so the "
-           "solver returns a long-way arc instead. Pre-existing; not the "
-           "coplanar-boundary defect this module covers.",
+           "solver returns a long-way arc instead. TWO consumer-visible faces, "
+           "which need different detection: ungated it is a CORKSCREW (true md "
+           "404.4, returned 3556); under direct_only=True the loop is refused "
+           "and it surfaces as a false 'unreachable' None (welleng-pathfinder). "
+           "Pre-existing; not the coplanar-boundary defect this module covers.",
     strict=True,
 )
 def test_near_straight_boundary_leg():

@@ -152,6 +152,15 @@ def _wrap_turn(x):
     return np.where(2 * np.pi - x < _TURN_SNAP, 0.0, x)
 
 
+# Below this the Gram determinant is exact coplanarity, not an infeasibility.
+# The Heron product form is accurate to 6.2e-16 relative, so a genuinely
+# unrealisable triple lands orders of magnitude below -1e-12. ONE tolerance,
+# used by every site that gates on the determinant -- `forward`,
+# `_clc_solutions` and `solve_clc_2d` disagreeing on it is what let a planar
+# pose solve on one path and be refused on another.
+_GRAM_TOL = 1e-12
+
+
 def _gram_det(mu, alpha1, alpha2):
     """Gram determinant of (t1, t_hold, t4) from their pairwise cosines.
 
@@ -198,9 +207,19 @@ def forward(alpha1, alpha2, beta, mu, R1, R2):
     eta4 = R1*T1*(mu + c2) + beta*c2 + R2*s2                     # Eq. 12
     # Accurate Gram determinant (see _gram_det): the naive difference-of-squares
     # form cannot tell rounding noise from a genuinely unrealisable angle triple.
-    surd = float(_gram_det(mu, alpha1, alpha2)) / (1 - mu**2)
-    if surd < 0:
+    # Exact coplanarity sits AT zero and comes back either side of it, so the
+    # test must match the one in _clc_solutions -- an absolute `surd < 0` here
+    # rejected all four branches of a planar pose at -5.5e-14 and lost a genuine
+    # max_radius (welleng-api, |eta14|/L = 8.8e-17).
+    # Gate the DETERMINANT, not the quotient: 1/(1-mu^2) is an amplifier that
+    # diverges as the tangents become (anti)parallel, and it turns a -4.5e-17
+    # determinant into a -2.4e-12 surd. The determinant is the well-scaled
+    # quantity -- bounded by 1, accurate to 6.2e-16 -- so the tolerance belongs
+    # on it.
+    det = float(_gram_det(mu, alpha1, alpha2))
+    if det < -_GRAM_TOL:
         return None
+    surd = max(det, 0.0) / (1 - mu**2)
     eta14 = (R1*T1 + beta + R2*T2) * np.sqrt(surd)               # Eq. 13
     return np.array([eta1, eta4, eta14])
 
@@ -627,12 +646,16 @@ def _clc_solutions(P1, T1, P4, T4, R1, R2):
                 # machine precision for which NO hold direction exists, because
                 # the spherical triangle inequality is violated. Measured on a
                 # near-planar pose pair, EVERY returned solution was of this kind.
-                sd = _gram_det(M, a1, a2)/(1-M**2)
+                det = _gram_det(M, a1, a2)
+                sd = np.maximum(det, 0.0)/(1-M**2)
             # A negative Gram determinant is now trustworthy: reject rather than
             # clamp, so an unrealisable triple cannot reach a caller. Genuine
-            # coplanarity sits at sd = 0 and still passes.
-            f14 = (R1b*t1h + b + R2b*t2h) * np.sqrt(np.maximum(sd, 0.0))
-            sd_bad = sd < -1e-12
+            # coplanarity sits at det = 0 and still passes. Gate the DETERMINANT
+            # and not the quotient -- 1/(1-mu^2) amplifies without bound as the
+            # tangents become (anti)parallel (a -4.5e-17 determinant becomes a
+            # -2.4e-12 surd), and the determinant is the well-scaled quantity.
+            f14 = (R1b*t1h + b + R2b*t2h) * np.sqrt(sd)
+            sd_bad = det < -_GRAM_TOL
             res4.append(np.where(
                 sd_bad, np.inf,
                 np.sqrt((f1-e1)**2 + (f4-e4)**2 + (np.abs(f14)-np.abs(e14))**2)))
@@ -818,7 +841,7 @@ def solve_clc_2d(p1, t1, p4, t4, R1, R2=None, return_all=False):
             # machine precision and are still not paths. Gate on the accurate
             # Gram determinant (see _gram_det); genuine coplanarity sits at 0 and
             # still passes.
-            if x1 is not None and _gram_det(mu, x1, x2) < -1e-12:
+            if x1 is not None and _gram_det(mu, x1, x2) < -_GRAM_TOL:
                 continue
             if r < tol and not any(abs(b - s['beta']) < 1e-2 for s in sols):
                 x1, x2 = float(_wrap_turn(x1)), float(_wrap_turn(x2))
