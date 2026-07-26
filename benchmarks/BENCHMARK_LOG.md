@@ -423,3 +423,59 @@ not measurable at this scale.
 - ISCWSA MWD Rev5.11, 167 stations, 20 reps: **3.6 ms/survey** (in line with prior baseline;
   the changes add one dict-lookup wrapper per term evaluation and a converter-side key rename —
   no hot-path regression). Machine: miner5, .venv312.
+
+## 2026-07-26 — branch feat/clearance-interior-cov (A-5 influx-temperature correction, 0.26.0rc10)
+
+The corrected revision `"column-mean-2026"` (now the default) solves a FIXED POINT for the
+influx-column height before it can evaluate the gas state — the column height is an output of
+A-2 and the density depends on the temperature at the column's mid-depth. ~7 gas-property
+solves per evaluation, and the closed form asks for the same station three times per case
+(`constant_A`, its `resolve_gas_properties`, and the result's own reporting).
+
+| `drill_kick`, SPE-208788 Table-1 case | ms/call |
+|---|---|
+| `spe-208788` (legacy path, unchanged) | 0.025 |
+| `column-mean-2026`, un-memoised | 0.140 |
+| `column-mean-2026`, memoised — repeat inputs | 0.026 |
+| `column-mean-2026`, memoised — 300 DISTINCT inputs (worst case, no reuse) | 0.066 |
+
+Un-memoised was **5.6x** the legacy path. `_influx_temperature_impl` is `lru_cache`d on the
+scalars the fixed point actually depends on, which collapses the 3 calls/case to 1 and makes an
+envelope sweep over a repeated station free. Worst case — every call a distinct input, so the
+cache never hits — is 2.6x the legacy path at 0.066 ms/call, which is well inside the envelope
+and monotonicity sweeps' existing budget. Machine: this dev box, .venv312.
+
+## 2026-07-26 — `ErrorModel.cov_nev_at` source-stacked evaluation (0.26.0rc12)
+
+welleng-pathfinder profiled `MahalanobisClearance` in `mode="exact"`: one check on a real path
+(124 candidate stations x 12 Volve offsets) spent **2.98 s of 3.67 s — 81% — inside 8906 SCALAR
+`cov_nev_at` calls**, issuing 219k `np.outer` products. It is the binding constraint of every
+`plan()` call that reports an oracle SF.
+
+They asked for a batched `cov_nev_at(md_array)`. **Refused — that is a vectorised public entry
+point, which is welleng-api's / welleng-assay's, not open core's (CLAUDE.md HARD RULE).** What core
+CAN do is make the SCALAR call faster, and almost all of the win was available there: a single
+interior evaluation touches all 35 sources of the default MWD model, and at 3-vector sizes numpy's
+per-call overhead dominated the arithmetic.
+
+`_interior_stacks()` stacks the per-source arrays once per model (model-invariant — no per-leg or
+per-query cache, deliberately), so one query is evaluated with a handful of einsums over the SOURCE
+axis instead of a 35-iteration Python loop with ~37 `np.outer` products.
+
+| `cov_nev_at`, 100-station MWD Rev5.11 survey, 35 sources | ms/call |
+|---|---|
+| per-source loop (rc11) | 0.540 |
+| source-stacked (rc12) | **0.097** |
+
+**5.6x on the scalar path.** Public API unchanged and still strictly scalar — one measured depth in,
+one (3, 3) out.
+
+Numerical parity vs the per-source loop: **max 2.7e-16 relative (~1 ulp)** across 137 queries on
+build / vertical / horizontal surveys. NOT bit-identical, and the reason is only that einsum
+accumulates the sum in a different order than a sequential `+=`. Pinned by
+`test_source_stacked_form_matches_a_per_source_reference`, which re-implements the replaced loop
+verbatim inside the test and asserts < 1e-14 relative.
+
+Projected on pathfinder's profile: 2.98 s -> ~0.53 s, so the check goes 3.67 s -> ~1.2 s, **~3x**
+against the ~3.6x ceiling they estimated for a 10x — i.e. most of the win, without a batched public
+API. Machine: this dev box, .venv312.
