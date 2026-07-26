@@ -1283,7 +1283,7 @@ class ToolError:
           - CNA, CNI: only in the BLIND/UNKNOWN/FINDS/TREND special models
             (gyro "Linear Cone").
           - ASIXY, ABIXY, MBIXY: in no current JSON model at all -- legacy-only.
-        See docs/dev/ERROR_MODEL_ENGINE.md S6. The base-ISCWSA terms that DO have
+        See the welleng error-model engine notes S6. The base-ISCWSA terms that DO have
         reference data (XYM3E/XYM4E/DBHR) are validated per-source to 5e-5 by
         tests/test_iscwsa_mwd_error.py and are no longer flagged.
         """
