@@ -75,6 +75,7 @@ from .core import (
     KickResult,
     drill_kick,
     swab_kick,
+    influx_column,
     resolve_gas_properties,
 )
 from .gas_z import (
@@ -136,6 +137,7 @@ __all__ = [
     "KickResult",
     "drill_kick",
     "swab_kick",
+    "influx_column",
     "resolve_gas_properties",
     "evaluate_envelope",
     "EnvelopeResult",

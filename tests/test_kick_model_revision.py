@@ -25,8 +25,11 @@ from welleng.kick_tolerance.core import (
     annular_capacity_dpa,
     constant_A,
     drill_kick,
+    influx_column,
+    ppg_to_psi,
     swab_kick,
 )
+from welleng.kick_tolerance.core import G_PSI_PER_PPG_FT
 
 LEGACY = "spe-208788"
 
@@ -154,3 +157,88 @@ def test_replace_preserves_the_revision():
     be silently dropped by one."""
     inp = case(model_revision=LEGACY)
     assert replace(inp, PP=12.0).model_revision == LEGACY
+
+
+# --- the limiting profile must close on the fracture pressure ---------------
+
+def _shoe_pressure_from_column(inp, res):
+    """Reconstruct the shoe pressure from the reported influx column."""
+    return res.P_td - G_PSI_PER_PPG_FT * (
+        res.rho_influx * res.H_gas
+        + inp.rho_mud * (inp.D_td - inp.D_lot - res.H_gas)
+    )
+
+
+@pytest.mark.parametrize("revision", sorted(MODEL_REVISIONS))
+@pytest.mark.parametrize("fn", (drill_kick, swab_kick))
+def test_limiting_profile_sits_exactly_on_the_fracture_pressure(revision, fn):
+    """At the tolerable influx the shoe sits ON the binding fracture pressure.
+
+    That is what "limiting" means, and it is an identity in A-2 for ANY influx
+    density -- so it must hold to 0.00 psi under both revisions. welleng-api's
+    profile drifted from -2.01 to -14.08 psi across the revisions, which is how
+    the missing pieces below were found: core reported the temperature it used
+    but not the DENSITY, and reported H only under the new revision, so a
+    consumer had to re-derive both and drifted when they moved.
+    """
+    inp = case(model_revision=revision)
+    res = fn(inp)
+    P_frac = ppg_to_psi(inp.P_lot, inp.D_lot) - inp.P_apl
+    assert _shoe_pressure_from_column(inp, res) == pytest.approx(P_frac, abs=1e-9)
+
+
+@pytest.mark.parametrize("revision", sorted(MODEL_REVISIONS))
+def test_column_is_reported_under_both_revisions(revision):
+    """H_gas and rho_influx are what a caller draws the profile from, so
+    neither may be None on either revision."""
+    res = drill_kick(case(model_revision=revision))
+    assert res.rho_influx is not None and 0.0 < res.rho_influx < res.P_td
+    assert res.H_gas is not None and 0.0 < res.H_gas < (10500.0 - 6500.0)
+
+
+def test_influx_column_matches_what_the_result_reports():
+    """The public helper and the result must not disagree -- that is the
+    'three sites, three answers' failure mode in miniature."""
+    inp = case()
+    T, H, rho = influx_column(inp)
+    res = drill_kick(inp)
+    assert (T, H, rho) == (res.T_influx, res.H_gas, res.rho_influx)
+
+
+def test_rho_influx_honours_an_injected_density():
+    """A caller supplying its own gas properties must still get a closing
+    profile, so the reported density has to be the INJECTED one."""
+    inp = case(rho_gas_s=1.5)
+    res = drill_kick(inp)
+    assert res.rho_influx == 1.5
+    P_frac = ppg_to_psi(inp.P_lot, inp.D_lot) - inp.P_apl
+    assert _shoe_pressure_from_column(inp, res) == pytest.approx(P_frac, abs=1e-9)
+
+
+@pytest.mark.parametrize("revision", sorted(MODEL_REVISIONS))
+def test_back_deriving_H_from_capacity_does_NOT_close_and_is_revision_blind(
+    revision,
+):
+    """The trap, pinned so nobody re-discovers it as a regression.
+
+    Expanding `capacity` back to the shoe goes through A-4, whose pressure
+    bookkeeping is not algebraically identical to A-5/A-7 as printed. That route
+    misses the fracture pressure -- IDENTICALLY under both revisions, which is
+    what proves it is the paper's own bookkeeping and not the influx-temperature
+    correction. A profile built that way was already off before 0.26.0.
+    """
+    from welleng.kick_tolerance.core import (
+        fahrenheit_to_rankine, resolve_gas_properties, P_ATM_PSI,
+    )
+    inp = case(model_revision=revision)
+    res = drill_kick(inp)
+    Z_s, Z_td, _ = resolve_gas_properties(inp, res.P_td)
+    P_frac = ppg_to_psi(inp.P_lot, inp.D_lot) - inp.P_apl
+    V_s = (res.capacity * res.P_td * fahrenheit_to_rankine(res.T_influx) * Z_s
+           / ((P_frac + P_ATM_PSI) * fahrenheit_to_rankine(inp.T_td) * Z_td))
+    H_from_V = V_s / inp.V_dpa
+    P_shoe = res.P_td - G_PSI_PER_PPG_FT * (
+        res.rho_influx * H_from_V
+        + inp.rho_mud * (inp.D_td - inp.D_lot - H_from_V)
+    )
+    assert P_shoe - P_frac == pytest.approx(-3.93, abs=0.05)   # both revisions
