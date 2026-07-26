@@ -397,6 +397,10 @@ class SurveyComposition:
         # reproduces the operator-stored covariances.
         share_well = list(share_global)
 
+        # One propagation per (run, depth-datum) instead of one per component
+        # -- see _run_component. Scoped to this call: cleared below so a
+        # mutated composition can never read a stale run.
+        self._run_cache = {}
         glob = self._compose_component(
             "cov_nev_global", share_global, start_nevs
         )
@@ -409,6 +413,7 @@ class SurveyComposition:
         well = self._compose_component(
             "cov_nev_well", share_well, start_nevs
         )
+        self._run_cache = {}
 
         # 3. Stitch per-group arrays (drop duplicate tie station of each
         #    subsequent group) into unified per-station arrays.
@@ -550,7 +555,23 @@ class SurveyComposition:
             inc = np.append(inc, nxt.inc_rad[1])
             azi = np.append(azi, nxt.azi_grid_rad[1])
         header = groups[0].header
-        if attr in ("cov_nev_systematic", "cov_nev_well") and k > 0:
+        # ONE propagation serves every component that shares this run's
+        # geometry AND its depth datum. `attr` selects which covariance to read
+        # off a build; it does not change the build -- the only thing that does
+        # is the severed-run `_tmd_datum` override below. So a run needs at most
+        # TWO propagations (with and without the override), not one per
+        # component. Un-cached, a 2-section compose ran EIGHT full ErrorModel
+        # propagations where 2-3 suffice, discarding three quarters of each
+        # result (welleng-probcol's profile: 93% of their programme setup).
+        severed = attr in ("cov_nev_systematic", "cov_nev_well") and k > 0
+        cache = getattr(self, "_run_cache", None)
+        if cache is None:
+            cache = self._run_cache = {}
+        key = (k, j, severed, tuple(np.asarray(start_nev, float).ravel()))
+        cached = cache.get(key)
+        if cached is not None:
+            return getattr(cached, attr)[:n_real]
+        if severed:
             # A severed run's own systematic/well realisations act on the
             # depth measured BY THAT RUN. COMPASS-formula terms weighted by
             # ``tmd`` (e.g. a dsf depth-scale error) must see run-relative
@@ -564,6 +585,7 @@ class SurveyComposition:
             md=md, inc=inc, azi=azi, deg=False, header=header,
             error_model=groups[0].error_model, start_nev=start_nev,
         )
+        cache[key] = run
         return getattr(run, attr)[:n_real]
 
     #: composed-covariance attribute -> the term propagation mode it holds
@@ -625,18 +647,33 @@ class SurveyComposition:
             pos += n_g - 1
         owner[pos:] = len(groups) - 1          # ghost rides the last leg
 
-        # per-model sigma profiles over the full geometry, per term name
-        sigmas: List[dict] = []
-        for g in groups:
-            run = Survey(
-                md=md, inc=inc, azi=azi, deg=False, header=g.header,
-                error_model=g.error_model, start_nev=start_nev,
-            )
-            sigmas.append({
+        # Per-model sigma profiles over the full geometry, per term name. The
+        # Survey per group depends only on the geometry, header and model --
+        # NOT on `attr`, which only selects which propagation mode to filter
+        # for -- so the same builds serve every component that reaches this
+        # path (global / systematic / well; random never does). Cached, or the
+        # multi-model run re-propagates each leg three times over.
+        cache = getattr(self, "_run_cache", None)
+        if cache is None:
+            cache = self._run_cache = {}
+        key = ("per_term", k, j, tuple(np.asarray(start_nev, float).ravel()))
+        runs = cache.get(key)
+        if runs is None:
+            runs = cache[key] = [
+                Survey(
+                    md=md, inc=inc, azi=azi, deg=False, header=g.header,
+                    error_model=g.error_model, start_nev=start_nev,
+                )
+                for g in groups
+            ]
+        sigmas: List[dict] = [
+            {
                 name: np.asarray(term.sigma_e_NEV, dtype=float)
                 for name, term in run.err.errors.errors.items()
                 if term.propagation == prop
-            })
+            }
+            for run in runs
+        ]
 
         names = sorted({n for s in sigmas for n in s})
         cov = np.zeros((n_real, 3, 3))
