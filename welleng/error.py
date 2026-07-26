@@ -529,6 +529,25 @@ class ErrorModel():
         stored ``cov_NEV[i+1]`` at ``f -> 1`` to machine precision. See
         ``docs/dev/CLEARANCE_ANALYTICAL_COV.md``.
 
+        INTERIOR ACCURACY IS GEOMETRY-DEPENDENT — do not read "exact at both
+        ends" as "accurate throughout". Both this boundary-anchored form and
+        welleng-assay's continuous transport are FIRST-ORDER interior
+        approximations of a nonlinear propagation; the interpolated-position
+        Monte Carlo is the oracle, and the two forms diverge from it most where
+        the ``1/sin(inc)`` azimuth weights are ill-conditioned. Measured against
+        MC on a build well at ``f = 0.5`` (welleng-assay, 2026-07-26):
+
+            inc 18 deg (low-inc build)   core 19.2%   assay 9.1%
+            inc 36 deg                   core  2.6%   assay 1.6%
+            inc 60 deg                   core  0.33%  assay 0.16%
+
+        So this form OVER-states relative to MC, consistently by ~2x more than
+        the continuous form. Station values (``f = 0`` and ``f = 1``) are
+        unaffected — those are exact. Aligning the boundary form to the
+        continuous transport is tracked for 0.27; until then, treat sub-30 deg
+        inclination interiors as indicative and take a station value, or
+        welleng-assay's form, where the number is load-bearing.
+
         Parameters
         ----------
         md : float
