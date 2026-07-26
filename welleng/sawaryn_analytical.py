@@ -104,13 +104,52 @@ def subtended_angles(beta, psi2, eta1, eta4, eta14, mu, R1, R2):
 
     def _roots(A, B, C):
         disc = B*B - 4*A*C
-        if A == 0 or disc < 0:
+        if A == 0:
             return []
+        # A TANGENCY (double root) is a real solution, not an infeasibility --
+        # and it is exactly the alpha2 = 0 single-arc boundary a planner lands
+        # on whenever it restates a pose-to-point result as a pose constraint.
+        # There the discriminant's true value is 0 and it is formed as a
+        # difference of two ~4e24 quantities: measured -5.4e08, i.e. -1.2e-16
+        # RELATIVE, pure rounding. An absolute ``disc < 0`` test reads that as
+        # infeasible and drops BOTH roots, so the whole single-arc solution
+        # disappears and the solver returns a multi-km corkscrew instead.
+        # Reject only a discriminant negative relative to the terms it was
+        # formed from; a genuine infeasibility is O(1) relative.
+        if disc < 0:
+            if disc < -1e-12 * max(abs(B*B), abs(4*A*C)):
+                return []
+            disc = 0.0
         sq = np.sqrt(disc)
         return [2*np.arctan2((-B + sq), 2*A),     # Eqs. 21 / 25
                 2*np.arctan2((-B - sq), 2*A)]
 
     return _roots(A1, B1, C1), _roots(A2, B2, C2)
+
+
+# A turn within this of a full loop is the co-terminal image of a zero turn.
+# 1e-5 rad is 0.00057 deg -- 2.5 cm of arc at R = 2500 m, i.e. below any
+# meaningful turn -- while a genuine near-full arc (359.99 deg) sits 1.7e-4 rad
+# away and is untouched. Sized to swallow the root error at beta -> 0, where the
+# zero turn came back as 2*pi - 3.1e-08 rather than machine-zero.
+_TURN_SNAP = 1e-5
+
+
+def _wrap_turn(x):
+    """Co-terminal arc angle -> the TRUE turn in [0, 2pi).
+
+    ``subtended_angles`` solves for ``tan(alpha/2)``, so 0 and 2pi are the same
+    root and Eqs 11-12 cannot tell them apart: both satisfy the closure
+    equations identically. The physical answer is the shorter one, so the
+    smallest non-negative representative is taken.
+
+    Plain ``x % (2*pi)`` gets that right everywhere EXCEPT at the zero-arc
+    boundary, where a numerically-zero turn comes out slightly NEGATIVE
+    (-1.2e-13 rad measured) and wraps to 2pi -- adding a phantom full loop,
+    e.g. a 822 m single-arc-plus-hold reported as 7094 m. Snap that back.
+    """
+    x = np.mod(x, 2 * np.pi)
+    return np.where(2 * np.pi - x < _TURN_SNAP, 0.0, x)
 
 
 def _gram_det(mu, alpha1, alpha2):
@@ -641,8 +680,8 @@ def _clc_solutions(P1, T1, P4, T4, R1, R2):
     # subtended_angles returns 2*arctan2(...) in (-2pi, 2pi]; a co-terminal value
     # (same tan(alpha/2), same path) inflates |alpha|. Normalise to the TRUE arc
     # turn in [0, 2pi) so the measured depth -- and any drawing -- is correct.
-    a1b = a1b % (2 * np.pi)
-    a2b = a2b % (2 * np.pi)
+    a1b = _wrap_turn(a1b)
+    a2b = _wrap_turn(a2b)
     md = R1b * a1b + b + R2b * a2b
     return b, a1b, a2b, md, valid
 
@@ -782,7 +821,7 @@ def solve_clc_2d(p1, t1, p4, t4, R1, R2=None, return_all=False):
             if x1 is not None and _gram_det(mu, x1, x2) < -1e-12:
                 continue
             if r < tol and not any(abs(b - s['beta']) < 1e-2 for s in sols):
-                x1, x2 = x1 % (2 * np.pi), x2 % (2 * np.pi)   # true arc turn
+                x1, x2 = float(_wrap_turn(x1)), float(_wrap_turn(x2))
                 sols.append(dict(beta=b, alpha1=x1, alpha2=x2,
                                  total_md=R1 * x1 + b + R2 * x2))
     sols.sort(key=lambda s: s['total_md'])

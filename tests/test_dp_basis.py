@@ -10,7 +10,6 @@ min_curve is the trajectory-consistent dp basis (opt-in). Guards:
 import json
 
 import numpy as np
-import pytest
 
 from welleng.survey import Survey, SurveyHeader
 from welleng.error import ErrorModel
@@ -59,7 +58,8 @@ def test_analytic_jacobian_matches_finite_difference():
     h = 1e-7
     # drk_dInc[k]: d(leg [k-1,k] disp)/d(inc_k)
     plus = ErrorModel._mc_leg_disp(md[k-1], inc[k-1], azi[k-1], md[k], inc[k]+h, azi[k])
-    minus = ErrorModel._mc_leg_disp(md[k-1], inc[k-1], azi[k-1], md[k], inc[k]-h, azi[k])
+    minus = ErrorModel._mc_leg_disp(
+        md[k-1], inc[k-1], azi[k-1], md[k], inc[k]-h, azi[k])
     fd = (plus - minus) / (2 * h)
     assert np.max(np.abs(mc.drdp[k, 3:6] - fd)) < 1e-6
 

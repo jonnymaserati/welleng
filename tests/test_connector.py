@@ -85,20 +85,24 @@ def test_dls2():
     )
     assert c.radius_design2 < c.radius_design
 
-def test_no_clc_target_raises():
-    # A target with NO curve-hold-curve solution at the design radii raises.
-    # (Since arcs may turn > 180deg, a CLC exists for almost every geometry --
-    # see test_long_arc_solves_at_design_dls -- so this needs a genuinely
-    # unreachable pose: a target on the start axis but with a reversed tangent,
-    # i.e. a U-turn on the spot that no radius-R curve-hold-curve can make.)
+def test_no_direct_clc_target_raises():
+    # A U-turn on the spot -- target on the start axis with a reversed tangent.
+    # There is NO DIRECT (both arcs <= 180deg) curve-hold-curve for it, so
+    # direct_only=True raises. It IS reachable the long way round: two arcs
+    # totalling 540deg land on the target with the reversed tangent (verified by
+    # reconstruction to 5e-07 m), and the default Connector returns that loop --
+    # it was only ever refused because a discriminant at a tangency rounded
+    # negative. See test_long_arc_solves_at_design_dls.
     import pytest
+    kwargs = dict(
+        pos1=[0., 0., 0.], vec1=[0., 0., 1.],
+        pos2=[0., 0., 50.], vec2=[0., 0., -1.],
+    )
     with pytest.raises(ValueError):
-        Connector(
-            pos1=[0., 0., 0.],
-            vec1=[0., 0., 1.],
-            pos2=[0., 0., 50.],
-            vec2=[0., 0., -1.],
-        )
+        Connector(direct_only=True, **kwargs)
+    with pytest.warns(UserWarning, match="long way"):
+        c = Connector(**kwargs)
+    assert c.md_target > 50.
 
 def test_min_curve():
     # test min_curve (inc2 provided)
