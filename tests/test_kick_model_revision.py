@@ -4,7 +4,7 @@ A kick-tolerance number ends up in a signed-off well programme, so a result
 computed under an earlier model has to stay reproducible EXACTLY once the model
 changes. Hence a named FROZEN revision that travels with the result.
 
-The correction itself (welleng-api, external reviewer, 2026-07-26): A-5's
+The correction itself (a batch consumer, external reviewer, 2026-07-26): A-5's
 ``T_s``/``Z_s``/``rho_gas_s`` describe the INFLUX at the condition A-2 defines
 -- gas top at the casing shoe -- so the column hangs BELOW the shoe and the
 shoe is its COOL END. Evaluating there makes the gas denser than the column,
@@ -175,7 +175,7 @@ def test_limiting_profile_sits_exactly_on_the_fracture_pressure(revision, fn):
     """At the tolerable influx the shoe sits ON the binding fracture pressure.
 
     That is what "limiting" means, and it is an identity in A-2 for ANY influx
-    density -- so it must hold to 0.00 psi under both revisions. welleng-api's
+    density -- so it must hold to 0.00 psi under both revisions. a batch consumer's
     profile drifted from -2.01 to -14.08 psi across the revisions, which is how
     the missing pieces below were found: core reported the temperature it used
     but not the DENSITY, and reported H only under the new revision, so a

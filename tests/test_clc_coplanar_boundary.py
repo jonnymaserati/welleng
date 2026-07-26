@@ -95,7 +95,7 @@ def test_forward_accepts_every_exactly_coplanar_triple():
     so it comes back either side of zero -- 8567 of the 57600 triples below
     evaluate NEGATIVE, down to -2.0e-15. An absolute ``surd < 0`` test rejected
     every one of them, which is how ``max_radius`` lost a genuine radius on a
-    planar pose (welleng-api, ``|eta14|/L = 8.8e-17``, all four branches
+    planar pose (a batch consumer, ``|eta14|/L = 8.8e-17``, all four branches
     refused at -5.5e-14). Aligning the test on ``_GRAM_TOL`` also took the
     collinear batteries' median closure from 8.0e-09 to 4.2e-14.
     """
@@ -118,7 +118,7 @@ def test_forward_accepts_every_exactly_coplanar_triple():
            "solver returns a long-way arc instead. TWO consumer-visible faces, "
            "which need different detection: ungated it is a CORKSCREW (true md "
            "404.4, returned 3556); under direct_only=True the loop is refused "
-           "and it surfaces as a false 'unreachable' None (welleng-pathfinder). "
+           "and it surfaces as a false 'unreachable' None (a downstream consumer). "
            "Pre-existing; not the coplanar-boundary defect this module covers.",
     strict=True,
 )

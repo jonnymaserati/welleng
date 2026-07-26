@@ -388,7 +388,7 @@ class ErrorModel():
 
     # course-length recurrence terms handled by the partial-course-length
     # interior convention (Codling SPE-187249; ISCWSA-validated weight funcs in
-    # ``welleng.errors.tool_errors``). One-oracle with welleng-assay's symbolic
+    # ``welleng.errors.tool_errors``). One-oracle with the symbolic
     # Propagator (2026-07-24 ruling).
     _COURSE_LENGTH_TERMS = ("XCLA", "XCLH")
 
@@ -491,7 +491,7 @@ class ErrorModel():
         depth and returns one (3, 3) -- and there is deliberately no per-leg or
         per-query cache here: everything below is model-invariant, built once and
         indexed. The batched/vectorised form of the interior covariance is
-        welleng-api's and welleng-assay's, not open core's.
+        outside this module's scope -- this entry point is scalar by design.
 
         Returns a dict with, for the ``"standard"`` sources, ``e_DIA`` (S, n, 3),
         ``e_NEV_star`` (S, n, 3), ``sigma_e_NEV`` (S, n, 3) and the boolean
@@ -612,20 +612,21 @@ class ErrorModel():
         (``cov_NEV[i] + outer(e_NEV(i->q))``, :meth:`_xcl_partial_enev`) -- a
         STATED convention (not MC-validated: course length has no independent MC
         ground truth at a fractional point), station-exact at f=0,1, one-oracle
-        with welleng-assay. Any remaining ring-fenced term (:meth:`_interior_prep`
-        class ``"linear"``) uses linear covariance interpolation. Reproduces the
+        with the symbolic reference. Any remaining ring-fenced term
+        (:meth:`_interior_prep` class ``"linear"``) uses linear covariance
+        interpolation. Reproduces the
         stored ``cov_NEV[i+1]`` at ``f -> 1`` to machine precision. See
         derivation (welleng development notes, not shipped).
 
         INTERIOR ACCURACY IS GEOMETRY-DEPENDENT — do not read "exact at both
         ends" as "accurate throughout". Both this boundary-anchored form and
-        welleng-assay's continuous transport are FIRST-ORDER interior
+        the continuous-transport form are FIRST-ORDER interior
         approximations of a nonlinear propagation; the interpolated-position
         Monte Carlo is the oracle, and the two forms diverge from it most where
         the ``1/sin(inc)`` azimuth weights are ill-conditioned.
 
         Both columns below are from ONE run against the SAME MC realisation
-        (welleng-assay ``280ada4``, core ``0.26.0rc14``): 30 m survey 0-3000 m
+        (welleng 0.26.0 and its symbolic reference): 30 m survey 0-3000 m
         building vertical to 60 deg over 300-1800 m, interior point ``f = 0.5``,
         interpolated-position MC at N = 300,000 seed 7, ``dp_basis`` balanced
         tangent, smooth measurement terms only (XCLA/XCLH excluded — an
@@ -645,7 +646,7 @@ class ErrorModel():
         Station values (``f = 0`` and ``f = 1``) are unaffected — those are
         exact. Aligning the boundary form to the continuous transport is tracked
         for 0.27; until then, treat sub-30 deg inclination interiors as
-        indicative and take a station value, or welleng-assay's continuous form,
+        indicative and take a station value, or a continuous-transport form,
         where the number is load-bearing.
 
         (An earlier version of this table shipped in 0.26.0rc9 with a stale
@@ -1093,7 +1094,7 @@ class ErrorModel():
         min-curvature trajectory the survey is reconstructed on, differs from
         balanced-tangential by O(interval^2) (~0.1% of the total covariance at
         30 m, growing with dogleg -- within the ISCWSA inter-implementation band),
-        and is validated against welleng-assay's symbolic min-curve Jacobian and
+        and is validated against a symbolic min-curve Jacobian and
         its Monte-Carlo. Opt-in: the default ``'balanced_tangent'`` reproduces the
         published ISCWSA numbers exactly.
 

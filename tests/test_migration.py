@@ -508,7 +508,7 @@ if __name__ == "__main__":
 
 
 # --- SIDP / SICP on MigrationStep: Rada Jancic ideal-gas hand-calc -----------
-# Well-control single-bubble reference (welleng-api spec 2026-07-22):
+# Well-control single-bubble reference (a batch consumer spec 2026-07-22):
 #   MW 10 ppg, vertical TVD 10000 ft, annular capacity 0.0459 bbl/ft,
 #   influx 5 bbl -> 108.9 ft gas column, gas gradient 0.1 psi/ft, SIDP 200 psi.
 # Ideal gas (Z=1, isothermal), bubble at bottom:

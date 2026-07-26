@@ -210,7 +210,7 @@ def forward(alpha1, alpha2, beta, mu, R1, R2):
     # Exact coplanarity sits AT zero and comes back either side of it, so the
     # test must match the one in _clc_solutions -- an absolute `surd < 0` here
     # rejected all four branches of a planar pose at -5.5e-14 and lost a genuine
-    # max_radius (welleng-api, |eta14|/L = 8.8e-17).
+    # max_radius (reported on a planar pose, |eta14|/L = 8.8e-17).
     # Gate the DETERMINANT, not the quotient: 1/(1-mu^2) is an amplifier that
     # diverges as the tangents become (anti)parallel, and it turns a -4.5e-17
     # determinant into a -2.4e-12 surd. The determinant is the well-scaled
@@ -432,7 +432,7 @@ def _eq15_coeff(k, psi2, g1, g4, l, R1, R2):
 
     A caller that needs a single coefficient should not pay for the other ten.
     The critical-radius solve needs only ``c0``, and evaluating all eleven cost
-    it 2.5x -- measured by welleng-api at 33.3 vs 14.0 ms for N = 10,000 and
+    it 2.5x -- measured at 33.3 vs 14.0 ms for N = 10,000 and
     1004.6 vs 386.5 ms for N = 200,000. They had worked around it by extracting
     ``c0`` into generated modules of their own, which had to be regenerated on
     every pin bump; this removes that seam.
@@ -978,7 +978,7 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
     # true u was 5921 returned -1708 +/- 2000i). For unit tangents
     # 1 - t1.t4 == |t1 - t4|**2 / 2 exactly, so w is computed that way.
     #
-    # Closed form + coefficient extraction handed over by welleng-api at TA0's
+    # Closed form + coefficient extraction contributed at the project owner's
     # direction; their 63 pinned fixtures are the acceptance test.
     t1a, t4a = np.asarray(t1, float), np.asarray(t4, float)
     w = 0.5 * float((t1a - t4a) @ (t1a - t4a))          # == 1 - mu, exactly
@@ -1030,10 +1030,10 @@ def max_radius(p1, t1, p4, t4, ratio=1.0):
         """
         # Windows start WIDE. At mu -> 1 the admissible region can sit tens of
         # percent from the root, not ppm: a ladder starting at 1e-2 never reaches
-        # it and every one of welleng-pathfinder's 7 false-None cases died here.
+        # it and every one of a consumer's 7 reported false-None cases died here.
         # And the search must tolerate an INFEASIBLE start -- the root itself
         # often has no admissible branch, so `_closure` is inf there. Treat inf as
-        # a large finite sentinel (welleng-api's own batch convention) so the
+        # a large finite sentinel (a standard batch convention) so the
         # ternary can descend out of the infeasible region instead of comparing
         # inf <= inf and shrinking arbitrarily.
         def _cl(R_):

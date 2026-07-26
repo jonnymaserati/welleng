@@ -125,6 +125,35 @@ cov = survey.err.errors.cov_NEVs       # NEV covariance per station
 > curve. Companion paper:
 > [doi:10.5281/zenodo.21130979](https://doi.org/10.5281/zenodo.21130979).
 
+### New in 0.26
+
+- **Interior covariance, arc-faithful** — `ErrorModel.cov_nev_at(md)` evaluates the ISCWSA
+  covariance directly ON the minimum-curvature arc at any measured depth, instead of
+  interpolating the assembled matrix between stations (which under-reports the separation
+  factor by up to ~25% near doglegs) or inserting a fake station (which adds a spurious
+  measurement). Exact at both station ends; read the docstring for the geometry-dependent
+  interior accuracy before relying on a low-inclination value.
+- **`Connector(direct_only=True)`** — arcs may turn more than 180°, so a curve-hold-curve
+  exists at almost any dogleg severity and "does a CLC exist here?" is *not* a reachability
+  test. `direct_only=True` rejects long-way solutions, restoring a meaningful predicate.
+- **Kick tolerance: `model_revision`** — ⚠️ **the default tolerable influx changes.** The A-5
+  closed form evaluated the influx gas at the *shoe* temperature, but the gas column hangs
+  below the shoe, so the shoe is its cool end; the denser gas inflated the constant and
+  OVERSTATED the tolerable influx (~3% on the published example, ~8% on a steep gradient) —
+  anti-conservative. Fixed, and the model is now versioned: pin
+  `model_revision="spe-208788"` to reproduce any number computed with an earlier release.
+  The revision travels on the result alongside the influx temperature and column height it
+  resolved, so a stored calculation records what produced it.
+- **`SurveyComposition`** — tie a well's survey sections into one continuous survey with
+  per-component-correct covariance carry across tool changes.
+- **COMPASS/EDM error-model import** — read an IPM straight out of an EDM export
+  (`welleng.errors.edm_ipm`) and use it as a live error model, optionally normalised to
+  self-contained term formulas.
+- **`dp_basis` / `xcl_representation`** — switchable conventions for the position
+  differential and for the XCLA/XCLH course-length terms.
+- **Tubular catalogues** — API 5CT casing and tubing dimensions/grades via
+  `welleng.catalog.Catalog`.
+
 ## Using welleng in production
 
 welleng is free and open-source (**Apache-2.0**) and stays that way — the engine

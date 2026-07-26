@@ -121,7 +121,7 @@ def test_source_stacked_form_matches_a_per_source_reference():
 
     NB this vectorises over SOURCES within one scalar query. The public entry
     point stays scalar -- one measured depth in, one (3, 3) out. The batched
-    form over query depths is welleng-api's and welleng-assay's.
+    form over query depths is a batch consumer's and the symbolic reference's.
     """
     import numpy as np
     import welleng as we
