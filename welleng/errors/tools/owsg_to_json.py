@@ -407,7 +407,7 @@ def convert_sheet(
         # but adopts the canonical/robust form that the v5.13 definition and the
         # #2/#3 workbooks use (the toolgroup + #1 workbook omit it). Results are
         # unchanged; welleng remains Rev 5.11. See Issue #225 and
-        # docs/dev/ERROR_MODEL_ENGINE.md section 7.
+        # the welleng error-model engine notes, section 7.
         if code in ("XYM3E", "XYM4E"):
             term["inclination_formula"] = term["inclination_formula"].replace(
                 "Cos(Inc)", "Abs(Cos(Inc))")

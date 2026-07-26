@@ -615,7 +615,7 @@ class ErrorModel():
         with welleng-assay. Any remaining ring-fenced term (:meth:`_interior_prep`
         class ``"linear"``) uses linear covariance interpolation. Reproduces the
         stored ``cov_NEV[i+1]`` at ``f -> 1`` to machine precision. See
-        ``docs/dev/CLEARANCE_ANALYTICAL_COV.md``.
+        derivation (welleng development notes, not shipped).
 
         INTERIOR ACCURACY IS GEOMETRY-DEPENDENT — do not read "exact at both
         ends" as "accurate throughout". Both this boundary-anchored form and
@@ -1175,7 +1175,7 @@ class ErrorModel():
         variant. It is the variant that reproduces the ISCWSA MWD reference to
         ~5e-5 (tests/test_iscwsa_mwd_error.py); SPE 90408 gyro Appendix E may
         use the other interpretation, contributing to its ~0.6% inter-
-        implementation residual. See docs/dev/VALIDATION.md ("Known
+        implementation residual. See the welleng validation notes ("Known
         differences") and ISCWSA "Test Profile Differences" (CDR-SM-03).
         '''
         if getattr(self.survey.header, 'dp_basis', 'balanced_tangent') \
