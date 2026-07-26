@@ -3,8 +3,24 @@
 The analytical solver (``analytical_kick_tolerance``) evaluates the migration-form
 kick tolerance at only the BREAKPOINTS of the imposed-pressure-vs-position curve
 (the exact worst gas position), instead of a fine march + bisection. These tests
-lock it against the validated migration engine (``max_influx_circulated``, itself
-validated vs SPE-208788 / SPE-202426 / SPE-140113):
+lock it against the migration engine (``max_influx_circulated``):
+
+.. warning::
+
+   This module asserts AGREEMENT BETWEEN TWO OF OUR OWN ENGINES. It is not
+   external validation, and an earlier version of this docstring claimed the
+   migration engine was "itself validated vs SPE-208788 / SPE-202426 /
+   SPE-140113". **That claim was false** -- no test connects the migration engine
+   to any of those papers. Every paper reproduction in the suite
+   (``test_spe208788_worked_example``, ``test_spe202426_fig12``,
+   ``test_spe140113_santos``, ``test_nogepa``) exercises the CLOSED FORM or its
+   own dedicated formula, never the marching or analytical engines; and
+   ``test_migration`` states in its own docstring that it is a reasonableness
+   suite against "not a published worked example".
+
+   So the marching path's assurance is: internal reasonableness, monotonicity,
+   and agreement with the analytical solver. Real engineering assurance --
+   NOT paper reproduction. See ``docs/dev/KICK_CLOSED_FORM_AUDIT.md``.
 
   * conservative mode reproduces the migration's safe-side bound on standard
     geometry (base / weak-zone / sloped-FP), and stays CONSERVATIVE (<= the march)
