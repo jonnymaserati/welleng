@@ -489,15 +489,20 @@ def test_maasp_a_weak_zone_below_the_shoe_governs():
     assert flat.governed_by_shoe is True
     assert flat.governing_tvd == shoe
     assert math.isclose(flat.maasp_psi, 4020.0 - G * 10.0 * shoe, rel_tol=1e-12)
+    # constant fracture gradient -> the convention IS the limit
+    assert math.isclose(flat.limiting_psi, flat.maasp_psi, rel_tol=1e-12)
 
+    # a realistic weak zone: 1.0 ppg below the surrounding fracture gradient,
+    # still comfortably above the 10.0 ppg mud, i.e. a hole you would actually drill
     weak = maasp(sections,
-                 ([shoe, 7999.0, 8000.0, 8001.0, td], [fp, fp, fp - 2.5, fp, fp]),
+                 ([shoe, 7999.0, 8000.0, 8001.0, td], [fp, fp, fp - 1.0, fp, fp]),
                  rho_mud_ppg=10.0)
+    # the CONVENTION is unchanged -- MAASP is a shoe property and does not move
+    assert math.isclose(weak.maasp_psi, flat.maasp_psi, rel_tol=1e-12)
+    # but the real limit is deeper and lower
     assert weak.governed_by_shoe is False
     assert weak.governing_tvd == 8000.0
-    assert weak.maasp_psi < flat.maasp_psi
-    # the conventional answer is unchanged and is now the UNSAFE one
-    assert math.isclose(weak.shoe_maasp_psi, flat.maasp_psi, rel_tol=1e-12)
+    assert weak.limiting_psi < weak.maasp_psi
 
 
 def test_maasp_requires_an_exposed_section():
