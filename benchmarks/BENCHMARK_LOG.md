@@ -3,7 +3,7 @@
 Append-only record of benchmark runs, newest first. This log is the **evidence for
 the pre-merge benchmark gate**: performance-sensitive engine code must be benchmarked
 + profiled and logged here BEFORE it is merged (see
-[`docs/dev/BENCHMARK_GATE.md`](../docs/dev/BENCHMARK_GATE.md)). Timings are per-host
+the project's local benchmark-gate policy). Timings are per-host
 and indicative — compare RELATIVE change on the same machine, not absolute numbers.
 
 Each entry: date · branch/commit · host · the numbers · what changed + the profile
@@ -209,7 +209,7 @@ Perf unchanged (init-only, O(sections)): thorough 3821→3790 ms, fast 648→652
 (within noise). Validation: 44 passed, 1 skipped (standard-case results identical;
 the fix only moves the tight-BHA answer). Residual (narrow gas-bottom breakpoint
 under-sampling) → the analytical solver with the complete breakpoint set
-(`docs/dev/KICK_ANALYTICAL_PLAN.md`).
+(local analytical-solver plan).
 
 ## 2026-07-14 (later) · `feat/kick-analytical` · analytical KT solver + optimisation
 
@@ -508,4 +508,135 @@ so a mutated composition can never read a stale run.
 failure. Pinned by `test_composition_does_not_re_propagate_per_covariance_component`.
 
 Not "chasing performance" — computing the same thing four times is a defect (project-owner ruling, 2026-07-26).
+Machine: this dev box, .venv312.
+
+## 2026-07-27 — kick tolerance: a 245x regression caught by this gate, and a 4x win (0.27.0rc1)
+
+**The gate did its job.** Two changes were about to ship together: the analytical solver got
+genuinely faster, and `drill_kick` got 245x SLOWER. Only the first was noticed until the
+benchmark was run, because no test measures time.
+
+| operation | 0.26.0 | branch, before fix | after fix |
+|---|---|---|---|
+| `drill_kick` (H-Y auto Z), harness (repeated inputs) | 49.3 us | 23851.9 us | **12.9 us** |
+| `drill_kick`, DISTINCT inputs (batch/sweep reality) | 0.049 ms | 24.2 ms | **0.321 ms** |
+| `analytical_kick_tolerance` [exact] | 5.2 ms | — | **1.2 ms** |
+| `analytical_kick_tolerance` [conservative] | 5.4 ms | — | **1.4 ms** |
+| `migrate`, `max_influx_circulated` | unchanged | | |
+
+**Note the harness overstates the win.** It calls `drill_kick` with the SAME inputs 20 times,
+so the new memo hits across calls and reports 12.9 us. Distinct inputs -- what a sweep or a
+batch endpoint actually does -- give 0.321 ms, still 6.5x slower than 0.26.0. Quote the
+distinct-input number.
+
+**Cause of the regression.** The `bubble-state` revision replaced a lumped influx state with
+the bubble's OWN state, which meant integrating the gas column. `_bubble_state` marched 256
+points x up to 64 outer iterations, calling Hall-Yarborough at every point: profiling showed
+**51,300 H-Y solves for 20 `drill_kick` calls, 2,565 per call**. It is also called TWICE per
+case -- once by `constant_A` for the buoyancy deficit, once by `influx_column` for the
+reported state.
+
+**Two fixes.**
+
+1. *Memo, bit-identical.* `_bubble_state` is asked for the same bubble twice per case.
+   Keyed on `_inputs_key`, built from EVERY field by reflection rather than a hand-listed
+   subset -- a hand-listed key is precisely how a memo silently breaks a frozen revision
+   (omit `model_revision` and a result computed under one revision is served for another).
+   2x, and free.
+2. *Closed-form column.* The column is exponential, so integrate it in closed form instead of
+   marching it. With `rho ~ c.P`, `dP/dh = g.rho` gives `P(h) = P_top.exp(k.h)`, and
+
+       INT rho dh = dP / g   =>   rho_bar = (P_bottom - P_top) / (g.H)
+
+   which is EXACT for any internal distribution -- the identity already asserted by
+   `test_the_bulk_density_is_pinned_by_the_endpoint_pressures`. `c` is taken at the column's
+   mean pressure and mid-height temperature, the treatment `analytical.py` already uses on
+   the same column. 37x.
+
+**Accuracy cost: 0.04%**, and downward (28.6606 -> 28.6492 bbl on the Table-1 case), i.e. the
+conservative side. Permitted because `bubble-state` is UNRELEASED -- the freeze binds on the
+existence of a published artefact, not on elapsed time.
+
+**Every validation anchor held**, checked explicitly rather than inferred from a green suite:
+
+| anchor | before | after |
+|---|---|---|
+| NOGEPA-50 Sec 3.2 | identity, 1e-12 | identity, 1e-12 |
+| independent worked case (unpublished) | -0.76% | -0.76% |
+| SPE-208788 worked example | -2.72% | -2.72% |
+| SPE-202426 Nassab, stated ratio | +2.41% | +2.42% |
+
+NOGEPA stays EXACT because it assumes Z = 1 and isothermal, so `c` is constant and the
+exponential column is not an approximation there at all.
+
+**Harness fixed in the same change.** It now times DISTINCT inputs and reports both figures,
+so a memo can never again flatter a regression into invisibility:
+
+```
+drill_kick, DISTINCT inputs               319.6 us   <- quote this
+drill_kick, repeated input (memo)          12.5 us
+analytical_kick_tolerance [exact]           1.2 ms
+analytical_kick_tolerance [conservative]    1.3 ms
+migrate (n_steps=100)                     325.3 ms
+max_influx_circulated [thorough]         4206.1 ms
+max_influx_circulated [fast]              722.6 ms
+```
+
+Machine: this dev box, .venv312.
+
+---
+
+## 2026-07-27 — rc3 defect fixes (Findings A + D). No perf change; harness un-broke.
+
+Three additive changes, none on a hot path: two `bool` flags on `KickResult`
+(`bubble_length_limited`, `capacity_negative`) and an already-fractured guard in
+`analytical_kick_tolerance` that only runs in the `not isfinite(v_star)` branch — i.e.
+only when the breach search found no candidate at all, which is not the normal path.
+
+```
+drill_kick, DISTINCT inputs               160.3 us   <- quote this
+drill_kick, repeated input (memo)          13.0 us
+analytical_kick_tolerance [exact]           1.2 ms   <- API/GUI path
+analytical_kick_tolerance [conservative]    1.4 ms
+migrate (n_steps=100)                     328.5 ms
+_max_influx_circulated [thorough]        4240.4 ms
+_max_influx_circulated [fast]             731.1 ms
+```
+
+Against the previous entry: `drill_kick` 319.6 -> 160.3 us is the profiling work already
+logged above, not these fixes; the analytical path is flat at 1.2/1.4 ms. Nothing here
+moved a number.
+
+**The harness itself was broken and silently so.** It still imported
+`max_influx_circulated`, which this cycle renamed to `_max_influx_circulated` when the
+marching oracle went private — so the gate's own script died on import. It was not run
+between that rename and now. Fixed in this change. A blocking gate that cannot start is
+indistinguishable from a gate that passes if nobody reads the output, which is the second
+time this cycle the benchmark gate has caught something only because it was actually run.
+
+Machine: this dev box, .venv312.
+
+---
+
+## 2026-07-27 — MAASP added (rc4). Flat.
+
+`maasp()` is a handful of `np.interp` evaluations over the exposed-depth set the
+analytical solver has already built (`_env_d` is passed straight in as `check_depths`,
+so the candidate set is not recomputed). It runs once per `analytical_kick_tolerance`
+call; on `drill_kick` it is two multiplications.
+
+```
+drill_kick, DISTINCT inputs               165.6 us   (was 160.3 -- noise)
+drill_kick, repeated input (memo)          13.8 us
+analytical_kick_tolerance [exact]           1.3 ms   (was 1.2 -- at the rounding edge)
+analytical_kick_tolerance [conservative]    1.4 ms   (was 1.4)
+migrate (n_steps=100)                     334.2 ms
+_max_influx_circulated [thorough]        4333.5 ms
+_max_influx_circulated [fast]             745.2 ms
+```
+
+Not claiming these as improvements or regressions: the harness prints one decimal at
+1.2-1.3 ms, so the analytical move is at the resolution limit. Nothing here is a real
+change and nothing was optimised.
+
 Machine: this dev box, .venv312.

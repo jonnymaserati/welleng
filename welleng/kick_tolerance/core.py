@@ -68,12 +68,20 @@ equation of the closed form -- only rho_gas_s does (via the A-5 constant A).
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from functools import lru_cache
+
+import numpy as np
 from math import cos, radians
 from typing import Optional
 
-from .gas_z import gas_density_ppg, hall_yarborough_z, methane_properties
+from .gas_z import (
+    gas_density_ppg,
+    hall_yarborough_z,
+    hall_yarborough_z_and_y,
+    methane_properties,
+)
 
 # --- Constants (public, oilfield units) -------------------------------------
 G_PSI_PER_PPG_FT = 0.0521      # gravitational constant g  [psi.ppg^-1.ft^-1]
@@ -106,10 +114,38 @@ MODEL_REVISIONS = {
     # The influx column hangs BELOW the shoe, so the shoe is its COOL end. The
     # state is lumped at the column-mean temperature instead. See
     # ``_influx_temperature``.
-    "column-mean-2026": "influx gas state evaluated at the gas-column mean "
-                        "temperature (default from welleng 0.26.0)",
+    # SUPERSEDED. Retained and FROZEN so any number computed under welleng
+    # 0.26.0 reproduces exactly. It evaluates the influx gas at a pressure
+    # obtained by running a GAS gradient over the whole open hole -- which A-2's
+    # simplification (1) explicitly excludes ("the gas column does not fill the
+    # entire open hole") -- and at the column-mean temperature. Do not select it
+    # for new work. Retained only so a number issued under 0.26.0 stays
+    # reproducible; `bubble-state` is the default and the validated basis.
+    "column-mean-2026": "SUPERSEDED. Influx gas at a whole-open-hole gas-gradient "
+                        "pressure and the column-mean temperature "
+                        "(welleng 0.26.0). Reproducibility only.",
+    # The influx gas evaluated at the BUBBLE's own state, which is what A-2/A-3/A-4
+    # describe and what NOGEPA-50 Section 3.2 mandates:
+    #   * BHP is pinned; MUD beneath the bubble sets the bubble-BOTTOM pressure;
+    #   * the bubble's own weight sets the gradient across it;
+    #   * its TOP sits at the shoe fracture limit;
+    #   * the density is the MASS-WEIGHTED MEAN over the column (one density
+    #     serves both the A-2 buoyancy term and the volume expansion, because
+    #     mass is conserved);
+    #   * the temperature is bracketed by the two mud interfaces.
+    # Reduces ALGEBRAICALLY EXACTLY to NOGEPA-50 under NOGEPA's assumptions
+    # (Z = 1, isothermal, constant gas gradient) -- see tests/test_nogepa.py.
+    "bubble-state": "influx gas at the BUBBLE's own state: mud beneath the "
+                    "bubble sets its bottom pressure, mass-weighted mean density "
+                    "over the column, temperature bracketed by the mud "
+                    "interfaces (default from welleng 0.27.0)",
 }
-DEFAULT_MODEL_REVISION = "column-mean-2026"
+DEFAULT_MODEL_REVISION = "bubble-state"
+
+#: Revisions that evaluate the influx at the BUBBLE's own state rather than at a
+#: whole-open-hole gas-gradient pressure. ``spe-208788`` and ``column-mean-2026``
+#: are frozen on the old basis and deliberately absent.
+_BUBBLE_STATE = frozenset({"bubble-state"})
 
 
 def ppg_to_psi(rho_ppg: float, depth_ft: float) -> float:
@@ -255,11 +291,54 @@ class KickResult:
     H_gas: Optional[float] = None
     # Influx-column height at this capacity [ft TVD], from A-2 with
     # ``rho_influx``. Reported under BOTH revisions.
+    bubble_length_limited: bool = False
+    # True when the column solve hit the OPEN-HOLE LENGTH and ``H_gas`` was
+    # clipped to it, so the reported geometry is a clamp and not a physical
+    # result: ``H_gas == D_td - D_lot`` exactly, putting the bubble top exactly
+    # ON the shoe. ``capacity`` is NOT clipped with it, so on a clamped result
+    # the two disagree -- measured 38.09 bbl against an open hole holding 14.63,
+    # while the geometry says the bubble exactly fills that open hole.
+    #
+    # DO NOT read the geometry and the volume together when this is True. The
+    # configuration is bubble-length-limited in the sense of SPE/IADC-140113
+    # (Santos): a single coherent bubble cannot be longer than the open hole it
+    # occupies, so the limiting configuration this result describes is not
+    # reachable. ``analytical_kick_tolerance`` reports the same situation as
+    # ``open_hole_unconstrained``.
+    #
+    # Raised by welleng-api against 0.27.0rc2, who put it correctly: a response
+    # that reports overflow in one field and no overflow in another is worse
+    # than either answer alone.
+    capacity_negative: bool = False
+    # True when A-7 returns a NEGATIVE tolerable influx, which is not a volume.
+    # It means the maximum-credible pore pressure already exceeds what the shoe
+    # can hold with no influx at all -- the section is undrillable on these
+    # inputs rather than tolerant of a negative kick. ``capacity`` is left as
+    # computed rather than floored, so the magnitude still says how far past the
+    # limit the case is, but a consumer must not display it as a tolerance.
     #
     # ``(H_gas, rho_influx)`` are the pair a caller needs to draw the limiting
     # pressure profile, and they are the ONLY pair that closes on the fracture
     # pressure exactly -- see ``influx_column`` for the identity and for why
     # back-deriving H from ``capacity`` instead does not close.
+    maasp_psi: float = float("nan")
+    #                            Maximum allowable annular surface pressure [psi]:
+    #                            the shut-in surface pressure that just brings the
+    #                            shoe to its fracture pressure,
+    #                            `g.P_lot.D_lot - g.rho_mud.D_lot`.
+    #                            SHUT-IN, so `P_apl` is NOT deducted -- annular
+    #                            friction is a CIRCULATING term and subtracting it
+    #                            here would understate the closed-in limit.
+    #                            This is the single-shoe form. It assumes the shoe
+    #                            is the weakest EXPOSED point, which is exact for a
+    #                            constant fracture gradient and WRONG (too high) if
+    #                            a weak zone sits below the shoe -- use
+    #                            `migration.maasp` with a profile for that case.
+    #                            Unlike the kick tolerance itself, MAASP does NOT
+    #                            divide out the gravitational constant: it is a
+    #                            difference of two large pressures, so a source
+    #                            quoting g = 0.052 differs from welleng's 0.0521 by
+    #                            ~0.7% on a typical shoe.
 
 
 # --- Gas-property backend (clean-room Hall & Yarborough 1973) ---------------
@@ -301,6 +380,150 @@ def _shoe_gas_pressure(inp: KickInputs, P_td: float) -> float:
             break
         P_shoe = P_new
     return P_shoe
+
+
+def _inputs_key(inp: "KickInputs"):
+    """Complete, hashable key for a ``KickInputs``.
+
+    Built from EVERY field by reflection rather than a hand-listed subset. A
+    hand-listed key is how a memo silently breaks a frozen revision: omit
+    ``model_revision`` and a cached result computed under one revision is
+    returned for another. Adding a field to ``KickInputs`` extends this key
+    automatically.
+    """
+    parts = []
+    for f in dataclasses.fields(inp):
+        v = getattr(inp, f.name)
+        parts.append((f.name, tuple(sorted(v.items())) if isinstance(v, dict) else v))
+    return tuple(parts)
+
+
+#: One-shot memo for :func:`_bubble_state`. The closed form asks for the SAME
+#: bubble twice per case -- once from ``constant_A`` for the buoyancy deficit and
+#: once from ``influx_column`` for the reported state -- and the state costs a
+#: full column integration. Bit-identical by construction: same inputs, same
+#: result, no rounding in the key.
+_BUBBLE_STATE_MEMO: dict = {}
+
+
+def _bubble_state(inp: KickInputs, P_td: float, n: int = 256):
+    """The influx bubble's OWN state. ``(T_bar [degR], H [ft], P_bar, rho_bar)``.
+
+    The construction A-2/A-3/A-4 describe and NOGEPA-50 Section 3.2 mandates:
+
+      * BHP is pinned at ``P_td``;
+      * MUD beneath the bubble sets the bubble-BOTTOM pressure;
+      * the bubble's own weight sets the gradient across it;
+      * its TOP sits at the shoe fracture limit ``P_lot*g*D_lot - P_apl``;
+      * ``rho_bar`` is the MASS-WEIGHTED MEAN density over the column -- one
+        density serves BOTH the A-2 buoyancy term and the volume expansion,
+        because mass is conserved. Integrating also marches P and T together, so
+        the state is coherent at every point rather than at one chosen depth;
+      * the temperature is bracketed by the two mud interfaces.
+
+    WHAT THIS REPLACES. ``_shoe_gas_pressure`` ran a GAS gradient over the whole
+    open hole, which A-2's simplification (1) explicitly excludes -- it put the
+    gas 1290 psi too high (6553.6 vs 5223.1 psia) and 18% too dense on the
+    SPE-208788 Table-1 case, under-reporting the tolerable influx by ~6%.
+
+    SELF-CHECK. Two independent routes to the bubble-bottom pressure -- the
+    bubble's own weight from the top, and BHP minus the mud column beneath -- must
+    agree. Measured closure 0.006 psi; a wrong construction would not close.
+    Asserted by tests/test_kick_bubble_state.py.
+    """
+    key = (_inputs_key(inp), P_td, n)
+    cached = _BUBBLE_STATE_MEMO.get(key)
+    if cached is not None:
+        return cached
+    result = _bubble_state_impl(inp, P_td, n)
+    if len(_BUBBLE_STATE_MEMO) > 4096:          # bounded; an envelope sweep is finite
+        _BUBBLE_STATE_MEMO.clear()
+    _BUBBLE_STATE_MEMO[key] = result
+    return result
+
+
+def _bubble_state_impl(inp: KickInputs, P_td: float, n: int):
+    g = G_PSI_PER_PPG_FT
+    P_top = ppg_to_psi(inp.P_lot, inp.D_lot) - inp.P_apl + P_ATM_PSI
+    interval = inp.D_td - inp.D_lot
+    B = constant_B(inp)
+    # ideal_gas is ISOTHERMAL by contract -- one temperature in the calculation.
+    # bubble-state changes the PRESSURE basis, not that.
+    grad = (0.0 if (interval <= 0.0 or inp.ideal_gas)
+            else (inp.T_td - inp.T_s) / interval)
+    H = 0.0
+    y_seed = 1.0e-3                     # chained through the column solve below
+    T_bar = fahrenheit_to_rankine(inp.T_s)
+    rho_bar = _influx_density(inp, P_top, T_bar)
+    for _ in range(64):
+        # The column is EXPONENTIAL, so integrate it in closed form rather than
+        # marching it. With rho ~ c.P over the column, dP/dh = g.rho gives
+        # P(h) = P_top.exp(k.h), and the mean density follows from the pressure
+        # drop alone:
+        #
+        #     INT rho dh = dP / g   =>   rho_bar = (P_bottom - P_top) / (g.H)
+        #
+        # which is exact for ANY internal distribution -- the same identity
+        # asserted by test_the_bulk_density_is_pinned_by_the_endpoint_pressures.
+        # c is taken at the column's mean pressure and mid-height temperature,
+        # the treatment `analytical.py` already uses for the same column.
+        #
+        # This replaced a 256-point march that cost ~2,500 Hall-Yarborough
+        # solves per case and made `drill_kick` 245x slower than 0.26.0. The
+        # benchmark gate caught it; see benchmarks/BENCHMARK_LOG.md.
+        if H <= 0.0:
+            rho_new, y_seed = _influx_density_warm(
+                inp, P_top, fahrenheit_to_rankine(inp.T_s), y_seed)
+        else:
+            T_mid = fahrenheit_to_rankine(inp.T_s + grad * 0.5 * H)
+            P_bottom = P_top
+            for _ in range(6):                       # c depends on P; converges fast
+                P_mean = 0.5 * (P_top + P_bottom)
+                rho_mean, y_seed = _influx_density_warm(inp, P_mean, T_mid, y_seed)
+                c = rho_mean / P_mean
+                P_new = P_top * np.exp(g * c * H)
+                # 1e-5 psi, not 1e-9. The OUTER fixed point on H re-enters this
+                # loop until H itself converges to 1e-9, so tightening the inner
+                # pressure beyond the outer's own tolerance buys nothing but
+                # Hall-Yarborough solves -- 33 per case against 21, and H-Y is
+                # 70% of drill_kick. Measured effect on H: 2e-8 ft.
+                if abs(P_new - P_bottom) < 1e-5:
+                    P_bottom = P_new
+                    break
+                P_bottom = P_new
+            rho_new = (P_bottom - P_top) / (g * H)
+        # Mid-height (LENGTH-weighted) mean temperature -- and deliberately not
+        # the mass-weighted one, which looks more principled and is not.
+        #
+        # Mass weighting would weight by this column's own density profile. That
+        # profile is DENSITY-INVERTED: across a light gas column the pressure
+        # rises only slightly (+2.1% over 1462 ft on the Table-1 case) while the
+        # imposed geothermal gradient lifts T much more (+4.9%), and rho ~
+        # P/(Z.T), so the model puts the gas 4.3% HEAVIER at its top than at its
+        # bottom. A static column with the heavy fluid on top is not an
+        # equilibrium -- the gradient here is ~10x superadiabatic (g/cp for
+        # methane is ~0.002-0.003 degF/ft against 0.0225 imposed), so a real
+        # bubble convects and mixes toward near-isothermal: the adiabat over this
+        # column is ~3 degF against the ~33 degF the profile imposes.
+        #
+        # So the density profile is an artefact of solving a static column under
+        # an imposed geothermal profile, not something to weight by. Mid-height
+        # is the honest summary of an imposed linear profile. Revisit only with a
+        # convective/mixing treatment of the bubble, which is a model change, not
+        # an averaging choice.
+        T_bar = fahrenheit_to_rankine(inp.T_s + grad * 0.5 * H)
+        deficit = inp.rho_mud - rho_new
+        if deficit <= 0.0:
+            rho_bar = rho_new
+            break                                      # no buoyant column
+        H_new = min(max((B - P_td) / (g * deficit), 0.0), interval)
+        rho_bar = rho_new
+        if abs(H_new - H) < 1e-9:
+            H = H_new
+            break
+        H = H_new
+    P_bar = P_top + g * rho_bar * 0.5 * H
+    return T_bar, H, P_bar, rho_bar
 
 
 def _influx_temperature(inp: KickInputs, P_td: float) -> tuple[float, float]:
@@ -384,6 +607,28 @@ def _influx_temperature_impl(T_s, T_td, D_lot, D_td, rho_mud, P_lot, P_apl,
             break
         H = H_new
     return T_r, H
+
+
+def _influx_density_warm(inp: KickInputs, p_psia: float, t_r: float, y0: float):
+    """``(density [ppg], y)`` at ``(p_psia, t_r)``, WARM-STARTABLE.
+
+    ``y`` is Hall-Yarborough's reduced density; feeding the previous solve's ``y``
+    back as ``y0`` cuts its Newton iterations from ~5 to ~2 without changing the
+    converged root (identical to 1e-12 -- see :func:`gas_z.reduced_density`).
+
+    The bubble-state column solve walks a sequence of NEARBY pressures, which is
+    exactly the case that seed was written for, and it was calling the cold path.
+    ``y`` is meaningless for the ideal and CoolProp backends, which return the
+    seed unchanged so the caller can chain without branching.
+    """
+    if inp.ideal_gas:
+        return gas_density_ppg(p_psia, t_r, 1.0), y0
+    if inp.fluid is not None:
+        from .gas_z_coolprop import fluid_z_density
+
+        return fluid_z_density(inp.fluid, p_psia, t_r)[1], y0
+    z, y = hall_yarborough_z_and_y(p_psia, t_r, y0=y0)
+    return gas_density_ppg(p_psia, t_r, z), y
 
 
 def _influx_density(inp: KickInputs, p_psia: float, t_r: float) -> float:
@@ -475,6 +720,36 @@ def constant_A(inp: KickInputs, P_td: Optional[float] = None) -> float:
     """
     if P_td is None:
         P_td = scenario_P_td(inp)
+    injected = (inp.Z_s is not None or inp.Z_td is not None
+                or inp.rho_gas_s is not None)
+    if inp.model_revision in _BUBBLE_STATE and not injected:
+        # MASS CONSERVATION. From A-2/A-3, V_td = H*V_dpa*rho_bar/rho_td, and A-7
+        # is V_td = A*(B - P_td)/(P_td + P_atm), so
+        #     A = V_dpa*rho_bar*(P_td + P_atm) / (g*(rho_mud - rho_bar)*rho_td)
+        # ONE density serves both the buoyancy deficit and the expansion -- that is
+        # what "molecular mass held constant" means -- and it sidesteps A-5's
+        # pressure bookkeeping. (A-5/A-7 as printed drop P_atm from the shoe term
+        # relative to A-4; derived symbolically, ~0.27%, and it is exactly the
+        # residual that remained against NOGEPA-50.)
+        T_bar, _, _, rho_bar = _bubble_state(inp, P_td)
+        deficit = inp.rho_mud - rho_bar
+        if deficit <= 0.0:
+            return 0.0
+        # ideal_gas is isothermal by contract, so the TD state shares the one
+        # temperature; otherwise the TD state is genuinely at T_td.
+        T_td_r = T_bar if inp.ideal_gas else fahrenheit_to_rankine(inp.T_td)
+        rho_td = _influx_density(inp, P_td + P_ATM_PSI, T_td_r)
+        A = (inp.V_dpa * rho_bar * (P_td + P_ATM_PSI)
+             / (G_PSI_PER_PPG_FT * deficit * rho_td))
+        return A / cos(radians(inp.inc_shoe))
+    # INJECTED gas properties fall through to the A-5 algebraic form on purpose.
+    # Injection is the PAPER-REPRODUCTION path (project-owner rule: when we
+    # validate we use the paper's method AND inputs), and a paper that assumes a
+    # constant influx density -- Santos SPE-140113: "constant temperature,
+    # constant density, no compressibility (Z=1)" -- expands its influx by BOYLE,
+    # not by mass conservation. Mass conservation with a constant density gives no
+    # expansion at all, which is not that paper's model. So a caller supplying gas
+    # properties gets the algebra those properties belong to.
     Z_s, Z_td, rho_gas_s = resolve_gas_properties(inp, P_td)
     P_lot_psi = ppg_to_psi(inp.P_lot, inp.D_lot)
     # SAME influx temperature the Z_s / rho_gas_s above were evaluated at --
@@ -551,6 +826,10 @@ def influx_column(
     """
     if P_td is None:
         P_td = scenario_P_td(inp)
+    if (inp.model_revision in _BUBBLE_STATE and inp.Z_s is None
+            and inp.Z_td is None and inp.rho_gas_s is None):
+        T_r, H, _, rho_influx = _bubble_state(inp, P_td)
+        return T_r - RANKINE_OFFSET, H, rho_influx
     T_r, _ = _influx_temperature(inp, P_td)
     _, _, rho_influx = resolve_gas_properties(inp, P_td)
     deficit = inp.rho_mud - rho_influx
@@ -594,6 +873,15 @@ def drill_kick(inp: KickInputs) -> KickResult:
         T_influx=T_influx,
         rho_influx=rho_influx,
         H_gas=H_gas,
+        # bool(), not the numpy scalar these comparisons produce -- a np.bool_
+        # fails `is True` and can trip a JSON serialiser downstream.
+        maasp_psi=float(
+            ppg_to_psi(inp.P_lot, inp.D_lot) - ppg_to_psi(inp.rho_mud, inp.D_lot)
+        ),
+        bubble_length_limited=bool(
+            H_gas is not None and abs(H_gas - (inp.D_td - inp.D_lot)) < 1e-6
+        ),
+        capacity_negative=bool(capacity < 0.0),
     )
 
 
@@ -648,6 +936,15 @@ def swab_kick(inp: KickInputs) -> KickResult:
         T_influx=T_influx,
         rho_influx=rho_influx,
         H_gas=H_gas,
+        # bool(), not the numpy scalar these comparisons produce -- a np.bool_
+        # fails `is True` and can trip a JSON serialiser downstream.
+        maasp_psi=float(
+            ppg_to_psi(inp.P_lot, inp.D_lot) - ppg_to_psi(inp.rho_mud, inp.D_lot)
+        ),
+        bubble_length_limited=bool(
+            H_gas is not None and abs(H_gas - (inp.D_td - inp.D_lot)) < 1e-6
+        ),
+        capacity_negative=bool(capacity < 0.0),
     )
 
 

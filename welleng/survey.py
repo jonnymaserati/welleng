@@ -13,6 +13,7 @@ coordinate transformations.
 # reductions. `warn_unused_ignores` is enabled, so each ignore must catch a real
 # error. Lines tagged `LATENT BUG` flag genuine pre-existing issues (left as-is,
 # out of typing scope) rather than masking them silently.
+import copy
 import numpy as np
 import math
 import warnings
@@ -1423,6 +1424,21 @@ class Survey(MinCurve):
         """
         return interpolate_tvd(self, tvd=tvd)
 
+    def tvd_turning_points(self) -> np.ndarray:
+        """The measured depths at which the well passes through horizontal.
+
+        TVD is monotonic in measured depth between consecutive turning points,
+        so these are the cuts a TVD-domain treatment needs to stay
+        single-valued (Sawaryn & Thorogood 2005, SPE-84246-PA, Eq. 31).
+
+        Returns
+        -------
+        (,n) ndarray of float
+            Turning-point measured depths, ascending; empty if TVD is
+            monotonic throughout.
+        """
+        return tvd_turning_points(self)
+
     def interpolate_survey_tvd(
         self, start: Optional[float] = None, stop: Optional[float] = None,
         step: float = 10
@@ -2477,6 +2493,15 @@ def interpolate_mds(survey: "Survey", md: ArrayLike) -> "Survey":
     # (np.setdiff1d returns a sorted, unique array)
     md = np.setdiff1d(md, survey.md)
 
+    if md.size == 0:
+        # Every requested depth is already a survey station, so there is
+        # nothing to interpolate and the survey itself is the answer. This is
+        # a routine input, not a degenerate one -- asking for the stations of
+        # a regular survey hits it exactly.
+        survey_interpolated = copy.deepcopy(survey)
+        survey_interpolated.interpolated = np.zeros(len(survey.md), dtype=bool)
+        return survey_interpolated
+
     assert md[0] >= survey.md[0], "The shortest md is not within the survey"
     assert md[-1] <= survey.md[-1], "The largest md is beyond the survey"
 
@@ -2797,6 +2822,41 @@ def _horizontal_tangent_delta(
         if 1e-12 < cand < alpha - 1e-12:
             return cand
     return None
+
+
+def tvd_turning_points(survey: "Survey") -> np.ndarray:
+    """The measured depths at which the well's TVD turns -- where the
+    trajectory passes through horizontal.
+
+    Between consecutive turning points TVD is a monotonic function of measured
+    depth, so these are the depths at which a TVD-domain treatment must be cut
+    if it is to remain single-valued. Found from the *Turning Point*
+    construction of Sawaryn & Thorogood (2005, SPE-84246-PA, Eq. 31) applied to
+    each minimum-curvature leg -- see :func:`_horizontal_tangent_delta`.
+
+    Parameters
+    ----------
+    survey : Survey
+
+    Returns
+    -------
+    (,n) ndarray of float
+        Turning-point measured depths, ascending. Empty if the well's TVD is
+        monotonic throughout.
+    """
+    mds = []
+    for i in range(len(survey.md) - 1):
+        alpha = survey.dogleg[i + 1]
+        delta_md = survey.delta_md[i + 1]
+        if delta_md == 0 or np.isnan(alpha) or alpha <= 1e-9:
+            continue
+        d_tp = _horizontal_tangent_delta(
+            survey.vec_nev[i][2], survey.vec_nev[i + 1][2], alpha
+        )
+        if d_tp is not None:
+            mds.append(survey.md[i] + d_tp / alpha * delta_md)
+
+    return np.array(sorted(mds), dtype=float)
 
 
 def _arc_tvd_crossings(

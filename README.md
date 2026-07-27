@@ -19,7 +19,7 @@
 - **Well path creation** — the `connector` module builds trajectories between start/end locations automatically, backed by an analytic, vectorized closed-form curve-hold-curve (CLC) point-to-target solver (`sawaryn_analytical` — every solution + the minimum-measured-depth path) with radius-sweep and R1×R2 drillable-region tooling
 - **Vertical section, TVD interpolation, project-ahead** — common survey planning tools
 - **Torque and drag** — simple torque/drag model with architecture module
-- **Kick tolerance** — deterministic, conservative single-bubble kick-tolerance engine (drill and swab cases): the mandated NOGEPA-50 static formula, a whole-path gas-migration check over the pore–fracture envelope, and an exact analytical breakpoint solver, reproducing the published worked examples of SPE-208788-PA, SPE-202426-PA (Kiani Nassab) and Santos (SPE/IADC-140113); real-gas *Z* via a clean-room Hall–Yarborough backend with an optional CoolProp EOS backend for CO₂/CCUS mixtures; deviated-well aware
+- **Kick tolerance** — deterministic, conservative single-bubble kick-tolerance engine (drill and swab cases): the mandated NOGEPA-50 static formula, a whole-path gas-migration check over the pore–fracture envelope, and an exact analytical breakpoint solver, reproducing the published worked examples of SPE-208788-PA, SPE-202426-PA (Kiani Nassab) and Santos (SPE/IADC-140113); real-gas *Z* via a clean-room Hall–Yarborough backend with an optional CoolProp EOS backend for CO₂/CCUS mixtures; deviated-well aware; reports the shut-in quantities SIDP, SICP and MAASP, the last both at the shoe (the industry convention) and minimised over every exposed depth, which differ when a weak zone sits below the shoe
 - **Visualization** — interactive 3D via [vedo]/VTK or browser-based via plotly (requires `easy` install)
 - **Data exchange** — import/export Landmark .wbp files; read EDM datasets
 - **Geomagnetic reference lookup** — fetches WMM/IGRF field values from the BGS web service when not supplied (given a real well location)
@@ -62,7 +62,7 @@ cov = survey.err.errors.cov_NEVs       # NEV covariance per station
 > **Revisions.** welleng ships **Rev5-1 / Rev5.11** as the default. The older **OWSG
 > Rev2** (2015) toolcodes can be regenerated from their workbooks with
 > `python -m welleng.errors.tools.owsg_to_json`, but are not yet shipped as a
-> selectable revision (tracked in `docs/dev/FUTURE_WORK.md`). Validate any model only
+> selectable revision. Validate any model only
 > against a **matching-revision** reference.
 
 > **Error model update (welleng 0.10.0).** The MWD Rev 5 model has been brought

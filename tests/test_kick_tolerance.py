@@ -266,3 +266,254 @@ def test_fluid_aliases_map_co2():
     a["co2"] = "BROKEN"                      # mutating the copy must not leak
     from welleng.kick_tolerance import fluid_aliases as fa2
     assert fa2()["co2"] == "CarbonDioxide"
+
+
+def test_the_gravitational_constant_cancels_out_of_the_answer():
+    """Guards a claim that was got WRONG, confidently, and committed.
+
+    It was recorded that welleng's g = 0.0521 (against an exact 0.05194805) made
+    the kick tolerance ~5.7% high, and that latitude was worth a further ~10%.
+    Both were artefacts of comparing two models by matching their PSI values
+    instead of their equivalent mud weights. The real figure is ~0.001%.
+
+    Where pressures are equivalent mud weights -- the industry convention --
+    BHP = PP.g.TD and FRAC = LOT.g.shoe are both gradient-derived, so
+
+        h = [rho_mud.(TD - shoe) - (PP.TD - LOT.shoe)] / (rho_mud - rho_gas)
+
+    contains no g, and the Boyle ratio FRAC/BHP = (LOT.shoe)/(PP.TD) cancels it
+    as well. g survives only where an absolute pressure enters that is NOT
+    gradient-derived -- here just the atmospheric term in A-7.
+
+    Measured directly: over the full planetary range of gravity (equator to
+    pole) the gas height is identical and the tolerable influx moves 0.0012%.
+
+    If someone "improves" the constant and expects the answer to move, this test
+    is why it does not.
+    """
+    import welleng.kick_tolerance.core as core
+
+    td, shoe, mud, cap = 12000.0, 6000.0, 10.0, (8.5 ** 2 - 5.0 ** 2) / 1029.4
+    pp, lot, gas = 11.2019230769, 12.8846153846, 1.15021
+
+    def solve():
+        return drill_kick(KickInputs(
+            rho_mud=mud, PP=pp, kick_intensity=0.0, P_lot=lot, P_apl=0.0,
+            D_td=td, D_lot=shoe, V_dpa=cap, T_s=100.0, T_td=100.0,
+            Z_s=1.0, Z_td=1.0, rho_gas_s=gas, ideal_gas=True,
+        ))
+
+    original = core.G_PSI_PER_PPG_FT
+    try:
+        results = []
+        for g in (0.0521, 0.05194805, 0.0518086, 0.0520832):   # ours, exact, equator, pole
+            core.G_PSI_PER_PPG_FT = g
+            results.append(solve())
+    finally:
+        core.G_PSI_PER_PPG_FT = original
+
+    heights = [r.H_gas for r in results]
+    volumes = [r.capacity for r in results]
+
+    # the hydrostatic balance is exactly g-free
+    assert max(heights) - min(heights) < 1e-9
+    # and the volume moves only through the atmospheric term
+    assert (max(volumes) - min(volumes)) / min(volumes) < 1e-4
+
+    # it is also the g-free closed form, not merely self-consistent
+    g_free = ((td - shoe) * mud - (pp * td - lot * shoe)) / (mud - gas)
+    assert math.isclose(heights[0], g_free, rel_tol=1e-9)
+
+
+def test_matches_an_independent_practitioner_worked_case():
+    """External check against an independently derived Driller's Method
+    result -- 12,000 ft TD, 6,000 ft shoe, 10.0 ppg mud, 6,990 psi reservoir,
+    4,020 psi fracture at shoe, 8-1/2 in hole, 5 in pipe.
+
+    The reference reports a gas height of 326.15986 ft and a kick tolerance of
+    8.65186401728 bbl.
+
+    This is the only anchor welleng has that is not a paper we also transcribe,
+    and it is the one that caught the g mistake above. The source is an
+    unpublished third-party working document; it is deliberately not cited here
+    (see the local validation record).
+    """
+    td, shoe, mud, cap = 12000.0, 6000.0, 10.0, (8.5 ** 2 - 5.0 ** 2) / 1029.4
+
+    result = drill_kick(KickInputs(
+        rho_mud=mud, PP=11.2019230769, kick_intensity=0.0, P_lot=12.8846153846,
+        P_apl=0.0, D_td=td, D_lot=shoe, V_dpa=cap, T_s=100.0, T_td=100.0,
+        Z_s=1.0, Z_td=1.0, rho_gas_s=1.15021, ideal_gas=True,
+    ))
+
+    assert math.isclose(result.H_gas, 326.15986, rel_tol=0.002)      # 0.06%
+    assert math.isclose(result.capacity, 8.65186401728, rel_tol=0.01)  # 0.76%
+
+
+def test_a_clamped_bubble_height_is_flagged_not_silently_reported():
+    """Raised by welleng-api against 0.27.0rc2, and they framed it correctly: a
+    response that reports overflow in one field and no overflow in another is
+    worse than either answer alone.
+
+    The column solve clips H_gas to the OPEN-HOLE LENGTH. When that clamp binds,
+    the reported geometry says the bubble exactly fills the open hole -- its top
+    lands on the shoe to the digit -- while `capacity` is NOT clipped with it and
+    says 2.6x more. Both cannot be true.
+
+    The configuration is bubble-length-limited in the sense of SPE/IADC-140113:
+    a single coherent bubble cannot be longer than the open hole it occupies, so
+    the limiting configuration is unreachable. Flagged rather than silently
+    returned; the geometry and the volume must not be read together.
+    """
+    v_dpa = annular_capacity_dpa(6.125, 4.0)
+    inp = KickInputs(rho_mud=11.9, PP=12.2, kick_intensity=1.0, P_lot=15.0,
+                     P_apl=0.0, D_td=10500.0, D_lot=9800.0,
+                     T_s=212.0, T_td=302.0, V_dpa=v_dpa)
+
+    r = drill_kick(inp)
+    open_hole = (inp.D_td - inp.D_lot) * v_dpa
+
+    assert r.bubble_length_limited is True
+    assert math.isclose(r.H_gas, inp.D_td - inp.D_lot, rel_tol=1e-9)  # the clamp
+    assert r.capacity > open_hole                                     # the contradiction
+
+    # and an ordinary case is not flagged
+    ok = drill_kick(KickInputs(rho_mud=11.9, PP=11.5, kick_intensity=1.1,
+                               P_lot=16.0, P_apl=210.0, D_td=10500.0, D_lot=6500.0,
+                               T_s=212.0, T_td=302.0, V_dpa=v_dpa))
+    assert ok.bubble_length_limited is False
+
+
+def test_a_negative_tolerance_is_flagged_because_it_is_not_a_volume():
+    """A-7 can return a negative influx. That is not a tolerance -- it means the
+    maximum-credible pore pressure already exceeds what the shoe holds with NO
+    influx, so the section is undrillable on these inputs.
+
+    Left unfloored so the magnitude still says how far past the limit the case
+    is, but flagged so a consumer cannot display it as a volume.
+    """
+    r = drill_kick(KickInputs(rho_mud=11.9, PP=12.6, kick_intensity=1.5,
+                              P_lot=12.6, P_apl=0.0, D_td=10500.0, D_lot=6500.0,
+                              T_s=212.0, T_td=302.0,
+                              V_dpa=annular_capacity_dpa(6.125, 4.0)))
+
+    assert r.capacity < 0.0
+    assert r.capacity_negative is True
+
+
+def test_d_already_fractured_is_not_the_shoe_holding():
+    """welleng-api Finding D, 2026-07-27. Their design-curve sweep shifts the FP
+    profile down and re-solves; at the weakest shoe it got `open_hole_unconstrained`
+    with the SAME volume as the strongest shoe, so the sweep broke on its first
+    point and the curve came back empty.
+
+    An empty breach-candidate set has two OPPOSITE causes and the per-depth solves
+    return None for both: the shoe is far too strong to breach, or the mud column
+    ALONE already meets FP so there is no intact state to grow a bubble from. The
+    second reported the full open-hole capacity for a well that is losing returns
+    before any gas enters -- the unsafe direction.
+    """
+    from welleng.kick_tolerance.analytical import analytical_kick_tolerance
+    from welleng.kick_tolerance.core import fahrenheit_to_rankine
+    from welleng.kick_tolerance.migration import WellSection
+
+    g, shoe, td, mud = 0.0521, 6500.0, 9800.0, 11.4
+    sections = [WellSection(0.0, shoe, 0.1215, False),
+                WellSection(shoe, td, 0.1215, True)]
+    solve = lambda fp_shoe, fp_td: analytical_kick_tolerance(  # noqa: E731
+        sections=sections, pp=([0.0, td], [11.0, 11.0]),
+        fp=([shoe, td], [fp_shoe, fp_td]), bhp_psi=g * mud * td, rho_mud_ppg=mud,
+        gas_bh_state=(g * mud * td, fahrenheit_to_rankine(180.0), None, None),
+        geothermal=([0.0, td], [fahrenheit_to_rankine(60.0),
+                                fahrenheit_to_rankine(180.0)]))
+
+    # mud alone (3860.6 psi at the shoe) already exceeds a 10.4 ppg frac (3522.0)
+    bad = solve(10.4, 11.0)
+    assert bad.already_fractured is True
+    assert bad.max_influx_bbl == 0.0
+    assert bad.open_hole_unconstrained is False       # the bug: this used to be True
+    assert bad.binding_depth_tvd == shoe
+
+    # a genuinely strong shoe is still unconstrained, and must NOT set the new flag
+    strong = solve(14.2, 15.5)
+    assert strong.open_hole_unconstrained is True
+    assert strong.already_fractured is False
+
+    # and the two must not report the same volume any more
+    assert bad.max_influx_bbl != strong.max_influx_bbl
+
+    # monotone in shoe strength -- the property api's sweep relies on
+    kts = [solve(12.4 + o, 13.0 + o).max_influx_bbl for o in (-2.0, -1.0, 0.0, 1.0)]
+    assert kts == sorted(kts), kts
+
+
+def test_maasp_single_shoe_is_the_frac_minus_mud_identity():
+    """MAASP = P_frac(shoe) - mud hydrostatic to the shoe, shut in.
+
+    `P_apl` is NOT deducted: annular friction is a CIRCULATING term and MAASP is a
+    closed-in limit, so subtracting it would understate what the annulus can hold.
+    The fixture carries P_apl=210 psi precisely so a regression that started
+    deducting it would move this number.
+    """
+    from welleng.kick_tolerance.core import ppg_to_psi
+
+    inp = KickInputs(rho_mud=11.9, PP=11.5, kick_intensity=1.1, P_lot=16.0,
+                     P_apl=210.0, D_td=10500.0, D_lot=6500.0, T_s=212.0, T_td=302.0,
+                     V_dpa=annular_capacity_dpa(6.125, 4.0))
+    r = drill_kick(inp)
+
+    expected = ppg_to_psi(16.0, 6500.0) - ppg_to_psi(11.9, 6500.0)
+    assert math.isclose(r.maasp_psi, expected, rel_tol=1e-12)
+    assert math.isclose(r.maasp_psi, 1388.46, abs_tol=0.01)
+    assert not math.isclose(r.maasp_psi, expected - 210.0, rel_tol=1e-9)  # P_apl kept
+
+
+def test_maasp_a_weak_zone_below_the_shoe_governs():
+    """The industry convention evaluates MAASP at the shoe. With a CONSTANT
+    fracture gradient that is exact -- `g.d.(FP_emw - rho_mud)` grows with depth,
+    so the shallowest exposed point governs. It stops being right the moment a
+    weak zone sits BELOW the shoe, and then the shoe-only number is too HIGH.
+
+    Same failure mode as assuming the swab bubble top sits at the shoe.
+    """
+    from welleng.kick_tolerance.migration import (
+        G_PSI_PER_PPG_FT as G, WellSection, maasp,
+    )
+
+    shoe, td = 6000.0, 10000.0
+    sections = [WellSection(0.0, shoe, 0.0459, False),
+                WellSection(shoe, td, 0.0459, True)]
+    fp = 4020.0 / (G * shoe)                        # 4020 psi at the shoe
+
+    flat = maasp(sections, ([shoe, td], [fp, fp]), rho_mud_ppg=10.0)
+    assert flat.governed_by_shoe is True
+    assert flat.governing_tvd == shoe
+    assert math.isclose(flat.maasp_psi, 4020.0 - G * 10.0 * shoe, rel_tol=1e-12)
+    # constant fracture gradient -> the convention IS the limit
+    assert math.isclose(flat.limiting_psi, flat.maasp_psi, rel_tol=1e-12)
+
+    # a realistic weak zone: 1.0 ppg below the surrounding fracture gradient,
+    # still comfortably above the 10.0 ppg mud, i.e. a hole you would actually drill
+    weak = maasp(sections,
+                 ([shoe, 7999.0, 8000.0, 8001.0, td], [fp, fp, fp - 1.0, fp, fp]),
+                 rho_mud_ppg=10.0)
+    # the CONVENTION is unchanged -- MAASP is a shoe property and does not move
+    assert math.isclose(weak.maasp_psi, flat.maasp_psi, rel_tol=1e-12)
+    # but the real limit is deeper and lower
+    assert weak.governed_by_shoe is False
+    assert weak.governing_tvd == 8000.0
+    assert weak.limiting_psi < weak.maasp_psi
+
+
+def test_maasp_requires_an_exposed_section():
+    """Fully cased: nothing is exposed, so MAASP is undefined -- the limit is
+    casing burst instead. Refuse rather than return the shoe's number."""
+    from welleng.kick_tolerance.migration import WellSection, maasp
+
+    try:
+        maasp([WellSection(0.0, 6000.0, 0.0459, False)],
+              ([0.0, 6000.0], [14.0, 14.0]), rho_mud_ppg=10.0)
+    except ValueError as e:
+        assert "open-hole" in str(e)
+    else:
+        raise AssertionError("fully cased hole must refuse a MAASP")

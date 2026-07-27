@@ -181,3 +181,37 @@ def test_interpolate_pos_nev_matches_interpolate_survey():
             pos_full = np.array([full.n, full.e, full.tvd]).T[1]
             pos_light = _interpolate_pos_nev(s, x, 0)
             assert np.allclose(pos_light, pos_full, atol=1e-7), (i, frac)
+
+
+def test_interpolate_mds_when_every_request_is_already_a_station():
+    """`interpolate_mds` drops requested depths that coincide with stations.
+    When that empties the request there is nothing to interpolate and the
+    survey itself is the answer -- it used to raise IndexError on `md[0]`.
+
+    This is a routine input, not a degenerate one: anything that cuts a well
+    at the union of its survey stations and some geometry changes hits it as
+    soon as the geometry changes happen to land on stations.
+    """
+    survey = we.survey.Survey(
+        md=[0, 500, 1000, 2000, 3000], inc=[0, 0, 30, 90, 90],
+        azi=[0, 0, 45, 135, 180],
+    )
+
+    result = survey.interpolate_mds(survey.md)
+
+    assert len(result.md) == len(survey.md)
+    assert not np.any(np.asarray(result.interpolated, dtype=bool))
+    assert np.allclose(result.pos_nev[:, 2], survey.pos_nev[:, 2])
+
+
+def test_interpolate_mds_mixed_request_flags_only_the_new_stations():
+    survey = we.survey.Survey(
+        md=[0, 500, 1000, 2000, 3000], inc=[0, 0, 30, 90, 90],
+        azi=[0, 0, 45, 135, 180],
+    )
+
+    result = survey.interpolate_mds([0.0, 250.0, 500.0])
+
+    assert np.asarray(result.interpolated, dtype=bool).tolist() == [
+        False, True, False, False, False, False
+    ]
