@@ -266,3 +266,83 @@ def test_fluid_aliases_map_co2():
     a["co2"] = "BROKEN"                      # mutating the copy must not leak
     from welleng.kick_tolerance import fluid_aliases as fa2
     assert fa2()["co2"] == "CarbonDioxide"
+
+
+def test_the_gravitational_constant_cancels_out_of_the_answer():
+    """Guards a claim that was got WRONG, confidently, and committed.
+
+    It was recorded that welleng's g = 0.0521 (against an exact 0.05194805) made
+    the kick tolerance ~5.7% high, and that latitude was worth a further ~10%.
+    Both were artefacts of comparing two models by matching their PSI values
+    instead of their equivalent mud weights. The real figure is ~0.001%.
+
+    Where pressures are equivalent mud weights -- the industry convention --
+    BHP = PP.g.TD and FRAC = LOT.g.shoe are both gradient-derived, so
+
+        h = [rho_mud.(TD - shoe) - (PP.TD - LOT.shoe)] / (rho_mud - rho_gas)
+
+    contains no g, and the Boyle ratio FRAC/BHP = (LOT.shoe)/(PP.TD) cancels it
+    as well. g survives only where an absolute pressure enters that is NOT
+    gradient-derived -- here just the atmospheric term in A-7.
+
+    Measured directly: over the full planetary range of gravity (equator to
+    pole) the gas height is identical and the tolerable influx moves 0.0012%.
+
+    If someone "improves" the constant and expects the answer to move, this test
+    is why it does not.
+    """
+    import welleng.kick_tolerance.core as core
+
+    td, shoe, mud, cap = 12000.0, 6000.0, 10.0, (8.5 ** 2 - 5.0 ** 2) / 1029.4
+    pp, lot, gas = 11.2019230769, 12.8846153846, 1.15021
+
+    def solve():
+        return drill_kick(KickInputs(
+            rho_mud=mud, PP=pp, kick_intensity=0.0, P_lot=lot, P_apl=0.0,
+            D_td=td, D_lot=shoe, V_dpa=cap, T_s=100.0, T_td=100.0,
+            Z_s=1.0, Z_td=1.0, rho_gas_s=gas, ideal_gas=True,
+        ))
+
+    original = core.G_PSI_PER_PPG_FT
+    try:
+        results = []
+        for g in (0.0521, 0.05194805, 0.0518086, 0.0520832):   # ours, exact, equator, pole
+            core.G_PSI_PER_PPG_FT = g
+            results.append(solve())
+    finally:
+        core.G_PSI_PER_PPG_FT = original
+
+    heights = [r.H_gas for r in results]
+    volumes = [r.capacity for r in results]
+
+    # the hydrostatic balance is exactly g-free
+    assert max(heights) - min(heights) < 1e-9
+    # and the volume moves only through the atmospheric term
+    assert (max(volumes) - min(volumes)) / min(volumes) < 1e-4
+
+    # it is also the g-free closed form, not merely self-consistent
+    g_free = ((td - shoe) * mud - (pp * td - lot * shoe)) / (mud - gas)
+    assert math.isclose(heights[0], g_free, rel_tol=1e-9)
+
+
+def test_matches_an_independent_practitioner_worked_case():
+    """External check: Jancic, "Advanced Well Control Lecturing", Driller's
+    Method case -- 12,000 ft TD, 6,000 ft shoe, 10.0 ppg mud, 6,990 psi
+    reservoir, 4,020 psi fracture at shoe, 8-1/2 in hole, 5 in pipe.
+
+    He reports a gas height of 326.15986 ft and a kick tolerance of
+    8.65186401728 bbl, from an independently derived method.
+
+    This is the only anchor welleng has that is not a paper we also transcribe,
+    and it is the one that caught the g mistake above.
+    """
+    td, shoe, mud, cap = 12000.0, 6000.0, 10.0, (8.5 ** 2 - 5.0 ** 2) / 1029.4
+
+    result = drill_kick(KickInputs(
+        rho_mud=mud, PP=11.2019230769, kick_intensity=0.0, P_lot=12.8846153846,
+        P_apl=0.0, D_td=td, D_lot=shoe, V_dpa=cap, T_s=100.0, T_td=100.0,
+        Z_s=1.0, Z_td=1.0, rho_gas_s=1.15021, ideal_gas=True,
+    ))
+
+    assert math.isclose(result.H_gas, 326.15986, rel_tol=0.002)      # 0.06%
+    assert math.isclose(result.capacity, 8.65186401728, rel_tol=0.01)  # 0.76%

@@ -166,22 +166,31 @@ def mud_weight_from_gradient(
 #:
 #: **Do not quote this to more figures than gravity justifies.** g varies with
 #: latitude by about +-0.27% about standard (9.7803 m/s^2 at the equator to
-#: 9.8322 at the poles), so the physically achievable range of this constant is
-#: roughly 0.051809 to 0.052083 -- a 0.53% spread. Any digit beyond the fourth
-#: is a statement about where the well is, not about arithmetic.
+#: 9.8322 at the poles), so the physically achievable range is roughly 0.051809
+#: to 0.052083 -- a 0.53% spread. Any digit beyond the fourth is a statement
+#: about where the well is, not about arithmetic.
 #:
-#: That matters more than it looks for kick tolerance, where the answer is a
-#: small difference of two large hydrostatic terms. The amplification is
-#: ~20x on a typical case, so LATITUDE ALONE is worth ~10% of the kick
-#: tolerance: the same well design tolerates a different influx in the North Sea
-#: than in the Gulf of Mexico. The amplification grows without bound as a well
-#: approaches balance, i.e. it is largest exactly when the tolerance is smallest.
+#: **But it mostly CANCELS, which is why the literature does not fuss about it.**
+#: Where pressures are expressed as equivalent mud weights -- the industry
+#: convention -- the constant divides out of a hydrostatic balance. For the
+#: kick-tolerance gas height, ``BHP = PP.g.TD`` and ``FRAC = LOT.g.shoe`` are
+#: both gradient-derived, so
 #:
-#: Note ``welleng.kick_tolerance`` uses 0.0521, which is +0.292% and therefore
-#: OUTSIDE the planetary range (it exceeds polar gravity). That value is
-#: inherited from SPE-208788-PA and reproducing the paper's worked example
-#: digit-for-digit depends on it -- validate with the source's own constant, and
-#: quote the deviation.
+#:     h = [rho_mud.(TD - shoe) - (PP.TD - LOT.shoe)] / (rho_mud - rho_gas)
+#:
+#: contains no g at all; and the Boyle ratio ``FRAC/BHP = (LOT.shoe)/(PP.TD)``
+#: cancels it as well. With ideal gas the kick tolerance is COMPLETELY
+#: independent of this constant, and welleng's 0.0521 versus the exact value
+#: makes no difference to it.
+#:
+#: g survives only where an ABSOLUTE pressure enters that is not gradient-derived
+#: with the same constant -- an annular-pressure-loss term in psi, or a real-gas
+#: Z(P, T) evaluation, which needs a true absolute pressure. Those are
+#: second-order.
+#:
+#: (Recorded because it was got wrong once: comparing two models by matching
+#: their PSI values, rather than their equivalent mud weights, makes the constant
+#: appear to matter by several percent. It is an artefact of the comparison.)
 PSI_PER_PPG_PER_FT: float = float(
     (ureg('1 lb/gal') * ureg('standard_gravity')).to('psi/ft').magnitude
 )
@@ -214,9 +223,11 @@ def hydrostatic_gradient_at_latitude(
 ) -> pint.Quantity:
     """Hydrostatic gradient using LOCAL gravity rather than standard gravity.
 
-    Worth using where the answer is sensitive to it -- see the note on
-    :data:`PSI_PER_PPG_PER_FT`. A North Sea well (58 deg N) and a Gulf of Mexico
-    well (28 deg N) differ by 0.26% in gravity alone.
+    A North Sea well (58 deg N) and a Gulf of Mexico well (28 deg N) differ by
+    0.26% in gravity. Note this rarely changes an answer -- see the cancellation
+    note on :data:`PSI_PER_PPG_PER_FT`. Use it where an absolute pressure is
+    genuinely needed, not to "improve" a hydrostatic balance expressed in
+    equivalent mud weights, where the constant divides out.
 
     >>> round(to(hydrostatic_gradient_at_latitude(mud_weight(1, 'ppg'), 58.0),
     ...          'psi/ft'), 7)
