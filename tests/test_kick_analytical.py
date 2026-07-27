@@ -177,3 +177,77 @@ def test_tolerable_set_is_monotone():
         mode="thorough", n_steps=300, **COMMON)
     # the analytical V* must not exceed the fine march's answer (conservative)
     assert vstar <= below.max_influx_bbl + 1.0
+
+
+def test_gas_bottom_solve_converges_rather_than_truncating():
+    """The gas-bottom-pinned influx solve must END ON ITS TOLERANCE, never on the
+    iteration cap.
+
+    Plain false position stagnates on this problem -- the margin is strongly convex
+    in the influx, so one bracket endpoint is retained every iteration and the
+    bracket never halves. Under the original 24-iteration cap the loop was cut off
+    mid-flight and the truncated influx was returned as if converged: 3.7% low on a
+    shoe-bound case, and erratic enough that KT-vs-bit-position grew a spurious cusp
+    (54 ft of gas-top movement across 2 ft of bit). The Illinois modification forces
+    the bracket down; the cap is now a runaway backstop.
+
+    Guard: the answer must be independent of the cap and of the tolerance, which is
+    exactly what a truncating solve is not.
+    """
+    from welleng.kick_tolerance import analytical as A
+
+    sections = [WellSection(0.0, 6500.0, 0.066, False),
+                WellSection(6500.0, 7556.5, 0.066, True),
+                WellSection(7556.5, 8056.5, 0.012, True),
+                WellSection(8056.5, 10500.0, 0.088, True)]
+
+    tol_psi, tol_bbl, max_iter = (
+        A._SECANT_TOL_PSI, A._SECANT_TOL_BBL, A._SECANT_MAX_ITER
+    )
+    try:
+        A._SECANT_TOL_PSI, A._SECANT_TOL_BBL, A._SECANT_MAX_ITER = 1e-9, 1e-12, 800
+        converged = _analytic(sections, FP_UNIFORM, mode="exact")
+    finally:
+        A._SECANT_TOL_PSI, A._SECANT_TOL_BBL, A._SECANT_MAX_ITER = (
+            tol_psi, tol_bbl, max_iter
+        )
+
+    shipped = _analytic(sections, FP_UNIFORM, mode="exact")
+
+    assert shipped == pytest.approx(converged, rel=1e-4)
+
+
+def test_kick_tolerance_is_smooth_in_bit_position():
+    """KT varies smoothly with bit position; a kink means the solver, not physics.
+
+    The gas column's length is density-driven and cap-independent, so moving the
+    bit moves the answer continuously. A truncating inner solve broke this: the
+    binding gas top swung 54 ft across 2 ft of bit travel, with the derivative
+    flipping sign twice, which reads as a genuine cusp and defeats any search for
+    the worst bit position.
+    """
+    def sections_for_bit(bit, dc_len=500.0, shoe=6500.0, td=10500.0):
+        dc_top = max(bit - dc_len, 0.0)
+        out = []
+        for a, b in zip(sorted({0.0, shoe, dc_top, bit, td}),
+                        sorted({0.0, shoe, dc_top, bit, td})[1:]):
+            if b <= a:
+                continue
+            mid = 0.5 * (a + b)
+            cap = 0.088 if mid > bit else (0.012 if mid >= dc_top else 0.066)
+            out.append(WellSection(a, b, cap, mid >= shoe))
+        return out
+
+    bits = np.arange(8056.0, 8058.01, 0.2)
+    tops = np.array([
+        analytical_kick_tolerance(
+            sections_for_bit(float(b)), PP, FP_UNIFORM,
+            gas_density_mode="exact", **COMMON
+        ).binding_gas_top_tvd
+        for b in bits
+    ])
+
+    assert np.all(np.diff(tops) >= -1e-9), "binding gas top is not monotone in bit"
+    assert tops.max() - tops.min() < 5.0, (
+        f"gas top swings {tops.max() - tops.min():.1f} ft across 2 ft of bit"
+    )

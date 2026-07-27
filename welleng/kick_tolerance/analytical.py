@@ -190,6 +190,14 @@ def _top_for_bottom(gas_bottom, influx_bbl_bh, sections_sorted, bottom_tvd, *,
     return max(gas_top, 0.0)
 
 
+# Convergence of the gas-bottom-pinned influx solve (``_breach_v_gas_bottom``).
+# The loop must END ON A TOLERANCE, never on the iteration cap -- the cap is a
+# runaway backstop. ``test_gas_bottom_solve_converges_not_truncates`` asserts that.
+_SECANT_TOL_PSI = 0.25       # margin tolerance
+_SECANT_TOL_BBL = 1e-3       # bracket width on the influx
+_SECANT_MAX_ITER = 100
+
+
 def _min_margin(gas_top, gas_bottom, exposed_depths, pp_psi, fp_psi, *,
                 bottom_tvd, bhp_psi, rho_mud_ppg, gas_bh, gas_density_mode,
                 temp_profile, z_fn=None):
@@ -457,18 +465,31 @@ def analytical_kick_tolerance(
         lo, hi = 0.0, v_hole
         m_lo = _margin_bottom(b, lo)[0]                   # large positive (no gas)
         v = hi
-        for _ in range(24):
+        # ILLINOIS-modified false position. Plain false position STAGNATES here:
+        # the margin is strongly convex in V, so one endpoint is retained every
+        # iteration and the bracket never halves. Under the old 24-iteration cap
+        # that truncated mid-flight and returned the truncated value as if it had
+        # converged -- 3.7% low on a shoe-bound case, and erratic enough to fake a
+        # cusp in KT-vs-bit-position. Halving the retained endpoint's margin forces
+        # the bracket down and restores superlinear convergence; the cap is now a
+        # backstop rather than the thing that ends the loop.
+        retained = 0
+        for _ in range(_SECANT_MAX_ITER):
             denom = m_hi - m_lo
             v = hi - m_hi * (hi - lo) / denom if abs(denom) > 1e-9 else 0.5 * (lo + hi)
             if not (lo < v < hi):
                 v = 0.5 * (lo + hi)
             m, _, _ = _margin_bottom(b, v)
-            if abs(m) < 0.25 or (hi - lo) < 1e-3:         # 0.25 psi / 0.001 bbl
+            if abs(m) < _SECANT_TOL_PSI or (hi - lo) < _SECANT_TOL_BBL:
                 break
             if m > 0.0:
-                lo, m_lo = v, m
+                if retained > 0:
+                    m_hi *= 0.5                           # Illinois
+                lo, m_lo, retained = v, m, max(retained, 0) + 1
             else:
-                hi, m_hi = v, m
+                if retained < 0:
+                    m_lo *= 0.5                           # Illinois
+                hi, m_hi, retained = v, m, min(retained, 0) - 1
         m, gt, db = _margin_bottom(b, v)
         return v, gt, db
 
