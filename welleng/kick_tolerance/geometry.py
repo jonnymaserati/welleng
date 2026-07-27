@@ -160,6 +160,7 @@ def sections_from_architecture(
     shoe_md: float,
     top_md: Optional[float] = None,
     bottom_md: Optional[float] = None,
+    max_piece_md: Optional[float] = None,
 ) -> list:
     """Build the elementary :class:`WellSection` list from an MD-domain well
     architecture and a survey.
@@ -197,6 +198,15 @@ def sections_from_architecture(
     top_md, bottom_md : float, optional
         Restrict the build to this along-hole interval [m]. Defaults to the
         wellbore's own extent.
+    max_piece_md : float, optional
+        Subdivide any piece longer than this [m]. A piece reports one mean
+        ``sec(inc)``, so a partial span taken inside it -- which is what happens
+        where a gas face lands -- carries that mean rather than the local value.
+        The error is 0.12% of a 1000 ft bubble at 30 m survey stations and 25%
+        at 1000 m stations, so this is only worth setting on a COARSELY surveyed
+        well. Subdividing costs nothing but a longer list: the extra cuts get
+        their TVDs from the same batch interpolation as every other cut, so they
+        are exact, not interpolated approximations.
 
     Returns
     -------
@@ -222,6 +232,15 @@ def sections_from_architecture(
     cuts.update(float(md) for md in survey.tvd_turning_points())
     cuts.add(float(shoe_md))
     cuts.update((top, bottom))
+
+    if max_piece_md is not None:
+        if max_piece_md <= 0.0:
+            raise ValueError("max_piece_md must be positive")
+        ordered = sorted(md for md in cuts if top <= md <= bottom)
+        for a, b in zip(ordered, ordered[1:]):
+            n = int(np.ceil((b - a) / max_piece_md))
+            if n > 1:
+                cuts.update(a + (b - a) * i / n for i in range(1, n))
 
     mds = sorted(md for md in cuts if top <= md <= bottom)
 
