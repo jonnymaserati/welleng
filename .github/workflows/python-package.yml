@@ -37,6 +37,16 @@ jobs:
       # holds NEW code to the full standard without a mass legacy refactor.
       run: uvx ruff check welleng/ tests/
 
+    - name: Doc gate — new public API must be documented and in the Sphinx build
+      # Every public function/class/dataclass field ADDED vs the base must have a
+      # docstring (or, for a field, an explanatory comment) and live in a module
+      # some .rst automodules. Added 2026-07-27 (TA0): new public surface landed
+      # several times in the 0.27 cycle and the docs only caught up when someone
+      # asked. Needs the base ref, so fetch it.
+      run: |
+        git fetch --no-tags --depth=1 origin main || true
+        uv run --no-project python scripts/doc_gate.py origin/main
+
     - name: Test a minimal install
       run: |
         uv run --isolated --no-dev -p ${{ matrix.python-version }} python tests/test_minimal.py
