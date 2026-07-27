@@ -482,3 +482,75 @@ def test_swab_picks_the_weak_zone_not_the_shoe():
 
     assert result.binding_depth_tvd > SWAB_SHOE + 100.0
     assert result.binding_depth_tvd == pytest.approx(8001.0, abs=1.0)
+
+
+# ---------------------------------------------------------------------------
+# temperature is a property of the CASE, not of what the caller typed
+# ---------------------------------------------------------------------------
+_R = lambda f: f + 459.67          # noqa: E731
+GEOTHERMAL = ([0.0, 10500.0], [_R(60.0), _R(200.0)])
+
+
+def test_case_none_keeps_the_pre_027_precedence():
+    """Backwards compatible: temp_profile > geothermal > isothermal."""
+    iso = _analytic(TWO_SECTION, FP_UNIFORM, mode="exact")
+    with_geo = analytical_kick_tolerance(
+        TWO_SECTION, PP, FP_UNIFORM, gas_density_mode="exact",
+        geothermal=GEOTHERMAL, **COMMON).max_influx_bbl
+
+    assert with_geo > iso                       # formation is the higher answer
+    assert analytical_kick_tolerance(
+        TWO_SECTION, PP, FP_UNIFORM, gas_density_mode="exact",
+        case=None, **COMMON).max_influx_bbl == pytest.approx(iso)
+
+
+def test_drill_uses_the_td_temperature_limit():
+    """A circulated kill tends to TD temperature; isothermal at T_bh is that
+    limit and is within 1.5% of a realistic circulating profile, safe side."""
+    assert analytical_kick_tolerance(
+        TWO_SECTION, PP, FP_UNIFORM, gas_density_mode="exact",
+        case="drill", **COMMON
+    ).max_influx_bbl == pytest.approx(_analytic(TWO_SECTION, FP_UNIFORM, mode="exact"))
+
+
+def test_drill_refuses_a_formation_gradient():
+    """The specific mistake worth 7-12% in the unsafe direction."""
+    with pytest.raises(ValueError, match="CIRCULATED kill"):
+        analytical_kick_tolerance(TWO_SECTION, PP, FP_UNIFORM,
+                                  gas_density_mode="exact", case="drill",
+                                  geothermal=GEOTHERMAL, **COMMON)
+
+
+def test_swab_requires_a_formation_gradient():
+    """A trip has no circulation, so the column relaxes toward formation. There
+    is nothing sane to invent when it is missing."""
+    with pytest.raises(ValueError, match="trip with no circulation"):
+        analytical_kick_tolerance(TWO_SECTION, PP, FP_UNIFORM,
+                                  gas_density_mode="exact", case="swab", **COMMON)
+
+    swab = analytical_kick_tolerance(TWO_SECTION, PP, FP_UNIFORM,
+                                     gas_density_mode="exact", case="swab",
+                                     geothermal=GEOTHERMAL, **COMMON).max_influx_bbl
+    assert swab > _analytic(TWO_SECTION, FP_UNIFORM, mode="exact")
+
+
+def test_an_explicit_profile_always_wins():
+    """The advanced path: a measured or modelled circulating profile, including a
+    non-monotonic one that peaks above TD."""
+    circulating = (np.array([0.0, 5000.0, 8000.0, 10500.0]),
+                   np.array([_R(120.0), _R(182.0), _R(205.0), _R(195.0)]))
+
+    for case in ("drill", "swab"):
+        assert analytical_kick_tolerance(
+            TWO_SECTION, PP, FP_UNIFORM, gas_density_mode="exact", case=case,
+            temp_profile=circulating, **COMMON
+        ).max_influx_bbl == pytest.approx(
+            analytical_kick_tolerance(
+                TWO_SECTION, PP, FP_UNIFORM, gas_density_mode="exact",
+                temp_profile=circulating, **COMMON).max_influx_bbl)
+
+
+def test_an_unknown_case_is_refused():
+    with pytest.raises(ValueError, match="must be 'drill', 'swab' or None"):
+        analytical_kick_tolerance(TWO_SECTION, PP, FP_UNIFORM,
+                                  gas_density_mode="exact", case="nonsense", **COMMON)

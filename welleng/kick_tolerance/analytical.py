@@ -101,6 +101,53 @@ def _z(p_psi: float, t_rankine: float) -> float:
     return _z_cached(int(round(p_psi)), int(round(t_rankine * 10.0)))
 
 
+def _temperature_for_case(case, temp_profile, geothermal):
+    """Resolve the gas-column temperature profile from the WELL-CONTROL CASE.
+
+    Which temperature is correct is a property of the case, not of what the
+    caller happened to type into a temperature box:
+
+    * **drill** -- the kill is CIRCULATED, so the annulus tends to a steady state
+      that tends to TD temperature. Isothermal at the bottom-hole temperature is
+      that limit, and it is within 1.5% of a realistic circulating profile on the
+      safe side. A formation gradient is the WRONG profile here and reads 7-12%
+      HIGH: cooler shallow gas is denser, the column is heavier, the shoe sees
+      less, and more influx looks tolerable. Supplying ``geothermal`` for a drill
+      case is therefore refused rather than silently used.
+    * **swab** -- a TRIP, no circulation, so the column relaxes toward formation.
+      A geothermal profile is required; there is nothing sane to invent if it is
+      absent.
+
+    An explicit ``temp_profile`` always wins -- that is the advanced path, and it
+    is how a measured or modelled circulating profile is supplied (non-monotonic
+    profiles are supported). ``case=None`` reproduces the pre-0.27 precedence
+    exactly: ``temp_profile > geothermal > isothermal``.
+    """
+    if case is None:
+        return temp_profile if temp_profile is not None else geothermal
+    if case not in ("drill", "swab"):
+        raise ValueError(f"case must be 'drill', 'swab' or None, not {case!r}")
+    if temp_profile is not None:
+        return temp_profile
+    if case == "swab":
+        if geothermal is None:
+            raise ValueError(
+                "case='swab' is a trip with no circulation, so the gas column "
+                "relaxes toward FORMATION temperature -- supply geothermal=(tvd, "
+                "degR) or an explicit temp_profile."
+            )
+        return geothermal
+    if geothermal is not None:
+        raise ValueError(
+            "case='drill' is a CIRCULATED kill, so the annulus tends to TD "
+            "temperature, not to the formation gradient. A geothermal profile "
+            "reads 7-12% HIGH here (denser shallow gas, heavier column, less "
+            "pressure at the shoe). Drop geothermal to use the isothermal "
+            "bottom-hole limit, or pass an explicit circulating temp_profile."
+        )
+    return None                                # isothermal at T_bh
+
+
 def max_influx_contained_at_surface(
     sections: Sequence[WellSection],
     *,
@@ -338,6 +385,7 @@ def analytical_kick_tolerance(
     fluid_table=None,
     gas_model: str = "real",
     check_depths: Optional[Sequence[float]] = None,
+    case: Optional[str] = None,
 ) -> AnalyticalKickTolerance:
     """Max bottom-hole influx tolerable over the whole migration, by breakpoints.
 
@@ -366,6 +414,12 @@ def analytical_kick_tolerance(
         gas_bh_state : ``(P_bh [psi], T_bh [degR], Z [-], rho_gas [ppg])`` (any None
                        -> computed). Returns influx / kick tolerance in [bbl], binding
                        depths in [ft].
+        case : 'drill' | 'swab' | None. Selects the TEMPERATURE convention when no
+            explicit ``temp_profile`` is given -- see :func:`_temperature_for_case`.
+            'drill' is a circulated kill (isothermal at T_bh, the TD-temperature
+            limit) and REFUSES a geothermal profile, which reads 7-12% high;
+            'swab' is a trip and REQUIRES one. ``None`` keeps the pre-0.27
+            precedence temp_profile > geothermal > isothermal.
         check_depths : optional explicit TVDs [ft] at which to enforce the
                        pore-fracture (PP-FP) envelope, OVERRIDING the auto-enumerated
                        exposed depths (open-hole boundaries + PP/FP breakpoints + gas
@@ -421,8 +475,7 @@ def analytical_kick_tolerance(
         gas_bh_state = (P_bh0, T_bh0, Z_bh0, rho_bh0)
     gas_bh = _resolve_bh_state(gas_bh_state, bhp_psi)
     zf = z_fn or _z                                       # Z(P,T): H-Y default, else provider
-    if temp_profile is None:
-        temp_profile = geothermal
+    temp_profile = _temperature_for_case(case, temp_profile, geothermal)
     temp_fn = _as_temp_callable(temp_profile, gas_bh[1])
     pp_fn, fp_fn = _as_ppg_callable(pp), _as_ppg_callable(fp)
 
