@@ -507,15 +507,15 @@ if __name__ == "__main__":
     print(f"bha_length_exceeded = {r.bha_length_exceeded}")
 
 
-# --- SIDP / SICP on MigrationStep: Rada Jancic ideal-gas hand-calc -----------
-# Well-control single-bubble reference (a batch consumer spec 2026-07-22):
+# --- SIDP / SICP on MigrationStep: textbook ideal-gas single bubble ----------
+# Standard well-control single-bubble case:
 #   MW 10 ppg, vertical TVD 10000 ft, annular capacity 0.0459 bbl/ft,
 #   influx 5 bbl -> 108.9 ft gas column, gas gradient 0.1 psi/ft, SIDP 200 psi.
 # Ideal gas (Z=1, isothermal), bubble at bottom:
 #   SIDP = 200.00, SICP = 245.87 (at welleng's native g=0.0521).
-# Rada's hand-calc gives 200.00 / 245.75 at his rounded g=0.052 -- the 0.12 psi
+# A hand-calc at the commonly rounded g=0.052 gives 200.00 / 245.75; the 0.12 psi
 # is purely that gravitational-constant rounding, not a modelling difference.
-def test_rada_ideal_sidp_sicp_bubble_at_bottom():
+def test_ideal_sidp_sicp_bubble_at_bottom():
     G = G_PSI_PER_PPG_FT                       # 0.0521
     MW, TVD, CAP, INFLUX, GGRAD = 10.0, 10000.0, 0.0459, 5.0, 0.1
     bhp = 200.0 + G * MW * TVD                 # BHP consistent with SIDP=200

@@ -326,15 +326,17 @@ def test_the_gravitational_constant_cancels_out_of_the_answer():
 
 
 def test_matches_an_independent_practitioner_worked_case():
-    """External check: Jancic, "Advanced Well Control Lecturing", Driller's
-    Method case -- 12,000 ft TD, 6,000 ft shoe, 10.0 ppg mud, 6,990 psi
-    reservoir, 4,020 psi fracture at shoe, 8-1/2 in hole, 5 in pipe.
+    """External check against an independently derived Driller's Method
+    result -- 12,000 ft TD, 6,000 ft shoe, 10.0 ppg mud, 6,990 psi reservoir,
+    4,020 psi fracture at shoe, 8-1/2 in hole, 5 in pipe.
 
-    He reports a gas height of 326.15986 ft and a kick tolerance of
-    8.65186401728 bbl, from an independently derived method.
+    The reference reports a gas height of 326.15986 ft and a kick tolerance of
+    8.65186401728 bbl.
 
     This is the only anchor welleng has that is not a paper we also transcribe,
-    and it is the one that caught the g mistake above.
+    and it is the one that caught the g mistake above. The source is an
+    unpublished third-party working document; it is deliberately not cited here
+    (see the local validation record).
     """
     td, shoe, mud, cap = 12000.0, 6000.0, 10.0, (8.5 ** 2 - 5.0 ** 2) / 1029.4
 

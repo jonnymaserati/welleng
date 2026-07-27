@@ -562,7 +562,7 @@ existence of a published artefact, not on elapsed time.
 | anchor | before | after |
 |---|---|---|
 | NOGEPA-50 Sec 3.2 | identity, 1e-12 | identity, 1e-12 |
-| Jancic (independent worked case) | -0.76% | -0.76% |
+| independent worked case (unpublished) | -0.76% | -0.76% |
 | SPE-208788 worked example | -2.72% | -2.72% |
 | SPE-202426 Nassab, stated ratio | +2.41% | +2.42% |
 
