@@ -380,6 +380,25 @@ def _bubble_state(inp: KickInputs, P_td: float, n: int = 256):
                 P += g * rho[k] * (hs[k + 1] - h)
         rho_new = (float(np.trapezoid(rho, hs) / H) if H > 0.0
                    else float(rho[0]))
+        # Mid-height (LENGTH-weighted) mean temperature -- and deliberately not
+        # the mass-weighted one, which looks more principled and is not.
+        #
+        # Mass weighting would weight by this column's own density profile. That
+        # profile is DENSITY-INVERTED: across a light gas column the pressure
+        # rises only slightly (+2.1% over 1462 ft on the Table-1 case) while the
+        # imposed geothermal gradient lifts T much more (+4.9%), and rho ~
+        # P/(Z.T), so the model puts the gas 4.3% HEAVIER at its top than at its
+        # bottom. A static column with the heavy fluid on top is not an
+        # equilibrium -- the gradient here is ~10x superadiabatic (g/cp for
+        # methane is ~0.002-0.003 degF/ft against 0.0225 imposed), so a real
+        # bubble convects and mixes toward near-isothermal: the adiabat over this
+        # column is ~3 degF against the ~33 degF the profile imposes.
+        #
+        # So the density profile is an artefact of solving a static column under
+        # an imposed geothermal profile, not something to weight by. Mid-height
+        # is the honest summary of an imposed linear profile. Revisit only with a
+        # convective/mixing treatment of the bubble, which is a model change, not
+        # an averaging choice.
         T_bar = fahrenheit_to_rankine(inp.T_s + grad * 0.5 * H)
         deficit = inp.rho_mud - rho_new
         if deficit <= 0.0:
