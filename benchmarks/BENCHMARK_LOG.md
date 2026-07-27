@@ -569,7 +569,17 @@ existence of a published artefact, not on elapsed time.
 NOGEPA stays EXACT because it assumes Z = 1 and isothermal, so `c` is constant and the
 exponential column is not an approximation there at all.
 
-**Follow-up for the harness:** it should use distinct inputs, or it will hide the next memo-
-shaped regression the same way it nearly hid this one.
+**Harness fixed in the same change.** It now times DISTINCT inputs and reports both figures,
+so a memo can never again flatter a regression into invisibility:
+
+```
+drill_kick, DISTINCT inputs               319.6 us   <- quote this
+drill_kick, repeated input (memo)          12.5 us
+analytical_kick_tolerance [exact]           1.2 ms
+analytical_kick_tolerance [conservative]    1.3 ms
+migrate (n_steps=100)                     325.3 ms
+max_influx_circulated [thorough]         4206.1 ms
+max_influx_circulated [fast]              722.6 ms
+```
 
 Machine: this dev box, .venv312.
