@@ -41,6 +41,13 @@ def annular_capacity(inner_id_in: float, pipe_od_in: float = 0.0) -> float:
     return (inner_id_in ** 2 - pipe_od_in ** 2) / _CAP_CONST
 
 
+#: Default burst design factor -- the published minimum internal yield pressure
+#: is reduced to this fraction to get the allowable. 0.80 is the conventional
+#: setting and is what Volve's own kill sheets carry
+#: (``WP_KILL_SHEET_GEN.casing_burst_safety_factor = 80.0``, on all 362 records).
+BURST_DESIGN_FACTOR = 0.80
+
+
 def cased_section(
     top_tvd: float,
     bottom_tvd: float,
@@ -49,10 +56,23 @@ def cased_section(
     casing_weight_ppf: float,
     pipe_od_in: float,
     grade: Optional[str] = None,
+    burst_design_factor: float = BURST_DESIGN_FACTOR,
 ) -> WellSection:
     """A cased WellSection with true annular capacity (casing ID from the
-    API-5CT catalogue, minus the string OD). ``is_open_hole=False`` (protected;
-    its formation is not exposed to fracture)."""
+    API-5CT catalogue, minus the string OD). ``is_open_hole=False`` -- its
+    formation is protected and is not exposed to fracture.
+
+    When a ``grade`` is given the catalogue also yields the minimum internal
+    yield pressure (API TR 5C3 Eq. 10, Barlow, already derated by minimum wall),
+    and the section carries ``burst_design_factor`` times that as its allowable
+    internal pressure. Without a grade there is no rating and the section is
+    left unchecked -- the catalogue flags an absent grade rather than guessing,
+    and so does this.
+
+    The burst check is INDICATIVE, not a casing design: no external backup is
+    credited, and no axial, bending, temperature, wear or connection effects.
+    See :class:`~welleng.kick_tolerance.migration.WellSection`.
+    """
     try:
         from welleng.catalog import resolve
     except ImportError as exc:  # pragma: no cover - catalog is a core subpackage
@@ -60,11 +80,15 @@ def cased_section(
             "cased_section needs welleng.catalog (the API-5CT tubular catalogue)."
         ) from exc
     spec = resolve(casing_od_in, casing_weight_ppf, grade, kind="casing")
+    rating = spec.internal_yield_pressure_psi
     return WellSection(
         top_tvd=top_tvd,
         bottom_tvd=bottom_tvd,
         annular_capacity_bbl_per_ft=annular_capacity(spec.id_in, pipe_od_in),
         is_open_hole=False,
+        burst_pressure_psi=(
+            None if rating is None else float(rating) * burst_design_factor
+        ),
     )
 
 

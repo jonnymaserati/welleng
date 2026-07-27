@@ -251,3 +251,87 @@ def test_kick_tolerance_is_smooth_in_bit_position():
     assert tops.max() - tops.min() < 5.0, (
         f"gas top swings {tops.max() - tops.min():.1f} ft across 2 ft of bit"
     )
+
+
+# ---------------------------------------------------------------------------
+# casing burst — indicative surface-containment check
+# ---------------------------------------------------------------------------
+OPEN_HOLE = WellSection(6500.0, 10500.0, 0.046, True)
+
+
+def test_a_section_without_a_rating_is_not_assessed():
+    """Backwards compatible: no burst allowable means the casing is simply not
+    assessed, exactly as before 0.27 -- not silently assumed adequate."""
+    plain = WellSection(0.0, 6500.0, 0.0489, False)
+
+    r = analytical_kick_tolerance([plain, OPEN_HOLE], PP, FP_UNIFORM,
+                                  gas_density_mode="exact", **COMMON)
+
+    assert r.surface_containment_bbl is None
+    assert r.casing_binds is False
+
+
+def test_cased_section_carries_the_catalogue_rating_when_graded():
+    from welleng.kick_tolerance.geometry import BURST_DESIGN_FACTOR, cased_section
+
+    graded = cased_section(0.0, 6500.0, casing_od_in=9.625, casing_weight_ppf=47.0,
+                           pipe_od_in=5.0, grade="L80")
+    ungraded = cased_section(0.0, 6500.0, casing_od_in=9.625, casing_weight_ppf=47.0,
+                             pipe_od_in=5.0)
+
+    # API 5CT 9-5/8 47 ppf L80: minimum internal yield 6870 psi
+    assert graded.burst_pressure_psi == pytest.approx(6870.0 * BURST_DESIGN_FACTOR)
+    # the catalogue flags an absent grade rather than guessing, and so do we
+    assert ungraded.burst_pressure_psi is None
+
+
+def test_real_casing_does_not_bind_before_the_formation():
+    """The premise the engine has always assumed -- now checked rather than
+    assumed. A 9-5/8 47 ppf L80 string holds far more than the open hole allows."""
+    from welleng.kick_tolerance.geometry import cased_section
+
+    csg = cased_section(0.0, 6500.0, casing_od_in=9.625, casing_weight_ppf=47.0,
+                        pipe_od_in=5.0, grade="L80")
+
+    r = analytical_kick_tolerance([csg, OPEN_HOLE], PP, FP_UNIFORM,
+                                  gas_density_mode="exact", **COMMON)
+
+    assert r.surface_containment_bbl > r.max_influx_bbl
+    assert r.casing_binds is False
+
+
+def test_a_weak_string_binds_before_the_formation_and_is_flagged():
+    weak = WellSection(0.0, 6500.0, 0.0489, False, burst_pressure_psi=900.0)
+
+    r = analytical_kick_tolerance([weak, OPEN_HOLE], PP, FP_UNIFORM,
+                                  gas_density_mode="exact", **COMMON)
+
+    assert r.surface_containment_bbl < r.max_influx_bbl
+    assert r.casing_binds is True
+
+
+def test_surface_containment_rises_with_the_allowable():
+    from welleng.kick_tolerance.analytical import max_influx_contained_at_surface
+
+    sections = [WellSection(0.0, 6500.0, 0.0489, False), OPEN_HOLE]
+    volumes = [
+        max_influx_contained_at_surface(
+            sections, burst_pressure_psi=p, bottom_tvd=10500.0, **COMMON
+        )
+        for p in (500.0, 1000.0, 2000.0, 4000.0, 5496.0)
+    ]
+
+    assert all(b > a for a, b in zip(volumes, volumes[1:]))
+
+
+def test_a_well_that_cannot_be_shut_in_returns_zero():
+    """Below the surface pressure of the mud column alone, no influx fits."""
+    from welleng.kick_tolerance.analytical import max_influx_contained_at_surface
+
+    sections = [WellSection(0.0, 6500.0, 0.0489, False), OPEN_HOLE]
+    mud_alone = COMMON["bhp_psi"] - 0.0521 * COMMON["rho_mud_ppg"] * 10500.0
+
+    assert max_influx_contained_at_surface(
+        sections, burst_pressure_psi=max(mud_alone, 1.0) - 1.0,
+        bottom_tvd=10500.0, **COMMON
+    ) == 0.0

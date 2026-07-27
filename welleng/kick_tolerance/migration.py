@@ -127,6 +127,21 @@ class WellSection:
         reports :attr:`capacity_per_tvd_ft` accordingly. Leave them ``None``
         and the section is treated as vertical (``dMD == dTVD``), which is
         the pre-0.27 behaviour exactly.
+    burst_pressure_psi
+        Optional ALLOWABLE internal pressure for a cased section [psi] -- the
+        published minimum internal yield pressure already reduced by a design
+        factor. Supply it and the imposed pressure is checked against it over
+        the cased interval, alongside the pore/fracture check in open hole;
+        leave it ``None`` (the default) and cased intervals are unchecked, as
+        they were before 0.27.
+
+        INDICATIVE ONLY -- this is not a casing design tool. It credits NO
+        external backup (the full internal pressure is resisted by the pipe,
+        which is the safe-side worst case), and it accounts for no axial load,
+        bending, temperature derating, wear or connection rating. A real burst
+        design is a differential calculation against a backup profile over the
+        load cases. Use this to notice that the casing may bind before the
+        formation does, not to size a string.
 
     Pressure is a function of TVD and volume is a function of MD; a section
     carries both extents so the two integrals stay in their own domains. The
@@ -142,6 +157,7 @@ class WellSection:
     is_open_hole: bool
     top_md: float | None = None
     bottom_md: float | None = None
+    burst_pressure_psi: float | None = None
 
     @property
     def md_extent(self) -> float:
