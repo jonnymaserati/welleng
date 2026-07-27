@@ -432,6 +432,24 @@ def analytical_kick_tolerance(
     check_arr = (None if check_depths is None
                  else np.array(sorted({float(x) for x in check_depths}), dtype=float))
 
+    # This solver is exact BECAUSE it knows every depth at which the binding
+    # constraint can turn. A callable profile has no discrete breakpoints
+    # (_profile_breakpoints returns []), so a weak zone between section boundaries
+    # is never in the candidate set and is never evaluated -- silently, and in the
+    # NON-conservative direction. Measured: the same weak zone at 8000 ft gives
+    # 44.4 bbl as a (tvd, ppg) table and 58.2 bbl as a callable, a 31% over-report.
+    # A caller who pins ``check_depths`` has told us where to look and may use a
+    # callable; otherwise refuse rather than quietly answer the wrong question.
+    if check_arr is None and (callable(pp) or callable(fp)):
+        raise ValueError(
+            "analytical_kick_tolerance needs the depths at which the pore/fracture "
+            "gradient can turn, and a callable profile does not expose them -- a "
+            "weak zone between section boundaries would be silently missed. Pass "
+            "the profile as a (tvd, ppg) table, or pin the depths to enforce with "
+            "check_depths=[...]. To keep a callable without either, use "
+            "max_influx_circulated, which marches instead of enumerating."
+        )
+
     def exposed_for(gas_top, gas_bottom):
         # FP/PP margin over a mud/gas column is piecewise-monotone; its extremum
         # is at a breakpoint depth: open-hole boundaries, PP/FP breaks, and the
