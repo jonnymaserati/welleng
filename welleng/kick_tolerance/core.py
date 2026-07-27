@@ -321,6 +321,24 @@ class KickResult:
     # pressure profile, and they are the ONLY pair that closes on the fracture
     # pressure exactly -- see ``influx_column`` for the identity and for why
     # back-deriving H from ``capacity`` instead does not close.
+    maasp_psi: float = float("nan")
+    #                            Maximum allowable annular surface pressure [psi]:
+    #                            the shut-in surface pressure that just brings the
+    #                            shoe to its fracture pressure,
+    #                            `g.P_lot.D_lot - g.rho_mud.D_lot`.
+    #                            SHUT-IN, so `P_apl` is NOT deducted -- annular
+    #                            friction is a CIRCULATING term and subtracting it
+    #                            here would understate the closed-in limit.
+    #                            This is the single-shoe form. It assumes the shoe
+    #                            is the weakest EXPOSED point, which is exact for a
+    #                            constant fracture gradient and WRONG (too high) if
+    #                            a weak zone sits below the shoe -- use
+    #                            `migration.maasp` with a profile for that case.
+    #                            Unlike the kick tolerance itself, MAASP does NOT
+    #                            divide out the gravitational constant: it is a
+    #                            difference of two large pressures, so a source
+    #                            quoting g = 0.052 differs from welleng's 0.0521 by
+    #                            ~0.7% on a typical shoe.
 
 
 # --- Gas-property backend (clean-room Hall & Yarborough 1973) ---------------
@@ -857,6 +875,9 @@ def drill_kick(inp: KickInputs) -> KickResult:
         H_gas=H_gas,
         # bool(), not the numpy scalar these comparisons produce -- a np.bool_
         # fails `is True` and can trip a JSON serialiser downstream.
+        maasp_psi=float(
+            ppg_to_psi(inp.P_lot, inp.D_lot) - ppg_to_psi(inp.rho_mud, inp.D_lot)
+        ),
         bubble_length_limited=bool(
             H_gas is not None and abs(H_gas - (inp.D_td - inp.D_lot)) < 1e-6
         ),
@@ -917,6 +938,9 @@ def swab_kick(inp: KickInputs) -> KickResult:
         H_gas=H_gas,
         # bool(), not the numpy scalar these comparisons produce -- a np.bool_
         # fails `is True` and can trip a JSON serialiser downstream.
+        maasp_psi=float(
+            ppg_to_psi(inp.P_lot, inp.D_lot) - ppg_to_psi(inp.rho_mud, inp.D_lot)
+        ),
         bubble_length_limited=bool(
             H_gas is not None and abs(H_gas - (inp.D_td - inp.D_lot)) < 1e-6
         ),
