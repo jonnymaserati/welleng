@@ -265,6 +265,15 @@ class AnalyticalKickTolerance:
     #                                and the formation-only number overstates what the
     #                                well can take. INDICATIVE -- see
     #                                :func:`max_influx_contained_at_surface`.
+    already_fractured: bool = False
+    #                                True when the MUD COLUMN ALONE already meets or
+    #                                exceeds the fracture pressure at some exposed
+    #                                depth, with NO influx in the hole. The tolerance
+    #                                is then 0.0 and the section is undrillable on
+    #                                these inputs -- it is NOT the same condition as
+    #                                ``open_hole_unconstrained`` even though both
+    #                                leave the breach search with no candidate. See
+    #                                the guard in :func:`analytical_kick_tolerance`.
 
 
 def _top_for_bottom(gas_bottom, influx_bbl_bh, sections_sorted, bottom_tvd, *,
@@ -868,6 +877,39 @@ def analytical_kick_tolerance(
             r = _breach_v_gas_top_at(float(zt), float(d))
             if r is not None and r[0] < v_star:
                 v_star, best = r[0], (float(zt), r[1], float(d))
+
+    # ALREADY FRACTURED, NO INFLUX. An empty breach-candidate set has TWO physically
+    # OPPOSITE causes, and the per-depth solves return None for both: the shoe is far
+    # too strong to breach (genuinely unconstrained), or the MUD COLUMN ALONE already
+    # meets FP so there is no intact state to grow a bubble from (`FP <= A` above).
+    # Collapsing the second into "the shoe holds through full open-hole displacement"
+    # reports the full open-hole capacity for a well that is losing returns before any
+    # gas enters -- the unsafe direction, and the same defect class as the clamped
+    # bubble height in `core.drill_kick`. Separate them explicitly.
+    # Raised by welleng-api 2026-07-27 (Finding D): their design-curve sweep shifts FP
+    # down by 2 ppg, hit this at the weakest shoe, and got `open_hole_unconstrained`
+    # with the SAME volume as the strongest shoe in the sweep.
+    if not np.isfinite(v_star):
+        _mud_breach = [
+            float(d) for d in _env_d
+            if ppg_to_psi(float(fp_fn(np.array([float(d)]))[0]), float(d))
+            <= bhp_psi - g * rho_mud_ppg * (bottom_tvd - float(d))
+        ]
+        if _mud_breach:
+            return AnalyticalKickTolerance(
+                0.0, np.nan, np.nan, float(min(_mud_breach)), False,
+                {"note": (
+                    "The mud column ALONE already meets or exceeds the fracture "
+                    f"pressure at {min(_mud_breach):.1f} ft with NO influx in the "
+                    "hole, so there is no tolerable kick: the well is losing returns "
+                    "before any gas enters. Tolerance reported as 0.0. This is NOT "
+                    "'the shoe holds' -- it is the opposite. Reduce mud weight or "
+                    "set casing before this section."
+                )},
+                surface_containment_bbl=surface_bbl,
+                casing_binds=False,
+                already_fractured=True,
+            )
 
     # If no fracture breach is reachable within the exposed hole, the shoe holds to
     # full displacement -- route through the casing-burst / full-displacement handling

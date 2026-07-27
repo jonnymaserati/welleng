@@ -346,3 +346,100 @@ def test_matches_an_independent_practitioner_worked_case():
 
     assert math.isclose(result.H_gas, 326.15986, rel_tol=0.002)      # 0.06%
     assert math.isclose(result.capacity, 8.65186401728, rel_tol=0.01)  # 0.76%
+
+
+def test_a_clamped_bubble_height_is_flagged_not_silently_reported():
+    """Raised by welleng-api against 0.27.0rc2, and they framed it correctly: a
+    response that reports overflow in one field and no overflow in another is
+    worse than either answer alone.
+
+    The column solve clips H_gas to the OPEN-HOLE LENGTH. When that clamp binds,
+    the reported geometry says the bubble exactly fills the open hole -- its top
+    lands on the shoe to the digit -- while `capacity` is NOT clipped with it and
+    says 2.6x more. Both cannot be true.
+
+    The configuration is bubble-length-limited in the sense of SPE/IADC-140113:
+    a single coherent bubble cannot be longer than the open hole it occupies, so
+    the limiting configuration is unreachable. Flagged rather than silently
+    returned; the geometry and the volume must not be read together.
+    """
+    v_dpa = annular_capacity_dpa(6.125, 4.0)
+    inp = KickInputs(rho_mud=11.9, PP=12.2, kick_intensity=1.0, P_lot=15.0,
+                     P_apl=0.0, D_td=10500.0, D_lot=9800.0,
+                     T_s=212.0, T_td=302.0, V_dpa=v_dpa)
+
+    r = drill_kick(inp)
+    open_hole = (inp.D_td - inp.D_lot) * v_dpa
+
+    assert r.bubble_length_limited is True
+    assert math.isclose(r.H_gas, inp.D_td - inp.D_lot, rel_tol=1e-9)  # the clamp
+    assert r.capacity > open_hole                                     # the contradiction
+
+    # and an ordinary case is not flagged
+    ok = drill_kick(KickInputs(rho_mud=11.9, PP=11.5, kick_intensity=1.1,
+                               P_lot=16.0, P_apl=210.0, D_td=10500.0, D_lot=6500.0,
+                               T_s=212.0, T_td=302.0, V_dpa=v_dpa))
+    assert ok.bubble_length_limited is False
+
+
+def test_a_negative_tolerance_is_flagged_because_it_is_not_a_volume():
+    """A-7 can return a negative influx. That is not a tolerance -- it means the
+    maximum-credible pore pressure already exceeds what the shoe holds with NO
+    influx, so the section is undrillable on these inputs.
+
+    Left unfloored so the magnitude still says how far past the limit the case
+    is, but flagged so a consumer cannot display it as a volume.
+    """
+    r = drill_kick(KickInputs(rho_mud=11.9, PP=12.6, kick_intensity=1.5,
+                              P_lot=12.6, P_apl=0.0, D_td=10500.0, D_lot=6500.0,
+                              T_s=212.0, T_td=302.0,
+                              V_dpa=annular_capacity_dpa(6.125, 4.0)))
+
+    assert r.capacity < 0.0
+    assert r.capacity_negative is True
+
+
+def test_d_already_fractured_is_not_the_shoe_holding():
+    """welleng-api Finding D, 2026-07-27. Their design-curve sweep shifts the FP
+    profile down and re-solves; at the weakest shoe it got `open_hole_unconstrained`
+    with the SAME volume as the strongest shoe, so the sweep broke on its first
+    point and the curve came back empty.
+
+    An empty breach-candidate set has two OPPOSITE causes and the per-depth solves
+    return None for both: the shoe is far too strong to breach, or the mud column
+    ALONE already meets FP so there is no intact state to grow a bubble from. The
+    second reported the full open-hole capacity for a well that is losing returns
+    before any gas enters -- the unsafe direction.
+    """
+    from welleng.kick_tolerance.analytical import analytical_kick_tolerance
+    from welleng.kick_tolerance.core import fahrenheit_to_rankine
+    from welleng.kick_tolerance.migration import WellSection
+
+    g, shoe, td, mud = 0.0521, 6500.0, 9800.0, 11.4
+    sections = [WellSection(0.0, shoe, 0.1215, False),
+                WellSection(shoe, td, 0.1215, True)]
+    solve = lambda fp_shoe, fp_td: analytical_kick_tolerance(  # noqa: E731
+        sections=sections, pp=([0.0, td], [11.0, 11.0]),
+        fp=([shoe, td], [fp_shoe, fp_td]), bhp_psi=g * mud * td, rho_mud_ppg=mud,
+        gas_bh_state=(g * mud * td, fahrenheit_to_rankine(180.0), None, None),
+        geothermal=([0.0, td], [fahrenheit_to_rankine(60.0),
+                                fahrenheit_to_rankine(180.0)]))
+
+    # mud alone (3860.6 psi at the shoe) already exceeds a 10.4 ppg frac (3522.0)
+    bad = solve(10.4, 11.0)
+    assert bad.already_fractured is True
+    assert bad.max_influx_bbl == 0.0
+    assert bad.open_hole_unconstrained is False       # the bug: this used to be True
+    assert bad.binding_depth_tvd == shoe
+
+    # a genuinely strong shoe is still unconstrained, and must NOT set the new flag
+    strong = solve(14.2, 15.5)
+    assert strong.open_hole_unconstrained is True
+    assert strong.already_fractured is False
+
+    # and the two must not report the same volume any more
+    assert bad.max_influx_bbl != strong.max_influx_bbl
+
+    # monotone in shoe strength -- the property api's sweep relies on
+    kts = [solve(12.4 + o, 13.0 + o).max_influx_bbl for o in (-2.0, -1.0, 0.0, 1.0)]
+    assert kts == sorted(kts), kts

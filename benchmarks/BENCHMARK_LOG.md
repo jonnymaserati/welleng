@@ -583,3 +583,35 @@ max_influx_circulated [fast]              722.6 ms
 ```
 
 Machine: this dev box, .venv312.
+
+---
+
+## 2026-07-27 — rc3 defect fixes (Findings A + D). No perf change; harness un-broke.
+
+Three additive changes, none on a hot path: two `bool` flags on `KickResult`
+(`bubble_length_limited`, `capacity_negative`) and an already-fractured guard in
+`analytical_kick_tolerance` that only runs in the `not isfinite(v_star)` branch — i.e.
+only when the breach search found no candidate at all, which is not the normal path.
+
+```
+drill_kick, DISTINCT inputs               160.3 us   <- quote this
+drill_kick, repeated input (memo)          13.0 us
+analytical_kick_tolerance [exact]           1.2 ms   <- API/GUI path
+analytical_kick_tolerance [conservative]    1.4 ms
+migrate (n_steps=100)                     328.5 ms
+_max_influx_circulated [thorough]        4240.4 ms
+_max_influx_circulated [fast]             731.1 ms
+```
+
+Against the previous entry: `drill_kick` 319.6 -> 160.3 us is the profiling work already
+logged above, not these fixes; the analytical path is flat at 1.2/1.4 ms. Nothing here
+moved a number.
+
+**The harness itself was broken and silently so.** It still imported
+`max_influx_circulated`, which this cycle renamed to `_max_influx_circulated` when the
+marching oracle went private — so the gate's own script died on import. It was not run
+between that rename and now. Fixed in this change. A blocking gate that cannot start is
+indistinguishable from a gate that passes if nobody reads the output, which is the second
+time this cycle the benchmark gate has caught something only because it was actually run.
+
+Machine: this dev box, .venv312.
