@@ -335,3 +335,31 @@ def test_a_well_that_cannot_be_shut_in_returns_zero():
         sections, burst_pressure_psi=max(mud_alone, 1.0) - 1.0,
         bottom_tvd=10500.0, **COMMON
     ) == 0.0
+
+
+def test_callable_profile_is_refused_because_its_breakpoints_are_invisible():
+    """The solver is exact because it enumerates every depth where the binding
+    constraint can turn. A callable exposes none, so a weak zone between section
+    boundaries is silently skipped -- and skipped in the NON-conservative
+    direction. Same weak zone at 8000 ft: 44.4 bbl as a table, 58.2 bbl as a
+    callable, a 31% over-report with no warning. Refuse instead.
+    """
+    knots_tvd = np.array([0.0, 7999.0, 8000.0, 8001.0, 10500.0])
+    knots_ppg = np.array([14.0, 14.0, 13.0, 14.0, 14.0])
+    as_table = (knots_tvd, knots_ppg)
+    as_callable = lambda d: np.interp(d, knots_tvd, knots_ppg)  # noqa: E731
+
+    with pytest.raises(ValueError, match="callable profile"):
+        analytical_kick_tolerance(TWO_SECTION, PP, as_callable,
+                                  gas_density_mode="exact", **COMMON)
+
+    # the table form sees the weak zone and binds there
+    table = analytical_kick_tolerance(TWO_SECTION, PP, as_table,
+                                      gas_density_mode="exact", **COMMON)
+    assert table.binding_depth_tvd == pytest.approx(8000.0)
+
+    # a caller who pins the depths has said where to look, so a callable is fine
+    pinned = analytical_kick_tolerance(TWO_SECTION, PP, as_callable,
+                                       gas_density_mode="exact",
+                                       check_depths=[6500.0, 8000.0], **COMMON)
+    assert pinned.max_influx_bbl == pytest.approx(table.max_influx_bbl, rel=0.02)
