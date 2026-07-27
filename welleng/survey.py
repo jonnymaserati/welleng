@@ -1423,6 +1423,21 @@ class Survey(MinCurve):
         """
         return interpolate_tvd(self, tvd=tvd)
 
+    def tvd_turning_points(self) -> np.ndarray:
+        """The measured depths at which the well passes through horizontal.
+
+        TVD is monotonic in measured depth between consecutive turning points,
+        so these are the cuts a TVD-domain treatment needs to stay
+        single-valued (Sawaryn & Thorogood 2005, SPE-84246-PA, Eq. 31).
+
+        Returns
+        -------
+        (,n) ndarray of float
+            Turning-point measured depths, ascending; empty if TVD is
+            monotonic throughout.
+        """
+        return tvd_turning_points(self)
+
     def interpolate_survey_tvd(
         self, start: Optional[float] = None, stop: Optional[float] = None,
         step: float = 10
@@ -2797,6 +2812,41 @@ def _horizontal_tangent_delta(
         if 1e-12 < cand < alpha - 1e-12:
             return cand
     return None
+
+
+def tvd_turning_points(survey: "Survey") -> np.ndarray:
+    """The measured depths at which the well's TVD turns -- where the
+    trajectory passes through horizontal.
+
+    Between consecutive turning points TVD is a monotonic function of measured
+    depth, so these are the depths at which a TVD-domain treatment must be cut
+    if it is to remain single-valued. Found from the *Turning Point*
+    construction of Sawaryn & Thorogood (2005, SPE-84246-PA, Eq. 31) applied to
+    each minimum-curvature leg -- see :func:`_horizontal_tangent_delta`.
+
+    Parameters
+    ----------
+    survey : Survey
+
+    Returns
+    -------
+    (,n) ndarray of float
+        Turning-point measured depths, ascending. Empty if the well's TVD is
+        monotonic throughout.
+    """
+    mds = []
+    for i in range(len(survey.md) - 1):
+        alpha = survey.dogleg[i + 1]
+        delta_md = survey.delta_md[i + 1]
+        if delta_md == 0 or np.isnan(alpha) or alpha <= 1e-9:
+            continue
+        d_tp = _horizontal_tangent_delta(
+            survey.vec_nev[i][2], survey.vec_nev[i + 1][2], alpha
+        )
+        if d_tp is not None:
+            mds.append(survey.md[i] + d_tp / alpha * delta_md)
+
+    return np.array(sorted(mds), dtype=float)
 
 
 def _arc_tvd_crossings(

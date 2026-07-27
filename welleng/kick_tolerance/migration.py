@@ -119,15 +119,62 @@ class WellSection:
     is_open_hole
         True for an exposed open-hole formation (subject to the PP-FP envelope
         check); False for a cased/protected interval (not checked).
+    top_md, bottom_md
+        Optional along-hole extent of the same section [ft]. Annular capacity
+        is a volume per unit of ALONG-HOLE length, so in a deviated well the
+        volume held between two TVDs is ``capacity * dMD``, not
+        ``capacity * dTVD``. Supply these (from a survey) and the section
+        reports :attr:`capacity_per_tvd_ft` accordingly. Leave them ``None``
+        and the section is treated as vertical (``dMD == dTVD``), which is
+        the pre-0.27 behaviour exactly.
 
-    Note: TVD + capacity-per-section is deliberate; MD/deviation coupling is a
-    later refinement (see module docstring).
+    Pressure is a function of TVD and volume is a function of MD; a section
+    carries both extents so the two integrals stay in their own domains. The
+    ratio ``dMD/dTVD`` is the section-mean ``sec(inc)``, so a section should be
+    short enough that inclination is near-constant across it -- build them with
+    :func:`welleng.kick_tolerance.geometry.sections_from_architecture`, which
+    splits at the union of geometry changes and survey stations.
     """
 
     top_tvd: float
     bottom_tvd: float
     annular_capacity_bbl_per_ft: float
     is_open_hole: bool
+    top_md: float | None = None
+    bottom_md: float | None = None
+
+    @property
+    def md_extent(self) -> float:
+        """Along-hole length of the section [ft]; the TVD extent if unset."""
+        if self.top_md is None or self.bottom_md is None:
+            return self.bottom_tvd - self.top_tvd
+        return self.bottom_md - self.top_md
+
+    @property
+    def capacity_per_tvd_ft(self) -> float:
+        """Annular capacity per foot of TVD [bbl/ft].
+
+        ``annular_capacity_bbl_per_ft * (dMD / dTVD)`` -- the along-hole
+        capacity scaled by the section-mean ``sec(inc)``. Equals the raw
+        capacity for a vertical section. Every volume in the TVD-domain
+        engines is ``this * dTVD``.
+
+        Raises
+        ------
+        ValueError
+            If the section has zero TVD extent (a horizontal section holds
+            volume across no TVD at all, which the TVD-domain formulation
+            cannot represent).
+        """
+        d_tvd = self.bottom_tvd - self.top_tvd
+        if d_tvd <= 0.0:
+            raise ValueError(
+                "WellSection has zero TVD extent: a horizontal section holds "
+                "volume over no TVD and cannot be expressed as a capacity per "
+                "foot of TVD. Split the well above the horizontal, or use the "
+                "MD-domain march."
+            )
+        return self.annular_capacity_bbl_per_ft * self.md_extent / d_tvd
 
 
 # ============================================================================
@@ -505,7 +552,7 @@ def _fill_down(gas_top: float, volume_bbl: float, sections_sorted, bottom_tvd: f
         seg_len = seg_bottom - seg_top
         if seg_len <= 0.0:
             continue
-        cap = sec.annular_capacity_bbl_per_ft
+        cap = sec.capacity_per_tvd_ft
         vol_avail = cap * seg_len
         if remaining <= vol_avail:
             d = seg_top + remaining / cap
@@ -537,7 +584,7 @@ def _fill_up(gas_bottom: float, volume_bbl: float, sections_sorted, top_limit: f
         seg_len = seg_bottom - seg_top
         if seg_len <= 0.0:
             continue
-        cap = sec.annular_capacity_bbl_per_ft
+        cap = sec.capacity_per_tvd_ft
         vol_avail = cap * seg_len
         if remaining <= vol_avail:
             d = seg_bottom - remaining / cap
@@ -894,7 +941,7 @@ def max_influx_circulated(
     # constrain the KT at the provided FP (not "unlimited" -- the limit lies beyond
     # what is assessed here); see the open_hole_unconstrained handling below.
     v_hole = sum(
-        s.annular_capacity_bbl_per_ft * (s.bottom_tvd - s.top_tvd)
+        s.capacity_per_tvd_ft * (s.bottom_tvd - s.top_tvd)
         for s in sections if s.is_open_hole
     )
     v_ceiling = min(v_hole, v_cap_bbl)               # never search beyond the hole
