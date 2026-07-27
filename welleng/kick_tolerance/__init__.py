@@ -82,6 +82,41 @@ number.
   density-driven and capacity-independent, so for each candidate binding depth
   ``d`` the worst string position is ``d + L(d)``.
 
+MAASP -- the stated convention (READ THIS)
+------------------------------------------
+``maasp()`` reports **MAASP at the casing shoe**, the industry definition::
+
+    MAASP = P_frac(shoe) - g.rho_mud.shoe
+
+That is what a driller computes by hand and what belongs under a field labelled
+"MAASP". It is deliberately NOT redefined. ``limiting_psi`` carries the
+generalisation -- the same quantity minimised over every *exposed* depth. The two
+are identical for a constant fracture gradient, because ``g.d.(FP_emw - rho_mud)``
+grows with depth so the shallowest exposed point governs; they separate only when a
+weak zone sits below the shoe, and then the conventional number is the higher, less
+safe one (``governed_by_shoe`` tells you which case you are in).
+
+Three properties that are easy to assume wrongly:
+
+* **Shut in.** Annular pressure loss is NOT deducted -- APL is a *circulating*
+  term, and subtracting it would understate the closed-in limit.
+* **Mud-filled annulus.** MAASP is a PLANNING number, not the shut-in limit during
+  a kick: with influx in the annulus the column is lighter than mud and the surface
+  pressure that breaks the shoe down is a different quantity -- the one the
+  kick-tolerance solve computes. **Do not compare a live SICP against MAASP and
+  conclude the shoe is safe.**
+* **``g`` does NOT cancel**, unlike the kick tolerance itself. MAASP is a difference
+  of two large pressures rather than an equivalent-mud-weight ratio, so a source
+  quoting ``g = 0.052`` differs from welleng's ``0.0521`` by ~0.7% on a typical
+  shoe. Expect that when reconciling against hand calcs and textbook examples.
+
+A fully cased hole RAISES: nothing is exposed, so MAASP is undefined and the
+governing limit is casing burst instead.
+
+Related shut-in quantities ``sidp_psi`` and ``sicp_psi`` are reported per
+``MigrationStep``. **SICP is a SCHEDULE, not a single value** -- it rises as the
+bubble expands and migrates, so any displayed SICP must say which position it is.
+
 UNITS -- the field-units contract (READ THIS)
 ---------------------------------------------
 **Every input and output of this subpackage is in US oilfield field units**,
