@@ -24,6 +24,34 @@ model would only RELAX (raise) the tolerance -- a casing-design margin-recovery
 tool, not a safety improvement -- and its transient two-phase hydraulics belong
 with a hydraulics kernel, not here.
 
+STRING POSITION -- the stated convention (READ THIS)
+----------------------------------------------------
+**A kick tolerance is a number about a stated configuration, and this is ours.**
+The engine can place the string anywhere; the convention below is what the
+REPORTED quantity means, not what the code is capable of. Quote it with the
+number.
+
+* **Drilling case** (``drill_kick``, and the sectioned solvers used for it) --
+  the **BHA is ON BOTTOM**. There is no string-position variable: the geometry is
+  fixed and the kick margin is carried in the bottom-hole pressure. Nothing is
+  searched over, because nothing moves.
+
+* **Swab case** (``swab_kick``, tripping) -- the string position IS a variable,
+  because the BHA can intercept the bubble at any depth as it is run in. The
+  worst interception is **COMPUTED, not assumed.**
+
+  Industry commonly assumes the worst case is *bubble top at the shoe with the
+  bit at the bubble's bottom*. We do not assume it, because we can afford to
+  solve for it -- and it is **NOT conservative**. The worst case has the bubble
+  top at the BINDING depth, which is the shoe only when the shoe is what binds.
+  Measured against the true worst: the shoe assumption is +0.68%, +0.79% and
+  **+25.42%** high on a well whose weak zone sits below the shoe. It has the
+  right shape and the wrong depth.
+
+  The true worst is determinate, not a search: the gas length ``L(d)`` is
+  density-driven and capacity-independent, so for each candidate binding depth
+  ``d`` the worst string position is ``d + L(d)``.
+
 UNITS -- the field-units contract (READ THIS)
 ---------------------------------------------
 **Every input and output of this subpackage is in US oilfield field units**,
@@ -108,7 +136,10 @@ from .migration import (
 )
 # Analytical (breakpoint) kick-tolerance solver: the migration-form KT evaluated
 # only at the breakpoints of P(gas position) -- the exact worst position, no march.
-from .analytical import analytical_kick_tolerance, AnalyticalKickTolerance
+from .analytical import (
+    analytical_kick_tolerance, AnalyticalKickTolerance,
+    max_influx_contained_at_surface, swab_worst_bit,
+)
 # Catalogue-backed geometry: true annular capacity (bore - string), casing IDs
 # from the API-5CT catalogue. catalog is imported lazily inside the builders.
 from .geometry import annular_capacity, cased_section, open_hole_section
@@ -158,6 +189,8 @@ __all__ = [
     "linear_temp_profile",
     "analytical_kick_tolerance",
     "AnalyticalKickTolerance",
+    "max_influx_contained_at_surface",
+    "swab_worst_bit",
     "annular_capacity",
     "cased_section",
     "open_hole_section",
