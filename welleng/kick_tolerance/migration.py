@@ -930,9 +930,16 @@ def _max_influx_circulated(
     one. It earned its keep on 2026-07-27, when it exposed an incomplete
     breakpoint set that no other test caught.
 
-    It is interface-anchored, NOT a coarse march: it anchors to the profile
-    breakpoints, which is why it still finds a 2 ft weak zone at any step count.
-    Do not describe it as naive sampling.
+    It is interface-anchored -- and that is the point, not a caveat. It finds a
+    2 ft weak zone at any step count ONLY because it anchors to the profile
+    breakpoints. Strip them out by passing a callable profile, which exposes
+    none, and the same engine returns 57.748 bbl against a true 44.443: it steps
+    straight over the zone, +30%.
+
+    So this engine is evidence FOR the breakpoint argument, not against it. The
+    breakpoints do the work; the marching is what happens between them. Do not
+    cite it as "a march finds narrow features" -- a march does not, and we do not
+    ship one that tries.
 
     An influx is tolerable when the migration keeps ``within_envelope`` True AND the
     bubble fits the open hole (``bha_length_exceeded`` False). Both tighten monotonically
