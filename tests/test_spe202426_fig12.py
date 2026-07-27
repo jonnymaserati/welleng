@@ -18,6 +18,7 @@ figure + this closed form + welleng all give geothermal > isothermal.)
 import pytest
 
 from welleng.kick_tolerance import KickInputs, drill_kick
+from welleng.kick_tolerance.core import DEFAULT_MODEL_REVISION
 
 M_TO_FT = 3.280839895
 _c2f = lambda c: c * 9.0 / 5.0 + 32.0
@@ -98,38 +99,39 @@ def test_fig12_A_scales_as_Ttd_over_Ts():
     assert a_geo > a_iso
 
 
-def test_the_default_revision_reads_ABOVE_nassab_by_a_pinned_amount():
-    """The tests above pin the FROZEN ``spe-208788`` revision. On the shipped
-    default the magnitudes move, and they move the OTHER WAY from SPE-208788.
+def test_the_default_matches_what_the_paper_actually_STATES():
+    """Assert against the paper's words, not against dots read off its figure.
 
-        SPE-208788 (gas properties PINNED by the paper)   default  -2.7 %
-        SPE-202426 here      (properties COMPUTED)        default  +9.1 %
+    A previous version of this test compared the default to "~16 and ~13 bbl"
+    and concluded it read +9% ANTI-CONSERVATIVE. Those are not published values
+    -- they are our reading of Fig. 12. The paper states a RELATIONSHIP:
 
-    The difference is the override surface, not the physics: SPE-208788's case
-    supplies Z_s / Z_td / rho_gas_s, which bypass the gas backend entirely, so
-    the bubble-state pressure basis cannot move the density there. Here nothing
-    is overridden, so it can.
+        "The geothermal assumption is conservative in this case, with a 7%
+         resulting change in KT when compared with Simulator D. The isothermal
+         assumption is more conservative, giving 23% lower KT."
 
-    Direction matters and is asserted: against Nassab the default reports MORE
-    tolerance than the published dots, 14.44 against ~13 -- outside the +-1 bbl
-    that the frozen revision meets. That is the anti-conservative direction, it
-    is a consequence of the corrected influx basis rather than a defect, and it
-    is pinned here so it cannot drift unnoticed.
+    So geo = 0.93 x SimD and iso = 0.77 x SimD, hence iso/geo = 0.8280. That is
+    the quantity to check, and it is dimensionless -- immune to the figure
+    reading, and to any absolute offset between our model and his.
+
+    On it the DEFAULT agrees to 2.4% and is CLOSER than the frozen revision
+    (2.85%), which is the opposite of what the figure-read comparison suggested.
     """
     kw = {k: v for k, v in CASE1.items() if k != "model_revision"}
 
-    def kt(t_s, t_td):
-        return drill_kick(KickInputs(T_s=t_s, T_td=t_td, **kw)).capacity
+    def ratio(revision):
+        def kt(t_s, t_td):
+            return drill_kick(KickInputs(
+                T_s=t_s, T_td=t_td, model_revision=revision, **kw)).capacity
+        return kt(T_ISO, T_ISO) / kt(T_SHOE_GEO, T_TD_GEO)
 
-    geothermal = kt(T_SHOE_GEO, T_TD_GEO)
-    isothermal = kt(T_ISO, T_ISO)
+    stated = (1.0 - 0.23) / (1.0 - 0.07)          # 0.8280
 
-    assert geothermal == pytest.approx(17.024, abs=0.02)
-    assert isothermal == pytest.approx(14.435, abs=0.02)
+    default = ratio(DEFAULT_MODEL_REVISION)
+    frozen = ratio("spe-208788")
 
-    # the SIGN of the physics claim survives -- geothermal above isothermal, ~15%
-    assert geothermal > isothermal
-    assert (geothermal - isothermal) / geothermal == pytest.approx(0.152, abs=0.01)
-
-    # and the default sits ABOVE the published dots, unlike the frozen revision
-    assert isothermal - 13.0 > 1.0
+    assert default == pytest.approx(stated, rel=0.03)
+    assert abs(default - stated) < abs(frozen - stated), (
+        "the corrected influx basis should track the paper's stated relationship "
+        "at least as well as the published-model revision"
+    )
