@@ -76,7 +76,12 @@ import numpy as np
 from math import cos, radians
 from typing import Optional
 
-from .gas_z import gas_density_ppg, hall_yarborough_z, methane_properties
+from .gas_z import (
+    gas_density_ppg,
+    hall_yarborough_z,
+    hall_yarborough_z_and_y,
+    methane_properties,
+)
 
 # --- Constants (public, oilfield units) -------------------------------------
 G_PSI_PER_PPG_FT = 0.0521      # gravitational constant g  [psi.ppg^-1.ft^-1]
@@ -403,6 +408,7 @@ def _bubble_state_impl(inp: KickInputs, P_td: float, n: int):
     grad = (0.0 if (interval <= 0.0 or inp.ideal_gas)
             else (inp.T_td - inp.T_s) / interval)
     H = 0.0
+    y_seed = 1.0e-3                     # chained through the column solve below
     T_bar = fahrenheit_to_rankine(inp.T_s)
     rho_bar = _influx_density(inp, P_top, T_bar)
     for _ in range(64):
@@ -422,13 +428,15 @@ def _bubble_state_impl(inp: KickInputs, P_td: float, n: int):
         # solves per case and made `drill_kick` 245x slower than 0.26.0. The
         # benchmark gate caught it; see benchmarks/BENCHMARK_LOG.md.
         if H <= 0.0:
-            rho_new = _influx_density(inp, P_top, fahrenheit_to_rankine(inp.T_s))
+            rho_new, y_seed = _influx_density_warm(
+                inp, P_top, fahrenheit_to_rankine(inp.T_s), y_seed)
         else:
             T_mid = fahrenheit_to_rankine(inp.T_s + grad * 0.5 * H)
             P_bottom = P_top
             for _ in range(6):                       # c depends on P; converges fast
-                c = _influx_density(inp, 0.5 * (P_top + P_bottom), T_mid) / (
-                    0.5 * (P_top + P_bottom))
+                P_mean = 0.5 * (P_top + P_bottom)
+                rho_mean, y_seed = _influx_density_warm(inp, P_mean, T_mid, y_seed)
+                c = rho_mean / P_mean
                 P_new = P_top * np.exp(g * c * H)
                 if abs(P_new - P_bottom) < 1e-9:
                     P_bottom = P_new
@@ -550,6 +558,28 @@ def _influx_temperature_impl(T_s, T_td, D_lot, D_td, rho_mud, P_lot, P_apl,
             break
         H = H_new
     return T_r, H
+
+
+def _influx_density_warm(inp: KickInputs, p_psia: float, t_r: float, y0: float):
+    """``(density [ppg], y)`` at ``(p_psia, t_r)``, WARM-STARTABLE.
+
+    ``y`` is Hall-Yarborough's reduced density; feeding the previous solve's ``y``
+    back as ``y0`` cuts its Newton iterations from ~5 to ~2 without changing the
+    converged root (identical to 1e-12 -- see :func:`gas_z.reduced_density`).
+
+    The bubble-state column solve walks a sequence of NEARBY pressures, which is
+    exactly the case that seed was written for, and it was calling the cold path.
+    ``y`` is meaningless for the ideal and CoolProp backends, which return the
+    seed unchanged so the caller can chain without branching.
+    """
+    if inp.ideal_gas:
+        return gas_density_ppg(p_psia, t_r, 1.0), y0
+    if inp.fluid is not None:
+        from .gas_z_coolprop import fluid_z_density
+
+        return fluid_z_density(inp.fluid, p_psia, t_r)[1], y0
+    z, y = hall_yarborough_z_and_y(p_psia, t_r, y0=y0)
+    return gas_density_ppg(p_psia, t_r, z), y
 
 
 def _influx_density(inp: KickInputs, p_psia: float, t_r: float) -> float:
