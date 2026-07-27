@@ -56,6 +56,46 @@ class String:
 
         return string_new
 
+    def at(self, md):
+        """
+        The section spanning the given measured depth.
+
+        Parameters
+        ----------
+        md: float
+            Measured depth in meters, within (top, bottom].
+
+        Returns
+        -------
+        dict
+            The section dict (as stored in `sections`), carrying its 'top'
+            and 'bottom' measured depths along with whatever geometry was
+            added with it ('id' for a `WellBore`, 'od' for a `BHA`).
+        """
+        assert self.top <= md <= self.bottom, "Depth out of range"
+
+        for section in self.sections.values():
+            if section['top'] <= md <= section['bottom']:
+                return section
+
+        raise ValueError(f"No section spans md {md}")
+
+    def breakpoints(self):
+        """
+        The measured depths at which this string's geometry changes -- every
+        section top and bottom, sorted and de-duplicated.
+
+        Returns
+        -------
+        list of float
+        """
+        mds = set()
+        for section in self.sections.values():
+            mds.add(section['top'])
+            mds.add(section['bottom'])
+
+        return sorted(mds)
+
     def add_section(self, **kwargs):
         if type(self).__name__ == 'WellBore':
             for param in PARAMS.get('WellBore'):

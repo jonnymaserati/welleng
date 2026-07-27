@@ -24,6 +24,99 @@ model would only RELAX (raise) the tolerance -- a casing-design margin-recovery
 tool, not a safety improvement -- and its transient two-phase hydraulics belong
 with a hydraulics kernel, not here.
 
+WORST-CASE PORE PRESSURE -- the stated convention (READ THIS)
+--------------------------------------------------------------
+**welleng uses PP + kick intensity, floored at the mud hydrostatic.**
+
+    scenario_P_td = max( (PP + kick_intensity) * g * D_td ,  rho_mud * g * D_td )
+
+This is a CHOICE, and it is the single biggest source of disagreement between
+kick-tolerance numbers in the industry. Santos & Sonnemann, *Transitional Kick
+Tolerance*, SPE-159175-MS (2012), names the two families in common use:
+
+* **PP+KI** -- "Predicted pore pressure + kick intensity". What we implement.
+* **MW+KI** -- "Current Mud Density + kick intensity", i.e. the worst case is
+  referenced to the fluid in the hole rather than to the predicted pore
+  pressure.
+
+They give different answers, and the paper is blunt about the consequence: *"one
+big issue in the industry today is the lack of consistency about KT calculation,
+leading to significant confusion and increased risk"*, from *"methods which
+provide widely diverging results"*. It also warns that "several, slightly
+different ways" exist WITHIN each family -- our mud-hydrostatic floor is one such
+variation, so quoting "PP+KI" alone does not pin the number either.
+
+Quote the convention with the number. Two engineers can both be right and
+disagree by a wide margin, and neither will know why unless it is stated.
+
+Not implemented: **Transitional Kick Tolerance** (the same paper) -- KT as a
+curve over the whole hole section rather than a single value at section TD. The
+paper's criticism that the industry focuses "almost exclusively on the KT at the
+end of a hole section" applies to this package as it stands.
+
+STRING POSITION -- the stated convention (READ THIS)
+----------------------------------------------------
+**A kick tolerance is a number about a stated configuration, and this is ours.**
+The engine can place the string anywhere; the convention below is what the
+REPORTED quantity means, not what the code is capable of. Quote it with the
+number.
+
+* **Drilling case** (``drill_kick``, and the sectioned solvers used for it) --
+  the **BHA is ON BOTTOM**. There is no string-position variable: the geometry is
+  fixed and the kick margin is carried in the bottom-hole pressure. Nothing is
+  searched over, because nothing moves.
+
+* **Swab case** (``swab_kick``, tripping) -- the string position IS a variable,
+  because the BHA can intercept the bubble at any depth as it is run in. The
+  worst interception is **COMPUTED, not assumed.**
+
+  Industry commonly assumes the worst case is *bubble top at the shoe with the
+  bit at the bubble's bottom*. We do not assume it, because we can afford to
+  solve for it -- and it is **NOT conservative**. The worst case has the bubble
+  top at the BINDING depth, which is the shoe only when the shoe is what binds.
+  Measured against the true worst: the shoe assumption is +0.68%, +0.79% and
+  **+25.42%** high on a well whose weak zone sits below the shoe. It has the
+  right shape and the wrong depth.
+
+  The true worst is determinate, not a search: the gas length ``L(d)`` is
+  density-driven and capacity-independent, so for each candidate binding depth
+  ``d`` the worst string position is ``d + L(d)``.
+
+MAASP -- the stated convention (READ THIS)
+------------------------------------------
+``maasp()`` reports **MAASP at the casing shoe**, the industry definition::
+
+    MAASP = P_frac(shoe) - g.rho_mud.shoe
+
+That is what a driller computes by hand and what belongs under a field labelled
+"MAASP". It is deliberately NOT redefined. ``limiting_psi`` carries the
+generalisation -- the same quantity minimised over every *exposed* depth. The two
+are identical for a constant fracture gradient, because ``g.d.(FP_emw - rho_mud)``
+grows with depth so the shallowest exposed point governs; they separate only when a
+weak zone sits below the shoe, and then the conventional number is the higher, less
+safe one (``governed_by_shoe`` tells you which case you are in).
+
+Three properties that are easy to assume wrongly:
+
+* **Shut in.** Annular pressure loss is NOT deducted -- APL is a *circulating*
+  term, and subtracting it would understate the closed-in limit.
+* **Mud-filled annulus.** MAASP is a PLANNING number, not the shut-in limit during
+  a kick: with influx in the annulus the column is lighter than mud and the surface
+  pressure that breaks the shoe down is a different quantity -- the one the
+  kick-tolerance solve computes. **Do not compare a live SICP against MAASP and
+  conclude the shoe is safe.**
+* **``g`` does NOT cancel**, unlike the kick tolerance itself. MAASP is a difference
+  of two large pressures rather than an equivalent-mud-weight ratio, so a source
+  quoting ``g = 0.052`` differs from welleng's ``0.0521`` by ~0.7% on a typical
+  shoe. Expect that when reconciling against hand calcs and textbook examples.
+
+A fully cased hole RAISES: nothing is exposed, so MAASP is undefined and the
+governing limit is casing burst instead.
+
+Related shut-in quantities ``sidp_psi`` and ``sicp_psi`` are reported per
+``MigrationStep``. **SICP is a SCHEDULE, not a single value** -- it rises as the
+bubble expands and migrates, so any displayed SICP must say which position it is.
+
 UNITS -- the field-units contract (READ THIS)
 ---------------------------------------------
 **Every input and output of this subpackage is in US oilfield field units**,
@@ -102,19 +195,23 @@ from .migration import (
     MigrationResult,
     KickToleranceResult,
     migrate,
-    max_influx_circulated,
+    _max_influx_circulated,
     pressure_at_depth,
     linear_temp_profile,
 )
 # Analytical (breakpoint) kick-tolerance solver: the migration-form KT evaluated
 # only at the breakpoints of P(gas position) -- the exact worst position, no march.
-from .analytical import analytical_kick_tolerance, AnalyticalKickTolerance
+from .analytical import (
+    analytical_kick_tolerance, AnalyticalKickTolerance,
+    max_influx_contained_at_surface, swab_worst_bit,
+)
 # Catalogue-backed geometry: true annular capacity (bore - string), casing IDs
 # from the API-5CT catalogue. catalog is imported lazily inside the builders.
 from .geometry import annular_capacity, cased_section, open_hole_section
 # NOGEPA-50 static single-shoe formula (the mandated baseline the migration
 # engine's static reduction reproduces).
 from .nogepa import nogepa_drilling_kick_tolerance, NogepaResult
+from .migration import maasp, MaaspResult
 
 try:  # envelope/monotonicity need SymPy (optional 'kick' extra)
     from .envelope import evaluate_envelope, EnvelopeResult
@@ -153,14 +250,17 @@ __all__ = [
     "MigrationResult",
     "KickToleranceResult",
     "migrate",
-    "max_influx_circulated",
     "pressure_at_depth",
     "linear_temp_profile",
     "analytical_kick_tolerance",
     "AnalyticalKickTolerance",
+    "max_influx_contained_at_surface",
+    "swab_worst_bit",
     "annular_capacity",
     "cased_section",
     "open_hole_section",
     "nogepa_drilling_kick_tolerance",
+    "maasp",
+    "MaaspResult",
     "NogepaResult",
 ]

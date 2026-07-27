@@ -1,68 +1,78 @@
-"""Kick-tolerance model revisions, and the A-5 influx-temperature correction.
+"""Kick-tolerance model revisions, and the influx gas state.
 
 A kick-tolerance number ends up in a signed-off well programme, so a result
-computed under an earlier model has to stay reproducible EXACTLY once the model
-changes. Hence a named FROZEN revision that travels with the result.
+computed under an earlier model must stay reproducible EXACTLY once the model
+changes. Hence named, FROZEN revisions that travel with the result.
 
-The correction itself (a batch consumer, external reviewer, 2026-07-26): A-5's
-``T_s``/``Z_s``/``rho_gas_s`` describe the INFLUX at the condition A-2 defines
--- gas top at the casing shoe -- so the column hangs BELOW the shoe and the
-shoe is its COOL END. Evaluating there makes the gas denser than the column,
-shrinking the ``(rho_mud - rho_gas_s)`` deficit in A-5's denominator, inflating
-A, and passing straight through A-7 as an OVERSTATED tolerable influx. The
-pressure side already integrates the column; only the temperature side did not.
+THE HISTORY, because the revision names only make sense with it:
+
+* ``spe-208788`` reproduces the paper's printed TABLE. Its gas is evaluated after
+  a GAS gradient over the whole open hole -- which is what the table's printed
+  Z_s = 1.1230 and rho_gas-s = 1.710 imply, and which A-2's simplification (1)
+  explicitly excludes ("the gas column does not fill the entire open hole").
+* ``column-mean-2026`` moved the influx TEMPERATURE to the column mean (correct,
+  and supported by SPE-202426's worked average) but left that pressure basis in
+  place. A second-order fix on a first-order error.
+* ``bubble-state`` evaluates the gas at the BUBBLE's own state: BHP pinned, MUD
+  beneath the bubble setting its bottom pressure, its top at the shoe fracture
+  limit, mass-weighted mean density over the column. This reduces ALGEBRAICALLY
+  EXACTLY to NOGEPA-50 Section 3.2 under NOGEPA's assumptions -- see
+  ``tests/test_nogepa.py``, which is the closed form's external anchor.
+
+Full audit, with the decomposition and the numbers:
+``docs/dev/KICK_CLOSED_FORM_AUDIT.md``.
 """
 
 import math
-from dataclasses import replace
 
 import pytest
 
 from welleng.kick_tolerance.core import (
     DEFAULT_MODEL_REVISION,
     MODEL_REVISIONS,
+    G_PSI_PER_PPG_FT,
+    P_ATM_PSI,
     KickInputs,
     annular_capacity_dpa,
     constant_A,
     drill_kick,
     influx_column,
     ppg_to_psi,
+    scenario_P_td,
     swab_kick,
 )
-from welleng.kick_tolerance.core import G_PSI_PER_PPG_FT
 
 LEGACY = "spe-208788"
+SUPERSEDED = ("spe-208788", "column-mean-2026")
 
 
-def case(**overrides) -> KickInputs:
-    """SPE-208788 Table-1 geometry, gas properties computed."""
+def case(**over):
     kw = dict(
         rho_mud=11.9, PP=11.5, kick_intensity=1.1, P_lot=16.0, P_apl=210.0,
         D_td=10500.0, D_lot=6500.0, T_s=212.0, T_td=302.0,
         V_dpa=annular_capacity_dpa(6.125, 4.0), kt_threshold=25.0,
     )
-    kw.update(overrides)
+    kw.update(over)
     return KickInputs(**kw)
 
 
-# --- the revision mechanism -------------------------------------------------
+# --- the mechanism ----------------------------------------------------------
 
-def test_default_is_the_corrected_revision():
-    assert DEFAULT_MODEL_REVISION == "column-mean-2026"
-    assert LEGACY in MODEL_REVISIONS
-    assert KickInputs.__dataclass_fields__["model_revision"].default == (
-        DEFAULT_MODEL_REVISION
-    )
+def test_default_is_the_bubble_state_revision():
+    assert DEFAULT_MODEL_REVISION == "bubble-state"
+    # every published revision stays reachable, permanently
+    assert set(SUPERSEDED) <= set(MODEL_REVISIONS)
 
 
-def test_revision_travels_with_the_result():
-    """A stored calculation must record what produced it, or it cannot be
-    re-run verbatim."""
+def test_revision_and_station_travel_with_the_result():
+    """A stored calculation must record what produced it, or it cannot be re-run."""
     for rev in MODEL_REVISIONS:
         for fn in (drill_kick, swab_kick):
             res = fn(case(model_revision=rev))
             assert res.model_revision == rev
             assert res.T_influx is not None
+            assert res.rho_influx is not None and res.rho_influx > 0.0
+            assert res.H_gas is not None and res.H_gas > 0.0
 
 
 def test_unknown_revision_raises():
@@ -70,175 +80,111 @@ def test_unknown_revision_raises():
         drill_kick(case(model_revision="whatever-2099"))
 
 
-def test_legacy_revision_is_frozen_at_the_published_numbers():
-    """The anchor. `spe-208788` must keep reproducing SPE-208788 Table 1."""
+def test_frozen_revisions_reproduce_the_published_numbers():
+    """`spe-208788` must keep reproducing SPE-208788's TABLE, forever."""
     res = drill_kick(case(model_revision=LEGACY))
-    assert round(res.P_td) == 6893                      # A-1
-    assert round(res.B) == 7688                         # A-6
+    assert round(res.P_td) == 6893                            # A-1
+    assert round(res.B) == 7688                               # A-6
     assert math.isclose(res.capacity, 27.86, rel_tol=0.013)   # A-7
     assert math.isclose(res.pp_at_threshold, 12.74, rel_tol=0.01)
-    assert res.T_influx == pytest.approx(212.0)         # the shoe temperature
+    assert res.T_influx == pytest.approx(212.0)               # the shoe
 
 
-# --- the correction ---------------------------------------------------------
+# --- the bubble state -------------------------------------------------------
 
-def test_correction_is_anti_conservative_in_the_direction_reported():
-    """The whole point: the shipped model OVERSTATED the tolerable influx."""
-    legacy = drill_kick(case(model_revision=LEGACY)).capacity
-    fixed = drill_kick(case()).capacity
-    assert fixed < legacy
-    overstatement = legacy / fixed - 1.0
-    assert 0.02 < overstatement < 0.05                  # 3.1% on this case
+def test_the_bubble_column_CLOSES_on_the_fracture_limit():
+    """The construction's self-check, and the reason to trust it.
+
+    Two independent routes to the bubble-BOTTOM pressure must agree: the
+    bubble's own weight added to its top pressure, and BHP minus the mud column
+    beneath it. A wrong construction does not close. This is what the superseded
+    basis fails -- it puts the gas 1290 psi high by running a gas gradient over
+    the whole open hole.
+    """
+    from welleng.kick_tolerance.core import _bubble_state
+
+    inp = case()
+    P_td = scenario_P_td(inp)
+    _, H, _, rho_bar = _bubble_state(inp, P_td)
+    g = G_PSI_PER_PPG_FT
+    P_top = ppg_to_psi(inp.P_lot, inp.D_lot) - inp.P_apl + P_ATM_PSI
+    from_own_weight = P_top + g * rho_bar * H
+    from_mud_beneath = (P_td - g * inp.rho_mud * (inp.D_td - inp.D_lot - H)
+                        + P_ATM_PSI)
+    assert from_own_weight == pytest.approx(from_mud_beneath, abs=1e-6), (
+        f"column does not close: {from_own_weight:.4f} vs "
+        f"{from_mud_beneath:.4f} psia"
+    )
 
 
-def test_influx_is_evaluated_inside_the_column_not_at_its_cool_end():
+@pytest.mark.parametrize("superseded", SUPERSEDED)
+def test_the_corrected_basis_reports_MORE_than_the_superseded_one(superseded):
+    """Direction, stated because it is the safety-relevant fact.
+
+    The superseded basis evaluates the gas too DENSE (a whole-open-hole gas
+    gradient puts it 1290 psi high), and under-reports the tolerable influx by
+    2-12% depending on the gradient. So the correction INCREASES the reported
+    capacity: anyone who acted on a shipped number took LESS influx than they
+    could safely tolerate.
+    """
+    old = drill_kick(case(model_revision=superseded)).capacity
+    new = drill_kick(case()).capacity
+    assert new > old
+    assert 0.02 < (new / old - 1) < 0.12
+
+
+def test_the_influx_is_evaluated_INSIDE_the_bubble():
     res = drill_kick(case())
-    assert res.T_influx > 212.0                         # warmer than the shoe
-    assert res.T_influx < 302.0                         # cooler than TD
-    assert 0.0 < res.H_gas < (10500.0 - 6500.0)         # column is in open hole
-    # the mean sits at the column mid-depth on the geothermal gradient
+    assert 212.0 < res.T_influx < 302.0          # between the mud interfaces
+    assert 0.0 < res.H_gas < (10500.0 - 6500.0)  # column is in the open hole
     grad = (302.0 - 212.0) / (10500.0 - 6500.0)
     assert res.T_influx == pytest.approx(212.0 + grad * 0.5 * res.H_gas, rel=1e-6)
 
 
-def test_isothermal_is_an_exact_no_op():
-    """The correction is PURELY the temperature gradient. With no gradient the
-    two revisions must agree bit-for-bit -- if they do not, something other
-    than the reported defect changed."""
-    iso = dict(T_s=212.0, T_td=212.0)
-    a_legacy = constant_A(case(model_revision=LEGACY, **iso))
-    a_fixed = constant_A(case(**iso))
-    assert a_fixed == a_legacy
-
-
-@pytest.mark.parametrize("t_td", (232.0, 272.0, 302.0, 362.0, 412.0))
-def test_correction_grows_monotonically_with_the_gradient(t_td):
-    """A steeper gradient means a bigger gap between the shoe and the column,
-    so a bigger correction. Monotone, and zero at zero gradient."""
-    legacy = drill_kick(case(model_revision=LEGACY, T_td=t_td)).capacity
-    fixed = drill_kick(case(T_td=t_td)).capacity
-    delta = legacy / fixed - 1.0
-    assert delta >= 0.0
-    baseline = (
-        drill_kick(case(model_revision=LEGACY, T_td=212.0)).capacity
-        / drill_kick(case(T_td=212.0)).capacity - 1.0
+def test_influx_column_matches_what_the_result_reports():
+    """The public helper and the result must not disagree -- the
+    'three sites, three answers' failure mode in miniature."""
+    inp = case()
+    assert influx_column(inp) == (
+        drill_kick(inp).T_influx, drill_kick(inp).H_gas,
+        drill_kick(inp).rho_influx,
     )
-    assert baseline == pytest.approx(0.0, abs=1e-12)
-    if t_td > 212.0:
-        assert delta > 0.0
 
 
-def test_ideal_gas_reference_mode_is_isothermal_and_unaffected():
-    """`ideal_gas` is isothermal by definition, so no revision can move it."""
-    a_legacy = constant_A(case(model_revision=LEGACY, ideal_gas=True))
-    a_fixed = constant_A(case(ideal_gas=True))
-    assert a_fixed == a_legacy
+def test_isothermal_still_moves_because_this_is_NOT_a_temperature_fix():
+    """Guard against the old story being read back in.
+
+    The 0.26.0 correction was temperature-only, so `isothermal == exact no-op`
+    held and proved that nothing else had moved. `bubble-state` changes the
+    PRESSURE basis, so it moves under a zero gradient too -- and asserting that
+    keeps anyone from re-deriving the temperature-only framing.
+    """
+    iso = dict(T_s=212.0, T_td=212.0)
+    a = constant_A(case(model_revision="column-mean-2026", **iso))
+    b = constant_A(case(**iso))
+    assert b != a
+    assert b > a                                  # same direction as with a gradient
 
 
-def test_injected_gas_properties_still_win():
-    """An explicit override is verbatim under either revision -- but the
-    denominator's T_s still moves, because that is the correction."""
-    inj = dict(Z_s=1.10, Z_td=1.10, rho_gas_s=1.5)
-    a_legacy = constant_A(case(model_revision=LEGACY, **inj))
-    a_fixed = constant_A(case(**inj))
-    assert a_fixed < a_legacy
+# --- validation inputs stay the caller's ------------------------------------
 
+def test_injected_gas_properties_take_the_papers_algebra():
+    """Injection is the PAPER-REPRODUCTION path and must stay Boyle, not mass
+    conservation.
 
-def test_swab_is_corrected_too():
-    """The swab case stations its gas at its own P_td; the temperature
-    correction applies there as well."""
-    assert swab_kick(case()).capacity < swab_kick(
-        case(model_revision=LEGACY)
-    ).capacity
+    Santos (SPE-140113) assumes "constant temperature, constant density, no
+    compressibility (Z=1)". Expanding a CONSTANT-density influx by mass
+    conservation gives no expansion at all, which is not that paper's model. So a
+    caller who supplies gas properties gets the algebra those properties belong
+    to -- which is how `tests/test_spe140113_santos.py` still reproduces 50.9 bbl.
+    """
+    inj = dict(Z_s=1.0, Z_td=1.0, rho_gas_s=1.9)
+    assert drill_kick(case(**inj)).rho_influx == pytest.approx(1.9)
+    # and it is NOT the computed bubble density
+    assert drill_kick(case()).rho_influx != pytest.approx(1.9, rel=1e-3)
 
 
 def test_replace_preserves_the_revision():
-    """`dataclasses.replace` is how consumers build sweeps; a revision must not
-    be silently dropped by one."""
+    from dataclasses import replace
     inp = case(model_revision=LEGACY)
     assert replace(inp, PP=12.0).model_revision == LEGACY
-
-
-# --- the limiting profile must close on the fracture pressure ---------------
-
-def _shoe_pressure_from_column(inp, res):
-    """Reconstruct the shoe pressure from the reported influx column."""
-    return res.P_td - G_PSI_PER_PPG_FT * (
-        res.rho_influx * res.H_gas
-        + inp.rho_mud * (inp.D_td - inp.D_lot - res.H_gas)
-    )
-
-
-@pytest.mark.parametrize("revision", sorted(MODEL_REVISIONS))
-@pytest.mark.parametrize("fn", (drill_kick, swab_kick))
-def test_limiting_profile_sits_exactly_on_the_fracture_pressure(revision, fn):
-    """At the tolerable influx the shoe sits ON the binding fracture pressure.
-
-    That is what "limiting" means, and it is an identity in A-2 for ANY influx
-    density -- so it must hold to 0.00 psi under both revisions. a batch consumer's
-    profile drifted from -2.01 to -14.08 psi across the revisions, which is how
-    the missing pieces below were found: core reported the temperature it used
-    but not the DENSITY, and reported H only under the new revision, so a
-    consumer had to re-derive both and drifted when they moved.
-    """
-    inp = case(model_revision=revision)
-    res = fn(inp)
-    P_frac = ppg_to_psi(inp.P_lot, inp.D_lot) - inp.P_apl
-    assert _shoe_pressure_from_column(inp, res) == pytest.approx(P_frac, abs=1e-9)
-
-
-@pytest.mark.parametrize("revision", sorted(MODEL_REVISIONS))
-def test_column_is_reported_under_both_revisions(revision):
-    """H_gas and rho_influx are what a caller draws the profile from, so
-    neither may be None on either revision."""
-    res = drill_kick(case(model_revision=revision))
-    assert res.rho_influx is not None and 0.0 < res.rho_influx < res.P_td
-    assert res.H_gas is not None and 0.0 < res.H_gas < (10500.0 - 6500.0)
-
-
-def test_influx_column_matches_what_the_result_reports():
-    """The public helper and the result must not disagree -- that is the
-    'three sites, three answers' failure mode in miniature."""
-    inp = case()
-    T, H, rho = influx_column(inp)
-    res = drill_kick(inp)
-    assert (T, H, rho) == (res.T_influx, res.H_gas, res.rho_influx)
-
-
-def test_rho_influx_honours_an_injected_density():
-    """A caller supplying its own gas properties must still get a closing
-    profile, so the reported density has to be the INJECTED one."""
-    inp = case(rho_gas_s=1.5)
-    res = drill_kick(inp)
-    assert res.rho_influx == 1.5
-    P_frac = ppg_to_psi(inp.P_lot, inp.D_lot) - inp.P_apl
-    assert _shoe_pressure_from_column(inp, res) == pytest.approx(P_frac, abs=1e-9)
-
-
-@pytest.mark.parametrize("revision", sorted(MODEL_REVISIONS))
-def test_back_deriving_H_from_capacity_does_NOT_close_and_is_revision_blind(
-    revision,
-):
-    """The trap, pinned so nobody re-discovers it as a regression.
-
-    Expanding `capacity` back to the shoe goes through A-4, whose pressure
-    bookkeeping is not algebraically identical to A-5/A-7 as printed. That route
-    misses the fracture pressure -- IDENTICALLY under both revisions, which is
-    what proves it is the paper's own bookkeeping and not the influx-temperature
-    correction. A profile built that way was already off before 0.26.0.
-    """
-    from welleng.kick_tolerance.core import (
-        fahrenheit_to_rankine, resolve_gas_properties, P_ATM_PSI,
-    )
-    inp = case(model_revision=revision)
-    res = drill_kick(inp)
-    Z_s, Z_td, _ = resolve_gas_properties(inp, res.P_td)
-    P_frac = ppg_to_psi(inp.P_lot, inp.D_lot) - inp.P_apl
-    V_s = (res.capacity * res.P_td * fahrenheit_to_rankine(res.T_influx) * Z_s
-           / ((P_frac + P_ATM_PSI) * fahrenheit_to_rankine(inp.T_td) * Z_td))
-    H_from_V = V_s / inp.V_dpa
-    P_shoe = res.P_td - G_PSI_PER_PPG_FT * (
-        res.rho_influx * H_from_V
-        + inp.rho_mud * (inp.D_td - inp.D_lot - H_from_V)
-    )
-    assert P_shoe - P_frac == pytest.approx(-3.93, abs=0.05)   # both revisions

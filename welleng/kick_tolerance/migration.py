@@ -75,7 +75,7 @@ g = 0.0521 psi.ppg^-1.ft^-1.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Sequence, Union
+from typing import Callable, Optional, Sequence, Union
 
 import numpy as np
 
@@ -119,15 +119,78 @@ class WellSection:
     is_open_hole
         True for an exposed open-hole formation (subject to the PP-FP envelope
         check); False for a cased/protected interval (not checked).
+    top_md, bottom_md
+        Optional along-hole extent of the same section [ft]. Annular capacity
+        is a volume per unit of ALONG-HOLE length, so in a deviated well the
+        volume held between two TVDs is ``capacity * dMD``, not
+        ``capacity * dTVD``. Supply these (from a survey) and the section
+        reports :attr:`capacity_per_tvd_ft` accordingly. Leave them ``None``
+        and the section is treated as vertical (``dMD == dTVD``), which is
+        the pre-0.27 behaviour exactly.
+    burst_pressure_psi
+        Optional ALLOWABLE internal pressure for a cased section [psi] -- the
+        published minimum internal yield pressure already reduced by a design
+        factor. Supply it and the imposed pressure is checked against it over
+        the cased interval, alongside the pore/fracture check in open hole;
+        leave it ``None`` (the default) and cased intervals are unchecked, as
+        they were before 0.27.
 
-    Note: TVD + capacity-per-section is deliberate; MD/deviation coupling is a
-    later refinement (see module docstring).
+        INDICATIVE ONLY -- this is not a casing design tool. It credits NO
+        external backup (the full internal pressure is resisted by the pipe,
+        which is the safe-side worst case), and it accounts for no axial load,
+        bending, temperature derating, wear or connection rating. A real burst
+        design is a differential calculation against a backup profile over the
+        load cases. Use this to notice that the casing may bind before the
+        formation does, not to size a string.
+
+    Pressure is a function of TVD and volume is a function of MD; a section
+    carries both extents so the two integrals stay in their own domains. The
+    ratio ``dMD/dTVD`` is the section-mean ``sec(inc)``, so a section should be
+    short enough that inclination is near-constant across it -- build them with
+    :func:`welleng.kick_tolerance.geometry.sections_from_architecture`, which
+    splits at the union of geometry changes and survey stations.
     """
 
     top_tvd: float
     bottom_tvd: float
     annular_capacity_bbl_per_ft: float
     is_open_hole: bool
+    top_md: float | None = None
+    bottom_md: float | None = None
+    burst_pressure_psi: float | None = None
+
+    @property
+    def md_extent(self) -> float:
+        """Along-hole length of the section [ft]; the TVD extent if unset."""
+        if self.top_md is None or self.bottom_md is None:
+            return self.bottom_tvd - self.top_tvd
+        return self.bottom_md - self.top_md
+
+    @property
+    def capacity_per_tvd_ft(self) -> float:
+        """Annular capacity per foot of TVD [bbl/ft].
+
+        ``annular_capacity_bbl_per_ft * (dMD / dTVD)`` -- the along-hole
+        capacity scaled by the section-mean ``sec(inc)``. Equals the raw
+        capacity for a vertical section. Every volume in the TVD-domain
+        engines is ``this * dTVD``.
+
+        Raises
+        ------
+        ValueError
+            If the section has zero TVD extent (a horizontal section holds
+            volume across no TVD at all, which the TVD-domain formulation
+            cannot represent).
+        """
+        d_tvd = self.bottom_tvd - self.top_tvd
+        if d_tvd <= 0.0:
+            raise ValueError(
+                "WellSection has zero TVD extent: a horizontal section holds "
+                "volume over no TVD and cannot be expressed as a capacity per "
+                "foot of TVD. Split the well above the horizontal, or use the "
+                "MD-domain march."
+            )
+        return self.annular_capacity_bbl_per_ft * self.md_extent / d_tvd
 
 
 # ============================================================================
@@ -162,6 +225,132 @@ def _profile_breakpoints(profile: ProfileLike) -> list:
 def ppg_to_psi(rho_ppg: np.ndarray, depth_ft: np.ndarray) -> np.ndarray:
     """Gradient pressure of a mud-weight-equivalent column: g * ppg * TVD [psi]."""
     return G_PSI_PER_PPG_FT * np.asarray(rho_ppg) * np.asarray(depth_ft)
+
+
+# ============================================================================
+# MAASP -- maximum allowable annular surface pressure
+# ============================================================================
+@dataclass
+class MaaspResult:
+    """Result of :func:`maasp`."""
+
+    maasp_psi: float
+    #                         MAASP AT THE CASING SHOE -- the conventional, industry
+    #                         definition, `P_frac(shoe) - g.rho_mud.shoe`. This is the
+    #                         number a driller computes by hand and the one to display
+    #                         under the label "MAASP". Deliberately NOT redefined.
+    shoe_tvd: float           # the shoe it was evaluated at [ft TVD]
+    limiting_psi: float
+    #                         The same quantity MINIMISED over every exposed depth. Equal
+    #                         to `maasp_psi` whenever the fracture gradient is constant,
+    #                         because `g.d.(FP_emw - rho_mud)` then grows with depth and
+    #                         the shallowest exposed point governs. LOWER when a weak
+    #                         zone sits below the shoe -- and then the conventional shoe
+    #                         number overstates what the annulus can be closed in on.
+    governing_tvd: float      # exposed depth that sets `limiting_psi` [ft TVD]
+    governed_by_shoe: bool    # True when the convention and the limit agree
+
+
+def maasp(
+    sections: Sequence[WellSection],
+    fp: ProfileLike,
+    *,
+    rho_mud_ppg: float,
+    check_depths: Optional[Sequence[float]] = None,
+) -> MaaspResult:
+    """Maximum allowable annular surface pressure, over the WHOLE exposed hole.
+
+    MAASP is the surface pressure that just brings the weakest exposed formation
+    to its fracture pressure with the well shut in::
+
+        MAASP = min over exposed d of [ P_frac(d) - g.rho_mud.d ]
+
+    **Shut-in, so no annular friction is deducted.** Annular pressure loss is a
+    CIRCULATING term; subtracting it here would understate the closed-in limit and
+    is a different quantity. If a back-pressure or choke margin applies, subtract
+    it from the returned value at the point of use, where its sign is unambiguous.
+
+    **``maasp_psi`` is the CONVENTION and is not redefined**: it is evaluated at the
+    casing shoe, which is what a driller computes by hand and what belongs under a
+    field labelled "MAASP". ``limiting_psi`` carries the generalisation -- the same
+    quantity minimised over every exposed depth.
+
+    With a CONSTANT fracture gradient the two are identical, because
+    ``P_frac(d) - g.rho_mud.d = g.d.(FP_emw - rho_mud)`` grows with depth and the
+    shallowest exposed point -- the shoe -- governs. They separate only when a weak
+    zone sits BELOW the shoe, and then the conventional number is the higher, less
+    safe one. ``governed_by_shoe`` says which case you are in.
+
+    **MAASP assumes a MUD-FILLED annulus.** It is a planning number, not the shut-in
+    limit during a kick: once influx is in the annulus the column is lighter than mud
+    and the surface pressure at which the shoe breaks down is a different quantity
+    (that is what the kick-tolerance solve computes). Do NOT compare a live SICP
+    against MAASP and conclude the shoe is safe.
+
+    MAASP depends on the CURRENT mud weight, so it changes as the well is weighted
+    up; it is a property of (hole, fracture profile, mud), not of an influx.
+
+    Parameters
+    ----------
+    sections : sequence of WellSection
+        Only ``is_open_hole`` sections are exposed. Cased formations are behind
+        pipe and are not assessed here (casing BURST is a separate limit -- see
+        :func:`~welleng.kick_tolerance.analytical.max_influx_contained_at_surface`).
+    fp : ProfileLike
+        Fracture pressure as a ``(tvd, ppg)`` table or a callable [ppg EMW].
+    rho_mud_ppg : float
+        Current mud weight [ppg].
+    check_depths : sequence of float, optional
+        Explicit depths to evaluate. Defaults to the open-hole boundaries plus the
+        fracture-profile breakpoints that fall inside the open hole -- the depths
+        where the governing constraint can turn. A CALLABLE ``fp`` exposes no
+        breakpoints, so pass ``check_depths`` for one or a narrow weak zone can be
+        stepped over entirely.
+
+    Returns
+    -------
+    MaaspResult
+
+    Raises
+    ------
+    ValueError
+        If no section is open hole -- nothing is exposed, so MAASP is undefined.
+    """
+    oh = [s for s in sections if s.is_open_hole]
+    if not oh:
+        raise ValueError(
+            "MAASP needs an exposed (open-hole) section: with the whole hole cased "
+            "there is no formation to fracture and the limit is casing burst, not "
+            "MAASP."
+        )
+    shoe = min(s.top_tvd for s in oh)
+    fp_fn = _as_ppg_callable(fp)
+
+    if check_depths is not None:
+        depths = sorted(float(d) for d in check_depths)
+    else:
+        cand = {s.top_tvd for s in oh} | {s.bottom_tvd for s in oh}
+        cand |= {
+            b for b in _profile_breakpoints(fp)
+            if any(s.top_tvd <= b <= s.bottom_tvd for s in oh)
+        }
+        depths = sorted(float(d) for d in cand)
+
+    d_arr = np.asarray(depths, dtype=float)
+    margin = ppg_to_psi(fp_fn(d_arr), d_arr) - ppg_to_psi(rho_mud_ppg, d_arr)
+    i = int(np.argmin(margin))
+
+    shoe_margin = float(
+        ppg_to_psi(float(fp_fn(np.array([shoe]))[0]), shoe)
+        - ppg_to_psi(rho_mud_ppg, shoe)
+    )
+    return MaaspResult(
+        maasp_psi=shoe_margin,                       # the CONVENTION, unmodified
+        shoe_tvd=float(shoe),
+        limiting_psi=float(margin[i]),
+        governing_tvd=float(d_arr[i]),
+        governed_by_shoe=bool(abs(float(d_arr[i]) - shoe) < 1e-9),
+    )
 
 
 # ============================================================================
@@ -505,7 +694,7 @@ def _fill_down(gas_top: float, volume_bbl: float, sections_sorted, bottom_tvd: f
         seg_len = seg_bottom - seg_top
         if seg_len <= 0.0:
             continue
-        cap = sec.annular_capacity_bbl_per_ft
+        cap = sec.capacity_per_tvd_ft
         vol_avail = cap * seg_len
         if remaining <= vol_avail:
             d = seg_top + remaining / cap
@@ -537,7 +726,7 @@ def _fill_up(gas_bottom: float, volume_bbl: float, sections_sorted, top_limit: f
         seg_len = seg_bottom - seg_top
         if seg_len <= 0.0:
             continue
-        cap = sec.annular_capacity_bbl_per_ft
+        cap = sec.capacity_per_tvd_ft
         vol_avail = cap * seg_len
         if remaining <= vol_avail:
             d = seg_bottom - remaining / cap
@@ -836,7 +1025,7 @@ class KickToleranceResult:
     #                              documented follow-up (task) -- not applied here.
 
 
-def max_influx_circulated(
+def _max_influx_circulated(
     sections: Sequence[WellSection],
     pp: "ProfileLike",
     fp: "ProfileLike",
@@ -853,9 +1042,30 @@ def max_influx_circulated(
     tol_bbl: float = 0.1,
     max_iter: int = 60,
 ) -> KickToleranceResult:
-    """MAX bottom-hole influx that can be CIRCULATED OUT within the PP-FP envelope
+    """ORACLE ONLY -- not the product path. Use
+    :func:`~welleng.kick_tolerance.analytical.analytical_kick_tolerance`.
+
+    MAX bottom-hole influx that can be CIRCULATED OUT within the PP-FP envelope
     over the whole migration -- the migration-form kick tolerance, WITH where/why
     it breaches. INVERSE of :func:`migrate` (which checks a GIVEN influx).
+
+    **Why this is private.** It exists to CHECK the analytical solver, and it is
+    ~3500x slower (4.2 s against 1.2 ms) because it marches the bubble and
+    bisects the influx. Measured against a dense position scan it is 0.6-0.9%
+    CONSERVATIVE -- good enough to catch a wrong answer, not good enough to be
+    one. It earned its keep on 2026-07-27, when it exposed an incomplete
+    breakpoint set that no other test caught.
+
+    It is interface-anchored -- and that is the point, not a caveat. It finds a
+    2 ft weak zone at any step count ONLY because it anchors to the profile
+    breakpoints. Strip them out by passing a callable profile, which exposes
+    none, and the same engine returns 57.748 bbl against a true 44.443: it steps
+    straight over the zone, +30%.
+
+    So this engine is evidence FOR the breakpoint argument, not against it. The
+    breakpoints do the work; the marching is what happens between them. Do not
+    cite it as "a march finds narrow features" -- a march does not, and we do not
+    ship one that tries.
 
     An influx is tolerable when the migration keeps ``within_envelope`` True AND the
     bubble fits the open hole (``bha_length_exceeded`` False). Both tighten monotonically
@@ -894,7 +1104,7 @@ def max_influx_circulated(
     # constrain the KT at the provided FP (not "unlimited" -- the limit lies beyond
     # what is assessed here); see the open_hole_unconstrained handling below.
     v_hole = sum(
-        s.annular_capacity_bbl_per_ft * (s.bottom_tvd - s.top_tvd)
+        s.capacity_per_tvd_ft * (s.bottom_tvd - s.top_tvd)
         for s in sections if s.is_open_hole
     )
     v_ceiling = min(v_hole, v_cap_bbl)               # never search beyond the hole

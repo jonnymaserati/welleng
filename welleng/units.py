@@ -161,6 +161,82 @@ def mud_weight_from_gradient(
     return (gradient_q / ureg('standard_gravity')).to(unit)
 
 
+#: Hydrostatic gradient of a 1 ppg fluid at STANDARD gravity [psi/ft].
+#: 1 lb / 231 in^3 x 12 in/ft = 0.05194805..., computed here rather than typed.
+#:
+#: **Do not quote this to more figures than gravity justifies.** g varies with
+#: latitude by about +-0.27% about standard (9.7803 m/s^2 at the equator to
+#: 9.8322 at the poles), so the physically achievable range is roughly 0.051809
+#: to 0.052083 -- a 0.53% spread. Any digit beyond the fourth is a statement
+#: about where the well is, not about arithmetic.
+#:
+#: **But it mostly CANCELS, which is why the literature does not fuss about it.**
+#: Where pressures are expressed as equivalent mud weights -- the industry
+#: convention -- the constant divides out of a hydrostatic balance. For the
+#: kick-tolerance gas height, ``BHP = PP.g.TD`` and ``FRAC = LOT.g.shoe`` are
+#: both gradient-derived, so
+#:
+#:     h = [rho_mud.(TD - shoe) - (PP.TD - LOT.shoe)] / (rho_mud - rho_gas)
+#:
+#: contains no g at all; and the Boyle ratio ``FRAC/BHP = (LOT.shoe)/(PP.TD)``
+#: cancels it as well. With ideal gas the kick tolerance is COMPLETELY
+#: independent of this constant, and welleng's 0.0521 versus the exact value
+#: makes no difference to it.
+#:
+#: g survives only where an ABSOLUTE pressure enters that is not gradient-derived
+#: with the same constant -- an annular-pressure-loss term in psi, or a real-gas
+#: Z(P, T) evaluation, which needs a true absolute pressure. Those are
+#: second-order.
+#:
+#: (Recorded because it was got wrong once: comparing two models by matching
+#: their PSI values, rather than their equivalent mud weights, makes the constant
+#: appear to matter by several percent. It is an artefact of the comparison.)
+PSI_PER_PPG_PER_FT: float = float(
+    (ureg('1 lb/gal') * ureg('standard_gravity')).to('psi/ft').magnitude
+)
+
+
+def gravity_at_latitude(
+    latitude_deg: Number, altitude_m: Number = 0.0
+) -> float:
+    """Normal gravity [m/s^2] at a latitude, WGS84 (Somigliana), with a
+    free-air correction for altitude.
+
+    >>> round(gravity_at_latitude(0.0), 5)
+    9.78033
+    >>> round(gravity_at_latitude(90.0), 5)
+    9.83218
+    """
+    phi = np.radians(np.asarray(latitude_deg, dtype=float))
+    sin2 = np.sin(phi) ** 2
+    g = 9.7803253359 * (1.0 + 0.00193185265241 * sin2) / np.sqrt(
+        1.0 - 0.00669437999013 * sin2
+    )
+    return float(g - 3.086e-6 * float(altitude_m))
+
+
+def hydrostatic_gradient_at_latitude(
+    mud_weight_q: pint.Quantity,
+    latitude_deg: Number,
+    unit: UnitLike = 'psi/ft',
+    altitude_m: Number = 0.0,
+) -> pint.Quantity:
+    """Hydrostatic gradient using LOCAL gravity rather than standard gravity.
+
+    A North Sea well (58 deg N) and a Gulf of Mexico well (28 deg N) differ by
+    0.26% in gravity. Note this rarely changes an answer -- see the cancellation
+    note on :data:`PSI_PER_PPG_PER_FT`. Use it where an absolute pressure is
+    genuinely needed, not to "improve" a hydrostatic balance expressed in
+    equivalent mud weights, where the constant divides out.
+
+    >>> round(to(hydrostatic_gradient_at_latitude(mud_weight(1, 'ppg'), 58.0),
+    ...          'psi/ft'), 7)
+    0.0520059
+    """
+    g = gravity_at_latitude(latitude_deg, altitude_m) * ureg('m/s**2')
+    return (mud_weight_q * g).to(unit)
+
+
 # --- fast boundary converter --------------------------------------------------
 # Canonical SI unit per named quantity. welleng engines compute in these; the
 # `Units` boundary converts user I/O to/from them. Performance-critical callers

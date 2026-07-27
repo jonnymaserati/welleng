@@ -18,6 +18,7 @@ figure + this closed form + welleng all give geothermal > isothermal.)
 import pytest
 
 from welleng.kick_tolerance import KickInputs, drill_kick
+from welleng.kick_tolerance.core import DEFAULT_MODEL_REVISION
 
 M_TO_FT = 3.280839895
 _c2f = lambda c: c * 9.0 / 5.0 + 32.0
@@ -56,22 +57,23 @@ def test_fig12_geothermal_greater_than_isothermal():
     assert (geo - iso) / geo == pytest.approx(0.148, abs=0.02)
 
 
-def test_fig12_sign_survives_the_column_mean_revision():
-    """The SIGN is physics, not a convention, so it must hold under the default
-    revision too -- where the influx state moves to the gas-column mean
-    temperature. Magnitudes drop (a warmer influx is lighter, which shrinks A);
-    geothermal > isothermal does not."""
+def test_fig12_sign_survives_every_revision():
+    """The SIGN is physics, not a convention, so it must hold under EVERY
+    revision -- including the default, where the influx is evaluated at the
+    bubble's own state (mud beneath it) rather than after a whole-open-hole gas
+    gradient. Magnitudes move; geothermal > isothermal does not."""
     kw = {k: v for k, v in CASE1.items() if k != "model_revision"}
 
     def kt(t_s, t_td):
         return drill_kick(KickInputs(T_s=t_s, T_td=t_td, **kw)).capacity
 
-    geo, iso = kt(T_SHOE_GEO, T_TD_GEO), kt(T_ISO, T_ISO)
-    assert geo > iso
-    # Isothermal has no column gradient, so the revision cannot move it.
-    assert iso == pytest.approx(_kt(T_ISO, T_ISO), rel=1e-12)
-    # Geothermal does, and only downwards.
-    assert geo < _kt(T_SHOE_GEO, T_TD_GEO)
+    from welleng.kick_tolerance.core import MODEL_REVISIONS
+    for revision in sorted(MODEL_REVISIONS):
+        g = drill_kick(KickInputs(T_s=T_SHOE_GEO, T_td=T_TD_GEO,
+                                  model_revision=revision, **kw)).capacity
+        i = drill_kick(KickInputs(T_s=T_ISO, T_td=T_ISO,
+                                  model_revision=revision, **kw)).capacity
+        assert g > i, f"{revision}: geothermal {g:.4f} !> isothermal {i:.4f}"
 
 
 def test_fig12_matches_static_company_model_dots():
@@ -95,3 +97,41 @@ def test_fig12_A_scales_as_Ttd_over_Ts():
     ratio = fahrenheit_to_rankine(T_ISO) / fahrenheit_to_rankine(T_SHOE_GEO)
     assert a_geo / a_iso == pytest.approx(ratio, rel=1e-9)
     assert a_geo > a_iso
+
+
+def test_the_default_matches_what_the_paper_actually_STATES():
+    """Assert against the paper's words, not against dots read off its figure.
+
+    A previous version of this test compared the default to "~16 and ~13 bbl"
+    and concluded it read +9% ANTI-CONSERVATIVE. Those are not published values
+    -- they are our reading of Fig. 12. The paper states a RELATIONSHIP:
+
+        "The geothermal assumption is conservative in this case, with a 7%
+         resulting change in KT when compared with Simulator D. The isothermal
+         assumption is more conservative, giving 23% lower KT."
+
+    So geo = 0.93 x SimD and iso = 0.77 x SimD, hence iso/geo = 0.8280. That is
+    the quantity to check, and it is dimensionless -- immune to the figure
+    reading, and to any absolute offset between our model and his.
+
+    On it the DEFAULT agrees to 2.4% and is CLOSER than the frozen revision
+    (2.85%), which is the opposite of what the figure-read comparison suggested.
+    """
+    kw = {k: v for k, v in CASE1.items() if k != "model_revision"}
+
+    def ratio(revision):
+        def kt(t_s, t_td):
+            return drill_kick(KickInputs(
+                T_s=t_s, T_td=t_td, model_revision=revision, **kw)).capacity
+        return kt(T_ISO, T_ISO) / kt(T_SHOE_GEO, T_TD_GEO)
+
+    stated = (1.0 - 0.23) / (1.0 - 0.07)          # 0.8280
+
+    default = ratio(DEFAULT_MODEL_REVISION)
+    frozen = ratio("spe-208788")
+
+    assert default == pytest.approx(stated, rel=0.03)
+    assert abs(default - stated) < abs(frozen - stated), (
+        "the corrected influx basis should track the paper's stated relationship "
+        "at least as well as the published-model revision"
+    )
