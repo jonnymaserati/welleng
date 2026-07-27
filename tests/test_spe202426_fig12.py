@@ -96,3 +96,40 @@ def test_fig12_A_scales_as_Ttd_over_Ts():
     ratio = fahrenheit_to_rankine(T_ISO) / fahrenheit_to_rankine(T_SHOE_GEO)
     assert a_geo / a_iso == pytest.approx(ratio, rel=1e-9)
     assert a_geo > a_iso
+
+
+def test_the_default_revision_reads_ABOVE_nassab_by_a_pinned_amount():
+    """The tests above pin the FROZEN ``spe-208788`` revision. On the shipped
+    default the magnitudes move, and they move the OTHER WAY from SPE-208788.
+
+        SPE-208788 (gas properties PINNED by the paper)   default  -2.7 %
+        SPE-202426 here      (properties COMPUTED)        default  +9.1 %
+
+    The difference is the override surface, not the physics: SPE-208788's case
+    supplies Z_s / Z_td / rho_gas_s, which bypass the gas backend entirely, so
+    the bubble-state pressure basis cannot move the density there. Here nothing
+    is overridden, so it can.
+
+    Direction matters and is asserted: against Nassab the default reports MORE
+    tolerance than the published dots, 14.44 against ~13 -- outside the +-1 bbl
+    that the frozen revision meets. That is the anti-conservative direction, it
+    is a consequence of the corrected influx basis rather than a defect, and it
+    is pinned here so it cannot drift unnoticed.
+    """
+    kw = {k: v for k, v in CASE1.items() if k != "model_revision"}
+
+    def kt(t_s, t_td):
+        return drill_kick(KickInputs(T_s=t_s, T_td=t_td, **kw)).capacity
+
+    geothermal = kt(T_SHOE_GEO, T_TD_GEO)
+    isothermal = kt(T_ISO, T_ISO)
+
+    assert geothermal == pytest.approx(17.024, abs=0.02)
+    assert isothermal == pytest.approx(14.435, abs=0.02)
+
+    # the SIGN of the physics claim survives -- geothermal above isothermal, ~15%
+    assert geothermal > isothermal
+    assert (geothermal - isothermal) / geothermal == pytest.approx(0.152, abs=0.01)
+
+    # and the default sits ABOVE the published dots, unlike the frozen revision
+    assert isothermal - 13.0 > 1.0

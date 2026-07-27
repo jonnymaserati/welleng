@@ -26,6 +26,7 @@ import pytest
 
 from welleng.kick_tolerance import KickInputs, drill_kick, swab_kick
 from welleng.kick_tolerance.core import (
+    DEFAULT_MODEL_REVISION,
     scenario_P_td, constant_A, constant_B, influx_volume_A7,
     resolve_gas_properties,
 )
@@ -114,3 +115,40 @@ def test_spe208788_hall_yarborough_backend_reproduces_paper_gas_props():
     assert Z_s == pytest.approx(1.1230, rel=0.02)
     assert Z_td == pytest.approx(1.1650, rel=0.01)
     assert rho_gas_s == pytest.approx(1.710, rel=0.01)
+
+
+# ---------------------------------------------------------------------------
+# what the SHIPPED DEFAULT gives on the paper's own case
+# ---------------------------------------------------------------------------
+def test_the_default_revision_deviates_from_the_paper_by_a_pinned_amount():
+    """The published-paper tests above pin the FROZEN ``spe-208788`` revision.
+    The shipped default is ``bubble-state``, and it deliberately differs -- so
+    without this test the default's agreement with the flagship paper is
+    asserted nowhere, and it could drift to any value with the suite still green.
+
+    The deviation is intentional: the paper evaluates the influx after a gas
+    gradient over the WHOLE open hole, which A-2's simplification (1) explicitly
+    excludes, and ``bubble-state`` puts mud beneath the bubble instead. That
+    correction is what makes the closed form reduce to NOGEPA-50 Section 3.2
+    exactly (tests/test_nogepa.py), so the two anchors disagree by construction
+    and the paper is the one that gives way.
+
+    Pinned so the SIZE of that disagreement is guarded, not merely explained.
+    """
+    frozen = paper_inputs()                       # pins spe-208788 internally
+    kw = {k: v for k, v in frozen.__dict__.items()
+          if k in KickInputs.__dataclass_fields__ and k != "model_revision"}
+    default = KickInputs(**kw)                    # whatever the default is
+
+    assert default.model_revision == DEFAULT_MODEL_REVISION
+    assert drill_kick(frozen).capacity == pytest.approx(27.780, abs=0.01)
+    assert swab_kick(frozen).capacity == pytest.approx(43.567, abs=0.01)
+
+    drill = drill_kick(default).capacity
+    swab = swab_kick(default).capacity
+    assert drill == pytest.approx(27.102, abs=0.01)     # -2.72% vs the paper
+    assert swab == pytest.approx(42.023, abs=0.01)      # -4.04% vs the paper
+
+    # direction is the safe side: the corrected basis reports LESS tolerance
+    # than the paper on this case, not more
+    assert drill < 27.86 and swab < 43.79
