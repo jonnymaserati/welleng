@@ -68,6 +68,7 @@ equation of the closed form -- only rho_gas_s does (via the A-5 constant A).
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -332,6 +333,30 @@ def _shoe_gas_pressure(inp: KickInputs, P_td: float) -> float:
     return P_shoe
 
 
+def _inputs_key(inp: "KickInputs"):
+    """Complete, hashable key for a ``KickInputs``.
+
+    Built from EVERY field by reflection rather than a hand-listed subset. A
+    hand-listed key is how a memo silently breaks a frozen revision: omit
+    ``model_revision`` and a cached result computed under one revision is
+    returned for another. Adding a field to ``KickInputs`` extends this key
+    automatically.
+    """
+    parts = []
+    for f in dataclasses.fields(inp):
+        v = getattr(inp, f.name)
+        parts.append((f.name, tuple(sorted(v.items())) if isinstance(v, dict) else v))
+    return tuple(parts)
+
+
+#: One-shot memo for :func:`_bubble_state`. The closed form asks for the SAME
+#: bubble twice per case -- once from ``constant_A`` for the buoyancy deficit and
+#: once from ``influx_column`` for the reported state -- and the state costs a
+#: full column integration. Bit-identical by construction: same inputs, same
+#: result, no rounding in the key.
+_BUBBLE_STATE_MEMO: dict = {}
+
+
 def _bubble_state(inp: KickInputs, P_td: float, n: int = 256):
     """The influx bubble's OWN state. ``(T_bar [degR], H [ft], P_bar, rho_bar)``.
 
@@ -357,6 +382,18 @@ def _bubble_state(inp: KickInputs, P_td: float, n: int = 256):
     agree. Measured closure 0.006 psi; a wrong construction would not close.
     Asserted by tests/test_kick_bubble_state.py.
     """
+    key = (_inputs_key(inp), P_td, n)
+    cached = _BUBBLE_STATE_MEMO.get(key)
+    if cached is not None:
+        return cached
+    result = _bubble_state_impl(inp, P_td, n)
+    if len(_BUBBLE_STATE_MEMO) > 4096:          # bounded; an envelope sweep is finite
+        _BUBBLE_STATE_MEMO.clear()
+    _BUBBLE_STATE_MEMO[key] = result
+    return result
+
+
+def _bubble_state_impl(inp: KickInputs, P_td: float, n: int):
     g = G_PSI_PER_PPG_FT
     P_top = ppg_to_psi(inp.P_lot, inp.D_lot) - inp.P_apl + P_ATM_PSI
     interval = inp.D_td - inp.D_lot
@@ -369,17 +406,35 @@ def _bubble_state(inp: KickInputs, P_td: float, n: int = 256):
     T_bar = fahrenheit_to_rankine(inp.T_s)
     rho_bar = _influx_density(inp, P_top, T_bar)
     for _ in range(64):
-        # march DOWN the bubble, accumulating its own weight
-        hs = np.linspace(0.0, H, n) if H > 0.0 else np.zeros(1)
-        P, rho = P_top, np.empty(len(hs))
-        for k, h in enumerate(hs):
-            rho[k] = _influx_density(
-                inp, P, fahrenheit_to_rankine(inp.T_s + grad * h)
-            )
-            if k + 1 < len(hs):
-                P += g * rho[k] * (hs[k + 1] - h)
-        rho_new = (float(np.trapezoid(rho, hs) / H) if H > 0.0
-                   else float(rho[0]))
+        # The column is EXPONENTIAL, so integrate it in closed form rather than
+        # marching it. With rho ~ c.P over the column, dP/dh = g.rho gives
+        # P(h) = P_top.exp(k.h), and the mean density follows from the pressure
+        # drop alone:
+        #
+        #     INT rho dh = dP / g   =>   rho_bar = (P_bottom - P_top) / (g.H)
+        #
+        # which is exact for ANY internal distribution -- the same identity
+        # asserted by test_the_bulk_density_is_pinned_by_the_endpoint_pressures.
+        # c is taken at the column's mean pressure and mid-height temperature,
+        # the treatment `analytical.py` already uses for the same column.
+        #
+        # This replaced a 256-point march that cost ~2,500 Hall-Yarborough
+        # solves per case and made `drill_kick` 245x slower than 0.26.0. The
+        # benchmark gate caught it; see benchmarks/BENCHMARK_LOG.md.
+        if H <= 0.0:
+            rho_new = _influx_density(inp, P_top, fahrenheit_to_rankine(inp.T_s))
+        else:
+            T_mid = fahrenheit_to_rankine(inp.T_s + grad * 0.5 * H)
+            P_bottom = P_top
+            for _ in range(6):                       # c depends on P; converges fast
+                c = _influx_density(inp, 0.5 * (P_top + P_bottom), T_mid) / (
+                    0.5 * (P_top + P_bottom))
+                P_new = P_top * np.exp(g * c * H)
+                if abs(P_new - P_bottom) < 1e-9:
+                    P_bottom = P_new
+                    break
+                P_bottom = P_new
+            rho_new = (P_bottom - P_top) / (g * H)
         # Mid-height (LENGTH-weighted) mean temperature -- and deliberately not
         # the mass-weighted one, which looks more principled and is not.
         #

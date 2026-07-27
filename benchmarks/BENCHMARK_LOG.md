@@ -509,3 +509,67 @@ failure. Pinned by `test_composition_does_not_re_propagate_per_covariance_compon
 
 Not "chasing performance" — computing the same thing four times is a defect (project-owner ruling, 2026-07-26).
 Machine: this dev box, .venv312.
+
+## 2026-07-27 — kick tolerance: a 245x regression caught by this gate, and a 4x win (0.27.0rc1)
+
+**The gate did its job.** Two changes were about to ship together: the analytical solver got
+genuinely faster, and `drill_kick` got 245x SLOWER. Only the first was noticed until the
+benchmark was run, because no test measures time.
+
+| operation | 0.26.0 | branch, before fix | after fix |
+|---|---|---|---|
+| `drill_kick` (H-Y auto Z), harness (repeated inputs) | 49.3 us | 23851.9 us | **12.9 us** |
+| `drill_kick`, DISTINCT inputs (batch/sweep reality) | 0.049 ms | 24.2 ms | **0.321 ms** |
+| `analytical_kick_tolerance` [exact] | 5.2 ms | — | **1.2 ms** |
+| `analytical_kick_tolerance` [conservative] | 5.4 ms | — | **1.4 ms** |
+| `migrate`, `max_influx_circulated` | unchanged | | |
+
+**Note the harness overstates the win.** It calls `drill_kick` with the SAME inputs 20 times,
+so the new memo hits across calls and reports 12.9 us. Distinct inputs -- what a sweep or a
+batch endpoint actually does -- give 0.321 ms, still 6.5x slower than 0.26.0. Quote the
+distinct-input number.
+
+**Cause of the regression.** The `bubble-state` revision replaced a lumped influx state with
+the bubble's OWN state, which meant integrating the gas column. `_bubble_state` marched 256
+points x up to 64 outer iterations, calling Hall-Yarborough at every point: profiling showed
+**51,300 H-Y solves for 20 `drill_kick` calls, 2,565 per call**. It is also called TWICE per
+case -- once by `constant_A` for the buoyancy deficit, once by `influx_column` for the
+reported state.
+
+**Two fixes.**
+
+1. *Memo, bit-identical.* `_bubble_state` is asked for the same bubble twice per case.
+   Keyed on `_inputs_key`, built from EVERY field by reflection rather than a hand-listed
+   subset -- a hand-listed key is precisely how a memo silently breaks a frozen revision
+   (omit `model_revision` and a result computed under one revision is served for another).
+   2x, and free.
+2. *Closed-form column.* The column is exponential, so integrate it in closed form instead of
+   marching it. With `rho ~ c.P`, `dP/dh = g.rho` gives `P(h) = P_top.exp(k.h)`, and
+
+       INT rho dh = dP / g   =>   rho_bar = (P_bottom - P_top) / (g.H)
+
+   which is EXACT for any internal distribution -- the identity already asserted by
+   `test_the_bulk_density_is_pinned_by_the_endpoint_pressures`. `c` is taken at the column's
+   mean pressure and mid-height temperature, the treatment `analytical.py` already uses on
+   the same column. 37x.
+
+**Accuracy cost: 0.04%**, and downward (28.6606 -> 28.6492 bbl on the Table-1 case), i.e. the
+conservative side. Permitted because `bubble-state` is UNRELEASED -- the freeze binds on the
+existence of a published artefact, not on elapsed time.
+
+**Every validation anchor held**, checked explicitly rather than inferred from a green suite:
+
+| anchor | before | after |
+|---|---|---|
+| NOGEPA-50 Sec 3.2 | identity, 1e-12 | identity, 1e-12 |
+| Jancic (independent worked case) | -0.76% | -0.76% |
+| SPE-208788 worked example | -2.72% | -2.72% |
+| SPE-202426 Nassab, stated ratio | +2.41% | +2.42% |
+
+NOGEPA stays EXACT because it assumes Z = 1 and isothermal, so `c` is constant and the
+exponential column is not an approximation there at all.
+
+**Follow-up for the harness:** it should use distinct inputs, or it will hide the next memo-
+shaped regression the same way it nearly hid this one.
+
+Machine: this dev box, .venv312.
