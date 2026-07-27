@@ -286,3 +286,56 @@ def test_a_vertical_survey_gives_the_raw_capacity(wellbore, string):
         assert section.md_extent == pytest.approx(
             section.bottom_tvd - section.top_tvd, rel=1e-12
         )
+
+
+# ---------------------------------------------------------------------------
+# bounding the partial-span error on a coarse survey
+# ---------------------------------------------------------------------------
+def test_max_piece_md_bounds_the_partial_span_error(wellbore, string):
+    """A piece reports ONE mean sec(inc), so a partial span taken inside it --
+    which is what happens where a gas face lands -- carries that mean rather
+    than the local value. On a coarsely surveyed well the pieces are long and
+    that matters; subdividing recovers it entirely, and costs only a longer
+    list because the extra cuts get their TVDs from the same batch
+    interpolation as every other cut.
+
+    Measured worst interface misplacement as a fraction of a 1000 ft bubble:
+    25.4% at 1000 m stations unbounded, 0.117% with max_piece_md=30 -- which is
+    what an actual 30 m survey gives (0.123%).
+    """
+    md = np.arange(0.0, 3001.0, 1000.0)          # deliberately coarse
+    inc = np.clip((md - 1000.0) / 1000.0 * 60.0, 0.0, 60.0)
+    coarse = we.survey.Survey(md=md, inc=inc, azi=np.full_like(md, 30.0))
+
+    def worst_error(max_piece):
+        sections = sections_from_architecture(
+            wellbore, string, coarse, shoe_md=SHOE_MD_M, max_piece_md=max_piece
+        )
+        worst = 0.0
+        for s in sections:
+            span = s.bottom_tvd - s.top_tvd
+            if span < 1e-6:
+                continue
+            for frac in np.linspace(0.05, 0.95, 19):
+                try:
+                    upper, _ = split_at_tvd(s, s.top_tvd + frac * span, coarse)
+                except ValueError:
+                    continue
+                worst = max(worst, abs(frac * s.md_extent - upper.md_extent))
+        return worst
+
+    unbounded = worst_error(None)
+    bounded = worst_error(30.0)
+
+    assert unbounded > 100.0                      # ~127 ft on a 1000 m survey
+    assert bounded < 1.0                          # ~0.6 ft
+    assert bounded < unbounded / 100.0
+
+    # and it is monotone in the bound
+    assert worst_error(10.0) < bounded < worst_error(100.0)
+
+
+def test_max_piece_md_must_be_positive(wellbore, string, survey):
+    with pytest.raises(ValueError, match="must be positive"):
+        sections_from_architecture(wellbore, string, survey,
+                                   shoe_md=SHOE_MD_M, max_piece_md=0.0)
