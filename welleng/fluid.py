@@ -69,6 +69,26 @@ class Fluid:
         Predicts Downhold Density Changes in Static Drilling Fluids by Roland
         R. Sorelle et al.
 
+        .. warning::
+           **Do not use this to obtain a fluid COMPRESSIBILITY.** The published
+           coefficients here are a faithful transcription -- the water
+           correlation ``rho_w = 8.63186 - 3.31977e-3*T + 2.3717e-5*P`` matches
+           Sorelle et al. (1982) as reproduced in Mitchell, *Fundamentals of
+           Drilling Engineering*, Eq. 3.5 -- and they imply c_water ~ 2.9e-6/psi
+           and c_oil ~ 3.9e-6/psi, so ~3.5e-6/psi for a 12 ppg mud at these
+           volume fractions.
+
+           But :meth:`get_density_profile` responds to ``pressure_applied`` at
+           only **1.2e-8/psi at 2000 ft and 5.0e-8/psi at 8000 ft** -- two orders
+           of magnitude low, and depth-dependent, which a compressibility should
+           not be. ``pressure_applied`` enters only ``alpha_1``/``beta_1``, which
+           appear both as a prefactor and inside ``log((alpha_1 + alpha_2*depth)
+           / alpha_1)``, and the two largely cancel.
+
+           The defect is in the depth-averaging, not the data. Measured
+           2026-07-27; unfixed because this module is slated for replacement by
+           the welleng-drilling fluid model.
+
         This paper was written in oilfield units, so we'll convert inputs to
         ppg, ft, F and psi.
 
