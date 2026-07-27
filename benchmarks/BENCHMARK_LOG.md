@@ -615,3 +615,28 @@ indistinguishable from a gate that passes if nobody reads the output, which is t
 time this cycle the benchmark gate has caught something only because it was actually run.
 
 Machine: this dev box, .venv312.
+
+---
+
+## 2026-07-27 — MAASP added (rc4). Flat.
+
+`maasp()` is a handful of `np.interp` evaluations over the exposed-depth set the
+analytical solver has already built (`_env_d` is passed straight in as `check_depths`,
+so the candidate set is not recomputed). It runs once per `analytical_kick_tolerance`
+call; on `drill_kick` it is two multiplications.
+
+```
+drill_kick, DISTINCT inputs               165.6 us   (was 160.3 -- noise)
+drill_kick, repeated input (memo)          13.8 us
+analytical_kick_tolerance [exact]           1.3 ms   (was 1.2 -- at the rounding edge)
+analytical_kick_tolerance [conservative]    1.4 ms   (was 1.4)
+migrate (n_steps=100)                     334.2 ms
+_max_influx_circulated [thorough]        4333.5 ms
+_max_influx_circulated [fast]             745.2 ms
+```
+
+Not claiming these as improvements or regressions: the harness prints one decimal at
+1.2-1.3 ms, so the analytical move is at the resolution limit. Nothing here is a real
+change and nothing was optimised.
+
+Machine: this dev box, .venv312.

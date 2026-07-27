@@ -445,3 +445,70 @@ def test_d_already_fractured_is_not_the_shoe_holding():
     # monotone in shoe strength -- the property api's sweep relies on
     kts = [solve(12.4 + o, 13.0 + o).max_influx_bbl for o in (-2.0, -1.0, 0.0, 1.0)]
     assert kts == sorted(kts), kts
+
+
+def test_maasp_single_shoe_is_the_frac_minus_mud_identity():
+    """MAASP = P_frac(shoe) - mud hydrostatic to the shoe, shut in.
+
+    `P_apl` is NOT deducted: annular friction is a CIRCULATING term and MAASP is a
+    closed-in limit, so subtracting it would understate what the annulus can hold.
+    The fixture carries P_apl=210 psi precisely so a regression that started
+    deducting it would move this number.
+    """
+    from welleng.kick_tolerance.core import ppg_to_psi
+
+    inp = KickInputs(rho_mud=11.9, PP=11.5, kick_intensity=1.1, P_lot=16.0,
+                     P_apl=210.0, D_td=10500.0, D_lot=6500.0, T_s=212.0, T_td=302.0,
+                     V_dpa=annular_capacity_dpa(6.125, 4.0))
+    r = drill_kick(inp)
+
+    expected = ppg_to_psi(16.0, 6500.0) - ppg_to_psi(11.9, 6500.0)
+    assert math.isclose(r.maasp_psi, expected, rel_tol=1e-12)
+    assert math.isclose(r.maasp_psi, 1388.46, abs_tol=0.01)
+    assert not math.isclose(r.maasp_psi, expected - 210.0, rel_tol=1e-9)  # P_apl kept
+
+
+def test_maasp_a_weak_zone_below_the_shoe_governs():
+    """The industry convention evaluates MAASP at the shoe. With a CONSTANT
+    fracture gradient that is exact -- `g.d.(FP_emw - rho_mud)` grows with depth,
+    so the shallowest exposed point governs. It stops being right the moment a
+    weak zone sits BELOW the shoe, and then the shoe-only number is too HIGH.
+
+    Same failure mode as assuming the swab bubble top sits at the shoe.
+    """
+    from welleng.kick_tolerance.migration import (
+        G_PSI_PER_PPG_FT as G, WellSection, maasp,
+    )
+
+    shoe, td = 6000.0, 10000.0
+    sections = [WellSection(0.0, shoe, 0.0459, False),
+                WellSection(shoe, td, 0.0459, True)]
+    fp = 4020.0 / (G * shoe)                        # 4020 psi at the shoe
+
+    flat = maasp(sections, ([shoe, td], [fp, fp]), rho_mud_ppg=10.0)
+    assert flat.governed_by_shoe is True
+    assert flat.governing_tvd == shoe
+    assert math.isclose(flat.maasp_psi, 4020.0 - G * 10.0 * shoe, rel_tol=1e-12)
+
+    weak = maasp(sections,
+                 ([shoe, 7999.0, 8000.0, 8001.0, td], [fp, fp, fp - 2.5, fp, fp]),
+                 rho_mud_ppg=10.0)
+    assert weak.governed_by_shoe is False
+    assert weak.governing_tvd == 8000.0
+    assert weak.maasp_psi < flat.maasp_psi
+    # the conventional answer is unchanged and is now the UNSAFE one
+    assert math.isclose(weak.shoe_maasp_psi, flat.maasp_psi, rel_tol=1e-12)
+
+
+def test_maasp_requires_an_exposed_section():
+    """Fully cased: nothing is exposed, so MAASP is undefined -- the limit is
+    casing burst instead. Refuse rather than return the shoe's number."""
+    from welleng.kick_tolerance.migration import WellSection, maasp
+
+    try:
+        maasp([WellSection(0.0, 6000.0, 0.0459, False)],
+              ([0.0, 6000.0], [14.0, 14.0]), rho_mud_ppg=10.0)
+    except ValueError as e:
+        assert "open-hole" in str(e)
+    else:
+        raise AssertionError("fully cased hole must refuse a MAASP")

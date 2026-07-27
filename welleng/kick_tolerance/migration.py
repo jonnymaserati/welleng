@@ -75,7 +75,7 @@ g = 0.0521 psi.ppg^-1.ft^-1.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Sequence, Union
+from typing import Callable, Optional, Sequence, Union
 
 import numpy as np
 
@@ -225,6 +225,118 @@ def _profile_breakpoints(profile: ProfileLike) -> list:
 def ppg_to_psi(rho_ppg: np.ndarray, depth_ft: np.ndarray) -> np.ndarray:
     """Gradient pressure of a mud-weight-equivalent column: g * ppg * TVD [psi]."""
     return G_PSI_PER_PPG_FT * np.asarray(rho_ppg) * np.asarray(depth_ft)
+
+
+# ============================================================================
+# MAASP -- maximum allowable annular surface pressure
+# ============================================================================
+@dataclass
+class MaaspResult:
+    """Result of :func:`maasp`."""
+
+    maasp_psi: float          # the governing MAASP [psi]
+    governing_tvd: float      # exposed depth that sets it [ft TVD]
+    shoe_tvd: float           # shallowest open-hole depth (the conventional shoe) [ft]
+    shoe_maasp_psi: float     # MAASP evaluated AT THE SHOE, the industry convention
+    governed_by_shoe: bool
+    #                         False when an exposed depth BELOW the shoe governs, i.e.
+    #                         the conventional shoe-only MAASP OVERSTATES what the
+    #                         annulus can be closed in on. Same failure as assuming the
+    #                         swab bubble top sits at the shoe -- see `swab_worst_bit`.
+
+
+def maasp(
+    sections: Sequence[WellSection],
+    fp: ProfileLike,
+    *,
+    rho_mud_ppg: float,
+    check_depths: Optional[Sequence[float]] = None,
+) -> MaaspResult:
+    """Maximum allowable annular surface pressure, over the WHOLE exposed hole.
+
+    MAASP is the surface pressure that just brings the weakest exposed formation
+    to its fracture pressure with the well shut in::
+
+        MAASP = min over exposed d of [ P_frac(d) - g.rho_mud.d ]
+
+    **Shut-in, so no annular friction is deducted.** Annular pressure loss is a
+    CIRCULATING term; subtracting it here would understate the closed-in limit and
+    is a different quantity. If a back-pressure or choke margin applies, subtract
+    it from the returned value at the point of use, where its sign is unambiguous.
+
+    **Why this is a minimum over depths and not just the shoe.** The industry
+    convention evaluates MAASP at the casing shoe, and with a CONSTANT fracture
+    gradient that is exactly right: ``P_frac(d) - g.rho_mud.d = g.d.(FP_emw -
+    rho_mud)`` grows with depth, so the shallowest exposed point -- the shoe --
+    always governs. It stops being right the moment a weak zone sits BELOW the
+    shoe, because then ``FP_emw`` is not constant and a deeper, weaker formation
+    can govern instead. The shoe-only number is then too high, in the unsafe
+    direction. ``governed_by_shoe`` says which case you are in.
+
+    MAASP depends on the CURRENT mud weight, so it changes as the well is weighted
+    up; it is a property of (hole, fracture profile, mud), not of an influx.
+
+    Parameters
+    ----------
+    sections : sequence of WellSection
+        Only ``is_open_hole`` sections are exposed. Cased formations are behind
+        pipe and are not assessed here (casing BURST is a separate limit -- see
+        :func:`~welleng.kick_tolerance.analytical.max_influx_contained_at_surface`).
+    fp : ProfileLike
+        Fracture pressure as a ``(tvd, ppg)`` table or a callable [ppg EMW].
+    rho_mud_ppg : float
+        Current mud weight [ppg].
+    check_depths : sequence of float, optional
+        Explicit depths to evaluate. Defaults to the open-hole boundaries plus the
+        fracture-profile breakpoints that fall inside the open hole -- the depths
+        where the governing constraint can turn. A CALLABLE ``fp`` exposes no
+        breakpoints, so pass ``check_depths`` for one or a narrow weak zone can be
+        stepped over entirely.
+
+    Returns
+    -------
+    MaaspResult
+
+    Raises
+    ------
+    ValueError
+        If no section is open hole -- nothing is exposed, so MAASP is undefined.
+    """
+    oh = [s for s in sections if s.is_open_hole]
+    if not oh:
+        raise ValueError(
+            "MAASP needs an exposed (open-hole) section: with the whole hole cased "
+            "there is no formation to fracture and the limit is casing burst, not "
+            "MAASP."
+        )
+    shoe = min(s.top_tvd for s in oh)
+    fp_fn = _as_ppg_callable(fp)
+
+    if check_depths is not None:
+        depths = sorted(float(d) for d in check_depths)
+    else:
+        cand = {s.top_tvd for s in oh} | {s.bottom_tvd for s in oh}
+        cand |= {
+            b for b in _profile_breakpoints(fp)
+            if any(s.top_tvd <= b <= s.bottom_tvd for s in oh)
+        }
+        depths = sorted(float(d) for d in cand)
+
+    d_arr = np.asarray(depths, dtype=float)
+    margin = ppg_to_psi(fp_fn(d_arr), d_arr) - ppg_to_psi(rho_mud_ppg, d_arr)
+    i = int(np.argmin(margin))
+
+    shoe_margin = float(
+        ppg_to_psi(float(fp_fn(np.array([shoe]))[0]), shoe)
+        - ppg_to_psi(rho_mud_ppg, shoe)
+    )
+    return MaaspResult(
+        maasp_psi=float(margin[i]),
+        governing_tvd=float(d_arr[i]),
+        shoe_tvd=float(shoe),
+        shoe_maasp_psi=shoe_margin,
+        governed_by_shoe=bool(abs(float(d_arr[i]) - shoe) < 1e-9),
+    )
 
 
 # ============================================================================

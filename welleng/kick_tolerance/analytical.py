@@ -274,6 +274,15 @@ class AnalyticalKickTolerance:
     #                                ``open_hole_unconstrained`` even though both
     #                                leave the breach search with no candidate. See
     #                                the guard in :func:`analytical_kick_tolerance`.
+    maasp_psi: float = float("nan")
+    #                                Maximum allowable annular surface pressure over
+    #                                the WHOLE exposed hole [psi] -- see
+    #                                :func:`~welleng.kick_tolerance.migration.maasp`.
+    maasp_governing_tvd: float = float("nan")
+    maasp_governed_by_shoe: bool = True
+    #                                False when a weak zone BELOW the shoe governs, so
+    #                                the conventional shoe-only MAASP overstates the
+    #                                closed-in limit.
 
 
 def _top_for_bottom(gas_bottom, influx_bbl_bh, sections_sorted, bottom_tvd, *,
@@ -878,6 +887,16 @@ def analytical_kick_tolerance(
             if r is not None and r[0] < v_star:
                 v_star, best = r[0], (float(zt), r[1], float(d))
 
+    from .migration import maasp as _maasp
+    try:
+        _mr = _maasp(ss, fp, rho_mud_ppg=rho_mud_ppg,
+                     check_depths=list(_env_d) if len(_env_d) else None)
+        _mk = dict(maasp_psi=_mr.maasp_psi,
+                   maasp_governing_tvd=_mr.governing_tvd,
+                   maasp_governed_by_shoe=_mr.governed_by_shoe)
+    except ValueError:                       # no open hole -- MAASP undefined
+        _mk = {}
+
     # ALREADY FRACTURED, NO INFLUX. An empty breach-candidate set has TWO physically
     # OPPOSITE causes, and the per-depth solves return None for both: the shoe is far
     # too strong to breach (genuinely unconstrained), or the MUD COLUMN ALONE already
@@ -909,6 +928,7 @@ def analytical_kick_tolerance(
                 surface_containment_bbl=surface_bbl,
                 casing_binds=False,
                 already_fractured=True,
+                **_mk,
             )
 
     # If no fracture breach is reachable within the exposed hole, the shoe holds to
@@ -984,12 +1004,14 @@ def analytical_kick_tolerance(
         return AnalyticalKickTolerance(
             float(lo), 0.0, float(oh_len),
             float(shoe), True, dict(_OPEN_HOLE_UNCONSTRAINED_NOTE),
-            surface_bbl, surface_bbl is not None and surface_bbl < float(lo))
+            surface_bbl, surface_bbl is not None and surface_bbl < float(lo),
+            **_mk)
 
     return AnalyticalKickTolerance(
         float(v_star), float(gt), float(gb),
         float(dbind) if dbind == dbind else np.nan, False, {},
-        surface_bbl, surface_bbl is not None and surface_bbl < float(v_star))
+        surface_bbl, surface_bbl is not None and surface_bbl < float(v_star),
+        **_mk)
 
 
 def swab_worst_bit(
