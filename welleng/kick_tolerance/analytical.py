@@ -895,3 +895,130 @@ def analytical_kick_tolerance(
         float(v_star), float(gt), float(gb),
         float(dbind) if dbind == dbind else np.nan, False, {},
         surface_bbl, surface_bbl is not None and surface_bbl < float(v_star))
+
+
+def swab_worst_bit(
+    sections_for_bit,
+    pp: ProfileLike,
+    fp: ProfileLike,
+    *,
+    bhp_psi: float,
+    rho_mud_ppg: float,
+    gas_bh_state,
+    bottom_tvd: float,
+    shoe_tvd: float,
+    gas_density_mode: str = "conservative",
+    temp_profile: TempProfileLike = None,
+    geothermal: TempProfileLike = None,
+    **kwargs,
+):
+    """Worst string position for the SWAB case, and the kick tolerance there.
+
+    Tripping in, the BHA can intercept the bubble at any depth, so unlike the
+    drilling case (BHA on bottom, geometry fixed) the string position is a
+    variable. This finds the worst one WITHOUT searching over it.
+
+    Industry commonly assumes the worst case is *bubble top at the shoe with the
+    bit at the bubble's bottom.* That is **not conservative** -- it hard-codes the
+    shoe as the binding depth. Measured against the true worst it is +0.68%,
+    +0.79% and **+25.42%** high, the last on a well whose weak zone sits below the
+    shoe. Right shape, wrong depth.
+
+    The worst position is DETERMINATE. The gas length ``L(d)`` is density-driven
+    and capacity-independent, so with the bubble top pinned at a candidate binding
+    depth ``d``::
+
+        bit* = d + L(d),      L(d) from   FP(d)*exp(k*L) = A + b*L
+
+    one closed-form solve per candidate depth, no search. ``bit*`` is itself a
+    breakpoint -- it is exactly where the gas top lands on the pressure knot, so
+    the binding candidate switches there -- hence both sides of each are
+    evaluated and the worse taken.
+
+    Do NOT be tempted by the fixed point ``bit := gas_bottom(bit)``: once the bit
+    is deep enough the gas bottom equals the bit identically, so every position
+    satisfies it and any iteration "converges" to wherever it started.
+
+    Parameters
+    ----------
+    sections_for_bit : callable
+        ``bit_tvd -> list[WellSection]``. Builds the annulus for a string
+        position: the BHA/collar annulus above the bit, open hole below it.
+    pp, fp : ProfileLike
+        Pore and fracture profiles as ``(tvd, ppg)`` tables.
+    bhp_psi, rho_mud_ppg, gas_bh_state
+        As :func:`analytical_kick_tolerance`.
+    bottom_tvd, shoe_tvd
+        Well TD and casing shoe [ft TVD].
+    **kwargs
+        Passed through to :func:`analytical_kick_tolerance`.
+
+    Returns
+    -------
+    (AnalyticalKickTolerance, float)
+        The result at the worst string position, and that position [ft TVD].
+    """
+    g = G_PSI_PER_PPG_FT
+    fp_fn = _as_ppg_callable(fp)
+    P_bh, T_bh_r, Z_bh, rho_bh = _resolve_bh_state(gas_bh_state, bhp_psi)
+    temp_fn = _as_temp_callable(temp_profile if temp_profile is not None else geothermal,
+                                T_bh_r)
+
+    def _length_at(d):
+        """Cap-independent gas length with the bubble top pinned at ``d``."""
+        FP = ppg_to_psi(fp_fn(np.array([d]))[0], d)
+        A = bhp_psi - g * rho_mud_ppg * (bottom_tvd - d)
+        bm = g * rho_mud_ppg
+        if FP <= A:
+            return None
+        T_d = float(temp_fn(d))
+        L = (FP - A) / bm
+        for _ in range(40):
+            Z_c = _z(0.5 * (FP + A + bm * max(L, 0.0)), T_d)
+            k = g * rho_bh * Z_bh * T_bh_r / (P_bh * Z_c * T_d)
+            e = np.exp(k * L)
+            f, df = FP * e - (A + bm * L), FP * k * e - bm
+            if abs(df) < 1e-12:
+                break
+            Ln = L - f / df
+            if abs(Ln - L) < 1e-7:
+                L = Ln
+                break
+            L = max(Ln, 0.0)
+        return L if L > 0.0 else None
+
+    # Candidate binding depths: the shoe plus every pressure knot in the open hole.
+    candidates = {float(shoe_tvd)}
+    for prof in (pp, fp):
+        candidates.update(x for x in _profile_breakpoints(prof)
+                          if shoe_tvd < x < bottom_tvd)
+
+    bits = set()
+    for d in candidates:
+        L = _length_at(d)
+        if L is None:
+            continue
+        star = d + L
+        # bit* is a breakpoint: the binding candidate switches across it, so take
+        # both sides rather than landing exactly on the switch.
+        for bit in (star - 1e-3, star, star + 1e-3):
+            if shoe_tvd < bit <= bottom_tvd:
+                bits.add(min(bit, bottom_tvd))
+
+    if not bits:
+        raise ValueError(
+            "no admissible string position: the fracture profile is never "
+            "reachable from the bottom-hole pressure over the open hole."
+        )
+
+    best, best_bit = None, None
+    for bit in sorted(bits):
+        r = analytical_kick_tolerance(
+            sections_for_bit(bit), pp, fp, bhp_psi=bhp_psi,
+            rho_mud_ppg=rho_mud_ppg, gas_bh_state=gas_bh_state,
+            gas_density_mode=gas_density_mode, temp_profile=temp_profile,
+            geothermal=geothermal, **kwargs,
+        )
+        if best is None or r.max_influx_bbl < best.max_influx_bbl:
+            best, best_bit = r, bit
+    return best, best_bit

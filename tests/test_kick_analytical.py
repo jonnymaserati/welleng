@@ -423,3 +423,62 @@ def test_off_diagonal_candidate_a_face_on_one_boundary_binding_at_another():
     assert worst_margin(answer * 1.05) < 0.0
     # the pre-fix answer is now excluded
     assert answer < 18.0
+
+
+# ---------------------------------------------------------------------------
+# swab: the worst string position is derived, not searched
+# ---------------------------------------------------------------------------
+SWAB_TD, SWAB_SHOE, SWAB_DC = 10500.0, 6500.0, 500.0
+
+
+def _sections_for_bit(bit):
+    dc_top = max(bit - SWAB_DC, 0.0)
+    bounds = sorted({0.0, SWAB_SHOE, dc_top, bit, SWAB_TD})
+    out = []
+    for a, b in zip(bounds, bounds[1:]):
+        if b <= a:
+            continue
+        mid = 0.5 * (a + b)
+        cap = 0.088 if mid > bit else (0.012 if mid >= dc_top else 0.066)
+        out.append(WellSection(a, b, cap, mid >= SWAB_SHOE))
+    return out
+
+
+def _scan_worst_bit(fp, n=401):
+    bits = np.linspace(SWAB_SHOE + SWAB_DC, SWAB_TD, n)
+    kt = np.array([
+        analytical_kick_tolerance(_sections_for_bit(float(b)), PP, fp,
+                                  gas_density_mode="exact", **COMMON).max_influx_bbl
+        for b in bits
+    ])
+    i = int(kt.argmin())
+    return float(kt[i]), float(bits[i])
+
+
+@pytest.mark.parametrize("fp", [FP_UNIFORM, WEAK_FP, SLOPED_FP])
+def test_swab_worst_bit_matches_a_dense_scan(fp):
+    """`bit* = d + L(d)` per candidate binding depth, no search over position."""
+    from welleng.kick_tolerance import swab_worst_bit
+
+    result, bit = swab_worst_bit(
+        _sections_for_bit, PP, fp, bottom_tvd=SWAB_TD, shoe_tvd=SWAB_SHOE,
+        gas_density_mode="exact", **COMMON,
+    )
+    scanned_kt, _ = _scan_worst_bit(fp)
+
+    assert result.max_influx_bbl == pytest.approx(scanned_kt, rel=0.01)
+    assert SWAB_SHOE < bit <= SWAB_TD
+
+
+def test_swab_picks_the_weak_zone_not_the_shoe():
+    """The industry assumption pins the bubble top at the SHOE. When a weak zone
+    sits below the shoe that is the wrong depth, and it is 25% UNSAFE."""
+    from welleng.kick_tolerance import swab_worst_bit
+
+    result, _ = swab_worst_bit(
+        _sections_for_bit, PP, WEAK_FP, bottom_tvd=SWAB_TD, shoe_tvd=SWAB_SHOE,
+        gas_density_mode="exact", **COMMON,
+    )
+
+    assert result.binding_depth_tvd > SWAB_SHOE + 100.0
+    assert result.binding_depth_tvd == pytest.approx(8001.0, abs=1.0)
