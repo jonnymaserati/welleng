@@ -173,14 +173,6 @@ from .analytical import (
 # Catalogue-backed geometry: true annular capacity (bore - string), casing IDs
 # from the API-5CT catalogue. catalog is imported lazily inside the builders.
 from .geometry import annular_capacity, cased_section, open_hole_section
-# Shut-in migration: closure is CONSTANT VOLUME, not pinned BHP. The rigid limit
-# is degenerate -- the tolerance is created entirely by the relief.
-from .shut_in import (
-    OBM_COMPRESSIBILITY,
-    WBM_COMPRESSIBILITY,
-    ShutInBreach,
-    shut_in_migration,
-)
 # NOGEPA-50 static single-shoe formula (the mandated baseline the migration
 # engine's static reduction reproduces).
 from .nogepa import nogepa_drilling_kick_tolerance, NogepaResult
@@ -229,10 +221,6 @@ __all__ = [
     "AnalyticalKickTolerance",
     "max_influx_contained_at_surface",
     "swab_worst_bit",
-    "shut_in_migration",
-    "ShutInBreach",
-    "WBM_COMPRESSIBILITY",
-    "OBM_COMPRESSIBILITY",
     "annular_capacity",
     "cased_section",
     "open_hole_section",
