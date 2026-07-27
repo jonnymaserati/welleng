@@ -97,6 +97,96 @@ def _z(p_psi: float, t_rankine: float) -> float:
     return _z_cached(int(round(p_psi)), int(round(t_rankine * 10.0)))
 
 
+def max_influx_contained_at_surface(
+    sections: Sequence[WellSection],
+    *,
+    burst_pressure_psi: float,
+    bhp_psi: float,
+    rho_mud_ppg: float,
+    gas_bh_state,
+    bottom_tvd: Optional[float] = None,
+    temp_profile: TempProfileLike = None,
+    z_fn=None,
+) -> float:
+    """Largest bottom-hole influx whose migration to surface still keeps the
+    surface pressure within ``burst_pressure_psi`` [bbl].
+
+    The worst case for the casing is the whole influx arrived at surface: the gas
+    has expanded, it has displaced the mud that was carrying the load, and the
+    surface pressure is at its highest. With the bubble occupying ``[0, L]`` and
+    mud beneath it to TD, and the bottom pinned at the bottom-hole pressure::
+
+        P_s * exp(k * L)  +  rho_mud * g * (TD - L)  =  BHP
+
+    One scalar equation in the gas length ``L``, solved directly -- set ``P_s`` to
+    the allowable and the equation gives the longest tolerable column, which the
+    per-section capacities then turn into an influx. Surface pressure rises
+    monotonically with ``L`` (gas replacing mud), so the root is unique.
+
+    Compare the result with the kick tolerance from
+    :func:`analytical_kick_tolerance`: if it is SMALLER, the casing is the binding
+    barrier rather than the formation, and the open-hole answer alone overstates
+    what the well can take.
+
+    INDICATIVE ONLY -- this is not a casing design calculation. It credits no
+    external backup, assumes the influx arrives coherently at surface with mud
+    beneath it, and ignores axial load, bending, temperature derating, wear and
+    connection ratings.
+
+    Returns
+    -------
+    float
+        The influx [bbl at bottom-hole conditions]. ``0.0`` if the well cannot be
+        shut in within the allowable even with no influx at all (i.e. the mud
+        column alone already puts surface above the rating).
+    """
+    ss = sorted(sections, key=lambda s: s.top_tvd)
+    td = float(bottom_tvd) if bottom_tvd is not None else max(s.bottom_tvd for s in ss)
+    g = G_PSI_PER_PPG_FT
+    zf = z_fn or _z
+    P_bh, T_bh_r, Z_bh, rho_bh = _resolve_bh_state(gas_bh_state, bhp_psi)
+    temp_fn = _as_temp_callable(temp_profile, T_bh_r)
+
+    P_s = float(burst_pressure_psi)
+    # No influx at all: a full mud column already puts surface at BHP - rho.g.TD.
+    if P_s <= bhp_psi - g * rho_mud_ppg * td:
+        return 0.0
+
+    T_c = float(temp_fn(0.5 * td))
+    L, k = 0.0, None
+    for _ in range(60):                       # outer: Z at the column mean pressure
+        P_top = P_s
+        P_bot_guess = P_s if k is None else P_s * np.exp(k * L)
+        Z_c = zf(max(0.5 * (P_top + P_bot_guess), 1.0), T_c)
+        k = g * rho_bh * Z_bh * T_bh_r / (P_bh * Z_c * T_c)
+        prev = L
+        for _ in range(40):                   # inner: Newton on the balance
+            e = np.exp(k * L)
+            f = P_s * e + g * rho_mud_ppg * (td - L) - bhp_psi
+            df = P_s * k * e - g * rho_mud_ppg
+            if abs(df) < 1e-12:
+                break
+            step = f / df
+            L = min(max(L - step, 0.0), td)
+            if abs(step) < 1e-9:
+                break
+        if abs(L - prev) < 1e-8:
+            break
+
+    if L <= 0.0:
+        return 0.0
+
+    volume, P = 0.0, P_s
+    for s in ss:
+        top, bot = max(0.0, s.top_tvd), min(L, s.bottom_tvd)
+        if bot <= top:
+            continue
+        P_bot = P * np.exp(k * (bot - top))
+        volume += s.capacity_per_tvd_ft * (P_bot - P) / (g * rho_bh)
+        P = P_bot
+    return float(volume)
+
+
 @dataclass
 class AnalyticalKickTolerance:
     """Result of :func:`analytical_kick_tolerance`."""
@@ -112,6 +202,18 @@ class AnalyticalKickTolerance:
     #                                the shoe), it is simply NOT assessed here (we stop at
     #                                the shoe), and the fracture pressure is uncertain.
     breakpoints: dict              # {label: influx-at-breach} for inspection
+    surface_containment_bbl: Optional[float] = None
+    #                                Largest influx the CASING could hold with the
+    #                                bubble arrived at surface, when the cased
+    #                                sections carry a burst allowable. None when no
+    #                                section does (the default) -- the casing is then
+    #                                simply not assessed, as before.
+    casing_binds: bool = False
+    #                                True when that is SMALLER than the open-hole
+    #                                answer, i.e. the casing is the binding barrier
+    #                                and the formation-only number overstates what the
+    #                                well can take. INDICATIVE -- see
+    #                                :func:`max_influx_contained_at_surface`.
 
 
 def _top_for_bottom(gas_bottom, influx_bbl_bh, sections_sorted, bottom_tvd, *,
@@ -350,6 +452,20 @@ def analytical_kick_tolerance(
     v_hole = sum(s.capacity_per_tvd_ft * (s.bottom_tvd - s.top_tvd)
                  for s in ss if s.is_open_hole)
 
+    # The casing above the shoe is not exposed to fracture, but it has a finite
+    # internal pressure rating, and the worst case for it is the influx arrived at
+    # SURFACE. Assessed only when a cased section carries an allowable (i.e. it was
+    # built by ``cased_section`` with a grade); the weakest rating governs.
+    _ratings = [s.burst_pressure_psi for s in ss
+                if not s.is_open_hole and s.burst_pressure_psi is not None]
+    surface_bbl = (
+        max_influx_contained_at_surface(
+            ss, burst_pressure_psi=min(_ratings), bhp_psi=bhp_psi,
+            rho_mud_ppg=rho_mud_ppg, gas_bh_state=gas_bh_state,
+            bottom_tvd=bottom_tvd, temp_profile=temp_profile, z_fn=z_fn,
+        ) if _ratings else None
+    )
+
     # A BOUNDARY is any discrete change in the problem -- a section-capacity
     # change OR a PP/FP breakpoint. Both gas faces are candidate-pinned at every
     # boundary (JJ): gas BOTTOM at a boundary + TD (families 2/3), gas TOP at a
@@ -577,8 +693,10 @@ def analytical_kick_tolerance(
         shoe = min((s.top_tvd for s in ss if s.is_open_hole), default=np.nan)
         return AnalyticalKickTolerance(
             float(lo), 0.0, float(oh_len),
-            float(shoe), True, dict(_OPEN_HOLE_UNCONSTRAINED_NOTE))
+            float(shoe), True, dict(_OPEN_HOLE_UNCONSTRAINED_NOTE),
+            surface_bbl, surface_bbl is not None and surface_bbl < float(lo))
 
     return AnalyticalKickTolerance(
         float(v_star), float(gt), float(gb),
-        float(dbind) if dbind == dbind else np.nan, False, {})
+        float(dbind) if dbind == dbind else np.nan, False, {},
+        surface_bbl, surface_bbl is not None and surface_bbl < float(v_star))
