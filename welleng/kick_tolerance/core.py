@@ -438,7 +438,12 @@ def _bubble_state_impl(inp: KickInputs, P_td: float, n: int):
                 rho_mean, y_seed = _influx_density_warm(inp, P_mean, T_mid, y_seed)
                 c = rho_mean / P_mean
                 P_new = P_top * np.exp(g * c * H)
-                if abs(P_new - P_bottom) < 1e-9:
+                # 1e-5 psi, not 1e-9. The OUTER fixed point on H re-enters this
+                # loop until H itself converges to 1e-9, so tightening the inner
+                # pressure beyond the outer's own tolerance buys nothing but
+                # Hall-Yarborough solves -- 33 per case against 21, and H-Y is
+                # 70% of drill_kick. Measured effect on H: 2e-8 ft.
+                if abs(P_new - P_bottom) < 1e-5:
                     P_bottom = P_new
                     break
                 P_bottom = P_new
