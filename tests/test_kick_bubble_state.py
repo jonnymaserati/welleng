@@ -90,3 +90,33 @@ def test_the_influx_temperature_is_the_mid_height_value():
         fahrenheit_to_rankine(inp.T_s + grad * 0.5 * h), rel=1e-9)
     assert fahrenheit_to_rankine(inp.T_s) < t_bar < fahrenheit_to_rankine(
         inp.T_s + grad * h)
+
+
+def test_the_bulk_density_is_pinned_by_the_endpoint_pressures():
+    """Why the convective instability does not reach the kick tolerance.
+
+    Both faces of the bubble are fixed by the pressure balance -- its top by the
+    shoe fracture limit, its bottom by the mud beneath it -- so
+
+        INT rho dh = dP / g
+
+    is determined, and the bulk mean density rho_bar = dP/(g*H) with it. However
+    the column redistributes internally, the mean density is the same, and so is
+    the buoyancy term that drives the A constant.
+
+    The internal ARRANGEMENT of the mass never enters the answer. That is why the
+    density profile being convectively unstable
+    (:func:`test_the_modelled_gas_column_is_convectively_unstable`) is a caution
+    about the reported internal state and not about the kick tolerance.
+    """
+    for t_s, t_td in ((212.0, 302.0), (100.0, 300.0), (212.0, 212.0), (60.0, 350.0)):
+        inp = KickInputs(T_s=t_s, T_td=t_td, **CASE)
+        _, h, _, rho_bar = core._bubble_state(inp, scenario_P_td(inp))
+
+        # the bubble-bottom pressure by the INDEPENDENT route: bottom hole less
+        # the mud column beneath the bubble
+        p_bottom = scenario_P_td(inp) + 14.7 - G_PSI_PER_PPG_FT * inp.rho_mud * (
+            inp.D_td - inp.D_lot - h)
+        implied = (p_bottom - p_top(inp)) / (G_PSI_PER_PPG_FT * h)
+
+        assert implied == pytest.approx(rho_bar, rel=1e-9)
