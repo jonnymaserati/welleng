@@ -3,7 +3,7 @@
 Append-only record of benchmark runs, newest first. This log is the **evidence for
 the pre-merge benchmark gate**: performance-sensitive engine code must be benchmarked
 + profiled and logged here BEFORE it is merged (see
-[`docs/dev/BENCHMARK_GATE.md`](../docs/dev/BENCHMARK_GATE.md)). Timings are per-host
+the project's local benchmark-gate policy). Timings are per-host
 and indicative — compare RELATIVE change on the same machine, not absolute numbers.
 
 Each entry: date · branch/commit · host · the numbers · what changed + the profile
@@ -209,7 +209,7 @@ Perf unchanged (init-only, O(sections)): thorough 3821→3790 ms, fast 648→652
 (within noise). Validation: 44 passed, 1 skipped (standard-case results identical;
 the fix only moves the tight-BHA answer). Residual (narrow gas-bottom breakpoint
 under-sampling) → the analytical solver with the complete breakpoint set
-(`docs/dev/KICK_ANALYTICAL_PLAN.md`).
+(local analytical-solver plan).
 
 ## 2026-07-14 (later) · `feat/kick-analytical` · analytical KT solver + optimisation
 

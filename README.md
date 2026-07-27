@@ -62,7 +62,7 @@ cov = survey.err.errors.cov_NEVs       # NEV covariance per station
 > **Revisions.** welleng ships **Rev5-1 / Rev5.11** as the default. The older **OWSG
 > Rev2** (2015) toolcodes can be regenerated from their workbooks with
 > `python -m welleng.errors.tools.owsg_to_json`, but are not yet shipped as a
-> selectable revision (tracked in `docs/dev/FUTURE_WORK.md`). Validate any model only
+> selectable revision. Validate any model only
 > against a **matching-revision** reference.
 
 > **Error model update (welleng 0.10.0).** The MWD Rev 5 model has been brought
