@@ -13,6 +13,7 @@ coordinate transformations.
 # reductions. `warn_unused_ignores` is enabled, so each ignore must catch a real
 # error. Lines tagged `LATENT BUG` flag genuine pre-existing issues (left as-is,
 # out of typing scope) rather than masking them silently.
+import copy
 import numpy as np
 import math
 import warnings
@@ -2491,6 +2492,15 @@ def interpolate_mds(survey: "Survey", md: ArrayLike) -> "Survey":
     # drop requested depths that coincide with existing stations
     # (np.setdiff1d returns a sorted, unique array)
     md = np.setdiff1d(md, survey.md)
+
+    if md.size == 0:
+        # Every requested depth is already a survey station, so there is
+        # nothing to interpolate and the survey itself is the answer. This is
+        # a routine input, not a degenerate one -- asking for the stations of
+        # a regular survey hits it exactly.
+        survey_interpolated = copy.deepcopy(survey)
+        survey_interpolated.interpolated = np.zeros(len(survey.md), dtype=bool)
+        return survey_interpolated
 
     assert md[0] >= survey.md[0], "The shortest md is not within the survey"
     assert md[-1] <= survey.md[-1], "The largest md is beyond the survey"
