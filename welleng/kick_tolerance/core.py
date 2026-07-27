@@ -119,7 +119,8 @@ MODEL_REVISIONS = {
     # obtained by running a GAS gradient over the whole open hole -- which A-2's
     # simplification (1) explicitly excludes ("the gas column does not fill the
     # entire open hole") -- and at the column-mean temperature. Do not select it
-    # for new work. See docs/dev/KICK_CLOSED_FORM_AUDIT.md.
+    # for new work. Retained only so a number issued under 0.26.0 stays
+    # reproducible; `bubble-state` is the default and the validated basis.
     "column-mean-2026": "SUPERSEDED. Influx gas at a whole-open-hole gas-gradient "
                         "pressure and the column-mean temperature "
                         "(welleng 0.26.0). Reproducibility only.",
