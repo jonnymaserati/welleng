@@ -363,3 +363,63 @@ def test_callable_profile_is_refused_because_its_breakpoints_are_invisible():
                                        gas_density_mode="exact",
                                        check_depths=[6500.0, 8000.0], **COMMON)
     assert pinned.max_influx_bbl == pytest.approx(table.max_influx_bbl, rel=0.02)
+
+
+def test_off_diagonal_candidate_a_face_on_one_boundary_binding_at_another():
+    """The worst gas position can have a face on one boundary while a DIFFERENT
+    depth binds. That pairing was never enumerated.
+
+    The candidate set paired "gas top at d" with "FP enforced at d" -- the
+    diagonal of (face position x binding depth). With a long tight bottom section
+    the worst config has the gas top on the BHA-top boundary and the SHOE
+    breaching. Measured on a 2500 ft tight section: the diagonal-only set returned
+    18.692 bbl whose worst gas position sits at -52 psi, i.e. 7.1% UNSAFE against
+    a true breach of 17.446 bbl (5 ft scan over all gas positions). With the
+    off-diagonal family the solver returns 17.447, +0.01%.
+
+    Asserted against the DEFINITION -- the influx at which the worst position over
+    the whole migration first breaches -- and not against the marching engine,
+    which under-samples this geometry by 0.9% and would make a wrong answer look
+    conservative.
+    """
+    from welleng.kick_tolerance.analytical import _top_for_bottom, _z
+    from welleng.kick_tolerance.migration import (
+        _as_temp_callable, _resolve_bh_state, pressure_at_depth, ppg_to_psi,
+    )
+
+    td = 10500.0
+    sections = [WellSection(0.0, 6500.0, 0.066, False),
+                WellSection(6500.0, 8000.0, 0.046, True),
+                WellSection(8000.0, td, 0.012, True)]
+    depths = np.array([6500.0, 8000.0, td])
+    fp_psi = ppg_to_psi(np.full(3, 14.0), depths)
+    gas_bh = _resolve_bh_state(COMMON["gas_bh_state"], COMMON["bhp_psi"])
+    temp_fn = _as_temp_callable(None, gas_bh[1])
+
+    def worst_margin(volume, step=25.0):
+        worst = np.inf
+        for gas_bottom in np.arange(6600.0, td + 1.0, step):
+            gas_top = _top_for_bottom(
+                gas_bottom, volume, sections, td, bhp_psi=COMMON["bhp_psi"],
+                rho_mud_ppg=COMMON["rho_mud_ppg"], gas_bh=gas_bh, temp_fn=temp_fn,
+                gas_density_mode="exact", z_fn=_z,
+            )
+            if gas_top is None or gas_top < 0:
+                continue
+            p = pressure_at_depth(
+                depths, gas_top_tvd=gas_top, gas_bottom_tvd=gas_bottom,
+                bottom_tvd=td, bhp_psi=COMMON["bhp_psi"],
+                rho_mud_ppg=COMMON["rho_mud_ppg"], gas_bh=gas_bh,
+                gas_density_mode="exact", temp_profile=None,
+            )
+            worst = min(worst, float(np.min(fp_psi - p)))
+        return worst
+
+    answer = _analytic(sections, FP_UNIFORM, mode="exact")
+
+    # the answer is ON the envelope -- no position breaches, and none has slack
+    assert worst_margin(answer) > -5.0
+    # and it is the LARGEST such influx: a little more definitely breaches
+    assert worst_margin(answer * 1.05) < 0.0
+    # the pre-fix answer is now excluded
+    assert answer < 18.0

@@ -52,8 +52,12 @@ bisection):
   (a 3-iter Newton, dependency-free). The length is density-driven hence
   CAP-independent; only the bbl total walks the per-section capacities.
 * families 2/3 (gas BOTTOM at a boundary + TD -- the interior/tight-BHA binding a
-  gas-top pin can't express) -- a secant on the influx, using :func:`_top_for_bottom`
-  to place the gas for each trial influx.
+  gas-top pin can't express) -- ALSO CLOSED FORM. Pinning the binding depth makes the
+  bit depth cancel out of the balance, leaving ``rho_mud.g.L - dP_gas(L) = C(d)`` with
+  ``C`` a function of the binding depth alone: the same Lambert-W form as above, once
+  per (gas-bottom pin, envelope depth) pair. The influx never needed bisecting.
+  :func:`_breach_v_gas_bottom` retains the bracketed secant as the REFERENCE
+  implementation the closed form is tested against; it is not on the solve path.
 
 The kick tolerance is the MIN breach influx over all candidates.
 """
@@ -587,6 +591,158 @@ def analytical_kick_tolerance(
                              z_fn=z_fn)
         return mv, gt, db
 
+    def _breach_v_gas_top_at(z, d):
+        """CLOSED FORM. Influx for the gas TOP pinned at boundary ``z`` with the
+        envelope exactly tight at an exposed depth ``d`` ABOVE it.
+
+        The existing gas-top family pins the top at ``d`` and enforces FP at the
+        SAME depth -- the diagonal of (face position x binding depth). The worst
+        config need not be on that diagonal: with a long tight bottom section the
+        gas top sits on the BHA-top boundary while the shoe is what binds, and
+        that pairing was never enumerated. Measured on a 2500 ft tight section:
+        the diagonal-only set returns 18.69 bbl, whose worst gas position has a
+        -52 psi margin at the shoe; the true answer is 17.3.
+
+        Unknown is the gas BOTTOM. With the gas spanning ``[z, gb]``::
+
+            P(gb) = BHP - rho_mud*g*(TD - gb)
+            P(z)  = P(gb) * exp(-k*(gb - z))
+            P(d)  = P(z) - rho_mud*g*(z - d)  =  FP(d)
+
+        One scalar equation in ``gb``; same Newton as everywhere else here.
+
+        Returns ``(V, gas_bottom)`` or None when no such config fits.
+        """
+        if not (d < z < bottom_tvd):
+            return None
+        FPd = ppg_to_psi(fp_fn(np.array([d]))[0], d)
+        bm = g * rho_mud_ppg
+        T_d = float(temp_fn(z))
+        P_z_target = FPd + bm * (z - d)        # gas-top pressure the envelope demands
+        if P_z_target <= 0.0:
+            return None
+
+        gb, k = min(z + 1.0, bottom_tvd), None
+        for _ in range(30):                    # outer: Z at the column mean pressure
+            P_gb = bhp_psi - bm * (bottom_tvd - gb)
+            Z_c = zf(max(0.5 * (P_gb + P_z_target), 1.0), T_d)
+            k = g * rho_bh * Z_bh * T_bh_r / (P_bh * Z_c * T_d)
+            prev = gb
+            for _ in range(30):                # inner: Newton on P(z) - target
+                P_gb = bhp_psi - bm * (bottom_tvd - gb)
+                e = np.exp(-k * (gb - z))
+                f = P_gb * e - P_z_target
+                df = bm * e - P_gb * k * e
+                if abs(df) < 1e-12:
+                    break
+                step = f / df
+                gb = min(max(gb - step, z + 1e-9), bottom_tvd)
+                if abs(step) < 1e-9:
+                    break
+            if abs(gb - prev) < 1e-7:
+                break
+
+        if not (z < gb <= bottom_tvd + 1e-6):
+            return None
+        gb = min(gb, bottom_tvd)
+        # The Newton CLAMPS at the bounds, so a demand the well cannot meet comes
+        # back as a bound rather than as a failure. Verify the equation is actually
+        # satisfied before believing the answer -- an unreachable gas-top pressure
+        # (P_z_target above anything the column can deliver) otherwise yields a
+        # spurious tiny influx and collapses the kick tolerance.
+        resid = (bhp_psi - bm * (bottom_tvd - gb)) * np.exp(-k * (gb - z)) - P_z_target
+        if abs(resid) > 1e-6 * max(1.0, abs(P_z_target)):
+            return None
+
+        V, P = 0.0, P_z_target
+        for s in ss:
+            top, bot = max(z, s.top_tvd), min(gb, s.bottom_tvd)
+            if bot <= top:
+                continue
+            P_bot = P * np.exp(k * (bot - top))
+            for _ in range(3):
+                Z_s = zf(max(0.5 * (P + P_bot), 1.0), T_d)
+                k_s = g * rho_bh * Z_bh * T_bh_r / (P_bh * Z_s * T_d)
+                P_bot = P * np.exp(k_s * (bot - top))
+            V += s.capacity_per_tvd_ft * (P_bot - P) / (g * rho_bh)
+            P = P_bot
+        return (V, gb) if V > 0.0 else None
+
+    def _breach_v_gas_bottom_at(b, d):
+        """CLOSED FORM. Influx for gas BOTTOM pinned at ``b`` with the fracture
+        envelope exactly tight at an exposed depth ``d`` ABOVE the gas top.
+
+        The bit depth cancels out of the shoe balance, leaving one scalar equation
+        in the gas length ``L``. With the gas bottom pinned, its pressure is known
+        from the mud beneath it, and the mud above the gas carries the load up to
+        ``d``::
+
+            FP(d) = P_b*exp(-k*L) - rho_mud*g*(b - L - d)
+
+        i.e. ``rho_mud*g*L - dP_gas(L) = FP(d) - BHP + rho_mud*g*(TD - d)``, whose
+        right-hand side depends only on ``d``. Newton on ``L`` -- the same
+        Lambert-W form :func:`_breach_v_gas_top` already solves for the gas-TOP
+        pin, which is why the influx never needed bisecting.
+
+        Depths INSIDE the gas need no solve: with the bottom pinned, the pressure
+        there is fixed and independent of the influx, so the binding config is the
+        one with the gas top exactly at ``d`` -- already enumerated as family 1/4.
+
+        Returns ``(V, gas_top)`` or None when no such config fits the hole.
+        """
+        P_b = bhp_psi - g * rho_mud_ppg * (bottom_tvd - b)
+        if P_b <= 0.0:
+            return None
+        FPd = ppg_to_psi(fp_fn(np.array([d]))[0], d)
+        C = FPd - bhp_psi + g * rho_mud_ppg * (bottom_tvd - d)
+        bm = g * rho_mud_ppg
+        T_d = float(temp_fn(d))
+
+        L, k = max(C / bm, 1.0), None
+        for _ in range(30):                    # outer: Z at the column mean pressure
+            P_top = P_b if k is None else P_b * np.exp(-k * L)
+            Z_c = zf(max(0.5 * (P_b + P_top), 1.0), T_d)
+            k = g * rho_bh * Z_bh * T_bh_r / (P_bh * Z_c * T_d)
+            prev = L
+            for _ in range(30):                # inner: Newton on Phi(L) - C
+                e = np.exp(-k * L)
+                f = bm * L - P_b * (1.0 - e) - C
+                df = bm - P_b * k * e
+                if abs(df) < 1e-12:
+                    break
+                step = f / df
+                L = max(L - step, 1e-9)
+                if abs(step) < 1e-9:
+                    break
+            if abs(L - prev) < 1e-7:
+                break
+
+        gas_top = b - L
+        if not (0.0 < L) or gas_top <= d:
+            return None                        # d must sit above the gas top
+        # Same guard: the Newton floors L, so an unsatisfiable balance returns a
+        # bound instead of failing. Check the residual before believing it.
+        if abs(bm * L - P_b * (1.0 - np.exp(-k * L)) - C) > 1e-6 * max(1.0, abs(C)):
+            return None
+
+        # bbl total: walk the per-section capacities, Z re-evaluated per section
+        # exactly as the gas-top-pinned family does.
+        V, P = 0.0, P_b * np.exp(-k * L)
+        for s in ss:
+            top, bot = max(gas_top, s.top_tvd), min(b, s.bottom_tvd)
+            if bot <= top:
+                continue
+            # Z at the SECTION's own mean pressure -- two passes, because the
+            # section's bottom pressure is what we are computing.
+            P_bot = P * np.exp(k * (bot - top))
+            for _ in range(3):
+                Z_s = zf(max(0.5 * (P + P_bot), 1.0), T_d)
+                k_s = g * rho_bh * Z_bh * T_bh_r / (P_bh * Z_s * T_d)
+                P_bot = P * np.exp(k_s * (bot - top))
+            V += s.capacity_per_tvd_ft * (P_bot - P) / (g * rho_bh)
+            P = P_bot
+        return (V, gas_top) if V > 0.0 else None
+
     def _breach_v_gas_bottom(b):
         """Influx where the config with gas BOTTOM pinned at ``b`` first breaches
         (families 2/3 -- the interior/tight-BHA binding the closed form can't pin).
@@ -634,10 +790,31 @@ def analytical_kick_tolerance(
         r = _breach_v_gas_top(d)
         if r is not None and r[0] < v_star:
             v_star, best = r[0], (d, r[1], d)
-    for b in bottom_pins:                                 # families 2/3: secant on V
-        r = _breach_v_gas_bottom(b)
-        if r is not None and r[0] < v_star:
-            v_star, best = r[0], (r[1], b, r[2])
+    # Fixed envelope depths -- the depths at which the constraint can turn, with the
+    # gas faces excluded (those are families 1/4).
+    _env_d = (check_arr if check_arr is not None else np.array(sorted(
+        x for x in (set(pf_breaks)
+                    | {s.top_tvd for s in ss if s.is_open_hole}
+                    | {s.bottom_tvd for s in ss if s.is_open_hole})
+        if any(s.is_open_hole and s.top_tvd <= x <= s.bottom_tvd for s in ss)),
+        dtype=float))
+
+    for b in bottom_pins:                                 # families 2/3: CLOSED FORM
+        for d in _env_d:
+            r = _breach_v_gas_bottom_at(b, float(d))
+            if r is not None and r[0] < v_star:
+                v_star, best = r[0], (r[1], b, float(d))
+
+    # OFF-DIAGONAL: gas TOP pinned at a boundary while a DIFFERENT depth binds.
+    # With a long tight bottom section the gas top sits on the BHA-top boundary and
+    # the shoe is what breaches; that pairing is on neither diagonal above.
+    for zt in top_pins:
+        for d in _env_d:
+            if float(d) >= float(zt):
+                continue
+            r = _breach_v_gas_top_at(float(zt), float(d))
+            if r is not None and r[0] < v_star:
+                v_star, best = r[0], (float(zt), r[1], float(d))
 
     # If no fracture breach is reachable within the exposed hole, the shoe holds to
     # full displacement -- route through the casing-burst / full-displacement handling
