@@ -153,11 +153,11 @@ def _top_for_bottom(gas_bottom, influx_bbl_bh, sections_sorted, bottom_tvd, *,
             cap = None
             for sec in sections_sorted:               # section just above z; snap to its top
                 if sec.top_tvd < z <= sec.bottom_tvd:
-                    cap = sec.annular_capacity_bbl_per_ft
+                    cap = sec.capacity_per_tvd_ft
                 if sec.top_tvd < z and sec.top_tvd > seg_top_limit:
                     seg_top_limit = sec.top_tvd
             if cap is None:
-                cap = sections_sorted[0].annular_capacity_bbl_per_ft
+                cap = sections_sorted[0].capacity_per_tvd_ft
             seg = z - seg_top_limit
             T = float(temp_fn(0.5 * (z + seg_top_limit)))
             Z = zf(max(P, 1.0), T)
@@ -339,7 +339,7 @@ def analytical_kick_tolerance(
         return d
 
     # Physical ceiling: total exposed open-hole volume (single bubble below shoe).
-    v_hole = sum(s.annular_capacity_bbl_per_ft * (s.bottom_tvd - s.top_tvd)
+    v_hole = sum(s.capacity_per_tvd_ft * (s.bottom_tvd - s.top_tvd)
                  for s in ss if s.is_open_hole)
 
     # A BOUNDARY is any discrete change in the problem -- a section-capacity
@@ -420,12 +420,12 @@ def analytical_kick_tolerance(
             if gas_density_mode == "conservative":
                 Z_t = zf(FP, T_d)
                 rho_top = rho_bh * FP * Z_bh * T_bh_r / (P_bh * Z_t * T_d)
-                V += rho_top * s.annular_capacity_bbl_per_ft * (bot - top) / rho_bh
+                V += rho_top * s.capacity_per_tvd_ft * (bot - top) / rho_bh
             else:
                 Z_c = zf(0.5 * (P + A + b * (bot - d)), T_d)
                 k = g * rho_bh * Z_bh * T_bh_r / (P_bh * Z_c * T_d)
                 P_bot = P * np.exp(k * (bot - top))
-                V += s.annular_capacity_bbl_per_ft * (P_bot - P) / (g * rho_bh)
+                V += s.capacity_per_tvd_ft * (P_bot - P) / (g * rho_bh)
                 P = P_bot
         return V, gas_bottom
 
