@@ -161,6 +161,71 @@ def mud_weight_from_gradient(
     return (gradient_q / ureg('standard_gravity')).to(unit)
 
 
+#: Hydrostatic gradient of a 1 ppg fluid at STANDARD gravity [psi/ft].
+#: 1 lb / 231 in^3 x 12 in/ft = 0.05194805..., computed here rather than typed.
+#:
+#: **Do not quote this to more figures than gravity justifies.** g varies with
+#: latitude by about +-0.27% about standard (9.7803 m/s^2 at the equator to
+#: 9.8322 at the poles), so the physically achievable range of this constant is
+#: roughly 0.051809 to 0.052083 -- a 0.53% spread. Any digit beyond the fourth
+#: is a statement about where the well is, not about arithmetic.
+#:
+#: That matters more than it looks for kick tolerance, where the answer is a
+#: small difference of two large hydrostatic terms. The amplification is
+#: ~20x on a typical case, so LATITUDE ALONE is worth ~10% of the kick
+#: tolerance: the same well design tolerates a different influx in the North Sea
+#: than in the Gulf of Mexico. The amplification grows without bound as a well
+#: approaches balance, i.e. it is largest exactly when the tolerance is smallest.
+#:
+#: Note ``welleng.kick_tolerance`` uses 0.0521, which is +0.292% and therefore
+#: OUTSIDE the planetary range (it exceeds polar gravity). That value is
+#: inherited from SPE-208788-PA and reproducing the paper's worked example
+#: digit-for-digit depends on it -- validate with the source's own constant, and
+#: quote the deviation.
+PSI_PER_PPG_PER_FT: float = float(
+    (ureg('1 lb/gal') * ureg('standard_gravity')).to('psi/ft').magnitude
+)
+
+
+def gravity_at_latitude(
+    latitude_deg: Number, altitude_m: Number = 0.0
+) -> float:
+    """Normal gravity [m/s^2] at a latitude, WGS84 (Somigliana), with a
+    free-air correction for altitude.
+
+    >>> round(gravity_at_latitude(0.0), 5)
+    9.78033
+    >>> round(gravity_at_latitude(90.0), 5)
+    9.83218
+    """
+    phi = np.radians(np.asarray(latitude_deg, dtype=float))
+    sin2 = np.sin(phi) ** 2
+    g = 9.7803253359 * (1.0 + 0.00193185265241 * sin2) / np.sqrt(
+        1.0 - 0.00669437999013 * sin2
+    )
+    return float(g - 3.086e-6 * float(altitude_m))
+
+
+def hydrostatic_gradient_at_latitude(
+    mud_weight_q: pint.Quantity,
+    latitude_deg: Number,
+    unit: UnitLike = 'psi/ft',
+    altitude_m: Number = 0.0,
+) -> pint.Quantity:
+    """Hydrostatic gradient using LOCAL gravity rather than standard gravity.
+
+    Worth using where the answer is sensitive to it -- see the note on
+    :data:`PSI_PER_PPG_PER_FT`. A North Sea well (58 deg N) and a Gulf of Mexico
+    well (28 deg N) differ by 0.26% in gravity alone.
+
+    >>> round(to(hydrostatic_gradient_at_latitude(mud_weight(1, 'ppg'), 58.0),
+    ...          'psi/ft'), 7)
+    0.0520059
+    """
+    g = gravity_at_latitude(latitude_deg, altitude_m) * ureg('m/s**2')
+    return (mud_weight_q * g).to(unit)
+
+
 # --- fast boundary converter --------------------------------------------------
 # Canonical SI unit per named quantity. welleng engines compute in these; the
 # `Units` boundary converts user I/O to/from them. Performance-critical callers
