@@ -899,7 +899,7 @@ class KickToleranceResult:
     #                              documented follow-up (task) -- not applied here.
 
 
-def max_influx_circulated(
+def _max_influx_circulated(
     sections: Sequence[WellSection],
     pp: "ProfileLike",
     fp: "ProfileLike",
@@ -916,9 +916,23 @@ def max_influx_circulated(
     tol_bbl: float = 0.1,
     max_iter: int = 60,
 ) -> KickToleranceResult:
-    """MAX bottom-hole influx that can be CIRCULATED OUT within the PP-FP envelope
+    """ORACLE ONLY -- not the product path. Use
+    :func:`~welleng.kick_tolerance.analytical.analytical_kick_tolerance`.
+
+    MAX bottom-hole influx that can be CIRCULATED OUT within the PP-FP envelope
     over the whole migration -- the migration-form kick tolerance, WITH where/why
     it breaches. INVERSE of :func:`migrate` (which checks a GIVEN influx).
+
+    **Why this is private.** It exists to CHECK the analytical solver, and it is
+    ~3500x slower (4.2 s against 1.2 ms) because it marches the bubble and
+    bisects the influx. Measured against a dense position scan it is 0.6-0.9%
+    CONSERVATIVE -- good enough to catch a wrong answer, not good enough to be
+    one. It earned its keep on 2026-07-27, when it exposed an incomplete
+    breakpoint set that no other test caught.
+
+    It is interface-anchored, NOT a coarse march: it anchors to the profile
+    breakpoints, which is why it still finds a 2 ft weak zone at any step count.
+    Do not describe it as naive sampling.
 
     An influx is tolerable when the migration keeps ``within_envelope`` True AND the
     bubble fits the open hole (``bha_length_exceeded`` False). Both tighten monotonically

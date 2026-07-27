@@ -160,7 +160,7 @@ from .migration import (
     MigrationResult,
     KickToleranceResult,
     migrate,
-    max_influx_circulated,
+    _max_influx_circulated,
     pressure_at_depth,
     linear_temp_profile,
 )
@@ -214,7 +214,6 @@ __all__ = [
     "MigrationResult",
     "KickToleranceResult",
     "migrate",
-    "max_influx_circulated",
     "pressure_at_depth",
     "linear_temp_profile",
     "analytical_kick_tolerance",
