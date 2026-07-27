@@ -24,6 +24,36 @@ model would only RELAX (raise) the tolerance -- a casing-design margin-recovery
 tool, not a safety improvement -- and its transient two-phase hydraulics belong
 with a hydraulics kernel, not here.
 
+WORST-CASE PORE PRESSURE -- the stated convention (READ THIS)
+--------------------------------------------------------------
+**welleng uses PP + kick intensity, floored at the mud hydrostatic.**
+
+    scenario_P_td = max( (PP + kick_intensity) * g * D_td ,  rho_mud * g * D_td )
+
+This is a CHOICE, and it is the single biggest source of disagreement between
+kick-tolerance numbers in the industry. Santos & Sonnemann, *Transitional Kick
+Tolerance*, SPE-159175-MS (2012), names the two families in common use:
+
+* **PP+KI** -- "Predicted pore pressure + kick intensity". What we implement.
+* **MW+KI** -- "Current Mud Density + kick intensity", i.e. the worst case is
+  referenced to the fluid in the hole rather than to the predicted pore
+  pressure.
+
+They give different answers, and the paper is blunt about the consequence: *"one
+big issue in the industry today is the lack of consistency about KT calculation,
+leading to significant confusion and increased risk"*, from *"methods which
+provide widely diverging results"*. It also warns that "several, slightly
+different ways" exist WITHIN each family -- our mud-hydrostatic floor is one such
+variation, so quoting "PP+KI" alone does not pin the number either.
+
+Quote the convention with the number. Two engineers can both be right and
+disagree by a wide margin, and neither will know why unless it is stated.
+
+Not implemented: **Transitional Kick Tolerance** (the same paper) -- KT as a
+curve over the whole hole section rather than a single value at section TD. The
+paper's criticism that the industry focuses "almost exclusively on the KT at the
+end of a hole section" applies to this package as it stands.
+
 STRING POSITION -- the stated convention (READ THIS)
 ----------------------------------------------------
 **A kick tolerance is a number about a stated configuration, and this is ours.**
