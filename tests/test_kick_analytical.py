@@ -3,7 +3,7 @@
 The analytical solver (``analytical_kick_tolerance``) evaluates the migration-form
 kick tolerance at only the BREAKPOINTS of the imposed-pressure-vs-position curve
 (the exact worst gas position), instead of a fine march + bisection. These tests
-lock it against the migration engine (``max_influx_circulated``):
+lock it against the migration engine (``_max_influx_circulated``):
 
 .. warning::
 
@@ -35,7 +35,7 @@ import numpy as np
 import pytest
 
 from welleng.kick_tolerance import (
-    WellSection, max_influx_circulated, analytical_kick_tolerance,
+    WellSection, _max_influx_circulated, analytical_kick_tolerance,
 )
 
 GAS = (None, 660.0, None, None)          # (P_bh=BHP, T_bh_rankine, Z, rho) -> H-Y fills
@@ -54,7 +54,7 @@ SLOPED_FP = (np.array([0.0, 6500.0, 10500.0]), np.array([13.0, 13.5, 14.5]))
 
 
 def _march(sections, fp, mode="conservative"):
-    return max_influx_circulated(
+    return _max_influx_circulated(
         sections, PP, fp, gas_density_mode=mode, mode="thorough", n_steps=300,
         **COMMON).max_influx_bbl
 
@@ -91,7 +91,7 @@ def test_bubble_length_limit_is_casing_burst_regime():
     full-displacement volume (~109). Analytical and march must agree (JJ 2026-07-16)."""
     a = analytical_kick_tolerance(TWO_SECTION, PP, STRONG_FP,
                                   gas_density_mode="conservative", **COMMON)
-    m = max_influx_circulated(TWO_SECTION, PP, STRONG_FP, gas_density_mode="conservative",
+    m = _max_influx_circulated(TWO_SECTION, PP, STRONG_FP, gas_density_mode="conservative",
                               mode="thorough", n_steps=300, **COMMON)
     assert a.open_hole_unconstrained and m.open_hole_unconstrained
     assert m.limited_by == "open_hole_capacity"
@@ -172,7 +172,7 @@ def test_tolerable_set_is_monotone():
     r = analytical_kick_tolerance(TIGHT_BHA, PP, FP_UNIFORM,
                                   gas_density_mode="conservative", **COMMON)
     vstar = r.max_influx_bbl
-    below = max_influx_circulated(
+    below = _max_influx_circulated(
         TIGHT_BHA, PP, FP_UNIFORM, gas_density_mode="conservative",
         mode="thorough", n_steps=300, **COMMON)
     # the analytical V* must not exceed the fine march's answer (conservative)

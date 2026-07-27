@@ -1,6 +1,6 @@
 """Analytical (breakpoint) kick-tolerance solver.
 
-The migration :func:`~welleng.kick_tolerance.migration.max_influx_circulated`
+The migration :func:`~welleng.kick_tolerance.migration._max_influx_circulated`
 marches a single gas bubble up the annulus and bisects the influx. That is exact
 in the limit but (a) costs a fine march and (b) can UNDER-sample a narrow
 breakpoint of the imposed-pressure-vs-position curve. This module computes the
@@ -390,7 +390,7 @@ def analytical_kick_tolerance(
     """Max bottom-hole influx tolerable over the whole migration, by breakpoints.
 
     Breakpoint alternative to
-    :func:`~welleng.kick_tolerance.migration.max_influx_circulated`: evaluates the
+    :func:`~welleng.kick_tolerance.migration._max_influx_circulated`: evaluates the
     imposed pressure only at the breakpoints of ``P(gas position)`` (§module
     docstring) and bisects the influx to the first fracture. ``gas_density_mode``
     selects the safe-side numeric bound (``"conservative"``, default) or the more
@@ -504,7 +504,7 @@ def analytical_kick_tolerance(
             "weak zone between section boundaries would be silently missed. Pass "
             "the profile as a (tvd, ppg) table, or pin the depths to enforce with "
             "check_depths=[...]. To keep a callable without either, use "
-            "max_influx_circulated, which marches instead of enumerating."
+            "_max_influx_circulated, which marches instead of enumerating."
         )
 
     def exposed_for(gas_top, gas_bottom):
@@ -574,7 +574,7 @@ def analytical_kick_tolerance(
         limit, caught here, or an interior config caught by the gas-BOTTOM-pinned
         family (``_breach_v_gas_bottom`` -> ``_min_margin``), which DOES enforce the
         full ``min(FP - P, P - PP)`` envelope. (2) Empirical guard: the analytical KT is
-        cross-checked against the thorough march (``max_influx_circulated``, which
+        cross-checked against the thorough march (``_max_influx_circulated``, which
         enforces the full PP-FP envelope at every station) in
         ``test_conservative_matches_migration_standard`` -- analytical <= march + tol.
         If this FP-only solve ever over-reported by missing a pore-side binding, the

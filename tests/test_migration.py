@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 
 from welleng.kick_tolerance.migration import (
-    WellSection, migrate, max_influx_circulated, pressure_at_depth,
+    WellSection, migrate, _max_influx_circulated, pressure_at_depth,
     linear_temp_profile, G_PSI_PER_PPG_FT,
 )
 from welleng.kick_tolerance.gas_z import hall_yarborough_z, gas_density_ppg
@@ -214,7 +214,7 @@ def test_max_influx_circulated_is_the_envelope_boundary():
     It sits between the known passing (3 bbl) and breaching (45 bbl) influxes;
     migrate() at V* is inside the envelope (safe-side boundary) and just above V*
     it fails (breaches FP or the bubble can't pass the BHA)."""
-    kt = max_influx_circulated(
+    kt = _max_influx_circulated(
         make_sections(), PP_TABLE, FP_TABLE,
         bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state(),
         n_steps=120, tol_bbl=0.1,
@@ -249,11 +249,11 @@ def test_max_influx_circulated_threads_temp_profile():
         bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state(),
         n_steps=120, tol_bbl=0.1,
     )
-    v_iso = max_influx_circulated(make_sections(), PP_TABLE, FP_TABLE, **common)
-    v_none = max_influx_circulated(
+    v_iso = _max_influx_circulated(make_sections(), PP_TABLE, FP_TABLE, **common)
+    v_none = _max_influx_circulated(
         make_sections(), PP_TABLE, FP_TABLE, temp_profile=None, **common
     )
-    v_geo = max_influx_circulated(
+    v_geo = _max_influx_circulated(
         make_sections(), PP_TABLE, FP_TABLE, temp_profile=GEO_TEMP, **common
     )
     # None == isothermal default, and the cooler-up-hole profile gives >= headroom.
@@ -268,10 +268,10 @@ def test_fast_mode_matches_thorough_within_tolerance():
     good enough for the API / GUI; thorough remains the definitive check. Same
     binding region."""
     common = dict(bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state())
-    thorough = max_influx_circulated(
+    thorough = _max_influx_circulated(
         make_sections(), PP_TABLE, FP_TABLE, mode="thorough", **common
     )
-    fast = max_influx_circulated(
+    fast = _max_influx_circulated(
         make_sections(), PP_TABLE, FP_TABLE, mode="fast", **common
     )
     assert fast.max_influx_bbl == pytest.approx(thorough.max_influx_bbl, rel=0.02)
@@ -286,7 +286,7 @@ def test_max_influx_unlimited_when_hole_fills_without_fracturing():
     full-OPEN-HOLE-DISPLACEMENT influx -- LESS than the geometric hole volume, because
     the influx (measured at bottom hole) expands to fill the hole (JJ 2026-07-16)."""
     fp_high = (np.array([0.0, BOTTOM_TVD]), np.array([30.0, 30.0]))  # never fractures
-    r = max_influx_circulated(
+    r = _max_influx_circulated(
         make_sections(), PP_TABLE, fp_high,
         bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state(), n_steps=80,
     )
@@ -295,7 +295,7 @@ def test_max_influx_unlimited_when_hole_fills_without_fracturing():
     assert r.limited_by == "open_hole_capacity"
     assert 0.0 < r.max_influx_bbl < v_hole          # expansion-adjusted, below geometric
     # a normal (fracturing) well is NOT flagged unlimited and reports a finite limit.
-    r2 = max_influx_circulated(
+    r2 = _max_influx_circulated(
         make_sections(), PP_TABLE, FP_TABLE,
         bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state(), n_steps=80,
     )
@@ -317,20 +317,20 @@ def test_geothermal_is_the_default_temp_when_provided():
         n_steps=120, tol_bbl=0.1,
     )
     # geothermal defaulted in == passing it explicitly as temp_profile.
-    v_geo_default = max_influx_circulated(
+    v_geo_default = _max_influx_circulated(
         make_sections(), PP_TABLE, FP_TABLE, geothermal=GEO_TEMP, **common
     )
-    v_geo_explicit = max_influx_circulated(
+    v_geo_explicit = _max_influx_circulated(
         make_sections(), PP_TABLE, FP_TABLE, temp_profile=GEO_TEMP, **common
     )
     assert v_geo_default.max_influx_bbl == pytest.approx(v_geo_explicit.max_influx_bbl)
     # explicit temp_profile OVERRIDES geothermal (isothermal-at-BHT wins here).
     iso = lambda d: 660.0
-    v_override = max_influx_circulated(
+    v_override = _max_influx_circulated(
         make_sections(), PP_TABLE, FP_TABLE,
         temp_profile=iso, geothermal=GEO_TEMP, **common
     )
-    v_iso = max_influx_circulated(make_sections(), PP_TABLE, FP_TABLE, **common)
+    v_iso = _max_influx_circulated(make_sections(), PP_TABLE, FP_TABLE, **common)
     assert v_override.max_influx_bbl == pytest.approx(v_iso.max_influx_bbl)
     # and the geothermal default actually differs from the isothermal fallback.
     assert v_geo_default.max_influx_bbl != pytest.approx(v_iso.max_influx_bbl)
@@ -346,7 +346,7 @@ def test_weak_formation_binds_deeper_than_the_shoe():
         np.array([0.0, SHOE_TVD, weak_tvd - 200, weak_tvd, weak_tvd + 200, BOTTOM_TVD]),
         np.array([14.0, 14.0, 14.0, 11.6, 14.0, 14.0]),   # a low-FP notch at 6500 ft
     )
-    kt = max_influx_circulated(
+    kt = _max_influx_circulated(
         make_sections(), PP_TABLE, fp_weak,
         bhp_psi=BHP, rho_mud_ppg=RHO_MUD, gas_bh_state=bh_state(), n_steps=150,
     )
