@@ -290,6 +290,31 @@ class KickResult:
     H_gas: Optional[float] = None
     # Influx-column height at this capacity [ft TVD], from A-2 with
     # ``rho_influx``. Reported under BOTH revisions.
+    bubble_length_limited: bool = False
+    # True when the column solve hit the OPEN-HOLE LENGTH and ``H_gas`` was
+    # clipped to it, so the reported geometry is a clamp and not a physical
+    # result: ``H_gas == D_td - D_lot`` exactly, putting the bubble top exactly
+    # ON the shoe. ``capacity`` is NOT clipped with it, so on a clamped result
+    # the two disagree -- measured 38.09 bbl against an open hole holding 14.63,
+    # while the geometry says the bubble exactly fills that open hole.
+    #
+    # DO NOT read the geometry and the volume together when this is True. The
+    # configuration is bubble-length-limited in the sense of SPE/IADC-140113
+    # (Santos): a single coherent bubble cannot be longer than the open hole it
+    # occupies, so the limiting configuration this result describes is not
+    # reachable. ``analytical_kick_tolerance`` reports the same situation as
+    # ``open_hole_unconstrained``.
+    #
+    # Raised by welleng-api against 0.27.0rc2, who put it correctly: a response
+    # that reports overflow in one field and no overflow in another is worse
+    # than either answer alone.
+    capacity_negative: bool = False
+    # True when A-7 returns a NEGATIVE tolerable influx, which is not a volume.
+    # It means the maximum-credible pore pressure already exceeds what the shoe
+    # can hold with no influx at all -- the section is undrillable on these
+    # inputs rather than tolerant of a negative kick. ``capacity`` is left as
+    # computed rather than floored, so the magnitude still says how far past the
+    # limit the case is, but a consumer must not display it as a tolerance.
     #
     # ``(H_gas, rho_influx)`` are the pair a caller needs to draw the limiting
     # pressure profile, and they are the ONLY pair that closes on the fracture
@@ -829,6 +854,12 @@ def drill_kick(inp: KickInputs) -> KickResult:
         T_influx=T_influx,
         rho_influx=rho_influx,
         H_gas=H_gas,
+        # bool(), not the numpy scalar these comparisons produce -- a np.bool_
+        # fails `is True` and can trip a JSON serialiser downstream.
+        bubble_length_limited=bool(
+            H_gas is not None and abs(H_gas - (inp.D_td - inp.D_lot)) < 1e-6
+        ),
+        capacity_negative=bool(capacity < 0.0),
     )
 
 
@@ -883,6 +914,12 @@ def swab_kick(inp: KickInputs) -> KickResult:
         T_influx=T_influx,
         rho_influx=rho_influx,
         H_gas=H_gas,
+        # bool(), not the numpy scalar these comparisons produce -- a np.bool_
+        # fails `is True` and can trip a JSON serialiser downstream.
+        bubble_length_limited=bool(
+            H_gas is not None and abs(H_gas - (inp.D_td - inp.D_lot)) < 1e-6
+        ),
+        capacity_negative=bool(capacity < 0.0),
     )
 
 

@@ -9,7 +9,7 @@ Operations
 ----------
 * ``drill_kick`` -- the basic single-shoe closed form (the free/basic API tier).
 * ``migrate``    -- one gas-migration sweep.
-* ``max_influx_circulated`` -- the inverse solve (bisection over migrations); the
+* ``_max_influx_circulated`` -- the inverse solve (bisection over migrations); the
   advanced-tier API hot path and the dominant cost.
 
 Recorded baselines (Python 3.12, one dev machine, 2026-07-14) -- indicative only,
@@ -18,7 +18,7 @@ compare RELATIVE change on the same host:
     operation                 original   after opt   speedup
     drill_kick (H-Y auto Z)    45.3 us    22.6 us     ~2.0x
     migrate (n_steps=100)       573 ms     293 ms     ~2.0x
-    max_influx_circulated      7491 ms    3758 ms     ~2.0x
+    _max_influx_circulated      7491 ms    3758 ms     ~2.0x
 
 The optimisation (2026-07-14) was pure speed, results unchanged (the kick-tolerance
 validation suite is the guardrail): the Hall-Yarborough Newton solve is the ~95%
@@ -39,7 +39,7 @@ from welleng.kick_tolerance import (
     WellSection,
     analytical_kick_tolerance,
     drill_kick,
-    max_influx_circulated,
+    _max_influx_circulated,
     migrate,
 )
 
@@ -106,10 +106,10 @@ def main() -> None:
         lambda: migrate(sections, pp, fp, influx_bbl_bh=25.0, **common), 30
     ) * 1e3
     mx = _time(
-        lambda: max_influx_circulated(sections, pp, fp, mode="thorough", **common), 10
+        lambda: _max_influx_circulated(sections, pp, fp, mode="thorough", **common), 10
     ) * 1e3
     mxf = _time(
-        lambda: max_influx_circulated(sections, pp, fp, mode="fast", **common), 10
+        lambda: _max_influx_circulated(sections, pp, fp, mode="fast", **common), 10
     ) * 1e3
     ana_common = dict(bhp_psi=6402.0, rho_mud_ppg=12.0, gas_bh_state=gas_bh_state)
     analytical_kick_tolerance(sections, pp, fp, **ana_common)          # warm Z cache
@@ -127,8 +127,8 @@ def main() -> None:
     print(f"{'drill_kick, DISTINCT inputs':<38}{dk:>9.1f} us   <- quote this")
     print(f"{'drill_kick, repeated input (memo)':<38}{dk_memo:>9.1f} us")
     print(f"{'migrate (n_steps=100)':<38}{mg:>9.1f} ms")
-    print(f"{'max_influx_circulated [thorough]':<38}{mx:>9.1f} ms")
-    print(f"{'max_influx_circulated [fast]':<38}{mxf:>9.1f} ms")
+    print(f"{'_max_influx_circulated [thorough]':<38}{mx:>9.1f} ms")
+    print(f"{'_max_influx_circulated [fast]':<38}{mxf:>9.1f} ms")
     print(f"{'analytical_kick_tolerance [conserv]':<38}{anc:>9.1f} ms")
     print(f"{'analytical_kick_tolerance [exact]':<38}{ane:>9.1f} ms   <- API/GUI path")
 
