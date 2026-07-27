@@ -275,9 +275,15 @@ class AnalyticalKickTolerance:
     #                                leave the breach search with no candidate. See
     #                                the guard in :func:`analytical_kick_tolerance`.
     maasp_psi: float = float("nan")
-    #                                Maximum allowable annular surface pressure over
-    #                                the WHOLE exposed hole [psi] -- see
+    #                                MAASP at the casing shoe [psi] -- the CONVENTION,
+    #                                mud-filled annulus. See
     #                                :func:`~welleng.kick_tolerance.migration.maasp`.
+    maasp_limiting_psi: float = float("nan")
+    #                                The same, minimised over every exposed depth.
+    #                                Equal to `maasp_psi` for a constant fracture
+    #                                gradient; LOWER when a weak zone sits below the
+    #                                shoe, in which case the convention is the less
+    #                                safe number.
     maasp_governing_tvd: float = float("nan")
     maasp_governed_by_shoe: bool = True
     #                                False when a weak zone BELOW the shoe governs, so
@@ -892,6 +898,7 @@ def analytical_kick_tolerance(
         _mr = _maasp(ss, fp, rho_mud_ppg=rho_mud_ppg,
                      check_depths=list(_env_d) if len(_env_d) else None)
         _mk = dict(maasp_psi=_mr.maasp_psi,
+                   maasp_limiting_psi=_mr.limiting_psi,
                    maasp_governing_tvd=_mr.governing_tvd,
                    maasp_governed_by_shoe=_mr.governed_by_shoe)
     except ValueError:                       # no open hole -- MAASP undefined

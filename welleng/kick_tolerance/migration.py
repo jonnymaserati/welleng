@@ -234,15 +234,21 @@ def ppg_to_psi(rho_ppg: np.ndarray, depth_ft: np.ndarray) -> np.ndarray:
 class MaaspResult:
     """Result of :func:`maasp`."""
 
-    maasp_psi: float          # the governing MAASP [psi]
-    governing_tvd: float      # exposed depth that sets it [ft TVD]
-    shoe_tvd: float           # shallowest open-hole depth (the conventional shoe) [ft]
-    shoe_maasp_psi: float     # MAASP evaluated AT THE SHOE, the industry convention
-    governed_by_shoe: bool
-    #                         False when an exposed depth BELOW the shoe governs, i.e.
-    #                         the conventional shoe-only MAASP OVERSTATES what the
-    #                         annulus can be closed in on. Same failure as assuming the
-    #                         swab bubble top sits at the shoe -- see `swab_worst_bit`.
+    maasp_psi: float
+    #                         MAASP AT THE CASING SHOE -- the conventional, industry
+    #                         definition, `P_frac(shoe) - g.rho_mud.shoe`. This is the
+    #                         number a driller computes by hand and the one to display
+    #                         under the label "MAASP". Deliberately NOT redefined.
+    shoe_tvd: float           # the shoe it was evaluated at [ft TVD]
+    limiting_psi: float
+    #                         The same quantity MINIMISED over every exposed depth. Equal
+    #                         to `maasp_psi` whenever the fracture gradient is constant,
+    #                         because `g.d.(FP_emw - rho_mud)` then grows with depth and
+    #                         the shallowest exposed point governs. LOWER when a weak
+    #                         zone sits below the shoe -- and then the conventional shoe
+    #                         number overstates what the annulus can be closed in on.
+    governing_tvd: float      # exposed depth that sets `limiting_psi` [ft TVD]
+    governed_by_shoe: bool    # True when the convention and the limit agree
 
 
 def maasp(
@@ -264,14 +270,22 @@ def maasp(
     is a different quantity. If a back-pressure or choke margin applies, subtract
     it from the returned value at the point of use, where its sign is unambiguous.
 
-    **Why this is a minimum over depths and not just the shoe.** The industry
-    convention evaluates MAASP at the casing shoe, and with a CONSTANT fracture
-    gradient that is exactly right: ``P_frac(d) - g.rho_mud.d = g.d.(FP_emw -
-    rho_mud)`` grows with depth, so the shallowest exposed point -- the shoe --
-    always governs. It stops being right the moment a weak zone sits BELOW the
-    shoe, because then ``FP_emw`` is not constant and a deeper, weaker formation
-    can govern instead. The shoe-only number is then too high, in the unsafe
-    direction. ``governed_by_shoe`` says which case you are in.
+    **``maasp_psi`` is the CONVENTION and is not redefined**: it is evaluated at the
+    casing shoe, which is what a driller computes by hand and what belongs under a
+    field labelled "MAASP". ``limiting_psi`` carries the generalisation -- the same
+    quantity minimised over every exposed depth.
+
+    With a CONSTANT fracture gradient the two are identical, because
+    ``P_frac(d) - g.rho_mud.d = g.d.(FP_emw - rho_mud)`` grows with depth and the
+    shallowest exposed point -- the shoe -- governs. They separate only when a weak
+    zone sits BELOW the shoe, and then the conventional number is the higher, less
+    safe one. ``governed_by_shoe`` says which case you are in.
+
+    **MAASP assumes a MUD-FILLED annulus.** It is a planning number, not the shut-in
+    limit during a kick: once influx is in the annulus the column is lighter than mud
+    and the surface pressure at which the shoe breaks down is a different quantity
+    (that is what the kick-tolerance solve computes). Do NOT compare a live SICP
+    against MAASP and conclude the shoe is safe.
 
     MAASP depends on the CURRENT mud weight, so it changes as the well is weighted
     up; it is a property of (hole, fracture profile, mud), not of an influx.
@@ -331,10 +345,10 @@ def maasp(
         - ppg_to_psi(rho_mud_ppg, shoe)
     )
     return MaaspResult(
-        maasp_psi=float(margin[i]),
-        governing_tvd=float(d_arr[i]),
+        maasp_psi=shoe_margin,                       # the CONVENTION, unmodified
         shoe_tvd=float(shoe),
-        shoe_maasp_psi=shoe_margin,
+        limiting_psi=float(margin[i]),
+        governing_tvd=float(d_arr[i]),
         governed_by_shoe=bool(abs(float(d_arr[i]) - shoe) < 1e-9),
     )
 
