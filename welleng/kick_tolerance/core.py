@@ -82,9 +82,16 @@ from .gas_z import (
     hall_yarborough_z_and_y,
     methane_properties,
 )
+# `migration` imports nothing from this package, so this direction is acyclic.
+# SINGLE SOURCE OF TRUTH for the ppg->psi/ft constant and the density<->gradient
+# conversion. core.py previously declared its own `G_PSI_PER_PPG_FT = 0.0521`
+# alongside migration.py's: two definitions of one physical constant, agreeing by
+# coincidence of maintenance, with nothing that would fail if one moved. Re-exported
+# below so `from welleng.kick_tolerance.core import G_PSI_PER_PPG_FT` still resolves.
+from .migration import G_PSI_PER_PPG_FT, ppg_to_gradient
 
 # --- Constants (public, oilfield units) -------------------------------------
-G_PSI_PER_PPG_FT = 0.0521      # gravitational constant g  [psi.ppg^-1.ft^-1]
+# G_PSI_PER_PPG_FT is imported from .migration above -- ONE definition, not two.
 P_ATM_PSI = 14.7               # atmospheric pressure P_atm [psi]
 RANKINE_OFFSET = 460.0         # degF -> degR (paper convention; A back-solves
                                #               to ~241.2 with this offset)
@@ -339,6 +346,19 @@ class KickResult:
     #                            difference of two large pressures, so a source
     #                            quoting g = 0.052 differs from welleng's 0.0521 by
     #                            ~0.7% on a typical shoe.
+    rho_influx_gradient_psi_per_ft: float = float("nan")
+    #                            The influx density `rho_influx` expressed as a
+    #                            pressure GRADIENT [psi/ft], using this engine's
+    #                            own ppg->psi/ft constant so it reproduces the
+    #                            column weight actually applied.
+    #                            Reported because the well-control literature
+    #                            quotes influx GRADIENTS rather than densities --
+    #                            NOGEPA-50 states a gas range of 0.05-0.15 psi/ft --
+    #                            so this is the field a user can check against the
+    #                            standard they work to, without back-solving
+    #                            anything. Comparison only: a quoted gradient is
+    #                            NOT an input path (a non-methane influx goes in as
+    #                            a composition and welleng computes the density).
 
 
 # --- Gas-property backend (clean-room Hall & Yarborough 1973) ---------------
@@ -875,6 +895,10 @@ def drill_kick(inp: KickInputs) -> KickResult:
         H_gas=H_gas,
         # bool(), not the numpy scalar these comparisons produce -- a np.bool_
         # fails `is True` and can trip a JSON serialiser downstream.
+        rho_influx_gradient_psi_per_ft=(
+            float(ppg_to_gradient(rho_influx)) if rho_influx is not None
+            else float("nan")
+        ),
         maasp_psi=float(
             ppg_to_psi(inp.P_lot, inp.D_lot) - ppg_to_psi(inp.rho_mud, inp.D_lot)
         ),
@@ -938,6 +962,10 @@ def swab_kick(inp: KickInputs) -> KickResult:
         H_gas=H_gas,
         # bool(), not the numpy scalar these comparisons produce -- a np.bool_
         # fails `is True` and can trip a JSON serialiser downstream.
+        rho_influx_gradient_psi_per_ft=(
+            float(ppg_to_gradient(rho_influx)) if rho_influx is not None
+            else float("nan")
+        ),
         maasp_psi=float(
             ppg_to_psi(inp.P_lot, inp.D_lot) - ppg_to_psi(inp.rho_mud, inp.D_lot)
         ),

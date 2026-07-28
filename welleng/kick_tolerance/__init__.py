@@ -117,6 +117,36 @@ Related shut-in quantities ``sidp_psi`` and ``sicp_psi`` are reported per
 ``MigrationStep``. **SICP is a SCHEDULE, not a single value** -- it rises as the
 bubble expands and migrates, so any displayed SICP must say which position it is.
 
+INFLUX DENSITY <-> GRADIENT (READ THIS if you compare against a standard)
+-------------------------------------------------------------------------
+``ppg_to_gradient(rho_ppg)`` and ``gradient_to_ppg(psi_per_ft)``, and the influx
+gradient is reported on the result as ``rho_influx_gradient_psi_per_ft`` beside
+``rho_influx``.
+
+**Why it exists.** The well-control literature quotes influx **gradients**, not
+densities -- NOGEPA-50 states a gas range of 0.05-0.15 psi/ft -- so this is how a
+practitioner checks welleng's computed density against the standard they work to.
+
+**Which constant, and why it matters.** In SI a gradient needs no constant at all: it
+is ``rho * g`` [Pa/m]. The field form folds ``g`` into a ppg->psi/ft factor and there
+are THREE in circulation, differing by ~0.3%::
+
+    0.05210    G_PSI_PER_PPG_FT          -- what THIS engine weights columns with
+    0.05200    NOGEPA_G                  -- the mandated NOGEPA-50 constant
+    0.0519481  units.PSI_PER_PPG_PER_FT  -- exact, from standard gravity
+
+These functions use the **ENGINE's** constant, deliberately, so a reported gradient
+reproduces the column weight actually applied. Unlike a kick tolerance expressed in
+equivalent mud weights, the constant does **NOT** divide out here -- it is an absolute
+gradient, so the full 0.3% is present. Want another convention? Multiply explicitly, so
+the choice is visible at the call site.
+
+**Comparison only -- NOT an input path.** Converting a quoted gradient to a density and
+feeding it to the engine is hand-injected gas properties arriving through the front
+door, which is precisely what ``Z_s`` / ``Z_td`` / ``rho_gas_s`` were removed for. A
+non-methane influx goes in as a **composition** and welleng computes the density
+itself. Use this to check agreement, not to override it.
+
 UNITS -- the field-units contract (READ THIS)
 ---------------------------------------------
 **Every input and output of this subpackage is in US oilfield field units**,
@@ -211,7 +241,10 @@ from .geometry import annular_capacity, cased_section, open_hole_section
 # NOGEPA-50 static single-shoe formula (the mandated baseline the migration
 # engine's static reduction reproduces).
 from .nogepa import nogepa_drilling_kick_tolerance, NogepaResult
-from .migration import maasp, MaaspResult
+from .migration import (
+    maasp, MaaspResult, ppg_to_gradient, gradient_to_ppg,
+    gas_state_from_density, GasState,
+)
 
 try:  # envelope/monotonicity need SymPy (optional 'kick' extra)
     from .envelope import evaluate_envelope, EnvelopeResult
@@ -262,5 +295,9 @@ __all__ = [
     "nogepa_drilling_kick_tolerance",
     "maasp",
     "MaaspResult",
+    "ppg_to_gradient",
+    "gradient_to_ppg",
+    "gas_state_from_density",
+    "GasState",
     "NogepaResult",
 ]
