@@ -241,7 +241,10 @@ from .geometry import annular_capacity, cased_section, open_hole_section
 # NOGEPA-50 static single-shoe formula (the mandated baseline the migration
 # engine's static reduction reproduces).
 from .nogepa import nogepa_drilling_kick_tolerance, NogepaResult
-from .migration import maasp, MaaspResult, ppg_to_gradient, gradient_to_ppg
+from .migration import (
+    maasp, MaaspResult, ppg_to_gradient, gradient_to_ppg,
+    gas_state_from_density, GasState,
+)
 
 try:  # envelope/monotonicity need SymPy (optional 'kick' extra)
     from .envelope import evaluate_envelope, EnvelopeResult
@@ -294,5 +297,7 @@ __all__ = [
     "MaaspResult",
     "ppg_to_gradient",
     "gradient_to_ppg",
+    "gas_state_from_density",
+    "GasState",
     "NogepaResult",
 ]
