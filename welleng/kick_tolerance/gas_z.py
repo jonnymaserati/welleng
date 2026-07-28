@@ -174,6 +174,35 @@ def reduced_density(
     )
 
 
+M_AIR_LBM_PER_LBMOL = 28.9647   # dry air molar mass [lbm/lbmol]
+
+
+def standing_pseudo_criticals(gas_gravity: float) -> tuple:
+    """Natural-gas pseudo-criticals from gas gravity — Standing (1977)::
+
+        T_pc = 168 + 325.g - 12.5.g^2   [degR]
+        P_pc = 677 + 15.0.g - 37.5.g^2  [psia]
+
+    ``gas_gravity`` is relative to AIR (air = 1.0), i.e. ``M_gas / 28.9647`` — a
+    COMPOSITION, not a density. Pure methane is 0.5539.
+
+    **Why this matters and is not a refinement.** Molar mass alone scales density but
+    says nothing about Z; the Hall & Yarborough correlation needs pseudo-criticals.
+    Using methane's for a heavier gas is internally inconsistent, and not by a little:
+    at 5400 psi, the temperature at which a 0.686-gravity gas reaches 2.00 ppg is
+    **179.9 degF on methane's pseudo-criticals and 194.6 degF on Standing's** — a
+    14.7 degF error, in a diagnostic whose entire purpose is to expose an implausible
+    temperature.
+
+    Valid for sweet natural gases roughly 0.55-1.0. Sour gases (H2S, CO2) need a
+    Wichert-Aziz correction, which is NOT applied here — pass explicit pseudo-criticals
+    for those.
+    """
+    g = float(gas_gravity)
+    return (168.0 + 325.0 * g - 12.5 * g * g,
+            677.0 + 15.0 * g - 37.5 * g * g)
+
+
 def hall_yarborough_z(
     p_psia: float,
     t_rankine: float,

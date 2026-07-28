@@ -289,6 +289,19 @@ class AnalyticalKickTolerance:
     #                                False when a weak zone BELOW the shoe governs, so
     #                                the conventional shoe-only MAASP overstates the
     #                                closed-in limit.
+    rho_influx_bh_ppg: float = float("nan")
+    #                                Influx gas density at BOTTOM-HOLE conditions [ppg],
+    #                                i.e. the `gas_bh` state the solve was given.
+    #                                NOT the same quantity as `KickResult.rho_influx`,
+    #                                which is a resolved influx density whose meaning
+    #                                depends on `model_revision` -- do not compare them
+    #                                directly.
+    rho_influx_bh_gradient_psi_per_ft: float = float("nan")
+    #                                The same as a gradient [psi/ft], on THIS engine's
+    #                                constant. Reported so the GUI never has to convert
+    #                                it, since converting with the wrong one of the three
+    #                                circulating ppg->psi/ft constants is a ~0.3% error
+    #                                that cannot be reconciled against our own column.
 
 
 def _top_for_bottom(gas_bottom, influx_bbl_bh, sections_sorted, bottom_tvd, *,
@@ -894,15 +907,20 @@ def analytical_kick_tolerance(
                 v_star, best = r[0], (float(zt), r[1], float(d))
 
     from .migration import maasp as _maasp
+    from .migration import ppg_to_gradient as _ppg_to_grad
+
+    _rho_bh = float(gas_bh[3])
+    _rk = dict(rho_influx_bh_ppg=_rho_bh,
+               rho_influx_bh_gradient_psi_per_ft=float(_ppg_to_grad(_rho_bh)))
     try:
         _mr = _maasp(ss, fp, rho_mud_ppg=rho_mud_ppg,
                      check_depths=list(_env_d) if len(_env_d) else None)
         _mk = dict(maasp_psi=_mr.maasp_psi,
                    maasp_limiting_psi=_mr.limiting_psi,
                    maasp_governing_tvd=_mr.governing_tvd,
-                   maasp_governed_by_shoe=_mr.governed_by_shoe)
+                   maasp_governed_by_shoe=_mr.governed_by_shoe, **_rk)
     except ValueError:                       # no open hole -- MAASP undefined
-        _mk = {}
+        _mk = dict(_rk)
 
     # ALREADY FRACTURED, NO INFLUX. An empty breach-candidate set has TWO physically
     # OPPOSITE causes, and the per-depth solves return None for both: the shoe is far

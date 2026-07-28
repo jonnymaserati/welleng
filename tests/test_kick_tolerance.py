@@ -668,3 +668,136 @@ def test_an_unreachable_density_says_what_IS_reachable():
         assert "composition" in msg
     else:
         raise AssertionError("5.76 ppg methane at 5400 psi must be refused")
+
+
+def test_gas_gravity_sets_the_pseudo_criticals_not_just_the_molar_mass():
+    """The defect this guards, found 2026-07-28 after I had already reported the wrong
+    number to TA0 and welleng-api.
+
+    `molar_mass_lbm` scales DENSITY but says nothing about Z, and Hall-Yarborough needs
+    PSEUDO-CRITICALS. Leaving them on methane's for a heavier gas is internally
+    inconsistent and not by a little: at 5400 psi the temperature at which a
+    0.686-gravity gas reaches 2.00 ppg is 179.9 F on methane's pseudo-criticals and
+    194.6 F on Standing's -- a 14.7 F error, in a diagnostic whose whole purpose is to
+    expose an implausible temperature.
+
+    `gas_gravity=` sets both, together, and is the way in.
+    """
+    from welleng.kick_tolerance import gas_state_from_density as solve
+    from welleng.kick_tolerance.gas_z import (
+        M_AIR_LBM_PER_LBMOL, standing_pseudo_criticals,
+    )
+
+    gravity = 0.686
+    tpc, ppc = standing_pseudo_criticals(gravity)
+    assert tpc > 343.0                                  # heavier than methane
+
+    consistent = solve(rho_ppg=2.00, p_psia=5400.0, gas_gravity=gravity)
+    with pytest_warns_userwarning():
+        inconsistent = solve(rho_ppg=2.00, p_psia=5400.0,
+                             molar_mass_lbm=gravity * M_AIR_LBM_PER_LBMOL)
+
+    # both hit the density; they disagree on the TEMPERATURE by ~15 F
+    assert math.isclose(consistent.rho_ppg, 2.00, rel_tol=1e-9)
+    assert math.isclose(inconsistent.rho_ppg, 2.00, rel_tol=1e-9)
+    assert consistent.t_rankine - inconsistent.t_rankine > 10.0
+
+    # gas gravity is relative to AIR and must reject a value that is plainly a
+    # different quantity -- 6.9 as a typo for 0.69, or an SG-vs-water
+    for bad in (6.9, 0.2):
+        try:
+            solve(rho_ppg=2.00, p_psia=5400.0, gas_gravity=bad)
+        except ValueError as e:
+            assert "relative to AIR" in str(e)
+        else:
+            raise AssertionError(f"gas_gravity={bad} must be refused")
+
+    try:
+        solve(rho_ppg=2.0, p_psia=5400.0, gas_gravity=0.69, molar_mass_lbm=19.86)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("gas_gravity AND molar_mass_lbm must be refused")
+
+
+def pytest_warns_userwarning():
+    """Minimal context manager -- this module does not import pytest."""
+    import warnings
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _cm():
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            yield
+            assert any(issubclass(x.category, UserWarning) for x in w), \
+                "expected a UserWarning about inconsistent pseudo-criticals"
+    return _cm()
+
+
+def test_the_solver_bracket_comes_from_the_correlation_validity_band():
+    """The bracket started as a round 300-2000 degR and blew up on its own first probe:
+    outside Hall-Yarborough's band (1.15 <= Tpr <= 3.0) the Newton does not lose
+    accuracy, it FAILS TO CONVERGE and raises. The bracket is now derived from the band
+    for the composition in use, so an unreachable target also reports the range the
+    CORRELATION can speak to rather than one it was extrapolated across.
+    """
+    from welleng.kick_tolerance import gas_state_from_density as solve
+    from welleng.kick_tolerance.gas_z import METHANE_TPC_RANKINE as TPC
+
+    s = solve(rho_ppg=2.00, p_psia=5400.0)              # must not raise
+    assert 1.15 * TPC <= s.t_rankine <= 3.0 * TPC
+
+    try:
+        solve(rho_ppg=25.0, p_psia=5400.0)
+    except ValueError as e:
+        assert "validity" in str(e) and "achievable range" in str(e)
+    else:
+        raise AssertionError("25 ppg methane must be refused")
+
+
+def test_the_reference_temperature_makes_the_comparison_the_answer():
+    """welleng-api asked for this: the comparison IS the output, so assembling it from
+    a solved value plus a BHT the client happens to hold is where it goes wrong --
+    nothing guarantees they came from the same well.
+    """
+    from welleng.kick_tolerance import gas_state_from_density as solve
+    from welleng.kick_tolerance.core import fahrenheit_to_rankine
+
+    bht = fahrenheit_to_rankine(180.0)
+    s = solve(rho_ppg=2.00, p_psia=5400.0, reference_t_rankine=bht)
+    assert s.reference_t_rankine == bht
+    assert math.isclose(s.t_discrepancy_rankine, s.t_rankine - bht, rel_tol=1e-12)
+    assert s.t_discrepancy_rankine < -90.0        # methane: ~-103 F, wildly implausible
+
+    # with the gravity that actually produces 2.00 ppg at 180 F, they agree
+    ok = solve(rho_ppg=2.00, p_psia=5400.0, gas_gravity=0.6687,
+               reference_t_rankine=bht)
+    assert abs(ok.t_discrepancy_rankine) < 1.0
+
+    # absent a reference there is no comparison to report
+    assert solve(rho_ppg=2.00, p_psia=5400.0).t_discrepancy_rankine is None
+
+
+def test_the_analytical_result_reports_its_own_influx_gradient():
+    """welleng-api asked rather than deriving it, which was right. Reported so the GUI
+    never converts with one of the three circulating ppg->psi/ft constants."""
+    from welleng.kick_tolerance.analytical import analytical_kick_tolerance
+    from welleng.kick_tolerance.core import fahrenheit_to_rankine
+    from welleng.kick_tolerance.migration import (
+        G_PSI_PER_PPG_FT as G, WellSection,
+    )
+
+    shoe, td = 6500.0, 9800.0
+    cap = (8.5 ** 2 - 5.0 ** 2) / 1029.4
+    bhp = 5871.67
+    r = analytical_kick_tolerance(
+        sections=[WellSection(0.0, shoe, cap, False),
+                  WellSection(shoe, td, cap, True)],
+        pp=([0.0, td], [11.0, 11.0]), fp=([shoe, td], [14.2, 15.5]),
+        bhp_psi=bhp, rho_mud_ppg=11.4,
+        gas_bh_state=(bhp, fahrenheit_to_rankine(180.0), None, None),
+    )
+    assert r.rho_influx_bh_ppg > 0.0
+    assert math.isclose(r.rho_influx_bh_gradient_psi_per_ft,
+                        G * r.rho_influx_bh_ppg, rel_tol=1e-15)
