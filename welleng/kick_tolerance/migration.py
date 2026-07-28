@@ -227,6 +227,65 @@ def ppg_to_psi(rho_ppg: np.ndarray, depth_ft: np.ndarray) -> np.ndarray:
     return G_PSI_PER_PPG_FT * np.asarray(rho_ppg) * np.asarray(depth_ft)
 
 
+def ppg_to_gradient(rho_ppg: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+    """Density [ppg] -> pressure gradient [psi/ft], with THIS engine's constant.
+
+    In SI this needs no constant at all -- a gradient is just ``rho * g`` [Pa/m].
+    The field-unit form carries ``g`` folded into a ppg->psi/ft factor, and there
+    are **three** in circulation which differ by ~0.3%::
+
+        0.05210    G_PSI_PER_PPG_FT  -- what THIS engine weights columns with
+        0.05200    NOGEPA_G          -- the mandated NOGEPA-50 constant
+        0.0519481  units.PSI_PER_PPG_PER_FT -- exact, from standard gravity
+
+    **This function deliberately uses the ENGINE's constant.** A gradient reported
+    with any other one does not reproduce the column weight the engine actually
+    applied, and a consumer reconciling the two would be chasing a discrepancy that
+    is purely a choice of constant. (welleng-api lost a morning to exactly that class
+    of mismatch on 2026-07-28.) If you want the gradient under a DIFFERENT convention
+    -- to compare against a standard that mandates its own -- multiply the density by
+    that constant explicitly, so the choice is visible at the call site.
+
+    Note the constant does NOT divide out here, unlike a kick tolerance expressed in
+    equivalent mud weights: this is an absolute gradient, so the ~0.3% spread above is
+    fully present in the answer.
+
+    Parameters
+    ----------
+    rho_ppg
+        Density [ppg]. Scalar or array.
+
+    Returns
+    -------
+    float or ndarray
+        Pressure gradient [psi/ft].
+
+    Examples
+    --------
+    >>> round(ppg_to_gradient(1.70133), 6)   # a real-gas methane influx
+    0.088639
+    """
+    return G_PSI_PER_PPG_FT * np.asarray(rho_ppg, dtype=float) if not np.isscalar(
+        rho_ppg) else G_PSI_PER_PPG_FT * float(rho_ppg)
+
+
+def gradient_to_ppg(gradient_psi_per_ft: Union[float, np.ndarray]):
+    """Pressure gradient [psi/ft] -> density [ppg]. Inverse of :func:`ppg_to_gradient`.
+
+    Useful because the well-control literature quotes influx GRADIENTS, not densities
+    -- NOGEPA-50 states a gas range of 0.05-0.15 psi/ft -- so this is how a quoted
+    gradient is compared against what welleng computed from (P, T, composition).
+
+    **Read-only comparison, not an input path.** Converting a quoted gradient to a
+    density and feeding it to the engine is hand-injected gas properties arriving
+    through the front door, which is exactly what `Z_s`/`Z_td`/`rho_gas_s` were
+    removed for: a non-methane influx goes in as a COMPOSITION and welleng computes
+    the density itself. Use this to CHECK agreement, not to override it.
+    """
+    return np.asarray(gradient_psi_per_ft, dtype=float) / G_PSI_PER_PPG_FT if not (
+        np.isscalar(gradient_psi_per_ft)) else float(gradient_psi_per_ft) / G_PSI_PER_PPG_FT
+
+
 # ============================================================================
 # MAASP -- maximum allowable annular surface pressure
 # ============================================================================

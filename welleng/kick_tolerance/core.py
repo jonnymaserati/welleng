@@ -82,6 +82,9 @@ from .gas_z import (
     hall_yarborough_z_and_y,
     methane_properties,
 )
+# `migration` imports nothing from this package, so this direction is acyclic.
+# One definition of the density<->gradient conversion, not two.
+from .migration import ppg_to_gradient
 
 # --- Constants (public, oilfield units) -------------------------------------
 G_PSI_PER_PPG_FT = 0.0521      # gravitational constant g  [psi.ppg^-1.ft^-1]
@@ -339,6 +342,19 @@ class KickResult:
     #                            difference of two large pressures, so a source
     #                            quoting g = 0.052 differs from welleng's 0.0521 by
     #                            ~0.7% on a typical shoe.
+    rho_influx_gradient_psi_per_ft: float = float("nan")
+    #                            The influx density `rho_influx` expressed as a
+    #                            pressure GRADIENT [psi/ft], using this engine's
+    #                            own ppg->psi/ft constant so it reproduces the
+    #                            column weight actually applied.
+    #                            Reported because the well-control literature
+    #                            quotes influx GRADIENTS rather than densities --
+    #                            NOGEPA-50 states a gas range of 0.05-0.15 psi/ft --
+    #                            so this is the field a user can check against the
+    #                            standard they work to, without back-solving
+    #                            anything. Comparison only: a quoted gradient is
+    #                            NOT an input path (a non-methane influx goes in as
+    #                            a composition and welleng computes the density).
 
 
 # --- Gas-property backend (clean-room Hall & Yarborough 1973) ---------------
@@ -875,6 +891,10 @@ def drill_kick(inp: KickInputs) -> KickResult:
         H_gas=H_gas,
         # bool(), not the numpy scalar these comparisons produce -- a np.bool_
         # fails `is True` and can trip a JSON serialiser downstream.
+        rho_influx_gradient_psi_per_ft=(
+            float(ppg_to_gradient(rho_influx)) if rho_influx is not None
+            else float("nan")
+        ),
         maasp_psi=float(
             ppg_to_psi(inp.P_lot, inp.D_lot) - ppg_to_psi(inp.rho_mud, inp.D_lot)
         ),
@@ -938,6 +958,10 @@ def swab_kick(inp: KickInputs) -> KickResult:
         H_gas=H_gas,
         # bool(), not the numpy scalar these comparisons produce -- a np.bool_
         # fails `is True` and can trip a JSON serialiser downstream.
+        rho_influx_gradient_psi_per_ft=(
+            float(ppg_to_gradient(rho_influx)) if rho_influx is not None
+            else float("nan")
+        ),
         maasp_psi=float(
             ppg_to_psi(inp.P_lot, inp.D_lot) - ppg_to_psi(inp.rho_mud, inp.D_lot)
         ),
