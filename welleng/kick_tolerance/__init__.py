@@ -143,9 +143,12 @@ the choice is visible at the call site.
 
 **Comparison only -- NOT an input path.** Converting a quoted gradient to a density and
 feeding it to the engine is hand-injected gas properties arriving through the front
-door, which is precisely what ``Z_s`` / ``Z_td`` / ``rho_gas_s`` were removed for. A
-non-methane influx goes in as a **composition** and welleng computes the density
-itself. Use this to check agreement, not to override it.
+door. That is what the gas-property overrides ``Z_s`` / ``Z_td`` / ``rho_gas_s``
+are for, and they exist for ONE purpose: reproducing a published worked example
+against the paper's own tabulated gas properties, independently of our Z backend
+(``tests/test_spe208788_worked_example.py`` does exactly this). **They are not a way
+to describe a real influx** -- a non-methane influx goes in as a **composition** and
+welleng computes the density itself. Use this to check agreement, not to override it.
 
 UNITS -- the field-units contract (READ THIS)
 ---------------------------------------------
