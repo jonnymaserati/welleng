@@ -78,12 +78,18 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional, Sequence, Union
 
 import numpy as np
+import warnings
+
 from scipy.optimize import brentq
 
 try:  # package-relative import (brief spec: from .gas_z import ...)
-    from .gas_z import hall_yarborough_z, hall_yarborough_z_and_y, gas_density_ppg
+    from .gas_z import (hall_yarborough_z, hall_yarborough_z_and_y, gas_density_ppg,
+                        standing_pseudo_criticals, M_AIR_LBM_PER_LBMOL,
+                        METHANE_TPC_RANKINE, METHANE_PPC_PSIA)
 except ImportError:  # flat-script / pytest-from-directory execution
-    from gas_z import hall_yarborough_z, hall_yarborough_z_and_y, gas_density_ppg
+    from gas_z import (hall_yarborough_z, hall_yarborough_z_and_y, gas_density_ppg,
+                       standing_pseudo_criticals, M_AIR_LBM_PER_LBMOL,
+                       METHANE_TPC_RANKINE, METHANE_PPC_PSIA)
 
 # --- Constant (public, oilfield units) --------------------------------------
 # THE ppg -> psi/ft CONSTANT FOR THIS SUBPACKAGE -- single source of truth.
@@ -287,8 +293,19 @@ class GasState:
     rho_ppg: float         # density [ppg] -- matches the requested target
     gradient_psi_per_ft: float
     #                      `rho_ppg` as a gradient, on THIS engine's constant --
-     #                     the form the well-control literature quotes.
+    #                      the form the well-control literature quotes.
     solved_for: str        # "temperature" or "pressure" -- which one was UNKNOWN
+    reference_t_rankine: Optional[float] = None
+    #                      The well's ACTUAL temperature, echoed back when supplied, so
+    #                      the comparison is one answer from one call rather than a join
+    #                      the caller makes between a solved value and a temperature it
+    #                      happens to hold. Nothing guarantees those came from the same
+    #                      well; this does.
+    t_discrepancy_rankine: Optional[float] = None
+    #                      `t_rankine - reference_t_rankine` [degR, = degF interval].
+    #                      THE OUTPUT OF THE DIAGNOSTIC. Large means the quoted density
+    #                      does not describe this well's gas. None unless a reference was
+    #                      given and temperature was the solved variable.
 
 
 def gas_state_from_density(
@@ -297,7 +314,11 @@ def gas_state_from_density(
     gradient_psi_per_ft: Optional[float] = None,
     p_psia: Optional[float] = None,
     t_rankine: Optional[float] = None,
-    molar_mass_lbm: float = 16.043,
+    gas_gravity: Optional[float] = None,
+    molar_mass_lbm: Optional[float] = None,
+    t_pc_rankine: Optional[float] = None,
+    p_pc_psia: Optional[float] = None,
+    reference_t_rankine: Optional[float] = None,
     z_fn=None,
     ideal: bool = False,
 ) -> GasState:
@@ -376,17 +397,64 @@ def gas_state_from_density(
             "p_psia, pinned to the well's BHP -- and the other is solved."
         )
 
+    # COMPOSITION. Molar mass alone scales density but says nothing about Z, and the
+    # Hall-Yarborough correlation needs PSEUDO-CRITICALS. Using methane's for a heavier
+    # gas is internally inconsistent and not by a little: at 5400 psi a 0.686-gravity
+    # gas reaches 2.00 ppg at 179.9 degF on methane's pseudo-criticals and 194.6 degF on
+    # Standing's. `gas_gravity` therefore sets BOTH, together, and is the way in.
+    if gas_gravity is not None and molar_mass_lbm is not None:
+        raise ValueError("give gas_gravity OR molar_mass_lbm, not both")
+    if gas_gravity is not None:
+        if not 0.5 <= float(gas_gravity) <= 2.0:
+            raise ValueError(
+                f"gas_gravity is relative to AIR (air = 1.0); pure methane is 0.5539 "
+                f"and hydrocarbon gases run ~0.55-1.0 (CO2 is 1.52, H2S 1.18). Got "
+                f"{gas_gravity!r}, which is outside 0.5-2.0 -- if that was a specific "
+                f"gravity relative to WATER, or a density, it is a different quantity."
+            )
+        molar_mass_lbm = float(gas_gravity) * M_AIR_LBM_PER_LBMOL
+        _tpc, _ppc = standing_pseudo_criticals(gas_gravity)
+    else:
+        if molar_mass_lbm is None:
+            molar_mass_lbm = 16.043                       # methane
+        _tpc, _ppc = METHANE_TPC_RANKINE, METHANE_PPC_PSIA
+        if abs(molar_mass_lbm - 16.043) > 1e-9 and t_pc_rankine is None:
+            warnings.warn(
+                f"molar_mass_lbm={molar_mass_lbm:g} is not methane, but the "
+                f"pseudo-criticals are still methane's, so Z is inconsistent with the "
+                f"density (worth ~15 degF at gravity 0.69). Pass gas_gravity= instead, "
+                f"which sets both, or supply t_pc_rankine/p_pc_psia explicitly.",
+                UserWarning, stacklevel=2,
+            )
+    if t_pc_rankine is not None:
+        _tpc = float(t_pc_rankine)
+    if p_pc_psia is not None:
+        _ppc = float(p_pc_psia)
+
     def _rho(p: float, t: float) -> float:
         z = 1.0 if ideal else (
-            float(z_fn(p, t)) if z_fn is not None else hall_yarborough_z(p, t)
+            float(z_fn(p, t)) if z_fn is not None
+            else hall_yarborough_z(p, t, _tpc, _ppc)
         )
         return gas_density_ppg(p, t, z, molar_mass_lbm), z
 
+    # BRACKET FROM THE CORRELATION'S VALIDITY BAND, not round numbers. Hall-Yarborough
+    # holds for 0.1 <= Ppr <= 24 and 1.15 <= Tpr <= 3.0. Outside it the Newton does not
+    # merely lose accuracy -- it FAILS TO CONVERGE and raises, so an arbitrary bracket
+    # (this started as 300-2000 degR) blows up on its own first probe. Deriving the
+    # bracket from the band also means an unreachable target reports the range the
+    # CORRELATION can speak to, rather than a range it was extrapolated across.
+    if ideal or z_fn is not None:
+        t_lo, t_hi, p_lo, p_hi = 300.0, 2000.0, 1.0, 30000.0      # no H-Y constraint
+    else:
+        t_lo, t_hi = 1.15 * _tpc, 3.0 * _tpc
+        p_lo, p_hi = 0.1 * _ppc, 24.0 * _ppc
+
     if t_rankine is None:                       # solve TEMPERATURE at known P
-        solved_for, lo, hi = "temperature", 300.0, 2000.0     # ~-160 to ~1540 degF
+        solved_for, lo, hi = "temperature", t_lo, t_hi
         f = lambda x: _rho(float(p_psia), x)[0] - rho_ppg     # noqa: E731
     else:                                       # solve PRESSURE at known T
-        solved_for, lo, hi = "pressure", 14.7, 30000.0
+        solved_for, lo, hi = "pressure", p_lo, p_hi
         f = lambda x: _rho(x, float(t_rankine))[0] - rho_ppg  # noqa: E731
 
     f_lo, f_hi = f(lo), f(hi)
@@ -394,7 +462,8 @@ def gas_state_from_density(
         r_lo, r_hi = f_lo + rho_ppg, f_hi + rho_ppg
         raise ValueError(
             f"target density {rho_ppg:.6g} ppg is unreachable by varying "
-            f"{solved_for} over [{lo:g}, {hi:g}]: achievable range is "
+            f"{solved_for} over [{lo:.4g}, {hi:.4g}] (the Hall-Yarborough validity "
+            f"band for this composition): achievable range is "
             f"{min(r_lo, r_hi):.6g} to {max(r_lo, r_hi):.6g} ppg. The gas is likely "
             f"not this composition (molar_mass_lbm={molar_mass_lbm:g}) at the given "
             f"{'pressure' if solved_for == 'temperature' else 'temperature'}."
@@ -406,6 +475,13 @@ def gas_state_from_density(
     return GasState(
         p_psia=p_out, t_rankine=t_out, z=float(z_out), rho_ppg=float(rho_out),
         gradient_psi_per_ft=float(ppg_to_gradient(rho_out)), solved_for=solved_for,
+        reference_t_rankine=(
+            None if reference_t_rankine is None else float(reference_t_rankine)
+        ),
+        t_discrepancy_rankine=(
+            None if (reference_t_rankine is None or solved_for != "temperature")
+            else float(t_out - float(reference_t_rankine))
+        ),
     )
 
 
