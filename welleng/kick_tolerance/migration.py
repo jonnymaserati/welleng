@@ -85,6 +85,13 @@ except ImportError:  # flat-script / pytest-from-directory execution
     from gas_z import hall_yarborough_z, hall_yarborough_z_and_y, gas_density_ppg
 
 # --- Constant (public, oilfield units) --------------------------------------
+# THE ppg -> psi/ft CONSTANT FOR THIS SUBPACKAGE -- single source of truth.
+# `core` and `analytical` both import it from here; do not redeclare it.
+# Deliberately 0.0521, the industry convention, NOT `units.PSI_PER_PPG_PER_FT`
+# (0.0519481, exact from standard gravity) and NOT `nogepa.NOGEPA_G` (0.052, which
+# that standard mandates for its own formula). The three differ by ~0.3%. It divides
+# out of a kick tolerance expressed in equivalent mud weights, but NOT out of an
+# absolute pressure or gradient -- see `ppg_to_gradient` and MAASP.
 G_PSI_PER_PPG_FT = 0.0521  # gravitational constant g [psi.ppg^-1.ft^-1]
 
 # Below this pressure the Hall-Yarborough correlation leaves its validity band
@@ -981,14 +988,20 @@ def migrate(
         if gas_len > open_hole_length:
             bha_flag = True
 
-        # Envelope check at every exposed open-hole depth for this step.
-        P = pressure_at_depth(
-            exposed_depths, gas_top_tvd=gas_top, gas_bottom_tvd=gas_bottom,
+        # Envelope check at every exposed open-hole depth for this step, AND the
+        # surface value that becomes SICP, in ONE call. Same gas geometry and the
+        # same kwargs, and `pressure_at_depth` is vectorised over depth, so calling
+        # it twice integrated the identical gas column twice. Bit-identical results.
+        _P_all = pressure_at_depth(
+            np.concatenate(([0.0], exposed_depths)),
+            gas_top_tvd=gas_top, gas_bottom_tvd=gas_bottom,
             bottom_tvd=bottom_tvd, bhp_psi=bhp_psi,
             rho_mud_ppg=rho_mud_ppg, gas_bh=gas_bh,
             gas_density_mode=gas_density_mode, temp_profile=temp_profile,
             z_fn=z_ideal,
         )
+        sicp = float(_P_all[0])
+        P = _P_all[1:]
         fp_margin = fp_psi - P          # >= 0 required (no breakdown)
         pp_margin = P - pp_psi          # >= 0 required (no further influx)
         j = int(np.argmin(fp_margin))
@@ -996,17 +1009,10 @@ def migrate(
         step_binding_tvd = float(exposed_depths[j])
         step_p_binding = float(P[j])
 
-        # SICP = the same imposed annulus profile evaluated at surface (depth 0)
-        # for this bubble position (no new physics -- the existing profile at the
-        # top). Ideal gas -> flat across the walk; real gas -> varies as the
-        # bubble expands. SIDP is position-independent (computed once, above).
-        sicp = float(pressure_at_depth(
-            0.0, gas_top_tvd=gas_top, gas_bottom_tvd=gas_bottom,
-            bottom_tvd=bottom_tvd, bhp_psi=bhp_psi,
-            rho_mud_ppg=rho_mud_ppg, gas_bh=gas_bh,
-            gas_density_mode=gas_density_mode, temp_profile=temp_profile,
-            z_fn=z_ideal,
-        ))
+        # SICP is that same imposed annulus profile at surface (depth 0) -- no new
+        # physics, just the profile above the gas top, taken from _P_all[0] above.
+        # Ideal gas -> flat across the walk; real gas -> rises as the bubble expands,
+        # so it is a SCHEDULE. SIDP is position-independent (computed once, above).
 
         if not (np.all(fp_margin >= 0.0) and np.all(pp_margin >= 0.0)):
             all_within = False

@@ -83,11 +83,15 @@ from .gas_z import (
     methane_properties,
 )
 # `migration` imports nothing from this package, so this direction is acyclic.
-# One definition of the density<->gradient conversion, not two.
-from .migration import ppg_to_gradient
+# SINGLE SOURCE OF TRUTH for the ppg->psi/ft constant and the density<->gradient
+# conversion. core.py previously declared its own `G_PSI_PER_PPG_FT = 0.0521`
+# alongside migration.py's: two definitions of one physical constant, agreeing by
+# coincidence of maintenance, with nothing that would fail if one moved. Re-exported
+# below so `from welleng.kick_tolerance.core import G_PSI_PER_PPG_FT` still resolves.
+from .migration import G_PSI_PER_PPG_FT, ppg_to_gradient
 
 # --- Constants (public, oilfield units) -------------------------------------
-G_PSI_PER_PPG_FT = 0.0521      # gravitational constant g  [psi.ppg^-1.ft^-1]
+# G_PSI_PER_PPG_FT is imported from .migration above -- ONE definition, not two.
 P_ATM_PSI = 14.7               # atmospheric pressure P_atm [psi]
 RANKINE_OFFSET = 460.0         # degF -> degR (paper convention; A back-solves
                                #               to ~241.2 with this offset)
