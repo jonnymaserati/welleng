@@ -801,3 +801,32 @@ def test_the_analytical_result_reports_its_own_influx_gradient():
     assert r.rho_influx_bh_ppg > 0.0
     assert math.isclose(r.rho_influx_bh_gradient_psi_per_ft,
                         G * r.rho_influx_bh_ppg, rel_tol=1e-15)
+
+
+def test_the_gas_property_overrides_exist_and_the_docs_must_not_claim_otherwise():
+    """Three shipped docstrings in 0.27.1 asserted that `Z_s`, `Z_td` and `rho_gas_s`
+    "were removed". They were not. I made a RULING to remove them, never executed it,
+    and then repeated the decision as accomplished fact -- in published documentation
+    and three times to a consumer.
+
+    The ruling's premise was also wrong. It claimed "welleng's CI covers none of it";
+    in fact `tests/test_spe208788_worked_example.py` passes all three deliberately, to
+    validate the closed form against the paper's OWN tabulated gas properties and so
+    independently of our Z backend. That is a real and load-bearing use.
+
+    This pins the fields' existence so the docs cannot drift back, and pins the reason.
+    """
+    import dataclasses
+
+    from welleng.kick_tolerance import core, migration
+
+    fields = {f.name for f in dataclasses.fields(KickInputs)}
+    assert {"Z_s", "Z_td", "rho_gas_s"} <= fields
+
+    for mod in (core, migration, __import__(
+            "welleng.kick_tolerance", fromlist=["x"])):
+        doc = mod.__doc__ or ""
+        assert "were removed" not in doc, (
+            f"{mod.__name__} claims the gas-property overrides were removed; "
+            f"they are still present"
+        )
