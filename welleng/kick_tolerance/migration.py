@@ -343,9 +343,11 @@ def gas_state_from_density(
 
     **Never write the result back into a design input.** Solving a temperature to hit a
     density and then computing with it is hand-injected gas properties arriving through
-    the front door, which is precisely what ``Z_s`` / ``Z_td`` / ``rho_gas_s`` were
-    removed for: a non-methane influx goes in as a COMPOSITION and welleng computes the
-    density itself. This function is a diagnostic.
+    the front door. The overrides ``Z_s`` / ``Z_td`` / ``rho_gas_s`` exist for ONE
+    purpose -- reproducing a published worked example against the paper's own tabulated
+    gas properties, independently of our Z backend -- and NOT for describing a real
+    influx: that goes in as a COMPOSITION and welleng computes the density itself.
+    This function is a diagnostic.
 
     Parameters
     ----------
@@ -494,9 +496,10 @@ def gradient_to_ppg(gradient_psi_per_ft: Union[float, np.ndarray]):
 
     **Read-only comparison, not an input path.** Converting a quoted gradient to a
     density and feeding it to the engine is hand-injected gas properties arriving
-    through the front door, which is exactly what `Z_s`/`Z_td`/`rho_gas_s` were
-    removed for: a non-methane influx goes in as a COMPOSITION and welleng computes
-    the density itself. Use this to CHECK agreement, not to override it.
+    through the front door. `Z_s`/`Z_td`/`rho_gas_s` exist ONLY to reproduce a
+    published worked example against the paper's own tabulated gas properties; a real
+    influx goes in as a COMPOSITION and welleng computes the density itself. Use this
+    to CHECK agreement, not to override it.
     """
     return np.asarray(gradient_psi_per_ft, dtype=float) / G_PSI_PER_PPG_FT if not (
         np.isscalar(gradient_psi_per_ft)) else float(gradient_psi_per_ft) / G_PSI_PER_PPG_FT
