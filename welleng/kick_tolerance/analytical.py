@@ -248,7 +248,10 @@ class AnalyticalKickTolerance:
     binding_depth_tvd: float       # exposed depth where the envelope is tight [ft]
     open_hole_unconstrained: bool  # True if the OPEN HOLE does not constrain the kick
     #                                tolerance at the provided fracture pressure -- the
-    #                                shoe holds through full open-hole displacement. NOT
+    #                                shoe holds through full open-hole displacement.
+    #                                ``max_influx_bbl`` is then the BOTTOM-HOLE INFLUX that
+    #                                just fills the open hole (same units as a fracture
+    #                                tolerance; NOT the open-hole volumetric capacity). NOT
     #                                "unlimited": a real limit exists (casing burst above
     #                                the shoe), it is simply NOT assessed here (we stop at
     #                                the shoe), and the fracture pressure is uncertain.
@@ -927,7 +930,7 @@ def analytical_kick_tolerance(
     # too strong to breach (genuinely unconstrained), or the MUD COLUMN ALONE already
     # meets FP so there is no intact state to grow a bubble from (`FP <= A` above).
     # Collapsing the second into "the shoe holds through full open-hole displacement"
-    # reports the full open-hole capacity for a well that is losing returns before any
+    # reports the full-displacement influx for a well that is losing returns before any
     # gas enters -- the unsafe direction, and the same defect class as the clamped
     # bubble height in `core.drill_kick`. Separate them explicitly.
     # Raised by welleng-api 2026-07-27 (Finding D): their design-curve sweep shifts FP
@@ -972,7 +975,9 @@ def analytical_kick_tolerance(
     # tolerance at the provided fracture pressure. This is NOT "unlimited", and we do
     # NOT claim what the limit IS: this assessment stops at the shoe. We assert only
     # what we checked -- the open hole is not the constraint here. Report the full
-    # open-hole gas capacity with that flag, NOT a misleading fracture KT. [JJ]
+    # bottom-hole influx that fills the open hole on full displacement, with that
+    # flag, NOT a misleading fracture KT. (It is a BH influx, same units as a fracture
+    # tolerance -- NOT the open-hole volumetric capacity.) [JJ]
     from .migration import _fill_down, pressure_at_depth
 
     oh_len = sum(s.bottom_tvd - s.top_tvd for s in ss if s.is_open_hole)
@@ -980,8 +985,13 @@ def analytical_kick_tolerance(
     _OPEN_HOLE_UNCONSTRAINED_NOTE = {
         "note": ("The open hole does not constrain the kick tolerance at the provided "
                  "(uncertain) fracture pressure: the shoe holds through full open-hole "
-                 "displacement. The reported volume is the full open-hole gas capacity, "
-                 "NOT the kick tolerance -- this is not 'unlimited'. Limits are NOT "
+                 "displacement. The reported volume is the BOTTOM-HOLE INFLUX that "
+                 "just fills the open hole on full displacement (its expanded gas column "
+                 "spans the shoe to TD) -- the SAME kind of quantity as a fracture-limited "
+                 "tolerance, but limited by the open-hole LENGTH, not by fracture. It is "
+                 "NOT the open-hole volumetric capacity (larger by the gas-expansion "
+                 "ratio) and NOT a fracture kick tolerance -- this is not 'unlimited'. "
+                 "Limits are NOT "
                  "assessed here: above the shoe (e.g. casing burst as the gas reaches "
                  "surface) is outside this open-hole check, and sub-shoe leak-off into "
                  "permeable formations is not modelled. The governing limit lies beyond "

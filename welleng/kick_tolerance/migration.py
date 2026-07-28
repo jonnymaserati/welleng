@@ -1292,7 +1292,10 @@ class KickToleranceResult:
     open_hole_unconstrained: bool = False   # True when the open hole does not constrain
     #                              the KT at the provided (uncertain) fracture pressure --
     #                              the shoe holds through full open-hole displacement.
-    #                              max_influx_bbl is then the full open-hole gas capacity,
+    #                              max_influx_bbl is then the BOTTOM-HOLE INFLUX that just
+    #                              fills the open hole on full displacement (same units as a
+    #                              fracture tolerance, NOT the open-hole volumetric capacity,
+    #                              which is larger by the gas-expansion ratio),
     #                              NOT a fracture limit and NOT the kick tolerance. This is
     #                              NOT "unlimited": limits are simply not assessed beyond
     #                              the open hole -- above the shoe (e.g. casing burst as the
