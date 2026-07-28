@@ -517,3 +517,58 @@ def test_maasp_requires_an_exposed_section():
         assert "open-hole" in str(e)
     else:
         raise AssertionError("fully cased hole must refuse a MAASP")
+
+
+def test_influx_density_and_gradient_convert_both_ways():
+    """The well-control literature quotes influx GRADIENTS, not densities --
+    NOGEPA-50 states a gas range of 0.05-0.15 psi/ft -- so a user needs to compare
+    a quoted gradient against what welleng computed from (P, T, composition).
+
+    Comparison only. Converting a quoted gradient to a density and feeding it back
+    is hand-injected gas properties through the front door, which is what `Z_s`,
+    `Z_td` and `rho_gas_s` were removed for.
+    """
+    import numpy as np
+
+    from welleng.kick_tolerance import gradient_to_ppg, ppg_to_gradient
+    from welleng.kick_tolerance.migration import G_PSI_PER_PPG_FT as G
+
+    rho = 1.70133
+    grad = ppg_to_gradient(rho)
+    assert math.isclose(grad, G * rho, rel_tol=1e-15)
+    assert math.isclose(gradient_to_ppg(grad), rho, rel_tol=1e-12)   # round trip
+    assert math.isclose(ppg_to_gradient(gradient_to_ppg(0.1)), 0.1, rel_tol=1e-12)
+
+    # vectorised both ways
+    arr = np.array([1.6, 1.7, 1.8])
+    assert np.allclose(gradient_to_ppg(ppg_to_gradient(arr)), arr, rtol=1e-12)
+
+
+def test_the_reported_gradient_uses_THIS_engines_constant():
+    """Three ppg->psi/ft constants are in circulation and they differ by ~0.3%:
+    the engine's 0.0521, NOGEPA's 0.052, and the exact 0.0519481 from standard
+    gravity. The reported gradient MUST use the engine's, or it does not reproduce
+    the column weight the engine actually applied and a consumer reconciling the
+    two chases a discrepancy that is purely a choice of constant.
+
+    Unlike a kick tolerance in equivalent mud weights, the constant does NOT divide
+    out here -- this is an absolute gradient, so the full ~0.3% is in the answer.
+    """
+    from welleng.kick_tolerance.migration import G_PSI_PER_PPG_FT as G
+    from welleng.kick_tolerance.nogepa import NOGEPA_G
+    from welleng.units import PSI_PER_PPG_PER_FT
+
+    inp = KickInputs(rho_mud=11.9, PP=11.5, kick_intensity=1.1, P_lot=16.0,
+                     P_apl=210.0, D_td=10500.0, D_lot=6500.0, T_s=212.0, T_td=302.0,
+                     V_dpa=annular_capacity_dpa(6.125, 4.0))
+    r = drill_kick(inp)
+
+    assert math.isclose(r.rho_influx_gradient_psi_per_ft, G * r.rho_influx,
+                        rel_tol=1e-15)
+    # and demonstrably NOT the other two
+    assert not math.isclose(r.rho_influx_gradient_psi_per_ft,
+                            PSI_PER_PPG_PER_FT * r.rho_influx, rel_tol=1e-6)
+    assert not math.isclose(r.rho_influx_gradient_psi_per_ft,
+                            NOGEPA_G * r.rho_influx, rel_tol=1e-6)
+    # a real-gas methane influx lands inside NOGEPA-50's stated gas range
+    assert 0.05 <= r.rho_influx_gradient_psi_per_ft <= 0.15
