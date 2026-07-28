@@ -78,13 +78,27 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional, Sequence, Union
 
 import numpy as np
+import warnings
+
+from scipy.optimize import brentq
 
 try:  # package-relative import (brief spec: from .gas_z import ...)
-    from .gas_z import hall_yarborough_z, hall_yarborough_z_and_y, gas_density_ppg
+    from .gas_z import (hall_yarborough_z, hall_yarborough_z_and_y, gas_density_ppg,
+                        standing_pseudo_criticals, M_AIR_LBM_PER_LBMOL,
+                        METHANE_TPC_RANKINE, METHANE_PPC_PSIA)
 except ImportError:  # flat-script / pytest-from-directory execution
-    from gas_z import hall_yarborough_z, hall_yarborough_z_and_y, gas_density_ppg
+    from gas_z import (hall_yarborough_z, hall_yarborough_z_and_y, gas_density_ppg,
+                       standing_pseudo_criticals, M_AIR_LBM_PER_LBMOL,
+                       METHANE_TPC_RANKINE, METHANE_PPC_PSIA)
 
 # --- Constant (public, oilfield units) --------------------------------------
+# THE ppg -> psi/ft CONSTANT FOR THIS SUBPACKAGE -- single source of truth.
+# `core` and `analytical` both import it from here; do not redeclare it.
+# Deliberately 0.0521, the industry convention, NOT `units.PSI_PER_PPG_PER_FT`
+# (0.0519481, exact from standard gravity) and NOT `nogepa.NOGEPA_G` (0.052, which
+# that standard mandates for its own formula). The three differ by ~0.3%. It divides
+# out of a kick tolerance expressed in equivalent mud weights, but NOT out of an
+# absolute pressure or gradient -- see `ppg_to_gradient` and MAASP.
 G_PSI_PER_PPG_FT = 0.0521  # gravitational constant g [psi.ppg^-1.ft^-1]
 
 # Below this pressure the Hall-Yarborough correlation leaves its validity band
@@ -225,6 +239,267 @@ def _profile_breakpoints(profile: ProfileLike) -> list:
 def ppg_to_psi(rho_ppg: np.ndarray, depth_ft: np.ndarray) -> np.ndarray:
     """Gradient pressure of a mud-weight-equivalent column: g * ppg * TVD [psi]."""
     return G_PSI_PER_PPG_FT * np.asarray(rho_ppg) * np.asarray(depth_ft)
+
+
+def ppg_to_gradient(rho_ppg: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+    """Density [ppg] -> pressure gradient [psi/ft], with THIS engine's constant.
+
+    In SI this needs no constant at all -- a gradient is just ``rho * g`` [Pa/m].
+    The field-unit form carries ``g`` folded into a ppg->psi/ft factor, and there
+    are **three** in circulation which differ by ~0.3%::
+
+        0.05210    G_PSI_PER_PPG_FT  -- what THIS engine weights columns with
+        0.05200    NOGEPA_G          -- the mandated NOGEPA-50 constant
+        0.0519481  units.PSI_PER_PPG_PER_FT -- exact, from standard gravity
+
+    **This function deliberately uses the ENGINE's constant.** A gradient reported
+    with any other one does not reproduce the column weight the engine actually
+    applied, and a consumer reconciling the two would be chasing a discrepancy that
+    is purely a choice of constant. (welleng-api lost a morning to exactly that class
+    of mismatch on 2026-07-28.) If you want the gradient under a DIFFERENT convention
+    -- to compare against a standard that mandates its own -- multiply the density by
+    that constant explicitly, so the choice is visible at the call site.
+
+    Note the constant does NOT divide out here, unlike a kick tolerance expressed in
+    equivalent mud weights: this is an absolute gradient, so the ~0.3% spread above is
+    fully present in the answer.
+
+    Parameters
+    ----------
+    rho_ppg
+        Density [ppg]. Scalar or array.
+
+    Returns
+    -------
+    float or ndarray
+        Pressure gradient [psi/ft].
+
+    Examples
+    --------
+    >>> round(ppg_to_gradient(1.70133), 6)   # a real-gas methane influx
+    0.088639
+    """
+    return G_PSI_PER_PPG_FT * np.asarray(rho_ppg, dtype=float) if not np.isscalar(
+        rho_ppg) else G_PSI_PER_PPG_FT * float(rho_ppg)
+
+
+@dataclass
+class GasState:
+    """A resolved influx gas state — see :func:`gas_state_from_density`."""
+
+    p_psia: float          # pressure [psia]
+    t_rankine: float       # temperature [degR]
+    z: float               # compressibility factor [-]
+    rho_ppg: float         # density [ppg] -- matches the requested target
+    gradient_psi_per_ft: float
+    #                      `rho_ppg` as a gradient, on THIS engine's constant --
+    #                      the form the well-control literature quotes.
+    solved_for: str        # "temperature" or "pressure" -- which one was UNKNOWN
+    reference_t_rankine: Optional[float] = None
+    #                      The well's ACTUAL temperature, echoed back when supplied, so
+    #                      the comparison is one answer from one call rather than a join
+    #                      the caller makes between a solved value and a temperature it
+    #                      happens to hold. Nothing guarantees those came from the same
+    #                      well; this does.
+    t_discrepancy_rankine: Optional[float] = None
+    #                      `t_rankine - reference_t_rankine` [degR, = degF interval].
+    #                      THE OUTPUT OF THE DIAGNOSTIC. Large means the quoted density
+    #                      does not describe this well's gas. None unless a reference was
+    #                      given and temperature was the solved variable.
+
+
+def gas_state_from_density(
+    *,
+    rho_ppg: Optional[float] = None,
+    gradient_psi_per_ft: Optional[float] = None,
+    p_psia: Optional[float] = None,
+    t_rankine: Optional[float] = None,
+    gas_gravity: Optional[float] = None,
+    molar_mass_lbm: Optional[float] = None,
+    t_pc_rankine: Optional[float] = None,
+    p_pc_psia: Optional[float] = None,
+    reference_t_rankine: Optional[float] = None,
+    z_fn=None,
+    ideal: bool = False,
+) -> GasState:
+    """Given an influx DENSITY (or gradient), solve for the (P, T) that produces it.
+
+    **A density does not determine a state.** ``rho = P.M / (Z.R.T)`` is one equation
+    in two unknowns, so a density is a CURVE in (P, T), not a point. This therefore
+    requires exactly ONE of ``p_psia`` or ``t_rankine`` and solves for the other.
+
+    The intended use is the READ-ONLY comparison a practitioner needs: they arrive
+    with a published case that quotes a gas gradient and no temperature, and the well
+    already has a BHP. Pin ``p_psia`` to that BHP, solve for the temperature the quoted
+    density implies, and show it beside the well's actual bottom-hole temperature. When
+    those two disagree, the quoted density is not describing this well's gas -- and that
+    is the useful output, not a number to feed back in.
+
+    **Worked example of exactly that.** A published case quotes 2.00 ppg at 5400 psi.
+    Pin P and solve: it needs ~80 degF. At 10,000 ft TVD that is absurd, so either the
+    influx is not pure methane (2.00 ppg at a realistic 180 degF needs a gas gravity of
+    ~0.69) or the figure is a round number with no state behind it. Either way the user
+    now knows, instead of having silently injected it.
+
+    **Never write the result back into a design input.** Solving a temperature to hit a
+    density and then computing with it is hand-injected gas properties arriving through
+    the front door, which is precisely what ``Z_s`` / ``Z_td`` / ``rho_gas_s`` were
+    removed for: a non-methane influx goes in as a COMPOSITION and welleng computes the
+    density itself. This function is a diagnostic.
+
+    Parameters
+    ----------
+    rho_ppg, gradient_psi_per_ft
+        The target, as a density [ppg] OR a gradient [psi/ft]. Exactly one. The
+        gradient is converted with THIS engine's constant (see
+        :func:`ppg_to_gradient`).
+    p_psia, t_rankine
+        Exactly one. The KNOWN one; the other is solved.
+    molar_mass_lbm
+        Gas molar mass [lbm/lbmol]. Default methane (16.043). A heavier natural gas
+        is ~19-21, i.e. gas gravity 0.65-0.73.
+    z_fn
+        Optional real-gas ``(P, T) -> Z`` provider (e.g. a CoolProp table). Default is
+        the clean-room Hall & Yarborough methane backend.
+    ideal
+        ``True`` forces ``Z = 1``. Use for reproducing a textbook case that assumes it;
+        do not use for engineering.
+
+    Returns
+    -------
+    GasState
+
+    Raises
+    ------
+    ValueError
+        If not exactly one target is given, or not exactly one known variable, or the
+        target density is unreachable — in which case the message states the range that
+        IS achievable, because that is the diagnostic.
+
+    Notes
+    -----
+    Density is monotone in both variables (falling with T at fixed P, rising with P at
+    fixed T), verified across 60-400 degF and 500-12,000 psia, so the root is unique
+    and the bracketed solve cannot land on a second branch.
+    """
+    if (rho_ppg is None) == (gradient_psi_per_ft is None):
+        raise ValueError(
+            "give exactly one target: rho_ppg OR gradient_psi_per_ft"
+        )
+    if rho_ppg is None:
+        rho_ppg = float(gradient_to_ppg(float(gradient_psi_per_ft)))
+    if rho_ppg <= 0.0:
+        raise ValueError(f"target density must be positive, got {rho_ppg}")
+    if (p_psia is None) == (t_rankine is None):
+        raise ValueError(
+            "a density does not determine a state (rho = P.M/(Z.R.T) is one equation "
+            "in two unknowns). Supply exactly ONE of p_psia or t_rankine -- normally "
+            "p_psia, pinned to the well's BHP -- and the other is solved."
+        )
+
+    # COMPOSITION. Molar mass alone scales density but says nothing about Z, and the
+    # Hall-Yarborough correlation needs PSEUDO-CRITICALS. Using methane's for a heavier
+    # gas is internally inconsistent and not by a little: at 5400 psi a 0.686-gravity
+    # gas reaches 2.00 ppg at 179.9 degF on methane's pseudo-criticals and 194.6 degF on
+    # Standing's. `gas_gravity` therefore sets BOTH, together, and is the way in.
+    if gas_gravity is not None and molar_mass_lbm is not None:
+        raise ValueError("give gas_gravity OR molar_mass_lbm, not both")
+    if gas_gravity is not None:
+        if not 0.5 <= float(gas_gravity) <= 2.0:
+            raise ValueError(
+                f"gas_gravity is relative to AIR (air = 1.0); pure methane is 0.5539 "
+                f"and hydrocarbon gases run ~0.55-1.0 (CO2 is 1.52, H2S 1.18). Got "
+                f"{gas_gravity!r}, which is outside 0.5-2.0 -- if that was a specific "
+                f"gravity relative to WATER, or a density, it is a different quantity."
+            )
+        molar_mass_lbm = float(gas_gravity) * M_AIR_LBM_PER_LBMOL
+        _tpc, _ppc = standing_pseudo_criticals(gas_gravity)
+    else:
+        if molar_mass_lbm is None:
+            molar_mass_lbm = 16.043                       # methane
+        _tpc, _ppc = METHANE_TPC_RANKINE, METHANE_PPC_PSIA
+        if abs(molar_mass_lbm - 16.043) > 1e-9 and t_pc_rankine is None:
+            warnings.warn(
+                f"molar_mass_lbm={molar_mass_lbm:g} is not methane, but the "
+                f"pseudo-criticals are still methane's, so Z is inconsistent with the "
+                f"density (worth ~15 degF at gravity 0.69). Pass gas_gravity= instead, "
+                f"which sets both, or supply t_pc_rankine/p_pc_psia explicitly.",
+                UserWarning, stacklevel=2,
+            )
+    if t_pc_rankine is not None:
+        _tpc = float(t_pc_rankine)
+    if p_pc_psia is not None:
+        _ppc = float(p_pc_psia)
+
+    def _rho(p: float, t: float) -> float:
+        z = 1.0 if ideal else (
+            float(z_fn(p, t)) if z_fn is not None
+            else hall_yarborough_z(p, t, _tpc, _ppc)
+        )
+        return gas_density_ppg(p, t, z, molar_mass_lbm), z
+
+    # BRACKET FROM THE CORRELATION'S VALIDITY BAND, not round numbers. Hall-Yarborough
+    # holds for 0.1 <= Ppr <= 24 and 1.15 <= Tpr <= 3.0. Outside it the Newton does not
+    # merely lose accuracy -- it FAILS TO CONVERGE and raises, so an arbitrary bracket
+    # (this started as 300-2000 degR) blows up on its own first probe. Deriving the
+    # bracket from the band also means an unreachable target reports the range the
+    # CORRELATION can speak to, rather than a range it was extrapolated across.
+    if ideal or z_fn is not None:
+        t_lo, t_hi, p_lo, p_hi = 300.0, 2000.0, 1.0, 30000.0      # no H-Y constraint
+    else:
+        t_lo, t_hi = 1.15 * _tpc, 3.0 * _tpc
+        p_lo, p_hi = 0.1 * _ppc, 24.0 * _ppc
+
+    if t_rankine is None:                       # solve TEMPERATURE at known P
+        solved_for, lo, hi = "temperature", t_lo, t_hi
+        f = lambda x: _rho(float(p_psia), x)[0] - rho_ppg     # noqa: E731
+    else:                                       # solve PRESSURE at known T
+        solved_for, lo, hi = "pressure", p_lo, p_hi
+        f = lambda x: _rho(x, float(t_rankine))[0] - rho_ppg  # noqa: E731
+
+    f_lo, f_hi = f(lo), f(hi)
+    if f_lo * f_hi > 0.0:
+        r_lo, r_hi = f_lo + rho_ppg, f_hi + rho_ppg
+        raise ValueError(
+            f"target density {rho_ppg:.6g} ppg is unreachable by varying "
+            f"{solved_for} over [{lo:.4g}, {hi:.4g}] (the Hall-Yarborough validity "
+            f"band for this composition): achievable range is "
+            f"{min(r_lo, r_hi):.6g} to {max(r_lo, r_hi):.6g} ppg. The gas is likely "
+            f"not this composition (molar_mass_lbm={molar_mass_lbm:g}) at the given "
+            f"{'pressure' if solved_for == 'temperature' else 'temperature'}."
+        )
+    x = float(brentq(f, lo, hi, xtol=1e-10, rtol=1e-14, maxiter=200))
+    p_out = float(p_psia) if t_rankine is None else x
+    t_out = x if t_rankine is None else float(t_rankine)
+    rho_out, z_out = _rho(p_out, t_out)
+    return GasState(
+        p_psia=p_out, t_rankine=t_out, z=float(z_out), rho_ppg=float(rho_out),
+        gradient_psi_per_ft=float(ppg_to_gradient(rho_out)), solved_for=solved_for,
+        reference_t_rankine=(
+            None if reference_t_rankine is None else float(reference_t_rankine)
+        ),
+        t_discrepancy_rankine=(
+            None if (reference_t_rankine is None or solved_for != "temperature")
+            else float(t_out - float(reference_t_rankine))
+        ),
+    )
+
+
+def gradient_to_ppg(gradient_psi_per_ft: Union[float, np.ndarray]):
+    """Pressure gradient [psi/ft] -> density [ppg]. Inverse of :func:`ppg_to_gradient`.
+
+    Useful because the well-control literature quotes influx GRADIENTS, not densities
+    -- NOGEPA-50 states a gas range of 0.05-0.15 psi/ft -- so this is how a quoted
+    gradient is compared against what welleng computed from (P, T, composition).
+
+    **Read-only comparison, not an input path.** Converting a quoted gradient to a
+    density and feeding it to the engine is hand-injected gas properties arriving
+    through the front door, which is exactly what `Z_s`/`Z_td`/`rho_gas_s` were
+    removed for: a non-methane influx goes in as a COMPOSITION and welleng computes
+    the density itself. Use this to CHECK agreement, not to override it.
+    """
+    return np.asarray(gradient_psi_per_ft, dtype=float) / G_PSI_PER_PPG_FT if not (
+        np.isscalar(gradient_psi_per_ft)) else float(gradient_psi_per_ft) / G_PSI_PER_PPG_FT
 
 
 # ============================================================================
@@ -922,14 +1197,20 @@ def migrate(
         if gas_len > open_hole_length:
             bha_flag = True
 
-        # Envelope check at every exposed open-hole depth for this step.
-        P = pressure_at_depth(
-            exposed_depths, gas_top_tvd=gas_top, gas_bottom_tvd=gas_bottom,
+        # Envelope check at every exposed open-hole depth for this step, AND the
+        # surface value that becomes SICP, in ONE call. Same gas geometry and the
+        # same kwargs, and `pressure_at_depth` is vectorised over depth, so calling
+        # it twice integrated the identical gas column twice. Bit-identical results.
+        _P_all = pressure_at_depth(
+            np.concatenate(([0.0], exposed_depths)),
+            gas_top_tvd=gas_top, gas_bottom_tvd=gas_bottom,
             bottom_tvd=bottom_tvd, bhp_psi=bhp_psi,
             rho_mud_ppg=rho_mud_ppg, gas_bh=gas_bh,
             gas_density_mode=gas_density_mode, temp_profile=temp_profile,
             z_fn=z_ideal,
         )
+        sicp = float(_P_all[0])
+        P = _P_all[1:]
         fp_margin = fp_psi - P          # >= 0 required (no breakdown)
         pp_margin = P - pp_psi          # >= 0 required (no further influx)
         j = int(np.argmin(fp_margin))
@@ -937,17 +1218,10 @@ def migrate(
         step_binding_tvd = float(exposed_depths[j])
         step_p_binding = float(P[j])
 
-        # SICP = the same imposed annulus profile evaluated at surface (depth 0)
-        # for this bubble position (no new physics -- the existing profile at the
-        # top). Ideal gas -> flat across the walk; real gas -> varies as the
-        # bubble expands. SIDP is position-independent (computed once, above).
-        sicp = float(pressure_at_depth(
-            0.0, gas_top_tvd=gas_top, gas_bottom_tvd=gas_bottom,
-            bottom_tvd=bottom_tvd, bhp_psi=bhp_psi,
-            rho_mud_ppg=rho_mud_ppg, gas_bh=gas_bh,
-            gas_density_mode=gas_density_mode, temp_profile=temp_profile,
-            z_fn=z_ideal,
-        ))
+        # SICP is that same imposed annulus profile at surface (depth 0) -- no new
+        # physics, just the profile above the gas top, taken from _P_all[0] above.
+        # Ideal gas -> flat across the walk; real gas -> rises as the bubble expands,
+        # so it is a SCHEDULE. SIDP is position-independent (computed once, above).
 
         if not (np.all(fp_margin >= 0.0) and np.all(pp_margin >= 0.0)):
             all_within = False

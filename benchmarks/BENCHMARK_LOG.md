@@ -640,3 +640,42 @@ Not claiming these as improvements or regressions: the harness prints one decima
 change and nothing was optimised.
 
 Machine: this dev box, .venv312.
+
+---
+
+## 2026-07-28 — migrate() env+SICP merged; bit-identical, 1.10x. 0.27.1rc1
+
+welleng-api reported `migrate()` at 303 ms (0.211 ms `drill_kick`, ~1.2 ms
+`analytical_kick_tolerance`) and read it as "each step redoing work". Profiled at
+`n_steps=100` — 1790 `pressure_at_depth` calls, 45,170 Hall-Yarborough Z solves:
+
+```
+  loop   1582 calls  (88.4%)   15.8 per step   <- damped fixed point on P_rep
+  env     100 calls  ( 5.6%)    1.0 per step
+  sicp    108 calls  ( 6.0%)    1.1 per step
+```
+
+**Fixed here (the safe 6%):** the envelope check and the SICP value had identical gas
+geometry and identical kwargs, and `pressure_at_depth` is vectorised over depth — so
+calling it twice integrated the same gas column twice. Now one call with the surface
+depth prepended.
+
+**Parity against the RELEASED 0.27.0 from PyPI, same case, same process:**
+
+```
+0.27.0 (PyPI)   307.5 ms
+branch          279.6 ms      1.10x
+
+sicp   bit-identical: True      pbind  bit-identical: True
+sidp   bit-identical: True      minfp  bit-identical: True
+```
+
+Bit-identical was verified, not asserted — same function, same inputs, batched.
+
+**NOT fixed here, deliberately:** the 88% damped fixed point (`P = 0.5*(P + P_new)`,
+~16 iterations, each a fresh 20-substep integration). Replacing it with an actual
+solve is the ~70%, but it moves a value converged to 1e-4, so it goes in with all
+five validation anchors re-measured — not in the same change as a bit-identical
+refactor. See [[feedback-solve-dont-search]].
+
+Machine: this dev box, .venv312.

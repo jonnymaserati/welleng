@@ -517,3 +517,287 @@ def test_maasp_requires_an_exposed_section():
         assert "open-hole" in str(e)
     else:
         raise AssertionError("fully cased hole must refuse a MAASP")
+
+
+def test_influx_density_and_gradient_convert_both_ways():
+    """The well-control literature quotes influx GRADIENTS, not densities --
+    NOGEPA-50 states a gas range of 0.05-0.15 psi/ft -- so a user needs to compare
+    a quoted gradient against what welleng computed from (P, T, composition).
+
+    Comparison only. Converting a quoted gradient to a density and feeding it back
+    is hand-injected gas properties through the front door, which is what `Z_s`,
+    `Z_td` and `rho_gas_s` were removed for.
+    """
+    import numpy as np
+
+    from welleng.kick_tolerance import gradient_to_ppg, ppg_to_gradient
+    from welleng.kick_tolerance.migration import G_PSI_PER_PPG_FT as G
+
+    rho = 1.70133
+    grad = ppg_to_gradient(rho)
+    assert math.isclose(grad, G * rho, rel_tol=1e-15)
+    assert math.isclose(gradient_to_ppg(grad), rho, rel_tol=1e-12)   # round trip
+    assert math.isclose(ppg_to_gradient(gradient_to_ppg(0.1)), 0.1, rel_tol=1e-12)
+
+    # vectorised both ways
+    arr = np.array([1.6, 1.7, 1.8])
+    assert np.allclose(gradient_to_ppg(ppg_to_gradient(arr)), arr, rtol=1e-12)
+
+
+def test_the_reported_gradient_uses_THIS_engines_constant():
+    """Three ppg->psi/ft constants are in circulation and they differ by ~0.3%:
+    the engine's 0.0521, NOGEPA's 0.052, and the exact 0.0519481 from standard
+    gravity. The reported gradient MUST use the engine's, or it does not reproduce
+    the column weight the engine actually applied and a consumer reconciling the
+    two chases a discrepancy that is purely a choice of constant.
+
+    Unlike a kick tolerance in equivalent mud weights, the constant does NOT divide
+    out here -- this is an absolute gradient, so the full ~0.3% is in the answer.
+    """
+    from welleng.kick_tolerance.migration import G_PSI_PER_PPG_FT as G
+    from welleng.kick_tolerance.nogepa import NOGEPA_G
+    from welleng.units import PSI_PER_PPG_PER_FT
+
+    inp = KickInputs(rho_mud=11.9, PP=11.5, kick_intensity=1.1, P_lot=16.0,
+                     P_apl=210.0, D_td=10500.0, D_lot=6500.0, T_s=212.0, T_td=302.0,
+                     V_dpa=annular_capacity_dpa(6.125, 4.0))
+    r = drill_kick(inp)
+
+    assert math.isclose(r.rho_influx_gradient_psi_per_ft, G * r.rho_influx,
+                        rel_tol=1e-15)
+    # and demonstrably NOT the other two
+    assert not math.isclose(r.rho_influx_gradient_psi_per_ft,
+                            PSI_PER_PPG_PER_FT * r.rho_influx, rel_tol=1e-6)
+    assert not math.isclose(r.rho_influx_gradient_psi_per_ft,
+                            NOGEPA_G * r.rho_influx, rel_tol=1e-6)
+    # a real-gas methane influx lands inside NOGEPA-50's stated gas range
+    assert 0.05 <= r.rho_influx_gradient_psi_per_ft <= 0.15
+
+
+def test_the_ppg_to_psi_constant_has_exactly_one_definition():
+    """`core` and `migration` each declared their own `G_PSI_PER_PPG_FT = 0.0521`.
+    Two definitions of one physical constant, agreeing only by coincidence of
+    maintenance, with nothing that would fail if one moved. `migration` is now the
+    single source and everything else imports it.
+
+    Asserted as identity, not equality: two separate literals would be equal today
+    and that is exactly the failure this guards.
+    """
+    from welleng.kick_tolerance import analytical, core, migration
+
+    assert core.G_PSI_PER_PPG_FT is migration.G_PSI_PER_PPG_FT
+    assert analytical.G_PSI_PER_PPG_FT is migration.G_PSI_PER_PPG_FT
+
+    # NOGEPA's constant is a DIFFERENT quantity and must stay distinct -- it is what
+    # that standard mandates for its own formula, not what this engine computes with.
+    from welleng.kick_tolerance.nogepa import NOGEPA_G
+
+    assert NOGEPA_G != migration.G_PSI_PER_PPG_FT
+
+
+def test_a_density_does_not_determine_a_state():
+    """`rho = P.M/(Z.R.T)` is ONE equation in TWO unknowns, so a density is a curve
+    in (P, T), not a point. The solver must refuse an under-determined request rather
+    than pick a branch."""
+    from welleng.kick_tolerance import gas_state_from_density as solve
+
+    for kwargs, why in (
+        (dict(rho_ppg=2.0), "neither P nor T"),
+        (dict(rho_ppg=2.0, p_psia=5400.0, t_rankine=640.0), "both P and T"),
+        (dict(rho_ppg=2.0, gradient_psi_per_ft=0.1, p_psia=5400.0), "two targets"),
+        (dict(p_psia=5400.0), "no target"),
+    ):
+        try:
+            solve(**kwargs)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"must refuse: {why}")
+
+
+def test_solving_a_quoted_density_exposes_an_impossible_temperature():
+    """The diagnostic this exists for. A published case quotes 2.00 ppg with no
+    temperature; the well has a BHP. Pin P, solve T, and the answer is ~77 F -- absurd
+    at 10,000 ft TVD, which tells the user the figure does not describe this well's gas.
+
+    Feeding that temperature back into the design is the hand-injected gas-property
+    path that `Z_s`/`Z_td`/`rho_gas_s` were removed for. This is a comparison only.
+    """
+    from welleng.kick_tolerance import gas_state_from_density as solve
+    from welleng.kick_tolerance.core import fahrenheit_to_rankine
+    from welleng.kick_tolerance.migration import ppg_to_gradient
+
+    s = solve(rho_ppg=2.00, p_psia=5400.0)
+    assert s.solved_for == "temperature"
+    assert math.isclose(s.rho_ppg, 2.00, rel_tol=1e-9)          # hits the target
+    assert 530.0 < s.t_rankine < 545.0                          # ~70-85 F
+    assert math.isclose(s.gradient_psi_per_ft, ppg_to_gradient(2.00), rel_tol=1e-12)
+
+    # a gradient is an equivalent way in
+    assert math.isclose(
+        solve(gradient_psi_per_ft=ppg_to_gradient(2.00), p_psia=5400.0).t_rankine,
+        s.t_rankine, rel_tol=1e-9,
+    )
+
+    # the SAME density at a REALISTIC 180 F needs a heavier gas (gas gravity ~0.69),
+    # which is the other half of the diagnostic
+    heavy = solve(rho_ppg=2.00, p_psia=5400.0, molar_mass_lbm=19.86)
+    assert math.isclose(heavy.t_rankine - 460.0, 180.0, abs_tol=1.0)
+
+    # converse direction: known BHT, solve the pressure
+    conv = solve(rho_ppg=2.00, t_rankine=fahrenheit_to_rankine(180.0))
+    assert conv.solved_for == "pressure"
+    assert math.isclose(conv.rho_ppg, 2.00, rel_tol=1e-9)
+
+
+def test_an_unreachable_density_says_what_IS_reachable():
+    """The 'SG' trap: gas specific gravity is relative to AIR (a COMPOSITION), mud SG
+    is relative to WATER (a density). A user typing 0.69 meaning gas gravity, read as
+    SG-vs-water, becomes 5.76 ppg -- and methane cannot be that dense at 5400 psi at
+    any temperature. It must fail LOUDLY and say what the achievable range is, because
+    that is what tells the user which quantity they actually typed.
+    """
+    from welleng.kick_tolerance import gas_state_from_density as solve
+
+    try:
+        solve(rho_ppg=0.69 * 8.3454, p_psia=5400.0)
+    except ValueError as e:
+        msg = str(e)
+        assert "unreachable" in msg
+        assert "achievable range" in msg
+        assert "composition" in msg
+    else:
+        raise AssertionError("5.76 ppg methane at 5400 psi must be refused")
+
+
+def test_gas_gravity_sets_the_pseudo_criticals_not_just_the_molar_mass():
+    """The defect this guards, found 2026-07-28 after I had already reported the wrong
+    number to TA0 and welleng-api.
+
+    `molar_mass_lbm` scales DENSITY but says nothing about Z, and Hall-Yarborough needs
+    PSEUDO-CRITICALS. Leaving them on methane's for a heavier gas is internally
+    inconsistent and not by a little: at 5400 psi the temperature at which a
+    0.686-gravity gas reaches 2.00 ppg is 179.9 F on methane's pseudo-criticals and
+    194.6 F on Standing's -- a 14.7 F error, in a diagnostic whose whole purpose is to
+    expose an implausible temperature.
+
+    `gas_gravity=` sets both, together, and is the way in.
+    """
+    from welleng.kick_tolerance import gas_state_from_density as solve
+    from welleng.kick_tolerance.gas_z import (
+        M_AIR_LBM_PER_LBMOL, standing_pseudo_criticals,
+    )
+
+    gravity = 0.686
+    tpc, ppc = standing_pseudo_criticals(gravity)
+    assert tpc > 343.0                                  # heavier than methane
+
+    consistent = solve(rho_ppg=2.00, p_psia=5400.0, gas_gravity=gravity)
+    with pytest_warns_userwarning():
+        inconsistent = solve(rho_ppg=2.00, p_psia=5400.0,
+                             molar_mass_lbm=gravity * M_AIR_LBM_PER_LBMOL)
+
+    # both hit the density; they disagree on the TEMPERATURE by ~15 F
+    assert math.isclose(consistent.rho_ppg, 2.00, rel_tol=1e-9)
+    assert math.isclose(inconsistent.rho_ppg, 2.00, rel_tol=1e-9)
+    assert consistent.t_rankine - inconsistent.t_rankine > 10.0
+
+    # gas gravity is relative to AIR and must reject a value that is plainly a
+    # different quantity -- 6.9 as a typo for 0.69, or an SG-vs-water
+    for bad in (6.9, 0.2):
+        try:
+            solve(rho_ppg=2.00, p_psia=5400.0, gas_gravity=bad)
+        except ValueError as e:
+            assert "relative to AIR" in str(e)
+        else:
+            raise AssertionError(f"gas_gravity={bad} must be refused")
+
+    try:
+        solve(rho_ppg=2.0, p_psia=5400.0, gas_gravity=0.69, molar_mass_lbm=19.86)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("gas_gravity AND molar_mass_lbm must be refused")
+
+
+def pytest_warns_userwarning():
+    """Minimal context manager -- this module does not import pytest."""
+    import warnings
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _cm():
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            yield
+            assert any(issubclass(x.category, UserWarning) for x in w), \
+                "expected a UserWarning about inconsistent pseudo-criticals"
+    return _cm()
+
+
+def test_the_solver_bracket_comes_from_the_correlation_validity_band():
+    """The bracket started as a round 300-2000 degR and blew up on its own first probe:
+    outside Hall-Yarborough's band (1.15 <= Tpr <= 3.0) the Newton does not lose
+    accuracy, it FAILS TO CONVERGE and raises. The bracket is now derived from the band
+    for the composition in use, so an unreachable target also reports the range the
+    CORRELATION can speak to rather than one it was extrapolated across.
+    """
+    from welleng.kick_tolerance import gas_state_from_density as solve
+    from welleng.kick_tolerance.gas_z import METHANE_TPC_RANKINE as TPC
+
+    s = solve(rho_ppg=2.00, p_psia=5400.0)              # must not raise
+    assert 1.15 * TPC <= s.t_rankine <= 3.0 * TPC
+
+    try:
+        solve(rho_ppg=25.0, p_psia=5400.0)
+    except ValueError as e:
+        assert "validity" in str(e) and "achievable range" in str(e)
+    else:
+        raise AssertionError("25 ppg methane must be refused")
+
+
+def test_the_reference_temperature_makes_the_comparison_the_answer():
+    """welleng-api asked for this: the comparison IS the output, so assembling it from
+    a solved value plus a BHT the client happens to hold is where it goes wrong --
+    nothing guarantees they came from the same well.
+    """
+    from welleng.kick_tolerance import gas_state_from_density as solve
+    from welleng.kick_tolerance.core import fahrenheit_to_rankine
+
+    bht = fahrenheit_to_rankine(180.0)
+    s = solve(rho_ppg=2.00, p_psia=5400.0, reference_t_rankine=bht)
+    assert s.reference_t_rankine == bht
+    assert math.isclose(s.t_discrepancy_rankine, s.t_rankine - bht, rel_tol=1e-12)
+    assert s.t_discrepancy_rankine < -90.0        # methane: ~-103 F, wildly implausible
+
+    # with the gravity that actually produces 2.00 ppg at 180 F, they agree
+    ok = solve(rho_ppg=2.00, p_psia=5400.0, gas_gravity=0.6687,
+               reference_t_rankine=bht)
+    assert abs(ok.t_discrepancy_rankine) < 1.0
+
+    # absent a reference there is no comparison to report
+    assert solve(rho_ppg=2.00, p_psia=5400.0).t_discrepancy_rankine is None
+
+
+def test_the_analytical_result_reports_its_own_influx_gradient():
+    """welleng-api asked rather than deriving it, which was right. Reported so the GUI
+    never converts with one of the three circulating ppg->psi/ft constants."""
+    from welleng.kick_tolerance.analytical import analytical_kick_tolerance
+    from welleng.kick_tolerance.core import fahrenheit_to_rankine
+    from welleng.kick_tolerance.migration import (
+        G_PSI_PER_PPG_FT as G, WellSection,
+    )
+
+    shoe, td = 6500.0, 9800.0
+    cap = (8.5 ** 2 - 5.0 ** 2) / 1029.4
+    bhp = 5871.67
+    r = analytical_kick_tolerance(
+        sections=[WellSection(0.0, shoe, cap, False),
+                  WellSection(shoe, td, cap, True)],
+        pp=([0.0, td], [11.0, 11.0]), fp=([shoe, td], [14.2, 15.5]),
+        bhp_psi=bhp, rho_mud_ppg=11.4,
+        gas_bh_state=(bhp, fahrenheit_to_rankine(180.0), None, None),
+    )
+    assert r.rho_influx_bh_ppg > 0.0
+    assert math.isclose(r.rho_influx_bh_gradient_psi_per_ft,
+                        G * r.rho_influx_bh_ppg, rel_tol=1e-15)
