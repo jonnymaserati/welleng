@@ -11,7 +11,7 @@ authors:
     given-names: Jonathan
     affiliation: "Corcutt Beheer B.V., Wassenaar, Netherlands"
     orcid: "https://orcid.org/0009-0008-1953-7760"
-version: 0.27.2
+version: 0.27.3
 license: Apache-2.0
 repository-code: "https://github.com/jonnymaserati/welleng"
 url: "https://github.com/jonnymaserati/welleng"

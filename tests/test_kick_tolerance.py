@@ -830,3 +830,46 @@ def test_the_gas_property_overrides_exist_and_the_docs_must_not_claim_otherwise(
             f"{mod.__name__} claims the gas-property overrides were removed; "
             f"they are still present"
         )
+
+
+def test_unconstrained_returns_a_bh_influx_not_the_open_hole_capacity():
+    """welleng-api, 2026-07-28: on a hot circulated-kill well `case="drill"` makes the
+    open hole non-constraining, and the note attached to the result said the returned
+    volume is "the full open-hole gas capacity". It is NOT.
+
+    Measured: the returned value is the BOTTOM-HOLE INFLUX whose expanded gas column
+    just fills the open hole -- the same KIND of quantity as a fracture-limited
+    tolerance (both bottom-hole influx), and smaller than the open-hole volumetric
+    capacity by the gas-expansion ratio. The note now says so; this pins the fact so it
+    cannot drift back to the false wording.
+    """
+    from welleng.kick_tolerance.analytical import analytical_kick_tolerance
+    from welleng.kick_tolerance.core import fahrenheit_to_rankine
+    from welleng.kick_tolerance.migration import WellSection
+
+    shoe, td = 6500.0, 9800.0
+    cap = (8.5 ** 2 - 5.0 ** 2) / 1029.4
+    mud, pp, ki = 11.4, 11.0, 0.5
+    bhp = 0.0521 * (pp + ki) * td
+    sections = [WellSection(0.0, shoe, cap, False),
+                WellSection(shoe, td, cap, True)]
+
+    r = analytical_kick_tolerance(
+        sections=sections, pp=([0.0, td], [pp, pp]),
+        fp=([shoe, td], [14.2, 15.5]), bhp_psi=bhp, rho_mud_ppg=mud,
+        gas_bh_state=(bhp, fahrenheit_to_rankine(180.0), None, None),
+        case="drill", gas_density_mode="exact",
+    )
+
+    assert r.open_hole_unconstrained is True
+    v_hole = cap * (td - shoe)                       # open-hole VOLUMETRIC capacity
+
+    # the returned value is a BH influx: strictly less than the volumetric capacity,
+    # by roughly the gas-expansion ratio (here ~2.6x), never equal to it
+    assert 0.0 < r.max_influx_bbl < v_hole
+    assert r.max_influx_bbl < 0.6 * v_hole           # expansion is real, not marginal
+
+    # and the note must not resurrect the "capacity" claim
+    note = r.breakpoints.get("note", "")
+    assert "bottom-hole influx" in note.lower()
+    assert "full open-hole gas capacity" not in note
