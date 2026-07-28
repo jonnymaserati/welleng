@@ -78,6 +78,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional, Sequence, Union
 
 import numpy as np
+from scipy.optimize import brentq
 
 try:  # package-relative import (brief spec: from .gas_z import ...)
     from .gas_z import hall_yarborough_z, hall_yarborough_z_and_y, gas_density_ppg
@@ -274,6 +275,138 @@ def ppg_to_gradient(rho_ppg: Union[float, np.ndarray]) -> Union[float, np.ndarra
     """
     return G_PSI_PER_PPG_FT * np.asarray(rho_ppg, dtype=float) if not np.isscalar(
         rho_ppg) else G_PSI_PER_PPG_FT * float(rho_ppg)
+
+
+@dataclass
+class GasState:
+    """A resolved influx gas state — see :func:`gas_state_from_density`."""
+
+    p_psia: float          # pressure [psia]
+    t_rankine: float       # temperature [degR]
+    z: float               # compressibility factor [-]
+    rho_ppg: float         # density [ppg] -- matches the requested target
+    gradient_psi_per_ft: float
+    #                      `rho_ppg` as a gradient, on THIS engine's constant --
+     #                     the form the well-control literature quotes.
+    solved_for: str        # "temperature" or "pressure" -- which one was UNKNOWN
+
+
+def gas_state_from_density(
+    *,
+    rho_ppg: Optional[float] = None,
+    gradient_psi_per_ft: Optional[float] = None,
+    p_psia: Optional[float] = None,
+    t_rankine: Optional[float] = None,
+    molar_mass_lbm: float = 16.043,
+    z_fn=None,
+    ideal: bool = False,
+) -> GasState:
+    """Given an influx DENSITY (or gradient), solve for the (P, T) that produces it.
+
+    **A density does not determine a state.** ``rho = P.M / (Z.R.T)`` is one equation
+    in two unknowns, so a density is a CURVE in (P, T), not a point. This therefore
+    requires exactly ONE of ``p_psia`` or ``t_rankine`` and solves for the other.
+
+    The intended use is the READ-ONLY comparison a practitioner needs: they arrive
+    with a published case that quotes a gas gradient and no temperature, and the well
+    already has a BHP. Pin ``p_psia`` to that BHP, solve for the temperature the quoted
+    density implies, and show it beside the well's actual bottom-hole temperature. When
+    those two disagree, the quoted density is not describing this well's gas -- and that
+    is the useful output, not a number to feed back in.
+
+    **Worked example of exactly that.** A published case quotes 2.00 ppg at 5400 psi.
+    Pin P and solve: it needs ~80 degF. At 10,000 ft TVD that is absurd, so either the
+    influx is not pure methane (2.00 ppg at a realistic 180 degF needs a gas gravity of
+    ~0.69) or the figure is a round number with no state behind it. Either way the user
+    now knows, instead of having silently injected it.
+
+    **Never write the result back into a design input.** Solving a temperature to hit a
+    density and then computing with it is hand-injected gas properties arriving through
+    the front door, which is precisely what ``Z_s`` / ``Z_td`` / ``rho_gas_s`` were
+    removed for: a non-methane influx goes in as a COMPOSITION and welleng computes the
+    density itself. This function is a diagnostic.
+
+    Parameters
+    ----------
+    rho_ppg, gradient_psi_per_ft
+        The target, as a density [ppg] OR a gradient [psi/ft]. Exactly one. The
+        gradient is converted with THIS engine's constant (see
+        :func:`ppg_to_gradient`).
+    p_psia, t_rankine
+        Exactly one. The KNOWN one; the other is solved.
+    molar_mass_lbm
+        Gas molar mass [lbm/lbmol]. Default methane (16.043). A heavier natural gas
+        is ~19-21, i.e. gas gravity 0.65-0.73.
+    z_fn
+        Optional real-gas ``(P, T) -> Z`` provider (e.g. a CoolProp table). Default is
+        the clean-room Hall & Yarborough methane backend.
+    ideal
+        ``True`` forces ``Z = 1``. Use for reproducing a textbook case that assumes it;
+        do not use for engineering.
+
+    Returns
+    -------
+    GasState
+
+    Raises
+    ------
+    ValueError
+        If not exactly one target is given, or not exactly one known variable, or the
+        target density is unreachable — in which case the message states the range that
+        IS achievable, because that is the diagnostic.
+
+    Notes
+    -----
+    Density is monotone in both variables (falling with T at fixed P, rising with P at
+    fixed T), verified across 60-400 degF and 500-12,000 psia, so the root is unique
+    and the bracketed solve cannot land on a second branch.
+    """
+    if (rho_ppg is None) == (gradient_psi_per_ft is None):
+        raise ValueError(
+            "give exactly one target: rho_ppg OR gradient_psi_per_ft"
+        )
+    if rho_ppg is None:
+        rho_ppg = float(gradient_to_ppg(float(gradient_psi_per_ft)))
+    if rho_ppg <= 0.0:
+        raise ValueError(f"target density must be positive, got {rho_ppg}")
+    if (p_psia is None) == (t_rankine is None):
+        raise ValueError(
+            "a density does not determine a state (rho = P.M/(Z.R.T) is one equation "
+            "in two unknowns). Supply exactly ONE of p_psia or t_rankine -- normally "
+            "p_psia, pinned to the well's BHP -- and the other is solved."
+        )
+
+    def _rho(p: float, t: float) -> float:
+        z = 1.0 if ideal else (
+            float(z_fn(p, t)) if z_fn is not None else hall_yarborough_z(p, t)
+        )
+        return gas_density_ppg(p, t, z, molar_mass_lbm), z
+
+    if t_rankine is None:                       # solve TEMPERATURE at known P
+        solved_for, lo, hi = "temperature", 300.0, 2000.0     # ~-160 to ~1540 degF
+        f = lambda x: _rho(float(p_psia), x)[0] - rho_ppg     # noqa: E731
+    else:                                       # solve PRESSURE at known T
+        solved_for, lo, hi = "pressure", 14.7, 30000.0
+        f = lambda x: _rho(x, float(t_rankine))[0] - rho_ppg  # noqa: E731
+
+    f_lo, f_hi = f(lo), f(hi)
+    if f_lo * f_hi > 0.0:
+        r_lo, r_hi = f_lo + rho_ppg, f_hi + rho_ppg
+        raise ValueError(
+            f"target density {rho_ppg:.6g} ppg is unreachable by varying "
+            f"{solved_for} over [{lo:g}, {hi:g}]: achievable range is "
+            f"{min(r_lo, r_hi):.6g} to {max(r_lo, r_hi):.6g} ppg. The gas is likely "
+            f"not this composition (molar_mass_lbm={molar_mass_lbm:g}) at the given "
+            f"{'pressure' if solved_for == 'temperature' else 'temperature'}."
+        )
+    x = float(brentq(f, lo, hi, xtol=1e-10, rtol=1e-14, maxiter=200))
+    p_out = float(p_psia) if t_rankine is None else x
+    t_out = x if t_rankine is None else float(t_rankine)
+    rho_out, z_out = _rho(p_out, t_out)
+    return GasState(
+        p_psia=p_out, t_rankine=t_out, z=float(z_out), rho_ppg=float(rho_out),
+        gradient_psi_per_ft=float(ppg_to_gradient(rho_out)), solved_for=solved_for,
+    )
 
 
 def gradient_to_ppg(gradient_psi_per_ft: Union[float, np.ndarray]):

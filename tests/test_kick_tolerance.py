@@ -593,3 +593,78 @@ def test_the_ppg_to_psi_constant_has_exactly_one_definition():
     from welleng.kick_tolerance.nogepa import NOGEPA_G
 
     assert NOGEPA_G != migration.G_PSI_PER_PPG_FT
+
+
+def test_a_density_does_not_determine_a_state():
+    """`rho = P.M/(Z.R.T)` is ONE equation in TWO unknowns, so a density is a curve
+    in (P, T), not a point. The solver must refuse an under-determined request rather
+    than pick a branch."""
+    from welleng.kick_tolerance import gas_state_from_density as solve
+
+    for kwargs, why in (
+        (dict(rho_ppg=2.0), "neither P nor T"),
+        (dict(rho_ppg=2.0, p_psia=5400.0, t_rankine=640.0), "both P and T"),
+        (dict(rho_ppg=2.0, gradient_psi_per_ft=0.1, p_psia=5400.0), "two targets"),
+        (dict(p_psia=5400.0), "no target"),
+    ):
+        try:
+            solve(**kwargs)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"must refuse: {why}")
+
+
+def test_solving_a_quoted_density_exposes_an_impossible_temperature():
+    """The diagnostic this exists for. A published case quotes 2.00 ppg with no
+    temperature; the well has a BHP. Pin P, solve T, and the answer is ~77 F -- absurd
+    at 10,000 ft TVD, which tells the user the figure does not describe this well's gas.
+
+    Feeding that temperature back into the design is the hand-injected gas-property
+    path that `Z_s`/`Z_td`/`rho_gas_s` were removed for. This is a comparison only.
+    """
+    from welleng.kick_tolerance import gas_state_from_density as solve
+    from welleng.kick_tolerance.core import fahrenheit_to_rankine
+    from welleng.kick_tolerance.migration import ppg_to_gradient
+
+    s = solve(rho_ppg=2.00, p_psia=5400.0)
+    assert s.solved_for == "temperature"
+    assert math.isclose(s.rho_ppg, 2.00, rel_tol=1e-9)          # hits the target
+    assert 530.0 < s.t_rankine < 545.0                          # ~70-85 F
+    assert math.isclose(s.gradient_psi_per_ft, ppg_to_gradient(2.00), rel_tol=1e-12)
+
+    # a gradient is an equivalent way in
+    assert math.isclose(
+        solve(gradient_psi_per_ft=ppg_to_gradient(2.00), p_psia=5400.0).t_rankine,
+        s.t_rankine, rel_tol=1e-9,
+    )
+
+    # the SAME density at a REALISTIC 180 F needs a heavier gas (gas gravity ~0.69),
+    # which is the other half of the diagnostic
+    heavy = solve(rho_ppg=2.00, p_psia=5400.0, molar_mass_lbm=19.86)
+    assert math.isclose(heavy.t_rankine - 460.0, 180.0, abs_tol=1.0)
+
+    # converse direction: known BHT, solve the pressure
+    conv = solve(rho_ppg=2.00, t_rankine=fahrenheit_to_rankine(180.0))
+    assert conv.solved_for == "pressure"
+    assert math.isclose(conv.rho_ppg, 2.00, rel_tol=1e-9)
+
+
+def test_an_unreachable_density_says_what_IS_reachable():
+    """The 'SG' trap: gas specific gravity is relative to AIR (a COMPOSITION), mud SG
+    is relative to WATER (a density). A user typing 0.69 meaning gas gravity, read as
+    SG-vs-water, becomes 5.76 ppg -- and methane cannot be that dense at 5400 psi at
+    any temperature. It must fail LOUDLY and say what the achievable range is, because
+    that is what tells the user which quantity they actually typed.
+    """
+    from welleng.kick_tolerance import gas_state_from_density as solve
+
+    try:
+        solve(rho_ppg=0.69 * 8.3454, p_psia=5400.0)
+    except ValueError as e:
+        msg = str(e)
+        assert "unreachable" in msg
+        assert "achievable range" in msg
+        assert "composition" in msg
+    else:
+        raise AssertionError("5.76 ppg methane at 5400 psi must be refused")
