@@ -572,3 +572,24 @@ def test_the_reported_gradient_uses_THIS_engines_constant():
                             NOGEPA_G * r.rho_influx, rel_tol=1e-6)
     # a real-gas methane influx lands inside NOGEPA-50's stated gas range
     assert 0.05 <= r.rho_influx_gradient_psi_per_ft <= 0.15
+
+
+def test_the_ppg_to_psi_constant_has_exactly_one_definition():
+    """`core` and `migration` each declared their own `G_PSI_PER_PPG_FT = 0.0521`.
+    Two definitions of one physical constant, agreeing only by coincidence of
+    maintenance, with nothing that would fail if one moved. `migration` is now the
+    single source and everything else imports it.
+
+    Asserted as identity, not equality: two separate literals would be equal today
+    and that is exactly the failure this guards.
+    """
+    from welleng.kick_tolerance import analytical, core, migration
+
+    assert core.G_PSI_PER_PPG_FT is migration.G_PSI_PER_PPG_FT
+    assert analytical.G_PSI_PER_PPG_FT is migration.G_PSI_PER_PPG_FT
+
+    # NOGEPA's constant is a DIFFERENT quantity and must stay distinct -- it is what
+    # that standard mandates for its own formula, not what this engine computes with.
+    from welleng.kick_tolerance.nogepa import NOGEPA_G
+
+    assert NOGEPA_G != migration.G_PSI_PER_PPG_FT
