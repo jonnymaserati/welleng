@@ -17,6 +17,14 @@ from .mesh import WellMesh, to_trimesh
 from .survey import Survey, _interpolate_survey, _interpolate_pos_nev, slice_survey
 from .utils import NEV_to_HLA
 
+# Acceptance criteria (SPE-187073 policy layer) live in a focused module;
+# re-exported here because this is where a consumer looks for them.
+from welleng.acceptance import (  # noqa: E402,F401
+    AcceptanceCriteria, Verdict, classify,
+    SF_CRITICAL, SF_REVIEW, SF_EXCLUDE,
+    K_HSE, SURFACE_MARGIN_M, PROJECT_AHEAD_SIGMA_M,
+)
+
 
 def _closest_x_on_arc(P0, t0, t1, delta_md, dogleg, Q, eps=1e-9):
     """Closed-form closest MD-offset ``x`` in ``[0, delta_md]`` on a
