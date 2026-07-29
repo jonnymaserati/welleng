@@ -23,6 +23,14 @@ welleng.architecture module
    :undoc-members:
    :show-inheritance:
 
+welleng.acceptance module
+-------------------------
+
+.. automodule:: welleng.acceptance
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 welleng.clearance module
 ------------------------
 
