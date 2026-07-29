@@ -77,3 +77,44 @@ def test_re_exported_from_clearance_where_consumers_look():
     assert AC.standard().classify(1.1).band == REVIEW
     assert clf(6.0).band == EXCLUDE
     assert sc == 1.0
+
+
+def test_to_dict_is_the_canonical_json_serialisation():
+    """welleng-pathfinder's A1 provenance stamps the criterion so a stored result
+    records what "acceptable" meant when computed. `to_dict` is the blessed form so
+    all four consumers stamp byte-identically instead of each hand-rolling asdict.
+    """
+    import dataclasses
+    import json
+
+    v = classify(1.1)
+    d = v.to_dict()
+
+    # JSON-clean, no round-trip surprises
+    assert json.loads(json.dumps(d)) == d
+    assert d["band"] == "review"
+    assert d["criterion"]["sf_critical"] == 1.0        # recurses the nested criterion
+
+    cd = AcceptanceCriteria.standard().to_dict()
+    assert json.loads(json.dumps(cd)) == cd
+    assert cd["operator_override"] is False
+
+    # the stamp must cover EVERY dataclass field -- a new field cannot silently
+    # fall out of the provenance record. This is the contract, pinned.
+    for cls, obj in ((AcceptanceCriteria, AcceptanceCriteria.standard()),
+                     (Verdict, v)):
+        fields = {f.name for f in dataclasses.fields(cls)}
+        assert set(obj.to_dict().keys()) == fields, (
+            f"{cls.__name__}.to_dict must cover all dataclass fields; a new field "
+            f"was added without updating to_dict: {fields ^ set(obj.to_dict().keys())}"
+        )
+
+
+def test_an_operator_override_is_recoverable_from_the_stamp():
+    """The override must survive serialisation -- a stored result has to show an
+    operator number was in force, not the standard's."""
+    op = AcceptanceCriteria.standard().with_operator_floor(1.5)
+    d = op.to_dict()
+    assert d["operator_override"] is True
+    assert d["sf_critical"] == 1.5
+    assert "operator floor" in d["source"]

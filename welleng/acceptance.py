@@ -60,7 +60,7 @@ EXCLUDE = "exclude"         # so far apart it is dropped from scanning
 class Verdict:
     """The classification of a single separation factor. Read-only."""
 
-    sf: float
+    sf: float               # the separation factor classified
     band: str                 # one of CRITICAL / REVIEW / ACCEPTABLE / EXCLUDE
     acceptable: bool          # sf >= the effective critical floor (band != CRITICAL)
     action: str               # the standard's action for this band, human-readable
@@ -69,6 +69,24 @@ class Verdict:
     def __bool__(self) -> bool:
         """``bool(verdict)`` is its acceptability -- so ``if not verdict:`` reads."""
         return self.acceptable
+
+    def to_dict(self) -> dict:
+        """Canonical JSON-serialisable form, for a provenance stamp.
+
+        The BLESSED serialisation -- every consumer stamps a verdict identically
+        rather than each hand-rolling :func:`dataclasses.asdict`, so a stored
+        result's record of what "acceptable" meant is byte-identical across repos.
+        Fields are listed explicitly (not reflected) so the stamp is a stable
+        contract: a new internal field cannot silently change it. The nested
+        criterion recurses through its own :meth:`AcceptanceCriteria.to_dict`.
+        """
+        return {
+            "sf": self.sf,
+            "band": self.band,
+            "acceptable": self.acceptable,
+            "action": self.action,
+            "criterion": self.criterion.to_dict(),
+        }
 
 
 @dataclass(frozen=True)
@@ -79,13 +97,13 @@ class AcceptanceCriteria:
     :meth:`with_operator_floor`. ``classify`` maps an SF to a :class:`Verdict`.
     """
 
-    sf_critical: float = SF_CRITICAL
-    sf_review: float = SF_REVIEW
-    sf_exclude: float = SF_EXCLUDE
-    k: float = K_HSE
-    surface_margin_m: float = SURFACE_MARGIN_M
-    project_ahead_sigma_m: float = PROJECT_AHEAD_SIGMA_M
-    source: str = _SOURCE
+    sf_critical: float = SF_CRITICAL          # STOP-drilling floor [SF]
+    sf_review: float = SF_REVIEW              # engineering-review/MOC prompt [SF]
+    sf_exclude: float = SF_EXCLUDE            # drop-from-scanning threshold [SF]
+    k: float = K_HSE                          # HSE-risk position-error multiplier
+    surface_margin_m: float = SURFACE_MARGIN_M       # Sm, surface margin [m]
+    project_ahead_sigma_m: float = PROJECT_AHEAD_SIGMA_M  # project-ahead sigma [m]
+    source: str = _SOURCE     # citation string; carries the override note if tightened
     operator_override: bool = False
     #   True when `with_operator_floor` has raised the critical floor above the
     #   standard's SF = 1. A result carrying this must NOT present the number as
@@ -143,6 +161,24 @@ class AcceptanceCriteria:
             sf=sf, band=band, acceptable=(band != CRITICAL), action=action,
             criterion=self,
         )
+
+    def to_dict(self) -> dict:
+        """Canonical JSON-serialisable form, for a provenance stamp.
+
+        The BLESSED serialisation (see :meth:`Verdict.to_dict`) -- fields listed
+        explicitly so the stamp is a stable contract, not whatever
+        :func:`dataclasses.asdict` happens to reflect.
+        """
+        return {
+            "sf_critical": self.sf_critical,
+            "sf_review": self.sf_review,
+            "sf_exclude": self.sf_exclude,
+            "k": self.k,
+            "surface_margin_m": self.surface_margin_m,
+            "project_ahead_sigma_m": self.project_ahead_sigma_m,
+            "source": self.source,
+            "operator_override": self.operator_override,
+        }
 
 
 def classify(sf: float, criteria: Optional[AcceptanceCriteria] = None) -> Verdict:
