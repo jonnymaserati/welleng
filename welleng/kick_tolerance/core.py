@@ -219,9 +219,17 @@ class KickInputs:
     P_apl: float
     D_td: float
     D_lot: float
-    T_s: float
-    T_td: float
     V_dpa: float
+    T_s: Optional[float] = None
+    #  Shoe/influx temperature [degF]. OPTIONAL for a DRILLING kick when an influx
+    #  density (rho_gas_s) is given: the drill calc then runs ideal-isothermal and the
+    #  temperature CANCELS out of the column expansion (rho(P) = rho_bh.P/P_bh), so its
+    #  value does not affect the result. REQUIRED for swab_kick (a trip relaxes the gas
+    #  column toward formation temperature -- it cannot be ignored). Supply T_s/T_td for
+    #  a real-gas / composition influx (Z varies with T up the column, ~2%).
+    T_td: Optional[float] = None
+    #  TD temperature [degF]. See T_s. Omit BOTH (a drilling kick with rho_gas_s) for
+    #  the ideal-isothermal, temperature-cancels path.
     Z_s: Optional[float] = None
     Z_td: Optional[float] = None
     rho_gas_s: Optional[float] = None
@@ -865,12 +873,46 @@ def _psi_to_ppg(p_psi: float, depth_ft: float) -> float:
 
 # --- The two first-class cases ----------------------------------------------
 
+def _with_resolved_temperature(inp: KickInputs) -> KickInputs:
+    """Drilling-kick temperature-optional resolution.
+
+    Temperature (``T_s``/``T_td``) may be OMITTED for a drilling kick when an influx
+    density ``rho_gas_s`` is given. The calc then runs ideal-isothermal, where the
+    temperature value CANCELS out of the gas-column expansion
+    (``rho(P) = rho_gas_s . P / P_bh``) -- verified independent of the temperature
+    across 60-400 degF. A neutral placeholder is filled and ``ideal_gas`` forced so
+    the downstream arithmetic is well-defined; the answer does not depend on the
+    placeholder.
+
+    Without a temperature AND without a density the gas state is undetermined -- a
+    real-gas / composition influx needs a temperature to get ``Z`` up the column --
+    so that case is refused with a clear message. This is a DRILLING-kick path only;
+    :func:`swab_kick` requires a real temperature (a trip relaxes toward formation).
+    """
+    if inp.T_s is not None and inp.T_td is not None:
+        return inp
+    if inp.rho_gas_s is None:
+        raise ValueError(
+            "temperature omitted (T_s/T_td): a drilling kick then runs ideal-isothermal, "
+            "where temperature cancels -- but that path needs an influx DENSITY. Provide "
+            "rho_gas_s (ppg), or supply T_s and T_td (a real-gas / composition influx "
+            "needs a temperature to evaluate Z up the column)."
+        )
+    return dataclasses.replace(inp, T_s=60.0, T_td=60.0, ideal_gas=True)
+
+
 def drill_kick(inp: KickInputs) -> KickResult:
     """Drillability gate (section PASS/FAIL).
 
     A-7 tolerable-influx capacity at the MAXIMUM-CREDIBLE pore pressure,
     P_pp = (PP + kick_intensity) expressed as a pressure at D_td, per A-1.
+
+    Temperature is OPTIONAL here: omit ``T_s``/``T_td`` and supply an influx density
+    ``rho_gas_s`` to run the ideal-isothermal, temperature-cancels path (matches a
+    simple density-based well-control tool). See :func:`_with_resolved_temperature`.
     """
+    _t_omitted = inp.T_s is None or inp.T_td is None   # ideal-isothermal, T cancels
+    inp = _with_resolved_temperature(inp)
     A = constant_A(inp)
     B = constant_B(inp)
     P_pp_psi = ppg_to_psi(inp.PP + inp.kick_intensity, inp.D_td)
@@ -890,7 +932,7 @@ def drill_kick(inp: KickInputs) -> KickResult:
         passed=margin >= 0.0,
         pp_at_threshold=_psi_to_ppg(P_td_thresh, inp.D_td),
         model_revision=inp.model_revision,
-        T_influx=T_influx,
+        T_influx=None if _t_omitted else T_influx,   # don't report the cancelling placeholder
         rho_influx=rho_influx,
         H_gas=H_gas,
         # bool(), not the numpy scalar these comparisons produce -- a np.bool_
@@ -939,6 +981,13 @@ def swab_kick(inp: KickInputs) -> KickResult:
     intensity (Nassab SPE-202426-PA, Eqs 8-9). The difference is ~1.5% and only
     when PP+KI > mud (outside the swab model's PP <= mud domain).
     """
+    if inp.T_s is None or inp.T_td is None:
+        raise ValueError(
+            "a swab kick requires a formation temperature (T_s and T_td): a trip "
+            "relaxes the gas column toward formation temperature, so it cannot be "
+            "dropped the way a circulated drilling kick can. Temperature is optional "
+            "only for drill_kick (with an influx density)."
+        )
     P_td = ppg_to_psi(inp.rho_mud, inp.D_td)  # A-8 substitution
     A = constant_A(inp, P_td)                 # station gas at the swab P_td (no KI leak)
     B = constant_B(inp)
