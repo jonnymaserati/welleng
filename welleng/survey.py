@@ -1825,18 +1825,26 @@ class Survey(MinCurve):
         views['md'] = md
         return views
 
-    def directional_difficulty_index(self, **kwargs: Any) -> np.ndarray:
-        """
-        Taken from IADC/SPE 59196 The Directional Difficulty Index - A
-        New Approach to Performance Benchmarking by Alistair W. Oag et al.
+    def directional_difficulty_index(
+        self, data: bool = False, depth_units: str = "meters", **kwargs: Any
+    ) -> Union[float, np.ndarray]:
+        """Directional Difficulty Index (DDI), IADC/SPE 59196 (Oag & Williams).
 
-        Returns
-        -------
-        data: (n) array of floats
-            The ddi for each survey station.
-        """
+        ``DDI = log10(MD * AHD * cumulative-dogleg / TVD)``, computed in feet.
+        See :func:`directional_difficulty_index` for the definition, units and
+        validation notes.
 
-        return directional_difficulty_index(self, **kwargs)
+        Parameters
+        ----------
+        data : bool
+            False (default) -> the well DDI at TD (float); True -> the
+            per-station DDI ``(n,)`` array.
+        depth_units : str
+            The length unit of the survey's md/n/e/tvd (default "meters").
+        """
+        return directional_difficulty_index(
+            self, data=data, depth_units=depth_units, **kwargs
+        )
 
     def maximum_curvature(
         self, dls_noise: float = 1.0,
@@ -2243,37 +2251,61 @@ def tortuosity_views(
     }
 
 
-def directional_difficulty_index(survey: "Survey", **kwargs: Any) -> np.ndarray:
-    """
-    Taken from IADC/SPE 59196 The Directional Difficulty Index - A
-    New Approach to Performance Benchmarking by Alistair W. Oag et al.
+def directional_difficulty_index(
+    survey: "Survey", data: bool = False, depth_units: str = "meters",
+    **kwargs: Any
+) -> Union[float, np.ndarray]:
+    """Directional Difficulty Index (DDI).
+
+    IADC/SPE 59196 "The Directional Difficulty Index - A New Approach to
+    Performance Benchmarking", Oag & Williams (2000):
+
+        DDI = log10( MD * AHD * Tortuosity / TVD )
+
+    where ``AHD`` is the along-hole displacement (horizontal departure,
+    ``sqrt(N**2 + E**2)`` at the station) and ``Tortuosity`` is the cumulative
+    absolute dogleg angle (total curvature imposed on the wellbore) in degrees.
+
+    Units: DDI is **not** dimensionless -- ``MD * AHD / TVD`` carries a length
+    unit -- so it is conventionally computed in FEET (the paper's basis, target
+    range ~5-8). Declare the survey's length unit via ``depth_units`` (welleng's
+    ``Survey.unit`` is not a reliable length label) and DDI converts to feet, so
+    the same well in metres or feet gives the same DDI.
+
+    Validation: SPE-59196 gives its results graphically (Figs 7-12: DDI vs
+    MD/inclination/AHD for designer J- and S-wells; Fig 13 field wells with DDI
+    6.31-6.84; Fig 14 bands <6 / 6.0-6.4 / 6.4-6.8 / >6.8). A build-and-hold
+    J-well family reproduces the published RANGE (~5-7.6) and the increasing
+    trend with departure/inclination, and realistic ERD wells fall in the field
+    band. Exact per-well numbers need the designer wells' precise geometry
+    (given only as plots) and the paper's tortuosity is under-specified, so this
+    uses the standard cumulative-dogleg reading -- a DIFFERENT tortuosity from
+    :func:`tortuosity_index` (a normalized 3D index).
+
     Parameters
     ----------
-    survey: welleng.survey.Survey object
-    data: bool
-        If True, returns the ddi at each survey station.
+    survey : welleng.survey.Survey
+    data : bool
+        If False (default) return the well DDI at TD (a float). If True return
+        the DDI at every survey station (an ``(n,)`` array).
+    depth_units : str
+        The length unit the survey's md/n/e/tvd are in (default "meters").
+
     Returns
     -------
-    ddi: float
-        The ddi for the well at well (at TD).
-    data: (n) array of floats
-        The ddi for each survey station.
+    float or (n,) numpy.ndarray
+        The DDI at TD, or the per-station DDI array when ``data=True``.
     """
+    # length conversion factor: survey unit -> feet (MD*AHD/TVD is a length)
+    to_ft = (1.0 * ureg(depth_units)).to("ft").m
+    ahd = np.linalg.norm((survey.n, survey.e), axis=0)
+    tortuosity = np.cumsum(np.abs(np.degrees(survey.dogleg)))
     with np.errstate(divide='ignore', invalid='ignore'):
-        ddi = np.nan_to_num(np.log10(
-            (
-                (survey.md * ureg.meters).to('ft').m
-                * (
-                    np.linalg.norm(
-                        (survey.n, survey.e), axis=0
-                    ) * ureg.meters
-                ).to('ft').m
-                * np.cumsum(np.degrees(survey.dogleg))
-            )
-            / (survey.tvd * ureg.meters).to('ft').m
-        ), nan=0.0, posinf=0.0, neginf=0.0)
-
-    return ddi
+        ddi = np.nan_to_num(
+            np.log10(survey.md * ahd * tortuosity / survey.tvd * to_ft),
+            nan=0.0, posinf=0.0, neginf=0.0,
+        )
+    return ddi if data else float(ddi[-1])
 
 
 def _accumulate_sections(
