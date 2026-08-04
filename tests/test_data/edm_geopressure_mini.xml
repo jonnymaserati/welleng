@@ -28,5 +28,12 @@
 
   <CD_GRADE grade_id="P110" grade="P-110" min_yield_stress="1.584e7" ultimate_tensile_strength="2.016e7" is_api="Y"/>
   <CD_MATERIAL material_id="MAT1" material="N-80" density="489.9" youngs_modulus="4.365e9" poissons_ratio="0.26" expansion_coefficient="7.06e-6"/>
+
+  <CD_ASSEMBLY well_id="W1" wellbore_id="WB1" assembly_id="A1" string_type="Casing" assembly_name="9 5/8&quot; Production" assembly_size="9.625" hole_size="12.25" md_assembly_base="2000" tvd_assembly_base="1950"/>
+  <CD_ASSEMBLY well_id="W1" wellbore_id="WB1" assembly_id="A2" string_type="Drillstring" assembly_name="8 1/2&quot; BHA" assembly_size="8.5" hole_size="8.5" md_assembly_base="3000" tvd_assembly_base="2900"/>
+  <!-- casing component: rated (axial/burst/collapse present) -->
+  <CD_ASSEMBLY_COMP well_id="W1" wellbore_id="WB1" assembly_id="A1" assembly_comp_id="C1" sect_type_code="CAS" grade="P-110" od_body="9.625" id_body="8.535" min_yield_stress="110000" axial_rating="1710.06" pipe_pressure_burst="10900" pressure_collapse="7950" critical_percent_collapse="100.0" sequence_no="2"/>
+  <!-- drill pipe component: unrated (no ratings) -->
+  <CD_ASSEMBLY_COMP well_id="W1" wellbore_id="WB1" assembly_id="A2" assembly_comp_id="C2" sect_type_code="DP" grade="S-135" od_body="5.5" id_body="4.778" min_yield_stress="135000" makeup_torque="56261" sequence_no="1"/>
 </TOPLEVEL>
 </export>
