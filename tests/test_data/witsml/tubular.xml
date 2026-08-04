@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tubulars xmlns="http://www.witsml.org/schemas/1series" version="1.4.1.1">
+  <tubular uidWell="W1" uidWellbore="WB1" uid="T1">
+    <nameWell>Test-Field-A</nameWell>
+    <nameWellbore>A-1</nameWellbore>
+    <name>8.5in BHA</name>
+    <tubularComponent uid="tc2">
+      <sequence>2</sequence>
+      <typeTubularComp>drill pipe</typeTubularComp>
+      <od uom="m">0.127</od>
+      <id uom="m">0.108</id>
+      <len uom="m">3000</len>
+      <wtPerLen uom="kg/m">29.05</wtPerLen>
+    </tubularComponent>
+    <tubularComponent uid="tc1">
+      <sequence>1</sequence>
+      <typeTubularComp>bit</typeTubularComp>
+      <od uom="m">0.2159</od>
+      <id uom="m">0.0</id>
+      <len uom="m">0.3</len>
+      <wtPerLen uom="kg/m">0.0</wtPerLen>
+    </tubularComponent>
+  </tubular>
+</tubulars>

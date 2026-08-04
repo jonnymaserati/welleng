@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<logs xmlns="http://www.witsml.org/schemas/1series" version="1.4.1.1">
+  <log uidWell="W1" uidWellbore="WB1" uid="L2">
+    <nameWell>Test-Field-A</nameWell>
+    <nameWellbore>A-1</nameWellbore>
+    <name>TempGradient</name>
+    <indexType>measured depth</indexType>
+    <startIndex uom="m">1000</startIndex>
+    <endIndex uom="m">1200</endIndex>
+    <indexCurve>DEPTH</indexCurve>
+    <nullValue>-999.25</nullValue>
+    <logData>
+      <mnemonicList>DEPTH,ATMP_RT</mnemonicList>
+      <unitList>m,degC</unitList>
+      <data>1000,50.0</data>
+      <data>1100,68.5</data>
+      <data>1200,87.0</data>
+    </logData>
+  </log>
+</logs>
