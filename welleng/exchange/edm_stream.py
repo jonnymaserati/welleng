@@ -68,6 +68,13 @@ _GEOPRESSURE_TAGS = frozenset({
     "CD_GRADE", "CD_MATERIAL",
 })
 
+# Optional (opt-in via ``with_assemblies=True``) — the string catalogue:
+# casing/tubing/liner/BHA assemblies and their components. Casing components
+# additionally carry Landmark's STORED axial/burst/collapse ratings, returned
+# verbatim as a validation oracle (welleng recomputes; it does not read them
+# back as truth).
+_ASSEMBLY_TAGS = frozenset({"CD_ASSEMBLY", "CD_ASSEMBLY_COMP"})
+
 # Human-readable schema — cryptic EDM table/field codes -> name + description.
 # Exposed via :attr:`EDMReader.schema` so accessors, docs, and any downstream
 # viewer are self-documenting rather than surfacing raw ``CD_*`` codes.
@@ -170,6 +177,36 @@ EDM_SCHEMA = {
             "youngs_modulus": "Young's modulus (field units)",
             "poissons_ratio": "Poisson's ratio",
             "expansion_coefficient": "thermal expansion coeff",
+        },
+    },
+    "CD_ASSEMBLY": {
+        "name": "Assembly",
+        "description": "A string: casing / tubing / liner / BHA.",
+        "fields": {
+            "string_type": "Casing | Tubing | Liner | BHA | ...",
+            "assembly_name": "string name",
+            "assembly_size": "nominal size",
+            "hole_size": "hole size",
+            "md_assembly_base": "base MD",
+            "tvd_assembly_base": "base TVD",
+        },
+    },
+    "CD_ASSEMBLY_COMP": {
+        "name": "Assembly component",
+        "description": ("String component: geometry + material, plus Landmark's "
+                        "stored axial/burst/collapse ratings on casing "
+                        "components (a validation oracle -- welleng recomputes)."),
+        "fields": {
+            "sect_type_code": "DP | CAS | ... (section type)",
+            "grade": "pipe grade",
+            "od_body": "body OD",
+            "id_body": "body ID",
+            "min_yield_stress": "min yield stress",
+            "axial_rating": "stored pipe-body yield (klbf)",
+            "pipe_pressure_burst": "stored burst rating (psi)",
+            "pressure_collapse": "stored collapse rating (psi)",
+            "critical_percent_collapse": "collapse derating INPUT (not a result)",
+            "makeup_torque": "connection make-up torque",
         },
     },
 }
@@ -524,6 +561,47 @@ class Formation:
     raw: Dict[str, str] = field(default_factory=dict, repr=False)
 
 
+@dataclass
+class AssemblyComponent:
+    """A ``CD_ASSEMBLY_COMP`` row — one string component.
+
+    Casing components additionally carry Landmark's **stored** ratings
+    (``axial_rating`` klbf, ``pipe_pressure_burst`` psi, ``pressure_collapse``
+    psi); these are ``None`` on unrated components (e.g. drill pipe). They are
+    returned **verbatim as an oracle** -- welleng recomputes them, it does not
+    treat them as truth. Note ``critical_percent_*`` are derating **inputs**
+    (all 100.0 in Volve), not utilisation results. Full row in :attr:`raw`.
+    """
+
+    assembly_id: str
+    sect_type_code: str
+    grade: str
+    od_body: Optional[float]
+    id_body: Optional[float]
+    min_yield_stress: Optional[float]
+    axial_rating: Optional[float]
+    pipe_pressure_burst: Optional[float]
+    pressure_collapse: Optional[float]
+    sequence_no: Optional[int]
+    raw: Dict[str, str] = field(default_factory=dict, repr=False)
+
+
+@dataclass
+class Assembly:
+    """A ``CD_ASSEMBLY`` row — one string, with its components."""
+
+    assembly_id: str
+    wellbore_id: str
+    string_type: str                # Casing | Tubing | Liner | BHA | ...
+    name: str
+    size: Optional[float]
+    hole_size: Optional[float]
+    md_base: Optional[float]
+    tvd_base: Optional[float]
+    components: List[AssemblyComponent] = field(default_factory=list)
+    raw: Dict[str, str] = field(default_factory=dict, repr=False)
+
+
 def _f(attrib: Dict[str, str], key: str) -> Optional[float]:
     v = attrib.get(key)
     if v is None or v == "":
@@ -601,14 +679,15 @@ class EDMReader:
 
     def __init__(
         self, path: str, source_units: str = "feet",
-        with_geopressure: bool = False,
+        with_geopressure: bool = False, with_assemblies: bool = False,
     ):
         self.path = path
         self.source_units = source_units.lower()
         self.with_geopressure = with_geopressure
+        self.with_assemblies = with_assemblies
         self._wanted = _WANTED_TAGS | (
             _GEOPRESSURE_TAGS if with_geopressure else frozenset()
-        )
+        ) | (_ASSEMBLY_TAGS if with_assemblies else frozenset())
 
         self.projects: Dict[str, Dict[str, str]] = {}
         self.sites: Dict[str, Dict[str, str]] = {}
@@ -631,6 +710,10 @@ class EDMReader:
         self.grades: Dict[str, Dict[str, str]] = {}           # by grade_id
         self.materials: Dict[str, Dict[str, str]] = {}        # by material_id
 
+        # assemblies (populated only when with_assemblies)
+        self._assemblies: Dict[str, Assembly] = {}            # by assembly_id
+        self._assembly_comps: Dict[str, List[AssemblyComponent]] = {}  # by assembly_id
+
         # station records grouped by header id (parsed floats)
         self._raw_stations: Dict[str, List[dict]] = {}
         self._def_stations: Dict[str, List[dict]] = {}
@@ -644,11 +727,12 @@ class EDMReader:
     @classmethod
     def open(
         cls, path: str, source_units: str = "feet",
-        with_geopressure: bool = False,
+        with_geopressure: bool = False, with_assemblies: bool = False,
     ) -> "EDMReader":
         """Open and index an EDM file. Alias for the constructor."""
         return cls(path, source_units=source_units,
-                   with_geopressure=with_geopressure)
+                   with_geopressure=with_geopressure,
+                   with_assemblies=with_assemblies)
 
     def _index(self) -> None:
         for tag, a in _iter_rows(self.path, self._wanted):
@@ -754,6 +838,33 @@ class EDMReader:
                 self.grades[a["grade_id"]] = a
             elif tag == "CD_MATERIAL":
                 self.materials[a["material_id"]] = a
+            elif tag == "CD_ASSEMBLY":
+                self._assemblies[a["assembly_id"]] = Assembly(
+                    assembly_id=a["assembly_id"],
+                    wellbore_id=a.get("wellbore_id", ""),
+                    string_type=a.get("string_type", ""),
+                    name=a.get("assembly_name", ""),
+                    size=_f(a, "assembly_size"),
+                    hole_size=_f(a, "hole_size"),
+                    md_base=_f(a, "md_assembly_base"),
+                    tvd_base=_f(a, "tvd_assembly_base"),
+                    raw=a,
+                )
+            elif tag == "CD_ASSEMBLY_COMP":
+                self._assembly_comps.setdefault(
+                    a.get("assembly_id", ""), []).append(AssemblyComponent(
+                        assembly_id=a.get("assembly_id", ""),
+                        sect_type_code=a.get("sect_type_code", ""),
+                        grade=a.get("grade", ""),
+                        od_body=_f(a, "od_body"),
+                        id_body=_f(a, "id_body"),
+                        min_yield_stress=_f(a, "min_yield_stress"),
+                        axial_rating=_f(a, "axial_rating"),
+                        pipe_pressure_burst=_f(a, "pipe_pressure_burst"),
+                        pressure_collapse=_f(a, "pressure_collapse"),
+                        sequence_no=_i(a, "sequence_no"),
+                        raw=a,
+                    ))
             elif tag == "CD_SURVEY_STATION":
                 self._raw_stations.setdefault(
                     a["survey_header_id"], []
@@ -798,6 +909,11 @@ class EDMReader:
             for iv in intervals:
                 if iv.survey_tool_id is not None:
                     iv.tool = self.tools.get(iv.survey_tool_id)
+        # attach components to their assembly, ordered bottom-up by sequence_no
+        for aid, asm in self._assemblies.items():
+            asm.components = sorted(
+                self._assembly_comps.get(aid, []),
+                key=lambda c: c.sequence_no or 0)
 
     # -- lookups -------------------------------------------------------------
     def _resolve_wellbore(self, wellbore) -> Wellbore:
@@ -902,6 +1018,25 @@ class EDMReader:
         wb = self._resolve_wellbore(wellbore).wellbore_id
         return sorted(self._formations.get(wb, []),
                       key=lambda f: f.md or 0.0)
+
+    def assemblies(self, wellbore=None) -> List[Assembly]:
+        """String assemblies (casing/tubing/liner/BHA), each with its components.
+
+        With ``wellbore`` given, only that wellbore's strings; otherwise all.
+        Casing components carry Landmark's stored axial/burst/collapse ratings
+        (the oracle) -- see :class:`AssemblyComponent`. Requires
+        ``with_assemblies=True``.
+        """
+        if not self.with_assemblies:
+            raise RuntimeError(
+                "assemblies were not indexed; open the reader with "
+                "with_assemblies=True"
+            )
+        asms = list(self._assemblies.values())
+        if wellbore is not None:
+            wb = self._resolve_wellbore(wellbore).wellbore_id
+            asms = [a for a in asms if a.wellbore_id == wb]
+        return sorted(asms, key=lambda a: a.md_base or 0.0)
 
     def datum_set(self, well) -> List[Dict[str, str]]:
         """The full per-rig, dated datum realisations for a well (do NOT
@@ -1094,7 +1229,9 @@ class EDMReader:
 
 
 def open_edm(path: str, source_units: str = "feet",
-             with_geopressure: bool = False) -> EDMReader:
+             with_geopressure: bool = False,
+             with_assemblies: bool = False) -> EDMReader:
     """Convenience factory mirroring :meth:`EDMReader.open`."""
     return EDMReader.open(path, source_units=source_units,
-                          with_geopressure=with_geopressure)
+                          with_geopressure=with_geopressure,
+                          with_assemblies=with_assemblies)
