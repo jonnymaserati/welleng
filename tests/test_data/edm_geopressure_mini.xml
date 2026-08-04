@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<export>
+<TOPLEVEL>
+  <CD_WELL well_id="W1" well_common_name="Test-1" geo_offset_east="1000" geo_offset_north="2000" water_depth="300"/>
+  <CD_WELLBORE wellbore_id="WB1" wellbore_name="Test-1 A" well_id="W1" ko_md="0"/>
+  <CD_DATUM well_id="W1" datum_name="Rig Alpha RT" datum_elevation="180.1" is_default="Y" date_last_modified="{ts '2013-01-01 00:00:00'}"/>
+  <CD_DATUM well_id="W1" datum_name="Rig Beta RT" datum_elevation="177.2" is_default="N" date_last_modified="{ts '2014-06-01 00:00:00'}"/>
+
+  <CD_PORE_PRESSURE_GROUP well_id="W1" wellbore_id="WB1" pore_pressure_group_id="PPG1" phase="ACTUAL" name="PP actual" update_date="{ts '2014-08-05 15:26:00'}"/>
+  <CD_PORE_PRESSURE_GROUP well_id="W1" wellbore_id="WB1" pore_pressure_group_id="PPG2" phase="PROTOTYPE" name="PP proto" update_date="{ts '2010-01-01 00:00:00'}"/>
+  <CD_PORE_PRESSURE well_id="W1" wellbore_id="WB1" pore_pressure_group_id="PPG1" tvd="1000" pore_pressure="500" pore_pressure_emw="9.6" is_permeable_zone="Y" sequence_no="2"/>
+  <CD_PORE_PRESSURE well_id="W1" wellbore_id="WB1" pore_pressure_group_id="PPG1" tvd="500" pore_pressure="240" pore_pressure_emw="9.2" is_permeable_zone="N" sequence_no="1"/>
+  <CD_PORE_PRESSURE well_id="W1" wellbore_id="WB1" pore_pressure_group_id="PPG2" tvd="2000" pore_pressure="1100" pore_pressure_emw="10.5" is_permeable_zone="Y" sequence_no="1"/>
+
+  <CD_FRAC_GRADIENT_GROUP well_id="W1" wellbore_id="WB1" frac_gradient_group_id="FGG1" phase="ACTUAL" name="FG actual" update_date="{ts '2014-08-05 15:26:00'}"/>
+  <CD_FRAC_GRADIENT well_id="W1" wellbore_id="WB1" frac_gradient_group_id="FGG1" tvd="1000" frac_gradient_pressure="800" frac_gradient_emw="15.4" sequence_no="1"/>
+
+  <CD_TEMP_GRADIENT_GROUP well_id="W1" wellbore_id="WB1" temp_gradient_group_id="TGG1" phase="PROTOTYPE" name="Geothermal" update_date="{ts '2012-06-13 15:52:39'}"/>
+  <CD_TEMP_GRADIENT well_id="W1" wellbore_id="WB1" temp_gradient_group_id="TGG1" tvd="0" temperature="40" sequence_no="1"/>
+  <CD_TEMP_GRADIENT well_id="W1" wellbore_id="WB1" temp_gradient_group_id="TGG1" tvd="2000" temperature="205" sequence_no="2"/>
+
+  <CD_HOLE_SECT well_id="W1" wellbore_id="WB1" hole_sect_group_id="HG1" hole_sect_id="H1" sect_type_code="CAS" od_casing="20.0" id_casing="18.73" id_drift="18.543" hole_size="26.0" length="500" md_shoe="500" catalog_key_desc="20 in surface"/>
+  <CD_HOLE_SECT well_id="W1" wellbore_id="WB1" hole_sect_group_id="HG2" hole_sect_id="H1b" sect_type_code="CAS" od_casing="20.0" id_casing="18.73" id_drift="18.543" hole_size="26.0" length="500" md_shoe="500" catalog_key_desc="20 in surface"/>
+  <CD_HOLE_SECT well_id="W1" wellbore_id="WB1" hole_sect_group_id="HG1" hole_sect_id="H2" sect_type_code="OPEN" od_casing="" id_casing="" id_drift="" hole_size="12.25" length="1500" md_shoe="2000" catalog_key_desc="12 1/4 open"/>
+
+  <CD_WELLBORE_FORMATION well_id="W1" wellbore_id="WB1" wellbore_formation_id="F1" phase="PROTOTYPE" formation_name="Hugin_Fm_Top" prognosed_md="1800" prognosed_tvd="1750"/>
+  <CD_WELLBORE_FORMATION well_id="W1" wellbore_id="WB1" wellbore_formation_id="F2" phase="PROTOTYPE" formation_name="Hod_Fm_Top" prognosed_md="900" prognosed_tvd="880"/>
+
+  <CD_GRADE grade_id="P110" grade="P-110" min_yield_stress="1.584e7" ultimate_tensile_strength="2.016e7" is_api="Y"/>
+  <CD_MATERIAL material_id="MAT1" material="N-80" density="489.9" youngs_modulus="4.365e9" poissons_ratio="0.26" expansion_coefficient="7.06e-6"/>
+</TOPLEVEL>
+</export>
