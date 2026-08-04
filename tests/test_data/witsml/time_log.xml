@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<logs xmlns="http://www.witsml.org/schemas/1series" version="1.4.1.1">
+  <log uidWell="W1" uidWellbore="WB1" uid="L1">
+    <nameWell>Test-Field-A</nameWell>
+    <nameWellbore>A-1</nameWellbore>
+    <name>SurfaceData</name>
+    <serviceCompany>Test Co</serviceCompany>
+    <indexType>date time</indexType>
+    <startDateTimeIndex>2018-05-13T00:00:00.000Z</startDateTimeIndex>
+    <endDateTimeIndex>2018-05-13T00:00:02.000Z</endDateTimeIndex>
+    <indexCurve>Time</indexCurve>
+    <nullValue>-999.25</nullValue>
+    <logCurveInfo uid="c0"><mnemonic>Time</mnemonic><unit>s</unit></logCurveInfo>
+    <logCurveInfo uid="c1"><mnemonic>HKLD</mnemonic><unit>klbf</unit></logCurveInfo>
+    <logCurveInfo uid="c2"><mnemonic>MTIN</mnemonic><unit>degC</unit></logCurveInfo>
+    <logData>
+      <mnemonicList>Time,HKLD,MTIN</mnemonicList>
+      <unitList>s,klbf,degC</unitList>
+      <data>2018-05-13T00:00:00.000Z,120.5,45.0</data>
+      <data>2018-05-13T00:00:01.000Z,121.0,-999.25</data>
+      <data>2018-05-13T00:00:02.000Z,119.8,46.2</data>
+    </logData>
+  </log>
+</logs>

@@ -21,7 +21,7 @@
 - **Torque and drag** — simple torque/drag model with architecture module
 - **Kick tolerance** — deterministic, conservative single-bubble kick-tolerance engine (drill and swab cases): the mandated NOGEPA-50 static formula, a whole-path gas-migration check over the pore–fracture envelope, and an exact analytical breakpoint solver, reproducing the published worked examples of SPE-208788-PA, SPE-202426-PA (Kiani Nassab) and Santos (SPE/IADC-140113); real-gas *Z* via a clean-room Hall–Yarborough backend with an optional CoolProp EOS backend for CO₂/CCUS mixtures; deviated-well aware; reports the shut-in quantities SIDP, SICP and MAASP, the last both at the shoe (the industry convention) and minimised over every exposed depth, which differ when a weak zone sits below the shoe
 - **Visualization** — interactive 3D via [vedo]/VTK or browser-based via plotly (requires `easy` install)
-- **Data exchange** — import/export Landmark .wbp files; read EDM datasets
+- **Data exchange** — import/export Landmark .wbp files; read EDM datasets; a streaming **WITSML 1.4.1.1** (`1series`) reader (`welleng.exchange.witsml.open_witsml`) that indexes a directory or multi-GB zip of logs by decompressing only header prefixes, exposes channel discovery (`find`) and lazy per-log `curves()`, and reads tubular/BHA component tallies — validated against the public Equinor Volve realtime export
 - **Geomagnetic reference lookup** — fetches WMM/IGRF field values from the BGS web service when not supplied (given a real well location)
 
 ### Selecting an error model
