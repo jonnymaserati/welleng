@@ -873,3 +873,52 @@ def test_unconstrained_returns_a_bh_influx_not_the_open_hole_capacity():
     note = r.breakpoints.get("note", "")
     assert "bottom-hole influx" in note.lower()
     assert "full open-hole gas capacity" not in note
+
+
+def test_drill_kick_temperature_optional_when_density_given():
+    """A drilling kick may omit T_s/T_td if an influx density is supplied: it then
+    runs ideal-isothermal, where temperature CANCELS out of the column expansion.
+    Requested by TA0 (2026-07-30) for density-based programs / simple well-control
+    tools (e.g. Valaris WCT) that quote an influx density and no formation temperature.
+    """
+    v = annular_capacity_dpa(6.125, 4.0)
+    base = dict(rho_mud=11.9, PP=11.5, kick_intensity=1.1, P_lot=16.0, P_apl=210.0,
+                D_td=10500.0, D_lot=6500.0, V_dpa=v)
+
+    r = drill_kick(KickInputs(**base, rho_gas_s=0.69))            # NO temperature
+    # identical to supplying any isothermal temperature in ideal mode -- T cancels
+    for degf in (60.0, 250.0):
+        ref = drill_kick(KickInputs(**base, rho_gas_s=0.69, T_s=degf, T_td=degf,
+                                    ideal_gas=True))
+        assert math.isclose(r.capacity, ref.capacity, rel_tol=1e-12), degf
+    # the reported influx temperature is None, NOT a fabricated placeholder
+    assert r.T_influx is None
+    assert r.rho_influx is not None          # density path still populates the rest
+
+
+def test_drill_kick_no_temperature_and_no_density_is_refused():
+    """Omitting temperature is only meaningful with a density (ideal-isothermal).
+    Without either, the gas state is undetermined -- refuse with a clear message,
+    do not silently pick one."""
+    v = annular_capacity_dpa(6.125, 4.0)
+    try:
+        drill_kick(KickInputs(rho_mud=11.9, PP=11.5, kick_intensity=1.1, P_lot=16.0,
+                              P_apl=210.0, D_td=10500.0, D_lot=6500.0, V_dpa=v))
+    except ValueError as e:
+        assert "rho_gas_s" in str(e) and "temperature" in str(e).lower()
+    else:
+        raise AssertionError("no temperature AND no density must be refused")
+
+
+def test_swab_kick_requires_temperature():
+    """Temperature is optional ONLY for a drilling kick. A swab (trip) relaxes the
+    gas column toward formation temperature, so it cannot be dropped."""
+    v = annular_capacity_dpa(6.125, 4.0)
+    try:
+        swab_kick(KickInputs(rho_mud=11.9, PP=11.5, kick_intensity=1.1, P_lot=16.0,
+                             P_apl=210.0, D_td=10500.0, D_lot=6500.0, V_dpa=v,
+                             rho_gas_s=0.69))                     # density but no T
+    except ValueError as e:
+        assert "swab" in str(e).lower() and "temperature" in str(e).lower()
+    else:
+        raise AssertionError("swab_kick must require a formation temperature")
