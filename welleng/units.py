@@ -122,6 +122,85 @@ def torque(value: Number, unit: UnitLike = 'newton * meter') -> pint.Quantity:
     return _quantity(value, unit, '[force] * [length]', 'torque')
 
 
+# --- thermal-domain constructors ----------------------------------------------
+# CRITICAL: an absolute temperature is an OFFSET unit (degF <-> kelvin add a
+# constant), whereas every gradient / heat-capacity / conductivity term uses a
+# temperature DIFFERENCE (delta_degF <-> kelvin, a pure scale). Mixing the
+# two silently injects ~255 K. Use :func:`temperature` for a state (a reading)
+# and :func:`temperature_delta` for any per-degree term.
+def temperature(value: Number, unit: UnitLike = 'degF') -> pint.Quantity:
+    """An absolute temperature (default degF) — an OFFSET unit.
+
+    Convert with :func:`to`/:func:`to_si` (kelvin): the constant offset is
+    applied. Do NOT use this for gradients or specific heats — use
+    :func:`temperature_delta`.
+
+    >>> round(to(temperature(60, 'degF'), 'kelvin'), 2)
+    288.71
+    """
+    return _quantity(value, unit, '[temperature]', 'temperature')
+
+
+def temperature_delta(
+    value: Number, unit: UnitLike = 'delta_degF'
+) -> pint.Quantity:
+    """A temperature DIFFERENCE (default delta_degF) — a pure scale.
+
+    For the per-degree part of gradients, specific heats and conductivities.
+
+    >>> round(to(temperature_delta(1, 'delta_degF'), 'kelvin'), 4)
+    0.5556
+    """
+    return _quantity(value, unit, '[temperature]', 'temperature difference')
+
+
+def mass_rate(value: Number, unit: UnitLike = 'kilogram / second') -> pint.Quantity:
+    """A mass flow rate (default kg/s)."""
+    return _quantity(value, unit, '[mass] / [time]', 'mass rate')
+
+
+def specific_heat(
+    value: Number, unit: UnitLike = 'joule / (kilogram * kelvin)'
+) -> pint.Quantity:
+    """A specific heat capacity (default J/(kg·K)). Uses delta temperature."""
+    return _quantity(
+        value, unit, '[energy] / [mass] / [temperature]', 'specific heat')
+
+
+def thermal_conductivity(
+    value: Number, unit: UnitLike = 'watt / (meter * kelvin)'
+) -> pint.Quantity:
+    """A thermal conductivity (default W/(m·K)). Uses delta temperature."""
+    return _quantity(
+        value, unit, '[power] / [length] / [temperature]',
+        'thermal conductivity')
+
+
+def thermal_diffusivity(
+    value: Number, unit: UnitLike = 'meter ** 2 / second'
+) -> pint.Quantity:
+    """A thermal diffusivity (default m²/s)."""
+    return _quantity(
+        value, unit, '[length] ** 2 / [time]', 'thermal diffusivity')
+
+
+def heat_transfer_coefficient(
+    value: Number, unit: UnitLike = 'watt / (meter ** 2 * kelvin)'
+) -> pint.Quantity:
+    """A heat-transfer coefficient (default W/(m²·K)). Uses delta temperature."""
+    return _quantity(
+        value, unit, '[power] / [length] ** 2 / [temperature]',
+        'heat transfer coefficient')
+
+
+def temperature_gradient(
+    value: Number, unit: UnitLike = 'kelvin / meter'
+) -> pint.Quantity:
+    """A temperature gradient (default K/m) — delta-based (K/m, degF/ft)."""
+    return _quantity(
+        value, unit, '[temperature] / [length]', 'temperature gradient')
+
+
 # --- converters / guards ------------------------------------------------------
 def to(quantity: pint.Quantity, unit: UnitLike) -> float:
     """Magnitude of ``quantity`` expressed in ``unit`` (float).
