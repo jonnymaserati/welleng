@@ -279,3 +279,116 @@ def methane_properties(p_psia: float, t_rankine: float) -> tuple[float, float]:
     z = hall_yarborough_z(p_psia, t_rankine)
     rho = gas_density_ppg(p_psia, t_rankine, z)
     return z, rho
+
+
+def sutton_pseudo_criticals(gas_gravity: float) -> tuple:
+    """Natural-gas pseudo-criticals from gas gravity — Sutton (1985)::
+
+        T_pc = 169.2 + 349.5.g - 74.0.g^2   [degR]
+        P_pc = 756.8 - 131.0.g -  3.6.g^2   [psia]
+
+    An alternative to :func:`standing_pseudo_criticals` fitted to a wider gravity
+    range; preferred for heavier/associated gases (roughly ``g`` 0.57-1.68). Like
+    Standing's, it carries no sour-gas (H2S/CO2) correction -- pass explicit
+    pseudo-criticals (Wichert-Aziz corrected) for sour gases.
+    """
+    g = float(gas_gravity)
+    return (169.2 + 349.5 * g - 74.0 * g * g,
+            756.8 - 131.0 * g - 3.6 * g * g)
+
+
+_PC_CORRELATIONS = {
+    "standing": standing_pseudo_criticals,
+    "sutton": sutton_pseudo_criticals,
+}
+
+
+def gas_z(
+    p_psia: float,
+    t_rankine: float,
+    gas_gravity: float = None,
+    composition: dict = None,
+    t_pc_rankine: float = None,
+    p_pc_psia: float = None,
+    method: str = "auto",
+    pc_correlation: str = "standing",
+) -> float:
+    """Unified **classic** real-gas Z-factor — Hall-Yarborough or CoolProp EOS.
+
+    A single entry point that switches between the two classic/public backends:
+
+    * **Hall & Yarborough** (fast correlation) for a hydrocarbon gas specified by
+      ``gas_gravity`` (or explicit ``t_pc_rankine``/``p_pc_psia``);
+    * **CoolProp** real-EOS (accurate) for a ``composition`` mole-fraction dict
+      (mixtures / non-hydrocarbons like CO2 / N2 / H2S).
+
+    Parameters
+    ----------
+    p_psia, t_rankine : float
+        Absolute pressure [psia] and temperature [degR].
+    gas_gravity : float, optional
+        Gas gravity relative to air; pseudo-criticals are derived via
+        ``pc_correlation``. Ignored if ``t_pc_rankine``/``p_pc_psia`` are given.
+    composition : dict, optional
+        Mole-fraction composition (e.g. ``{"Methane": 0.9, "CO2": 0.1}``) -> the
+        CoolProp path.
+    t_pc_rankine, p_pc_psia : float, optional
+        Explicit pseudo-criticals for the Hall-Yarborough path (overrides
+        ``gas_gravity``). Default to Tier-0 methane if nothing is supplied.
+    method : {"auto", "hall_yarborough", "coolprop"}
+        ``"auto"`` picks CoolProp when a ``composition`` is given, else
+        Hall-Yarborough. An explicit choice forces the backend.
+    pc_correlation : {"standing", "sutton"}
+        Gas-gravity -> pseudo-critical correlation for the Hall-Yarborough path.
+
+    Returns
+    -------
+    float
+        The real-gas Z-factor [-].
+
+    Notes
+    -----
+    CoolProp is an optional extra. If the CoolProp path is requested (or auto-
+    selected) but CoolProp is not installed, this **falls back to Hall-Yarborough**
+    when a ``gas_gravity``/pseudo-criticals are available (so the correlation path
+    always works), and raises only if it has nothing to fall back on. This is the
+    classic/public oracle; the fast analytical (Papay) form lives in welleng-api.
+    """
+    if method not in ("auto", "hall_yarborough", "coolprop"):
+        raise ValueError(f"unknown method: {method!r}")
+    if pc_correlation not in _PC_CORRELATIONS:
+        raise ValueError(f"unknown pc_correlation: {pc_correlation!r}")
+
+    resolved = method
+    if resolved == "auto":
+        resolved = "coolprop" if composition else "hall_yarborough"
+
+    def _hy() -> float:
+        if t_pc_rankine is not None and p_pc_psia is not None:
+            tpc, ppc = t_pc_rankine, p_pc_psia
+        elif gas_gravity is not None:
+            tpc, ppc = _PC_CORRELATIONS[pc_correlation](gas_gravity)
+        else:
+            tpc, ppc = METHANE_TPC_RANKINE, METHANE_PPC_PSIA
+        return hall_yarborough_z(p_psia, t_rankine, tpc, ppc)
+
+    if resolved == "hall_yarborough":
+        return _hy()
+
+    # CoolProp path
+    if composition is None:
+        raise ValueError("method='coolprop' requires a composition dict")
+    from .gas_z_coolprop import fluid_z_density
+    try:
+        z, _ = fluid_z_density(composition, p_psia, t_rankine)
+        return z
+    except ImportError:
+        if gas_gravity is not None or (
+            t_pc_rankine is not None and p_pc_psia is not None
+        ):
+            return _hy()
+        raise ImportError(
+            "CoolProp is required for the composition path and is not installed; "
+            "install the optional extra, or pass gas_gravity/pseudo-criticals to "
+            "fall back to Hall-Yarborough"
+        )
