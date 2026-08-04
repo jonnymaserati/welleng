@@ -55,6 +55,125 @@ _STATION_TAGS = frozenset({
 })
 _WANTED_TAGS = _METADATA_TAGS | _STATION_TAGS
 
+# Optional (opt-in via ``with_geopressure=True``) — geopressure / temperature
+# prognoses, as-run geometry, formation tops, and the grade/material catalogue.
+# Off by default: these are the large non-survey tables the light reader
+# deliberately skips (Volve: ~76k geopressure rows). PRESSURE is canonical; the
+# stored EMW is an RKB-datum view (do not derive PPFP logic from it).
+_GEOPRESSURE_TAGS = frozenset({
+    "CD_PORE_PRESSURE", "CD_PORE_PRESSURE_GROUP",
+    "CD_FRAC_GRADIENT", "CD_FRAC_GRADIENT_GROUP",
+    "CD_TEMP_GRADIENT", "CD_TEMP_GRADIENT_GROUP",
+    "CD_HOLE_SECT", "CD_WELLBORE_FORMATION",
+    "CD_GRADE", "CD_MATERIAL",
+})
+
+# Human-readable schema — cryptic EDM table/field codes -> name + description.
+# Exposed via :attr:`EDMReader.schema` so accessors, docs, and any downstream
+# viewer are self-documenting rather than surfacing raw ``CD_*`` codes.
+EDM_SCHEMA = {
+    "CD_WELL": {
+        "name": "Well",
+        "description": "Well header (surface location, water depth).",
+        "fields": {
+            "well_common_name": "well name",
+            "geo_offset_east": "surface easting",
+            "geo_offset_north": "surface northing",
+            "water_depth": "water depth",
+        },
+    },
+    "CD_WELLBORE": {
+        "name": "Wellbore",
+        "description": "Wellbore / sidetrack (parent chain, kick-off).",
+        "fields": {
+            "wellbore_name": "wellbore name",
+            "parent_wellbore_id": "parent wellbore",
+            "ko_md": "kick-off MD",
+        },
+    },
+    "CD_DATUM": {
+        "name": "Depth datum",
+        "description": "Per-rig, dated depth reference (RT/RKB elevation).",
+        "fields": {
+            "datum_name": "rig / datum name",
+            "datum_elevation": "elevation above MSL",
+            "date_last_modified": "established",
+            "is_default": "default flag",
+        },
+    },
+    "CD_PORE_PRESSURE": {
+        "name": "Pore pressure",
+        "description": "Pore-pressure prognosis point (pressure is canonical).",
+        "fields": {
+            "tvd": "TVD",
+            "pore_pressure": "pressure (psi)",
+            "pore_pressure_emw": "equiv. mud weight (ppg, RKB-datum view)",
+            "is_permeable_zone": "permeable flag",
+        },
+    },
+    "CD_FRAC_GRADIENT": {
+        "name": "Fracture gradient",
+        "description": "Fracture-pressure prognosis point.",
+        "fields": {
+            "tvd": "TVD",
+            "frac_gradient_pressure": "pressure (psi)",
+            "frac_gradient_emw": "equiv. mud weight (ppg, RKB-datum view)",
+        },
+    },
+    "CD_TEMP_GRADIENT": {
+        "name": "Temperature gradient",
+        "description": "Geothermal temperature prognosis point (Volve degF).",
+        "fields": {
+            "tvd": "TVD",
+            "temperature": "temperature (degF in Volve)",
+        },
+    },
+    "CD_HOLE_SECT": {
+        "name": "Hole section",
+        "description": "As-run hole & casing section geometry.",
+        "fields": {
+            "sect_type_code": "CAS (cased) | OPEN",
+            "od_casing": "casing OD",
+            "id_casing": "casing ID",
+            "id_drift": "drift ID",
+            "hole_size": "hole size",
+            "length": "section length",
+            "md_shoe": "shoe MD",
+            "catalog_key_desc": "catalogue description",
+        },
+    },
+    "CD_WELLBORE_FORMATION": {
+        "name": "Formation top",
+        "description": "Prognosed formation top.",
+        "fields": {
+            "formation_name": "formation",
+            "prognosed_md": "top MD",
+            "prognosed_tvd": "top TVD",
+        },
+    },
+    "CD_GRADE": {
+        "name": "Pipe grade",
+        "description": "Casing/tubing grade catalogue (yield, UTS).",
+        "fields": {
+            "grade": "grade name",
+            "min_yield_stress": "min yield (field units)",
+            "ultimate_tensile_strength": "UTS",
+            "is_api": "API grade flag",
+        },
+    },
+    "CD_MATERIAL": {
+        "name": "Material",
+        "description": "Pipe material catalogue (density, elastic props).",
+        "fields": {
+            "material": "material name",
+            "density": "density (lb/ft3)",
+            "youngs_modulus": "Young's modulus (field units)",
+            "poissons_ratio": "Poisson's ratio",
+            "expansion_coefficient": "thermal expansion coeff",
+        },
+    },
+}
+
 
 class ToolKind(str, Enum):
     """Best-effort classification of a COMPASS survey tool."""
@@ -355,6 +474,56 @@ class WellboreSurvey:
 # Streaming reader
 # ---------------------------------------------------------------------------
 
+@dataclass
+class GeopressureProfile:
+    """A phased pore/frac/temperature prognosis for one wellbore.
+
+    ``value`` is **pressure in psi** for pore/frac (the canonical quantity) or
+    **temperature** for a temp profile (Volve stores degF). ``emw`` (pore/frac
+    only) is the stored equivalent mud weight in ppg — an **RKB-datum view**,
+    for display only; never derive PPFP logic from it. ``tvd`` is in the
+    reader's ``source_units``.
+    """
+
+    kind: str                       # "pore" | "frac" | "temp"
+    phase: Optional[str]            # PLAN | ACTUAL | PROTOTYPE
+    name: str
+    wellbore_id: str
+    group_id: str
+    update_date: Optional[str]
+    tvd: np.ndarray
+    value: np.ndarray
+    emw: Optional[np.ndarray] = None
+
+
+@dataclass
+class HoleSection:
+    """A ``CD_HOLE_SECT`` row — one as-run hole/casing section."""
+
+    wellbore_id: str
+    sect_type_code: str             # "CAS" (cased) | "OPEN"
+    od_casing: Optional[float]
+    id_casing: Optional[float]
+    id_drift: Optional[float]
+    hole_size: Optional[float]
+    length: Optional[float]
+    md_shoe: Optional[float]
+    description: str = ""           # catalog_key_desc
+    raw: Dict[str, str] = field(default_factory=dict, repr=False)
+
+
+@dataclass
+class Formation:
+    """A ``CD_WELLBORE_FORMATION`` row — one prognosed formation top."""
+
+    name: str
+    wellbore_id: str
+    phase: Optional[str]
+    md: Optional[float]             # prognosed_md
+    tvd: Optional[float]            # prognosed_tvd
+    raw: Dict[str, str] = field(default_factory=dict, repr=False)
+
+
 def _f(attrib: Dict[str, str], key: str) -> Optional[float]:
     v = attrib.get(key)
     if v is None or v == "":
@@ -370,7 +539,9 @@ def _i(attrib: Dict[str, str], key: str) -> Optional[int]:
     return None if f is None else int(f)
 
 
-def _iter_rows(path: str) -> Iterator[Tuple[str, Dict[str, str]]]:
+def _iter_rows(
+    path: str, wanted: frozenset = _WANTED_TAGS
+) -> Iterator[Tuple[str, Dict[str, str]]]:
     """Yield ``(tag, attrib)`` for wanted rows with bounded memory.
 
     The EDM file is flat (``<export><TOPLEVEL><CD_.../>...``). ``iterparse``
@@ -386,7 +557,7 @@ def _iter_rows(path: str) -> Iterator[Tuple[str, Dict[str, str]]]:
             continue
         # end event
         stack.pop()
-        if elem.tag in _WANTED_TAGS:
+        if elem.tag in wanted:
             yield elem.tag, dict(elem.attrib)
         elem.clear()
         # Drop already-parsed siblings held by the parent (TOPLEVEL) so it
@@ -409,11 +580,35 @@ class EDMReader:
     source_units : str, {"feet", "meters"}
         Units of the stored depth/offset values (default ``"feet"`` -- the
         Volve export). Angles are always degrees.
+    with_geopressure : bool, default False
+        Also materialise the geopressure / temperature prognoses, as-run
+        geometry, formation tops, and grade/material catalogue (the large
+        non-survey tables). Off by default keeps the light survey-only sweep.
+        When ``True``, use :meth:`pore_pressure`, :meth:`frac_gradient`,
+        :meth:`temperature`, :meth:`geometry`, :meth:`formations`,
+        :meth:`grades`, :meth:`materials`.
+
+    Attributes
+    ----------
+    schema : dict
+        Human-readable name + description for each EDM table/field this reader
+        surfaces (see :data:`EDM_SCHEMA`) -- so consumers, docs, and any viewer
+        do not have to decode raw ``CD_*`` codes.
     """
 
-    def __init__(self, path: str, source_units: str = "feet"):
+    #: Human-readable table/field glossary (cryptic EDM code -> name + desc).
+    schema = EDM_SCHEMA
+
+    def __init__(
+        self, path: str, source_units: str = "feet",
+        with_geopressure: bool = False,
+    ):
         self.path = path
         self.source_units = source_units.lower()
+        self.with_geopressure = with_geopressure
+        self._wanted = _WANTED_TAGS | (
+            _GEOPRESSURE_TAGS if with_geopressure else frozenset()
+        )
 
         self.projects: Dict[str, Dict[str, str]] = {}
         self.sites: Dict[str, Dict[str, str]] = {}
@@ -423,6 +618,18 @@ class EDMReader:
         self.tools: Dict[str, SurveyTool] = {}
         self.headers: Dict[str, SurveyHeader] = {}  # raw + definitive by id
         self.programs: Dict[str, List[ProgramInterval]] = {}  # by def hdr id
+
+        # geopressure / geometry (populated only when with_geopressure)
+        self._pp_groups: Dict[str, Dict[str, str]] = {}
+        self._fg_groups: Dict[str, Dict[str, str]] = {}
+        self._tg_groups: Dict[str, Dict[str, str]] = {}
+        self._pp_rows: Dict[str, List[Dict[str, str]]] = {}   # by group_id
+        self._fg_rows: Dict[str, List[Dict[str, str]]] = {}
+        self._tg_rows: Dict[str, List[Dict[str, str]]] = {}
+        self._hole_sects: Dict[str, List[HoleSection]] = {}   # by wellbore_id
+        self._formations: Dict[str, List[Formation]] = {}     # by wellbore_id
+        self.grades: Dict[str, Dict[str, str]] = {}           # by grade_id
+        self.materials: Dict[str, Dict[str, str]] = {}        # by material_id
 
         # station records grouped by header id (parsed floats)
         self._raw_stations: Dict[str, List[dict]] = {}
@@ -435,12 +642,16 @@ class EDMReader:
 
     # -- construction --------------------------------------------------------
     @classmethod
-    def open(cls, path: str, source_units: str = "feet") -> "EDMReader":
+    def open(
+        cls, path: str, source_units: str = "feet",
+        with_geopressure: bool = False,
+    ) -> "EDMReader":
         """Open and index an EDM file. Alias for the constructor."""
-        return cls(path, source_units=source_units)
+        return cls(path, source_units=source_units,
+                   with_geopressure=with_geopressure)
 
     def _index(self) -> None:
-        for tag, a in _iter_rows(self.path):
+        for tag, a in _iter_rows(self.path, self._wanted):
             if tag == "CD_PROJECT":
                 self.projects[a["project_id"]] = a
             elif tag == "CD_SITE":
@@ -500,6 +711,49 @@ class EDMReader:
                     md_base=_f(a, "md_base"),
                     sequence_no=_i(a, "sequence_no"),
                 ))
+            elif tag == "CD_PORE_PRESSURE_GROUP":
+                self._pp_groups[a["pore_pressure_group_id"]] = a
+            elif tag == "CD_PORE_PRESSURE":
+                self._pp_rows.setdefault(
+                    a["pore_pressure_group_id"], []).append(a)
+            elif tag == "CD_FRAC_GRADIENT_GROUP":
+                self._fg_groups[a["frac_gradient_group_id"]] = a
+            elif tag == "CD_FRAC_GRADIENT":
+                self._fg_rows.setdefault(
+                    a["frac_gradient_group_id"], []).append(a)
+            elif tag == "CD_TEMP_GRADIENT_GROUP":
+                self._tg_groups[a["temp_gradient_group_id"]] = a
+            elif tag == "CD_TEMP_GRADIENT":
+                self._tg_rows.setdefault(
+                    a["temp_gradient_group_id"], []).append(a)
+            elif tag == "CD_HOLE_SECT":
+                self._hole_sects.setdefault(
+                    a.get("wellbore_id", ""), []).append(HoleSection(
+                        wellbore_id=a.get("wellbore_id", ""),
+                        sect_type_code=a.get("sect_type_code", ""),
+                        od_casing=_f(a, "od_casing"),
+                        id_casing=_f(a, "id_casing"),
+                        id_drift=_f(a, "id_drift"),
+                        hole_size=_f(a, "hole_size"),
+                        length=_f(a, "length"),
+                        md_shoe=_f(a, "md_shoe"),
+                        description=a.get("catalog_key_desc", ""),
+                        raw=a,
+                    ))
+            elif tag == "CD_WELLBORE_FORMATION":
+                self._formations.setdefault(
+                    a.get("wellbore_id", ""), []).append(Formation(
+                        name=a.get("formation_name", ""),
+                        wellbore_id=a.get("wellbore_id", ""),
+                        phase=a.get("phase"),
+                        md=_f(a, "prognosed_md"),
+                        tvd=_f(a, "prognosed_tvd"),
+                        raw=a,
+                    ))
+            elif tag == "CD_GRADE":
+                self.grades[a["grade_id"]] = a
+            elif tag == "CD_MATERIAL":
+                self.materials[a["material_id"]] = a
             elif tag == "CD_SURVEY_STATION":
                 self._raw_stations.setdefault(
                     a["survey_header_id"], []
@@ -561,6 +815,104 @@ class EDMReader:
         return [
             wb for wb in self.wellbores.values() if s in wb.name.lower()
         ]
+
+    # -- geopressure / geometry (opt-in) -------------------------------------
+    def _require_geopressure(self) -> None:
+        if not self.with_geopressure:
+            raise RuntimeError(
+                "geopressure/geometry tables were not indexed; open the reader "
+                "with with_geopressure=True"
+            )
+
+    def _profiles(self, kind, groups, rows, wellbore, phase, latest,
+                  value_key, emw_key=None) -> List[GeopressureProfile]:
+        self._require_geopressure()
+        wb = self._resolve_wellbore(wellbore).wellbore_id
+        out = []
+        for gid, g in groups.items():
+            if g.get("wellbore_id") != wb:
+                continue
+            if phase is not None and g.get("phase") != phase:
+                continue
+            recs = sorted(rows.get(gid, []),
+                          key=lambda r: _f(r, "tvd") or 0.0)
+            if not recs:
+                continue
+            out.append(GeopressureProfile(
+                kind=kind, phase=g.get("phase"), name=g.get("name", ""),
+                wellbore_id=wb, group_id=gid, update_date=g.get("update_date"),
+                tvd=np.array([_f(r, "tvd") for r in recs], dtype=float),
+                value=np.array([_f(r, value_key) for r in recs], dtype=float),
+                emw=(np.array([_f(r, emw_key) for r in recs], dtype=float)
+                     if emw_key else None),
+            ))
+        # newest group first (by update_date string, ISO-ish so lexical works)
+        out.sort(key=lambda p: p.update_date or "", reverse=True)
+        return out[:1] if (latest and out) else out
+
+    def pore_pressure(self, wellbore, phase: str = "ACTUAL",
+                      latest: bool = True) -> List[GeopressureProfile]:
+        """Pore-pressure prognoses (pressure in psi is canonical).
+
+        ``phase`` filters PLAN | ACTUAL | PROTOTYPE (``None`` for all);
+        ``latest`` keeps only the newest matching group.
+        """
+        return self._profiles(
+            "pore", self._pp_groups, self._pp_rows, wellbore, phase, latest,
+            "pore_pressure", "pore_pressure_emw")
+
+    def frac_gradient(self, wellbore, phase: str = "ACTUAL",
+                      latest: bool = True) -> List[GeopressureProfile]:
+        """Fracture-gradient prognoses (pressure in psi is canonical)."""
+        return self._profiles(
+            "frac", self._fg_groups, self._fg_rows, wellbore, phase, latest,
+            "frac_gradient_pressure", "frac_gradient_emw")
+
+    def temperature(self, wellbore, phase: Optional[str] = None,
+                    latest: bool = True) -> List[GeopressureProfile]:
+        """Temperature (geothermal) prognoses. Volve stores degF; ``value``
+        is the raw stored temperature (no unit conversion)."""
+        return self._profiles(
+            "temp", self._tg_groups, self._tg_rows, wellbore, phase, latest,
+            "temperature")
+
+    def geometry(self, wellbore) -> List[HoleSection]:
+        """As-run hole/casing sections (OD/ID/drift/hole size/shoe MD), by shoe MD.
+
+        Exact-duplicate rows (Volve repeats a section across design-scenario
+        hole-section groups) are collapsed. Genuinely distinct scenarios are
+        NOT yet separated -- a scenario/case selector is a follow-up.
+        """
+        self._require_geopressure()
+        wb = self._resolve_wellbore(wellbore).wellbore_id
+        seen, uniq = set(), []
+        for h in sorted(self._hole_sects.get(wb, []),
+                        key=lambda h: h.md_shoe or 0.0):
+            key = (h.sect_type_code, h.od_casing, h.id_casing, h.id_drift,
+                   h.hole_size, h.length, h.md_shoe)
+            if key in seen:
+                continue
+            seen.add(key)
+            uniq.append(h)
+        return uniq
+
+    def formations(self, wellbore) -> List[Formation]:
+        """Prognosed formation tops for a wellbore, by MD."""
+        self._require_geopressure()
+        wb = self._resolve_wellbore(wellbore).wellbore_id
+        return sorted(self._formations.get(wb, []),
+                      key=lambda f: f.md or 0.0)
+
+    def datum_set(self, well) -> List[Dict[str, str]]:
+        """The full per-rig, dated datum realisations for a well (do NOT
+        collapse to one RT -- resolve by a measurement's date/rig)."""
+        well_id = well if well in self.wells else None
+        if well_id is None:
+            for wid, w in self.wells.items():
+                if w.get("well_common_name") == well:
+                    well_id = wid
+                    break
+        return self.datums.get(well_id or well, [])
 
     def survey_headers(
         self,
@@ -741,6 +1093,8 @@ class EDMReader:
         return chain
 
 
-def open_edm(path: str, source_units: str = "feet") -> EDMReader:
+def open_edm(path: str, source_units: str = "feet",
+             with_geopressure: bool = False) -> EDMReader:
     """Convenience factory mirroring :meth:`EDMReader.open`."""
-    return EDMReader.open(path, source_units=source_units)
+    return EDMReader.open(path, source_units=source_units,
+                          with_geopressure=with_geopressure)
