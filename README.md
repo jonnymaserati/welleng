@@ -125,6 +125,26 @@ cov = survey.err.errors.cov_NEVs       # NEV covariance per station
 > curve. Companion paper:
 > [doi:10.5281/zenodo.21130979](https://doi.org/10.5281/zenodo.21130979).
 
+### New in 0.28
+
+- **WITSML reader** — a streaming **WITSML 1.4.1.1** (`1series`) reader,
+  `welleng.exchange.witsml.open_witsml`, for the industry XML drilling-data format. Point it at
+  a directory or a multi-GB `.zip` of realtime logs (it indexes by decompressing only header
+  prefixes, so it never has to read the data blocks to build its catalogue), then discover
+  channels with `find(mnemonic)`, pull them lazily with `curves()` (nulls → `NaN`, time or depth
+  index), and read tubular/BHA component tallies. Validated against the public Equinor **Volve**
+  realtime export (18,814 logs). Few good open-source WITSML parsers exist — this is one.
+- **EDM geopressure & geometry reader** — the streaming Landmark **EDM / COMPASS** export reader
+  (`welleng.exchange.edm_stream.open_edm`) grows, opt-in via `with_geopressure=True`, to surface
+  the large non-survey tables: `pore_pressure` / `frac_gradient` / `temperature` prognoses
+  (phase-filtered, **pressure canonical**), as-run hole/casing `geometry`, `formations`,
+  the per-rig dated `datum_set`, and the grade/material catalogue — each with a human-readable
+  `schema` glossary so you never decode a raw `CD_*` code.
+- **Directional Difficulty Index (DDI)** — `Survey.directional_difficulty_index()`, the
+  Oag & Williams (IADC/SPE 59196) trajectory-complexity metric.
+- **Kick tolerance without a thermal model** — a drilling kick tolerance can be computed from a
+  supplied influx density alone; temperature is now optional.
+
 ### New in 0.26
 
 - **Interior covariance, arc-faithful** — `ErrorModel.cov_nev_at(md)` evaluates the ISCWSA
