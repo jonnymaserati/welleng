@@ -208,6 +208,9 @@ from .gas_z import (
     hall_yarborough_z,
     gas_density_ppg,
     methane_properties,
+    gas_z,
+    standing_pseudo_criticals,
+    sutton_pseudo_criticals,
 )
 # Optional CoolProp real-EOS mixture backend (CO2 / CCUS). The import itself is
 # safe without CoolProp -- the dependency is only imported when fluid_z_density
@@ -277,6 +280,9 @@ __all__ = [
     "hall_yarborough_z",
     "gas_density_ppg",
     "methane_properties",
+    "gas_z",
+    "standing_pseudo_criticals",
+    "sutton_pseudo_criticals",
     "fluid_z_density",
     "fluid_presets",
     "fluid_aliases",
