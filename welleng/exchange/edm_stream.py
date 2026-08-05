@@ -618,6 +618,23 @@ class GeopressureProfile:
     tvd: np.ndarray
     value: np.ndarray
     emw: Optional[np.ndarray] = None
+    # Gradient (linear) form: some groups store a slope on the group row instead
+    # of a point list (temperature especially). When ``is_gradient_form``, the
+    # tvd/value arrays hold the shallow anchors (surface, mudline) and the
+    # geothermal below the reference is ``value_at(tvd) = reference_value +
+    # gradient * (tvd - reference_tvd)``.
+    is_gradient_form: bool = False
+    gradient: Optional[float] = None        # per source-unit length
+    reference_tvd: Optional[float] = None
+    reference_value: Optional[float] = None
+    surface_value: Optional[float] = None
+
+    def value_at(self, tvd: float) -> Optional[float]:
+        """Value at a TVD for a gradient-form profile (None if not gradient)."""
+        if not self.is_gradient_form or self.gradient is None \
+                or self.reference_tvd is None or self.reference_value is None:
+            return None
+        return self.reference_value + self.gradient * (tvd - self.reference_tvd)
 
 
 @dataclass
@@ -1263,6 +1280,12 @@ class EDMReader:
             recs = sorted(rows.get(gid, []),
                           key=lambda r: _f(r, "tvd") or 0.0)
             if not recs:
+                # No point rows: a group may instead store the LINEAR-gradient
+                # form on its own row (temperature especially -- mudline_temp +
+                # grad_tvd*(tvd - temp_tvd)). Synthesize a usable profile.
+                grad = self._gradient_form_profile(kind, gid, g, wb)
+                if grad is not None:
+                    out.append(grad)
                 continue
             out.append(GeopressureProfile(
                 kind=kind, phase=g.get("phase"), name=g.get("name", ""),
@@ -1275,6 +1298,33 @@ class EDMReader:
         # newest group first (by update_date string, ISO-ish so lexical works)
         out.sort(key=lambda p: p.update_date or "", reverse=True)
         return out[:1] if (latest and out) else out
+
+    def _gradient_form_profile(self, kind, gid, g, wb):
+        """Synthesize a profile from the LINEAR-gradient attributes on a group
+        row (no point children). Verified for temperature (``grad_tvd`` degF/ft
+        from ``temp_tvd``/``mudline_temp``); returns ``None`` for other kinds
+        (pore/frac gradient-attribute forms are not yet confirmed in Volve)."""
+        if kind != "temp":
+            return None
+        grad = _f(g, "grad_tvd")
+        ref_tvd = _f(g, "temp_tvd")
+        mudline = _f(g, "mudline_temp")
+        surface = _f(g, "surface_ambient_temp")
+        if grad is None or ref_tvd is None or mudline is None:
+            return None
+        # shallow anchors: surface (tvd 0) -> mudline (ref_tvd); gradient below
+        if surface is not None:
+            tvd = np.array([0.0, ref_tvd], dtype=float)
+            val = np.array([surface, mudline], dtype=float)
+        else:
+            tvd = np.array([ref_tvd], dtype=float)
+            val = np.array([mudline], dtype=float)
+        return GeopressureProfile(
+            kind=kind, phase=g.get("phase"), name=g.get("name", ""),
+            wellbore_id=wb, group_id=gid, update_date=g.get("update_date"),
+            tvd=tvd, value=val, is_gradient_form=True, gradient=grad,
+            reference_tvd=ref_tvd, reference_value=mudline, surface_value=surface,
+        )
 
     def pore_pressure(self, wellbore, phase: str = "ACTUAL",
                       latest: bool = True) -> List[GeopressureProfile]:
