@@ -51,10 +51,22 @@ def test_pore_pressure_all_phases_and_latest(edm):
 def test_frac_and_temperature(edm):
     fg = edm.frac_gradient("WB1", phase="ACTUAL")[0]
     assert fg.value[0] == 800 and fg.kind == "frac"
-    tg = edm.temperature("WB1")[0]
+    tg = edm.temperature("WB1", phase="PROTOTYPE")[0]
     np.testing.assert_allclose(tg.tvd, [0, 2000])
     np.testing.assert_allclose(tg.value, [40, 205])  # degF, raw
-    assert tg.emw is None
+    assert tg.emw is None and not tg.is_gradient_form
+
+
+def test_temperature_gradient_attribute_form(edm):
+    # a group with NO child rows, gradient slope on the group row (F-15B case)
+    tg = edm.temperature("WB1", phase="PLAN")[0]
+    assert tg.is_gradient_form
+    assert tg.gradient == 0.015 and tg.reference_tvd == 200
+    assert tg.reference_value == 40 and tg.surface_value == 80
+    # shallow anchors surface->mudline, and value_at extrapolates below
+    np.testing.assert_allclose(tg.tvd, [0, 200])
+    np.testing.assert_allclose(tg.value, [80, 40])
+    assert tg.value_at(1200) == pytest.approx(40 + 0.015 * (1200 - 200))
 
 
 # -- geometry (dedup across scenarios) + formations ---------------------------
