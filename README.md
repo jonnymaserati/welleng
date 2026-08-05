@@ -125,6 +125,20 @@ cov = survey.err.errors.cov_NEVs       # NEV covariance per station
 > curve. Companion paper:
 > [doi:10.5281/zenodo.21130979](https://doi.org/10.5281/zenodo.21130979).
 
+### New in 0.29
+
+- **EDM reader, expanded** — the streaming Landmark **EDM / COMPASS** reader
+  (`welleng.exchange.edm_stream.open_edm`) now surfaces the design tables, each opt-in and
+  self-documenting via `reader.schema`: **assemblies** with Landmark's stored axial/burst/collapse
+  ratings (`with_assemblies`), the **design load-case set** — load profiles + factors, per-depth
+  custom loads, named loads, external-pressure params, dogleg overrides (`with_load_cases`), **fluid
+  rheology** with Fann data, a **geometry scenario selector**, and geothermal in both point and
+  gradient-attribute forms (`with_geopressure`).
+- **Unified real-gas Z-factor** — `welleng.kick_tolerance.gas_z` switches Hall-Yarborough (gas
+  gravity) ↔ CoolProp EOS (composition), with Sutton/Standing pseudo-criticals.
+- **Thermal unit helpers** — `welleng.units` gains temperature (offset) vs temperature-delta,
+  specific heat, thermal conductivity/diffusivity, heat-transfer coefficient, and gradient helpers.
+
 ### New in 0.28
 
 - **WITSML reader** — a streaming **WITSML 1.4.1.1** (`1series`) reader,
