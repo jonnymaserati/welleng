@@ -75,6 +75,16 @@ _GEOPRESSURE_TAGS = frozenset({
 # back as truth).
 _ASSEMBLY_TAGS = frozenset({"CD_ASSEMBLY", "CD_ASSEMBLY_COMP"})
 
+# Optional (opt-in via ``with_load_cases=True``) — the design load-case set:
+# enabled load profiles + design factors (TU_LOAD_PROFILE), the per-depth load
+# a string sees (TU_CUSTOM_LOAD_PROFILE), and the named loads + type/category
+# enums (TU_LOAD_HEADER). Parameters are returned RAW -- their design semantics
+# (which is a design factor, the load-case-code taxonomy) live in the casing
+# design engine, not the reader.
+_LOAD_CASE_TAGS = frozenset({
+    "TU_LOAD_PROFILE", "TU_CUSTOM_LOAD_PROFILE", "TU_LOAD_HEADER",
+})
+
 # Human-readable schema — cryptic EDM table/field codes -> name + description.
 # Exposed via :attr:`EDMReader.schema` so accessors, docs, and any downstream
 # viewer are self-documenting rather than surfacing raw ``CD_*`` codes.
@@ -200,6 +210,37 @@ EDM_SCHEMA = {
             "hole_size": "hole size",
             "md_assembly_base": "base MD",
             "tvd_assembly_base": "base TVD",
+        },
+    },
+    "TU_LOAD_PROFILE": {
+        "name": "Load profile",
+        "description": ("An enabled design load profile + its parameters "
+                        "(design factors, load inputs). Absent value = default."),
+        "fields": {
+            "profile_name": "load-profile name (e.g. BrstGasKickProfile)",
+            "parameter_name": "parameter name (e.g. DesignPipeBurstFactor)",
+            "parameter_value_num": "numeric value (absent -> app default)",
+            "application_name": "originating app (e.g. StressCheck)",
+        },
+    },
+    "TU_CUSTOM_LOAD_PROFILE": {
+        "name": "Custom load profile",
+        "description": "Per-depth load a string sees (the SF denominator).",
+        "fields": {
+            "measured_depth": "MD",
+            "internal_pressure": "internal pressure",
+            "external_pressure": "external pressure",
+            "profile_name": "load-profile name",
+        },
+    },
+    "TU_LOAD_HEADER": {
+        "name": "Load header",
+        "description": "A named load within a case, with type/category enums.",
+        "fields": {
+            "name": "load name (e.g. L.2.Pressure test the tubing)",
+            "load_type": "load type code",
+            "load_category": "0 burst | 1 collapse | 2 axial | 3 service",
+            "sequence_no": "order within the case",
         },
     },
     "CD_ASSEMBLY_COMP": {
@@ -614,6 +655,63 @@ class AssemblyComponent:
 
 
 @dataclass
+class LoadProfile:
+    """An enabled design load profile for a case (``TU_LOAD_PROFILE``).
+
+    ``parameters`` maps each parameter name to its value -- a float
+    (``parameter_value_num``), a string (``parameter_value_txt``), or ``None``
+    when the row carries neither, meaning the **application default** applies
+    (NOT zero). Parameter semantics (design factors, load-case codes) are the
+    design engine's, not the reader's.
+    """
+
+    case_id: str
+    wellbore_id: str
+    profile_name: str
+    application: str
+    parameters: Dict[str, object] = field(default_factory=dict)
+
+
+@dataclass
+class CustomLoadPoint:
+    """One depth point of a custom load profile (``TU_CUSTOM_LOAD_PROFILE``)."""
+
+    md: Optional[float]
+    internal_pressure: Optional[float]
+    external_pressure: Optional[float]
+
+    @property
+    def differential_pressure(self) -> Optional[float]:
+        """internal - external (>0 burst, <0 collapse); ``None`` if either is."""
+        if self.internal_pressure is None or self.external_pressure is None:
+            return None
+        return self.internal_pressure - self.external_pressure
+
+
+@dataclass
+class CustomLoadProfile:
+    """A custom load profile for a (case, profile) -- the per-depth load."""
+
+    case_id: str
+    wellbore_id: str
+    profile_name: str
+    points: List[CustomLoadPoint] = field(default_factory=list)
+
+
+@dataclass
+class LoadHeader:
+    """A named load within a case (``TU_LOAD_HEADER``)."""
+
+    load_id: str
+    case_id: str
+    wellbore_id: str
+    name: str
+    load_type: Optional[int]
+    load_category: Optional[int]
+    sequence_no: Optional[int]
+
+
+@dataclass
 class Assembly:
     """A ``CD_ASSEMBLY`` row — one string, with its components."""
 
@@ -707,14 +805,17 @@ class EDMReader:
     def __init__(
         self, path: str, source_units: str = "feet",
         with_geopressure: bool = False, with_assemblies: bool = False,
+        with_load_cases: bool = False,
     ):
         self.path = path
         self.source_units = source_units.lower()
         self.with_geopressure = with_geopressure
         self.with_assemblies = with_assemblies
+        self.with_load_cases = with_load_cases
         self._wanted = _WANTED_TAGS | (
             _GEOPRESSURE_TAGS if with_geopressure else frozenset()
-        ) | (_ASSEMBLY_TAGS if with_assemblies else frozenset())
+        ) | (_ASSEMBLY_TAGS if with_assemblies else frozenset()) | (
+            _LOAD_CASE_TAGS if with_load_cases else frozenset())
 
         self.projects: Dict[str, Dict[str, str]] = {}
         self.sites: Dict[str, Dict[str, str]] = {}
@@ -742,6 +843,11 @@ class EDMReader:
         self._assemblies: Dict[str, Assembly] = {}            # by assembly_id
         self._assembly_comps: Dict[str, List[AssemblyComponent]] = {}  # by assembly_id
 
+        # load cases (populated only when with_load_cases)
+        self._load_profiles: Dict[tuple, LoadProfile] = {}    # by (case_id, profile)
+        self._custom_loads: Dict[tuple, CustomLoadProfile] = {}  # by (case_id, profile)
+        self._load_headers: List[LoadHeader] = []
+
         # station records grouped by header id (parsed floats)
         self._raw_stations: Dict[str, List[dict]] = {}
         self._def_stations: Dict[str, List[dict]] = {}
@@ -756,11 +862,13 @@ class EDMReader:
     def open(
         cls, path: str, source_units: str = "feet",
         with_geopressure: bool = False, with_assemblies: bool = False,
+        with_load_cases: bool = False,
     ) -> "EDMReader":
         """Open and index an EDM file. Alias for the constructor."""
         return cls(path, source_units=source_units,
                    with_geopressure=with_geopressure,
-                   with_assemblies=with_assemblies)
+                   with_assemblies=with_assemblies,
+                   with_load_cases=with_load_cases)
 
     def _index(self) -> None:
         for tag, a in _iter_rows(self.path, self._wanted):
@@ -898,6 +1006,50 @@ class EDMReader:
                         sequence_no=_i(a, "sequence_no"),
                         raw=a,
                     ))
+            elif tag == "TU_LOAD_PROFILE":
+                key = (a.get("case_id", ""), a.get("profile_name", ""))
+                lp = self._load_profiles.get(key)
+                if lp is None:
+                    lp = LoadProfile(
+                        case_id=a.get("case_id", ""),
+                        wellbore_id=a.get("wellbore_id", ""),
+                        profile_name=a.get("profile_name", ""),
+                        application=a.get("application_name", ""),
+                    )
+                    self._load_profiles[key] = lp
+                pname = a.get("parameter_name")
+                if pname is not None:
+                    if "parameter_value_num" in a:
+                        lp.parameters[pname] = _f(a, "parameter_value_num")
+                    elif "parameter_value_txt" in a:
+                        lp.parameters[pname] = a["parameter_value_txt"]
+                    else:
+                        lp.parameters[pname] = None  # default applies (not 0)
+            elif tag == "TU_CUSTOM_LOAD_PROFILE":
+                key = (a.get("case_id", ""), a.get("profile_name", ""))
+                cp = self._custom_loads.get(key)
+                if cp is None:
+                    cp = CustomLoadProfile(
+                        case_id=a.get("case_id", ""),
+                        wellbore_id=a.get("wellbore_id", ""),
+                        profile_name=a.get("profile_name", ""),
+                    )
+                    self._custom_loads[key] = cp
+                cp.points.append(CustomLoadPoint(
+                    md=_f(a, "measured_depth"),
+                    internal_pressure=_f(a, "internal_pressure"),
+                    external_pressure=_f(a, "external_pressure"),
+                ))
+            elif tag == "TU_LOAD_HEADER":
+                self._load_headers.append(LoadHeader(
+                    load_id=a.get("load_id", ""),
+                    case_id=a.get("case_id", ""),
+                    wellbore_id=a.get("wellbore_id", ""),
+                    name=a.get("name", ""),
+                    load_type=_i(a, "load_type"),
+                    load_category=_i(a, "load_category"),
+                    sequence_no=_i(a, "sequence_no"),
+                ))
             elif tag == "CD_SURVEY_STATION":
                 self._raw_stations.setdefault(
                     a["survey_header_id"], []
@@ -1101,6 +1253,43 @@ class EDMReader:
             asms = [a for a in asms if a.wellbore_id == wb]
         return sorted(asms, key=lambda a: a.md_base or 0.0)
 
+    def _require_load_cases(self) -> None:
+        if not self.with_load_cases:
+            raise RuntimeError(
+                "load-case tables were not indexed; open the reader with "
+                "with_load_cases=True"
+            )
+
+    def load_profiles(self, wellbore=None, application: Optional[str] = "StressCheck"
+                      ) -> List[LoadProfile]:
+        """Enabled design load profiles (design factors + load params), grouped
+        per (case, profile). ``application`` filters by app (default StressCheck;
+        ``None`` for all). Requires ``with_load_cases=True``."""
+        self._require_load_cases()
+        wb = self._resolve_wellbore(wellbore).wellbore_id if wellbore else None
+        return [lp for lp in self._load_profiles.values()
+                if (wb is None or lp.wellbore_id == wb)
+                and (application is None or lp.application == application)]
+
+    def custom_load_profiles(self, wellbore=None) -> List[CustomLoadProfile]:
+        """Per-depth custom load profiles (the load a string sees), points by MD.
+        Requires ``with_load_cases=True``."""
+        self._require_load_cases()
+        wb = self._resolve_wellbore(wellbore).wellbore_id if wellbore else None
+        out = [cp for cp in self._custom_loads.values()
+               if wb is None or cp.wellbore_id == wb]
+        for cp in out:
+            cp.points.sort(key=lambda p: p.md or 0.0)
+        return out
+
+    def load_headers(self, wellbore=None) -> List[LoadHeader]:
+        """Named loads per case, sequence-ordered. Requires
+        ``with_load_cases=True``."""
+        self._require_load_cases()
+        wb = self._resolve_wellbore(wellbore).wellbore_id if wellbore else None
+        hs = [h for h in self._load_headers if wb is None or h.wellbore_id == wb]
+        return sorted(hs, key=lambda h: (h.case_id, h.sequence_no or 0))
+
     def datum_set(self, well) -> List[Dict[str, str]]:
         """The full per-rig, dated datum realisations for a well (do NOT
         collapse to one RT -- resolve by a measurement's date/rig)."""
@@ -1293,8 +1482,10 @@ class EDMReader:
 
 def open_edm(path: str, source_units: str = "feet",
              with_geopressure: bool = False,
-             with_assemblies: bool = False) -> EDMReader:
+             with_assemblies: bool = False,
+             with_load_cases: bool = False) -> EDMReader:
     """Convenience factory mirroring :meth:`EDMReader.open`."""
     return EDMReader.open(path, source_units=source_units,
                           with_geopressure=with_geopressure,
-                          with_assemblies=with_assemblies)
+                          with_assemblies=with_assemblies,
+                          with_load_cases=with_load_cases)

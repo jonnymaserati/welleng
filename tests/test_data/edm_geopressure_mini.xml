@@ -26,6 +26,15 @@
   <CD_CASE well_id="W1" wellbore_id="WB1" case_id="CS1" phase="ACTUAL" scenario_id="S1" hole_sect_group_id="HG1" case_name="As-run"/>
   <CD_CASE well_id="W1" wellbore_id="WB1" case_id="CS2" phase="PLAN" scenario_id="S2" hole_sect_group_id="HG2" case_name="Plan"/>
 
+  <!-- load-case set: one StressCheck profile with a valued + a defaulted param -->
+  <TU_LOAD_PROFILE well_id="W1" wellbore_id="WB1" case_id="CS1" application_name="StressCheck" load_profile_id="LP1" profile_name="BrstGasKickProfile" parameter_name="DesignPipeBurstFactor" parameter_value_num="1.1" measure_id="0"/>
+  <TU_LOAD_PROFILE well_id="W1" wellbore_id="WB1" case_id="CS1" application_name="StressCheck" load_profile_id="LP1" profile_name="BrstGasKickProfile" parameter_name="CMN_GasGravity"/>
+  <TU_LOAD_PROFILE well_id="W1" wellbore_id="WB1" case_id="CS1" application_name="WELLPLAN" load_profile_id="LP2" profile_name="OtherApp" parameter_name="X" parameter_value_num="9"/>
+  <TU_CUSTOM_LOAD_PROFILE well_id="W1" wellbore_id="WB1" application_name="StressCheck" case_id="CS1" profile_name="AFE load" profile_id="CP1" measured_depth="2000" internal_pressure="5000" external_pressure="3000" load_id="L1"/>
+  <TU_CUSTOM_LOAD_PROFILE well_id="W1" wellbore_id="WB1" application_name="StressCheck" case_id="CS1" profile_name="AFE load" profile_id="CP1" measured_depth="1000" internal_pressure="2000" external_pressure="3000" load_id="L1"/>
+  <TU_LOAD_HEADER well_id="W1" wellbore_id="WB1" case_id="CS1" load_id="L1" name="L.3.Gas kick" load_type="3" sequence_no="2" load_category="0"/>
+  <TU_LOAD_HEADER well_id="W1" wellbore_id="WB1" case_id="CS1" load_id="L2" name="L.1.Pressure test" load_type="7" sequence_no="1" load_category="0"/>
+
   <CD_WELLBORE_FORMATION well_id="W1" wellbore_id="WB1" wellbore_formation_id="F1" phase="PROTOTYPE" formation_name="Hugin_Fm_Top" prognosed_md="1800" prognosed_tvd="1750"/>
   <CD_WELLBORE_FORMATION well_id="W1" wellbore_id="WB1" wellbore_formation_id="F2" phase="PROTOTYPE" formation_name="Hod_Fm_Top" prognosed_md="900" prognosed_tvd="880"/>
 
