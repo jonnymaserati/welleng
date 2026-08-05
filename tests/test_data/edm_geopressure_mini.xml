@@ -18,6 +18,8 @@
   <CD_TEMP_GRADIENT_GROUP well_id="W1" wellbore_id="WB1" temp_gradient_group_id="TGG1" phase="PROTOTYPE" name="Geothermal" update_date="{ts '2012-06-13 15:52:39'}"/>
   <CD_TEMP_GRADIENT well_id="W1" wellbore_id="WB1" temp_gradient_group_id="TGG1" tvd="0" temperature="40" sequence_no="1"/>
   <CD_TEMP_GRADIENT well_id="W1" wellbore_id="WB1" temp_gradient_group_id="TGG1" tvd="2000" temperature="205" sequence_no="2"/>
+  <!-- gradient-attribute form: NO child rows; slope on the group -->
+  <CD_TEMP_GRADIENT_GROUP well_id="W1" wellbore_id="WB1" temp_gradient_group_id="TGG2" phase="PLAN" name="Geothermal grad" temp_or_grad_ind="1" surface_ambient_temp="80" mudline_temp="40" temp_tvd="200" grad_tvd="0.015"/>
 
   <CD_HOLE_SECT well_id="W1" wellbore_id="WB1" hole_sect_group_id="HG1" hole_sect_id="H1" sect_type_code="CAS" od_casing="20.0" id_casing="18.73" id_drift="18.543" hole_size="26.0" length="500" md_shoe="500" catalog_key_desc="20 in surface"/>
   <CD_HOLE_SECT well_id="W1" wellbore_id="WB1" hole_sect_group_id="HG2" hole_sect_id="H1b" sect_type_code="CAS" od_casing="20.0" id_casing="18.73" id_drift="18.543" hole_size="26.0" length="500" md_shoe="500" catalog_key_desc="20 in surface"/>
