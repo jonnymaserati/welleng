@@ -23,6 +23,9 @@
   <CD_HOLE_SECT well_id="W1" wellbore_id="WB1" hole_sect_group_id="HG2" hole_sect_id="H1b" sect_type_code="CAS" od_casing="20.0" id_casing="18.73" id_drift="18.543" hole_size="26.0" length="500" md_shoe="500" catalog_key_desc="20 in surface"/>
   <CD_HOLE_SECT well_id="W1" wellbore_id="WB1" hole_sect_group_id="HG1" hole_sect_id="H2" sect_type_code="OPEN" od_casing="" id_casing="" id_drift="" hole_size="12.25" length="1500" md_shoe="2000" catalog_key_desc="12 1/4 open"/>
 
+  <CD_CASE well_id="W1" wellbore_id="WB1" case_id="CS1" phase="ACTUAL" scenario_id="S1" hole_sect_group_id="HG1" case_name="As-run"/>
+  <CD_CASE well_id="W1" wellbore_id="WB1" case_id="CS2" phase="PLAN" scenario_id="S2" hole_sect_group_id="HG2" case_name="Plan"/>
+
   <CD_WELLBORE_FORMATION well_id="W1" wellbore_id="WB1" wellbore_formation_id="F1" phase="PROTOTYPE" formation_name="Hugin_Fm_Top" prognosed_md="1800" prognosed_tvd="1750"/>
   <CD_WELLBORE_FORMATION well_id="W1" wellbore_id="WB1" wellbore_formation_id="F2" phase="PROTOTYPE" formation_name="Hod_Fm_Top" prognosed_md="900" prognosed_tvd="880"/>
 

@@ -64,7 +64,7 @@ _GEOPRESSURE_TAGS = frozenset({
     "CD_PORE_PRESSURE", "CD_PORE_PRESSURE_GROUP",
     "CD_FRAC_GRADIENT", "CD_FRAC_GRADIENT_GROUP",
     "CD_TEMP_GRADIENT", "CD_TEMP_GRADIENT_GROUP",
-    "CD_HOLE_SECT", "CD_WELLBORE_FORMATION",
+    "CD_HOLE_SECT", "CD_CASE", "CD_WELLBORE_FORMATION",
     "CD_GRADE", "CD_MATERIAL",
 })
 
@@ -147,6 +147,17 @@ EDM_SCHEMA = {
             "length": "section length",
             "md_shoe": "shoe MD",
             "catalog_key_desc": "catalogue description",
+        },
+    },
+    "CD_CASE": {
+        "name": "Case",
+        "description": ("A design case/scenario; links a hole-section group "
+                        "to a named case + phase."),
+        "fields": {
+            "case_name": "case name",
+            "phase": "PLAN | ACTUAL | PROTOTYPE",
+            "scenario_id": "scenario",
+            "hole_sect_group_id": "hole-section group (geometry scenario)",
         },
     },
     "CD_WELLBORE_FORMATION": {
@@ -545,8 +556,24 @@ class HoleSection:
     hole_size: Optional[float]
     length: Optional[float]
     md_shoe: Optional[float]
+    group_id: str = ""              # hole_sect_group_id (the design scenario)
     description: str = ""           # catalog_key_desc
     raw: Dict[str, str] = field(default_factory=dict, repr=False)
+
+
+@dataclass
+class HoleSectionGroup:
+    """A design scenario for a wellbore's geometry (``hole_sect_group_id``).
+
+    Links (via ``CD_CASE``) to the case(s) that reference the group, so a caller
+    can pick a scenario by name/phase instead of an opaque id.
+    """
+
+    group_id: str
+    wellbore_id: str
+    case_names: List[str]
+    phases: List[str]
+    n_sections: int
 
 
 @dataclass
@@ -706,6 +733,7 @@ class EDMReader:
         self._fg_rows: Dict[str, List[Dict[str, str]]] = {}
         self._tg_rows: Dict[str, List[Dict[str, str]]] = {}
         self._hole_sects: Dict[str, List[HoleSection]] = {}   # by wellbore_id
+        self._cases: Dict[str, List[Dict[str, str]]] = {}     # by hole_sect_group_id
         self._formations: Dict[str, List[Formation]] = {}     # by wellbore_id
         self.grades: Dict[str, Dict[str, str]] = {}           # by grade_id
         self.materials: Dict[str, Dict[str, str]] = {}        # by material_id
@@ -821,9 +849,14 @@ class EDMReader:
                         hole_size=_f(a, "hole_size"),
                         length=_f(a, "length"),
                         md_shoe=_f(a, "md_shoe"),
+                        group_id=a.get("hole_sect_group_id", ""),
                         description=a.get("catalog_key_desc", ""),
                         raw=a,
                     ))
+            elif tag == "CD_CASE":
+                hsg = a.get("hole_sect_group_id")
+                if hsg:
+                    self._cases.setdefault(hsg, []).append(a)
             elif tag == "CD_WELLBORE_FORMATION":
                 self._formations.setdefault(
                     a.get("wellbore_id", ""), []).append(Formation(
@@ -992,18 +1025,25 @@ class EDMReader:
             "temp", self._tg_groups, self._tg_rows, wellbore, phase, latest,
             "temperature")
 
-    def geometry(self, wellbore) -> List[HoleSection]:
+    def geometry(self, wellbore, group_id: Optional[str] = None
+                 ) -> List[HoleSection]:
         """As-run hole/casing sections (OD/ID/drift/hole size/shoe MD), by shoe MD.
 
-        Exact-duplicate rows (Volve repeats a section across design-scenario
-        hole-section groups) are collapsed. Genuinely distinct scenarios are
-        NOT yet separated -- a scenario/case selector is a follow-up.
+        ``group_id`` selects one design scenario (a ``hole_sect_group_id`` from
+        :meth:`hole_section_groups`) -- returned as-is, no dedup. With no
+        ``group_id`` the sections are pooled across scenarios and
+        exact-duplicate rows collapsed (a convenience view; use a group for a
+        single coherent string).
         """
         self._require_geopressure()
         wb = self._resolve_wellbore(wellbore).wellbore_id
+        secs = sorted((h for h in self._hole_sects.get(wb, [])
+                       if group_id is None or h.group_id == group_id),
+                      key=lambda h: h.md_shoe or 0.0)
+        if group_id is not None:
+            return secs
         seen, uniq = set(), []
-        for h in sorted(self._hole_sects.get(wb, []),
-                        key=lambda h: h.md_shoe or 0.0):
+        for h in secs:
             key = (h.sect_type_code, h.od_casing, h.id_casing, h.id_drift,
                    h.hole_size, h.length, h.md_shoe)
             if key in seen:
@@ -1011,6 +1051,29 @@ class EDMReader:
             seen.add(key)
             uniq.append(h)
         return uniq
+
+    def hole_section_groups(self, wellbore) -> List[HoleSectionGroup]:
+        """The geometry design scenarios for a wellbore.
+
+        Each is a ``hole_sect_group_id`` with the case name(s)/phase(s) that
+        reference it (via ``CD_CASE``) and its section count -- so a caller can
+        pick a scenario for :meth:`geometry` by name/phase, not an opaque id.
+        """
+        self._require_geopressure()
+        wb = self._resolve_wellbore(wellbore).wellbore_id
+        counts: Dict[str, int] = {}
+        for h in self._hole_sects.get(wb, []):
+            counts[h.group_id] = counts.get(h.group_id, 0) + 1
+        out = []
+        for gid, n in counts.items():
+            cases = self._cases.get(gid, [])
+            out.append(HoleSectionGroup(
+                group_id=gid, wellbore_id=wb,
+                case_names=[c.get("case_name", "") for c in cases],
+                phases=sorted({c.get("phase", "") for c in cases if c.get("phase")}),
+                n_sections=n,
+            ))
+        return sorted(out, key=lambda g: -g.n_sections)
 
     def formations(self, wellbore) -> List[Formation]:
         """Prognosed formation tops for a wellbore, by MD."""

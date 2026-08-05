@@ -68,6 +68,23 @@ def test_geometry_dedups_and_sorts(edm):
     assert geo[1].od_casing is None  # empty numeric -> None
 
 
+def test_geometry_scenario_groups_and_selection(edm):
+    groups = edm.hole_section_groups("WB1")
+    by_id = {g.group_id: g for g in groups}
+    assert set(by_id) == {"HG1", "HG2"}
+    # HG1 (2 sections) linked to the ACTUAL "As-run" case; HG2 to PLAN "Plan"
+    assert by_id["HG1"].n_sections == 2
+    assert by_id["HG1"].case_names == ["As-run"] and by_id["HG1"].phases == ["ACTUAL"]
+    assert by_id["HG2"].phases == ["PLAN"]
+    # selecting a group returns that scenario's sections only, NOT deduped
+    g1 = edm.geometry("WB1", group_id="HG1")
+    assert {h.sect_type_code for h in g1} == {"CAS", "OPEN"} and len(g1) == 2
+    g2 = edm.geometry("WB1", group_id="HG2")
+    assert len(g2) == 1 and g2[0].sect_type_code == "CAS"  # the duplicate 20in
+    # pooled (no group) still collapses the cross-scenario duplicate
+    assert len(edm.geometry("WB1")) == 2
+
+
 def test_formations_by_md(edm):
     fms = edm.formations("WB1")
     assert [f.name for f in fms] == ["Hod_Fm_Top", "Hugin_Fm_Top"]  # by MD
