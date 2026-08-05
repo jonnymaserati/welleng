@@ -66,6 +66,7 @@ _GEOPRESSURE_TAGS = frozenset({
     "CD_TEMP_GRADIENT", "CD_TEMP_GRADIENT_GROUP",
     "CD_HOLE_SECT", "CD_CASE", "CD_WELLBORE_FORMATION",
     "CD_GRADE", "CD_MATERIAL",
+    "WP_FLUID_TEMP", "WP_FLUID_TEMP_FANN_DATA",
 })
 
 # Optional (opt-in via ``with_assemblies=True``) — the string catalogue:
@@ -83,6 +84,7 @@ _ASSEMBLY_TAGS = frozenset({"CD_ASSEMBLY", "CD_ASSEMBLY_COMP"})
 # design engine, not the reader.
 _LOAD_CASE_TAGS = frozenset({
     "TU_LOAD_PROFILE", "TU_CUSTOM_LOAD_PROFILE", "TU_LOAD_HEADER",
+    "TU_EPP_PARAMETERS", "TU_DLS_OVERRIDE",
 })
 
 # Human-readable schema — cryptic EDM table/field codes -> name + description.
@@ -241,6 +243,39 @@ EDM_SCHEMA = {
             "load_type": "load type code",
             "load_category": "0 burst | 1 collapse | 2 axial | 3 service",
             "sequence_no": "order within the case",
+        },
+    },
+    "TU_EPP_PARAMETERS": {
+        "name": "External-pressure params",
+        "description": "Per-LOAD external-pressure profile parameters.",
+        "fields": {
+            "load_id": "the load these belong to (per-load, not per-case)",
+            "name": "parameter name",
+            "value_num": "numeric value",
+        },
+    },
+    "TU_DLS_OVERRIDE": {
+        "name": "Dogleg override",
+        "description": ("An interval overriding the survey dogleg severity "
+                        "(md_top may be below md_base -- use span)."),
+        "fields": {
+            "md_top": "interval top MD (not guaranteed shallower)",
+            "md_base": "interval base MD",
+            "dogleg_severity": "override DLS",
+            "scenario_id": "scenario",
+        },
+    },
+    "WP_FLUID_TEMP": {
+        "name": "Fluid rheology",
+        "description": "Temperature/pressure-resolved drilling-fluid rheology.",
+        "fields": {
+            "temperature": "temperature",
+            "pressure": "pressure",
+            "density": "density",
+            "plastic_viscosity": "plastic viscosity",
+            "yield_point": "yield point",
+            "n_prime_parameter": "power-law n'",
+            "k_prime_parameter": "power-law K'",
         },
     },
     "CD_ASSEMBLY_COMP": {
@@ -712,6 +747,53 @@ class LoadHeader:
 
 
 @dataclass
+class DlsOverride:
+    """A ``TU_DLS_OVERRIDE`` interval overriding the survey dogleg severity.
+
+    ``md_top`` is NOT guaranteed shallower than ``md_base`` (inverted intervals
+    occur) -- use :attr:`span` for an ordered (top, base) pair.
+    """
+
+    wellbore_id: str
+    md_top: Optional[float]
+    md_base: Optional[float]
+    dogleg_severity: Optional[float]
+    scenario_id: str = ""
+    group_id: str = ""              # dls_override_group_id
+
+    @property
+    def span(self) -> tuple:
+        """Ordered ``(top, base)`` MD, robust to inverted intervals."""
+        a, b = self.md_top, self.md_base
+        if a is None or b is None:
+            return (a, b)
+        return (min(a, b), max(a, b))
+
+
+@dataclass
+class FluidRheologyPoint:
+    """A ``WP_FLUID_TEMP`` row — fluid rheology at one (temperature, pressure).
+
+    ``fann`` is the joined raw Fann-viscometer data (rpm, deflection) from
+    ``WP_FLUID_TEMP_FANN_DATA``. Rows without rheology numbers are skipped by
+    :meth:`EDMReader.fluid_rheology` (an incomplete catalogue row is not a
+    fluid definition).
+    """
+
+    fluid_id: str
+    temp_id: str
+    temperature: Optional[float]
+    pressure: Optional[float]
+    density: Optional[float]
+    plastic_viscosity: Optional[float]
+    yield_point: Optional[float]
+    n_prime: Optional[float]
+    k_prime: Optional[float]
+    fann: List[tuple] = field(default_factory=list)   # (rpm, deflection)
+    raw: Dict[str, str] = field(default_factory=dict, repr=False)
+
+
+@dataclass
 class Assembly:
     """A ``CD_ASSEMBLY`` row — one string, with its components."""
 
@@ -847,6 +929,13 @@ class EDMReader:
         self._load_profiles: Dict[tuple, LoadProfile] = {}    # by (case_id, profile)
         self._custom_loads: Dict[tuple, CustomLoadProfile] = {}  # by (case_id, profile)
         self._load_headers: List[LoadHeader] = []
+        self._epp: Dict[str, Dict[str, object]] = {}          # load_id -> {name: value}
+        self._epp_wb: Dict[str, str] = {}                     # load_id -> wellbore_id
+        self._dls_overrides: Dict[str, List[DlsOverride]] = {}  # by wellbore_id
+
+        # fluid rheology (populated only when with_geopressure)
+        self._fluid_temp: Dict[tuple, FluidRheologyPoint] = {}  # by (fluid_id, temp_id)
+        self._fann: Dict[tuple, List[tuple]] = {}             # by (fluid_id, temp_id)
 
         # station records grouped by header id (parsed floats)
         self._raw_stations: Dict[str, List[dict]] = {}
@@ -1050,6 +1139,42 @@ class EDMReader:
                     load_category=_i(a, "load_category"),
                     sequence_no=_i(a, "sequence_no"),
                 ))
+            elif tag == "TU_EPP_PARAMETERS":
+                lid = a.get("load_id", "")
+                pname = a.get("name")
+                if pname is not None:
+                    val = (_f(a, "value_num") if "value_num" in a
+                           else a.get("value_txt"))
+                    self._epp.setdefault(lid, {})[pname] = val
+                    self._epp_wb[lid] = a.get("wellbore_id", "")
+            elif tag == "TU_DLS_OVERRIDE":
+                self._dls_overrides.setdefault(
+                    a.get("wellbore_id", ""), []).append(DlsOverride(
+                        wellbore_id=a.get("wellbore_id", ""),
+                        md_top=_f(a, "md_top"),
+                        md_base=_f(a, "md_base"),
+                        dogleg_severity=_f(a, "dogleg_severity"),
+                        scenario_id=a.get("scenario_id", ""),
+                        group_id=a.get("dls_override_group_id", ""),
+                    ))
+            elif tag == "WP_FLUID_TEMP":
+                key = (a.get("fluid_id", ""), a.get("temp_id", ""))
+                self._fluid_temp[key] = FluidRheologyPoint(
+                    fluid_id=a.get("fluid_id", ""),
+                    temp_id=a.get("temp_id", ""),
+                    temperature=_f(a, "temperature"),
+                    pressure=_f(a, "pressure"),
+                    density=_f(a, "density"),
+                    plastic_viscosity=_f(a, "plastic_viscosity"),
+                    yield_point=_f(a, "yield_point"),
+                    n_prime=_f(a, "n_prime_parameter"),
+                    k_prime=_f(a, "k_prime_parameter"),
+                    raw=a,
+                )
+            elif tag == "WP_FLUID_TEMP_FANN_DATA":
+                key = (a.get("fluid_id", ""), a.get("temp_id", ""))
+                self._fann.setdefault(key, []).append(
+                    (_f(a, "rpm"), _f(a, "deflection")))
             elif tag == "CD_SURVEY_STATION":
                 self._raw_stations.setdefault(
                     a["survey_header_id"], []
@@ -1289,6 +1414,45 @@ class EDMReader:
         wb = self._resolve_wellbore(wellbore).wellbore_id if wellbore else None
         hs = [h for h in self._load_headers if wb is None or h.wellbore_id == wb]
         return sorted(hs, key=lambda h: (h.case_id, h.sequence_no or 0))
+
+    def epp_parameters(self, wellbore=None) -> Dict[str, Dict[str, object]]:
+        """External-pressure-profile parameters, keyed by ``load_id`` ->
+        ``{name: value}``. These are PER-LOAD (each load carries its own set;
+        values genuinely differ across loads of a case). Requires
+        ``with_load_cases=True``."""
+        self._require_load_cases()
+        if wellbore is None:
+            return self._epp
+        wb = self._resolve_wellbore(wellbore).wellbore_id
+        return {lid: v for lid, v in self._epp.items()
+                if self._epp_wb.get(lid) == wb}
+
+    def dls_overrides(self, wellbore) -> List[DlsOverride]:
+        """Dogleg-severity override intervals for a wellbore (empty if none --
+        which means the survey DLS governs). Requires ``with_load_cases=True``."""
+        self._require_load_cases()
+        wb = self._resolve_wellbore(wellbore).wellbore_id
+        return sorted(self._dls_overrides.get(wb, []),
+                      key=lambda d: d.span[0] or 0.0)
+
+    def fluid_rheology(self, fluid_id: Optional[str] = None
+                       ) -> List[FluidRheologyPoint]:
+        """Fluid rheology points (with joined Fann data), by temperature.
+
+        Rows carrying no rheology numbers are skipped (an incomplete catalogue
+        row is not a fluid definition). ``fluid_id`` filters to one fluid.
+        Requires ``with_geopressure=True``."""
+        self._require_geopressure()
+        out = []
+        for key, pt in self._fluid_temp.items():
+            if fluid_id is not None and pt.fluid_id != fluid_id:
+                continue
+            if all(v is None for v in (pt.plastic_viscosity, pt.yield_point,
+                                       pt.n_prime, pt.k_prime)):
+                continue  # no rheology -> not a definition
+            pt.fann = self._fann.get(key, [])
+            out.append(pt)
+        return sorted(out, key=lambda p: (p.fluid_id, p.temperature or 0.0))
 
     def datum_set(self, well) -> List[Dict[str, str]]:
         """The full per-rig, dated datum realisations for a well (do NOT
