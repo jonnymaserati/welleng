@@ -35,6 +35,20 @@
   <TU_LOAD_HEADER well_id="W1" wellbore_id="WB1" case_id="CS1" load_id="L1" name="L.3.Gas kick" load_type="3" sequence_no="2" load_category="0"/>
   <TU_LOAD_HEADER well_id="W1" wellbore_id="WB1" case_id="CS1" load_id="L2" name="L.1.Pressure test" load_type="7" sequence_no="1" load_category="0"/>
 
+  <!-- per-load external-pressure params: L1 and L2 differ -->
+  <TU_EPP_PARAMETERS well_id="W1" wellbore_id="WB1" case_id="CS1" load_id="L1" parameter_id="E1" name="EXT_PROF_FluidGradientBelowTOC" value_num="8.33" measure_id="0"/>
+  <TU_EPP_PARAMETERS well_id="W1" wellbore_id="WB1" case_id="CS1" load_id="L2" parameter_id="E2" name="EXT_PROF_FluidGradientBelowTOC" value_num="10.85" measure_id="0"/>
+
+  <!-- DLS overrides: one normal, one INVERTED (md_top below md_base) -->
+  <TU_DLS_OVERRIDE well_id="W1" wellbore_id="WB1" md_top="500" md_base="1500" dogleg_severity="2.5" scenario_id="S1" dls_override_group_id="DG1"/>
+  <TU_DLS_OVERRIDE well_id="W1" wellbore_id="WB1" md_top="3000" md_base="2000" dogleg_severity="4.0" scenario_id="S1" dls_override_group_id="DG1"/>
+
+  <!-- fluid rheology: F1 has rheology (+ Fann); F1/T2 has none -> skipped -->
+  <WP_FLUID_TEMP well_id="W1" wellbore_id="WB1" fluid_id="F1" temp_id="T1" temperature="122" pressure="14.7" density="11.27" plastic_viscosity="16.5" yield_point="9.6" n_prime_parameter="0.7" k_prime_parameter="0.5"/>
+  <WP_FLUID_TEMP well_id="W1" wellbore_id="WB1" fluid_id="F1" temp_id="T2" temperature="200"/>
+  <WP_FLUID_TEMP_FANN_DATA well_id="W1" wellbore_id="WB1" fluid_id="F1" temp_id="T1" fann_data_id="D1" rpm="600" deflection="42.6"/>
+  <WP_FLUID_TEMP_FANN_DATA well_id="W1" wellbore_id="WB1" fluid_id="F1" temp_id="T1" fann_data_id="D2" rpm="300" deflection="26.1"/>
+
   <CD_WELLBORE_FORMATION well_id="W1" wellbore_id="WB1" wellbore_formation_id="F1" phase="PROTOTYPE" formation_name="Hugin_Fm_Top" prognosed_md="1800" prognosed_tvd="1750"/>
   <CD_WELLBORE_FORMATION well_id="W1" wellbore_id="WB1" wellbore_formation_id="F2" phase="PROTOTYPE" formation_name="Hod_Fm_Top" prognosed_md="900" prognosed_tvd="880"/>
 
