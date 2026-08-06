@@ -165,6 +165,66 @@ class MinCurve:
             np.column_stack((self.delta_x, self.delta_y, self.delta_z)), axis=0
         )
 
+    def interpolate(self, md):
+        """Minimum-curvature position at arbitrary measured depth(s).
+
+        Interpolates along the min-curve ARC between the bracketing stations
+        (SLERP of the unit tangent by the partial dogleg, then one min-curve
+        segment) -- **never a straight chord**. This is the light MD->TVD (and
+        n/e) path for shoes / formation tops etc.: no ``Survey``, no covariance,
+        unit-agnostic (the result's length unit follows ``md``).
+
+        Parameters
+        ----------
+        md : float or array_like
+            Measured depth(s) to interpolate at.
+
+        Returns
+        -------
+        numpy.ndarray
+            LOCAL ``(East, North, TVD)`` position relative to station 0 (same
+            column order as :attr:`poss`) -- shape ``(3,)`` for scalar ``md``
+            else ``(n, 3)``. The caller adds any datum/start offset (MinCurve
+            holds no datum). ``md`` outside the survey range yields ``nan``.
+
+        Notes
+        -----
+        NEVER linear-interpolate a trajectory. Matches
+        :meth:`welleng.survey.Survey.interpolate_md` to machine precision.
+        """
+        scalar = np.ndim(md) == 0
+        q = np.atleast_1d(np.asarray(md, dtype=float))
+        mds = np.asarray(self.md, dtype=float)
+        inc = np.asarray(self.inc, dtype=float)
+        azi = np.asarray(self.azi, dtype=float)
+        in_range = (q >= mds[0]) & (q <= mds[-1])
+        idx = np.clip(np.searchsorted(mds, q, side="left") - 1, 0, len(mds) - 2)
+        x = q - mds[idx]
+        DL = self.dogleg[idx + 1]
+        dmd = self.delta_md[idx + 1]
+        straight = DL < 1e-14
+        inc_i = np.where(straight, inc[idx], 0.0)
+        azi_i = np.where(straight, azi[idx], 0.0)
+        m = ~straight
+        if m.any():
+            t1 = get_vec(inc[idx][m], azi[idx][m], deg=False).reshape(-1, 3)
+            t2 = get_vec(inc[idx + 1][m], azi[idx + 1][m], deg=False).reshape(-1, 3)
+            dl = x[m] * DL[m] / dmd[m]
+            s = np.sin(DL[m])
+            t = ((np.sin(DL[m] - dl) / s)[:, None] * t1
+                 + (np.sin(dl) / s)[:, None] * t2)
+            ang = get_angles(t)
+            inc_i[m] = ang[:, 0]
+            azi_i[m] = ang[:, 1]
+        rf = get_rf(np.where(straight, 0.0, x * DL / dmd))
+        deltas = min_curve_step(x, inc[idx], azi[idx], inc_i, azi_i, rf)
+        pos = self.poss[idx].astype(float).copy()
+        pos[:, 0] += deltas[:, 1]   # x
+        pos[:, 1] += deltas[:, 0]   # y
+        pos[:, 2] += deltas[:, 2]   # z (TVD)
+        pos[~in_range] = np.nan
+        return pos[0] if scalar else pos
+
 
 def get_vec(inc, azi, nev=False, r=1, deg=True):
     """
