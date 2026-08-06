@@ -594,6 +594,7 @@ class WellboreSurvey:
         header = WeSurveyHeader(
             name=self.header.name or self.header.header_id,
             azi_reference=azi_reference,
+            depth_unit=units,   # match the Survey's unit -- else its assert fires
         )
         return Survey(
             md=md,
