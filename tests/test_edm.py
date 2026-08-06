@@ -214,6 +214,20 @@ def test_to_welleng_feet_to_meters(reader):
     assert len(sv.md) == 3
 
 
+def test_to_welleng_feet_to_feet_no_assert(reader):
+    # regression: to_welleng(units="feet") on a feet source used to raise
+    # "inconsistent units with header" -- the built SurveyHeader didn't set
+    # depth_unit=units, so Survey's assert (unit == header.depth_unit) fired.
+    s = reader.survey("T-1 ST1", kind="definitive", phase="ACTUAL")
+    sv = s.to_welleng(units="feet")   # must NOT raise
+    assert sv.unit == "feet" and sv.header.depth_unit == "feet"
+    # feet source -> feet target: depths unchanged (no conversion)
+    assert np.isclose(sv.md[-1], 190.0) and np.isclose(sv.md[0], 50.0)
+    # and it round-trips through interpolate_md (a Node, not None)
+    node = sv.interpolate_md(float(sv.md[1]))
+    assert node is not None and np.isclose(node.md, sv.md[1])
+
+
 def test_to_welleng_covariance_reordered_and_scaled(reader):
     s = reader.survey("T-1 ST1", kind="definitive", phase="ACTUAL")
     sv = s.to_welleng(units="meters")
