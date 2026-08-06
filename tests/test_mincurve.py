@@ -182,3 +182,36 @@ def test_interpolate_scalar_array_and_out_of_range():
     assert np.isnan(mc.interpolate(md[-1] + 500.0)).all()  # beyond end -> nan
     # exact at a station == that station's cumulative position
     np.testing.assert_allclose(mc.interpolate(md[2]), mc.poss[2], atol=1e-9)
+
+
+# --- tvd_extrema (local-minima checking) + angles return ---------------------
+def test_tvd_extrema_finds_interior_turning_point():
+    # builds through horizontal (85 -> 95 deg) -> TVD peaks INSIDE the interval
+    md = np.array([0., 1000., 1100., 1300.])
+    mc = MinCurve(md, np.radians([0, 85, 95, 95.]), np.radians([0, 0, 0, 0.]))
+    ex = mc.tvd_extrema()
+    assert len(ex["md"]) == 1
+    assert ex["kind"][0] == "max" and ex["index"][0] == 1
+    assert 1000.0 < ex["md"][0] < 1100.0
+    # the interior extremum is DEEPER than either bracketing station (missed by them)
+    tvd_st = mc.poss[:, 2]
+    assert ex["tvd"][0] > tvd_st[1] and ex["tvd"][0] > tvd_st[2]
+    # inc at the extremum is 90 deg (vertical tangent)
+    _, inc_star, _ = mc.interpolate(float(ex["md"][0]), angles=True)
+    np.testing.assert_allclose(np.degrees(inc_star), 90.0, atol=1e-6)
+
+
+def test_tvd_extrema_empty_when_monotonic():
+    mc = MinCurve(np.array([0., 500., 1000.]),
+                  np.radians([0, 30, 60.]), np.radians([0, 0, 0.]))
+    assert len(mc.tvd_extrema()["md"]) == 0
+
+
+def test_interpolate_angles_return():
+    md, inc, azi = _curved()
+    mc = MinCurve(md, inc, azi)
+    pos, i, a = mc.interpolate(455.0, angles=True)
+    assert pos.shape == (3,) and np.isfinite(i) and np.isfinite(a)
+    # array form
+    p, ii, aa = mc.interpolate([150.0, 780.5], angles=True)
+    assert p.shape == (2, 3) and ii.shape == (2,) and aa.shape == (2,)
