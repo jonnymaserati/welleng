@@ -138,3 +138,47 @@ def test_survey_dls_matches_mincurve():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# --- interpolate (exact min-curve MD->TVD, no Survey) ------------------------
+def _curved():
+    # a build-and-turn survey with real doglegs
+    md = np.array([0.0, 300.0, 600.0, 1000.0, 1600.0, 2200.0])
+    inc = np.radians([0.0, 0.0, 30.0, 60.0, 90.0, 90.0])
+    azi = np.radians([0.0, 0.0, 20.0, 45.0, 90.0, 135.0])
+    return md, inc, azi
+
+
+def test_interpolate_matches_survey_interpolate_md():
+    md, inc, azi = _curved()
+    mc = MinCurve(md, inc, azi)
+    sv = Survey(md=md, inc=inc, azi=azi, deg=False)  # Survey start at origin
+    # off-station query mds spanning several intervals
+    qs = np.array([150.0, 455.0, 780.5, 1333.3, 1900.0])
+    got = mc.interpolate(qs)  # LOCAL [East, North, TVD]; pos_nev is [N, E, V]
+    for q, g in zip(qs, got):
+        node = sv.interpolate_md(float(q))
+        np.testing.assert_allclose(g[0], node.pos_nev[1], atol=1e-8)  # East
+        np.testing.assert_allclose(g[1], node.pos_nev[0], atol=1e-8)  # North
+        np.testing.assert_allclose(g[2], node.pos_nev[2], atol=1e-8)  # TVD
+
+
+def test_interpolate_is_the_arc_not_a_chord():
+    md, inc, azi = _curved()
+    mc = MinCurve(md, inc, azi)
+    # station tvds for a linear reference
+    tvd_st = mc.poss[:, 2]
+    q = 780.5  # mid a dogleg interval
+    arc = mc.interpolate(q)[2]
+    chord = np.interp(q, md, tvd_st)
+    assert abs(arc - chord) > 1e-3  # arc must differ from the linear chord
+
+
+def test_interpolate_scalar_array_and_out_of_range():
+    md, inc, azi = _curved()
+    mc = MinCurve(md, inc, azi)
+    assert mc.interpolate(500.0).shape == (3,)          # scalar -> (3,)
+    assert mc.interpolate([100.0, 500.0]).shape == (2, 3)
+    assert np.isnan(mc.interpolate(md[-1] + 500.0)).all()  # beyond end -> nan
+    # exact at a station == that station's cumulative position
+    np.testing.assert_allclose(mc.interpolate(md[2]), mc.poss[2], atol=1e-9)
