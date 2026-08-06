@@ -35,6 +35,24 @@ def test_pore_pressure_actual_sorted_canonical(edm):
     np.testing.assert_allclose(p.emw, [9.2, 9.6])  # RKB-view, carried verbatim
 
 
+def test_pore_pressure_carries_permeable_flag(edm):
+    p = edm.pore_pressure("WB1", phase="ACTUAL")[0]
+    # fixture PPG1: tvd 500 is_permeable_zone=N, tvd 1000 =Y (sorted by tvd)
+    assert p.permeable is not None
+    np.testing.assert_array_equal(p.permeable, [False, True])
+    # frac/temp carry no permeable flag
+    assert edm.frac_gradient("WB1", phase="ACTUAL")[0].permeable is None
+
+
+def test_well_position_by_id_and_name(edm):
+    wp = edm.well_position("W1")
+    assert wp.east == 1000 and wp.north == 2000
+    assert wp.slot_ew == -3.5 and wp.slot_ns == 12.0
+    assert edm.well_position("Test-1").well_id == "W1"  # resolves by common name
+    with pytest.raises(KeyError):
+        edm.well_position("nope")
+
+
 def test_pore_pressure_phase_filter(edm):
     assert edm.pore_pressure("WB1", phase="PROTOTYPE")[0].value[0] == 1100
     assert edm.pore_pressure("WB1", phase="PLAN") == []  # none of that phase
