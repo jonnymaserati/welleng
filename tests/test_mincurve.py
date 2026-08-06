@@ -184,27 +184,56 @@ def test_interpolate_scalar_array_and_out_of_range():
     np.testing.assert_allclose(mc.interpolate(md[2]), mc.poss[2], atol=1e-9)
 
 
-# --- tvd_extrema (local-minima checking) + angles return ---------------------
-def test_tvd_extrema_finds_interior_turning_point():
-    # builds through horizontal (85 -> 95 deg) -> TVD peaks INSIDE the interval
+# --- tvd_turning_points + interpolate_tvd (moved from Survey) + angles --------
+def test_tvd_turning_points_matches_survey():
+    # builds through horizontal (85 -> 95) -> a turning point INSIDE interval 1
     md = np.array([0., 1000., 1100., 1300.])
-    mc = MinCurve(md, np.radians([0, 85, 95, 95.]), np.radians([0, 0, 0, 0.]))
-    ex = mc.tvd_extrema()
-    assert len(ex["md"]) == 1
-    assert ex["kind"][0] == "max" and ex["index"][0] == 1
-    assert 1000.0 < ex["md"][0] < 1100.0
-    # the interior extremum is DEEPER than either bracketing station (missed by them)
-    tvd_st = mc.poss[:, 2]
-    assert ex["tvd"][0] > tvd_st[1] and ex["tvd"][0] > tvd_st[2]
-    # inc at the extremum is 90 deg (vertical tangent)
-    _, inc_star, _ = mc.interpolate(float(ex["md"][0]), angles=True)
+    inc = np.radians([0, 85, 95, 95.])
+    azi = np.zeros(4)
+    mc = MinCurve(md, inc, azi)
+    tp = mc.tvd_turning_points()
+    assert len(tp) == 1 and 1000.0 < tp[0] < 1100.0
+    # inc is 90 deg (horizontal tangent) at the turning point
+    _, inc_star, _ = mc.interpolate(float(tp[0]), angles=True)
     np.testing.assert_allclose(np.degrees(inc_star), 90.0, atol=1e-6)
+    # parity: Survey delegates to MinCurve for the same MDs
+    sv = Survey(md=md, inc=inc, azi=azi, deg=False)
+    np.testing.assert_allclose(sv.tvd_turning_points(), tp)
 
 
-def test_tvd_extrema_empty_when_monotonic():
+def test_tvd_turning_points_empty_when_monotonic():
     mc = MinCurve(np.array([0., 500., 1000.]),
-                  np.radians([0, 30, 60.]), np.radians([0, 0, 0.]))
-    assert len(mc.tvd_extrema()["md"]) == 0
+                  np.radians([0, 30, 60.]), np.zeros(3))
+    assert len(mc.tvd_turning_points()) == 0
+
+
+def test_interpolate_tvd_inverse_multi_crossing():
+    # rise -> dip -> rise: a target in the dip band is reached multiple times
+    md = np.array([0., 800., 1000., 1200., 1600.])
+    mc = MinCurve(md, np.radians([0, 70, 110, 70, 40.]), np.zeros(5))
+    fine = np.linspace(0.0, 1600.0, 800001)
+    tvdf = mc.interpolate(fine)[:, 2]
+    target = None
+    for frac in np.linspace(0.05, 0.98, 60):
+        t = tvdf.min() + frac * (tvdf.max() - tvdf.min())
+        f = tvdf - t
+        if (np.sign(f[:-1]) != np.sign(f[1:])).sum() >= 2:
+            target = t
+            break
+    assert target is not None
+    got = mc.interpolate_tvd(target)
+    assert len(got) >= 2
+    for g in got:                                  # each solved md hits the tvd
+        np.testing.assert_allclose(mc.interpolate(g)[2], target, atol=1e-4)
+
+
+def test_interpolate_tvd_monotonic_inverts_interpolate():
+    mc = MinCurve(np.array([0., 500., 1000., 1500.]),
+                  np.radians([0, 20, 40, 60.]), np.zeros(4))
+    tvd_q = mc.interpolate(1234.0)[2]
+    back = mc.interpolate_tvd(tvd_q)
+    assert back.size == 1
+    np.testing.assert_allclose(back[0], 1234.0, atol=1e-5)
 
 
 def test_interpolate_angles_return():
