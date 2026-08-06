@@ -165,7 +165,7 @@ class MinCurve:
             np.column_stack((self.delta_x, self.delta_y, self.delta_z)), axis=0
         )
 
-    def interpolate(self, md):
+    def interpolate(self, md, angles=False):
         """Minimum-curvature position at arbitrary measured depth(s).
 
         Interpolates along the min-curve ARC between the bracketing stations
@@ -223,7 +223,74 @@ class MinCurve:
         pos[:, 1] += deltas[:, 0]   # y
         pos[:, 2] += deltas[:, 2]   # z (TVD)
         pos[~in_range] = np.nan
+        if angles:
+            inc_i = np.where(in_range, inc_i, np.nan)
+            azi_i = np.where(in_range, azi_i, np.nan)
+            if scalar:
+                return pos[0], float(inc_i[0]), float(azi_i[0])
+            return pos, inc_i, azi_i
         return pos[0] if scalar else pos
+
+    def tvd_extrema(self):
+        """Interior TVD turning points along the minimum-curvature path.
+
+        Between two survey stations a min-curve arc whose inclination crosses
+        90 degrees (a vertical tangent, ``cos(inc) = dTVD/dMD = 0``) has a TVD
+        **local extremum INSIDE the interval** -- a deepest/shallowest point the
+        bracketing station TVDs miss. Found in closed form via
+        :func:`arc_inc_azi_extrema` (whose ``inc_min``/``inc_max`` bound the
+        arc's inclination), then the exact ``theta*`` where the vertical tangent
+        is zero.
+
+        Returns
+        -------
+        dict with arrays (one entry per interior extremum found):
+            ``md`` -- measured depth of the extremum (same unit as ``self.md``);
+            ``tvd`` -- local TVD (relative to station 0, like :attr:`poss`);
+            ``index`` -- the station interval it lies in;
+            ``kind`` -- ``"max"`` (deepest, dTVD sign +->-) or ``"min"``
+            (shallowest). Empty arrays if the path is TVD-monotonic.
+        """
+        n = len(self.md)
+        if n < 2:
+            return {"md": np.array([]), "tvd": np.array([]),
+                    "index": np.array([], dtype=int), "kind": np.array([])}
+        inc = np.asarray(self.inc, dtype=float)
+        azi = np.asarray(self.azi, dtype=float)
+        vec = get_vec(inc, azi, deg=False).reshape(-1, 3)
+        ext = arc_inc_azi_extrema(vec[:-1], vec[1:], self.dogleg[1:])
+        # interval crosses horizontal when its inc range straddles 90 deg
+        crosses = (ext["inc_min"] < np.pi / 2) & (ext["inc_max"] > np.pi / 2)
+        idx = np.nonzero(crosses)[0]        # 0-based interval index (station idx)
+        if idx.size == 0:
+            return {"md": np.array([]), "tvd": np.array([]),
+                    "index": np.array([], dtype=int), "kind": np.array([])}
+        mds, tvds, kinds = [], [], []
+        for k in idx:
+            va, vb = vec[k], vec[k + 1]
+            dl = self.dogleg[k + 1]
+            u = (vb - np.dot(va, vb) * va)
+            nu = np.linalg.norm(u)
+            if nu < 1e-12 or dl < 1e-12:
+                continue
+            u = np.sign(np.sin(dl)) * u / nu
+            A, B = va[2], u[2]              # t_V = A cos(theta) + B sin(theta)
+            theta = np.arctan2(-A, B)       # t_V(theta*) = 0 -> inc = 90 deg
+            theta = theta % (2 * np.pi)
+            if not (0.0 <= theta <= dl):
+                theta = (theta - np.pi) % (2 * np.pi)   # the other root
+                if not (0.0 <= theta <= dl):
+                    continue
+            x = (theta / dl) * self.delta_md[k + 1]
+            md_star = self.md[k] + x
+            tvd_star = self.interpolate(md_star)[2]
+            # deepest (max TVD) if dTVD/dMD goes + -> - i.e. A > 0 (starts down)
+            mds.append(md_star)
+            tvds.append(tvd_star)
+            kinds.append("max" if A > 0 else "min")
+        return {"md": np.asarray(mds), "tvd": np.asarray(tvds),
+                "index": np.asarray(idx[:len(mds)], dtype=int),
+                "kind": np.asarray(kinds)}
 
 
 def get_vec(inc, azi, nev=False, r=1, deg=True):

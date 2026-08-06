@@ -2598,28 +2598,11 @@ def _interpolate_survey(
 
     assert index < len(survey.md) - 1, "Index is out of range"
 
-    # check if it's just a tangent section
-    if survey.dogleg[index + 1] == 0:
-        azi = survey.azi_grid_rad[index]
-        inc = survey.inc_rad[index]
-
-    else:
-        # get the vector
-        t1 = survey.vec_xyz[index]
-        t2 = survey.vec_xyz[index + 1]
-
-        total_dogleg = survey.dogleg[index + 1]
-
-        dogleg = x * (total_dogleg / survey.delta_md[index + 1])
-
-        t = (
-            (math.sin(total_dogleg - dogleg) / math.sin(total_dogleg)) * t1
-            + (math.sin(dogleg) / math.sin(total_dogleg)) * t2
-        )
-
-        t /= np.linalg.norm(t)
-
-        inc, azi = get_angles(t)[0]
+    # Interpolated inc/azi via the inherited MinCurve arc interpolation -- Survey
+    # IS a MinCurve, so this is the single source of the min-curve SLERP (no
+    # duplicated tangent maths here). azi is grid-referenced (MinCurve was built
+    # on azi_grid_rad).
+    _, inc, azi = survey.interpolate(survey.md[index] + x, angles=True)
 
     mult = x / (survey.delta_md[index + 1])
 
