@@ -80,6 +80,59 @@ def min_curve_step(delta_md, inc1, azi1, inc2, azi2, rf=None):
     ), axis=-1)
 
 
+def _horizontal_tangent_delta(u1, u2, alpha):
+    """Subtended angle at which a min-curve arc's tangent becomes horizontal
+    (its TVD turning point), or ``None`` if not in the open interval
+    ``(0, alpha)``. Vertical specialisation of Sawaryn & Thorogood (2005,
+    SPE-84246-PA, Eq. 31): the tangent's vertical component (SLERP of the end
+    tangents) vanishes where ``sin(alpha-d) u1 + sin(d) u2 = 0`` -> ``tan(d) =
+    -sin(alpha) u1 / (u2 - cos(alpha) u1)``. ``u1``/``u2`` are the start/end
+    unit-tangent vertical components; a dogleg is at most ``pi`` so at most one
+    such point exists.
+    """
+    p_term = np.sin(alpha) * u1
+    q_term = u2 - np.cos(alpha) * u1
+    if abs(p_term) < 1e-15 and abs(q_term) < 1e-15:
+        return None
+    base = np.arctan2(-p_term, q_term)
+    for cand in (base, base + np.pi, base - np.pi):
+        if 1e-12 < cand < alpha - 1e-12:
+            return cand
+    return None
+
+
+def _arc_tvd_crossings(u1, u2, alpha, delta_md, dvert):
+    """Subtended angles in ``[0, alpha]`` at which a min-curve arc reaches a
+    target TVD. Closed-form *Interpolation at a Plane* of Sawaryn & Thorogood
+    (2005, SPE-84246-PA), Eqs. 25-27 + Eq. 1, specialised to a horizontal target
+    plane. ``u1``/``u2`` are the start/end unit-tangent vertical components,
+    ``alpha`` the dogleg, ``delta_md`` the arc length, ``dvert`` the target TVD
+    minus the arc-start TVD. Returns the 0, 1 or 2 real roots (discriminant
+    guarded).
+    """
+    a = u1 * np.sin(alpha)
+    b = u1 * np.cos(alpha) - u2
+    c = dvert * alpha * np.sin(alpha) / delta_md + b
+    disc = a * a + b * b - c * c
+    if disc < -1e-12:
+        return []
+    disc = max(disc, 0.0)
+    root = disc ** 0.5
+    out = []
+    for sign in (1.0, -1.0):
+        d = 2.0 * np.arctan2(a + sign * root, b + c)
+        d %= (2 * np.pi)
+        if d > alpha:
+            if abs(d - 2 * np.pi) < 1e-7:
+                d = 0.0
+            else:
+                continue
+        out.append(min(max(d, 0.0), alpha))
+        if root == 0.0:
+            break
+    return out
+
+
 class MinCurve:
     def __init__(
         self,
@@ -231,66 +284,83 @@ class MinCurve:
             return pos, inc_i, azi_i
         return pos[0] if scalar else pos
 
-    def tvd_extrema(self):
-        """Interior TVD turning points along the minimum-curvature path.
+    def tvd_turning_points(self):
+        """Measured depths where the path's TVD turns (passes horizontal).
 
-        Between two survey stations a min-curve arc whose inclination crosses
-        90 degrees (a vertical tangent, ``cos(inc) = dTVD/dMD = 0``) has a TVD
-        **local extremum INSIDE the interval** -- a deepest/shallowest point the
-        bracketing station TVDs miss. Found in closed form via
-        :func:`arc_inc_azi_extrema` (whose ``inc_min``/``inc_max`` bound the
-        arc's inclination), then the exact ``theta*`` where the vertical tangent
-        is zero.
-
-        Returns
-        -------
-        dict with arrays (one entry per interior extremum found):
-            ``md`` -- measured depth of the extremum (same unit as ``self.md``);
-            ``tvd`` -- local TVD (relative to station 0, like :attr:`poss`);
-            ``index`` -- the station interval it lies in;
-            ``kind`` -- ``"max"`` (deepest, dTVD sign +->-) or ``"min"``
-            (shallowest). Empty arrays if the path is TVD-monotonic.
+        Between consecutive turning points TVD is monotonic in MD, so these are
+        where a TVD-domain treatment must be cut to stay single-valued. Closed
+        form -- Sawaryn & Thorogood (2005, SPE-84246-PA) *Turning Point* (Eq. 31)
+        per minimum-curvature leg (see :func:`_horizontal_tangent_delta`). MDs
+        are in ``self.md``'s units; empty if TVD is monotonic throughout.
         """
-        n = len(self.md)
-        if n < 2:
-            return {"md": np.array([]), "tvd": np.array([]),
-                    "index": np.array([], dtype=int), "kind": np.array([])}
-        inc = np.asarray(self.inc, dtype=float)
-        azi = np.asarray(self.azi, dtype=float)
-        vec = get_vec(inc, azi, deg=False).reshape(-1, 3)
-        ext = arc_inc_azi_extrema(vec[:-1], vec[1:], self.dogleg[1:])
-        # interval crosses horizontal when its inc range straddles 90 deg
-        crosses = (ext["inc_min"] < np.pi / 2) & (ext["inc_max"] > np.pi / 2)
-        idx = np.nonzero(crosses)[0]        # 0-based interval index (station idx)
-        if idx.size == 0:
-            return {"md": np.array([]), "tvd": np.array([]),
-                    "index": np.array([], dtype=int), "kind": np.array([])}
-        mds, tvds, kinds = [], [], []
-        for k in idx:
-            va, vb = vec[k], vec[k + 1]
-            dl = self.dogleg[k + 1]
-            u = (vb - np.dot(va, vb) * va)
-            nu = np.linalg.norm(u)
-            if nu < 1e-12 or dl < 1e-12:
+        u = np.cos(np.asarray(self.inc, dtype=float))   # vertical tangent comp.
+        mds = []
+        for i in range(len(self.md) - 1):
+            alpha = self.dogleg[i + 1]
+            dmd = self.delta_md[i + 1]
+            if dmd == 0 or np.isnan(alpha) or alpha <= 1e-9:
                 continue
-            u = np.sign(np.sin(dl)) * u / nu
-            A, B = va[2], u[2]              # t_V = A cos(theta) + B sin(theta)
-            theta = np.arctan2(-A, B)       # t_V(theta*) = 0 -> inc = 90 deg
-            theta = theta % (2 * np.pi)
-            if not (0.0 <= theta <= dl):
-                theta = (theta - np.pi) % (2 * np.pi)   # the other root
-                if not (0.0 <= theta <= dl):
+            d_tp = _horizontal_tangent_delta(u[i], u[i + 1], alpha)
+            if d_tp is not None:
+                mds.append(self.md[i] + d_tp / alpha * dmd)
+        return np.array(sorted(mds), dtype=float)
+
+    def interpolate_tvd(self, tvd):
+        """Measured depth(s) where the path reaches a target (local) TVD.
+
+        The INVERSE of position-at-md. Reversal-robust: does NOT assume
+        monotonic TVD -- each min-curve arc is split at its turning point into
+        monotonic spans and every crossing is solved in closed form (Sawaryn &
+        Thorogood 2005, SPE-84246-PA, *Interpolation at a Plane*, Eqs. 25-27 +
+        Eq. 1; see :func:`_arc_tvd_crossings`). Returns all crossing MDs, sorted.
+
+        ``tvd`` is in the LOCAL frame (relative to station 0, like the TVD column
+        of :attr:`poss`); ``Survey`` layers its datum on top. Empty if the target
+        is never reached.
+        """
+        z = self.poss[:, 2]
+        u = np.cos(np.asarray(self.inc, dtype=float))
+        tol_md, tol_ang = 1e-6, 1e-9
+        crossings = []
+        for i in range(len(self.md) - 1):
+            alpha = self.dogleg[i + 1]
+            dmd = self.delta_md[i + 1]
+            if dmd == 0:
+                continue
+            v1, v2 = z[i], z[i + 1]
+            if np.isnan(alpha) or alpha <= tol_ang:      # straight: linear in MD
+                dv = v2 - v1
+                if abs(dv) <= tol_ang:
+                    if abs(tvd - v1) <= tol_md:
+                        crossings.append(self.md[i])
                     continue
-            x = (theta / dl) * self.delta_md[k + 1]
-            md_star = self.md[k] + x
-            tvd_star = self.interpolate(md_star)[2]
-            # deepest (max TVD) if dTVD/dMD goes + -> - i.e. A > 0 (starts down)
-            mds.append(md_star)
-            tvds.append(tvd_star)
-            kinds.append("max" if A > 0 else "min")
-        return {"md": np.asarray(mds), "tvd": np.asarray(tvds),
-                "index": np.asarray(idx[:len(mds)], dtype=int),
-                "kind": np.asarray(kinds)}
+                frac = (tvd - v1) / dv
+                if -1e-9 <= frac <= 1 + 1e-9:
+                    crossings.append(self.md[i] + min(max(frac, 0.0), 1.0) * dmd)
+                continue
+            u1, u2 = u[i], u[i + 1]
+            d_tp = _horizontal_tangent_delta(u1, u2, alpha)
+            breaks = [0.0, alpha] if d_tp is None else [0.0, d_tp, alpha]
+            for da, db in zip(breaks[:-1], breaks[1:]):
+                va = v1 if da == 0.0 else self.interpolate(
+                    self.md[i] + da / alpha * dmd)[2]
+                vb = v2 if db == alpha else self.interpolate(
+                    self.md[i] + db / alpha * dmd)[2]
+                lo, hi = (va, vb) if va <= vb else (vb, va)
+                if not (lo - tol_md <= tvd <= hi + tol_md):
+                    continue
+                for d in _arc_tvd_crossings(u1, u2, alpha, dmd, tvd - v1):
+                    if da - 1e-7 <= d <= db + 1e-7:
+                        crossings.append(
+                            self.md[i] + min(max(d / alpha * dmd, 0.0), dmd))
+        crossings.sort()
+        out, last = [], None
+        for md in crossings:
+            if last is not None and abs(md - last) <= tol_md:
+                continue
+            out.append(md)
+            last = md
+        return np.array(out, dtype=float)
 
 
 def get_vec(inc, azi, nev=False, r=1, deg=True):
