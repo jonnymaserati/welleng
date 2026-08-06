@@ -138,6 +138,9 @@ cov = survey.err.errors.cov_NEVs       # NEV covariance per station
   gravity) ↔ CoolProp EOS (composition), with Sutton/Standing pseudo-criticals.
 - **Thermal unit helpers** — `welleng.units` gains temperature (offset) vs temperature-delta,
   specific heat, thermal conductivity/diffusivity, heat-transfer coefficient, and gradient helpers.
+- **Light minimum-curvature interpolation** — `welleng.utils.MinCurve` gains `interpolate(md)`
+  (exact arc MD→position, no `Survey`), `interpolate_tvd(tvd)` (the reversal-robust inverse — every
+  crossing) and `tvd_turning_points()`; `Survey` now delegates its TVD interpolation to them.
 
 ### New in 0.28
 
