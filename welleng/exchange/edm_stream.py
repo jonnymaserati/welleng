@@ -96,8 +96,10 @@ EDM_SCHEMA = {
         "description": "Well header (surface location, water depth).",
         "fields": {
             "well_common_name": "well name",
-            "geo_offset_east": "surface easting",
-            "geo_offset_north": "surface northing",
+            "geo_offset_east": "surface easting (map)",
+            "geo_offset_north": "surface northing (map)",
+            "slot_ew": "slot east-west offset",
+            "slot_ns": "slot north-south offset",
             "water_depth": "water depth",
         },
     },
@@ -396,6 +398,18 @@ class Wellbore:
 
 
 @dataclass
+class WellPosition:
+    """A well's surface position (``CD_WELL``) — map offset + slot offset."""
+
+    well_id: str
+    name: str
+    east: Optional[float]      # geo_offset_east (map easting)
+    north: Optional[float]     # geo_offset_north (map northing)
+    slot_ew: Optional[float]   # slot east-west offset
+    slot_ns: Optional[float]   # slot north-south offset
+
+
+@dataclass
 class SurveyHeader:
     """A survey header (``CD_SURVEY_HEADER`` or ``CD_DEFINITIVE_SURVEY_HEADER``).
 
@@ -618,6 +632,7 @@ class GeopressureProfile:
     tvd: np.ndarray
     value: np.ndarray
     emw: Optional[np.ndarray] = None
+    permeable: Optional[np.ndarray] = None   # pore only: is_permeable_zone=="Y"/point
     # Gradient (linear) form: some groups store a slope on the group row instead
     # of a point list (temperature especially). When ``is_gradient_form``, the
     # tvd/value arrays hold the shallow anchors (surface, mudline) and the
@@ -1252,6 +1267,25 @@ class EDMReader:
             return self.wellbores[self.wellbore_name_to_id[wellbore]]
         raise KeyError(f"unknown wellbore: {wellbore!r}")
 
+    def _resolve_well_id(self, well) -> str:
+        if well in self.wells:
+            return well
+        for wid, w in self.wells.items():
+            if w.get("well_common_name") == well:
+                return wid
+        raise KeyError(f"unknown well: {well!r}")
+
+    def well_position(self, well) -> WellPosition:
+        """Surface position of a well (map offset + slot offset). Accepts a
+        ``well_id`` or a ``well_common_name``. Always available (no opt-in)."""
+        wid = self._resolve_well_id(well)
+        a = self.wells[wid]
+        return WellPosition(
+            well_id=wid, name=a.get("well_common_name", wid),
+            east=_f(a, "geo_offset_east"), north=_f(a, "geo_offset_north"),
+            slot_ew=_f(a, "slot_ew"), slot_ns=_f(a, "slot_ns"),
+        )
+
     def find_wellbores(self, substring: str) -> List[Wellbore]:
         """Return wellbores whose name contains ``substring`` (case-insensitive)."""
         s = substring.lower()
@@ -1294,6 +1328,8 @@ class EDMReader:
                 value=np.array([_f(r, value_key) for r in recs], dtype=float),
                 emw=(np.array([_f(r, emw_key) for r in recs], dtype=float)
                      if emw_key else None),
+                permeable=(np.array([r.get("is_permeable_zone") == "Y"
+                                     for r in recs]) if kind == "pore" else None),
             ))
         # newest group first (by update_date string, ISO-ish so lexical works)
         out.sort(key=lambda p: p.update_date or "", reverse=True)

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <export>
 <TOPLEVEL>
-  <CD_WELL well_id="W1" well_common_name="Test-1" geo_offset_east="1000" geo_offset_north="2000" water_depth="300"/>
+  <CD_WELL well_id="W1" well_common_name="Test-1" geo_offset_east="1000" geo_offset_north="2000" slot_ew="-3.5" slot_ns="12.0" water_depth="300"/>
   <CD_WELLBORE wellbore_id="WB1" wellbore_name="Test-1 A" well_id="W1" ko_md="0"/>
   <CD_DATUM well_id="W1" datum_name="Rig Alpha RT" datum_elevation="180.1" is_default="Y" date_last_modified="{ts '2013-01-01 00:00:00'}"/>
   <CD_DATUM well_id="W1" datum_name="Rig Beta RT" datum_elevation="177.2" is_default="N" date_last_modified="{ts '2014-06-01 00:00:00'}"/>
