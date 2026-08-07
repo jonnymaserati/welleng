@@ -48,7 +48,7 @@ FEET_TO_METERS = 0.3048
 _METADATA_TAGS = frozenset({
     "CD_PROJECT", "CD_SITE", "CD_WELL", "CD_WELLBORE", "CD_DATUM",
     "CD_SURVEY_TOOL", "CD_SURVEY_HEADER", "CD_DEFINITIVE_SURVEY_HEADER",
-    "CD_SURVEY_PROGRAM",
+    "CD_SURVEY_PROGRAM", "DP_MAGNETIC",
 })
 _STATION_TAGS = frozenset({
     "CD_SURVEY_STATION", "CD_DEFINITIVE_SURVEY_STATION",
@@ -120,6 +120,18 @@ EDM_SCHEMA = {
             "datum_elevation": "elevation above MSL",
             "date_last_modified": "established",
             "is_default": "default flag",
+        },
+    },
+    "DP_MAGNETIC": {
+        "name": "Geomagnetic reference",
+        "description": "Per-wellbore reference field (the operator's own geomag "
+                       "model) — feeds a SurveyHeader / interpretation reference.",
+        "fields": {
+            "field_strength": "total field strength (nT)",
+            "dip_angle": "magnetic dip (deg)",
+            "declination": "declination (deg)",
+            "declination_date": "model date",
+            "model_name": "geomag model (e.g. BGGM / IGRF)",
         },
     },
     "CD_PORE_PRESSURE": {
@@ -698,6 +710,27 @@ class Formation:
 
 
 @dataclass
+class Magnetics:
+    """A ``DP_MAGNETIC`` row — the per-wellbore geomagnetic reference.
+
+    The operator's own reference field (total intensity, dip and declination
+    from the named model), used to build a :class:`~welleng.survey.SurveyHeader`
+    (``b_total`` / ``dip`` / ``declination``) or an interpretation
+    :class:`~welleng.interpretation.GeomagReference` from the operator's geomag
+    rather than a generic model lookup.
+    """
+
+    wellbore_id: str
+    b_total: Optional[float]        # field_strength (nT)
+    dip: Optional[float]            # dip_angle (deg)
+    declination: Optional[float]    # deg
+    date: Optional[str]             # declination_date
+    model: Optional[str]           # model_name (e.g. BGGM / IGRF)
+    sequence_no: Optional[int]
+    raw: Dict[str, str] = field(default_factory=dict, repr=False)
+
+
+@dataclass
 class AssemblyComponent:
     """A ``CD_ASSEMBLY_COMP`` row — one string component.
 
@@ -940,6 +973,7 @@ class EDMReader:
         self.tools: Dict[str, SurveyTool] = {}
         self.headers: Dict[str, SurveyHeader] = {}  # raw + definitive by id
         self.programs: Dict[str, List[ProgramInterval]] = {}  # by def hdr id
+        self._magnetics: Dict[str, List[Magnetics]] = {}  # by wellbore_id
 
         # geopressure / geometry (populated only when with_geopressure)
         self._pp_groups: Dict[str, Dict[str, str]] = {}
@@ -1011,6 +1045,19 @@ class EDMReader:
                 )
             elif tag == "CD_DATUM":
                 self.datums.setdefault(a.get("well_id", ""), []).append(a)
+            elif tag == "DP_MAGNETIC":
+                self._magnetics.setdefault(a.get("wellbore_id", ""), []).append(
+                    Magnetics(
+                        wellbore_id=a.get("wellbore_id", ""),
+                        b_total=_f(a, "field_strength"),
+                        dip=_f(a, "dip_angle"),
+                        declination=_f(a, "declination"),
+                        date=a.get("declination_date"),
+                        model=a.get("model_name"),
+                        sequence_no=_i(a, "sequence_no"),
+                        raw=a,
+                    )
+                )
             elif tag == "CD_SURVEY_TOOL":
                 self.tools[a["survey_tool_id"]] = SurveyTool(
                     tool_id=a["survey_tool_id"],
@@ -1445,6 +1492,27 @@ class EDMReader:
         wb = self._resolve_wellbore(wellbore).wellbore_id
         return sorted(self._formations.get(wb, []),
                       key=lambda f: f.md or 0.0)
+
+    def magnetics(self, wellbore) -> Optional[Magnetics]:
+        """The wellbore's geomagnetic reference (operator's own model).
+
+        Returns the operative ``DP_MAGNETIC`` row (highest ``sequence_no``) as a
+        :class:`Magnetics` (``b_total`` / ``dip`` / ``declination`` / ``date`` /
+        ``model``), or ``None`` if the EDM has no magnetics for the wellbore. Use
+        it to build a per-well :class:`~welleng.survey.SurveyHeader` or an
+        interpretation :class:`~welleng.interpretation.GeomagReference` from the
+        operator's geomag rather than a generic model lookup. Always available
+        (no opt-in flag). Access every row via ``magnetics_all``.
+        """
+        rows = self._magnetics.get(self._resolve_wellbore(wellbore).wellbore_id, [])
+        if not rows:
+            return None
+        return max(rows, key=lambda m: m.sequence_no or 0)
+
+    def magnetics_all(self, wellbore) -> List[Magnetics]:
+        """All ``DP_MAGNETIC`` rows for a wellbore, by ``sequence_no``."""
+        rows = self._magnetics.get(self._resolve_wellbore(wellbore).wellbore_id, [])
+        return sorted(rows, key=lambda m: m.sequence_no or 0)
 
     def assemblies(self, wellbore=None) -> List[Assembly]:
         """String assemblies (casing/tubing/liner/BHA), each with its components.
