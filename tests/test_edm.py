@@ -32,6 +32,8 @@ SYNTHETIC_EDM = """<?xml version="1.0" standalone="no"?>
 <CD_WELL well_id="W1" site_id="S1" well_common_name="T-1" />
 <CD_WELLBORE well_id="W1" wellbore_id="WB0" wellbore_name="T-1 main" />
 <CD_WELLBORE well_id="W1" wellbore_id="WB1" wellbore_name="T-1 ST1" parent_wellbore_id="WB0" />
+<DP_MAGNETIC well_id="W1" wellbore_id="WB1" magnetic_model_id="M0" sequence_no="0" field_strength="50500" dip_angle="72.1" declination="-1.5" declination_date="{ts '2014-01-01'}" model_name="BGGM2014" />
+<DP_MAGNETIC well_id="W1" wellbore_id="WB1" magnetic_model_id="M1" sequence_no="1" field_strength="50550" dip_angle="72.2" declination="-1.6" declination_date="{ts '2015-01-01'}" model_name="BGGM2015" />
 <CD_SURVEY_TOOL survey_tool_id="TG" tool_name="Keeper, cont" description="Gyro Tool from SDC" tool_type="0" />
 <CD_SURVEY_TOOL survey_tool_id="TM" tool_name="Magnetic, std, non-mag" description="Magnetic Tools (MWD, EMS)" tool_type="0" />
 <CD_SURVEY_HEADER well_id="W1" wellbore_id="WB0" survey_header_id="SH0" phase="ACTUAL" survey_name="root raw" md_min="0" md_max="100" />
@@ -317,3 +319,27 @@ def test_edm_open_returns_streaming_reader(edm_file):
     r = EDM.open(edm_file)
     assert isinstance(r, EDMReader)
     assert len(r.wellbores) == 2
+
+
+# --------------------------------------------------------------------------
+# DP_MAGNETIC — per-wellbore geomagnetic reference accessor
+# --------------------------------------------------------------------------
+def test_magnetics_accessor_returns_operative_row(reader):
+    m = reader.magnetics("T-1 ST1")            # WB1, resolved by name
+    assert m is not None
+    # highest sequence_no wins (the operative reference)
+    assert m.sequence_no == 1
+    assert m.b_total == 50550.0
+    assert m.model == "BGGM2015"
+    assert m.dip == pytest.approx(72.2)
+    assert m.declination == pytest.approx(-1.6)
+
+
+def test_magnetics_all_ordered_by_sequence(reader):
+    allm = reader.magnetics_all("WB1")
+    assert [x.sequence_no for x in allm] == [0, 1]
+    assert allm[0].model == "BGGM2014"
+
+
+def test_magnetics_none_when_absent(reader):
+    assert reader.magnetics("WB0") is None     # root wellbore has no DP_MAGNETIC
