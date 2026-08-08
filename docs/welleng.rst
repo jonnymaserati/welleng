@@ -143,6 +143,14 @@ welleng.survey module
    :undoc-members:
    :show-inheritance:
 
+welleng.surface module
+----------------------
+
+.. automodule:: welleng.surface
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 welleng.target module
 ---------------------
 
