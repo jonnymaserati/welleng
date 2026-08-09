@@ -254,6 +254,25 @@ class SurveyParameters(Proj):
         ... )
         >>> print(result)
         [[ 588225.93417027 5770360.56500115]]
+
+        To place a well head given as geographic latitude/longitude -- e.g. an
+        EDM ``geo_latitude`` / ``geo_longitude`` -- into a map's projection
+        (say, the ED50 UTM31N frame a set of horizons use), start from the
+        matching *geographic* CRS. **Coordinate order follows the source CRS's
+        own axis order:** a geographic CRS such as ED50 (EPSG:4230) is
+        ``(latitude, longitude)``, not ``(lon, lat)``:
+
+        >>> geo = SurveyParameters('EPSG:4230')  # ED50 geographic
+        >>> geo.transform_coordinates(
+        ...     coords=[(58.4417, 1.8875)], to_projection='EPSG:23031'
+        ... )  # doctest: +SKIP
+        array([[ 435051.34, 6478573.19]])
+
+        Use the coordinates' own datum as the source CRS (ED50 geographic here,
+        not WGS84) so no spurious datum shift is introduced. Do NOT feed an
+        EDM's ``geo_offset_east`` / ``geo_offset_north`` here when they are in a
+        different map system than the target (as on Volve) -- go via the
+        geographic lat/long instead.
         """
         transformer = Transformer.from_crs(
             self.crs, CRS(to_projection)
