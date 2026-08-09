@@ -28,6 +28,10 @@ from .catalog import (
     CouplingSpec,
     OSDU_ALIASES,
     TubularSpec,
+    buttress_coupling_internal_yield_psi,
+    buttress_coupling_thread_strength_klb,
+    buttress_joint_strength_klb,
+    buttress_pipe_thread_strength_klb,
     collapse_pressure_psi,
     coupling_connections,
     grades,
@@ -37,6 +41,9 @@ from .catalog import (
     plain_end_weight_ppf,
     resolve,
     resolve_coupling,
+    round_thread_joint_strength_klb,
+    round_thread_pipe_fracture_strength_klb,
+    round_thread_pullout_strength_klb,
 )
 
 __all__ = [
@@ -58,4 +65,12 @@ __all__ = [
     "pipe_body_yield_klb",
     "internal_yield_pressure_psi",
     "collapse_pressure_psi",
+    # connection performance (API TR 5C3 Sec 9 + 10.2)
+    "buttress_joint_strength_klb",
+    "buttress_pipe_thread_strength_klb",
+    "buttress_coupling_thread_strength_klb",
+    "buttress_coupling_internal_yield_psi",
+    "round_thread_joint_strength_klb",
+    "round_thread_pipe_fracture_strength_klb",
+    "round_thread_pullout_strength_klb",
 ]
