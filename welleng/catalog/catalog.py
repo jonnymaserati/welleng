@@ -444,6 +444,217 @@ def coupling_connections() -> List[str]:
 
 
 # ===========================================================================
+# Connection performance - API TR 5C3 (7th ed., 2018) Sec 9 + Sec 10.2
+# ===========================================================================
+# Tensile joint strength (Sec 9) + coupling internal yield pressure
+# (Sec 10.2). ALL equations transcribed from the PDF equation IMAGES (not
+# pdftotext, which silently drops superscripts - Eq. 54 carries D^-0.59, NOT
+# "0.74D - 0.59"). Verified against the duplicate statement in Annex J.
+#
+# Thread geometry these equations need but API 5CT does NOT tabulate (perfect-
+# thread length L7, engaged length Let, coupling-root diameter d1) comes from
+# API Spec 5B. Only the buttress L7 is baked in below (turn-key, cited to API
+# 5B Table 5); round-thread Let / d1 are user-supplied (from API 5B) so no
+# unvalidated per-size thread data is fabricated here.
+#
+# Make-up torque: API TR 5C3 gives make-up torque for ROUND thread only
+# (Sec 15). BUTTRESS make-up torque is NOT in 5C3 (see API RP 5C1 or the
+# manufacturer) and is deliberately not implemented here.
+
+# API Spec 5B (16th ed., 2017) Table 5 - buttress perfect-thread length L7
+# (in.), keyed by pipe OD (in.). L7 is the one per-size value not derivable
+# from a closed form; E7, IB, Td, hB below ARE closed-form/constant per 5B.
+_BTC_L7_IN: Dict[float, float] = {
+    4.5: 1.6535, 5.0: 1.7785, 5.5: 1.8410, 6.625: 2.0285, 7.0: 2.2160,
+    7.625: 2.4035, 8.625: 2.5285, 9.625: 2.5285, 10.75: 2.5285,
+    11.75: 2.5285, 13.375: 2.5285, 16.0: 3.1245, 18.625: 3.1245,
+    20.0: 3.1245,
+}
+
+
+def _buttress_d1_in(od_in: float) -> float:
+    """Buttress coupling-thread root diameter d1 (in.), API TR 5C3 Eq. (61).
+
+    ``d1 = E7 - (L7 + IB) Td + hB`` with the API Spec 5B buttress geometry:
+    E7 = D4 - 0.062 (pitch dia; D4 = D + 0.016 for OD <= 13-3/8 in., else D),
+    L7 the perfect-thread length (5B Table 5, :data:`_BTC_L7_IN`), taper
+    Td = 0.0625 in./in. (OD <= 13-3/8) or 0.0833 (larger), triangle-stamp
+    offset IB = 0.400 (4-1/2), 0.500 (5 .. 13-3/8) or 0.375 (larger), and
+    buttress thread height hB = 0.062 in. (USC). Raises if L7 is untabulated.
+    """
+    key = round(float(od_in), 3)
+    l7 = _BTC_L7_IN.get(key)
+    if l7 is None:
+        raise CatalogError(
+            f"no API 5B buttress L7 for OD {od_in} in; "
+            f"available: {sorted(_BTC_L7_IN)}"
+        )
+    if key <= 13.375:
+        d4 = od_in + 0.016
+        td = 0.0625
+        ib = 0.400 if key == 4.5 else 0.500
+    else:
+        d4 = od_in
+        td = 0.0833
+        ib = 0.375
+    e7 = d4 - 0.062
+    return e7 - (l7 + ib) * td + 0.062
+
+
+def buttress_pipe_thread_strength_klb(
+    od_in: float, id_in: float, min_yield_psi: float, min_uts_psi: float
+) -> float:
+    """Buttress pipe-thread tensile strength (klb), API TR 5C3 Eq. (59).
+
+    ``Pj = 0.95 Ap fumnp [1.008 - 0.0396 (1.083 - fymnp/fumnp) D]`` with
+    ``Ap = (pi/4)(D^2 - d^2)``, pipe-body min tensile ``fumnp`` and min yield
+    ``fymnp``. One of the two buttress limit terms (see Eq. 60). Rounded to
+    the nearest klb (API tabulation convention).
+    """
+    ap = (math.pi / 4.0) * (od_in ** 2 - id_in ** 2)
+    factor = 1.008 - 0.0396 * (1.083 - min_yield_psi / min_uts_psi) * od_in
+    return round(0.95 * ap * min_uts_psi * factor / 1000.0)
+
+
+def buttress_coupling_thread_strength_klb(
+    od_in: float, coupling_od_in: float, coupling_uts_psi: float
+) -> float:
+    """Buttress coupling-thread tensile strength (klb), API TR 5C3 Eq. (60).
+
+    ``Pj = 0.95 Ajc fumnc`` with ``Ajc = (pi/4)(W^2 - d1^2)`` (Eq. 57), W the
+    coupling OD, d1 from :func:`_buttress_d1_in` (Eq. 61) and coupling min
+    tensile ``fumnc``. The other buttress limit term (see Eq. 59). Rounded to
+    the nearest klb.
+    """
+    d1 = _buttress_d1_in(od_in)
+    ajc = (math.pi / 4.0) * (coupling_od_in ** 2 - d1 ** 2)
+    return round(0.95 * ajc * coupling_uts_psi / 1000.0)
+
+
+def buttress_joint_strength_klb(
+    od_in: float,
+    id_in: float,
+    min_yield_psi: float,
+    min_uts_psi: float,
+    coupling_od_in: Optional[float] = None,
+    coupling_uts_psi: Optional[float] = None,
+) -> float:
+    """Buttress (BTC) tensile joint strength (klb), API TR 5C3 Sec 9.2.3.
+
+    The LESSER of the pipe-thread strength (Eq. 59) and the coupling-thread
+    strength (Eq. 60). ``coupling_od_in`` defaults to the API 5CT coupling OD
+    (W) from the catalogue; ``coupling_uts_psi`` defaults to the pipe-body
+    ``min_uts_psi`` (standard API couplings share the pipe grade). Rounded to
+    the nearest klb.
+    """
+    pipe = buttress_pipe_thread_strength_klb(
+        od_in, id_in, min_yield_psi, min_uts_psi
+    )
+    if coupling_od_in is None:
+        coupling_od_in = resolve_coupling(od_in, "BTC").coupling_od_in
+    if coupling_uts_psi is None:
+        coupling_uts_psi = min_uts_psi
+    coupling = buttress_coupling_thread_strength_klb(
+        od_in, coupling_od_in, coupling_uts_psi
+    )
+    return float(min(pipe, coupling))
+
+
+def buttress_coupling_internal_yield_psi(
+    od_in: float, coupling_od_in: float, coupling_yield_psi: float
+) -> float:
+    """Buttress coupling internal yield pressure (psi), API TR 5C3 Eq. (65).
+
+    ``piYc = fymnc (W - d1)/W`` with W the coupling OD, d1 from Eq. (67)
+    (= Eq. 61 buttress form; see :func:`_buttress_d1_in`) and coupling min
+    yield ``fymnc``. Per Sec 10.1 this limits connection internal pressure
+    only when lower than the pipe-body internal yield. Rounded to the nearest
+    10 psi (API tabulation convention).
+    """
+    d1 = _buttress_d1_in(od_in)
+    p = coupling_yield_psi * (coupling_od_in - d1) / coupling_od_in
+    return round(p / 10.0) * 10.0
+
+
+def round_thread_pipe_fracture_strength_klb(
+    od_in: float, id_in: float, min_uts_psi: float
+) -> float:
+    """Round-thread (STC/LTC) pipe fracture strength (klb), API TR 5C3 Eq.(53).
+
+    ``Pj = 0.95 Ajp fumnp`` with the last-perfect-thread pipe area
+    ``Ajp = (pi/4)[(D - 0.1425)^2 - d^2]`` (Eq. 56). ONE of the three round-
+    thread limit terms; the joint strength is the least of this, the pull-out
+    strength (Eq. 54) and coupling fracture (Eq. 55). Rounded to nearest klb.
+    """
+    ajp = (math.pi / 4.0) * ((od_in - 0.1425) ** 2 - id_in ** 2)
+    return round(0.95 * ajp * min_uts_psi / 1000.0)
+
+
+def round_thread_pullout_strength_klb(
+    od_in: float,
+    id_in: float,
+    engaged_thread_length_in: float,
+    min_yield_psi: float,
+    min_uts_psi: float,
+) -> float:
+    """Round-thread (STC/LTC) pull-out strength (klb), API TR 5C3 Eq. (54).
+
+    ``Pj = 0.95 Ajp Let [(0.74 D^-0.59 fumnp)/(0.5 Let + 0.14 D)
+    + fymnp/(Let + 0.14 D)]`` with ``Ajp`` from Eq. (56) and ``Let`` the
+    engaged thread length (= L4 - M, from API Spec 5B; user-supplied since
+    API 5CT does not tabulate it). Note ``D^-0.59`` is an EXPONENT (pdftotext
+    drops it). Pull-out governs for most standard round-thread sizes/grades
+    (Annex J.2.2.3). Rounded to the nearest klb.
+    """
+    ajp = (math.pi / 4.0) * ((od_in - 0.1425) ** 2 - id_in ** 2)
+    lt = engaged_thread_length_in
+    bracket = (
+        (0.74 * od_in ** -0.59 * min_uts_psi) / (0.5 * lt + 0.14 * od_in)
+        + min_yield_psi / (lt + 0.14 * od_in)
+    )
+    return round(0.95 * ajp * lt * bracket / 1000.0)
+
+
+def round_thread_joint_strength_klb(
+    od_in: float,
+    id_in: float,
+    min_yield_psi: float,
+    min_uts_psi: float,
+    engaged_thread_length_in: Optional[float] = None,
+    coupling_od_in: Optional[float] = None,
+    coupling_uts_psi: Optional[float] = None,
+    coupling_root_dia_in: Optional[float] = None,
+) -> float:
+    """Round-thread (STC/LTC) tensile joint strength (klb), API TR 5C3 Sec 9.2.2.
+
+    The LEAST of the pipe fracture strength (Eq. 53), the pull-out strength
+    (Eq. 54, if ``engaged_thread_length_in`` [Let] is supplied) and the
+    coupling fracture strength (Eq. 55, if ``coupling_root_dia_in`` [d1, from
+    API 5B Eq. 58] is supplied). Let and d1 come from API Spec 5B (not 5CT).
+
+    WARNING: pull-out normally GOVERNS (Annex J.2.2.3); with Let omitted this
+    returns the fracture-only term, which OVERSTATES the joint strength. Supply
+    Let for a valid rating. Rounded to the nearest klb.
+    """
+    terms = [round_thread_pipe_fracture_strength_klb(od_in, id_in, min_uts_psi)]
+    if engaged_thread_length_in is not None:
+        terms.append(
+            round_thread_pullout_strength_klb(
+                od_in,
+                id_in,
+                engaged_thread_length_in,
+                min_yield_psi,
+                min_uts_psi,
+            )
+        )
+    if coupling_root_dia_in is not None and coupling_od_in is not None:
+        uts = min_uts_psi if coupling_uts_psi is None else coupling_uts_psi
+        ajc = (math.pi / 4.0) * (coupling_od_in ** 2 - coupling_root_dia_in ** 2)
+        terms.append(round(0.95 * ajc * uts / 1000.0))
+    return float(min(terms))
+
+
+# ===========================================================================
 # ConnectionSpec - full connection performance schema (VAM-datasheet field set)
 # ===========================================================================
 
@@ -508,7 +719,8 @@ class ConnectionSpec:
         Fills ``connection_od_in`` (regular coupling OD W),
         ``coupling_length_in`` (min length NL), ``connection_type`` and
         ``grade``; every premium-performance field is left ``None`` (proprietary,
-        user-supplied - never fabricated).
+        user-supplied - never fabricated). To also compute API TR 5C3 joint
+        strength (which needs the pipe wall) use :meth:`from_tubular`.
         """
         cpl = resolve_coupling(od_in, connection, kind=kind)
         return cls(
@@ -516,4 +728,44 @@ class ConnectionSpec:
             coupling_length_in=cpl.coupling_length_in,
             connection_type=cpl.connection,
             grade=grade,
+        )
+
+    @classmethod
+    def from_tubular(
+        cls,
+        spec: "TubularSpec",
+        connection: str,
+    ) -> "ConnectionSpec":
+        """Build an API-connection spec from a resolved :class:`TubularSpec`.
+
+        Adds API TR 5C3 tensile joint strength to the 5CT dimensional fields:
+        for **BTC** with a graded ``spec`` it fills ``tension_strength_klb``
+        from the buttress joint strength (Eq. 59/60, turn-key). Round-thread
+        (STC/LTC) tension is left ``None`` because its governing pull-out term
+        needs the API 5B engaged length Let (call
+        :func:`round_thread_joint_strength_klb` with Let). Requires
+        ``spec.grade`` (and thus ``min_uts_psi``) for any strength value.
+        """
+        conn = str(connection).upper()
+        cpl = resolve_coupling(spec.od_in, conn, kind=spec.kind)
+        tension = None
+        if (
+            conn == "BTC"
+            and spec.yield_psi is not None
+            and spec.min_uts_psi is not None
+        ):
+            tension = buttress_joint_strength_klb(
+                spec.od_in,
+                spec.id_in,
+                spec.yield_psi,
+                spec.min_uts_psi,
+                coupling_od_in=cpl.coupling_od_in,
+            )
+        return cls(
+            connection_od_in=cpl.coupling_od_in,
+            connection_id_in=spec.id_in,
+            coupling_length_in=cpl.coupling_length_in,
+            tension_strength_klb=tension,
+            connection_type=cpl.connection,
+            grade=spec.grade,
         )
