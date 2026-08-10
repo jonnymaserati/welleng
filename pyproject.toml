@@ -102,6 +102,7 @@ all = [
     "python-flint",
     "coolprop>=8.0.0,<9",   # load-bearing; bounded to tested major (see [kick] note)
     "sympy",
+    "mpmath",   # explicit (also a sympy dep): 200-bit oracle for the #307 fpcore gate
 ]
 
 [project.urls]
