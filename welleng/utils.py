@@ -55,36 +55,110 @@ def get_rf(dogleg):
     return float(rf) if rf.ndim == 0 else rf
 
 
+def arc_step(v1, v2, theta, dmd, x):
+    """Minimum-curvature arc kernel -- THE single home (welleng #308).
+
+    Every min-curve arc evaluation in the library routes through this one
+    function so the derivation lives ONCE: ``MinCurve.interpolate`` (interior
+    MD query), :func:`min_curve_step` (station construction, ``x = dmd``) and
+    :func:`welleng.connector.interpolate_curve` (dense arc render) are all
+    callers, not re-derivations of it.
+
+    Parameters
+    ----------
+    v1, v2 : (n, 3) array
+        Start / end UNIT tangents of a min-curve leg, in ANY consistent
+        orthonormal basis -- the result comes back in that SAME basis (the
+        kernel is coordinate-agnostic; callers pass [E, N, V] or [N, E, V] and
+        read it back in kind).
+    theta : (n,) array
+        Leg dogleg (radians).
+    dmd : (n,) array
+        Leg length.
+    x : (n,) array
+        Arc length from the ``v1`` station to the query point
+        (``0 <= x <= dmd``); ``x = dmd`` gives the far station.
+
+    Returns
+    -------
+    disp, tangent : (n, 3) arrays
+        Local displacement from the ``v1`` station to the query point, and the
+        unit tangent there.
+
+    Notes
+    -----
+    Position is the half-angle form -- the symbolic-identity rewrite of the
+    canonical ``R[sin(phi) v1 + (1-cos(phi)) u]`` that pairs each vector sum
+    with ITS OWN denominator (``|v1+v2| = 2cos(theta/2)``,
+    ``|v1-v2| = 2sin(theta/2)``) so neither ratio amplifies as ``theta -> pi``
+    (~0.1 ulp near pi vs tens of ulp for the ``/sin`` and ``rf = (2/phi)
+    tan(phi/2)`` forms). It is applied for ``theta`` in ``[0, pi]`` (the
+    ``get_dogleg`` range). The tangent is the Rodrigues ``u``-form
+    ``cos(phi) v1 + sin(phi) u`` with ``u = (v2 - cos(theta) v1)/sin(theta)``:
+    a one-time ``1/sin`` set-up with no per-query amplifier, and -- unlike the
+    normalise-the-derivative shortcut -- it keeps the correct sign for
+    ``theta > pi`` (the long-way arcs ``interpolate_curve`` renders). The exact
+    antiparallel turn (``theta = pi``, arc plane undetermined) is left as the
+    start tangent.
+    """
+    v1 = np.asarray(v1, dtype=float)
+    v2 = np.asarray(v2, dtype=float)
+    theta = np.atleast_1d(np.asarray(theta, dtype=float))
+    dmd = np.atleast_1d(np.asarray(dmd, dtype=float))
+    x = np.atleast_1d(np.asarray(x, dtype=float))
+    disp = x[:, None] * v1                       # straight-leg chord default
+    tangent = np.array(v1, dtype=float, copy=True)
+    s = np.sin(theta)
+    m = (theta >= 1e-14) & (np.abs(s) >= 1e-12)  # curved, plane well-defined
+    if m.any():
+        a = v1[m].reshape(-1, 3)
+        b = v2[m].reshape(-1, 3)
+        th = theta[m]
+        phi = x[m] * th / dmd[m]
+        R = dmd[m] / th
+        hc = np.cos((th - phi) / 2) / np.cos(th / 2)
+        hs = np.sin((th - phi) / 2) / np.sin(th / 2)
+        disp[m] = (R * np.sin(phi / 2))[:, None] * (
+            (a + b) * hc[:, None] + (a - b) * hs[:, None]
+        )
+        u = (b - np.cos(th)[:, None] * a) / s[m][:, None]
+        tangent[m] = np.cos(phi)[:, None] * a + np.sin(phi)[:, None] * u
+    return disp, tangent
+
+
 def min_curve_step(delta_md, inc1, azi1, inc2, azi2, rf=None):
     """
     Compute position increments using minimum curvature (vectorised).
 
-    All trigonometric values are computed once and shared across the three
-    coordinate directions for efficiency.
+    Delegates the geometry to the single arc kernel :func:`arc_step` (welleng
+    #308) evaluated at the far station (``x = dmd``), so a station position can
+    no longer diverge from ``MinCurve.interpolate`` / ``interpolate_curve``.
 
     Parameters
     ----------
     delta_md: (n,) array — measured-depth increments
     inc1, azi1: (n,) arrays — start inclination / azimuth (radians)
     inc2, azi2: (n,) arrays — end inclination / azimuth (radians)
-    rf: (n,) array or None — ratio factors; computed if not supplied
+    rf: ignored — retained for backward compatibility (the arc kernel no longer
+        needs a precomputed ratio factor).
 
     Returns
     -------
     deltas: (n, 3) array — position increments in [N, E, V] order
     """
-    if rf is None:
-        rf = get_rf(get_dogleg(inc1, azi1, inc2, azi2))
+    scalar = np.ndim(inc1) == 0
+    inc1, azi1 = np.atleast_1d(inc1), np.atleast_1d(azi1)
+    inc2, azi2 = np.atleast_1d(inc2), np.atleast_1d(azi2)
+    dmd = np.atleast_1d(np.asarray(delta_md, dtype=float))
     si1, ci1 = np.sin(inc1), np.cos(inc1)
     si2, ci2 = np.sin(inc2), np.cos(inc2)
     ca1, sa1 = np.cos(azi1), np.sin(azi1)
     ca2, sa2 = np.cos(azi2), np.sin(azi2)
-    scale = delta_md * rf / 2
-    return np.stack((
-        scale * (si1 * ca1 + si2 * ca2),  # N
-        scale * (si1 * sa1 + si2 * sa2),  # E
-        scale * (ci1 + ci2),               # V
-    ), axis=-1)
+    v1 = np.stack((si1 * ca1, si1 * sa1, ci1), axis=-1)   # [N, E, V]
+    v2 = np.stack((si2 * ca2, si2 * sa2, ci2), axis=-1)
+    theta = get_dogleg(inc1, azi1, inc2, azi2)
+    disp, _ = arc_step(v1, v2, theta, dmd, dmd)
+    return disp[0] if scalar else disp
 
 
 def _horizontal_tangent_delta(u1, u2, alpha):
@@ -265,39 +339,12 @@ class MinCurve:
         x = q - mds[idx]
         DL = self.dogleg[idx + 1]
         dmd = self.delta_md[idx + 1]
-        straight = DL < 1e-14
-        m = ~straight
-        # Query-point unit tangent + local displacement from station `idx`, in
-        # vector space throughout. Straight leg -> station tangent + chord;
-        # curved -> the half-angle arc form below.
-        t_query = self._tangents[idx].astype(float).copy()
-        pos = self.poss[idx].astype(float).copy()
-        disp = x[:, None] * self._tangents[idx]          # straight-leg chord
-        if m.any():
-            v1 = self._tangents[idx][m].reshape(-1, 3)
-            v2 = self._tangents[idx + 1][m].reshape(-1, 3)
-            theta = DL[m]
-            phi = x[m] * theta / dmd[m]                  # partial dogleg
-            R = dmd[m] / theta                           # arc radius
-            # Half-angle arc form (welleng #308, enomado): the symbolic-identity
-            # rewrite of the canonical R[sin(phi) v1 + (1-cos(phi)) u] that pairs
-            # each vector sum with ITS OWN denominator -- |v1+v2| = 2cos(theta/2)
-            # and |v1-v2| = 2sin(theta/2) -- so neither ratio amplifies as
-            # theta -> pi (the U-turn regime #305 now renders). ~0.1 ulp near pi
-            # vs tens of ulp for the canonical /sin and the balanced-tangential
-            # rf = (2/phi)tan(phi/2) it replaces (both blow up at phi = pi).
-            hc = np.cos((theta - phi) / 2) / np.cos(theta / 2)
-            hs = np.sin((theta - phi) / 2) / np.sin(theta / 2)
-            disp[m] = (R * np.sin(phi / 2))[:, None] * (
-                (v1 + v2) * hc[:, None] + (v1 - v2) * hs[:, None]
-            )
-            # Tangent = analytic derivative of that same position, so the drawn
-            # point and drawn direction cannot disagree about which curve they
-            # are on. The 1/sin(theta) scalar is eaten by the normalisation, so
-            # there is no per-query 1/sin amplifier and no clamp is needed.
-            t = v2 * np.sin(phi)[:, None] - v1 * np.sin(phi - theta)[:, None]
-            t_query[m] = t / np.linalg.norm(t, axis=1, keepdims=True)
-        pos += disp
+        # Single arc kernel (welleng #308): local displacement + query tangent
+        # from the bracketing station, in the tangents' [E, N, V] basis.
+        disp, t_query = arc_step(
+            self._tangents[idx], self._tangents[idx + 1], DL, dmd, x
+        )
+        pos = self.poss[idx].astype(float) + disp
         pos[~in_range] = np.nan
         if angles:
             # inc/azi only for the angles=True return -- one get_angles on the
