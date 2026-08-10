@@ -273,3 +273,39 @@ def test_sf_vs_md_inherited_and_consistent(data=data):
         assert len(md) == len(ped) == len(mah)
         assert np.all(np.isfinite(ped)) and np.all(np.isfinite(mah))
         assert np.all(mah >= ped - 1e-9), w     # exact never below the rule, per station
+
+
+def test_mahalanobis_sf_chi2_statistical_distance(data=data):
+    """welleng's Mahalanobis SF is the chi-square / statistical-distance
+    separation of SPE-200475 (Bang, Nyrnes & Wilson, 2019) and Brooks
+    (SPE-116155, 2008): SF = sqrt(d' (Cr + Co)^-1 d) / k, the Mahalanobis
+    distance of the centre-to-centre vector in the combined-covariance metric.
+
+    Locks that value on the ISCWSA standard collision test wells at a known
+    ref/offset station pair, both against the closed-form chi-square (built here
+    from the arc-faithful interior covariance ``err.cov_nev_at``) and against
+    MahalanobisClearance's own continuous search. Cross-checked to <1% against
+    an independent third-party chi-square implementation of the same method.
+
+    At reference MD 1902 / '08 - well' MD 2271: combined-covariance Mahalanobis
+    ~5.93 (chi-square ~35.1) -> SF ~1.69 at k = 3.5. Note the continuous
+    narrowphase minimum is slightly WORSE (~1.66) than this single hand-picked
+    station pair -- exactly the pair a fixed-station scan would miss, which is
+    why the search must be continuous rather than station-only."""
+    surveys = generate_surveys(data)
+    ref = surveys["Reference well"]
+    off = surveys["08 - well"]
+
+    # closed-form chi-square at the hand-picked pair (arc-faithful interior cov)
+    A = np.asarray(ref.err.cov_nev_at(1902.0)) + np.asarray(off.err.cov_nev_at(2271.0))
+    d = (np.array(off.interpolate_md(2271.0).pos_nev)
+         - np.array(ref.interpolate_md(1902.0).pos_nev))
+    maha = float(np.sqrt(d @ np.linalg.inv(A) @ d))
+    assert abs(maha - 5.93) < 0.06                 # Mahalanobis distance (sqrt chi2)
+    assert abs(maha / 3.5 - 1.69) < 0.02           # SF at the k = 3.5 boundary
+
+    # MahalanobisClearance's continuous minimum finds a worse (lower-SF) pair
+    mc = MahalanobisClearance(ref, off)
+    sf_min = float(np.nanmin(np.asarray(mc.sf)))
+    assert sf_min < maha / 3.5                      # continuous < hand-picked pair
+    assert abs(sf_min - 1.66) < 0.03
