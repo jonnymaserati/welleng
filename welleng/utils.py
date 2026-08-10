@@ -103,26 +103,33 @@ def arc_step(v1, v2, theta, dmd, x):
     """
     v1 = np.asarray(v1, dtype=float)
     v2 = np.asarray(v2, dtype=float)
-    theta = np.atleast_1d(np.asarray(theta, dtype=float))
-    dmd = np.atleast_1d(np.asarray(dmd, dtype=float))
-    x = np.atleast_1d(np.asarray(x, dtype=float))
-    disp = x[:, None] * v1                       # straight-leg chord default
-    tangent = np.array(v1, dtype=float, copy=True)
+    theta = np.asarray(theta, dtype=float)
+    dmd = np.asarray(dmd, dtype=float)
+    x = np.asarray(x, dtype=float)
+    # Broadcast-clean over ANY leading batch shape: theta/dmd/x are (...) and
+    # v1/v2 are (..., 3). np.where over guarded intermediates (no boolean
+    # masking / reshape) so N-D batched callers -- e.g. cov/dense-sweep surfaces
+    # feeding (n_leg, n_query, 3) -- work exactly like the 1-D case (welleng
+    # #308 regression, api-caught: the old inline forms were broadcast-clean).
     s = np.sin(theta)
-    m = (theta >= 1e-14) & (np.abs(s) >= 1e-12)  # curved, plane well-defined
-    if m.any():
-        a = v1[m].reshape(-1, 3)
-        b = v2[m].reshape(-1, 3)
-        th = theta[m]
-        phi = x[m] * th / dmd[m]
-        R = dmd[m] / th
-        hc = np.cos((th - phi) / 2) / np.cos(th / 2)
-        hs = np.sin((th - phi) / 2) / np.sin(th / 2)
-        disp[m] = (R * np.sin(phi / 2))[:, None] * (
-            (a + b) * hc[:, None] + (a - b) * hs[:, None]
-        )
-        u = (b - np.cos(th)[:, None] * a) / s[m][:, None]
-        tangent[m] = np.cos(phi)[:, None] * a + np.sin(phi)[:, None] * u
+    curved = (theta >= 1e-14) & (np.abs(s) >= 1e-12)   # (...) plane well-defined
+    th = np.where(curved, theta, 1.0)                  # guarded denominators
+    sin_th = np.where(curved, s, 1.0)
+    dmd_safe = np.where(dmd == 0.0, 1.0, dmd)
+    phi = x * theta / dmd_safe                         # partial dogleg
+    R = dmd / th
+    cw = curved[..., None]
+    # Position: half-angle where curved, else the straight chord x*v1.
+    hc = np.cos((th - phi) / 2) / np.cos(th / 2)
+    hs = np.sin((th - phi) / 2) / np.sin(th / 2)
+    disp_curved = (R * np.sin(phi / 2))[..., None] * (
+        (v1 + v2) * hc[..., None] + (v1 - v2) * hs[..., None]
+    )
+    disp = np.where(cw, disp_curved, x[..., None] * v1)
+    # Tangent: Rodrigues u-form where curved, else the start tangent v1.
+    u = (v2 - np.cos(th)[..., None] * v1) / sin_th[..., None]
+    tang_curved = np.cos(phi)[..., None] * v1 + np.sin(phi)[..., None] * u
+    tangent = np.where(cw, tang_curved, v1)
     return disp, tangent
 
 
