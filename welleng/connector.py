@@ -20,7 +20,7 @@ from .node import Node, get_node_params
 from .sawaryn_analytical import max_radius, solve_clc
 from .utils import (
     dls_from_radius, get_angles,
-    get_dogleg, get_nev, get_rf, get_vec, radius_from_dls, get_arc
+    arc_step, get_dogleg, get_nev, get_rf, get_vec, radius_from_dls, get_arc
 )
 
 
@@ -1631,12 +1631,17 @@ def interpolate_curve(
     # vanishes only at a zero turn (straight -> vec1) or an exact pi turn
     # (antiparallel tangents, arc plane undetermined by the tangents alone: a
     # measure-zero singularity left as the start direction).
-    sin_dl = np.sin(dogleg)
-    if abs(sin_dl) < 1e-10:
-        vec = np.tile(vec1, (len(md), 1))
-    else:
-        u = (vec2 - np.cos(dogleg) * vec1) / sin_dl
-        vec = np.cos(dogleg_interp) * vec1 + np.sin(dogleg_interp) * u
+    # Tangent along the arc via the single arc kernel (welleng #308) -- one home
+    # shared with MinCurve.interpolate / min_curve_step. vec1/vec2 are NEV and
+    # arc_step is basis-agnostic, so the tangents come back NEV. x = md (arc
+    # length from the start), theta = dogleg, leg length = dist_curve. The
+    # kernel's Rodrigues u-form keeps the correct sign for dogleg > pi (long-way
+    # loops); the renormalise below is retained (cosmetic, ~ulp) for continuity.
+    n = len(md)
+    _, vec = arc_step(
+        np.tile(vec1, (n, 1)), np.tile(vec2, (n, 1)),
+        np.full(n, dogleg), np.full(n, dist_curve), md,
+    )
     vec = vec / np.linalg.norm(vec, axis=1).reshape(-1, 1)
     inc, azi = get_angles(vec, nev=True).T
 
