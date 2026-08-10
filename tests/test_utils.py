@@ -9,6 +9,7 @@ from welleng.utils import (
     dms2decimal,
     pprint_dms,
     dms_from_string,
+    arc_step,
     get_dogleg,
     get_rf,
     min_curve_step,
@@ -361,6 +362,35 @@ def test_min_curve_step_matches_mincurve():
         mc.delta_md[1:], inc[:-1], azi[:-1], inc[1:], azi[1:], mc.rf[1:]
     )
     assert np.allclose(result, expected, atol=1e-10)
+
+
+def test_arc_step_nd_batch_broadcasts():
+    """arc_step must be broadcast-clean over ANY leading batch shape, not just
+    1-D legs. Regression: welleng #308's one-homing consolidated the inline arc
+    forms (which broadcast) into arc_step using [:, None] + boolean-mask reshape
+    (which assumed 1-D), breaking N-D batched callers (cov / dense-sweep
+    surfaces feeding (n_leg, n_query, 3)). The N-D result must equal the per-leg
+    1-D result exactly, and the tangent must stay unit."""
+    rng = np.random.default_rng(1)
+    v1 = rng.normal(size=(6, 79, 3))
+    v1 /= np.linalg.norm(v1, axis=-1, keepdims=True)
+    ax = rng.normal(size=(6, 79, 3))
+    ax -= v1 * np.sum(ax * v1, axis=-1, keepdims=True)
+    ax /= np.linalg.norm(ax, axis=-1, keepdims=True)
+    theta = rng.uniform(0.01, 3.0, size=(6, 79))
+    v2 = np.cos(theta)[..., None] * v1 + np.sin(theta)[..., None] * ax
+    dmd = rng.uniform(10, 100, size=(6, 79))
+    x = rng.uniform(0, 1, size=(6, 79)) * dmd
+
+    disp, tang = arc_step(v1, v2, theta, dmd, x)
+    assert disp.shape == (6, 79, 3) and tang.shape == (6, 79, 3)
+    # N-D result == the per-leg 1-D result, bit for bit
+    for i in range(6):
+        d1, t1 = arc_step(v1[i], v2[i], theta[i], dmd[i], x[i])
+        np.testing.assert_array_equal(d1, disp[i])
+        np.testing.assert_array_equal(t1, tang[i])
+    # tangent is a unit vector everywhere
+    np.testing.assert_allclose(np.linalg.norm(tang, axis=-1), 1.0, atol=1e-12)
 
 
 def test_dls_radius_inverse():
