@@ -141,3 +141,43 @@ def test_schema_is_human_readable(edm):
     assert edm.schema["CD_PORE_PRESSURE"]["name"] == "Pore pressure"
     assert "canonical" in edm.schema["CD_PORE_PRESSURE"]["description"]
     assert edm.schema["CD_HOLE_SECT"]["fields"]["md_shoe"] == "shoe MD"
+
+
+# -- #307-adjacent geopressure fixes (richest group + tvd->metres) ------------
+VOLVE = os.path.join(HERE, "..", "data", "Volve.xml")
+_volve = pytest.mark.skipif(not os.path.isfile(VOLVE), reason="Volve.xml not present")
+
+
+@_volve
+def test_pore_pressure_default_picks_richest_curve_not_anchor():
+    """Default pore_pressure returns the full-depth prognosis (richest group),
+    NOT Volve's single-point ACTUAL anchor (drilling bug 1)."""
+    r = open_edm(VOLVE, with_geopressure=True)
+    wb = next(w for w in r.wellbores.values()
+              if r.pore_pressure(w.wellbore_id)
+              and len(r.pore_pressure(w.wellbore_id)[0].tvd) > 1)
+    p = r.pore_pressure(wb.wellbore_id)[0]
+    assert len(p.tvd) > 1                       # a curve, not the 1-point anchor
+    # the ACTUAL phase is a single-point anchor wherever it exists (some
+    # wellbores carry only PLAN/PROTOTYPE) -- so filtering to it never returns
+    # the curve.
+    any_actual = [r.pore_pressure(w.wellbore_id, phase="ACTUAL")
+                  for w in r.wellbores.values()]
+    anchors = [a[0] for a in any_actual if a]
+    assert anchors and all(len(a.tvd) == 1 for a in anchors)
+
+
+@_volve
+def test_geopressure_tvd_converted_to_metres():
+    """tvd is returned in metres by default (Volve source is feet) and in feet
+    on request, so it lines up with a survey to_welleng (drilling bug 2)."""
+    r = open_edm(VOLVE, with_geopressure=True)     # source_units defaults to feet
+    wb = next(w for w in r.wellbores.values()
+              if r.pore_pressure(w.wellbore_id)
+              and len(r.pore_pressure(w.wellbore_id)[0].tvd) > 1)
+    m = r.pore_pressure(wb.wellbore_id, units="meters")[0]
+    ft = r.pore_pressure(wb.wellbore_id, units="feet")[0]
+    np.testing.assert_allclose(ft.tvd, m.tvd / 0.3048, rtol=1e-9)
+    # a deep pore point is a physical gradient (~0.4-0.6 psi/ft) once tvd is feet
+    grad = m.value[-1] / (m.tvd[-1] / 0.3048)
+    assert 0.3 < grad < 0.7

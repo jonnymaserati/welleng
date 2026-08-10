@@ -633,7 +633,7 @@ class GeopressureProfile:
     **temperature** for a temp profile (Volve stores degF). ``emw`` (pore/frac
     only) is the stored equivalent mud weight in ppg — an **RKB-datum view**,
     for display only; never derive PPFP logic from it. ``tvd`` is in the
-    reader's ``source_units``.
+    it was the reader's ``source_units`` (feet on Volve).
     """
 
     kind: str                       # "pore" | "frac" | "temp"
@@ -1349,10 +1349,26 @@ class EDMReader:
                 "with with_geopressure=True"
             )
 
+    def _length_factor(self, units: str) -> float:
+        """Multiplier from the reader's ``source_units`` to ``units`` (as in
+        :meth:`WellboreSurvey.to_welleng`). Geopressure ``tvd`` is stored in
+        source units (feet on Volve); convert it so it lines up with the
+        metres a survey ``to_welleng`` returns."""
+        src, u = self.source_units.lower(), units.lower()
+        if src == u:
+            return 1.0
+        if src == "feet" and u in ("meters", "metres", "m"):
+            return FEET_TO_METERS
+        if src in ("meters", "metres") and u == "feet":
+            return 1.0 / FEET_TO_METERS
+        return 1.0
+
     def _profiles(self, kind, groups, rows, wellbore, phase, latest,
-                  value_key, emw_key=None) -> List[GeopressureProfile]:
+                  value_key, emw_key=None, units: str = "meters"
+                  ) -> List[GeopressureProfile]:
         self._require_geopressure()
         wb = self._resolve_wellbore(wellbore).wellbore_id
+        factor = self._length_factor(units)
         out = []
         for gid, g in groups.items():
             if g.get("wellbore_id") != wb:
@@ -1365,29 +1381,38 @@ class EDMReader:
                 # No point rows: a group may instead store the LINEAR-gradient
                 # form on its own row (temperature especially -- mudline_temp +
                 # grad_tvd*(tvd - temp_tvd)). Synthesize a usable profile.
-                grad = self._gradient_form_profile(kind, gid, g, wb)
+                grad = self._gradient_form_profile(kind, gid, g, wb, factor)
                 if grad is not None:
                     out.append(grad)
                 continue
             out.append(GeopressureProfile(
                 kind=kind, phase=g.get("phase"), name=g.get("name", ""),
                 wellbore_id=wb, group_id=gid, update_date=g.get("update_date"),
-                tvd=np.array([_f(r, "tvd") for r in recs], dtype=float),
+                tvd=np.array([_f(r, "tvd") for r in recs], dtype=float) * factor,
                 value=np.array([_f(r, value_key) for r in recs], dtype=float),
                 emw=(np.array([_f(r, emw_key) for r in recs], dtype=float)
                      if emw_key else None),
                 permeable=(np.array([r.get("is_permeable_zone") == "Y"
                                      for r in recs]) if kind == "pore" else None),
             ))
-        # newest group first (by update_date string, ISO-ish so lexical works)
-        out.sort(key=lambda p: p.update_date or "", reverse=True)
-        return out[:1] if (latest and out) else out
+        if latest and out:
+            # Richest group (most points) = the full-depth prognosis; ties ->
+            # PLAN. In Volve the ACTUAL phase is a single-point shallow anchor
+            # (~seabed ref, copied across wells), so a date-based "latest" lands
+            # on the anchor and drops the curve -- pick by point count instead.
+            out.sort(key=lambda p: (len(p.tvd), p.phase == "PLAN"), reverse=True)
+            return out[:1]
+        return out
 
-    def _gradient_form_profile(self, kind, gid, g, wb):
+    def _gradient_form_profile(self, kind, gid, g, wb, factor: float = 1.0):
         """Synthesize a profile from the LINEAR-gradient attributes on a group
         row (no point children). Verified for temperature (``grad_tvd`` degF/ft
         from ``temp_tvd``/``mudline_temp``); returns ``None`` for other kinds
-        (pore/frac gradient-attribute forms are not yet confirmed in Volve)."""
+        (pore/frac gradient-attribute forms are not yet confirmed in Volve).
+
+        ``factor`` converts source-unit lengths to the requested units: tvd /
+        reference_tvd scale by ``factor``, and the per-length ``gradient`` by
+        ``1/factor`` so ``value_at(tvd)`` is unchanged."""
         if kind != "temp":
             return None
         grad = _f(g, "grad_tvd")
@@ -1396,6 +1421,8 @@ class EDMReader:
         surface = _f(g, "surface_ambient_temp")
         if grad is None or ref_tvd is None or mudline is None:
             return None
+        ref_tvd *= factor
+        grad = grad / factor
         # shallow anchors: surface (tvd 0) -> mudline (ref_tvd); gradient below
         if surface is not None:
             tvd = np.array([0.0, ref_tvd], dtype=float)
@@ -1410,31 +1437,40 @@ class EDMReader:
             reference_tvd=ref_tvd, reference_value=mudline, surface_value=surface,
         )
 
-    def pore_pressure(self, wellbore, phase: str = "ACTUAL",
-                      latest: bool = True) -> List[GeopressureProfile]:
+    def pore_pressure(self, wellbore, phase: Optional[str] = None,
+                      latest: bool = True, units: str = "meters"
+                      ) -> List[GeopressureProfile]:
         """Pore-pressure prognoses (pressure in psi is canonical).
 
-        ``phase`` filters PLAN | ACTUAL | PROTOTYPE (``None`` for all);
-        ``latest`` keeps only the newest matching group.
+        ``phase`` filters PLAN | ACTUAL | PROTOTYPE (default ``None`` = all;
+        note Volve's ACTUAL is a single-point shallow anchor, not a curve).
+        ``latest`` keeps only the RICHEST group (the full-depth prognosis; ties
+        -> PLAN) rather than a date-newest one. ``tvd`` is returned in ``units``
+        (default metres, matching a survey ``to_welleng``); pressure stays psi.
         """
         return self._profiles(
             "pore", self._pp_groups, self._pp_rows, wellbore, phase, latest,
-            "pore_pressure", "pore_pressure_emw")
+            "pore_pressure", "pore_pressure_emw", units=units)
 
-    def frac_gradient(self, wellbore, phase: str = "ACTUAL",
-                      latest: bool = True) -> List[GeopressureProfile]:
-        """Fracture-gradient prognoses (pressure in psi is canonical)."""
+    def frac_gradient(self, wellbore, phase: Optional[str] = None,
+                      latest: bool = True, units: str = "meters"
+                      ) -> List[GeopressureProfile]:
+        """Fracture-gradient prognoses (pressure in psi is canonical). ``tvd``
+        in ``units`` (default metres); see :meth:`pore_pressure` for the phase /
+        richest-group / units behaviour."""
         return self._profiles(
             "frac", self._fg_groups, self._fg_rows, wellbore, phase, latest,
-            "frac_gradient_pressure", "frac_gradient_emw")
+            "frac_gradient_pressure", "frac_gradient_emw", units=units)
 
     def temperature(self, wellbore, phase: Optional[str] = None,
-                    latest: bool = True) -> List[GeopressureProfile]:
+                    latest: bool = True, units: str = "meters"
+                    ) -> List[GeopressureProfile]:
         """Temperature (geothermal) prognoses. Volve stores degF; ``value``
-        is the raw stored temperature (no unit conversion)."""
+        is the raw stored temperature (no unit conversion). ``tvd`` in
+        ``units`` (default metres)."""
         return self._profiles(
             "temp", self._tg_groups, self._tg_rows, wellbore, phase, latest,
-            "temperature")
+            "temperature", units=units)
 
     def geometry(self, wellbore, group_id: Optional[str] = None
                  ) -> List[HoleSection]:
