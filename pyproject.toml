@@ -183,6 +183,7 @@ dev = [
     "pytest-xdist",
     "networkx",
     "trimesh",
+    "mpmath",   # 200-bit oracle for tests/test_fpcore_conditioning.py (welleng#307 gate)
 ]
 
 [tool.ruff]
