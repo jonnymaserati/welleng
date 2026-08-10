@@ -258,17 +258,16 @@ class MinCurve:
         scalar = np.ndim(md) == 0
         q = np.atleast_1d(np.asarray(md, dtype=float))
         mds = np.asarray(self.md, dtype=float)
-        inc = np.asarray(self.inc, dtype=float)
-        azi = np.asarray(self.azi, dtype=float)
         in_range = (q >= mds[0]) & (q <= mds[-1])
         idx = np.clip(np.searchsorted(mds, q, side="left") - 1, 0, len(mds) - 2)
         x = q - mds[idx]
         DL = self.dogleg[idx + 1]
         dmd = self.delta_md[idx + 1]
         straight = DL < 1e-14
-        inc_i = np.where(straight, inc[idx], 0.0)
-        azi_i = np.where(straight, azi[idx], 0.0)
         m = ~straight
+        # Query-point unit tangent, in vector space throughout. Straight ->
+        # the station tangent; curved -> the Rodrigues sweep below.
+        t_query = self._tangents[idx].astype(float).copy()
         if m.any():
             t1 = self._tangents[idx][m].reshape(-1, 3)
             t2 = self._tangents[idx + 1][m].reshape(-1, 3)
@@ -280,20 +279,24 @@ class MinCurve:
             # per-query 1/sin amplifier (SLERP's ~44x near-180deg loss). Expands
             # to the same weights as SLERP away from the ill-conditioned tail.
             u = (t2 - np.cos(DL[m])[:, None] * t1) / s[:, None]
-            t = np.cos(dl)[:, None] * t1 + np.sin(dl)[:, None] * u
-            ang = get_angles(t)
-            inc_i[m] = ang[:, 0]
-            azi_i[m] = ang[:, 1]
+            t_query[m] = np.cos(dl)[:, None] * t1 + np.sin(dl)[:, None] * u
         rf = get_rf(np.where(straight, 0.0, x * DL / dmd))
-        deltas = min_curve_step(x, inc[idx], azi[idx], inc_i, azi_i, rf)
+        # Min-curve position step in VECTOR space: delta = (delta_md/2) rf
+        # (t_station + t_query), t's unit tangents in [E, N, V]. This equals
+        # min_curve_step's [N,E,V] = scale (vec1 + vec2) (get_vec gives [E,N,V]),
+        # but we already hold both tangent vectors -- so it skips the redundant
+        # vec -> angles -> vec round-trip (get_angles + min_curve_step re-deriving
+        # vectors from angles). Bit-identical to the angle path.
+        scale = (x * rf / 2.0)[:, None]
         pos = self.poss[idx].astype(float).copy()
-        pos[:, 0] += deltas[:, 1]   # x
-        pos[:, 1] += deltas[:, 0]   # y
-        pos[:, 2] += deltas[:, 2]   # z (TVD)
+        pos += scale * (self._tangents[idx] + t_query)
         pos[~in_range] = np.nan
         if angles:
-            inc_i = np.where(in_range, inc_i, np.nan)
-            azi_i = np.where(in_range, azi_i, np.nan)
+            # inc/azi only for the angles=True return -- one get_angles on the
+            # query tangent, not a per-position round-trip.
+            ang = get_angles(t_query)
+            inc_i = np.where(in_range, ang[:, 0], np.nan)
+            azi_i = np.where(in_range, ang[:, 1], np.nan)
             if scalar:
                 return pos[0], float(inc_i[0]), float(azi_i[0])
             return pos, inc_i, azi_i
