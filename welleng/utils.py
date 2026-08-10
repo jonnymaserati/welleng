@@ -184,6 +184,9 @@ class MinCurve:
 
         inc = np.array(inc)
         azi = np.array(azi)
+        # Per-station unit tangents are constants; cache them once so
+        # interpolate() doesn't recompute get_vec on every query (welleng #307).
+        self._tangents = get_vec(inc, azi, deg=False)
         inc_1, inc_2 = inc[:-1], inc[1:]
         azi_1, azi_2 = azi[:-1], azi[1:]
 
@@ -229,8 +232,8 @@ class MinCurve:
         """Minimum-curvature position at arbitrary measured depth(s).
 
         Interpolates along the min-curve ARC between the bracketing stations
-        (SLERP of the unit tangent by the partial dogleg, then one min-curve
-        segment) -- **never a straight chord**. This is the light MD->TVD (and
+        (Rodrigues normal-vector sweep of the unit tangent by the partial
+        dogleg, then one min-curve segment) -- **never a straight chord**. This is the light MD->TVD (and
         n/e) path for shoes / formation tops etc.: no ``Survey``, no covariance,
         unit-agnostic (the result's length unit follows ``md``).
 
@@ -267,12 +270,17 @@ class MinCurve:
         azi_i = np.where(straight, azi[idx], 0.0)
         m = ~straight
         if m.any():
-            t1 = get_vec(inc[idx][m], azi[idx][m], deg=False).reshape(-1, 3)
-            t2 = get_vec(inc[idx + 1][m], azi[idx + 1][m], deg=False).reshape(-1, 3)
+            t1 = self._tangents[idx][m].reshape(-1, 3)
+            t2 = self._tangents[idx + 1][m].reshape(-1, 3)
             dl = x[m] * DL[m] / dmd[m]
             s = np.sin(DL[m])
-            t = ((np.sin(DL[m] - dl) / s)[:, None] * t1
-                 + (np.sin(dl) / s)[:, None] * t2)
+            # Rodrigues normal-vector form, NOT SLERP (welleng #307): the normal
+            # u = (t2 - cos(DL) t1)/sin(DL) has |u| == 1 exactly by construction,
+            # so t(dl) = cos(dl) t1 + sin(dl) u is a one-time 1/sin setup with no
+            # per-query 1/sin amplifier (SLERP's ~44x near-180deg loss). Expands
+            # to the same weights as SLERP away from the ill-conditioned tail.
+            u = (t2 - np.cos(DL[m])[:, None] * t1) / s[:, None]
+            t = np.cos(dl)[:, None] * t1 + np.sin(dl)[:, None] * u
             ang = get_angles(t)
             inc_i[m] = ang[:, 0]
             azi_i[m] = ang[:, 1]
