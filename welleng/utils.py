@@ -22,10 +22,17 @@ def get_dogleg(inc1, azi1, inc2, azi2):
     -------
     dogleg: float or array — dogleg angle in radians
     """
-    return 2.0 * np.arcsin(np.sqrt(
+    # Clamp the haversine argument to [0, 1]: it is a sum of squares that is
+    # mathematically <= 1, but FP rounding can push it a few ulps past 1.0 at
+    # the antiparallel edge (a horizontal 180 deg turn: inc1==inc2==90, azi
+    # differing by 180), where sqrt of >1 -> arcsin NaN. The clamp makes that
+    # exact-pi U-turn return pi instead of NaN (welleng #307). No effect on any
+    # in-domain value.
+    return 2.0 * np.arcsin(np.sqrt(np.clip(
         np.sin((inc2 - inc1) / 2) ** 2
-        + np.sin(inc1) * np.sin(inc2) * np.sin((azi2 - azi1) / 2) ** 2
-    ))
+        + np.sin(inc1) * np.sin(inc2) * np.sin((azi2 - azi1) / 2) ** 2,
+        0.0, 1.0,
+    )))
 
 
 def get_rf(dogleg):

@@ -244,3 +244,23 @@ def test_interpolate_angles_return():
     # array form
     p, ii, aa = mc.interpolate([150.0, 780.5], angles=True)
     assert p.shape == (2, 3) and ii.shape == (2,) and aa.shape == (2,)
+
+
+# --- get_dogleg antiparallel/U-turn domain clamp (welleng #307) ---------------
+def test_get_dogleg_horizontal_uturn_is_pi_not_nan():
+    from welleng.utils import get_dogleg
+    # inc1==inc2==90, azi differing by 180 -> antiparallel tangents; the
+    # haversine arg is exactly 1.0 and FP rounding can push it past 1 -> NaN
+    # without the clamp. Must return pi.
+    dl = get_dogleg(np.radians(90.0), np.radians(0.0),
+                    np.radians(90.0), np.radians(180.0))
+    assert np.isfinite(dl)
+    np.testing.assert_allclose(dl, np.pi, atol=1e-9)
+
+
+def test_get_dogleg_unchanged_on_in_domain_values():
+    from welleng.utils import get_dogleg
+    assert get_dogleg(0.0, 0.0, 0.0, 0.0) == 0.0
+    np.testing.assert_allclose(
+        np.degrees(get_dogleg(np.radians(30.0), 0.0, np.radians(60.0), 0.0)),
+        30.0, atol=1e-9)
