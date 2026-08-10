@@ -1,0 +1,221 @@
+; Hot expressions of a minimum-curvature trajectory core, prepared for Herbie / FPBench.
+;
+; This is the English, self-contained edition of the file referenced in
+; jonnymaserati/welleng#307 — same kernels, internal path/crate references stripped.
+;
+; RUN ORDER MATTERS. The first kernel is a CALIBRATION kernel: it is an ALREADY-FIXED
+; defect (acos(dot) losing all precision near zero). If Herbie finds no improvement on
+; it, its "this form is optimal" verdict on the remaining kernels means nothing — the
+; tool is blind on this class, and that is itself the result of the run. A detector
+; that fails to flag a known target has not been validated.
+;
+; Axis convention: a direction vector is (x = East, y = North, z = TVD).
+; inc  — inclination / zenith, [0, pi]
+; azi  — azimuth, [0, 2*pi)
+; dM   — course length of the segment, metres
+; t    — fraction along the segment, [0, 1]
+; phi  — angle along the arc, phi = theta * t
+;
+; The :pre domains are taken from REAL survey input, not "from the type":
+; dM in [0.1, 1000] m (survey station spacing), theta in (1e-8, pi) — the arc branch
+; after the straight/arc split (our straight threshold is 1e-8 rad).
+;
+; Caveat on kernels whose arguments are vector COMPONENTS (position_arc_component,
+; arc_frame_normal_component): declaring the components independent loses the
+; constraint |v| = 1 and the relation v1 . v2 = cos(theta). Herbie will then report
+; precision loss on inputs that cannot physically occur. Do not trust a verdict on
+; those kernels without re-checking against an angle-parameterised form.
+
+; -----------------------------------------------------------------------------
+; K0. CALIBRATION: segment angle via acos(dot) — the form that shipped in our
+; production code until 2026-07-31. It returned NaN on ~9 % of identical-station
+; pairs (dot rounding a few ulp past 1) and a phantom dogleg of 1.5e-8 rad on a
+; further 18.5 %. Ground truth (our current form) is the chord form, kernel K1.
+; EXPECTATION: Herbie must propose something equivalent to K1.
+; -----------------------------------------------------------------------------
+(FPCore theta_via_acos_dot (i1 a1 i2 a2)
+  :name "theta = acos(dot(v1,v2)) — OLD form, known defect"
+  :pre (and (<= 0 i1 3.14159265358979) (<= 0 i2 3.14159265358979)
+            (<= 0 a1 6.28318530717959) (<= 0 a2 6.28318530717959))
+  (acos (+ (* (* (sin i1) (cos a1)) (* (sin i2) (cos a2)))
+           (+ (* (* (sin i1) (sin a1)) (* (sin i2) (sin a2)))
+              (* (cos i1) (cos i2))))))
+
+; K0b. Same expression, domain narrowed to the NEARLY COLLINEAR pair — where the
+; defect actually lived. Station 2 differs from station 1 by small d_i, d_a.
+(FPCore theta_via_acos_dot_near_collinear (i1 a1 di da)
+  :name "theta = acos(dot) on near-identical stations (defect domain)"
+  :pre (and (<= 0.001 i1 3.14) (<= 0 a1 6.28)
+            (<= -1e-4 di 1e-4) (<= -1e-4 da 1e-4))
+  (acos (+ (* (* (sin i1) (cos a1)) (* (sin (+ i1 di)) (cos (+ a1 da))))
+           (+ (* (* (sin i1) (sin a1)) (* (sin (+ i1 di)) (sin (+ a1 da))))
+              (* (cos i1) (cos (+ i1 di)))))))
+
+; -----------------------------------------------------------------------------
+; K1. Current angle form: the chord. theta = 2*asin(|v1 - v2| / 2).
+; The .min(1.0) clamp is deliberately omitted — it is a guard, not part of the form.
+; (For theta >= pi/2 we switch to 2*acos(|v1 + v2| / 2): there the SUM is the small
+; quantity, so each branch keeps its argument away from the flat end of the inverse
+; trig function.)
+; EXPECTATION: no improvement, or a negligible one — the form was chosen for
+; conditioning in the first place.
+; -----------------------------------------------------------------------------
+(FPCore theta_chord (i1 a1 di da)
+  :name "theta = 2*asin(|v1-v2|/2) — CURRENT form"
+  :pre (and (<= 0.001 i1 3.14) (<= 0 a1 6.28)
+            (<= -1e-4 di 1e-4) (<= -1e-4 da 1e-4))
+  (* 2 (asin (/ (sqrt (+ (pow (- (* (sin i1) (cos a1)) (* (sin (+ i1 di)) (cos (+ a1 da)))) 2)
+                         (+ (pow (- (* (sin i1) (sin a1)) (* (sin (+ i1 di)) (sin (+ a1 da)))) 2)
+                            (pow (- (cos i1) (cos (+ i1 di))) 2))))
+                2))))
+
+; -----------------------------------------------------------------------------
+; K2. Position along the arc, canonical "/ sin theta" writing, one component:
+;   p = 2*R*sin(phi/2)*(v1*sin(theta - phi/2) + v2*sin(phi/2)) / sin theta,
+;   R = dM/theta, phi = theta*t
+; See the caveat above: v1, v2 here are independent components in [-1, 1].
+; -----------------------------------------------------------------------------
+(FPCore position_arc_component (theta t dM v1 v2)
+  :name "position, arc: 2R*sin(phi/2)(v1*sin(theta-phi/2)+v2*sin(phi/2))/sin theta"
+  :pre (and (< 1e-8 theta 3.14159) (<= 0 t 1) (<= 0.1 dM 1000)
+            (<= -1 v1 1) (<= -1 v2 1))
+  (/ (* (* 2 (/ dM theta))
+        (* (sin (/ (* theta t) 2))
+           (+ (* v1 (sin (- theta (/ (* theta t) 2))))
+              (* v2 (sin (/ (* theta t) 2))))))
+     (sin theta)))
+
+; K2-small-angle: same expression, theta pressed against the branch threshold,
+; where the divide is by sin theta ~= theta.
+(FPCore position_arc_component_small_theta (theta t dM v1 v2)
+  :name "position, arc near the branch threshold (theta in (1e-8, 1e-4))"
+  :pre (and (< 1e-8 theta 1e-4) (<= 0 t 1) (<= 0.1 dM 1000)
+            (<= -1 v1 1) (<= -1 v2 1))
+  (/ (* (* 2 (/ dM theta))
+        (* (sin (/ (* theta t) 2))
+           (+ (* v1 (sin (- theta (/ (* theta t) 2))))
+              (* v2 (sin (/ (* theta t) 2))))))
+     (sin theta)))
+
+; -----------------------------------------------------------------------------
+; K3. Position, STRAIGHT branch (trapezoid):
+;   p = (v1*(1 - t/2) + v2*(t/2)) * dM * t
+; Here v1 and v2 differ by at most the straight threshold (1e-8 rad) in angle, so
+; there is no catastrophic cancellation by construction. This kernel checks that.
+; -----------------------------------------------------------------------------
+(FPCore position_straight_component (t dM v1 dv)
+  :name "position, straight: (v1(1-t/2) + (v1+dv)(t/2))*dM*t"
+  :pre (and (<= 0 t 1) (<= 0.1 dM 1000) (<= -1 v1 1) (<= -1e-8 dv 1e-8))
+  (* (+ (* v1 (- 1 (/ t 2))) (* (+ v1 dv) (/ t 2)))
+     (* dM t)))
+
+; -----------------------------------------------------------------------------
+; K4. Canonical arc form in the (v1, n) frame — the reference expression several
+; consumers derive from:
+;   p(phi) = R * (v1*sin phi + n*(1 - cos phi))
+; `1 - cos phi` at small phi is the classic cancellation (truth ~= phi^2/2).
+; EXPECTATION: Herbie proposes 2*sin^2(phi/2). It does — and that is the useful
+; finding, because the form sits on the path of EVERY consumer of the canonical
+; writing.
+; NOTE (measured, mpmath at 200 bits, relative accuracy of the normal's contribution):
+;   phi = 1e-2 : 1 - cos phi = 41.7 bits, 2*sin^2(phi/2) = 52.1 bits
+;   phi = 1e-4 : 27.5 bits vs 52.6 bits
+;   phi = 1e-8 :  0.0 bits vs 52.7 bits
+; The Taylor series Herbie suggests instead (phi^2/2 - phi^4/24) is NOT usable: it
+; collapses to 1.2 bits at phi = 3 rad. Herbie samples log-uniformly, so its average
+; error is dominated by tiny phi; for a dogleg the whole [0, pi] range is live.
+; Take the CLASS of the finding, not the proposed replacement.
+; -----------------------------------------------------------------------------
+(FPCore canonical_projection (R phi v1u nu)
+  :name "canonical: R*(v1*sin phi + n*(1 - cos phi))"
+  :pre (and (<= 0.1 R 1e9) (<= 0 phi 3.14159) (<= -1 v1u 1) (<= -1 nu 1))
+  (* R (+ (* v1u (sin phi)) (* nu (- 1 (cos phi))))))
+
+; -----------------------------------------------------------------------------
+; K5. Arc-plane normal, n = (v2 - cos theta * v1) / sin theta.
+; The denominator is exactly the norm of the numerator (|v2 - cos theta * v1| =
+; sin theta), so the ratio stays unit at any theta. Question to Herbie: does an
+; individual COMPONENT lose anything. (Component-independence caveat applies.)
+; -----------------------------------------------------------------------------
+(FPCore arc_frame_normal_component (theta v1 v2)
+  :name "arc frame: n = (v2 - cos theta * v1)/sin theta"
+  :pre (and (< 1e-8 theta 3.14159) (<= -1 v1 1) (<= -1 v2 1))
+  (/ (- v2 (* (cos theta) v1)) (sin theta)))
+
+; -----------------------------------------------------------------------------
+; K6. Tangent along the arc, before normalisation:
+;   d = v2*sin phi - v1*sin(phi - theta)
+; Note |d| = sin theta exactly, so the subsequent normalisation is not a rescue
+; of a "small / small" — the 1/sin theta of the SLERP writing is absorbed by it and
+; never evaluated. This was still the worst-conditioned kernel of our whole scan
+; (35.8 -> 51.1 ulp at small theta), i.e. this is where a measured loss lives and
+; where Herbie is most likely to be worth something.
+; -----------------------------------------------------------------------------
+(FPCore direction_arc_component (theta t v1 v2)
+  :name "tangent, arc: v2*sin(theta*t) - v1*sin(theta*t - theta)"
+  :pre (and (< 1e-8 theta 3.14159) (<= 0 t 1) (<= -1 v1 1) (<= -1 v2 1))
+  (- (* v2 (sin (* theta t)))
+     (* v1 (sin (- (* theta t) theta)))))
+
+(FPCore direction_arc_component_small_theta (theta t v1 v2)
+  :name "tangent, arc near the branch threshold (theta in (1e-8, 1e-4))"
+  :pre (and (< 1e-8 theta 1e-4) (<= 0 t 1) (<= -1 v1 1) (<= -1 v2 1))
+  (- (* v2 (sin (* theta t)))
+     (* v1 (sin (- (* theta t) theta)))))
+
+; -----------------------------------------------------------------------------
+; K7. TVD -> MD inversion on one arc: the arcsine argument of the closed-form
+; solution of "arc meets a horizontal plane":
+;   sin_arg = (dTVD/R - a) / sqrt(a^2 + c^2),  a = n . z_hat,  c = v1 . z_hat
+; Two hazards: (1) sqrt(a^2 + c^2) with both small — a near-horizontal arc;
+; (2) dTVD/R - a subtracts close values at large R — a gentle arc.
+; -----------------------------------------------------------------------------
+(FPCore analytical_sin_arg (dtvd R a c)
+  :name "TVD inversion: (dTVD/R - a)/sqrt(a^2+c^2)"
+  ; NOTE: the condition `a^2 + c^2 > eps` is deliberately ABSENT. Herbie cannot invert a
+  ; nonlinear precondition, so it collects sample points by rejection and throws away
+  ; 99.9 % of them — the kernel then fails outright with "error" (observed 2026-07-31).
+  ; A degenerate denominator is discarded on its own as an invalid point.
+  :pre (and (<= -1000 dtvd 1000) (<= 0.1 R 1e9) (<= -1 a 1) (<= -1 c 1))
+  (/ (- (/ dtvd R) a) (sqrt (+ (* a a) (* c c)))))
+
+; K7b. The full root: phi = asin(sin_arg) + atan2(a, c).
+(FPCore analytical_root (dtvd R a c)
+  :name "TVD inversion: phi = asin((dTVD/R - a)/sqrt(a^2+c^2)) + atan2(a, c)"
+  ; Same deliberate omission of the nonlinear precondition as in K7.
+  :pre (and (<= -1000 dtvd 1000) (<= 0.1 R 1e9) (<= -1 a 1) (<= -1 c 1))
+  (+ (asin (/ (- (/ dtvd R) a) (sqrt (+ (* a a) (* c c)))))
+     (atan2 a c)))
+
+; -----------------------------------------------------------------------------
+; K8. Closest-approach (anti-collision), STRAIGHT branch — the curve model and the
+; Newton step:
+;   p(x) = v1*x + delta*x^2/(2L),   g = (p - w).p',   p' = v1 + delta*x/L
+; This is exactly where a re-derived copy of the formula had drifted (a lost divide
+; by L), fixed 2026-07-31. Domain: delta <= 1e-8 by construction of the branch.
+; -----------------------------------------------------------------------------
+(FPCore closest_straight_point (x L v1 d)
+  :name "closest approach, straight: p(x) = v1*x + delta*x^2/(2L)"
+  :pre (and (<= 0 x 1000) (<= 0.1 L 1000) (<= -1 v1 1) (<= -1e-8 d 1e-8))
+  (+ (* v1 x) (* d (/ (* x x) (* 2 L)))))
+
+; -----------------------------------------------------------------------------
+; K9. Stationary points on an arc — the shared primitive behind the TVD extrema,
+; the bounding box and the closest-approach seed:
+;   phi = atan2(-beta, alpha)   (root of alpha*sin phi + beta*cos phi = 0)
+; Herbie is unlikely to say anything (atan2 is stable); included for completeness
+; of the consumer list.
+; -----------------------------------------------------------------------------
+(FPCore stationary_phi (alpha beta)
+  :name "stationary phi = atan2(-beta, alpha)"
+  :pre (and (<= -1e9 alpha 1e9) (<= -1e9 beta 1e9))
+  (atan2 (- beta) alpha))
+
+; -----------------------------------------------------------------------------
+; K10. Dogleg severity: (theta/dM)*10, converted to degrees. Multiplication by
+; constants is trivially safe; the kernel carries the domain for report completeness.
+; -----------------------------------------------------------------------------
+(FPCore dls (theta dM)
+  :name "dls = rad2deg(theta/dM * 10)"
+  :pre (and (<= 0 theta 3.14159) (<= 0.1 dM 1000))
+  (* (/ (* theta 10) dM) 57.29577951308232))
