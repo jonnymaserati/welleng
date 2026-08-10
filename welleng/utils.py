@@ -232,8 +232,8 @@ class MinCurve:
         """Minimum-curvature position at arbitrary measured depth(s).
 
         Interpolates along the min-curve ARC between the bracketing stations
-        (Rodrigues normal-vector sweep of the unit tangent by the partial
-        dogleg, then one min-curve segment) -- **never a straight chord**. This is the light MD->TVD (and
+        (closed-form half-angle position + its analytic tangent, welleng #308)
+        -- **never a straight chord**. This is the light MD->TVD (and
         n/e) path for shoes / formation tops etc.: no ``Survey``, no covariance,
         unit-agnostic (the result's length unit follows ``md``).
 
@@ -252,8 +252,10 @@ class MinCurve:
 
         Notes
         -----
-        NEVER linear-interpolate a trajectory. Matches
-        :meth:`welleng.survey.Survey.interpolate_md` to machine precision.
+        NEVER linear-interpolate a trajectory. Agrees with
+        :meth:`welleng.survey.Survey.interpolate_md` to sub-ulp for doglegs up
+        to ~2 rad; near ``pi`` this half-angle form is the better-conditioned of
+        the two (~0.1 ulp vs tens for the balanced-tangential node path).
         """
         scalar = np.ndim(md) == 0
         q = np.atleast_1d(np.asarray(md, dtype=float))
@@ -265,31 +267,37 @@ class MinCurve:
         dmd = self.delta_md[idx + 1]
         straight = DL < 1e-14
         m = ~straight
-        # Query-point unit tangent, in vector space throughout. Straight ->
-        # the station tangent; curved -> the Rodrigues sweep below.
+        # Query-point unit tangent + local displacement from station `idx`, in
+        # vector space throughout. Straight leg -> station tangent + chord;
+        # curved -> the half-angle arc form below.
         t_query = self._tangents[idx].astype(float).copy()
-        if m.any():
-            t1 = self._tangents[idx][m].reshape(-1, 3)
-            t2 = self._tangents[idx + 1][m].reshape(-1, 3)
-            dl = x[m] * DL[m] / dmd[m]
-            s = np.sin(DL[m])
-            # Rodrigues normal-vector form, NOT SLERP (welleng #307): the normal
-            # u = (t2 - cos(DL) t1)/sin(DL) has |u| == 1 exactly by construction,
-            # so t(dl) = cos(dl) t1 + sin(dl) u is a one-time 1/sin setup with no
-            # per-query 1/sin amplifier (SLERP's ~44x near-180deg loss). Expands
-            # to the same weights as SLERP away from the ill-conditioned tail.
-            u = (t2 - np.cos(DL[m])[:, None] * t1) / s[:, None]
-            t_query[m] = np.cos(dl)[:, None] * t1 + np.sin(dl)[:, None] * u
-        rf = get_rf(np.where(straight, 0.0, x * DL / dmd))
-        # Min-curve position step in VECTOR space: delta = (delta_md/2) rf
-        # (t_station + t_query), t's unit tangents in [E, N, V]. This equals
-        # min_curve_step's [N,E,V] = scale (vec1 + vec2) (get_vec gives [E,N,V]),
-        # but we already hold both tangent vectors -- so it skips the redundant
-        # vec -> angles -> vec round-trip (get_angles + min_curve_step re-deriving
-        # vectors from angles). Bit-identical to the angle path.
-        scale = (x * rf / 2.0)[:, None]
         pos = self.poss[idx].astype(float).copy()
-        pos += scale * (self._tangents[idx] + t_query)
+        disp = x[:, None] * self._tangents[idx]          # straight-leg chord
+        if m.any():
+            v1 = self._tangents[idx][m].reshape(-1, 3)
+            v2 = self._tangents[idx + 1][m].reshape(-1, 3)
+            theta = DL[m]
+            phi = x[m] * theta / dmd[m]                  # partial dogleg
+            R = dmd[m] / theta                           # arc radius
+            # Half-angle arc form (welleng #308, enomado): the symbolic-identity
+            # rewrite of the canonical R[sin(phi) v1 + (1-cos(phi)) u] that pairs
+            # each vector sum with ITS OWN denominator -- |v1+v2| = 2cos(theta/2)
+            # and |v1-v2| = 2sin(theta/2) -- so neither ratio amplifies as
+            # theta -> pi (the U-turn regime #305 now renders). ~0.1 ulp near pi
+            # vs tens of ulp for the canonical /sin and the balanced-tangential
+            # rf = (2/phi)tan(phi/2) it replaces (both blow up at phi = pi).
+            hc = np.cos((theta - phi) / 2) / np.cos(theta / 2)
+            hs = np.sin((theta - phi) / 2) / np.sin(theta / 2)
+            disp[m] = (R * np.sin(phi / 2))[:, None] * (
+                (v1 + v2) * hc[:, None] + (v1 - v2) * hs[:, None]
+            )
+            # Tangent = analytic derivative of that same position, so the drawn
+            # point and drawn direction cannot disagree about which curve they
+            # are on. The 1/sin(theta) scalar is eaten by the normalisation, so
+            # there is no per-query 1/sin amplifier and no clamp is needed.
+            t = v2 * np.sin(phi)[:, None] - v1 * np.sin(phi - theta)[:, None]
+            t_query[m] = t / np.linalg.norm(t, axis=1, keepdims=True)
+        pos += disp
         pos[~in_range] = np.nan
         if angles:
             # inc/azi only for the angles=True return -- one get_angles on the
