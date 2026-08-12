@@ -168,9 +168,9 @@ def test_pore_pressure_default_picks_richest_curve_not_anchor():
 
 
 @_volve
-def test_geopressure_tvd_converted_to_metres():
-    """tvd is returned in metres by default (Volve source is feet) and in feet
-    on request, so it lines up with a survey to_welleng (drilling bug 2)."""
+def test_geopressure_tvd_units_convertible():
+    """tvd is returned in the requested ``units`` -- metres and feet convert
+    exactly, and a deep pore point is a physical gradient once tvd is feet."""
     r = open_edm(VOLVE, with_geopressure=True)     # source_units defaults to feet
     wb = next(w for w in r.wellbores.values()
               if r.pore_pressure(w.wellbore_id)
@@ -178,6 +178,29 @@ def test_geopressure_tvd_converted_to_metres():
     m = r.pore_pressure(wb.wellbore_id, units="meters")[0]
     ft = r.pore_pressure(wb.wellbore_id, units="feet")[0]
     np.testing.assert_allclose(ft.tvd, m.tvd / 0.3048, rtol=1e-9)
-    # a deep pore point is a physical gradient (~0.4-0.6 psi/ft) once tvd is feet
     grad = m.value[-1] / (m.tvd[-1] / 0.3048)
     assert 0.3 < grad < 0.7
+
+
+@_volve
+def test_geopressure_default_units_honour_source_units():
+    """Geopressure TVD defaults to the reader's ``source_units`` so one
+    open_edm(...) call is internally consistent -- geopressure TVD lines up with
+    the survey/formation TVD from the SAME reader, not a mix of feet and metres
+    (welleng-design flag 2026-08-11). ``units=`` still overrides per call."""
+    wbid = None
+    r_ft = open_edm(VOLVE, source_units="feet", with_geopressure=True)
+    wbid = next(w.wellbore_id for w in r_ft.wellbores.values()
+                if r_ft.pore_pressure(w.wellbore_id)
+                and len(r_ft.pore_pressure(w.wellbore_id)[0].tvd) > 1)
+    # default (no units) == explicit source_units; NOT the metres value
+    default_ft = r_ft.pore_pressure(wbid)[0].tvd
+    explicit_ft = r_ft.pore_pressure(wbid, units="feet")[0].tvd
+    as_metres = r_ft.pore_pressure(wbid, units="meters")[0].tvd
+    np.testing.assert_allclose(default_ft, explicit_ft, rtol=1e-12)
+    np.testing.assert_allclose(default_ft, as_metres / 0.3048, rtol=1e-9)
+    # a metres reader defaults to metres
+    r_m = open_edm(VOLVE, source_units="meters", with_geopressure=True)
+    np.testing.assert_allclose(
+        r_m.pore_pressure(wbid)[0].tvd,
+        r_m.pore_pressure(wbid, units="meters")[0].tvd, rtol=1e-12)
