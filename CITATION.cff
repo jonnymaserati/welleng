@@ -104,3 +104,16 @@ references:
         orcid: "https://orcid.org/0009-0008-1953-7760"
     year: 2026
     doi: 10.5281/zenodo.21901641
+  # Survey resolution bounds trajectory-derived fidelity (perspective).
+  # source: papers/published/survey-resolution-fidelity.md
+  - type: article
+    title: >-
+      Survey Resolution — Not Survey Frequency or Model Order — Bounds
+      Trajectory-Derived Fidelity: a worked, self-correcting note
+    authors:
+      - family-names: Corcutt
+        given-names: Jonathan
+        affiliation: "Corcutt Beheer B.V., Wassenaar, Netherlands"
+        orcid: "https://orcid.org/0009-0008-1953-7760"
+    year: 2026
+    doi: 10.5281/zenodo.21906319

@@ -509,6 +509,21 @@ If your work uses the **tortuosity index** (`welleng.survey` TI/MTI), please als
 }
 ```
 
+If your work concerns **survey resolution, survey frequency, or torque-and-drag model fidelity**, please also cite:
+
+> Corcutt, J. (2026). *Survey Resolution — Not Survey Frequency or Model Order — Bounds Trajectory-Derived Fidelity: a worked, self-correcting note.* Zenodo. <https://doi.org/10.5281/zenodo.21906319>
+
+```bibtex
+@misc{corcutt2026surveyresolution,
+  author    = {Corcutt, Jonathan},
+  title     = {Survey Resolution --- Not Survey Frequency or Model Order --- Bounds Trajectory-Derived Fidelity: a worked, self-correcting note},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.21906319},
+  url       = {https://doi.org/10.5281/zenodo.21906319}
+}
+```
+
 **Built on:** welleng stands on NumPy, SciPy, pandas, trimesh, FCL and more, and implements published methods (ISCWSA, Brooks, Sawaryn, …) — see [CITATIONS.md](CITATIONS.md) for the dependency and method references to credit.
 
 ## License
