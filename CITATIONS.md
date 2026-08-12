@@ -52,6 +52,10 @@ If your work relies on a specific method, please **also** cite the relevant pape
   Reconciling the Position-Direct Form with the Standard Measurement-Error
   Architecture.* Zenodo.
   [doi:10.5281/zenodo.21901641](https://doi.org/10.5281/zenodo.21901641)
+- **Survey resolution bounds trajectory-derived fidelity** — Corcutt, J. (2026).
+  *Survey Resolution — Not Survey Frequency or Model Order — Bounds
+  Trajectory-Derived Fidelity: a worked, self-correcting note.* Zenodo.
+  [doi:10.5281/zenodo.21906319](https://doi.org/10.5281/zenodo.21906319)
 
 ## Built on — software dependencies
 

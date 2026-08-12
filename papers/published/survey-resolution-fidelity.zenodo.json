@@ -1,0 +1,53 @@
+{
+    "upload_type": "publication",
+    "publication_type": "preprint",
+    "version": "1.0",
+    "title": "Survey Resolution — Not Survey Frequency or Model Order — Bounds Trajectory-Derived Fidelity: a worked, self-correcting note",
+    "creators": [
+        {
+            "name": "Corcutt, Jonathan",
+            "affiliation": "Corcutt Beheer B.V., Wassenaar, Netherlands",
+            "orcid": "0009-0008-1953-7760"
+        }
+    ],
+    "description": "It is intuitive that a denser survey, or a higher-order mechanical model, should give a more accurate picture of a well. This note examines that intuition directly, working through the full modelling stack built in the open-source welleng library (the ISCWSA extended-course-length survey-interval error term, a maximum-curvature interpolator, the tortuosity index, and minimum-curvature covariance propagation) together with a tiered torque-and-drag engine. It reaches one conclusion that holds across both position uncertainty and torque-and-drag: fidelity is bounded by the resolution of the survey, not by how often you survey below that resolution, nor by the order of the mechanical model. The physical cause is common to both: the stiff near-bit assembly band-limits the wellbore it drills, so geometry shorter than the assembly's bending wavelength is neither drilled, nor sensed, nor traversed as extra measured depth. The adopted survey-interval error model (ISCWSA MWD Rev5, following Codling SPE/IADC-187249) already floors this at a minimum course length limited by the ending stiffness of the drill collar; a higher-order torque-and-drag model cannot recover curvature the survey never captured (Nobbs SPE-207935; Mitchell & Samuel SPE-105068). The note also records, honestly, that the work set out to propose a new error term and had to be corrected against the primary literature en route (the high-frequency floor was already published by Gaynor SPE/IADC-67818 and by Woods and Lubinski; the survey-only directional-bias term did not stand) — that self-correction is part of the lesson. The practical guidance: match survey frequency to the physical floor, match model tier to the data and the question, and recognise where the genuinely open problem still lies. Position-side tooling is in the open-source welleng library (Apache-2.0) and the results are reader-reproducible.",
+    "license": "cc-by-4.0",
+    "access_right": "open",
+    "keywords": [
+        "wellbore position uncertainty",
+        "survey interval",
+        "extended course length",
+        "XCL",
+        "ISCWSA",
+        "error model",
+        "torque and drag",
+        "soft string",
+        "stiff string",
+        "micro-tortuosity",
+        "minimum curvature",
+        "survey resolution",
+        "directional drilling",
+        "MWD",
+        "welleng",
+        "SPE"
+    ],
+    "related_identifiers": [
+        {
+            "identifier": "10.2118/187249-MS",
+            "relation": "cites",
+            "scheme": "doi",
+            "resource_type": "publication-conferencepaper"
+        },
+        {
+            "identifier": "https://github.com/jonnymaserati/welleng",
+            "relation": "isSupplementedBy",
+            "scheme": "url"
+        },
+        {
+            "identifier": "10.5281/zenodo.20968887",
+            "relation": "isSupplementTo",
+            "scheme": "doi",
+            "resource_type": "software"
+        }
+    ]
+}
