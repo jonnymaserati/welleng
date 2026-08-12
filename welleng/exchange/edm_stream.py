@@ -1364,11 +1364,14 @@ class EDMReader:
         return 1.0
 
     def _profiles(self, kind, groups, rows, wellbore, phase, latest,
-                  value_key, emw_key=None, units: str = "meters"
+                  value_key, emw_key=None, units: Optional[str] = None
                   ) -> List[GeopressureProfile]:
         self._require_geopressure()
         wb = self._resolve_wellbore(wellbore).wellbore_id
-        factor = self._length_factor(units)
+        # Default to the reader's own source_units so one open_edm(...) call is
+        # internally consistent -- geopressure TVD matches survey/formation TVD
+        # (welleng#design-flag 2026-08-11). `units=` overrides per call.
+        factor = self._length_factor(units or self.source_units)
         out = []
         for gid, g in groups.items():
             if g.get("wellbore_id") != wb:
@@ -1438,36 +1441,38 @@ class EDMReader:
         )
 
     def pore_pressure(self, wellbore, phase: Optional[str] = None,
-                      latest: bool = True, units: str = "meters"
+                      latest: bool = True, units: Optional[str] = None
                       ) -> List[GeopressureProfile]:
         """Pore-pressure prognoses (pressure in psi is canonical).
 
         ``phase`` filters PLAN | ACTUAL | PROTOTYPE (default ``None`` = all;
         note Volve's ACTUAL is a single-point shallow anchor, not a curve).
         ``latest`` keeps only the RICHEST group (the full-depth prognosis; ties
-        -> PLAN) rather than a date-newest one. ``tvd`` is returned in ``units``
-        (default metres, matching a survey ``to_welleng``); pressure stays psi.
+        -> PLAN) rather than a date-newest one. ``tvd`` is returned in ``units``,
+        which defaults to the reader's ``source_units`` so it matches the survey
+        and formation TVD from the same reader; pass ``units="meters"`` for SI.
+        Pressure stays psi.
         """
         return self._profiles(
             "pore", self._pp_groups, self._pp_rows, wellbore, phase, latest,
             "pore_pressure", "pore_pressure_emw", units=units)
 
     def frac_gradient(self, wellbore, phase: Optional[str] = None,
-                      latest: bool = True, units: str = "meters"
+                      latest: bool = True, units: Optional[str] = None
                       ) -> List[GeopressureProfile]:
         """Fracture-gradient prognoses (pressure in psi is canonical). ``tvd``
-        in ``units`` (default metres); see :meth:`pore_pressure` for the phase /
-        richest-group / units behaviour."""
+        in ``units`` (default: the reader's ``source_units``); see
+        :meth:`pore_pressure` for the phase / richest-group / units behaviour."""
         return self._profiles(
             "frac", self._fg_groups, self._fg_rows, wellbore, phase, latest,
             "frac_gradient_pressure", "frac_gradient_emw", units=units)
 
     def temperature(self, wellbore, phase: Optional[str] = None,
-                    latest: bool = True, units: str = "meters"
+                    latest: bool = True, units: Optional[str] = None
                     ) -> List[GeopressureProfile]:
         """Temperature (geothermal) prognoses. Volve stores degF; ``value``
         is the raw stored temperature (no unit conversion). ``tvd`` in
-        ``units`` (default metres)."""
+        ``units`` (default: the reader's ``source_units``)."""
         return self._profiles(
             "temp", self._tg_groups, self._tg_rows, wellbore, phase, latest,
             "temperature", units=units)
