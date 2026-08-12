@@ -513,6 +513,11 @@ def test_survey_headers_complete_set_and_superset_of_runs():
     raw = r.survey_headers(kind="raw")
     assert raw and all(isinstance(h, SurveyHeader) for h in raw)
     assert all(h.kind == "raw" for h in raw)
+    # NO id-collision loss: EDM reuses survey_header_id across distinct surveys,
+    # so the complete set has MORE rows than there are unique ids (regression
+    # guard against reverting to the id-keyed dict, which silently dropped 6
+    # real ACTUAL surveys on Volve).
+    assert len(raw) > len({h.header_id for h in raw})
     # md range carried through from CD_SURVEY_HEADER
     assert any(h.md_min is not None and h.md_max is not None for h in raw)
     # kind=None -> both raw + definitive

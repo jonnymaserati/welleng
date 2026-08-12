@@ -1024,6 +1024,10 @@ class EDMReader:
         self.datums: Dict[str, List[Dict[str, str]]] = {}  # by well_id
         self.tools: Dict[str, SurveyTool] = {}
         self.headers: Dict[str, SurveyHeader] = {}  # raw + definitive by id
+        # Complete header list -- EDM reuses survey_header_id across distinct
+        # surveys (a plan + actual + revisions can share an id), so the id-keyed
+        # dict above is lossy; this keeps every parsed header for survey_headers().
+        self._all_headers: List[SurveyHeader] = []
         self.programs: Dict[str, List[ProgramInterval]] = {}  # by def hdr id
         self._tool_terms: Dict[str, List[ToolTerm]] = {}  # by survey_tool_id
         self._magnetics: Dict[str, List[Magnetics]] = {}  # by wellbore_id
@@ -1123,7 +1127,7 @@ class EDMReader:
                     raw=a,
                 )
             elif tag == "CD_SURVEY_HEADER":
-                self.headers[a["survey_header_id"]] = SurveyHeader(
+                h = SurveyHeader(
                     header_id=a["survey_header_id"],
                     wellbore_id=a.get("wellbore_id", ""),
                     kind="raw",
@@ -1135,6 +1139,8 @@ class EDMReader:
                     md_max=_f(a, "md_max"),
                     raw=a,
                 )
+                self.headers[a["survey_header_id"]] = h  # id-keyed (lossy, joins)
+                self._all_headers.append(h)               # complete (no dedup)
             elif tag == "DP_TOOL_TERM":
                 self._tool_terms.setdefault(a["survey_tool_id"], []).append(
                     ToolTerm(
@@ -1153,7 +1159,7 @@ class EDMReader:
                     )
                 )
             elif tag == "CD_DEFINITIVE_SURVEY_HEADER":
-                self.headers[a["def_survey_header_id"]] = SurveyHeader(
+                h = SurveyHeader(
                     header_id=a["def_survey_header_id"],
                     wellbore_id=a.get("wellbore_id", ""),
                     kind="definitive",
@@ -1163,6 +1169,8 @@ class EDMReader:
                     survey_tool_id=a.get("survey_tool_id"),
                     raw=a,
                 )
+                self.headers[a["def_survey_header_id"]] = h
+                self._all_headers.append(h)
             elif tag == "CD_SURVEY_PROGRAM":
                 did = a.get("def_survey_header_id")
                 self.programs.setdefault(did, []).append(ProgramInterval(
@@ -1805,7 +1813,7 @@ class EDMReader:
         wb_id = (self._resolve_wellbore(wellbore).wellbore_id
                  if wellbore is not None else None)
         out = [
-            h for h in self.headers.values()
+            h for h in self._all_headers     # complete set, not the lossy dict
             if (wb_id is None or h.wellbore_id == wb_id)
             and (kind is None or h.kind == kind)
             and (phase is None or h.phase == phase)
