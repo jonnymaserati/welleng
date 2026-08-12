@@ -479,6 +479,21 @@ If your work uses the **kick-tolerance engine** (`welleng.kick_tolerance`), plea
 }
 ```
 
+If your work relies on the **ISCWSA extended-course-length (XCL) own-only recast**, please also cite:
+
+> Corcutt, J. (2026). *The ISCWSA Extended-Course-Length Error as an Own-Only Angle Error: Reconciling the Position-Direct Form with the Standard Measurement-Error Architecture (Monte-Carlo-Consistent; a One-Field OSDU Schema Change).* Zenodo. <https://doi.org/10.5281/zenodo.21901641>
+
+```bibtex
+@misc{corcutt2026xcl,
+  author    = {Corcutt, Jonathan},
+  title     = {The {ISCWSA} Extended-Course-Length Error as an Own-Only Angle Error: Reconciling the Position-Direct Form with the Standard Measurement-Error Architecture},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.21901641},
+  url       = {https://doi.org/10.5281/zenodo.21901641}
+}
+```
+
 If your work uses the **tortuosity index** (`welleng.survey` TI/MTI), please also cite:
 
 > Corcutt, J. (2026). *A Note on the Well Trajectory Tortuosity Index: Non-Independence of the Inclination–Azimuth Combination, and a Dimensionless Form.* Zenodo. <https://doi.org/10.5281/zenodo.21206271>

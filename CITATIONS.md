@@ -47,6 +47,11 @@ If your work relies on a specific method, please **also** cite the relevant pape
   (2026). *The welleng kick-tolerance engine: derivation, provenance and public
   validation against published methods.* Zenodo.
   [doi:10.5281/zenodo.21412388](https://doi.org/10.5281/zenodo.21412388)
+- **ISCWSA extended-course-length (XCL) own-only recast** — Corcutt, J. (2026).
+  *The ISCWSA Extended-Course-Length Error as an Own-Only Angle Error:
+  Reconciling the Position-Direct Form with the Standard Measurement-Error
+  Architecture.* Zenodo.
+  [doi:10.5281/zenodo.21901641](https://doi.org/10.5281/zenodo.21901641)
 
 ## Built on — software dependencies
 

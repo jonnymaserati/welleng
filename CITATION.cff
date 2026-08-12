@@ -90,3 +90,17 @@ references:
         orcid: "https://orcid.org/0009-0008-1953-7760"
     year: 2026
     doi: 10.5281/zenodo.21412388
+  # ISCWSA extended-course-length (XCL) own-only recast paper.
+  # source: papers/published/xcl-dia-recast.md
+  - type: article
+    title: >-
+      The ISCWSA Extended-Course-Length Error as an Own-Only Angle Error:
+      Reconciling the Position-Direct Form with the Standard Measurement-Error
+      Architecture (Monte-Carlo-Consistent; a One-Field OSDU Schema Change)
+    authors:
+      - family-names: Corcutt
+        given-names: Jonathan
+        affiliation: "Corcutt Beheer B.V., Wassenaar, Netherlands"
+        orcid: "https://orcid.org/0009-0008-1953-7760"
+    year: 2026
+    doi: 10.5281/zenodo.21901641
