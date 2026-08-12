@@ -1788,23 +1788,32 @@ class EDMReader:
 
     def survey_headers(
         self,
-        wellbore,
-        kind: str = "definitive",
+        wellbore=None,
+        kind: Optional[str] = "definitive",
         phase: Optional[str] = None,
     ) -> List[SurveyHeader]:
-        """Return the survey headers for a wellbore, filtered by kind/phase.
+        """Survey headers, filtered by wellbore / kind / phase.
 
-        Sorted by station count (descending), so the first entry is the
-        sensible default selection.
+        For a single ``wellbore`` (id or common name) the result is sorted by
+        station count (descending), so the first entry is the sensible default
+        selection. Pass ``wellbore=None`` for EVERY wellbore's headers (grouped
+        by wellbore); ``kind=None`` for both raw ``CD_SURVEY_HEADER`` (incl.
+        tool-less pilot/planned) AND definitive headers. This is the complete
+        raw header set -- a superset of what :meth:`survey_runs` projects to
+        (the tool-run view drops headers with no tool interval).
         """
-        wb = self._resolve_wellbore(wellbore)
+        wb_id = (self._resolve_wellbore(wellbore).wellbore_id
+                 if wellbore is not None else None)
         out = [
             h for h in self.headers.values()
-            if h.wellbore_id == wb.wellbore_id
-            and h.kind == kind
+            if (wb_id is None or h.wellbore_id == wb_id)
+            and (kind is None or h.kind == kind)
             and (phase is None or h.phase == phase)
         ]
-        out.sort(key=lambda h: h.n_stations, reverse=True)
+        # single wellbore: station-count desc (unchanged); all wellbores: group
+        # by wellbore then station-count desc.
+        out.sort(key=lambda h: (h.wellbore_id if wb_id is None else "",
+                                -h.n_stations))
         return out
 
     # -- survey assembly -----------------------------------------------------
