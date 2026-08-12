@@ -87,6 +87,11 @@ _LOAD_CASE_TAGS = frozenset({
     "TU_EPP_PARAMETERS", "TU_DLS_OVERRIDE",
 })
 
+# Optional (opt-in via ``with_tool_terms=True``) — the raw per-tool IPM error
+# terms (Volve: ~836 rows). Off by default; ``errors.edm_ipm`` reads them into
+# assembled models, this surfaces the raw term rows for a survey-program layer.
+_TOOL_TERM_TAGS = frozenset({"DP_TOOL_TERM"})
+
 # Human-readable schema — cryptic EDM table/field codes -> name + description.
 # Exposed via :attr:`EDMReader.schema` so accessors, docs, and any downstream
 # viewer are self-documenting rather than surfacing raw ``CD_*`` codes.
@@ -398,6 +403,32 @@ class SurveyTool:
 
 
 @dataclass
+class ToolTerm:
+    """A ``DP_TOOL_TERM`` row: one raw IPM error term of a survey tool.
+
+    The raw per-tool error-model terms (opt-in ``with_tool_terms=True``). This is
+    the un-normalised term dump; :func:`welleng.errors.edm_ipm.parse_edm_ipm`
+    turns these into assembled error *models*.
+    """
+
+    survey_tool_id: str
+    term_name: str
+    sequence_no: Optional[int] = None
+    # weight axis (mapping in errors.edm_ipm): e/d=depth, i/j=inclination,
+    # a/b=azimuth, l=azimuth/sin(inc) (east-singularity), m=combined;
+    # tie_type='n' rows are EDM intermediates, not error terms.
+    vector_type: Optional[str] = None
+    tie_type: Optional[str] = None      # s/r/g/w = Systematic/Random/Global/Well
+    c_value: Optional[float] = None
+    c_units: Optional[str] = None
+    c_formula: Optional[str] = None
+    c_range: Optional[int] = None       # 1 => the min/max activity window applies
+    min_range: Optional[float] = None
+    max_range: Optional[float] = None
+    raw: Dict[str, str] = field(default_factory=dict, repr=False)
+
+
+@dataclass
 class Wellbore:
     """A ``CD_WELLBORE`` row."""
 
@@ -436,6 +467,8 @@ class SurveyHeader:
     name: Optional[str] = None
     tie_survey_header_id: Optional[str] = None
     survey_tool_id: Optional[str] = None
+    md_min: Optional[float] = None
+    md_max: Optional[float] = None
     n_stations: int = 0
     raw: Dict[str, str] = field(default_factory=dict, repr=False)
 
@@ -460,6 +493,23 @@ class ProgramInterval:
         top = -np.inf if self.md_top is None else self.md_top
         base = np.inf if self.md_base is None else self.md_base
         return top <= md <= base
+
+
+@dataclass
+class SurveyRun:
+    """A per-interval survey-tool assignment: which tool ran over which
+    measured-depth range, from ``CD_SURVEY_PROGRAM`` joined to its raw
+    ``CD_SURVEY_HEADER`` (wellbore + survey name). The IPM survey-program layer a
+    consumer builds a tool-runs table from."""
+
+    wellbore_id: str
+    survey_name: Optional[str]
+    survey_tool_id: Optional[str]
+    md_min: Optional[float]        # CD_SURVEY_PROGRAM md_top (the run's start MD)
+    md_max: Optional[float]        # CD_SURVEY_PROGRAM md_base (the run's end MD)
+    survey_header_id: Optional[str]
+    def_survey_header_id: Optional[str]
+    sequence_no: Optional[int]
 
 
 @dataclass
@@ -953,17 +1003,19 @@ class EDMReader:
     def __init__(
         self, path: str, source_units: str = "feet",
         with_geopressure: bool = False, with_assemblies: bool = False,
-        with_load_cases: bool = False,
+        with_load_cases: bool = False, with_tool_terms: bool = False,
     ):
         self.path = path
         self.source_units = source_units.lower()
         self.with_geopressure = with_geopressure
         self.with_assemblies = with_assemblies
         self.with_load_cases = with_load_cases
+        self.with_tool_terms = with_tool_terms
         self._wanted = _WANTED_TAGS | (
             _GEOPRESSURE_TAGS if with_geopressure else frozenset()
         ) | (_ASSEMBLY_TAGS if with_assemblies else frozenset()) | (
-            _LOAD_CASE_TAGS if with_load_cases else frozenset())
+            _LOAD_CASE_TAGS if with_load_cases else frozenset()) | (
+            _TOOL_TERM_TAGS if with_tool_terms else frozenset())
 
         self.projects: Dict[str, Dict[str, str]] = {}
         self.sites: Dict[str, Dict[str, str]] = {}
@@ -973,6 +1025,7 @@ class EDMReader:
         self.tools: Dict[str, SurveyTool] = {}
         self.headers: Dict[str, SurveyHeader] = {}  # raw + definitive by id
         self.programs: Dict[str, List[ProgramInterval]] = {}  # by def hdr id
+        self._tool_terms: Dict[str, List[ToolTerm]] = {}  # by survey_tool_id
         self._magnetics: Dict[str, List[Magnetics]] = {}  # by wellbore_id
 
         # geopressure / geometry (populated only when with_geopressure)
@@ -1018,13 +1071,14 @@ class EDMReader:
     def open(
         cls, path: str, source_units: str = "feet",
         with_geopressure: bool = False, with_assemblies: bool = False,
-        with_load_cases: bool = False,
+        with_load_cases: bool = False, with_tool_terms: bool = False,
     ) -> "EDMReader":
         """Open and index an EDM file. Alias for the constructor."""
         return cls(path, source_units=source_units,
                    with_geopressure=with_geopressure,
                    with_assemblies=with_assemblies,
-                   with_load_cases=with_load_cases)
+                   with_load_cases=with_load_cases,
+                   with_tool_terms=with_tool_terms)
 
     def _index(self) -> None:
         for tag, a in _iter_rows(self.path, self._wanted):
@@ -1077,7 +1131,26 @@ class EDMReader:
                     name=a.get("survey_name"),
                     tie_survey_header_id=a.get("tie_survey_header_id"),
                     survey_tool_id=a.get("survey_tool_id"),
+                    md_min=_f(a, "md_min"),
+                    md_max=_f(a, "md_max"),
                     raw=a,
+                )
+            elif tag == "DP_TOOL_TERM":
+                self._tool_terms.setdefault(a["survey_tool_id"], []).append(
+                    ToolTerm(
+                        survey_tool_id=a["survey_tool_id"],
+                        term_name=a.get("term_name", ""),
+                        sequence_no=_i(a, "sequence_no"),
+                        vector_type=a.get("vector_type"),
+                        tie_type=a.get("tie_type"),
+                        c_value=_f(a, "c_value"),
+                        c_units=a.get("c_units"),
+                        c_formula=a.get("c_formula"),
+                        c_range=_i(a, "c_range"),
+                        min_range=_f(a, "min_range"),
+                        max_range=_f(a, "max_range"),
+                        raw=a,
+                    )
                 )
             elif tag == "CD_DEFINITIVE_SURVEY_HEADER":
                 self.headers[a["def_survey_header_id"]] = SurveyHeader(
@@ -1555,6 +1628,58 @@ class EDMReader:
         rows = self._magnetics.get(self._resolve_wellbore(wellbore).wellbore_id, [])
         return sorted(rows, key=lambda m: m.sequence_no or 0)
 
+    def tool_terms(self, survey_tool_id: str) -> List[ToolTerm]:
+        """Raw ``DP_TOOL_TERM`` IPM error terms for a survey tool, by
+        ``sequence_no`` (opt-in: ``with_tool_terms=True``).
+
+        The un-normalised per-tool term rows (``term_name`` / ``c_value`` /
+        ``c_units`` / ``c_formula`` / ``vector_type`` / ``tie_type`` / range).
+        For the assembled error *model* use
+        :func:`welleng.errors.edm_ipm.parse_edm_ipm`; this is the raw dump a
+        survey-program / IPM layer builds from. Empty list if the tool has none.
+        """
+        if not self.with_tool_terms:
+            raise RuntimeError(
+                "tool-term table (DP_TOOL_TERM) was not indexed; open the reader "
+                "with with_tool_terms=True."
+            )
+        return sorted(self._tool_terms.get(survey_tool_id, []),
+                      key=lambda t: t.sequence_no or 0)
+
+    def survey_runs(self, wellbore=None) -> List[SurveyRun]:
+        """Per-interval survey-tool assignments — which tool ran over which
+        measured-depth range — from ``CD_SURVEY_PROGRAM`` joined to its raw
+        ``CD_SURVEY_HEADER`` (wellbore + survey name).
+
+        One :class:`SurveyRun` per program interval, ordered by wellbore then
+        ``md_min``. Optionally filtered to one ``wellbore`` (id or common name).
+        Always available (CD_SURVEY_PROGRAM is in the default sweep); the raw
+        header supplies ``wellbore_id`` / ``survey_name``, the program interval
+        supplies ``survey_tool_id`` and the ``md_min``/``md_max`` run range.
+        """
+        wb_id = (self._resolve_wellbore(wellbore).wellbore_id
+                 if wellbore is not None else None)
+        out: List[SurveyRun] = []
+        for intervals in self.programs.values():
+            for iv in intervals:
+                hdr = self.headers.get(iv.survey_header_id)
+                wbid = hdr.wellbore_id if hdr else ""
+                if wb_id is not None and wbid != wb_id:
+                    continue
+                out.append(SurveyRun(
+                    wellbore_id=wbid,
+                    survey_name=hdr.name if hdr else None,
+                    survey_tool_id=iv.survey_tool_id,
+                    md_min=iv.md_top,
+                    md_max=iv.md_base,
+                    survey_header_id=iv.survey_header_id,
+                    def_survey_header_id=iv.def_survey_header_id,
+                    sequence_no=iv.sequence_no,
+                ))
+        out.sort(key=lambda r: (
+            r.wellbore_id, r.md_min if r.md_min is not None else 0.0))
+        return out
+
     def assemblies(self, wellbore=None) -> List[Assembly]:
         """String assemblies (casing/tubing/liner/BHA), each with its components.
 
@@ -1843,9 +1968,11 @@ class EDMReader:
 def open_edm(path: str, source_units: str = "feet",
              with_geopressure: bool = False,
              with_assemblies: bool = False,
-             with_load_cases: bool = False) -> EDMReader:
+             with_load_cases: bool = False,
+             with_tool_terms: bool = False) -> EDMReader:
     """Convenience factory mirroring :meth:`EDMReader.open`."""
     return EDMReader.open(path, source_units=source_units,
                           with_geopressure=with_geopressure,
                           with_assemblies=with_assemblies,
-                          with_load_cases=with_load_cases)
+                          with_load_cases=with_load_cases,
+                          with_tool_terms=with_tool_terms)

@@ -19,7 +19,9 @@ from welleng.errors.edm_ipm import (
     ipm_to_error_model,
     parse_edm_ipm,
 )
-from welleng.exchange.edm_stream import ToolKind, classify_tool
+from welleng.exchange.edm_stream import (
+    ToolKind, ToolTerm, SurveyRun, classify_tool, open_edm,
+)
 
 VOLVE = os.path.join(os.path.dirname(__file__), "..", "data", "Volve.xml")
 
@@ -458,3 +460,46 @@ def test_f15d_ew_high_inc_no_lateral_underrun(ipm):
         ratio = sig_we[m[:, col], col] / sig_cp[m[:, col], col]
         assert np.all(ratio > floor), \
             f"non-conservative under-run returned (axis {col})"
+
+
+# -- raw DP_TOOL_TERM / CD_SURVEY_PROGRAM surface (welleng-probcol spec) -------
+def test_tool_terms_opt_in_and_shape():
+    """tool_terms surfaces the raw DP_TOOL_TERM rows for a survey tool (opt-in),
+    sorted by sequence_no, with the term fields a survey-program layer needs."""
+    r = open_edm(VOLVE, with_tool_terms=True)
+    # find a tool that actually carries terms
+    tid = next(t for t in r.tools if r.tool_terms(t))
+    terms = r.tool_terms(tid)
+    assert terms and all(isinstance(t, ToolTerm) for t in terms)
+    assert [t.sequence_no for t in terms] == sorted(t.sequence_no for t in terms)
+    t0 = terms[0]
+    assert t0.survey_tool_id == tid and t0.term_name
+    assert t0.c_value is not None and t0.c_formula is not None
+    # vector_type is one of the COMPASS axis codes (e/d depth, i/j inc, a/b azi,
+    # l lateral, m combined, n intermediate)
+    assert {t.vector_type for t in r.tool_terms(tid)} <= set("edijablmn")
+
+
+def test_tool_terms_guarded_without_flag():
+    r = open_edm(VOLVE)  # no with_tool_terms
+    tid = next(iter(r.tools))
+    with pytest.raises(RuntimeError):
+        r.tool_terms(tid)
+
+
+def test_survey_runs_join_and_filter():
+    """survey_runs joins CD_SURVEY_PROGRAM (tool + md range) to its raw
+    CD_SURVEY_HEADER (wellbore + name); always available; filterable by wellbore."""
+    r = open_edm(VOLVE)
+    runs = r.survey_runs()
+    assert runs and all(isinstance(x, SurveyRun) for x in runs)
+    x = next(x for x in runs if x.survey_tool_id and x.md_min is not None)
+    assert x.wellbore_id and x.survey_tool_id
+    assert x.md_max is None or x.md_max >= x.md_min
+    # filtered to one wellbore returns only its runs, a subset of the whole
+    wb = x.wellbore_id
+    sub = r.survey_runs(wellbore=wb)
+    assert sub and all(s.wellbore_id == wb for s in sub)
+    assert len(sub) <= len(runs)
+    # every run's tool resolves against the tool catalogue
+    assert all(s.survey_tool_id in r.tools for s in runs if s.survey_tool_id)
