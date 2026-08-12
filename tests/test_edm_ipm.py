@@ -20,7 +20,7 @@ from welleng.errors.edm_ipm import (
     parse_edm_ipm,
 )
 from welleng.exchange.edm_stream import (
-    ToolKind, ToolTerm, SurveyRun, classify_tool, open_edm,
+    ToolKind, ToolTerm, SurveyRun, SurveyHeader, classify_tool, open_edm,
 )
 
 VOLVE = os.path.join(os.path.dirname(__file__), "..", "data", "Volve.xml")
@@ -503,3 +503,26 @@ def test_survey_runs_join_and_filter():
     assert len(sub) <= len(runs)
     # every run's tool resolves against the tool catalogue
     assert all(s.survey_tool_id in r.tools for s in runs if s.survey_tool_id)
+
+
+def test_survey_headers_complete_set_and_superset_of_runs():
+    """survey_headers is the COMPLETE header set (raw + definitive, incl.
+    tool-less pilot/planned), a superset of the headers survey_runs projects to
+    (the tool-run view drops headers with no tool interval)."""
+    r = open_edm(VOLVE)
+    raw = r.survey_headers(kind="raw")
+    assert raw and all(isinstance(h, SurveyHeader) for h in raw)
+    assert all(h.kind == "raw" for h in raw)
+    # md range carried through from CD_SURVEY_HEADER
+    assert any(h.md_min is not None and h.md_max is not None for h in raw)
+    # kind=None -> both raw + definitive
+    allh = r.survey_headers(kind=None)
+    assert {h.kind for h in allh} == {"raw", "definitive"}
+    assert len(allh) >= len(raw)
+    # the raw-header set is a superset of the headers survey_runs references
+    run_hdr_ids = {x.survey_header_id for x in r.survey_runs()}
+    raw_ids = {h.header_id for h in raw}
+    assert run_hdr_ids <= raw_ids            # runs project from a subset of raw headers
+    # filter by wellbore narrows to that wellbore only
+    wb = raw[0].wellbore_id
+    assert all(h.wellbore_id == wb for h in r.survey_headers(wellbore=wb))
