@@ -8,6 +8,16 @@ forms** — pure ``float`` in, ``float`` out. It is welleng's open-core
 layer are parity-gated against these functions (bit-identical, or a documented
 tolerance where an implicit solve differs in its Newton tail).
 
+Validation status (2026-08-13). Validated two ways: (1) exact-vs-published-formula
+unit tests, and (2) a real-data gate against the operator-tuned Volve Eclipse PVT
+tables (two fluid regions), run by welleng-production. The volumetric/Z chain
+(Rs/Bo/Bg, Standing & Vazquez-Beggs, Hall-Yarborough & Dranchuk-Abou-Kassem, Bw)
+lands within the ±5-8% correlation-class band vs the field PVT, with DAK and HY
+mutually agreeing to ~0.2%; viscosities (Beggs-Robinson, Lee, McCain water) carry
+wider, documented correlation-accuracy bands. No coefficient/unit errors surfaced.
+So the earlier per-function ``[ASSERTED]`` (formula-transcribed, not yet field-
+checked) tags are now superseded by that real-data check for the volumetric/Z set.
+
 Design contract
 ---------------
 * **Pure float in / float out.** No arrays, no fast paths — that is the
