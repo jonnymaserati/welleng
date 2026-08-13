@@ -2562,9 +2562,17 @@ def _xcl_dia(code, error, name, mag, propagation, NEV, tortuosity):
     Codling's XCL (SPE-187249, Eq. 1) is ``0.167 * DL * course-length`` with ``DL``
     the surveyed angle change -- i.e. an effective ANGLE error. This recasts it as
     such: XCLH as an inclination error, XCLA as an azimuth error, both propagated
-    OWN-ONLY through the standard ``drk`` (a course-length path error does not couple
-    to the prior station's measurement). Reproduces the NEV-direct station covariance
-    to machine precision. Unlike the NEV-direct form it exposes a real DIA
+    OWN-ONLY through an interval-local ``drk`` (a course-length path error is assigned
+    to the interval END station and does not couple to the prior station's measurement).
+    Reproduces the NEV-direct station covariance to machine precision.
+
+    First-station rule: as an INTERVAL error (station k depends only on the interval
+    k-1..k) it carries NO station-0 contribution and NO first-station surface-tie-on
+    doubling (Def. of ISCWSA Error Model §4.7.1.1, eq. 32) -- the perturbation starts at
+    index 1 and uses the interval-local ``drk`` built below, NOT the shared
+    tie-on-doubled Jacobian (``drk_dInc``/``drk_dAz`` in ``error.py``). This matches the
+    released position-direct XCL, which carries none. (Refinement noted by T. Allen,
+    TALLENTECH, 2026.) Unlike the NEV-direct form it exposes a real DIA
     perturbation (``e_DIA`` inc/azi component) that maps into the Monte-Carlo surface;
     XCLA keeps a lateral-direct branch near vertical (the tortuosity floor is a lateral
     uncertainty azimuth cannot carry -- the ``e_DIA`` there is 0, handled as a lateral
