@@ -15,6 +15,8 @@ header-includes: |
 
 **Cite as:** Corcutt, J. (2026). *The ISCWSA Extended-Course-Length Error as an Own-Only Angle Error.* Zenodo. <https://doi.org/10.5281/zenodo.21901641>
 
+*Version 1.1 (2026): clarifies the `own_only` first-station rule (§4.1) and adds an acknowledgement; no change to the results.*
+
 ## Abstract
 
 The ISCWSA error model propagates survey position uncertainty from per-station
@@ -251,6 +253,14 @@ interval only and does **not** propagate it forward through the remaining trajec
 minimal, generic addition that lets the standard formula machinery carry XCL (and any future
 own-only term) natively, retiring the bespoke position-direct code path.
 
+**First-station rule.** As an *interval* error, an `own_only` term carries **no first-station
+contribution and no first-station (surface tie-on) doubling**: it is attributed to the interval
+*ending* at each station, so there is no term at the tie-on station itself, and — unlike a true
+measurement term — it does not inherit the doubling ISCWSA applies to the first station (Def. of
+ISCWSA Error Model §4.7.1.1). The released position-direct XCL carries none; stating this explicitly
+in the `own_only` semantics preserves the machine-precision equivalence at the first station. This
+refinement was noted by T. Allen (TALLENTECH), who independently reproduced the recast.
+
 ### 4.2 XCLA at vertical — convergence with ISCWSA's XCLL
 The azimuth-error form is singular at vertical ($1/\sin I$; an azimuth error's lateral position
 effect vanishes as $\sin I\to 0$, while the tortuosity floor does not). This is the same singularity
@@ -322,6 +332,14 @@ model, so each figure is itself a check of the claim it illustrates.
 - **Figure 4** `fig_xcl_vertical_xcll.py` -- XCLA vertical singularity; convergence with XCLL.
 - **Figure 5** `fig_xcl_real_well.py` -- deviated-well share + machine-precision equivalence.
 - **Listing 1** OSDU JSON, current vs recast (section 4.1).
+
+
+## Acknowledgements
+
+The author thanks **Timothy Allen (TALLENTECH)**, who independently reproduced the own-only recast in
+his own error-model implementation and obtained the same released covariance, and who noted that an
+own-only interval term should carry no first-station tie-on doubling — a refinement now reflected in
+the `own_only` semantics (§4.1) and in the `welleng` reference implementation.
 
 
 ## References
