@@ -21,7 +21,6 @@ Each function has an acceptance test. Tests are tagged in their docstring:
 Field-unit → SI conversion factors used in the [WORKED] tests.
 """
 import math
-import warnings
 
 import pytest
 
@@ -278,7 +277,6 @@ def test_beggs_brill_dpdz_ex41_static():
     and cross-check the whole gradient against the internally-consistent
     Hasan-Kabir example. (If someone reconciles the book's friction, tighten this.)
     """
-    lam = vlp.no_slip_holdup(HK41["vsl_m_s"], HK41["vsg_m_s"])
     h_l = vlp.holdup_beggs_brill(
         HK41["vsl_m_s"], HK41["vsg_m_s"], HK41["d_m"], HK41["theta_deg"],
         rho_l=HK41["rho_l"], sigma_n_m=HK41["sigma_n_m"],
