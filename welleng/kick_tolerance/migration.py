@@ -958,12 +958,29 @@ def _fill_down(gas_top: float, volume_bbl: float, sections_sorted, bottom_tvd: f
     """Place ``volume_bbl`` of gas from ``gas_top`` DOWNWARD, section by section.
 
     Capacity changes discretely per section, so the gas length is accumulated
-    across the sections it spans. Returns (gas_bottom_tvd, gas_length_ft). If the
-    volume cannot fit above the well bottom it is clamped at the bottom (the
-    deficit surfaces via the BHA-length flag downstream).
+    across the sections it spans. Returns
+    ``(gas_bottom_tvd, gas_length_tvd_ft, gas_length_md_ft)``.
+
+    Two gas lengths are returned because the bubble occupies a TVD span AND an
+    along-hole (MD) span, and they differ by ``sec(inc)`` off vertical:
+
+    * ``gas_length_tvd`` = ``gas_bottom - gas_top`` -- feeds the hydrostatics
+      (pressure is a function of TVD).
+    * ``gas_length_md`` = the along-hole length the gas fills. Per segment it is
+      the volume placed there divided by the section's RAW along-hole capacity
+      (``annular_capacity_bbl_per_ft``, i.e. bbl per foot of MD). This is the
+      length the Santos SPE-140113 "a coherent bubble cannot be LONGER than the
+      open hole it occupies" criterion must use -- that is an ALONG-HOLE length
+      statement, not a TVD one. On a vertical section ``dMD == dTVD`` so the two
+      are equal (byte-identical to the pre-MD behaviour); on a
+      high-inclination/horizontal section the MD length is larger by ``sec(inc)``.
+
+    If the volume cannot fit above the well bottom it is clamped at the bottom
+    (the deficit surfaces via the BHA-length flag downstream).
     """
     remaining = volume_bbl
     d = gas_top
+    md_len = 0.0
     for sec in sections_sorted:  # shallow -> deep
         if sec.bottom_tvd <= d:
             continue  # entirely above the gas top
@@ -976,12 +993,17 @@ def _fill_down(gas_top: float, volume_bbl: float, sections_sorted, bottom_tvd: f
         vol_avail = cap * seg_len
         if remaining <= vol_avail:
             d = seg_top + remaining / cap
+            # MD placed here = volume / RAW along-hole capacity (bbl per ft MD).
+            md_len += remaining / sec.annular_capacity_bbl_per_ft
             remaining = 0.0
             break
         remaining -= vol_avail
+        # Full TVD span [seg_top, seg_bottom] filled: its MD length is the volume
+        # it holds over the raw along-hole capacity (== seg_len * dMD/dTVD).
+        md_len += vol_avail / sec.annular_capacity_bbl_per_ft
         d = seg_bottom
     gas_bottom = min(d, bottom_tvd)
-    return gas_bottom, gas_bottom - gas_top
+    return gas_bottom, gas_bottom - gas_top, md_len
 
 
 def _fill_up(gas_bottom: float, volume_bbl: float, sections_sorted, top_limit: float = 0.0):
@@ -1135,8 +1157,12 @@ def migrate(
     pp_psi = ppg_to_psi(pp_fn(exposed_depths), exposed_depths)
     fp_psi = ppg_to_psi(fp_fn(exposed_depths), exposed_depths)
 
+    # Along-hole (MD) length of the open hole. The Santos SPE-140113 bubble-vs-
+    # hole length check is an ALONG-HOLE criterion, so it is compared against the
+    # MD gas length from _fill_down, not the TVD extent. On a vertical well
+    # md_extent == the TVD span, so this is unchanged there.
     open_hole_length = sum(
-        s.bottom_tvd - s.top_tvd for s in sections_sorted if s.is_open_hole
+        s.md_extent for s in sections_sorted if s.is_open_hole
     )
 
     # Deepest gas-top position: bubble BOTTOM pinned at TD, filled UP across
@@ -1178,12 +1204,13 @@ def migrate(
         P_rep = bhp_psi - G_PSI_PER_PPG_FT * rho_mud_ppg * (bottom_tvd - gas_top)
         P_rep = max(P_rep, 1.0)
         T_local = float(temp_fn(gas_top))  # local T at the representative (gas-top) depth
-        gas_bottom, gas_len = gas_top, 0.0
+        gas_bottom, gas_len, gas_len_md = gas_top, 0.0, 0.0
         for _ in range(100):
             Z = 1.0 if ideal_gas else _z_at(P_rep, T_local)
             # V(P,T,Z) = V_bh * (P_bh*Z*T_local) / (P*Z_bh*T_bh); T_local=T_bh -> old.
             V = influx_bbl_bh * (P_bh * Z * T_local) / (P_rep * Z_bh * T_bh_r)
-            gas_bottom, gas_len = _fill_down(gas_top, V, sections_sorted, bottom_tvd)
+            gas_bottom, gas_len, gas_len_md = _fill_down(
+                gas_top, V, sections_sorted, bottom_tvd)
             P_new = float(pressure_at_depth(
                 gas_top, gas_top_tvd=gas_top, gas_bottom_tvd=gas_bottom,
                 bottom_tvd=bottom_tvd, bhp_psi=bhp_psi,
@@ -1197,7 +1224,10 @@ def migrate(
                 break
             P_rep = 0.5 * (P_rep + P_new)  # damped fixed point
 
-        if gas_len > open_hole_length:
+        # Santos SPE-140113 along-hole criterion: compare the MD gas length to the
+        # MD open-hole length (both along-hole). gas_len (TVD) is kept for the
+        # MigrationStep hydrostatic reporting below.
+        if gas_len_md > open_hole_length:
             bha_flag = True
 
         # Envelope check at every exposed open-hole depth for this step, AND the

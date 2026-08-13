@@ -980,7 +980,13 @@ def analytical_kick_tolerance(
     # tolerance -- NOT the open-hole volumetric capacity.) [JJ]
     from .migration import _fill_down, pressure_at_depth
 
-    oh_len = sum(s.bottom_tvd - s.top_tvd for s in ss if s.is_open_hole)
+    # Santos's "bubble cannot be longer than the open hole" is an ALONG-HOLE
+    # (MD) length statement: a horizontal open hole is short in TVD but long in
+    # MD, and it is the MD length the coherent bubble competes with. So oh_len is
+    # the open hole's MD extent, and the gas length it is compared against below
+    # is likewise the MD gas length (from _fill_down). On a vertical well
+    # md_extent == the TVD span, so this is byte-identical to the old TVD form.
+    oh_len = sum(s.md_extent for s in ss if s.is_open_hole)
 
     _OPEN_HOLE_UNCONSTRAINED_NOTE = {
         "note": ("The open hole does not constrain the kick tolerance at the provided "
@@ -1010,11 +1016,15 @@ def analytical_kick_tolerance(
         gas_top = 0.0
         P_rep = max(bhp_psi - g * rho_mud_ppg * (bottom_tvd - gas_top), 1.0)
         T_local = float(temp_fn(gas_top))
-        gas_len = 0.0
+        gas_len_md = 0.0
         for _ in range(100):
             Z = zf(P_rep, T_local)
             V = v_bh * (P_bh * Z * T_local) / (P_rep * Z_bh * T_bh_r)
-            gas_bottom, gas_len = _fill_down(gas_top, V, ss, bottom_tvd)
+            # The pressure loop drives off gas_bottom (TVD); the Santos length
+            # criterion needs the ALONG-HOLE gas length, so we return gas_len_md
+            # and discard the TVD length here.
+            gas_bottom, _gas_len_tvd, gas_len_md = _fill_down(
+                gas_top, V, ss, bottom_tvd)
             P_new = max(float(pressure_at_depth(
                 gas_top, gas_top_tvd=gas_top, gas_bottom_tvd=gas_bottom,
                 bottom_tvd=bottom_tvd, bhp_psi=bhp_psi, rho_mud_ppg=rho_mud_ppg,
@@ -1023,11 +1033,13 @@ def analytical_kick_tolerance(
             if abs(P_new - P_rep) < 1e-4:
                 break
             P_rep = 0.5 * (P_rep + P_new)
-        return gas_len
+        return gas_len_md
 
+    # Both sides are ALONG-HOLE (MD): _gas_len_at_surface returns the MD gas
+    # length and oh_len is the MD open-hole length. On a vertical well MD == TVD.
     if _gas_len_at_surface(v_star) > oh_len:               # fracture breach unreachable
         lo, hi = 0.0, v_star                              # -> full open-hole displacement
-        for _ in range(40):                               # bisect gas_len == oh_len
+        for _ in range(40):                               # bisect MD gas_len==oh_len
             if hi - lo <= 1e-2:
                 break
             mid = 0.5 * (lo + hi)

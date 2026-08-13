@@ -166,6 +166,58 @@ def test_open_hole_unconstrained_when_whole_hole_tolerates_gas():
     assert r.open_hole_unconstrained
 
 
+def test_horizontal_open_hole_fills_along_the_md_not_the_tvd():
+    """A horizontal open hole is short in TVD but long in MD. The Santos
+    SPE-140113 bubble-length criterion is ALONG-HOLE, so the unconstrained
+    bottom-hole influx must fill the open hole's MD (2000 ft here), not its tiny
+    TVD extent (34.9 ft).
+
+    Reproduces a downstream (api) horizontal case: a cased 0-8000 ft TVD / 0-9000
+    ft MD build, then a 34.9 ft-TVD / 2000 ft-MD lateral, both 0.0459 bbl/ft.
+
+    * WITH MDs set: open_hole_unconstrained, and max_influx_bbl fills the 2000 ft
+      MD open hole -- materially larger than the 0.0056 bbl the TVD-only bug gave.
+      It is the bottom-hole INFLUX (NOT the 91.8 bbl open-hole volumetric
+      capacity, which is larger by the gas-expansion ratio); we lock the computed
+      value.
+    * WITHOUT MDs (md_extent falls back to the TVD span): byte-identical to the
+      pre-fix TVD number -- the vertical/MD-unset path is untouched.
+    """
+    from welleng.kick_tolerance.migration import G_PSI_PER_PPG_FT
+
+    cap = 0.0459
+    bhp = G_PSI_PER_PPG_FT * 11.5 * 8034.9
+    common = dict(bhp_psi=bhp, rho_mud_ppg=11.5, gas_bh_state=(bhp, 640.0, None, None))
+    pp = (np.array([0.0, 8034.9]), np.array([11.0, 11.0]))
+    fp = (np.array([0.0, 8034.9]), np.array([14.2, 14.2]))
+
+    with_md = [
+        WellSection(0.0, 8000.0, cap, False, top_md=0.0, bottom_md=9000.0),
+        WellSection(8000.0, 8034.9, cap, True, top_md=9000.0, bottom_md=11000.0),
+    ]
+    r = analytical_kick_tolerance(with_md, pp, fp, **common)
+    assert r.open_hole_unconstrained is True
+    # MD-corrected bottom-hole influx that fills the 2000 ft MD open hole. NOT the
+    # 91.8 bbl (= 2000 * 0.0459) open-hole volumetric capacity.
+    assert r.max_influx_bbl == pytest.approx(21.044970703125, rel=1e-6)
+    assert r.max_influx_bbl < 91.8            # below the volumetric capacity (gas expands)
+
+    # The march engine agrees with the closed form on the same along-hole geometry.
+    m = _max_influx_circulated(with_md, pp, fp, gas_density_mode="conservative",
+                               mode="thorough", n_steps=300, **common)
+    assert m.open_hole_unconstrained is True
+    assert m.max_influx_bbl == pytest.approx(r.max_influx_bbl, rel=0.02)
+
+    # MD unset -> md_extent == the TVD span -> the old TVD-only number, unchanged.
+    tvd_only = [
+        WellSection(0.0, 8000.0, cap, False),
+        WellSection(8000.0, 8034.9, cap, True),
+    ]
+    r_tvd = analytical_kick_tolerance(tvd_only, pp, fp, **common)
+    assert r_tvd.open_hole_unconstrained is True
+    assert r_tvd.max_influx_bbl == pytest.approx(0.006257460937499936, rel=1e-9)
+
+
 def test_tolerable_set_is_monotone():
     """within-envelope must hold below V* and fail above it (monotone tolerable
     set) -- the property the migration bug violated on a tight BHA."""
