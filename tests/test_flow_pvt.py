@@ -292,7 +292,9 @@ def test_mu_oil_dead_beggs_robinson_form():
     z = 3.0324 - 0.02023 * api
     x = 10.0 ** z * t_f ** (-1.163)
     mu_cp = 10.0 ** x - 1.0
-    assert pvt.mu_oil_dead_beggs_robinson(t_k, api) == pytest.approx(mu_cp * 1e-3, rel=1e-12)
+    assert pvt.mu_oil_dead_beggs_robinson(t_k, api) == pytest.approx(
+        mu_cp * 1e-3, rel=1e-12
+    )
 
 
 def test_mu_oil_saturated_beggs_robinson_form():
@@ -315,7 +317,9 @@ def test_mu_oil_saturated_lowers_dead():
 def test_mu_oil_undersaturated_vazquez_beggs():
     """[ASSERTED/VALUE] V&B (1980) undersaturated: μ=μ_ob at Pb, rises above."""
     mu_pb, pb = 1.0e-3, 25e6
-    assert pvt.mu_oil_undersaturated_vazquez_beggs(mu_pb, pb, pb) == pytest.approx(mu_pb)
+    assert pvt.mu_oil_undersaturated_vazquez_beggs(mu_pb, pb, pb) == pytest.approx(
+        mu_pb
+    )
     # above Pb viscosity increases
     assert pvt.mu_oil_undersaturated_vazquez_beggs(mu_pb, 40e6, pb) > mu_pb
 
@@ -373,9 +377,13 @@ def test_mu_water_pressure_mccain_form():
     mu_atm, p_pa = 0.5e-3, 30e6
     p_psia = p_pa / PSI
     factor = 0.9994 + 4.0295e-5 * p_psia + 3.1062e-9 * p_psia ** 2
-    assert pvt.mu_water_pressure_mccain(mu_atm, p_pa) == pytest.approx(mu_atm * factor, rel=1e-12)
+    assert pvt.mu_water_pressure_mccain(mu_atm, p_pa) == pytest.approx(
+        mu_atm * factor, rel=1e-12
+    )
     # near 1 atm the factor is ~1
-    assert pvt.mu_water_pressure_mccain(mu_atm, 101325.0) == pytest.approx(mu_atm, rel=1e-3)
+    assert pvt.mu_water_pressure_mccain(mu_atm, 101325.0) == pytest.approx(
+        mu_atm, rel=1e-3
+    )
 
 
 def test_rho_water_fresh_standard():
