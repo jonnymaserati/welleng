@@ -305,6 +305,17 @@ class AnalyticalKickTolerance:
     #                                it, since converting with the wrong one of the three
     #                                circulating ppg->psi/ft constants is a ~0.3% error
     #                                that cannot be reconciled against our own column.
+    open_hole_capacity_bbl: float = float("nan")
+    #                                OPEN-HOLE VOLUMETRIC CAPACITY [bbl] -- the gas volume
+    #                                that fully displaces the open hole AT HOLE CONDITIONS
+    #                                (``v_hole`` = sum of capacity_per_tvd_ft*dTVD over the
+    #                                open sections; MD-correct once section MDs are set).
+    #                                This is a HOLE-CONDITIONS volume, NOT a bottom-hole
+    #                                influx -- larger than ``max_influx_bbl`` by the
+    #                                gas-expansion ratio. The GUI's horizontal panel wants
+    #                                this ("full displacement = X bbl"); ``max_influx_bbl``
+    #                                is the BH kick tolerance. Both reported, clearly
+    #                                distinct (welleng-api request 2026-08-13).
 
 
 def _top_for_bottom(gas_bottom, influx_bbl_bh, sections_sorted, bottom_tvd, *,
@@ -914,7 +925,11 @@ def analytical_kick_tolerance(
 
     _rho_bh = float(gas_bh[3])
     _rk = dict(rho_influx_bh_ppg=_rho_bh,
-               rho_influx_bh_gradient_psi_per_ft=float(_ppg_to_grad(_rho_bh)))
+               rho_influx_bh_gradient_psi_per_ft=float(_ppg_to_grad(_rho_bh)),
+               # OPEN-HOLE VOLUMETRIC CAPACITY (hole conditions), reported alongside the
+               # BH kick tolerance so the horizontal panel can show "full displacement =
+               # X bbl" without mistaking it for the tolerance (welleng-api request).
+               open_hole_capacity_bbl=float(v_hole))
     try:
         _mr = _maasp(ss, fp, rho_mud_ppg=rho_mud_ppg,
                      check_depths=list(_env_d) if len(_env_d) else None)
