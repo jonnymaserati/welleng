@@ -77,6 +77,11 @@ McCain, W. D. (1990). *The Properties of Petroleum Fluids*, 2nd ed.,
     PennWell — water FVF / viscosity / density correlations (ch. 16).
 Bellarby, J. (2009). *Well Completion Design*, Elsevier — §5.1 black-oil
     models (cross-check reference for the Standing forms).
+Baker, O. & Swerdloff, W. (1956). *Calculations of Surface Tension-3:
+    Calculations of Surface Tension Parachor Values.* Oil & Gas Journal 43(12)
+    — dead-oil/gas surface tension vs T and API.
+Katz, D. L. et al. (1959). *Handbook of Natural Gas Engineering*, McGraw-Hill
+    — the water/gas interfacial-tension fit (also attributed to Ramey).
 """
 from __future__ import annotations
 
@@ -694,3 +699,76 @@ def rho_oil(
     rs_scf = rs_sm3_sm3 / SCF_STB_TO_SM3_SM3
     rho_lbft3 = (62.4 * sg_oil + 0.0136 * rs_scf * gas_sg) / bo_rm3_sm3
     return _U.convert(rho_lbft3, "pound/foot**3", "kilogram/meter**3")
+
+
+# =============================================================================
+# Gas/liquid surface tension (VLP inputs)
+# =============================================================================
+#: 1 dyne/cm in N/m (the surface-tension seam; = 1e-3 exactly).
+_DYNE_CM_TO_N_M: float = 1.0e-3
+
+
+def sigma_oil_gas_baker_swerdloff(t_k: float, api: float) -> float:
+    """Dead-oil/gas surface tension [N/m]. Baker & Swerdloff (1956).
+
+        sigma(68 °F)  = 39.0 - 0.2571·API          [dyne/cm]
+        sigma(100 °F) = 37.5 - 0.2571·API          [dyne/cm]
+
+    linearly interpolated in temperature between 68 °F and 100 °F (held flat
+    outside that range). Returns the **dead-oil** (atmospheric) value in N/m.
+    The standard live-oil **pressure de-rating** — Baker & Swerdloff's
+    ``C = 1 - 0.024·p^0.45`` (p in psia), ``sigma_live = C·sigma_dead`` — is the
+    caller's to apply where the local pressure is known (it is not an argument
+    to this dead-oil form). T in °F for the correlation; band 68-100 °F (warn
+    outside). Classic as-published (OGJ, 1956; reproduced in Beggs, 1991).
+    """
+    t_f = _k_to_f(t_k)
+    if not (68.0 <= t_f <= 100.0):
+        warnings.warn(
+            f"Baker-Swerdloff surface tension outside its validity band "
+            f"(T={t_f:.4g} °F in [68, 100]); the value is held at the nearest "
+            f"endpoint / extrapolated.",
+            stacklevel=2,
+        )
+    s68 = 39.0 - 0.2571 * api
+    s100 = 37.5 - 0.2571 * api
+    if t_f <= 68.0:
+        sigma_dyne = s68
+    elif t_f >= 100.0:
+        sigma_dyne = s100
+    else:
+        sigma_dyne = s68 - (t_f - 68.0) * (s68 - s100) / (100.0 - 68.0)
+    return sigma_dyne * _DYNE_CM_TO_N_M
+
+
+def sigma_water_gas(t_k: float, p_pa: float) -> float:
+    """Water/gas interfacial tension [N/m]. Katz et al. (1959) / Ramey fit.
+
+        sigma(74 °F)  = 75.0 - 1.108·p^0.349        [dyne/cm]
+        sigma(280 °F) = 53.0 - 0.1048·p^0.637       [dyne/cm]
+
+    p in psia, linearly interpolated in temperature between 74 °F and 280 °F
+    (held flat outside). The classic published water/gas IFT fit (Katz et al.,
+    *Handbook of Natural Gas Engineering*, 1959; also attributed to Ramey). At
+    atmospheric pressure and 74 °F this returns ≈ 72 dyne/cm, the surface
+    tension of water. Band T 74-280 °F, p to ~5000 psia (warn outside). Returns
+    N/m. Classic as-published.
+    """
+    t_f = _k_to_f(t_k)
+    p_psia = _pa_to_psi(p_pa)
+    if not (74.0 <= t_f <= 280.0 and p_psia <= 5000.0):
+        warnings.warn(
+            f"Water/gas surface tension outside its validity band "
+            f"(T={t_f:.4g} °F in [74, 280], p={p_psia:.4g} psia ≤ 5000); "
+            f"the value is held/extrapolated.",
+            stacklevel=2,
+        )
+    s74 = 75.0 - 1.108 * p_psia ** 0.349
+    s280 = 53.0 - 0.1048 * p_psia ** 0.637
+    if t_f <= 74.0:
+        sigma_dyne = s74
+    elif t_f >= 280.0:
+        sigma_dyne = s280
+    else:
+        sigma_dyne = s74 - (t_f - 74.0) * (s74 - s280) / (280.0 - 74.0)
+    return sigma_dyne * _DYNE_CM_TO_N_M
