@@ -57,6 +57,24 @@ user/vendor-supplied** for premium threads (VAM, Tenaris, etc.) and are left
 Conversions applied by the loader (from each file's `_meta.to_SI`):
 `in × 0.0254 = m`, `lb/ft × 1.4881639 = kg/m`, `psi × 6894.757 = Pa`.
 
+## Premium connections (`premium_connections.json`)
+
+A NAME + provenance **registry** of premium (proprietary metal-to-metal /
+gas-tight) connection designations — VAM TOP/ACE, Hydril 563, NSCC, Fox, BDS —
+observed on real completion strings. The designations were parsed from the
+**Volve open dataset (Equinor)** WellCat completion models; each connection's
+specification is published on its **vendor's public website**. Equinor released
+the Volve dataset publicly and these are public vendor/industry identifiers
+(no operator, well, or individual identifiers) — provenance queries go to
+Equinor's Volve open-data release and to the respective vendor.
+
+Consistent with the premium-thread policy above, the registry asserts **no
+dimensions and no ratings**: `id_in`, `drift_in`, joint efficiency, pressure
+rating and make-up torque are proprietary/vendor-supplied and left `None` —
+consult the vendor datasheet, never fabricated. `vendor` is asserted only where
+the brand owner is unambiguous (VAM → Vallourec, Hydril → Tenaris); a `null`
+vendor (Fox, BDS) means it was not determined with confidence — not guessed.
+
 ## OSDU mapping (TubularComponent.1.0.0)
 
 | welleng            | OSDU property                                   |

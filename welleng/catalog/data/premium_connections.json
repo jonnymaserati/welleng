@@ -1,0 +1,33 @@
+{
+  "_meta": {
+    "class": "premium_connections",
+    "description": "Registry of PREMIUM (proprietary metal-to-metal / gas-tight) tubular connection designations observed in real completion designs. This is a NAME + provenance registry only: dimensional and performance data (OD, ID, drift, joint efficiency, seal/pressure ratings, make-up torque, bending/compression limits) are PROPRIETARY, vendor-supplied per each vendor's public datasheet, and are deliberately left null here - NOT vendored, never fabricated (same policy as the API 5CT grade performance fields).",
+    "source": "Connection designations parsed from the Volve open dataset (Equinor) WellCat completion models; these are the premium connections used on the Volve producer/injector strings. Equinor released the Volve dataset publicly, and each connection's specification is published on its vendor's public website. Refer any provenance query to Equinor's Volve open-data release and to the respective vendor.",
+    "policy": "Registry recognises the connection NAME + (where unambiguous) the vendor. It asserts NO dimensions and NO ratings. For dimensional/performance data, consult the vendor's public connection datasheet. A null vendor means the brand owner was not asserted with confidence (not guessed).",
+    "citation": "Volve open dataset (Equinor), WellCat completion models (connection designations only). Public vendor datasheets for specifications.",
+    "de_identified": "Grade and connection designations are public vendor/industry identifiers; no operator, well, or individual identifiers are included.",
+    "fields": {
+      "designation": "connection trade designation as parsed",
+      "vendor": "brand owner, asserted only where unambiguous; null = not confidently determined",
+      "vendor_note": "qualifier on the vendor attribution where relevant",
+      "category": "always 'premium' (proprietary metal-to-metal / gas-tight); distinguishes from API STC/LTC/BTC/NUE/EUE",
+      "spec_source": "where to obtain the (proprietary) dimensional + performance data",
+      "id_in": "null - vendor-supplied",
+      "drift_in": "null - vendor-supplied",
+      "joint_efficiency": "null - vendor-supplied",
+      "pressure_rating_psi": "null - vendor-supplied",
+      "makeup_torque_ftlb": "null - vendor-supplied"
+    }
+  },
+  "premium_connections": [
+    {"designation": "VAM TOP",      "vendor": "Vallourec", "vendor_note": "VAM is Vallourec's registered premium-connection brand", "category": "premium", "spec_source": "Vallourec VAM public connection datasheet", "id_in": null, "drift_in": null, "joint_efficiency": null, "pressure_rating_psi": null, "makeup_torque_ftlb": null},
+    {"designation": "VAM TOP HT",   "vendor": "Vallourec", "vendor_note": "VAM TOP high-torque variant", "category": "premium", "spec_source": "Vallourec VAM public connection datasheet", "id_in": null, "drift_in": null, "joint_efficiency": null, "pressure_rating_psi": null, "makeup_torque_ftlb": null},
+    {"designation": "VAM TOP HC",   "vendor": "Vallourec", "vendor_note": "VAM TOP high-collapse variant", "category": "premium", "spec_source": "Vallourec VAM public connection datasheet", "id_in": null, "drift_in": null, "joint_efficiency": null, "pressure_rating_psi": null, "makeup_torque_ftlb": null},
+    {"designation": "VAM TOP SC80", "vendor": "Vallourec", "vendor_note": "VAM TOP special-clearance variant", "category": "premium", "spec_source": "Vallourec VAM public connection datasheet", "id_in": null, "drift_in": null, "joint_efficiency": null, "pressure_rating_psi": null, "makeup_torque_ftlb": null},
+    {"designation": "VAM ACE",      "vendor": "Vallourec", "vendor_note": "VAM integral-flush / semi-flush family", "category": "premium", "spec_source": "Vallourec VAM public connection datasheet", "id_in": null, "drift_in": null, "joint_efficiency": null, "pressure_rating_psi": null, "makeup_torque_ftlb": null},
+    {"designation": "Hydril 563",   "vendor": "Tenaris", "vendor_note": "Hydril 500-series; Hydril connections are now part of Tenaris", "category": "premium", "spec_source": "TenarisHydril public connection datasheet", "id_in": null, "drift_in": null, "joint_efficiency": null, "pressure_rating_psi": null, "makeup_torque_ftlb": null},
+    {"designation": "NSCC",         "vendor": "Nippon Steel", "vendor_note": "attribution parsed from the source model; confirm against vendor before design use", "category": "premium", "spec_source": "Nippon Steel premium-connection public datasheet", "id_in": null, "drift_in": null, "joint_efficiency": null, "pressure_rating_psi": null, "makeup_torque_ftlb": null},
+    {"designation": "Fox",          "vendor": null, "vendor_note": "brand owner not asserted with confidence - not guessed; confirm before use", "category": "premium", "spec_source": "vendor public connection datasheet (owner to confirm)", "id_in": null, "drift_in": null, "joint_efficiency": null, "pressure_rating_psi": null, "makeup_torque_ftlb": null},
+    {"designation": "BDS",          "vendor": null, "vendor_note": "brand owner not asserted with confidence - not guessed; confirm before use", "category": "premium", "spec_source": "vendor public connection datasheet (owner to confirm)", "id_in": null, "drift_in": null, "joint_efficiency": null, "pressure_rating_psi": null, "makeup_torque_ftlb": null}
+  ]
+}
