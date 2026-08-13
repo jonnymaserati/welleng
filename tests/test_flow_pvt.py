@@ -58,10 +58,14 @@ def test_bg_boyle_scaling():
 # Gas Z-factor
 # =============================================================================
 def test_z_hall_yarborough_matches_kernel():
-    """[VALUE-VALIDATED] SI seam reproduces the KT-validated H-Y kernel exactly.
+    """[VALUE-VALIDATED] SI seam reproduces the KT-validated H-Y kernel to ~1 ULP.
 
     z_hall_yarborough is only an SI seam over the existing clean-room kernel
     welleng.kick_tolerance.gas_z.hall_yarborough_z (the KT suite is its guard).
+    The seam adds no correlation math -- only the Pa->psi / K->degR unit
+    conversions. Those round independently of a hand-converted kernel call, so
+    the two agree to ~1 ULP, not bit-for-bit (the last digit is platform/BLAS
+    dependent); assert to a tight tolerance rather than exact equality.
     """
     from welleng.kick_tolerance.gas_z import hall_yarborough_z
 
@@ -71,7 +75,7 @@ def test_z_hall_yarborough_matches_kernel():
     z_kernel = hall_yarborough_z(
         p_pa / PSI, t_k * 1.8, t_pc_k * 1.8, p_pc_pa / PSI
     )
-    assert z_seam == z_kernel          # byte-identical: seam adds no math
+    assert z_seam == pytest.approx(z_kernel, rel=1e-12)
 
 
 def test_z_dranchuk_vs_hall_yarborough():
