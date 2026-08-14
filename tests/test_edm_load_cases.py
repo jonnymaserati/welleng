@@ -92,3 +92,11 @@ def test_temp_deration_curve(edm):
     # derated yield of an 80 ksi grade at 392 F
     assert 80000 * pts[-1][1] == 71200.0
     assert edm.temp_deration("NOPE") == []
+
+
+def test_case_temp_gradient(edm):
+    g = edm.case_temp_gradient("CS1")
+    assert g == {"InitialCondition": [(0.0, 40.0), (2000.0, 205.0)]}  # sorted by md
+    # application filter (StressCheck)
+    assert edm.case_temp_gradient("CS1", application="stresscheck")
+    assert edm.case_temp_gradient("CS1", application="WellCat") == {}

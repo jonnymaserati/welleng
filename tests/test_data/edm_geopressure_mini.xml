@@ -35,6 +35,8 @@
   <TU_COMP_TEMP_DERATION_POINT well_id="W1" wellbore_id="WB1" assembly_id="ASM1" assembly_comp_id="TC1" point_id="D3" deration_temperature="392" correction_factor="0.89"/>
   <TU_COMP_TEMP_DERATION_POINT well_id="W1" wellbore_id="WB1" assembly_id="ASM1" assembly_comp_id="TC1" point_id="D1" deration_temperature="68" correction_factor="1.0"/>
   <TU_COMP_TEMP_DERATION_POINT well_id="W1" wellbore_id="WB1" assembly_id="ASM1" assembly_comp_id="TC1" point_id="D2" deration_temperature="212" correction_factor="0.92"/>
+  <CD_CASE_TEMP_GRADIENT well_id="W1" wellbore_id="WB1" case_id="CS1" case_temp_id="CT2" application_name="StressCheck" profile_name="InitialCondition" md="2000" casing_temp="205"/>
+  <CD_CASE_TEMP_GRADIENT well_id="W1" wellbore_id="WB1" case_id="CS1" case_temp_id="CT1" application_name="StressCheck" profile_name="InitialCondition" md="0" casing_temp="40"/>
 
   <!-- load-case set: one StressCheck profile with a valued + a defaulted param -->
   <TU_LOAD_PROFILE well_id="W1" wellbore_id="WB1" case_id="CS1" application_name="StressCheck" load_profile_id="LP1" profile_name="BrstGasKickProfile" parameter_name="DesignPipeBurstFactor" parameter_value_num="1.1" measure_id="0"/>

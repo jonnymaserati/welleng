@@ -1843,6 +1843,33 @@ class EDMReader:
                 pts.append((t, c))
         return sorted(pts)
 
+    def case_temp_gradient(
+        self, case_id: str, application: Optional[str] = None
+    ) -> Dict[str, List[Tuple[float, float]]]:
+        """``CD_CASE_TEMP_GRADIENT`` for one ``case_id`` as
+        ``{profile_name: sorted [(md, casing_temp)]}`` -- the per-case
+        temperature profile(s) (the WellCat "case temperature" that seeds the
+        deration + APB baseline). ``md`` is in the file's source units (feet);
+        ``casing_temp`` is raw (degF). ``application`` filters StressCheck vs
+        WellCat.
+        """
+        out: Dict[str, List[Tuple[float, float]]] = {}
+        for _tag, a in _iter_rows(
+            self.path, frozenset({"CD_CASE_TEMP_GRADIENT"})
+        ):
+            if a.get("case_id") != case_id:
+                continue
+            if not self._app_match(a.get("application_name"), application):
+                continue
+            md = _f(a, "md")
+            t = _f(a, "casing_temp")
+            if md is None or t is None:
+                continue
+            out.setdefault(a.get("profile_name") or "", []).append((md, t))
+        for pts in out.values():
+            pts.sort()
+        return out
+
     def fluid_rheology(self, fluid_id: Optional[str] = None
                        ) -> List[FluidRheologyPoint]:
         """Fluid rheology points (with joined Fann data), by temperature.
