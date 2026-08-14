@@ -59,3 +59,36 @@ def test_load_headers_sequence_ordered(edm):
 def test_schema_documents_default_semantics(edm):
     d = edm.schema["TU_LOAD_PROFILE"]["fields"]["parameter_value_num"]
     assert "default" in d
+
+
+# --- design-load cluster: raw-row readers (CD_CASE / TU_CASE_ASSEMBLY_PARAMETER
+#     / TU_COMP_TEMP_DERATION_POINT). These read the EDM directly, so they need
+#     no with_load_cases flag. -----------------------------------------------
+
+def test_design_cases_and_application_filter(edm):
+    all_cases = {c["case_id"] for c in edm.design_cases()}
+    assert all_cases == {"CS1", "CS2"}
+    # create_app_id carries the authoring app (CD_CASE has NO application_name);
+    # match is case-insensitive substring: 'StressCheck' -> 'StressCheck 5000.1'.
+    sc = edm.design_cases(application="StressCheck")
+    assert [c["case_id"] for c in sc] == ["CS1"]
+    wc = edm.design_cases(application="WellCat")  # lower/upper-insensitive -> WELLCAT
+    assert [c["case_id"] for c in wc] == ["CS2"]
+
+
+def test_case_parameters(edm):
+    params = edm.case_parameters("CS1")
+    assert params["InitAppSurfPressure"] == 0.0
+    assert params["AxialOverpullForceInd"] == 100000.0
+    # application filter (values are 'StressCheck' / 'WELLCAT')
+    sc_params = edm.case_parameters("CS1", application="stresscheck")
+    assert "InitAppSurfPressure" in sc_params
+    assert edm.case_parameters("CS1", application="WellCat") == {}
+
+
+def test_temp_deration_curve(edm):
+    pts = edm.temp_deration("TC1")
+    assert pts == [(68.0, 1.0), (212.0, 0.92), (392.0, 0.89)]
+    # derated yield of an 80 ksi grade at 392 F
+    assert 80000 * pts[-1][1] == 71200.0
+    assert edm.temp_deration("NOPE") == []

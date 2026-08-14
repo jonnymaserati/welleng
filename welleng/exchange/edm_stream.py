@@ -1764,6 +1764,85 @@ class EDMReader:
         return sorted(self._dls_overrides.get(wb, []),
                       key=lambda d: d.span[0] or 0.0)
 
+    # --- design-load cluster (raw-row readers) --------------------------------
+    # CD_CASE / TU_CASE_ASSEMBLY_PARAMETER / TU_COMP_TEMP_DERATION_POINT hold the
+    # casing/tubing design load cases, their input parameters, and per-component
+    # yield deration. These return RAW rows -- the casing-design interpretation
+    # (SF / collapse) is the consumer's. They read the EDM directly (one pass
+    # over the requested table per call); cache if called hot.
+
+    @staticmethod
+    def _app_match(value: Optional[str], application: Optional[str]) -> bool:
+        # case-insensitive substring so 'stresscheck' matches the versioned
+        # 'StressCheck 5000.1', and 'wellcat' matches the upper-case 'WELLCAT'.
+        if application is None:
+            return True
+        return value is not None and application.lower() in value.lower()
+
+    def design_cases(
+        self, wellbore=None, application: Optional[str] = None
+    ) -> List[Dict[str, str]]:
+        """``CD_CASE`` rows -- the casing/tubing design load cases -- as raw
+        dicts. Filter by ``wellbore`` (id or name) and/or ``application``.
+
+        NOTE: ``CD_CASE`` carries no ``application_name``; the authoring app is
+        in ``create_app_id`` (versioned strings, e.g. ``'StressCheck 5000.1'``,
+        ``'WELLCAT'``, ``'COMPASS'``, ``'WELLPLAN ...'``). ``application`` matches
+        it case-insensitively as a substring, so ``'StressCheck'`` /
+        ``'WellCat'`` both work. Keys include case_id, case_name, phase,
+        scenario_id, assembly_id, fluid_id, hole_sect_group_id, create_app_id.
+        """
+        wb = self._resolve_wellbore(wellbore).wellbore_id if wellbore else None
+        out: List[Dict[str, str]] = []
+        for _tag, a in _iter_rows(self.path, frozenset({"CD_CASE"})):
+            if wb is not None and a.get("wellbore_id") != wb:
+                continue
+            if not self._app_match(a.get("create_app_id"), application):
+                continue
+            out.append(dict(a))
+        return out
+
+    def case_parameters(
+        self, case_id: str, application: Optional[str] = None
+    ) -> Dict[str, Optional[float]]:
+        """``TU_CASE_ASSEMBLY_PARAMETER`` for one ``case_id`` as
+        ``{parameter_name: parameter_value_num}`` (e.g. ``'InitAppSurfPressure'``
+        -- the load-case input values). ``application`` filters on the row's
+        ``application_name`` (values ``'StressCheck'`` / ``'WELLCAT'``),
+        case-insensitive.
+        """
+        out: Dict[str, Optional[float]] = {}
+        for _tag, a in _iter_rows(
+            self.path, frozenset({"TU_CASE_ASSEMBLY_PARAMETER"})
+        ):
+            if a.get("case_id") != case_id:
+                continue
+            if not self._app_match(a.get("application_name"), application):
+                continue
+            name = a.get("parameter_name")
+            if name is not None:
+                out[name] = _f(a, "parameter_value_num")
+        return out
+
+    def temp_deration(
+        self, assembly_comp_id: str
+    ) -> List[Tuple[float, float]]:
+        """``TU_COMP_TEMP_DERATION_POINT`` for one component as sorted
+        ``(deration_temperature, correction_factor)`` points -- the yield
+        deration curve. Derated yield = base_yield * interp(correction_factor, T).
+        """
+        pts: List[Tuple[float, float]] = []
+        for _tag, a in _iter_rows(
+            self.path, frozenset({"TU_COMP_TEMP_DERATION_POINT"})
+        ):
+            if a.get("assembly_comp_id") != assembly_comp_id:
+                continue
+            t = _f(a, "deration_temperature")
+            c = _f(a, "correction_factor")
+            if t is not None and c is not None:
+                pts.append((t, c))
+        return sorted(pts)
+
     def fluid_rheology(self, fluid_id: Optional[str] = None
                        ) -> List[FluidRheologyPoint]:
         """Fluid rheology points (with joined Fann data), by temperature.

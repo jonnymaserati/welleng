@@ -25,8 +25,16 @@
   <CD_HOLE_SECT well_id="W1" wellbore_id="WB1" hole_sect_group_id="HG2" hole_sect_id="H1b" sect_type_code="CAS" od_casing="20.0" id_casing="18.73" id_drift="18.543" hole_size="26.0" length="500" md_shoe="500" catalog_key_desc="20 in surface"/>
   <CD_HOLE_SECT well_id="W1" wellbore_id="WB1" hole_sect_group_id="HG1" hole_sect_id="H2" sect_type_code="OPEN" od_casing="" id_casing="" id_drift="" hole_size="12.25" length="1500" md_shoe="2000" catalog_key_desc="12 1/4 open"/>
 
-  <CD_CASE well_id="W1" wellbore_id="WB1" case_id="CS1" phase="ACTUAL" scenario_id="S1" hole_sect_group_id="HG1" case_name="As-run"/>
-  <CD_CASE well_id="W1" wellbore_id="WB1" case_id="CS2" phase="PLAN" scenario_id="S2" hole_sect_group_id="HG2" case_name="Plan"/>
+  <CD_CASE well_id="W1" wellbore_id="WB1" case_id="CS1" phase="ACTUAL" scenario_id="S1" hole_sect_group_id="HG1" case_name="As-run" assembly_id="ASM1" fluid_id="F1" create_app_id="StressCheck 5000.1"/>
+  <CD_CASE well_id="W1" wellbore_id="WB1" case_id="CS2" phase="PLAN" scenario_id="S2" hole_sect_group_id="HG2" case_name="Plan" assembly_id="ASM1" fluid_id="F1" create_app_id="WELLCAT"/>
+
+  <!-- design-load cluster: case-input params + per-component yield deration -->
+  <TU_CASE_ASSEMBLY_PARAMETER well_id="W1" wellbore_id="WB1" case_id="CS1" application_name="StressCheck" assembly_parameter_id="AP1" measure_id="0" parameter_name="InitAppSurfPressure" parameter_value_num="0.0"/>
+  <TU_CASE_ASSEMBLY_PARAMETER well_id="W1" wellbore_id="WB1" case_id="CS1" application_name="StressCheck" assembly_parameter_id="AP2" measure_id="0" parameter_name="AxialOverpullForceInd" parameter_value_num="100000"/>
+  <TU_CASE_ASSEMBLY_PARAMETER well_id="W1" wellbore_id="WB1" case_id="CS2" application_name="WELLCAT" assembly_parameter_id="AP3" measure_id="0" parameter_name="InitAppSurfPressure" parameter_value_num="250"/>
+  <TU_COMP_TEMP_DERATION_POINT well_id="W1" wellbore_id="WB1" assembly_id="ASM1" assembly_comp_id="TC1" point_id="D3" deration_temperature="392" correction_factor="0.89"/>
+  <TU_COMP_TEMP_DERATION_POINT well_id="W1" wellbore_id="WB1" assembly_id="ASM1" assembly_comp_id="TC1" point_id="D1" deration_temperature="68" correction_factor="1.0"/>
+  <TU_COMP_TEMP_DERATION_POINT well_id="W1" wellbore_id="WB1" assembly_id="ASM1" assembly_comp_id="TC1" point_id="D2" deration_temperature="212" correction_factor="0.92"/>
 
   <!-- load-case set: one StressCheck profile with a valued + a defaulted param -->
   <TU_LOAD_PROFILE well_id="W1" wellbore_id="WB1" case_id="CS1" application_name="StressCheck" load_profile_id="LP1" profile_name="BrstGasKickProfile" parameter_name="DesignPipeBurstFactor" parameter_value_num="1.1" measure_id="0"/>
