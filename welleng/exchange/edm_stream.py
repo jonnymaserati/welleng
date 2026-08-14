@@ -1791,6 +1791,11 @@ class EDMReader:
         it case-insensitively as a substring, so ``'StressCheck'`` /
         ``'WellCat'`` both work. Keys include case_id, case_name, phase,
         scenario_id, assembly_id, fluid_id, hole_sect_group_id, create_app_id.
+
+        NOTE: ``application`` here means "AUTHORED by that tool" (create_app_id).
+        To enumerate cases that carry a load CONFIG for a tool -- including
+        COMPASS-authored cases that StressCheck wrote params onto -- use
+        :meth:`cases_with_load_config`.
         """
         wb = self._resolve_wellbore(wellbore).wellbore_id if wellbore else None
         out: List[Dict[str, str]] = []
@@ -1868,6 +1873,40 @@ class EDMReader:
             out.setdefault(a.get("profile_name") or "", []).append((md, t))
         for pts in out.values():
             pts.sort()
+        return out
+
+    def cases_with_load_config(
+        self, application: str = "StressCheck", wellbore=None
+    ) -> List[Dict[str, str]]:
+        """``CD_CASE`` rows for the cases that CARRY a load configuration for
+        ``application`` -- i.e. that have ``TU_CASE_ASSEMBLY_PARAMETER`` rows
+        with that ``application_name``. These are the **designable** cases.
+
+        This differs from :meth:`design_cases` on purpose: ``design_cases`` filters
+        by ``CD_CASE.create_app_id`` (the tool that AUTHORED the case), whereas
+        this enumerates by where the load params actually LIVE. A case authored in
+        COMPASS (the trajectory/link tool) can carry a StressCheck load config —
+        it is returned here but NOT by ``design_cases(application='StressCheck')``.
+        (Volve: 422 cases carry StressCheck params vs 169 StressCheck-authored;
+        279 of the difference are COMPASS-authored.) Use this to enumerate the
+        designable cases, then :meth:`case_parameters` per case_id.
+        """
+        want: set = set()
+        for _tag, a in _iter_rows(
+            self.path, frozenset({"TU_CASE_ASSEMBLY_PARAMETER"})
+        ):
+            if self._app_match(a.get("application_name"), application):
+                cid = a.get("case_id")
+                if cid is not None:
+                    want.add(cid)
+        wb = self._resolve_wellbore(wellbore).wellbore_id if wellbore else None
+        out: List[Dict[str, str]] = []
+        for _tag, a in _iter_rows(self.path, frozenset({"CD_CASE"})):
+            if a.get("case_id") not in want:
+                continue
+            if wb is not None and a.get("wellbore_id") != wb:
+                continue
+            out.append(dict(a))
         return out
 
     def fluid_rheology(self, fluid_id: Optional[str] = None

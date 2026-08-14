@@ -27,11 +27,13 @@
 
   <CD_CASE well_id="W1" wellbore_id="WB1" case_id="CS1" phase="ACTUAL" scenario_id="S1" hole_sect_group_id="HG1" case_name="As-run" assembly_id="ASM1" fluid_id="F1" create_app_id="StressCheck 5000.1"/>
   <CD_CASE well_id="W1" wellbore_id="WB1" case_id="CS2" phase="PLAN" scenario_id="S2" hole_sect_group_id="HG2" case_name="Plan" assembly_id="ASM1" fluid_id="F1" create_app_id="WELLCAT"/>
+  <CD_CASE well_id="W1" wellbore_id="WB1" case_id="CS3" phase="ACTUAL" scenario_id="S3" hole_sect_group_id="HGX" case_name="COMPASS-authored, StressCheck-configured" assembly_id="ASM1" fluid_id="F1" create_app_id="COMPASS"/>
 
   <!-- design-load cluster: case-input params + per-component yield deration -->
   <TU_CASE_ASSEMBLY_PARAMETER well_id="W1" wellbore_id="WB1" case_id="CS1" application_name="StressCheck" assembly_parameter_id="AP1" measure_id="0" parameter_name="InitAppSurfPressure" parameter_value_num="0.0"/>
   <TU_CASE_ASSEMBLY_PARAMETER well_id="W1" wellbore_id="WB1" case_id="CS1" application_name="StressCheck" assembly_parameter_id="AP2" measure_id="0" parameter_name="AxialOverpullForceInd" parameter_value_num="100000"/>
   <TU_CASE_ASSEMBLY_PARAMETER well_id="W1" wellbore_id="WB1" case_id="CS2" application_name="WELLCAT" assembly_parameter_id="AP3" measure_id="0" parameter_name="InitAppSurfPressure" parameter_value_num="250"/>
+  <TU_CASE_ASSEMBLY_PARAMETER well_id="W1" wellbore_id="WB1" case_id="CS3" application_name="StressCheck" assembly_parameter_id="AP4" measure_id="0" parameter_name="InitAppSurfPressure" parameter_value_num="500"/>
   <TU_COMP_TEMP_DERATION_POINT well_id="W1" wellbore_id="WB1" assembly_id="ASM1" assembly_comp_id="TC1" point_id="D3" deration_temperature="392" correction_factor="0.89"/>
   <TU_COMP_TEMP_DERATION_POINT well_id="W1" wellbore_id="WB1" assembly_id="ASM1" assembly_comp_id="TC1" point_id="D1" deration_temperature="68" correction_factor="1.0"/>
   <TU_COMP_TEMP_DERATION_POINT well_id="W1" wellbore_id="WB1" assembly_id="ASM1" assembly_comp_id="TC1" point_id="D2" deration_temperature="212" correction_factor="0.92"/>

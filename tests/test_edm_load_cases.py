@@ -67,7 +67,7 @@ def test_schema_documents_default_semantics(edm):
 
 def test_design_cases_and_application_filter(edm):
     all_cases = {c["case_id"] for c in edm.design_cases()}
-    assert all_cases == {"CS1", "CS2"}
+    assert all_cases == {"CS1", "CS2", "CS3"}
     # create_app_id carries the authoring app (CD_CASE has NO application_name);
     # match is case-insensitive substring: 'StressCheck' -> 'StressCheck 5000.1'.
     sc = edm.design_cases(application="StressCheck")
@@ -100,3 +100,12 @@ def test_case_temp_gradient(edm):
     # application filter (StressCheck)
     assert edm.case_temp_gradient("CS1", application="stresscheck")
     assert edm.case_temp_gradient("CS1", application="WellCat") == {}
+
+
+def test_cases_with_load_config_catches_compass_authored(edm):
+    # CS3 is COMPASS-authored but carries a StressCheck load param -> the gap.
+    authored = {c["case_id"] for c in edm.design_cases(application="StressCheck")}
+    designable = {c["case_id"] for c in edm.cases_with_load_config("StressCheck")}
+    assert "CS3" not in authored          # missed by the create_app_id filter
+    assert "CS3" in designable            # caught by where-the-params-live
+    assert designable == {"CS1", "CS3"}   # CS2 is a WELLCAT config, excluded
