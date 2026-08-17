@@ -68,3 +68,20 @@ def test_ft_lbf_custom_unit_preserved():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_two_arg_to_si_and_to_overloads():
+    from welleng import units as u
+    # 2-arg / 3-arg boilerplate-free forms match the Quantity forms
+    assert u.to_si(1.0, "bar") == u.to_si(u.pressure(1, "bar")) == 100000.0
+    assert u.to(1.0, "bar", "Pa") == u.to(u.pressure(1, "bar"), "Pa") == 100000.0
+    # a numeric-factor drilling unit (YP) round-trips
+    assert abs(u.to_si(1.0, "lbf/(100*ft**2)") - 0.4788026) < 1e-4
+
+
+def test_is_valid_unit_predicate():
+    from welleng import units as u
+    for good in ("in**2", "kg/m**3", "m/hr", "Pa*s", "lbf/(100*ft**2)", "ppg", "sg"):
+        assert u.is_valid_unit(good), good
+    for bad in ("not_a_unit", "xyzzy", ""):
+        assert not u.is_valid_unit(bad), bad

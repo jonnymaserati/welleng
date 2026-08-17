@@ -20,7 +20,7 @@ Examples
 >>> round(units.to_rad(units.deg(180)), 6)
 3.141593
 """
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 
 import numpy as np
 import pint
@@ -202,23 +202,66 @@ def temperature_gradient(
 
 
 # --- converters / guards ------------------------------------------------------
-def to(quantity: pint.Quantity, unit: UnitLike) -> float:
-    """Magnitude of ``quantity`` expressed in ``unit`` (float).
+def to(quantity, unit: UnitLike, to_unit: Optional[UnitLike] = None) -> float:
+    """Magnitude expressed in a target unit (float). Two call forms:
+
+    ``to(quantity, unit)`` -- express an existing Quantity in ``unit``; or
+    ``to(value, from_unit, to_unit)`` -- a value + its unit-string, converted
+    to ``to_unit`` (drops the ``Q_(value, from_unit)`` boilerplate).
 
     >>> to(pressure(1, 'bar'), 'Pa')
     100000.0
+    >>> to(1.0, 'bar', 'Pa')
+    100000.0
     """
+    if to_unit is not None:
+        quantity = quantity * ureg(unit)
+        unit = to_unit
     return float(quantity.to(unit).magnitude)
 
 
-def to_si(quantity: pint.Quantity) -> float:
-    """Magnitude of ``quantity`` in SI base units (float)."""
+def to_si(quantity, unit: Optional[UnitLike] = None) -> float:
+    """Magnitude in SI base units (float). Two call forms:
+
+    ``to_si(Q_(value, unit))`` or the boilerplate-free ``to_si(value, unit)``.
+
+    >>> to_si(pressure(1, 'bar'))
+    100000.0
+    >>> to_si(1.0, 'bar')
+    100000.0
+    """
+    if unit is not None:
+        quantity = quantity * ureg(unit)
     return float(quantity.to_base_units().magnitude)
 
 
 def magnitude(quantity: pint.Quantity) -> float:
     """The bare magnitude of ``quantity`` (float), unit unchanged."""
     return float(quantity.magnitude)
+
+
+def is_valid_unit(unit_str: UnitLike) -> bool:
+    """True if ``unit_str`` is a unit the registry understands.
+
+    A public predicate for validating a user-supplied unit string at an API/GUI
+    boundary BEFORE conversion, without a ``try``/``except`` around ``Q_``.
+
+    >>> is_valid_unit('lbf/(100*ft**2)')
+    True
+    >>> is_valid_unit('not_a_unit')
+    False
+    """
+    # A blank string is a user error at an API/GUI edge, not "dimensionless".
+    if not isinstance(unit_str, str) or not unit_str.strip():
+        return False
+    # Parse as an expression (not a strict Unit) so composite units carrying a
+    # numeric factor -- e.g. YP in lbf/(100*ft**2) -- pass; matches the ``ureg``
+    # path the 2-arg to_si / to use.
+    try:
+        ureg(unit_str)
+        return True
+    except Exception:
+        return False
 
 
 # --- drilling helpers ---------------------------------------------------------
