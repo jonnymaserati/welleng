@@ -167,11 +167,20 @@ class TorqueDrag:
         self.inc_delta[1:] = self.survey.inc_rad[1:] - self.survey.inc_rad[:-1]
 
     def get_azi_delta(self):
-        """Calculate the azimuth change between consecutive survey stations."""
+        """Calculate the azimuth change between consecutive survey stations.
+
+        The difference is wrapped into ``(-pi, pi]`` so a station where the well
+        crosses north (e.g. 359.9 -> 0.3 deg, a 0.4 deg turn) is treated as the
+        small turn it is, not an almost-full revolution. Without the wrap the
+        Johancsik bending term ``T * dazi * sin(inc)`` explodes at north
+        crossings (welleng#312) -- and, because ``force_normal`` is called while
+        integrating tension, the error also propagates into the tension profile.
+        """
         self.azi_delta = np.zeros_like(self.survey.azi_grid_rad)
-        self.azi_delta[1:] = (
+        delta = (
             self.survey.azi_grid_rad[1:] - self.survey.azi_grid_rad[:-1]
         )
+        self.azi_delta[1:] = (delta + np.pi) % (2 * np.pi) - np.pi
 
     def get_characteristic_od(self, section):
         """Return the effective outer diameter for a string section.
