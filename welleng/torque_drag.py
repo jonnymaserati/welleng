@@ -204,7 +204,9 @@ class TorqueDrag:
 
     def get_weight_buoyed_and_radius(self):
         """Calculate buoyed weight and contact radius for each survey interval."""
-        sections = self.string.sections
+        # sections is a dict keyed 0..n-1; iterate its values, not its keys
+        # (welleng#312: `for s in sections` yielded int keys -> TypeError).
+        sections = list(self.string.sections.values())
         bottoms = np.array([s['bottom'] for s in sections])
         mds = self.survey.md[1:]
         delta_mds = self.survey.delta_md[1:]
@@ -220,7 +222,7 @@ class TorqueDrag:
 
     def get_coeff_friction_sliding(self):
         """Build an array of sliding friction coefficients mapped to survey stations."""
-        sections = self.wellbore.sections
+        sections = list(self.wellbore.sections.values())
         bottoms = np.array([s['bottom'] for s in sections])
         mds = self.survey.md[1:]
         mask = mds <= self.wellbore.bottom
