@@ -340,7 +340,8 @@ _MWD_KEYWORDS = ("mwd", "magnetic", "magn", "ems", "measurement while")
 
 
 def classify_tool(
-    name: Optional[str], description: Optional[str] = None
+    name: Optional[str], description: Optional[str] = None,
+    remarks: Optional[str] = None,
 ) -> ToolKind:
     """Classify a survey tool from its name and (optional) description.
 
@@ -384,6 +385,8 @@ def classify_tool(
     kind = _classify(name)
     if kind is ToolKind.OTHER:
         kind = _classify(description)
+    if kind is ToolKind.OTHER:
+        kind = _classify(remarks)
     return kind
 
 
@@ -398,6 +401,7 @@ class SurveyTool:
     tool_id: str
     name: str
     description: str = ""
+    remarks: str = ""
     kind: ToolKind = ToolKind.OTHER
     raw: Dict[str, str] = field(default_factory=dict, repr=False)
 
@@ -510,6 +514,9 @@ class SurveyRun:
     survey_header_id: Optional[str]
     def_survey_header_id: Optional[str]
     sequence_no: Optional[int]
+    tool_name: Optional[str] = None
+    tool_remarks: Optional[str] = None
+    tool_kind: Optional[str] = None
 
 
 @dataclass
@@ -1121,8 +1128,10 @@ class EDMReader:
                     tool_id=a["survey_tool_id"],
                     name=a.get("tool_name", ""),
                     description=a.get("description", ""),
+                    remarks=a.get("remarks", ""),
                     kind=classify_tool(
-                        a.get("tool_name"), a.get("description")
+                        a.get("tool_name"), a.get("description"),
+                        a.get("remarks"),
                     ),
                     raw=a,
                 )
@@ -1378,8 +1387,16 @@ class EDMReader:
             self.wellbore_name_to_id[wb.name] = wb.wellbore_id
         for intervals in self.programs.values():
             for iv in intervals:
-                if iv.survey_tool_id is not None:
-                    iv.tool = self.tools.get(iv.survey_tool_id)
+                # CD_SURVEY_PROGRAM rows may omit survey_tool_id; fall back to
+                # the tool of the linked raw CD_SURVEY_HEADER so the definitive
+                # tie-chain still resolves a per-leg error model (e.g. Volve
+                # F-12, whose program interval carries no survey_tool_id).
+                tool_id = iv.survey_tool_id
+                if tool_id is None:
+                    hdr = self.headers.get(iv.survey_header_id)
+                    tool_id = hdr.survey_tool_id if hdr else None
+                if tool_id is not None:
+                    iv.tool = self.tools.get(tool_id)
         # attach components to their assembly, ordered bottom-up by sequence_no
         for aid, asm in self._assemblies.items():
             asm.components = sorted(
@@ -1674,15 +1691,27 @@ class EDMReader:
                 wbid = hdr.wellbore_id if hdr else ""
                 if wb_id is not None and wbid != wb_id:
                     continue
+                # Effective tool: the program interval's own tool, else the
+                # linked header's tool (same header-fallback as the finalise
+                # loop). Surfaces the resolved tool name/remarks/kind so the
+                # tie-chain reads without a second lookup.
+                eff_tool_id = iv.survey_tool_id
+                if eff_tool_id is None and hdr is not None:
+                    eff_tool_id = hdr.survey_tool_id
+                tool = iv.tool or (
+                    self.tools.get(eff_tool_id) if eff_tool_id else None)
                 out.append(SurveyRun(
                     wellbore_id=wbid,
                     survey_name=hdr.name if hdr else None,
-                    survey_tool_id=iv.survey_tool_id,
+                    survey_tool_id=eff_tool_id,
                     md_min=iv.md_top,
                     md_max=iv.md_base,
                     survey_header_id=iv.survey_header_id,
                     def_survey_header_id=iv.def_survey_header_id,
                     sequence_no=iv.sequence_no,
+                    tool_name=tool.name if tool else None,
+                    tool_remarks=tool.remarks if tool else None,
+                    tool_kind=tool.kind.name if tool else None,
                 ))
         out.sort(key=lambda r: (
             r.wellbore_id, r.md_min if r.md_min is not None else 0.0))
