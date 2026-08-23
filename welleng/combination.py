@@ -169,3 +169,46 @@ def fuse_covariances(
         sigma_a=sigma_a, sigma_b=sigma_b, sigma_fused=sigma_f,
         reduction_factor=red, pos_fused=pos_fused,
     )
+
+
+def combine_surveys(
+    survey_a,
+    survey_b,
+    mds,
+    *,
+    cross=None,
+) -> FusedSurvey:
+    """BLUE-combine two overlapping surveys of the same well at arbitrary MDs.
+
+    Evaluates each survey's covariance at every ``md`` via the analytical
+    arc-faithful interior covariance :meth:`welleng.error.ErrorModel.cov_nev_at`
+    -- the correct way to bring both surveys onto a common measured depth
+    (analytical, not the linear covariance interpolation that under-reports
+    near doglegs). Fusion of the resulting covariances is the same BLUE as
+    :func:`fuse_covariances`, so the combination is *continuous*: query it at
+    any MD in the overlap, on or off a survey station.
+
+    Parameters
+    ----------
+    survey_a, survey_b : welleng.survey.Survey
+        Two surveys of the SAME well over an overlapping MD interval, each with
+        an error model applied (so ``survey.err`` is set).
+    mds : float or array-like
+        Measured depth(s) at which to evaluate and combine. Must lie within
+        both surveys' MD range.
+    cross : (n, 3, 3) ndarray, optional
+        Cross-covariance from shared error sources at each MD. Default None == 0
+        (fully independent -- the ``correlate="N"`` case). Fully-shared
+        components do not reduce.
+
+    Returns
+    -------
+    FusedSurvey
+    """
+    mds = np.atleast_1d(np.asarray(mds, dtype=float))
+    for name, s in (("survey_a", survey_a), ("survey_b", survey_b)):
+        if getattr(s, "err", None) is None:
+            raise ValueError(f"{name} has no error model applied (survey.err is None)")
+    cov_a = np.stack([np.asarray(survey_a.err.cov_nev_at(float(m))) for m in mds])
+    cov_b = np.stack([np.asarray(survey_b.err.cov_nev_at(float(m))) for m in mds])
+    return fuse_covariances(cov_a, cov_b, cross=cross)

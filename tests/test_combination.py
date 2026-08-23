@@ -132,3 +132,40 @@ def test_position_fusion_shape_and_bounds():
 def test_shape_mismatch_raises():
     with pytest.raises(ValueError):
         fuse_covariances(_spd(1)[None], np.zeros((2, 3, 3)))
+
+
+def test_combine_surveys_continuous_via_cov_nev_at():
+    """combine_surveys evaluates each survey's analytical interior covariance
+    (cov_nev_at) at arbitrary (off-station) MDs, then BLUE-fuses -- the
+    continuous combination. Two independent copies of one survey must fuse to
+    sigma/sqrt(2), and match a manual cov_nev_at + fuse_covariances."""
+    import welleng as we
+    from welleng.combination import combine_surveys
+
+    sh = we.survey.SurveyHeader(
+        name="t", azi_reference="grid", latitude=58.0, longitude=2.0,
+        b_total=50000.0, dip=72.0, declination=1.0)
+    md = np.linspace(0, 2000, 41)
+    inc = np.linspace(0, 40, 41)
+    azi = np.full(41, 30.0)
+    s = we.survey.Survey(md=md, inc=inc, azi=azi, header=sh,
+                         error_model="MWD+SRGM", deg=True)
+
+    q = 0.5 * (md[10:14] + md[11:15])          # off-station interior MDs
+    r = combine_surveys(s, s, q)               # two independent copies
+
+    # independent equal inputs -> sqrt(2) reduction at every interior MD
+    np.testing.assert_allclose(r.reduction_factor, np.sqrt(2), rtol=1e-6)
+    # matches the manual composition (cov_nev_at -> fuse_covariances)
+    covq = np.stack([np.asarray(s.err.cov_nev_at(float(m))) for m in q])
+    np.testing.assert_allclose(r.cov_fused, covq / 2, rtol=1e-8)
+
+
+def test_combine_surveys_requires_error_model():
+    import welleng as we
+    sh = we.survey.SurveyHeader(name="t", azi_reference="grid")
+    s = we.survey.Survey(md=np.array([0., 100.]), inc=np.array([0., 5.]),
+                         azi=np.array([0., 10.]), header=sh, deg=True)
+    from welleng.combination import combine_surveys
+    with pytest.raises(ValueError):
+        combine_surveys(s, s, [50.0])
