@@ -765,7 +765,7 @@ class WellNetwork:
         **Deferred:** the source-context cross-term
         ``- 2 * Cov_shared_source`` between the *divergent* branches (same tool
         run / geomag date / datum — the RP's same-job / different-job
-        correlation table, McGregor partial correlation). Without it two
+        partial-correlation table). Without it two
         same-job laterals are treated as independent below the kickoff, which is
         slightly *conservative* (over-states relative uncertainty) — the safe
         direction. Add it with the per-term systematic / random classification
