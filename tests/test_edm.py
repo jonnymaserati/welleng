@@ -355,7 +355,8 @@ _EDM_TOOL_FALLBACK = """<?xml version="1.0" standalone="no"?>
 <CD_WELL well_id="W1" site_id="S1" well_common_name="T-1" />
 <CD_WELLBORE well_id="W1" wellbore_id="WB1" wellbore_name="T-1" />
 <CD_SURVEY_TOOL survey_tool_id="TM" tool_name="Magnetic, std, mag-corr" \
-description="Magnetic" remarks="MWD-std-mag" tool_type="0" />
+description="Magnetic" remarks="MWD-std-mag" tool_type="0" correlate="Y" \
+is_range_limited="Y" inclination_range_min="5" inclination_range_max="90" />
 <CD_SURVEY_HEADER well_id="W1" wellbore_id="WB1" survey_header_id="SH1" \
 phase="ACTUAL" survey_name="raw" survey_tool_id="TM" md_min="0" md_max="200" />
 <CD_SURVEY_PROGRAM well_id="W1" wellbore_id="WB1" def_survey_header_id="DH1" \
@@ -375,6 +376,10 @@ def test_survey_tool_remarks_captured(tmp_path):
     tool = _fallback_reader(tmp_path).tools["TM"]
     assert tool.remarks == "MWD-std-mag"
     assert tool.kind is ToolKind.MWD
+    assert tool.correlate is True                    # correlate="Y"
+    assert tool.is_range_limited is True
+    assert tool.inclination_range_min == 5.0
+    assert tool.inclination_range_max == 90.0
 
 
 def test_survey_program_tool_falls_back_to_header(tmp_path):
