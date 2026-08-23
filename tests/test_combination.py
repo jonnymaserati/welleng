@@ -249,3 +249,52 @@ def test_forward_carry_persist_subset_reduces_less():
     assert np.all(glob.sigma_carried >= allc.sigma_carried - 1e-9)
     assert np.all(glob.reduction_factor <= allc.reduction_factor + 1e-9)
     assert np.all(glob.reduction_factor >= 1.0 - 1e-9)
+
+
+def test_forward_carry_persistence_mc_gate():
+    """Bomb-proof the persistence model: when the systematic RE-REALISES between
+    overlap and deep (a different tool), only the 'global' (declination) source
+    persists. persist='global' must then match the empirical residual — the
+    non-global part does NOT reduce."""
+    from welleng.combination import carry_systematic_forward, _correlated_stacks
+    tgt, ref, n = _two_surveys()
+    oi, di = np.arange(2, 22), np.array([n - 1])
+    fc = carry_systematic_forward(tgt, ref, oi, di, persist="global",
+                                  obs_subsample=10)
+    Am, Rm, prop = _correlated_stacks(tgt)
+    Ag, Rg, _ = _correlated_stacks(ref)
+    ois = oi[np.linspace(0, len(oi) - 1, 10).round().astype(int)]
+    g = np.array([p == "global" for p in prop])          # persisting
+    s = ~g                                                # re-realising
+
+    def stack(A, idx):
+        return np.concatenate([A[:, k, :].T for k in idx], axis=0)
+
+    def blk(mats):
+        o = np.zeros((3 * len(mats), 3 * len(mats)))
+        for i, m in enumerate(mats):
+            o[3 * i:3 * i + 3, 3 * i:3 * i + 3] = m
+        return o
+    Hg_glob, Hg_sys = stack(Am[g], ois), stack(Am[s], ois)
+    Href = stack(Ag, ois)
+    covz = (Hg_glob @ Hg_glob.T + Hg_sys @ Hg_sys.T + Href @ Href.T
+            + blk([Rg[k] for k in ois]) + blk([Rm[k] for k in ois]))
+    k = di[0]
+    Akg, Aks = Am[g][:, k, :].T, Am[s][:, k, :].T
+    K = (Akg @ Hg_glob.T) @ np.linalg.inv(covz)          # gain via GLOBAL only
+
+    rng = np.random.default_rng(11)
+    N = 80000
+    eg = rng.normal(size=(N, g.sum()))                   # global: SHARED
+    es_o = rng.normal(size=(N, s.sum()))                 # systematic overlap
+    es_d = rng.normal(size=(N, s.sum()))                 # systematic deep (RE-REALISED)
+    er = rng.normal(size=(N, Ag.shape[0]))               # reference
+    Lm = {kk: np.linalg.cholesky(Rm[kk] + 1e-12 * np.eye(3)) for kk in list(ois) + [k]}
+    Lg = {kk: np.linalg.cholesky(Rg[kk] + 1e-12 * np.eye(3)) for kk in ois}
+    z = eg @ Hg_glob.T + es_o @ Hg_sys.T - er @ Href.T
+    for i, kk in enumerate(ois):
+        z[:, 3 * i:3 * i + 3] += (rng.normal(size=(N, 3)) @ Lm[kk].T
+                                  - rng.normal(size=(N, 3)) @ Lg[kk].T)
+    deep_true = eg @ Akg.T + es_d @ Aks.T + rng.normal(size=(N, 3)) @ Lm[k].T
+    resid = deep_true - z @ K.T
+    np.testing.assert_allclose(np.cov(resid.T), fc.cov_carried[0], rtol=0.06, atol=1e-3)
