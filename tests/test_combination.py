@@ -92,6 +92,32 @@ def test_mc_oracle_reproduces_fused_covariance_with_cross():
         np.sqrt(np.linalg.eigvalsh(A).max())
 
 
+def test_independent_oracle_stacked_gls():
+    """Cross-check against a fully INDEPENDENT derivation: stacked generalized
+    least squares. Two estimates of x with stacked measurement model
+    z = [x_A; x_B] = [I; I] x + noise, noise covariance R = [[A, C],[C^T, B]].
+    GLS: Sigma_c = (H^T R^-1 H)^-1, x_c = Sigma_c H^T R^-1 z. No Kalman gain
+    anywhere -> catches a wrong gain, which the MC (same gain) cannot."""
+    for seed in (20, 21, 22):
+        A, B = _spd(seed), _spd(seed + 50, scale=0.7)
+        C = 0.3 * np.minimum(A, B)
+        R = np.block([[A, C], [C.T, B]])
+        H = np.vstack([np.eye(3), np.eye(3)])          # (6,3)
+        Rinv = np.linalg.inv(R)
+        cov_gls = np.linalg.inv(H.T @ Rinv @ H)        # (3,3)
+
+        r = fuse_covariances(A[None], B[None], cross=C[None])
+        np.testing.assert_allclose(r.cov_fused[0], cov_gls, rtol=1e-8, atol=1e-10)
+
+        # position too: fused estimate must equal the GLS estimate
+        xa, xb = np.array([1., 2., 3.]), np.array([1.3, 1.7, 3.4])
+        z = np.concatenate([xa, xb])
+        x_gls = cov_gls @ H.T @ Rinv @ z
+        rp = fuse_covariances(A[None], B[None], cross=C[None],
+                              pos_a=xa[None], pos_b=xb[None])
+        np.testing.assert_allclose(rp.pos_fused[0], x_gls, rtol=1e-8, atol=1e-10)
+
+
 def test_position_fusion_shape_and_bounds():
     A, B = _spd(8)[None], _spd(9)[None]
     r = fuse_covariances(A, B, pos_a=np.array([[1., 2., 3.]]),
