@@ -531,3 +531,44 @@ def test_survey_headers_complete_set_and_superset_of_runs():
     # filter by wellbore narrows to that wellbore only
     wb = raw[0].wellbore_id
     assert all(h.wellbore_id == wb for h in r.survey_headers(wellbore=wb))
+
+
+# --------------------------------------------------------------------------
+# COMPASS gyro parity flag (non-standard wireline depth-scale, off by default)
+# --------------------------------------------------------------------------
+def test_compass_gyro_parity_appends_term_gyro_only(ipm):
+    from welleng.errors.edm_ipm import COMPASS_GYRO_TVDSF
+    base = ipm.error_model("Wellbore Surveyor, stat")
+    parity = ipm.error_model("Wellbore Surveyor, stat", compass_gyro_parity=True)
+    names_base = {t["name"] for t in base["terms"]}
+    names_par = {t["name"] for t in parity["terms"]}
+    assert "DTVDSF_COMPASS" not in names_base          # off by default
+    assert names_par - names_base == {"DTVDSF_COMPASS"}
+    dt = [t for t in parity["terms"] if t["name"] == "DTVDSF_COMPASS"][0]
+    assert dt["value"] == COMPASS_GYRO_TVDSF
+    assert "tvd" in dt["depth_formula"]
+    assert dt["propagation_mode"] == "Systematic"
+
+    # MWD (non-gyro) is unaffected by the flag
+    m0 = ipm.error_model("Magnetic, std, non-mag")
+    m1 = ipm.error_model("Magnetic, std, non-mag", compass_gyro_parity=True)
+    assert {t["name"] for t in m0["terms"]} == {t["name"] for t in m1["terms"]}
+
+
+def test_compass_gyro_parity_raises_sigma_v(ipm):
+    import numpy as np
+    import welleng as we
+    sh = we.survey.SurveyHeader(
+        name="g", azi_reference="grid", latitude=58.44, longitude=1.89,
+        b_total=50000.0, dip=72.0, declination=-1.5)
+    md = np.linspace(0, 2000, 40)
+    inc = np.linspace(0, 10, 40)
+    azi = np.full(40, 45.0)
+
+    def sigV(parity):
+        m = ipm.error_model("Wellbore Surveyor, stat", compass_gyro_parity=parity)
+        s = we.survey.Survey(md=md, inc=inc, azi=azi, header=sh,
+                             error_model=m, deg=True)
+        return np.sqrt(s.cov_nev[-1, 2, 2])
+
+    assert sigV(True) > sigV(False)   # parity adds vertical depth-scale
