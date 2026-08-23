@@ -204,8 +204,8 @@ def test_forward_carry_mc_gate():
     tgt, ref, n = _two_surveys()
     oi, di = np.arange(2, 22), np.array([n - 1])
     fc = carry_systematic_forward(tgt, ref, oi, di, obs_subsample=10)
-    Am, Rm = _correlated_stacks(tgt)
-    Ag, Rg = _correlated_stacks(ref)
+    Am, Rm, _ = _correlated_stacks(tgt)
+    Ag, Rg, _ = _correlated_stacks(ref)
     ois = oi[np.linspace(0, len(oi) - 1, 10).round().astype(int)]
 
     def stack(A, idx):
@@ -236,3 +236,16 @@ def test_forward_carry_mc_gate():
     residual = x_deep_true - z @ K.T               # truth - BLUE estimate
     emp = np.cov(residual.T)
     np.testing.assert_allclose(emp, fc.cov_carried[0], rtol=0.05, atol=1e-3)
+
+
+def test_forward_carry_persist_subset_reduces_less():
+    """Carrying only the persisting class ('global'/declination) reduces no more
+    than carrying every correlated source, and is still a genuine reduction."""
+    from welleng.combination import carry_systematic_forward
+    tgt, ref, n = _two_surveys()
+    oi, di = np.arange(2, 22), np.arange(24, n)
+    allc = carry_systematic_forward(tgt, ref, oi, di)                # persist=None
+    glob = carry_systematic_forward(tgt, ref, oi, di, persist="global")
+    assert np.all(glob.sigma_carried >= allc.sigma_carried - 1e-9)
+    assert np.all(glob.reduction_factor <= allc.reduction_factor + 1e-9)
+    assert np.all(glob.reduction_factor >= 1.0 - 1e-9)

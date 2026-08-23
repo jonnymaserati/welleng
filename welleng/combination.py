@@ -238,13 +238,15 @@ class ForwardCarry:
 
 
 def _correlated_stacks(survey):
-    """(A, cov_random) for a survey: A (S, n, 3) = per correlated-source
-    sigma-scaled NEV running sum; cov_random (n, 3, 3). Position error at
+    """(A, cov_random, prop) for a survey: A (S, n, 3) = per correlated-source
+    sigma-scaled NEV running sum; cov_random (n, 3, 3); prop (S,) = each
+    source's propagation mode ('global'|'systematic'|'well'). Position error at
     station k is ``A[:, k, :].T @ eps + N(0, cov_random[k])``, eps ~ N(0, I)."""
     if getattr(survey, "err", None) is None:
         raise ValueError("survey has no error model applied (survey.err is None)")
     s = survey.err._interior_stacks()
-    return s["sigma_e_NEV"][~s["random"]], s["cov_random"]
+    keep = ~s["random"]
+    return s["sigma_e_NEV"][keep], s["cov_random"], s["propagation"][keep]
 
 
 def carry_systematic_forward(
@@ -253,6 +255,7 @@ def carry_systematic_forward(
     overlap_idx,
     deep_idx,
     *,
+    persist=None,
     obs_subsample=12,
 ):
     """Carry a reference-calibrated systematic into the target's deep stations.
@@ -283,6 +286,16 @@ def carry_systematic_forward(
         Station indices the reference covers (the calibration interval).
     deep_idx : array-like of int
         Target-only station indices to carry the calibration to.
+    persist : None | str | iterable of str, optional
+        Which propagation classes persist between the overlap and the deep
+        section (and therefore carry). ``None`` (default) carries every
+        correlated source. Physically: ``'global'`` (geomagnetic reference /
+        declination) persists across BHA AND tool changes -- the assumption-free
+        choice; ``'systematic'`` (sensor bias/scale/misalignment) persists only
+        if the SAME MWD tool is reused; a source that re-realises (new tool for
+        that class) is independent between deep and overlap and does not carry.
+        e.g. ``persist='global'`` for the unconditional declination carry;
+        ``persist=('global', 'systematic')`` when the tool is reused.
     obs_subsample : int
         Cap on the number of overlap observation stations used (keeps the
         conditioning block modest); evenly spaced. Default 12.
@@ -293,8 +306,8 @@ def carry_systematic_forward(
     """
     overlap_idx = np.asarray(overlap_idx, dtype=int)
     deep_idx = np.asarray(deep_idx, dtype=int)
-    Am, Rm = _correlated_stacks(target)
-    Ag, Rg = _correlated_stacks(reference)
+    Am, Rm, prop_m = _correlated_stacks(target)
+    Ag, Rg, _ = _correlated_stacks(reference)
 
     oi = overlap_idx
     if obs_subsample and len(oi) > obs_subsample:
@@ -329,11 +342,23 @@ def carry_systematic_forward(
     except np.linalg.LinAlgError:
         covz_inv = np.linalg.pinv(covz)
 
-    Ad = Am[:, deep_idx, :]                     # (S, m, 3)
+    Ad = Am[:, deep_idx, :]                     # (S, m, 3) ALL correlated
     cov_nom = np.einsum("ski,skj->kij", Ad, Ad) + Rm[deep_idx]
-    # cross[k] = cov(X_deep_k, z) = A_deep(k) Hm^T ;
+    # Only PERSISTING sources are correlated between deep and overlap, so only
+    # they enter the cross-covariance (and thus reduce the deep cov). 'global'
+    # (geomag/declination) persists across BHA AND tool; 'systematic' (sensor)
+    # persists only if the same tool is reused; sources that re-realise (a new
+    # tool/BHA) have independent deep/overlap draws -> zero cross -> no carry.
+    if persist is None:
+        pmask = np.ones(Am.shape[0], dtype=bool)
+    else:
+        want = {persist} if isinstance(persist, str) else set(persist)
+        pmask = np.array([p in want for p in prop_m], dtype=bool)
+    Adp = Am[pmask][:, deep_idx, :]             # persisting sources, deep
+    Hmp = _stack(Am[pmask], oi)                 # persisting sources, overlap
+    # cross[k] = cov(X_deep_k, z) via persisting sources = A_deep^p (Hm^p)^T ;
     # conditioned = nom - cross covz^-1 cross^T
-    cross = np.einsum("smi,ps->mip", Ad, Hm)   # (m, 3, 3no)
+    cross = np.einsum("smi,ps->mip", Adp, Hmp)  # (m, 3, 3no)
     reduction = np.einsum("mip,pq,mjq->mij", cross, covz_inv, cross)
     cov_carried = _psd(cov_nom - reduction)    # symmetrise + clip float drift
 
