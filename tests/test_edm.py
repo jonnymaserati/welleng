@@ -343,3 +343,53 @@ def test_magnetics_all_ordered_by_sequence(reader):
 
 def test_magnetics_none_when_absent(reader):
     assert reader.magnetics("WB0") is None     # root wellbore has no DP_MAGNETIC
+
+
+# --------------------------------------------------------------------------
+# tool remarks + CD_SURVEY_PROGRAM tool header-fallback (Volve F-12 gap)
+# --------------------------------------------------------------------------
+_EDM_TOOL_FALLBACK = """<?xml version="1.0" standalone="no"?>
+<export>
+<CD_PROJECT project_id="P1" project_name="T" />
+<CD_SITE site_id="S1" project_id="P1" site_name="S" />
+<CD_WELL well_id="W1" site_id="S1" well_common_name="T-1" />
+<CD_WELLBORE well_id="W1" wellbore_id="WB1" wellbore_name="T-1" />
+<CD_SURVEY_TOOL survey_tool_id="TM" tool_name="Magnetic, std, mag-corr" \
+description="Magnetic" remarks="MWD-std-mag" tool_type="0" />
+<CD_SURVEY_HEADER well_id="W1" wellbore_id="WB1" survey_header_id="SH1" \
+phase="ACTUAL" survey_name="raw" survey_tool_id="TM" md_min="0" md_max="200" />
+<CD_SURVEY_PROGRAM well_id="W1" wellbore_id="WB1" def_survey_header_id="DH1" \
+survey_program_id="PR0" survey_header_id="SH1" md_top="0" md_base="200" \
+sequence_no="0" not_in_use="0" />
+</export>
+"""
+
+
+def _fallback_reader(tmp_path):
+    p = tmp_path / "fallback.xml"
+    p.write_text(_EDM_TOOL_FALLBACK)
+    return EDMReader.open(str(p))
+
+
+def test_survey_tool_remarks_captured(tmp_path):
+    tool = _fallback_reader(tmp_path).tools["TM"]
+    assert tool.remarks == "MWD-std-mag"
+    assert tool.kind is ToolKind.MWD
+
+
+def test_survey_program_tool_falls_back_to_header(tmp_path):
+    # CD_SURVEY_PROGRAM omits survey_tool_id -> resolve via the linked
+    # CD_SURVEY_HEADER's tool (Volve F-12 definitive carried no program tool).
+    runs = _fallback_reader(tmp_path).survey_runs("WB1")
+    assert len(runs) == 1
+    run = runs[0]
+    assert run.survey_tool_id == "TM"          # resolved via header fallback
+    assert run.tool_name == "Magnetic, std, mag-corr"
+    assert run.tool_remarks == "MWD-std-mag"
+    assert run.tool_kind == "MWD"
+
+
+def test_classify_tool_remarks_tiebreak():
+    # name + description inconclusive; the remark carries the gyro signal
+    assert classify_tool("Tool 7", "no signal", "old gyro run") is ToolKind.GYRO
+    assert classify_tool(None, None, None) is ToolKind.OTHER
