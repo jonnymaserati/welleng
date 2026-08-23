@@ -138,11 +138,15 @@ def fuse_covariances(
     # BLUE with correlated estimates (Bar-Shalom fusion).
     S = A + B - C - C.swapaxes(-1, -2)          # innovation covariance
     K = A - C                                    # gain numerator (Sigma_A - C)
-    # pseudo-inverse, not inverse: when a direction is FULLY shared the
-    # innovation covariance is singular there (the two surveys agree exactly);
-    # pinv gives gain 0 in that subspace -> that direction does not reduce,
-    # which is the correct BLUE limit. Equals inv when S is non-singular.
-    Sinv = np.linalg.pinv(S)
+    # inv is ~7x faster than pinv and correct for every VALID input: S is
+    # positive-definite unless a direction is FULLY shared (C spans the whole
+    # of it), which makes it exactly singular. Fall back to pinv on that edge
+    # -> gain 0 in the shared subspace -> that direction does not reduce, the
+    # correct BLUE limit.
+    try:
+        Sinv = np.linalg.inv(S)
+    except np.linalg.LinAlgError:
+        Sinv = np.linalg.pinv(S)                 # fully-shared singular edge
     gain = K @ Sinv                              # (n,3,3)
     cov_fused = _psd(A - gain @ K.swapaxes(-1, -2))
 
