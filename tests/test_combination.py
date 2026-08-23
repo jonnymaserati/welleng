@@ -169,3 +169,70 @@ def test_combine_surveys_requires_error_model():
     from welleng.combination import combine_surveys
     with pytest.raises(ValueError):
         combine_surveys(s, s, [50.0])
+
+
+def _two_surveys(model_t="MWD+SRGM", model_r="MWD+SRGM+SAG", n=40):
+    import welleng as we
+    sh = we.survey.SurveyHeader(
+        name="t", azi_reference="grid", latitude=58.0, longitude=2.0,
+        b_total=50000.0, dip=72.0, declination=1.0)
+    md = np.linspace(0, 3000, n)
+    inc = np.linspace(0, 50, n)
+    azi = np.linspace(20, 70, n)
+    tgt = we.survey.Survey(md=md, inc=inc, azi=azi, header=sh,
+                           error_model=model_t, deg=True)
+    ref = we.survey.Survey(md=md, inc=inc, azi=azi, header=sh,
+                           error_model=model_r, deg=True)
+    return tgt, ref, n
+
+
+def test_forward_carry_reduces_and_never_worse():
+    from welleng.combination import carry_systematic_forward
+    tgt, ref, n = _two_surveys()
+    fc = carry_systematic_forward(tgt, ref, np.arange(2, 22), np.arange(24, n))
+    assert np.all(fc.sigma_carried <= fc.sigma_nominal + 1e-9)
+    assert np.all(fc.reduction_factor >= 1.0 - 1e-9)
+    for C in fc.cov_carried:                       # conditioned cov stays PSD
+        assert np.linalg.eigvalsh(C).min() > -1e-9
+
+
+def test_forward_carry_mc_gate():
+    """Independent MC: simulate true target/reference errors, form the overlap
+    observation, estimate the deep error with the BLUE (Schur) gain; the
+    empirical residual covariance must match cov_carried."""
+    from welleng.combination import carry_systematic_forward, _correlated_stacks
+    tgt, ref, n = _two_surveys()
+    oi, di = np.arange(2, 22), np.array([n - 1])
+    fc = carry_systematic_forward(tgt, ref, oi, di, obs_subsample=10)
+    Am, Rm = _correlated_stacks(tgt)
+    Ag, Rg = _correlated_stacks(ref)
+    ois = oi[np.linspace(0, len(oi) - 1, 10).round().astype(int)]
+
+    def stack(A, idx):
+        return np.concatenate([A[:, k, :].T for k in idx], axis=0)
+
+    def blk(mats):
+        o = np.zeros((3 * len(mats), 3 * len(mats)))
+        for i, m in enumerate(mats):
+            o[3 * i:3 * i + 3, 3 * i:3 * i + 3] = m
+        return o
+    Hm, Hg = stack(Am, ois), stack(Ag, ois)
+    covz = Hm @ Hm.T + Hg @ Hg.T + blk([Rg[k] for k in ois]) + blk([Rm[k] for k in ois])
+    k = di[0]
+    Ak = Am[:, k, :].T
+    K = (Ak @ Hm.T) @ np.linalg.inv(covz)          # BLUE (Schur) gain
+
+    rng = np.random.default_rng(3)
+    N = 60000
+    epsm = rng.normal(size=(N, Am.shape[0]))
+    epsg = rng.normal(size=(N, Ag.shape[0]))
+    Lm = {kk: np.linalg.cholesky(Rm[kk] + 1e-12 * np.eye(3)) for kk in list(ois) + [k]}
+    Lg = {kk: np.linalg.cholesky(Rg[kk] + 1e-12 * np.eye(3)) for kk in ois}
+    z = epsm @ Hm.T - epsg @ Hg.T
+    for i, kk in enumerate(ois):
+        z[:, 3 * i:3 * i + 3] += (rng.normal(size=(N, 3)) @ Lm[kk].T
+                                  - rng.normal(size=(N, 3)) @ Lg[kk].T)
+    x_deep_true = epsm @ Ak.T + rng.normal(size=(N, 3)) @ Lm[k].T
+    residual = x_deep_true - z @ K.T               # truth - BLUE estimate
+    emp = np.cov(residual.T)
+    np.testing.assert_allclose(emp, fc.cov_carried[0], rtol=0.05, atol=1e-3)
