@@ -669,6 +669,76 @@ def get_angles(
     return _get_angles(vec)
 
 
+def survey_from_positions(nev, tie_vec, deg=True, mds=None):
+    """Reconstruct a minimum-curvature survey (md, inc, azi) from NEV positions.
+
+    Analytical inverse of the minimum-curvature method with a fixed tie-in
+    tangent. On each leg the minimum-curvature chord bisects the two station
+    tangents, so the end tangent is the start tangent *reflected about the
+    chord direction*::
+
+        t_{i+1} = 2 (c . t_i) c - t_i
+
+    with the tie-in tangent seeding the march; measured depth accumulates as the
+    arc length ``L * alpha / sin(alpha)`` (``alpha`` = angle between the leg's
+    start tangent and its chord ``c``). Closed form, O(n), no iteration.
+
+    Exact (to machine precision) when the position path is representable as a
+    minimum-curvature arc chain -- the case for a *fused* best-estimate
+    trajectory (its stations are a small perturbation of two arc chains). A path
+    that bends more than a single arc per leg can support needs the
+    curve-hold-curve / added-node refinement (:mod:`welleng.connector`); this is
+    the closed-form first solution, not the only one.
+
+    Parameters
+    ----------
+    nev : (n, 3) array_like
+        Station positions in (north, east, vertical), metres.
+    tie_vec : (3,) array_like
+        Tie-in unit tangent at the first station, in NEV. Fixed -- it pins the
+        otherwise free march.
+    deg : bool, default True
+        Return inc/azi in degrees, else radians.
+    mds : (n,) array_like, optional
+        Return these measured depths instead of the reconstructed arc-length
+        MD. The reconstructed MD is self-consistent with the returned inc/azi;
+        supplying the input surveys' MDs instead carries a small residual
+        (typically sub-mm per 1000 m) where the fused path length differs from
+        the originals.
+
+    Returns
+    -------
+    md, inc, azi : (n,) ndarrays
+    """
+    nev = np.asarray(nev, dtype=float).reshape(-1, 3)
+    n = len(nev)
+    t = np.zeros((n, 3))
+    t[0] = np.asarray(tie_vec, dtype=float).reshape(3)
+    t[0] /= np.linalg.norm(t[0])
+    md = np.zeros(n)
+    for i in range(n - 1):
+        d = nev[i + 1] - nev[i]
+        length = np.linalg.norm(d)
+        if length < 1e-9:                       # coincident stations
+            t[i + 1] = t[i]
+            continue
+        c = d / length
+        refl = 2.0 * (c @ t[i]) * c - t[i]      # reflect t_i about the chord
+        norm = np.linalg.norm(refl)
+        t[i + 1] = refl / norm if norm > 1e-12 else t[i]
+        alpha = np.arccos(np.clip(c @ t[i], -1.0, 1.0))
+        md[i + 1] = md[i] + (
+            length * alpha / np.sin(alpha) if alpha > 1e-9 else length
+        )
+    ang = get_angles(t, nev=True)
+    inc, azi = ang[:, 0], ang[:, 1]
+    if deg:
+        inc, azi = np.degrees(inc), np.degrees(azi)
+    if mds is not None:
+        md = np.asarray(mds, dtype=float).reshape(-1)
+    return md, inc, azi
+
+
 def _get_transform(inc, azi):
     ci, si = np.cos(inc), np.sin(inc)
     ca, sa = np.cos(azi), np.sin(azi)
