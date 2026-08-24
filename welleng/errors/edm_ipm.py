@@ -180,8 +180,10 @@ class EDMIPM:
         ``compass_gyro_parity=True`` (gyro tools only) appends a systematic
         vertical depth-scale term (:data:`COMPASS_GYRO_TVDSF` per TVD) that
         COMPASS applies to gyro definitives but does NOT export in
-        ``DP_TOOL_TERM`` (a wireline depth-scale, back-calculated from public
-        Volve). OFF by default — the default model is OWSG-standard-faithful;
+        ``DP_TOOL_TERM`` — an empirical well-level vertical term, back-calculated
+        from public Volve; its exact COMPASS source is not established (a
+        depth-term substitution / wireline hypothesis was tested against F-12 and
+        did not hold). OFF by default — the default model is OWSG-standard-faithful;
         enable ONLY to reproduce COMPASS's stored gyro covariances. Non-standard.
         """
         return ipm_to_error_model(
@@ -294,9 +296,11 @@ def parse_edm_ipm(path: str) -> EDMIPM:
 
 #: COMPASS-parity gyro vertical depth-scale (per TVD), systematic. NOT an OWSG
 #: standard term — back-calculated from public Volve gyro definitives (consistent
-#: ~2.73e-4 across 8 wells / 4 gyro tools, CV ~3%); a wireline depth-scale COMPASS
-#: applies but does not export in DP_TOOL_TERM. Applied only via
-#: ``compass_gyro_parity=True``. See docs/dev/EDM_ERROR_MODEL_CONTRACT.md.
+#: ~2.73e-4 across 8 wells / 4 gyro tools, CV ~3%); an empirical well-level
+#: vertical term COMPASS applies but does not export in DP_TOOL_TERM (exact source
+#: not established — a wireline/depth-term-substitution hypothesis was tested
+#: against F-12 and did not hold). Applied only via ``compass_gyro_parity=True``.
+#: See docs/dev/EDM_ERROR_MODEL_CONTRACT.md.
 COMPASS_GYRO_TVDSF = 2.73e-4
 
 
