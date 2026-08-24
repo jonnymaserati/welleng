@@ -1,0 +1,46 @@
+{
+  "upload_type": "publication",
+  "publication_type": "preprint",
+  "version": "1.0",
+  "title": "Combining and Forward-Carrying Overlapping Wellbore Surveys: An Open Implementation Demonstrated on Public Volve Data",
+  "creators": [
+    {
+      "name": "Corcutt, Jonathan",
+      "affiliation": "Corcutt Beheer B.V., Wassenaar, Netherlands",
+      "orcid": "0009-0008-1953-7760"
+    }
+  ],
+  "description": "When two independent surveys overlap the same interval of a wellbore - most commonly an MWD survey and a gyroscopic survey - the industry routinely keeps one and discards the other. This paper provides an open, validated implementation (welleng) of two operations, demonstrated end-to-end on the public Volve dataset. First, it combines overlapping surveys with the best linear unbiased estimator (BLUE), evaluated on the analytical arc-faithful interior covariance (the Rodrigues form of minimum-curvature interpolation, after Sawaryn and Thorogood 2005) so the result is continuous in measured depth. Second, it carries the calibration forward: where a gyro overlaps the upper part of an MWD run, the gyro constrains the MWD's systematic (magnetic) error - including terms a magnetic survey cannot observe from its own data - and, because that systematic realisation persists down-hole, the constraint reduces the MWD covariance in the deeper, gyro-free section. On Volve well F-4 the combination reduces the vertical 1-sigma by about a factor of 1.4 over the overlap; carrying the gyro-observed declination forward reduces the deep MWD-only lateral 1-sigma unconditionally, and by roughly a factor of two when the same MWD tool is reused below. Neither method is novel - both adopt established estimation theory - so the contribution is the open implementation, the analytical/continuous formulation, and the quantified demonstration on public field data. The implementation is validated against an independent stacked generalized-least-squares oracle to a relative tolerance of 1e-8, against a Monte-Carlo oracle, and reproduces the ~29% equal-accuracy reduction reported by Bang (2019, SPE-195621). Use requires citation of this work and welleng.",
+  "license": "cc-by-4.0",
+  "access_right": "open",
+  "keywords": [
+    "directional drilling",
+    "wellbore surveying",
+    "wellbore position uncertainty",
+    "survey combination",
+    "overlapping surveys",
+    "MWD",
+    "gyroscopic survey",
+    "ISCWSA error model",
+    "best linear unbiased estimator",
+    "BLUE",
+    "covariance fusion",
+    "Kalman conditioning",
+    "aided inertial navigation",
+    "minimum curvature method",
+    "ellipse of uncertainty",
+    "anti-collision",
+    "Volve",
+    "welleng",
+    "SPE"
+  ],
+  "related_identifiers": [
+    {"identifier": "10.2118/195621-MS", "relation": "cites", "scheme": "doi", "resource_type": "publication-conferencepaper"},
+    {"identifier": "10.2118/67616-PA", "relation": "cites", "scheme": "doi", "resource_type": "publication-article"},
+    {"identifier": "10.2118/84246-PA", "relation": "cites", "scheme": "doi", "resource_type": "publication-article"},
+    {"identifier": "10.2118/90408-PA", "relation": "cites", "scheme": "doi", "resource_type": "publication-article"},
+    {"identifier": "10.2118/189654-MS", "relation": "cites", "scheme": "doi", "resource_type": "publication-conferencepaper"},
+    {"identifier": "10.5281/zenodo.20968887", "relation": "isSupplementTo", "scheme": "doi", "resource_type": "software"}
+  ],
+  "notes": "Reference DOIs verified against local PDFs / doi.org; none fabricated. Chia (2003) and Ledroz (2016) are credited in the text via Bang (2019) but not cited directly (not held/read). Software (welleng) concept DOI: 10.5281/zenodo.20968887."
+}
