@@ -63,14 +63,14 @@ class FusedSurvey:
         The fused position estimate, if positions were supplied.
     """
 
-    cov_fused: NDArray[np.float64]
-    cov_a: NDArray[np.float64]
-    cov_b: NDArray[np.float64]
-    sigma_a: NDArray[np.float64]
-    sigma_b: NDArray[np.float64]
-    sigma_fused: NDArray[np.float64]
-    reduction_factor: NDArray[np.float64]
-    pos_fused: NDArray[np.float64] | None = None
+    cov_fused: NDArray[np.float64]      # (n,3,3) fused BLUE covariance, NEV, m^2
+    cov_a: NDArray[np.float64]          # (n,3,3) input survey A covariance, echoed
+    cov_b: NDArray[np.float64]          # (n,3,3) input survey B covariance, echoed
+    sigma_a: NDArray[np.float64]        # (n,) worst-direction 1sigma of A (m)
+    sigma_b: NDArray[np.float64]        # (n,) worst-direction 1sigma of B (m)
+    sigma_fused: NDArray[np.float64]    # (n,) worst-direction 1sigma of the fusion (m)
+    reduction_factor: NDArray[np.float64]  # (n,) min(sigma_a,sigma_b)/sigma_fused (>=1)
+    pos_fused: NDArray[np.float64] | None = None  # (n,3) fused NEV pos, if given
 
 
 def _psd(cov: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -230,11 +230,11 @@ class ForwardCarry:
         ``sigma_nominal / sigma_carried`` (>= 1).
     """
 
-    cov_nominal: NDArray[np.float64]
-    cov_carried: NDArray[np.float64]
-    sigma_nominal: NDArray[np.float64]
-    sigma_carried: NDArray[np.float64]
-    reduction_factor: NDArray[np.float64]
+    cov_nominal: NDArray[np.float64]    # (m,3,3) deep cov BEFORE carry, NEV, m^2
+    cov_carried: NDArray[np.float64]    # (m,3,3) deep cov AFTER carry (<= nominal)
+    sigma_nominal: NDArray[np.float64]  # (m,) worst-dir 1sigma before carry (m)
+    sigma_carried: NDArray[np.float64]  # (m,) worst-dir 1sigma after carry (m)
+    reduction_factor: NDArray[np.float64]  # (m,) sigma_nominal/sigma_carried (>=1)
 
 
 def _correlated_stacks(survey):
