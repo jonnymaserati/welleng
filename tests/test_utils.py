@@ -26,7 +26,9 @@ from welleng.utils import (
     NEV_to_HLA,
     HLA_to_NEV,
     MinCurve,
+    survey_from_positions,
 )
+import welleng as we
 import json
 
 LAT, LON = (52, 4, 43.1868, "N"), (4, 17, 19.6368, "E")
@@ -550,3 +552,48 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def _survey(md, inc, azi):
+    h = we.survey.SurveyHeader(name="t", azi_reference="grid")
+    return we.survey.Survey(md=md, inc=inc, azi=azi, header=h, deg=True)
+
+
+def test_survey_from_positions_roundtrip_exact():
+    # a single min-curve survey IS an arc chain -> reconstruction recovers it exactly
+    md = np.arange(0, 3000 + 1, 30.0)
+    inc = np.clip((md - 300) / 2000 * 70, 0, 70)
+    azi = 20 + np.clip((md - 500) / 2500, 0, 1) * 40
+    s = _survey(md, inc, azi)
+    nev = np.c_[s.n, s.e, s.tvd]
+    tie = get_vec(inc[0], azi[0], nev=True, deg=True)[0]
+    md_r, inc_r, azi_r = survey_from_positions(nev, tie)
+    # positions reproduced to machine precision via the reconstructed survey
+    r = _survey(md_r, inc_r, azi_r)
+    nev_r = np.c_[r.n, r.e, r.tvd]
+    assert np.max(np.abs(nev_r - nev)) < 1e-6
+    # inc/azi recovered (skip station 0 azi where inc~0 is degenerate)
+    assert np.allclose(inc_r, inc, atol=1e-6)
+    assert np.allclose(azi_r[inc > 1.0], azi[inc > 1.0], atol=1e-6)
+    # MD self-consistent with the input
+    assert abs(md_r[-1] - md[-1]) < 1e-6
+
+
+def test_survey_from_positions_fused_negligible_md_drift():
+    # two DIFFERENT surveys of one hole -> fused (midpoint) positions ->
+    # reconstruction round-trips exactly on its own MD; drift vs input MD is tiny
+    md = np.arange(0, 3000 + 1, 30.0)
+    inc = np.clip((md - 300) / 2000 * 70, 0, 70)
+    azi = 20 + np.clip((md - 500) / 2500, 0, 1) * 40
+    rng = np.random.default_rng(0)
+    di = lambda: rng.normal(0, 0.15, md.size)  # noqa: E731
+    da = lambda: rng.normal(0, 0.25, md.size)  # noqa: E731
+    a = _survey(md, inc + di(), azi + da())
+    b = _survey(md, inc + di(), azi + da())
+    pf = 0.5 * (np.c_[a.n, a.e, a.tvd] + np.c_[b.n, b.e, b.tvd])
+    tie = get_vec(inc[0], azi[0], nev=True, deg=True)[0]
+    md_r, inc_r, azi_r = survey_from_positions(pf, tie)
+    r = _survey(md_r, inc_r, azi_r)
+    nev_r = np.c_[r.n, r.e, r.tvd]
+    assert np.max(np.abs(nev_r - pf)) < 1e-4              # round-trips on its own MD
+    assert abs(md_r[-1] - md[-1]) < 0.05                 # < 5 cm drift over 3 km
