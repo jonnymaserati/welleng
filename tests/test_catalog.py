@@ -315,3 +315,41 @@ def test_casing_unknown_connection_label_is_noncrashing():
                connection="VAM-TOP", shoe_md=2600)
     assert c.id_in == 8.681  # dimensions still resolved
     assert c.coupling_od_in is None  # non-API label -> no coupling fill
+
+
+# --- premium connections (name + provenance registry; ratings None) -----------
+
+def test_premium_connections_registry_loads():
+    from welleng.catalog import premium_connections
+    names = premium_connections()
+    # designations parsed from the Volve WellCat models
+    for expected in ("VAM TOP", "VAM ACE", "Hydril 563", "NSCC"):
+        assert expected in names
+
+
+def test_premium_connection_ratings_are_none_never_fabricated():
+    # Policy: dimensions + performance are proprietary/vendor-supplied -> None.
+    from welleng.catalog import resolve_premium_connection
+    spec = resolve_premium_connection("VAM TOP")
+    assert spec.category == "premium"
+    assert spec.id_in is None
+    assert spec.drift_in is None
+    assert spec.joint_efficiency is None
+    assert spec.pressure_rating_psi is None
+    assert spec.makeup_torque_ftlb is None
+
+
+def test_premium_connection_vendor_asserted_only_when_confident():
+    from welleng.catalog import resolve_premium_connection
+    # VAM is unambiguously Vallourec's brand
+    assert resolve_premium_connection("VAM TOP").vendor == "Vallourec"
+    # Fox / BDS brand owners were not confidently determined -> null, not guessed
+    assert resolve_premium_connection("Fox").vendor is None
+    assert resolve_premium_connection("BDS").vendor is None
+
+
+def test_premium_connection_unknown_raises_with_available():
+    from welleng.catalog import resolve_premium_connection
+    with pytest.raises(CatalogError) as e:
+        resolve_premium_connection("NON-EXISTENT")
+    assert "available" in str(e.value)

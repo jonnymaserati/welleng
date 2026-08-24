@@ -769,3 +769,96 @@ class ConnectionSpec:
             connection_type=cpl.connection,
             grade=spec.grade,
         )
+
+
+# ===========================================================================
+# Premium connections (proprietary metal-to-metal / gas-tight) - NAME registry
+# ===========================================================================
+# A recognition registry of premium connection designations (VAM, Hydril, ...)
+# observed in real completion designs. It carries the NAME + (where unambiguous)
+# the vendor + a provenance note ONLY. Dimensional and performance data are
+# proprietary and vendor-supplied - deliberately null, never fabricated (the
+# same policy as the API 5CT grade performance fields; see data/sources.md).
+
+
+@dataclass(frozen=True)
+class PremiumConnectionSpec:
+    """A registered premium connection designation + provenance.
+
+    Carries NO dimensions and NO ratings: those are proprietary, published on
+    the vendor's public datasheet, and left ``None`` here (never fabricated).
+    ``vendor`` is ``None`` when the brand owner was not determined with
+    confidence (not guessed).
+    """
+
+    designation: str
+    vendor: Optional[str] = None
+    vendor_note: Optional[str] = None
+    category: str = "premium"
+    spec_source: Optional[str] = None
+    # --- proprietary, vendor-supplied; null by policy ---
+    id_in: Optional[float] = None
+    drift_in: Optional[float] = None
+    joint_efficiency: Optional[float] = None
+    pressure_rating_psi: Optional[float] = None
+    makeup_torque_ftlb: Optional[float] = None
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+
+class PremiumConnectionCatalog:
+    """Loaded registry of premium connection designations, keyed by name."""
+
+    def __init__(self, doc: dict):
+        self._meta = doc["_meta"]
+        self._by_name: Dict[str, dict] = {}
+        for row in doc["premium_connections"]:
+            self._by_name[str(row["designation"]).upper()] = row
+
+    @classmethod
+    def load(cls) -> "PremiumConnectionCatalog":
+        doc = json.loads((_DATA_DIR / "premium_connections.json").read_text())
+        return cls(doc)
+
+    def designations(self) -> List[str]:
+        return sorted(row["designation"] for row in self._by_name.values())
+
+    def resolve(self, designation: str) -> PremiumConnectionSpec:
+        row = self._by_name.get(str(designation).upper())
+        if row is None:
+            raise CatalogError(
+                f"unknown premium connection {designation!r}; available: "
+                f"{self.designations()}"
+            )
+        return PremiumConnectionSpec(
+            designation=row["designation"],
+            vendor=row.get("vendor"),
+            vendor_note=row.get("vendor_note"),
+            category=row.get("category", "premium"),
+            spec_source=row.get("spec_source"),
+            id_in=row.get("id_in"),
+            drift_in=row.get("drift_in"),
+            joint_efficiency=row.get("joint_efficiency"),
+            pressure_rating_psi=row.get("pressure_rating_psi"),
+            makeup_torque_ftlb=row.get("makeup_torque_ftlb"),
+        )
+
+
+@lru_cache(maxsize=None)
+def _premium_connection_catalog() -> PremiumConnectionCatalog:
+    return PremiumConnectionCatalog.load()
+
+
+def premium_connections() -> List[str]:
+    """List the registered premium connection designations (names only)."""
+    return _premium_connection_catalog().designations()
+
+
+def resolve_premium_connection(designation: str) -> PremiumConnectionSpec:
+    """Resolve a premium connection's registry entry (name + provenance).
+
+    Dimensions/ratings are proprietary and vendor-supplied - the returned spec
+    carries them as ``None`` (consult the vendor's public datasheet).
+    """
+    return _premium_connection_catalog().resolve(designation)

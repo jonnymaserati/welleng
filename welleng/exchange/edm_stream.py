@@ -340,7 +340,8 @@ _MWD_KEYWORDS = ("mwd", "magnetic", "magn", "ems", "measurement while")
 
 
 def classify_tool(
-    name: Optional[str], description: Optional[str] = None
+    name: Optional[str], description: Optional[str] = None,
+    remarks: Optional[str] = None,
 ) -> ToolKind:
     """Classify a survey tool from its name and (optional) description.
 
@@ -384,6 +385,8 @@ def classify_tool(
     kind = _classify(name)
     if kind is ToolKind.OTHER:
         kind = _classify(description)
+    if kind is ToolKind.OTHER:
+        kind = _classify(remarks)
     return kind
 
 
@@ -398,6 +401,7 @@ class SurveyTool:
     tool_id: str
     name: str
     description: str = ""
+    remarks: str = ""
     kind: ToolKind = ToolKind.OTHER
     raw: Dict[str, str] = field(default_factory=dict, repr=False)
 
@@ -510,6 +514,9 @@ class SurveyRun:
     survey_header_id: Optional[str]
     def_survey_header_id: Optional[str]
     sequence_no: Optional[int]
+    tool_name: Optional[str] = None
+    tool_remarks: Optional[str] = None
+    tool_kind: Optional[str] = None
 
 
 @dataclass
@@ -1121,8 +1128,10 @@ class EDMReader:
                     tool_id=a["survey_tool_id"],
                     name=a.get("tool_name", ""),
                     description=a.get("description", ""),
+                    remarks=a.get("remarks", ""),
                     kind=classify_tool(
-                        a.get("tool_name"), a.get("description")
+                        a.get("tool_name"), a.get("description"),
+                        a.get("remarks"),
                     ),
                     raw=a,
                 )
@@ -1378,8 +1387,16 @@ class EDMReader:
             self.wellbore_name_to_id[wb.name] = wb.wellbore_id
         for intervals in self.programs.values():
             for iv in intervals:
-                if iv.survey_tool_id is not None:
-                    iv.tool = self.tools.get(iv.survey_tool_id)
+                # CD_SURVEY_PROGRAM rows may omit survey_tool_id; fall back to
+                # the tool of the linked raw CD_SURVEY_HEADER so the definitive
+                # tie-chain still resolves a per-leg error model (e.g. Volve
+                # F-12, whose program interval carries no survey_tool_id).
+                tool_id = iv.survey_tool_id
+                if tool_id is None:
+                    hdr = self.headers.get(iv.survey_header_id)
+                    tool_id = hdr.survey_tool_id if hdr else None
+                if tool_id is not None:
+                    iv.tool = self.tools.get(tool_id)
         # attach components to their assembly, ordered bottom-up by sequence_no
         for aid, asm in self._assemblies.items():
             asm.components = sorted(
@@ -1674,15 +1691,27 @@ class EDMReader:
                 wbid = hdr.wellbore_id if hdr else ""
                 if wb_id is not None and wbid != wb_id:
                     continue
+                # Effective tool: the program interval's own tool, else the
+                # linked header's tool (same header-fallback as the finalise
+                # loop). Surfaces the resolved tool name/remarks/kind so the
+                # tie-chain reads without a second lookup.
+                eff_tool_id = iv.survey_tool_id
+                if eff_tool_id is None and hdr is not None:
+                    eff_tool_id = hdr.survey_tool_id
+                tool = iv.tool or (
+                    self.tools.get(eff_tool_id) if eff_tool_id else None)
                 out.append(SurveyRun(
                     wellbore_id=wbid,
                     survey_name=hdr.name if hdr else None,
-                    survey_tool_id=iv.survey_tool_id,
+                    survey_tool_id=eff_tool_id,
                     md_min=iv.md_top,
                     md_max=iv.md_base,
                     survey_header_id=iv.survey_header_id,
                     def_survey_header_id=iv.def_survey_header_id,
                     sequence_no=iv.sequence_no,
+                    tool_name=tool.name if tool else None,
+                    tool_remarks=tool.remarks if tool else None,
+                    tool_kind=tool.kind.name if tool else None,
                 ))
         out.sort(key=lambda r: (
             r.wellbore_id, r.md_min if r.md_min is not None else 0.0))
@@ -1763,6 +1792,151 @@ class EDMReader:
         wb = self._resolve_wellbore(wellbore).wellbore_id
         return sorted(self._dls_overrides.get(wb, []),
                       key=lambda d: d.span[0] or 0.0)
+
+    # --- design-load cluster (raw-row readers) --------------------------------
+    # CD_CASE / TU_CASE_ASSEMBLY_PARAMETER / TU_COMP_TEMP_DERATION_POINT hold the
+    # casing/tubing design load cases, their input parameters, and per-component
+    # yield deration. These return RAW rows -- the casing-design interpretation
+    # (SF / collapse) is the consumer's. They read the EDM directly (one pass
+    # over the requested table per call); cache if called hot.
+
+    @staticmethod
+    def _app_match(value: Optional[str], application: Optional[str]) -> bool:
+        # case-insensitive substring so 'stresscheck' matches the versioned
+        # 'StressCheck 5000.1', and 'wellcat' matches the upper-case 'WELLCAT'.
+        if application is None:
+            return True
+        return value is not None and application.lower() in value.lower()
+
+    def design_cases(
+        self, wellbore=None, application: Optional[str] = None
+    ) -> List[Dict[str, str]]:
+        """``CD_CASE`` rows -- the casing/tubing design load cases -- as raw
+        dicts. Filter by ``wellbore`` (id or name) and/or ``application``.
+
+        NOTE: ``CD_CASE`` carries no ``application_name``; the authoring app is
+        in ``create_app_id`` (versioned strings, e.g. ``'StressCheck 5000.1'``,
+        ``'WELLCAT'``, ``'COMPASS'``, ``'WELLPLAN ...'``). ``application`` matches
+        it case-insensitively as a substring, so ``'StressCheck'`` /
+        ``'WellCat'`` both work. Keys include case_id, case_name, phase,
+        scenario_id, assembly_id, fluid_id, hole_sect_group_id, create_app_id.
+
+        NOTE: ``application`` here means "AUTHORED by that tool" (create_app_id).
+        To enumerate cases that carry a load CONFIG for a tool -- including
+        COMPASS-authored cases that StressCheck wrote params onto -- use
+        :meth:`cases_with_load_config`.
+        """
+        wb = self._resolve_wellbore(wellbore).wellbore_id if wellbore else None
+        out: List[Dict[str, str]] = []
+        for _tag, a in _iter_rows(self.path, frozenset({"CD_CASE"})):
+            if wb is not None and a.get("wellbore_id") != wb:
+                continue
+            if not self._app_match(a.get("create_app_id"), application):
+                continue
+            out.append(dict(a))
+        return out
+
+    def case_parameters(
+        self, case_id: str, application: Optional[str] = None
+    ) -> Dict[str, Optional[float]]:
+        """``TU_CASE_ASSEMBLY_PARAMETER`` for one ``case_id`` as
+        ``{parameter_name: parameter_value_num}`` (e.g. ``'InitAppSurfPressure'``
+        -- the load-case input values). ``application`` filters on the row's
+        ``application_name`` (values ``'StressCheck'`` / ``'WELLCAT'``),
+        case-insensitive.
+        """
+        out: Dict[str, Optional[float]] = {}
+        for _tag, a in _iter_rows(
+            self.path, frozenset({"TU_CASE_ASSEMBLY_PARAMETER"})
+        ):
+            if a.get("case_id") != case_id:
+                continue
+            if not self._app_match(a.get("application_name"), application):
+                continue
+            name = a.get("parameter_name")
+            if name is not None:
+                out[name] = _f(a, "parameter_value_num")
+        return out
+
+    def temp_deration(
+        self, assembly_comp_id: str
+    ) -> List[Tuple[float, float]]:
+        """``TU_COMP_TEMP_DERATION_POINT`` for one component as sorted
+        ``(deration_temperature, correction_factor)`` points -- the yield
+        deration curve. Derated yield = base_yield * interp(correction_factor, T).
+        """
+        pts: List[Tuple[float, float]] = []
+        for _tag, a in _iter_rows(
+            self.path, frozenset({"TU_COMP_TEMP_DERATION_POINT"})
+        ):
+            if a.get("assembly_comp_id") != assembly_comp_id:
+                continue
+            t = _f(a, "deration_temperature")
+            c = _f(a, "correction_factor")
+            if t is not None and c is not None:
+                pts.append((t, c))
+        return sorted(pts)
+
+    def case_temp_gradient(
+        self, case_id: str, application: Optional[str] = None
+    ) -> Dict[str, List[Tuple[float, float]]]:
+        """``CD_CASE_TEMP_GRADIENT`` for one ``case_id`` as
+        ``{profile_name: sorted [(md, casing_temp)]}`` -- the per-case
+        temperature profile(s) (the WellCat "case temperature" that seeds the
+        deration + APB baseline). ``md`` is in the file's source units (feet);
+        ``casing_temp`` is raw (degF). ``application`` filters StressCheck vs
+        WellCat.
+        """
+        out: Dict[str, List[Tuple[float, float]]] = {}
+        for _tag, a in _iter_rows(
+            self.path, frozenset({"CD_CASE_TEMP_GRADIENT"})
+        ):
+            if a.get("case_id") != case_id:
+                continue
+            if not self._app_match(a.get("application_name"), application):
+                continue
+            md = _f(a, "md")
+            t = _f(a, "casing_temp")
+            if md is None or t is None:
+                continue
+            out.setdefault(a.get("profile_name") or "", []).append((md, t))
+        for pts in out.values():
+            pts.sort()
+        return out
+
+    def cases_with_load_config(
+        self, application: str = "StressCheck", wellbore=None
+    ) -> List[Dict[str, str]]:
+        """``CD_CASE`` rows for the cases that CARRY a load configuration for
+        ``application`` -- i.e. that have ``TU_CASE_ASSEMBLY_PARAMETER`` rows
+        with that ``application_name``. These are the **designable** cases.
+
+        This differs from :meth:`design_cases` on purpose: ``design_cases`` filters
+        by ``CD_CASE.create_app_id`` (the tool that AUTHORED the case), whereas
+        this enumerates by where the load params actually LIVE. A case authored in
+        COMPASS (the trajectory/link tool) can carry a StressCheck load config —
+        it is returned here but NOT by ``design_cases(application='StressCheck')``.
+        (Volve: 422 cases carry StressCheck params vs 169 StressCheck-authored;
+        279 of the difference are COMPASS-authored.) Use this to enumerate the
+        designable cases, then :meth:`case_parameters` per case_id.
+        """
+        want: set = set()
+        for _tag, a in _iter_rows(
+            self.path, frozenset({"TU_CASE_ASSEMBLY_PARAMETER"})
+        ):
+            if self._app_match(a.get("application_name"), application):
+                cid = a.get("case_id")
+                if cid is not None:
+                    want.add(cid)
+        wb = self._resolve_wellbore(wellbore).wellbore_id if wellbore else None
+        out: List[Dict[str, str]] = []
+        for _tag, a in _iter_rows(self.path, frozenset({"CD_CASE"})):
+            if a.get("case_id") not in want:
+                continue
+            if wb is not None and a.get("wellbore_id") != wb:
+                continue
+            out.append(dict(a))
+        return out
 
     def fluid_rheology(self, fluid_id: Optional[str] = None
                        ) -> List[FluidRheologyPoint]:

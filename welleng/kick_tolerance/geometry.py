@@ -57,6 +57,8 @@ def cased_section(
     pipe_od_in: float,
     grade: Optional[str] = None,
     burst_design_factor: float = BURST_DESIGN_FACTOR,
+    top_md: Optional[float] = None,
+    bottom_md: Optional[float] = None,
 ) -> WellSection:
     """A cased WellSection with true annular capacity (casing ID from the
     API-5CT catalogue, minus the string OD). ``is_open_hole=False`` -- its
@@ -72,6 +74,12 @@ def cased_section(
     The burst check is INDICATIVE, not a casing design: no external backup is
     credited, and no axial, bending, temperature, wear or connection effects.
     See :class:`~welleng.kick_tolerance.migration.WellSection`.
+
+    Pass ``top_md`` / ``bottom_md`` (the along-hole extent) on a deviated well so
+    the section carries its true MD length: volume lives in the MD domain and the
+    Santos bubble-length criterion is along-hole, both of which need the MD
+    extent. Leave them ``None`` and the section is treated as vertical
+    (``dMD == dTVD``), the pre-MD behaviour exactly.
     """
     try:
         from welleng.catalog import resolve
@@ -86,6 +94,8 @@ def cased_section(
         bottom_tvd=bottom_tvd,
         annular_capacity_bbl_per_ft=annular_capacity(spec.id_in, pipe_od_in),
         is_open_hole=False,
+        top_md=top_md,
+        bottom_md=bottom_md,
         burst_pressure_psi=(
             None if rating is None else float(rating) * burst_design_factor
         ),
@@ -98,14 +108,24 @@ def open_hole_section(
     *,
     hole_size_in: float,
     pipe_od_in: float,
+    top_md: Optional[float] = None,
+    bottom_md: Optional[float] = None,
 ) -> WellSection:
     """An open-hole WellSection with true annular capacity (bit diameter minus
-    the string OD). ``is_open_hole=True`` -- its formation is fracture-exposed."""
+    the string OD). ``is_open_hole=True`` -- its formation is fracture-exposed.
+
+    Pass ``top_md`` / ``bottom_md`` on a deviated well so the section carries its
+    true along-hole length: the open hole a horizontal well drills is short in
+    TVD but long in MD, and both the volume fill and the Santos bubble-length
+    criterion are along-hole. Leave them ``None`` and the section is vertical
+    (``dMD == dTVD``), the pre-MD behaviour exactly."""
     return WellSection(
         top_tvd=top_tvd,
         bottom_tvd=bottom_tvd,
         annular_capacity_bbl_per_ft=annular_capacity(hole_size_in, pipe_od_in),
         is_open_hole=True,
+        top_md=top_md,
+        bottom_md=bottom_md,
     )
 
 
