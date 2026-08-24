@@ -39,6 +39,14 @@ welleng.clearance module
    :undoc-members:
    :show-inheritance:
 
+welleng.combination module
+--------------------------
+
+.. automodule:: welleng.combination
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 welleng.composition module
 --------------------------
 
