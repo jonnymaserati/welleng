@@ -531,6 +531,10 @@ class ErrorModel():
         cached = dict(
             e_DIA=e_dia, e_NEV_star=e_star, sigma_e_NEV=sig, random=rand,
             cov_random=cov_random, cov_linear=cov_linear,
+            # per-std-source propagation mode (aligned with sigma_e_NEV rows) --
+            # lets a consumer select which persistence class carries forward
+            # (e.g. 'global' geomag/declination persists across tool/BHA).
+            propagation=np.array([s.propagation for s in std], dtype=object),
         )
         self._interior_stacks_cache = cached
         return cached

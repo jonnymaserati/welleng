@@ -46,7 +46,7 @@ referencing formulas before evaluation.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, List
 
 from ..exchange.edm_stream import ToolKind, classify_tool
@@ -167,7 +167,8 @@ class EDMIPM:
             )
         return matches[0]
 
-    def error_model(self, key: str, normalise: bool = False) -> dict:
+    def error_model(self, key: str, normalise: bool = False,
+                    compass_gyro_parity: bool = False) -> dict:
         """Build the welleng error-model dict for a tool (see
         :func:`ipm_to_error_model`).
 
@@ -175,8 +176,20 @@ class EDMIPM:
         (:func:`normalise_edm_model`), yielding a self-contained ISCWSA-JSON
         model for a generic/symbolic formula engine; the covariance is
         unchanged.
+
+        ``compass_gyro_parity=True`` (gyro tools only) appends a systematic
+        vertical depth-scale term (:data:`COMPASS_GYRO_TVDSF` per TVD) that
+        COMPASS applies to gyro definitives but does NOT export in
+        ``DP_TOOL_TERM`` — an empirical well-level vertical term, back-calculated
+        from public Volve; its exact COMPASS source is not established (a
+        depth-term substitution / wireline hypothesis was tested against F-12 and
+        did not hold). OFF by default — the default model is OWSG-standard-faithful;
+        enable ONLY to reproduce COMPASS's stored gyro covariances. Non-standard.
         """
-        return ipm_to_error_model(self.tool(key), normalise=normalise)
+        return ipm_to_error_model(
+            self.tool(key), normalise=normalise,
+            compass_gyro_parity=compass_gyro_parity,
+        )
 
 
 def tool_from_ipm_model(model) -> IPMTool:
@@ -281,7 +294,18 @@ def parse_edm_ipm(path: str) -> EDMIPM:
     )
 
 
-def ipm_to_error_model(tool: IPMTool, normalise: bool = False) -> dict:
+#: COMPASS-parity gyro vertical depth-scale (per TVD), systematic. NOT an OWSG
+#: standard term — back-calculated from public Volve gyro definitives (consistent
+#: ~2.73e-4 across 8 wells / 4 gyro tools, CV ~3%); an empirical well-level
+#: vertical term COMPASS applies but does not export in DP_TOOL_TERM (exact source
+#: not established — a wireline/depth-term-substitution hypothesis was tested
+#: against F-12 and did not hold). Applied only via ``compass_gyro_parity=True``.
+#: See docs/dev/EDM_ERROR_MODEL_CONTRACT.md.
+COMPASS_GYRO_TVDSF = 2.73e-4
+
+
+def ipm_to_error_model(tool: IPMTool, normalise: bool = False,
+                       compass_gyro_parity: bool = False) -> dict:
     """Convert one tool's IPM to the welleng (ISCWSA-JSON-shaped) model dict.
 
     The dict can be passed straight to ``Survey(..., error_model=model)`` /
@@ -290,6 +314,10 @@ def ipm_to_error_model(tool: IPMTool, normalise: bool = False) -> dict:
     With ``normalise=True`` the EDM intermediates are inlined into the term
     formulas (:func:`normalise_edm_model`) so the model is self-contained for a
     generic/symbolic formula engine; the covariance is unchanged.
+
+    ``compass_gyro_parity=True`` (gyro tools only) appends the non-standard
+    :data:`COMPASS_GYRO_TVDSF` systematic vertical depth-scale term (see
+    :meth:`IPM.error_model`). OFF by default.
 
     Conversion rules
     ----------------
@@ -303,6 +331,15 @@ def ipm_to_error_model(tool: IPMTool, normalise: bool = False) -> dict:
     - tie ``n`` rows become named intermediates evaluated (in sequence
       order) into the formula namespace: ``name = value * formula``.
     """
+    if compass_gyro_parity and tool.kind is ToolKind.GYRO:
+        # append the non-standard COMPASS gyro wireline depth-scale (systematic,
+        # depth vector, per TVD) — reproduces COMPASS's stored gyro sigma_V.
+        seq = max((t.sequence_no for t in tool.terms), default=0) + 1
+        tool = replace(tool, terms=tool.terms + [IPMTerm(
+            name="DTVDSF_COMPASS", sequence_no=seq, vector_type="e",
+            tie_type="s", value=COMPASS_GYRO_TVDSF, units="-", formula="tvd",
+        )])
+
     hyphenated = [t.name for t in tool.intermediates if "-" in t.name]
 
     intermediates = [

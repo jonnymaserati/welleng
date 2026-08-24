@@ -81,6 +81,8 @@ papers/zenodo-metadata.json
 examples/data/*
 # except the small public Volve KT reproducibility profiles (CC BY 4.0, Equinor)
 !examples/data/volve_f13_kick_tolerance_profiles.npz
+# and the small public Volve F-4 survey-combination reproducibility data (CC BY 4.0, Equinor)
+!examples/data/volve_f4_survey_combination.json
 tests/data/
 welleng/errors/error_codes.yaml
 welleng/errors/extract_error_codes.py

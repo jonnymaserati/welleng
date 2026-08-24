@@ -402,6 +402,12 @@ class SurveyTool:
     name: str
     description: str = ""
     remarks: str = ""
+    correlate: bool = False           # CD_SURVEY_TOOL.correlate 'Y'/'N' — whether
+    #                                   this tool's errors correlate with another
+    #                                   survey's (drives combined-survey weighting)
+    is_range_limited: bool = False     # inclination-range gating applies
+    inclination_range_min: Optional[float] = None   # deg
+    inclination_range_max: Optional[float] = None   # deg
     kind: ToolKind = ToolKind.OTHER
     raw: Dict[str, str] = field(default_factory=dict, repr=False)
 
@@ -1129,6 +1135,10 @@ class EDMReader:
                     name=a.get("tool_name", ""),
                     description=a.get("description", ""),
                     remarks=a.get("remarks", ""),
+                    correlate=a.get("correlate", "N") == "Y",
+                    is_range_limited=a.get("is_range_limited", "N") == "Y",
+                    inclination_range_min=_f(a, "inclination_range_min"),
+                    inclination_range_max=_f(a, "inclination_range_max"),
                     kind=classify_tool(
                         a.get("tool_name"), a.get("description"),
                         a.get("remarks"),
