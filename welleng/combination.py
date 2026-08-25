@@ -67,7 +67,12 @@ class FusedSurvey:
         :func:`welleng.utils.survey_from_positions` -- set only when a
         trajectory was requested (``combine_surveys(..., return_trajectory=
         True)``). With the query measured depths, ``(mds, inc, azi)`` is a
-        minimum-curvature survey listing of the combined path.
+        minimum-curvature survey listing of the combined path, drawable by
+        conventional trajectory software. **Every station is CALCULATED, not
+        measured** -- the fused path is a derived best estimate, so the whole
+        listing is a calculated product (there is no measured/calculated split
+        to make per station). DLS-faithful: the reconstructed dogleg severity
+        tracks the input surveys (it does not introduce spurious doglegs).
     """
 
     cov_fused: NDArray[np.float64]      # (n,3,3) fused BLUE covariance, NEV, m^2
