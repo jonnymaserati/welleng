@@ -301,7 +301,14 @@ def combine_surveys(
     # C/L/CC/CL/... combination, so a leg contributes 0-2 inner nodes; a node
     # whose MD does not advance (a zero-length segment) is dropped. The (md, inc,
     # azi) of every retained node is a minimum-curvature listing by construction,
-    # passing through each fused point exactly.
+    # passing through each fused point.
+    #
+    # The path is parameterised by its own arc length (cumulative CLC leg MD).
+    # This is the fused path's true length, which is marginally shorter than the
+    # query-MD span when the two surveys disagree (averaging two different arcs
+    # gives a slightly shorter path -- a real, sub-cm geometric effect, zero when
+    # the surveys agree), so honouring the query MD exactly would instead move
+    # the positions. The exact positions are kept; the MD is the path length.
     from .connector import Connector
     pos = fused.pos_fused
     t = tie.copy()
@@ -329,9 +336,13 @@ def combine_surveys(
     keep = np.concatenate(([True], np.diff(md_arr) > 1e-6))   # drop zero-length legs
     node_mds = md_arr[keep]
     # The fused covariance is continuous in MD, so evaluate it at EVERY node --
-    # the query stations and the inserted inner nodes alike -- giving a complete
-    # fused survey (md, inc, azi, covariance) at the full node set.
-    fused_nodes = _fuse_positions(survey_a, survey_b, node_mds, cross)
+    # query stations and inserted inner nodes alike -- giving a complete fused
+    # survey (md, inc, azi, covariance). The path length can overshoot the
+    # surveys' MD range by the arc-length difference (sub-cm); clamp only the MDs
+    # used to look up the covariance so the interpolation stays in range.
+    lo = max(float(survey_a.md.min()), float(survey_b.md.min()))
+    hi = min(float(survey_a.md.max()), float(survey_b.md.max()))
+    fused_nodes = _fuse_positions(survey_a, survey_b, np.clip(node_mds, lo, hi), cross)
     return replace(
         fused_nodes, md=node_mds,
         inc=np.degrees(inc_arr[keep]), azi=np.degrees(azi_arr[keep]),
