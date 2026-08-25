@@ -37,7 +37,7 @@ References
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 from numpy.typing import NDArray
@@ -61,6 +61,13 @@ class FusedSurvey:
         tightens the better of the two inputs (>= 1; 1 = no gain).
     pos_fused : (n, 3) ndarray or None
         The fused position estimate, if positions were supplied.
+    inc, azi : (n,) ndarray or None
+        The fused best-estimate trajectory as inclination/azimuth (degrees),
+        reconstructed from ``pos_fused`` via
+        :func:`welleng.utils.survey_from_positions` -- set only when a
+        trajectory was requested (``combine_surveys(..., return_trajectory=
+        True)``). With the query measured depths, ``(mds, inc, azi)`` is a
+        minimum-curvature survey listing of the combined path.
     """
 
     cov_fused: NDArray[np.float64]      # (n,3,3) fused BLUE covariance, NEV, m^2
@@ -71,6 +78,8 @@ class FusedSurvey:
     sigma_fused: NDArray[np.float64]    # (n,) worst-direction 1sigma of the fusion (m)
     reduction_factor: NDArray[np.float64]  # (n,) min(sigma_a,sigma_b)/sigma_fused (>=1)
     pos_fused: NDArray[np.float64] | None = None  # (n,3) fused NEV pos, if given
+    inc: NDArray[np.float64] | None = None  # (n,) reconstructed fused inclination (deg)
+    azi: NDArray[np.float64] | None = None  # (n,) reconstructed fused azimuth (deg)
 
 
 def _psd(cov: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -193,6 +202,7 @@ def combine_surveys(
     mds,
     *,
     cross=None,
+    return_trajectory=False,
 ) -> FusedSurvey:
     """BLUE-combine two overlapping surveys of the same well at arbitrary MDs.
 
@@ -216,6 +226,19 @@ def combine_surveys(
         Cross-covariance from shared error sources at each MD. Default None == 0
         (fully independent -- the ``correlate="N"`` case). Fully-shared
         components do not reduce.
+    return_trajectory : bool, default False
+        Also reconstruct the fused best-estimate *trajectory* -- the BLUE
+        position at each MD, recovered to (inc, azi) by
+        :func:`welleng.utils.survey_from_positions` (analytical, fixed tie-in).
+        Populates :attr:`FusedSurvey.pos_fused`, ``.inc`` and ``.azi`` so
+        ``(mds, result.inc, result.azi)`` is a min-curve listing of the
+        combined path. The tie-in tangent is taken from ``survey_a`` at the
+        first MD. Requires ``mds`` sorted ascending. The reconstruction is the
+        single-arc (reflection) form at the query MDs, so it carries a small
+        residual (typically cm-level) where the BLUE path will not sit on one
+        arc per leg; the exact form uses the reconstructed arc-length MD
+        (:func:`welleng.utils.survey_from_positions` without ``mds``), and a
+        curve-hold-curve / added-node refinement would zero it at query MDs.
 
     Returns
     -------
@@ -227,7 +250,20 @@ def combine_surveys(
             raise ValueError(f"{name} has no error model applied (survey.err is None)")
     cov_a = np.stack([np.asarray(survey_a.err.cov_nev_at(float(m))) for m in mds])
     cov_b = np.stack([np.asarray(survey_b.err.cov_nev_at(float(m))) for m in mds])
-    return fuse_covariances(cov_a, cov_b, cross=cross)
+    if not return_trajectory:
+        return fuse_covariances(cov_a, cov_b, cross=cross)
+
+    # Fused best-estimate trajectory: BLUE-weight the two surveys' positions at
+    # each MD, then reconstruct (inc, azi) analytically from the fused NEV path.
+    from .utils import survey_from_positions
+    nodes_a = [survey_a.interpolate_md(float(m)) for m in mds]
+    nodes_b = [survey_b.interpolate_md(float(m)) for m in mds]
+    pos_a = np.array([n.pos_nev for n in nodes_a])
+    pos_b = np.array([n.pos_nev for n in nodes_b])
+    fused = fuse_covariances(cov_a, cov_b, cross=cross, pos_a=pos_a, pos_b=pos_b)
+    tie_vec = np.asarray(nodes_a[0].vec_nev, dtype=float)
+    _, inc, azi = survey_from_positions(fused.pos_fused, tie_vec, mds=mds)
+    return replace(fused, inc=inc, azi=azi)
 
 
 @dataclass(frozen=True)
