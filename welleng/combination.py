@@ -42,6 +42,12 @@ from dataclasses import dataclass, replace
 import numpy as np
 from numpy.typing import NDArray
 
+# A dls_design low enough to sit below any leg's minimum-feasible dogleg
+# severity, so the point-to-target Connector returns the GENTLEST (largest
+# radius) curve that still reaches the fused point, rather than curving harder
+# to minimise measured depth. Used by the refine=True trajectory reconstruction.
+_GENTLE_DLS = 1e-3
+
 
 @dataclass(frozen=True)
 class FusedSurvey:
@@ -61,18 +67,18 @@ class FusedSurvey:
         tightens the better of the two inputs (>= 1; 1 = no gain).
     pos_fused : (n, 3) ndarray or None
         The fused position estimate, if positions were supplied.
-    inc, azi : (n,) ndarray or None
-        The fused best-estimate trajectory as inclination/azimuth (degrees),
-        reconstructed from ``pos_fused`` via
-        :func:`welleng.utils.survey_from_positions` -- set only when a
-        trajectory was requested (``combine_surveys(..., return_trajectory=
-        True)``). With the query measured depths, ``(mds, inc, azi)`` is a
-        minimum-curvature survey listing of the combined path, drawable by
-        conventional trajectory software. **Every station is CALCULATED, not
-        measured** -- the fused path is a derived best estimate, so the whole
-        listing is a calculated product (there is no measured/calculated split
-        to make per station). DLS-faithful: the reconstructed dogleg severity
-        tracks the input surveys (it does not introduce spurious doglegs).
+    md, inc, azi : (k,) ndarray or None
+        The fused best-estimate trajectory as a minimum-curvature listing --
+        set only when a trajectory was requested (``combine_surveys(...,
+        return_trajectory=True)``). ``(md, inc, azi)`` is drawable by
+        conventional trajectory software. Without ``refine`` these are the query
+        MDs with the single-arc reconstruction (bare-minimum tangents, ``k = n``);
+        with ``refine=True`` they are the exact curve-hold-curve path through the
+        fused points -- the query stations plus any inner arc/hold nodes needed
+        to hit them, so ``k >= n``. **Every station is CALCULATED, not measured**
+        -- the fused path is a derived best estimate, so the whole listing is a
+        calculated product (no measured/calculated split per station).
+        DLS-faithful: the reconstructed dogleg severity tracks the input surveys.
     """
 
     cov_fused: NDArray[np.float64]      # (n,3,3) fused BLUE covariance, NEV, m^2
@@ -83,8 +89,9 @@ class FusedSurvey:
     sigma_fused: NDArray[np.float64]    # (n,) worst-direction 1sigma of the fusion (m)
     reduction_factor: NDArray[np.float64]  # (n,) min(sigma_a,sigma_b)/sigma_fused (>=1)
     pos_fused: NDArray[np.float64] | None = None  # (n,3) fused NEV pos, if given
-    inc: NDArray[np.float64] | None = None  # (n,) reconstructed fused inclination (deg)
-    azi: NDArray[np.float64] | None = None  # (n,) reconstructed fused azimuth (deg)
+    md: NDArray[np.float64] | None = None   # (k,) fused trajectory measured depth
+    inc: NDArray[np.float64] | None = None  # (k,) fused trajectory inclination (deg)
+    azi: NDArray[np.float64] | None = None  # (k,) fused trajectory azimuth (deg)
 
 
 def _psd(cov: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -201,6 +208,15 @@ def fuse_covariances(
     )
 
 
+def _fuse_positions(survey_a, survey_b, mds, cross):
+    """Fused NEV covariance + BLUE position at each md (helper)."""
+    cov_a = np.stack([np.asarray(survey_a.err.cov_nev_at(float(m))) for m in mds])
+    cov_b = np.stack([np.asarray(survey_b.err.cov_nev_at(float(m))) for m in mds])
+    pos_a = np.array([survey_a.interpolate_md(float(m)).pos_nev for m in mds])
+    pos_b = np.array([survey_b.interpolate_md(float(m)).pos_nev for m in mds])
+    return fuse_covariances(cov_a, cov_b, cross=cross, pos_a=pos_a, pos_b=pos_b)
+
+
 def combine_surveys(
     survey_a,
     survey_b,
@@ -208,6 +224,7 @@ def combine_surveys(
     *,
     cross=None,
     return_trajectory=False,
+    refine=False,
 ) -> FusedSurvey:
     """BLUE-combine two overlapping surveys of the same well at arbitrary MDs.
 
@@ -233,17 +250,23 @@ def combine_surveys(
         components do not reduce.
     return_trajectory : bool, default False
         Also reconstruct the fused best-estimate *trajectory* -- the BLUE
-        position at each MD, recovered to (inc, azi) by
-        :func:`welleng.utils.survey_from_positions` (analytical, fixed tie-in).
-        Populates :attr:`FusedSurvey.pos_fused`, ``.inc`` and ``.azi`` so
-        ``(mds, result.inc, result.azi)`` is a min-curve listing of the
-        combined path. The tie-in tangent is taken from ``survey_a`` at the
-        first MD. Requires ``mds`` sorted ascending. The reconstruction is the
-        single-arc (reflection) form at the query MDs, so it carries a small
-        residual (typically cm-level) where the BLUE path will not sit on one
-        arc per leg; the exact form uses the reconstructed arc-length MD
-        (:func:`welleng.utils.survey_from_positions` without ``mds``), and a
-        curve-hold-curve / added-node refinement would zero it at query MDs.
+        position at each MD, recovered to (md, inc, azi) and returned in
+        :attr:`FusedSurvey.md`, ``.inc``, ``.azi`` (with ``.pos_fused``), a
+        min-curve listing of the combined path. The tie-in tangent is taken from
+        ``survey_a`` at the first MD; ``mds`` must be sorted ascending.
+        Without ``refine`` this is the single-arc (reflection) reconstruction at
+        the query MDs -- bare-minimum tangents, DLS-faithful, carrying a small
+        residual (typically cm) where the fused path will not sit on one arc per
+        leg.
+    refine : bool, default False
+        When ``return_trajectory`` is set, reconstruct the *exact* path instead:
+        connect consecutive fused points with the gentlest feasible
+        curve-hold-curve (largest radius reaching each point), cascading the
+        tangent. This passes through every fused point exactly and stays
+        DLS-faithful, at the cost of inner arc/hold nodes where a leg needs them
+        (a CLC degenerates to C/L/CC/... so most gentle legs add none). The
+        returned ``md/inc/azi`` are therefore longer than ``mds`` in general.
+        Only supported with ``cross=None``.
 
     Returns
     -------
@@ -253,22 +276,66 @@ def combine_surveys(
     for name, s in (("survey_a", survey_a), ("survey_b", survey_b)):
         if getattr(s, "err", None) is None:
             raise ValueError(f"{name} has no error model applied (survey.err is None)")
-    cov_a = np.stack([np.asarray(survey_a.err.cov_nev_at(float(m))) for m in mds])
-    cov_b = np.stack([np.asarray(survey_b.err.cov_nev_at(float(m))) for m in mds])
     if not return_trajectory:
+        cov_a = np.stack([np.asarray(survey_a.err.cov_nev_at(float(m))) for m in mds])
+        cov_b = np.stack([np.asarray(survey_b.err.cov_nev_at(float(m))) for m in mds])
         return fuse_covariances(cov_a, cov_b, cross=cross)
+    if refine and cross is not None:
+        raise NotImplementedError(
+            "refine=True is only supported with cross=None (inserting nodes "
+            "would require interpolating the cross-covariance)"
+        )
 
-    # Fused best-estimate trajectory: BLUE-weight the two surveys' positions at
-    # each MD, then reconstruct (inc, azi) analytically from the fused NEV path.
     from .utils import survey_from_positions
-    nodes_a = [survey_a.interpolate_md(float(m)) for m in mds]
-    nodes_b = [survey_b.interpolate_md(float(m)) for m in mds]
-    pos_a = np.array([n.pos_nev for n in nodes_a])
-    pos_b = np.array([n.pos_nev for n in nodes_b])
-    fused = fuse_covariances(cov_a, cov_b, cross=cross, pos_a=pos_a, pos_b=pos_b)
-    tie_vec = np.asarray(nodes_a[0].vec_nev, dtype=float)
-    _, inc, azi = survey_from_positions(fused.pos_fused, tie_vec, mds=mds)
-    return replace(fused, inc=inc, azi=azi)
+
+    fused = _fuse_positions(survey_a, survey_b, mds, cross)
+    tie = np.asarray(survey_a.interpolate_md(float(mds[0])).vec_nev, dtype=float)
+    _, inc0, azi0 = survey_from_positions(fused.pos_fused, tie, mds=mds)
+    if not refine:
+        return replace(fused, md=mds, inc=inc0, azi=azi0)
+
+    # Exact reconstruction: connect consecutive fused points with the gentlest
+    # feasible curve-hold-curve (a very low dls_design lets the Connector return
+    # the largest-radius curve that still reaches the point -- see solve_clc),
+    # cascading the end tangent so the path is C1. A CLC degenerates to any
+    # C/L/CC/CL/... combination, so a leg contributes 0-2 inner nodes; a node
+    # whose MD does not advance (a zero-length segment) is dropped. The (md, inc,
+    # azi) of every retained node is a minimum-curvature listing by construction,
+    # passing through each fused point exactly.
+    from .connector import Connector
+    pos = fused.pos_fused
+    t = tie.copy()
+    cum = float(mds[0])
+    md_out = [cum]
+    inc_out = [np.radians(float(inc0[0]))]
+    azi_out = [np.radians(float(azi0[0]))]
+    for k in range(len(pos) - 1):
+        c = Connector(pos1=pos[k], vec1=t, pos2=pos[k + 1], dls_design=_GENTLE_DLS)
+        t = np.asarray(c.node_end.vec_nev, dtype=float)
+        for m_loc, i_loc, a_loc in (
+            (c.md2, c.inc2, c.azi2),
+            (c.md3, c.inc3, c.azi3),
+            (c.md_target, c.inc_target, c.azi_target),
+        ):
+            if m_loc is None:
+                continue
+            md_out.append(cum + m_loc)
+            inc_out.append(i_loc)
+            azi_out.append(a_loc)
+        cum += c.md_target
+    md_arr = np.asarray(md_out, dtype=float)
+    inc_arr = np.asarray(inc_out, dtype=float)
+    azi_arr = np.asarray(azi_out, dtype=float)
+    keep = np.concatenate(([True], np.diff(md_arr) > 1e-6))   # drop zero-length legs
+    node_mds = md_arr[keep]
+    # The fused covariance is continuous in MD, so evaluate it at EVERY node --
+    # the query stations and the inserted inner nodes alike -- giving a complete
+    # fused survey (md, inc, azi, covariance) at the full node set.
+    fused_nodes = _fuse_positions(survey_a, survey_b, node_mds, cross)
+    return replace(
+        fused_nodes, md=node_mds,
+        inc=np.degrees(inc_arr[keep]), azi=np.degrees(azi_arr[keep]),
+    )
 
 
 @dataclass(frozen=True)
