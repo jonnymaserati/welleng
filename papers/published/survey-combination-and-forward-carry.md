@@ -13,7 +13,7 @@ header-includes: |
   \emergencystretch=3em
 ---
 
-**Version 1.0 — 2026-08-24** · DOI: [10.5281/zenodo.22080774](https://doi.org/10.5281/zenodo.22080774)
+**Version 1.1 — 2026-08-25** · concept DOI: [10.5281/zenodo.22080773](https://doi.org/10.5281/zenodo.22080773) (v1.1 adds §2 trajectory reconstruction)
 
 ## Abstract
 
@@ -164,6 +164,75 @@ practice depends on the actual gyro's quality, and the demonstration below,
 which uses the survey tools' own exported error models, is correspondingly a
 conservative floor.
 
+### Reconstructing the fused trajectory as a survey
+
+The combination returns a covariance and a best-estimate position at each
+measured depth, in the north-east-vertical frame. Conventional survey software
+and reporting, however, expect a minimum-curvature (measured depth,
+inclination, azimuth) listing, and recovering one from the fused position path
+was raised as a practical obstacle. It is in fact analytical: with the tie-in
+tangent fixed, each leg's end tangent is the start tangent *reflected about the
+chord*,
+
+$$\hat{t}_{i+1} = 2\,(\hat{c}\cdot\hat{t}_i)\,\hat{c} - \hat{t}_i,$$
+
+which is the minimum-curvature chord-bisector property. The tangents therefore
+march out in a single pass with no iteration (welleng's
+`survey_from_positions`).
+
+Two observations frame the reconstruction. First, the fused stations are
+**calculated, not measured**: the fused position is a derived best estimate, so
+the whole listing is a calculated product — there is no measured station that
+must be preserved verbatim. Measured depth, by contrast, *is* measured, and is
+held exact: it labels the reconstruction, and the single-pass march above
+returns a minimum-curvature listing at the query depths whose dogleg severity
+tracks the input surveys. Second, the fused positions do not, in general, lie on
+a single minimum-curvature arc chain at the query depths: averaging two surveys'
+positions leaves some consecutive fused points marginally farther apart than the
+query interval permits and others marginally closer (in the F-4-style case,
+roughly a 45/55 split, each by up to a few centimetres). With measured depth held
+exact, the reconstruction therefore carries a small position residual against the
+raw fused points — centimetre-scale per station, accumulating to a
+decimetre-scale closure at the segment end. This is a genuine consequence of
+fusing positions, not an error, and it sits three orders of magnitude below the
+metre-scale position uncertainty the survey carries in the first place.
+
+Where the fused overlap is interior — its last station is not the well's total
+depth, the common case — the reconstructed segment must join a single-source
+continuation beyond the overlap. That continuation is a real measured survey (the
+longer of the two), so the seam is pinned to it: the reconstruction's final
+target is the continuing survey's position interpolated at the seam measured
+depth, and the accumulated closure is absorbed in the final section — extending
+or truncating the last leg's chord to land on that point — so the fused segment
+and the continuation form one continuous minimum-curvature path with no position
+jump. This costs the (sub-uncertainty) fusion gain at the single seam station;
+the reconciliation direction is data-dependent (both signs occur across wells)
+and its magnitude is well below the position uncertainty. Because the fused
+covariance is a continuous function of measured depth (Section 2), it is
+evaluated at *every* station, so each carries its own true ellipse of
+uncertainty. The result is a self-consistent fused survey — (measured depth,
+inclination, azimuth, covariance) at every station — drawable as a
+minimum-curvature well path and carrying a true covariance throughout.
+
+The single-arc form is exact when each leg is representable as one
+minimum-curvature arc; its residual grows with the curvature *change* across a
+leg (build-to-turn transitions, dogleg gradients), so it is a function of
+trajectory shape rather than a clean law in dogleg severity and station spacing.
+For a typical build (2–3°/30 m) it stays a small fraction of the EOU at ordinary
+station spacing — of order 1% at ~30 m, within a couple of per cent out to
+~120 m — and becomes a large fraction (metres in absolute terms) only beyond
+~300 m station spacing, a regime in which the survey is under-sampled regardless.
+Where wider spacing or a sharp transition is encountered, the remedy is to sample
+the *continuous* fusion (Section 2) on a finer measured-depth grid so each
+sub-leg is again a single arc, at the cost of calculated inner stations.
+
+This reconstruction is presented as a **concept pending field validation**: it is
+verified here on synthetic and Volve data and is analytically well-posed, but has
+not yet been exercised across a range of real wells with their tie-on and
+continuation practices, which is where its edge behaviour (the closure
+reconciliation above, near-tangential legs, coarse or transition-heavy sections)
+should be confirmed.
+
 ## 3. Carrying the calibration forward
 
 A magnetic MWD survey cannot observe some of its own systematic errors from its
@@ -284,7 +353,13 @@ The methods are in welleng (open source):
 - `welleng.combination.fuse_covariances` — BLUE fusion (Equation 1), with the
   cross-covariance for shared terms and a positive-semidefinite guard.
 - `welleng.combination.combine_surveys` — continuous combination via the
-  analytical interior covariance `Survey.err.cov_nev_at`.
+  analytical interior covariance `Survey.err.cov_nev_at`; with
+  `return_trajectory=True` it also reconstructs the fused (md, inc, azi) listing
+  (single-arc, measured depth held exact), carrying the covariance at every
+  station.
+- `welleng.utils.survey_from_positions` — the analytical (reflection) inverse of
+  the minimum-curvature method: (md, inc, azi) from a fused position path and a
+  fixed tie-in tangent.
 - `welleng.combination.carry_systematic_forward` — the Schur conditioning of
   Equation (2).
 

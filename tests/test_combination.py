@@ -355,43 +355,9 @@ def test_combine_surveys_return_trajectory_roundtrip():
     rec = we.survey.Survey(md=mds, inc=r.inc, azi=r.azi, header=h, deg=True)
     rec_pos = np.c_[rec.n, rec.e, rec.tvd]
     # compare shape (origin-independent): displacement from the first station.
-    # cm-level tolerance: the single-arc reconstruction at the *query* MDs
-    # carries a small residual where the BLUE path won't sit on one arc per leg
-    # (the exact form uses the reconstructed arc-length MD; a CLC/node
-    # refinement would zero it at query MDs).
+    # MD is held exact; the single-arc reconstruction carries a small position
+    # residual (below the metre-scale EOU) where the BLUE path won't sit on one
+    # arc per leg.
+    assert np.allclose(rec.md, mds)                    # MD held exact
     assert np.allclose(rec_pos - rec_pos[0],
                        r.pos_fused - r.pos_fused[0], atol=0.05)
-
-
-def test_combine_surveys_refine_exact_and_cov_at_all_nodes():
-    # refine=True: the exact CLC reconstruction passes through every fused point,
-    # provides a covariance at every node (query + inner), and stays DLS-faithful.
-    h = we.survey.SurveyHeader(name="t", azi_reference="grid", latitude=58.0,
-                               b_total=50000.0, dip=72.0, declination=1.0)
-    md = np.arange(0.0, 2000.0 + 1, 30.0)
-    inc = np.clip((md - 300) / 1500 * 60, 1.0, 60.0)
-    azi = 30 + np.clip((md - 500) / 1500, 0, 1) * 40   # some turn
-    rng = np.random.default_rng(5)
-    A = we.survey.Survey(md=md, inc=inc + rng.normal(0, 0.15, md.size),
-                         azi=azi + rng.normal(0, 0.3, md.size),
-                         header=h, error_model="MWD+SRGM", deg=True)
-    B = we.survey.Survey(md=md, inc=inc + rng.normal(0, 0.15, md.size),
-                         azi=azi + rng.normal(0, 0.3, md.size),
-                         header=h, error_model="GYRO-NS-CT", deg=True)
-    mds = np.arange(300.0, 2000.0 + 1, 30.0)
-    r = combine_surveys(A, B, mds, return_trajectory=True, refine=True)
-    # covariance at every node (same length as the trajectory)
-    assert r.md is not None and len(r.md) == len(r.inc) == len(r.azi)
-    assert len(r.cov_fused) == len(r.md)
-    assert len(r.md) >= len(mds)                       # >= query stations
-    # the reconstructed path passes through every fused query point
-    fused_q = combine_surveys(A, B, mds, return_trajectory=True)   # BLUE pos at query
-    rec = we.survey.Survey(md=r.md, inc=r.inc, azi=r.azi, header=h, deg=True)
-    path = np.c_[rec.n, rec.e, rec.tvd] - np.c_[rec.n, rec.e, rec.tvd][0]
-    ref = fused_q.pos_fused - fused_q.pos_fused[0]
-    # nearest path point to each fused query point (relative frame)
-    dmin = np.array([np.min(np.linalg.norm(path - p, axis=1)) for p in ref])
-    assert dmin.max() < 1e-3                           # passes through, mm-exact
-    # DLS-faithful (no spurious doglegs)
-    ia = A.interpolate_mds(mds)
-    assert np.nanmax(rec.dls) < 2.0 * np.nanmax(ia.dls)
