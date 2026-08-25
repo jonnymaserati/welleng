@@ -3,7 +3,7 @@ import numpy as np
 import welleng as we
 import pytest
 
-from welleng.combination import fuse_covariances
+from welleng.combination import fuse_covariances, combine_surveys
 
 
 def _spd(seed, scale=1.0):
@@ -332,3 +332,32 @@ def test_survey_normalises_negative_inclination():
     assert np.isfinite(s.cov_nev).all()               # no NaN poisoning
     assert np.allclose(np.c_[s.n, s.e, s.tvd],
                        np.c_[s_eq.n, s_eq.e, s_eq.tvd], atol=1e-9)
+
+
+def test_combine_surveys_return_trajectory_roundtrip():
+    # combine two surveys of one well and reconstruct the fused trajectory;
+    # forward min-curve on (mds, inc, azi) must reproduce the fused positions.
+    h = we.survey.SurveyHeader(name="t", azi_reference="grid", latitude=58.0,
+                               b_total=50000.0, dip=72.0, declination=1.0)
+    md = np.arange(0.0, 2000.0 + 1, 30.0)
+    inc = np.clip((md - 300) / 1500 * 60, 1.0, 60.0)
+    azi = np.full(md.size, 30.0)
+    rng = np.random.default_rng(3)
+    A = we.survey.Survey(md=md, inc=inc + rng.normal(0, 0.1, md.size),
+                         azi=azi + rng.normal(0, 0.2, md.size),
+                         header=h, error_model="MWD+SRGM", deg=True)
+    B = we.survey.Survey(md=md, inc=inc + rng.normal(0, 0.1, md.size),
+                         azi=azi + rng.normal(0, 0.2, md.size),
+                         header=h, error_model="GYRO-NS-CT", deg=True)
+    mds = np.arange(300.0, 2000.0 + 1, 30.0)          # skip the md=0 tie station
+    r = combine_surveys(A, B, mds, return_trajectory=True)
+    assert r.inc is not None and r.azi is not None and r.pos_fused is not None
+    rec = we.survey.Survey(md=mds, inc=r.inc, azi=r.azi, header=h, deg=True)
+    rec_pos = np.c_[rec.n, rec.e, rec.tvd]
+    # compare shape (origin-independent): displacement from the first station.
+    # cm-level tolerance: the single-arc reconstruction at the *query* MDs
+    # carries a small residual where the BLUE path won't sit on one arc per leg
+    # (the exact form uses the reconstructed arc-length MD; a CLC/node
+    # refinement would zero it at query MDs).
+    assert np.allclose(rec_pos - rec_pos[0],
+                       r.pos_fused - r.pos_fused[0], atol=0.05)
