@@ -880,6 +880,20 @@ class Survey(MinCurve):
         # where the toolface averages out). None -> unspecified.
         self.steering = None if steering is None else np.asarray(steering)
 
+        # Normalise any negative inclination to the equivalent positive-inc /
+        # opposite-azimuth direction. A negative inclination is geometrically
+        # identical to |inc| at azi + 180 deg (the same unit tangent), so this
+        # is loss-free; it also keeps inc in [0, 180] where the error model's
+        # sin(inc)-weighted terms are defined (a negative inc otherwise NaNs
+        # the covariance and poisons the systematic running sum).
+        inc = np.array(inc, dtype="float64")
+        azi = np.array(azi, dtype="float64")
+        _neg = inc < 0.0
+        if _neg.any():
+            _half, _full = (180.0, 360.0) if deg else (np.pi, 2.0 * np.pi)
+            azi = np.where(_neg, (azi + _half) % _full, azi)
+            inc = np.abs(inc)
+
         self._process_azi_ref(inc, azi, deg)
 
         self._get_radius(radius)

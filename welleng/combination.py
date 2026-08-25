@@ -135,6 +135,22 @@ def fuse_covariances(
         if C.shape != A.shape:
             raise ValueError(f"cross {C.shape} must match cov_a {A.shape}")
 
+    # Guard non-finite input up front: a NaN/inf covariance (e.g. from an
+    # invalid negative/out-of-range inclination that NaNs the error model and
+    # poisons the systematic running sum) otherwise surfaces only as a cryptic
+    # "Eigenvalues did not converge" from the PSD clip below. Fail clearly,
+    # naming the offending stations, so the cause is the survey, not the fuse.
+    for name, M in (("cov_a", A), ("cov_b", B), ("cross", C)):
+        if not np.isfinite(M).all():
+            bad = np.where(~np.isfinite(M.reshape(len(M), -1)).all(axis=1))[0]
+            raise ValueError(
+                f"{name} has non-finite values at station index(es) "
+                f"{bad.tolist()[:20]} -- the input covariance is invalid. A "
+                "common cause is a negative or out-of-range inclination in the "
+                "source survey, which NaNs the error model and propagates down "
+                "the systematic running sum. Fix the survey/error model first."
+            )
+
     # BLUE with correlated estimates (Bar-Shalom fusion).
     S = A + B - C - C.swapaxes(-1, -2)          # innovation covariance
     K = A - C                                    # gain numerator (Sigma_A - C)

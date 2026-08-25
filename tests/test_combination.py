@@ -1,5 +1,6 @@
 """Tests for welleng.combination.fuse_covariances (overlapping-survey BLUE)."""
 import numpy as np
+import welleng as we
 import pytest
 
 from welleng.combination import fuse_covariances
@@ -298,3 +299,36 @@ def test_forward_carry_persistence_mc_gate():
     deep_true = eg @ Akg.T + es_d @ Aks.T + rng.normal(size=(N, 3)) @ Lm[k].T
     resid = deep_true - z @ K.T
     np.testing.assert_allclose(np.cov(resid.T), fc.cov_carried[0], rtol=0.06, atol=1e-3)
+
+
+def test_fuse_covariances_rejects_nonfinite_input():
+    # a NaN covariance (e.g. from a negative inclination poisoning the error
+    # model) must raise a clear error naming the station, not a cryptic
+    # eigvalsh "did not converge" from the PSD clip.
+    a = np.tile(np.eye(3), (5, 1, 1))
+    b = a.copy()
+    a[2, 0, 0] = np.nan
+    with pytest.raises(ValueError, match=r"non-finite.*index.*\[2\]"):
+        fuse_covariances(a, b)
+
+
+def test_survey_normalises_negative_inclination():
+    # a negative inclination is the same direction as |inc| at azi+180; Survey
+    # normalises it, so the covariance is finite (not NaN) and the geometry
+    # matches the explicitly-normalised survey.
+    h = we.survey.SurveyHeader(name="t", azi_reference="grid", latitude=58.0,
+                               b_total=50000.0, dip=72.0, declination=1.0)
+    md = np.array([0.0, 30.0, 60.0, 90.0])
+    inc_neg = np.array([0.0, -5.0, 10.0, 20.0])       # a negative station
+    azi = np.array([45.0, 45.0, 45.0, 45.0])
+    s = we.survey.Survey(md=md, inc=inc_neg, azi=azi,
+                         header=h, error_model="MWD+SRGM", deg=True)
+    # equivalent survey with the negative station written as +inc, azi+180
+    s_eq = we.survey.Survey(
+        md=md, inc=np.array([0.0, 5.0, 10.0, 20.0]),
+        azi=np.array([45.0, 225.0, 45.0, 45.0]),
+        header=h, error_model="MWD+SRGM", deg=True,
+    )
+    assert np.isfinite(s.cov_nev).all()               # no NaN poisoning
+    assert np.allclose(np.c_[s.n, s.e, s.tvd],
+                       np.c_[s_eq.n, s_eq.e, s_eq.tvd], atol=1e-9)
