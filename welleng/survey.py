@@ -289,6 +289,20 @@ class SurveyParameters(Proj):
         return np.array(result)
 
 
+def _mag_model_label(result: dict, requested_model: str) -> str:
+    """A human-readable provenance label for a geomagnetic lookup result.
+
+    The offline model returns ``model_name`` + ``source`` (e.g. ``WMM2025`` +
+    ``local-wmm``); the BGS payload carries neither cleanly, so fall back to the
+    requested model name tagged ``bgs``.
+    """
+    name = result.get('model_name')
+    source = result.get('source')
+    if name and source:
+        return f"{name} ({source})"
+    return f"{requested_model} (bgs)"
+
+
 class SurveyHeader:
     """Metadata for a well survey including location, magnetic field, and reference systems.
 
@@ -301,6 +315,21 @@ class SurveyHeader:
     ``'default'`` (see ``ErrorModel``). Assigning ``b_total``, ``dip`` or
     ``declination`` — at construction or any time after — marks that field
     ``'user'``.
+
+    ``mag_model`` records WHICH source a ``'lookup'`` came from (e.g.
+    ``'WMM2025 (local-wmm)'`` for the bundled offline model, or the BGS model
+    when the web service was used); ``None`` when no lookup happened.
+
+    .. note::
+       **A looked-up value is MODEL-derived, not a field measurement.** The WMM
+       (whether evaluated offline from the bundled coefficients or via BGS — the
+       two agree to < 0.001 nT, so ``'local-wmm'`` is *not* less accurate than
+       the service) carries the model's physical uncertainty — of order ~0.5° in
+       declination at typical latitudes. For survey work needing better than the
+       standard geomagnetic-reference error, supply an in-field-referenced (IFR /
+       BGGM / high-resolution) value directly (which marks the field ``'user'``);
+       do not treat a WMM lookup as a measured reference. ``mag_model`` is there
+       so a consumer can see the value's origin.
     """
 
     #: geomagnetic reference fields whose provenance is tracked
@@ -458,6 +487,7 @@ class SurveyHeader:
         self.vertical_section_azimuth = vertical_section_azimuth
 
         self.mag_defaults = mag_defaults
+        self.mag_model: Optional[str] = None
         self._get_mag_data(deg)
 
     def _get_mag_data(self, deg: bool) -> None:
@@ -506,6 +536,7 @@ class SurveyHeader:
                     date=self.survey_date
                 )
                 lookup_ok = True
+                self.mag_model = _mag_model_label(result, 'wmm')
             except GeomagLookupError:
                 # The default model (WMM) only covers a ~10-year window around
                 # the present; historic survey dates 400 on it. IGRF covers
@@ -520,6 +551,7 @@ class SurveyHeader:
                         model='igrf'
                     )
                     lookup_ok = True
+                    self.mag_model = _mag_model_label(result, 'igrf')
                 except GeomagLookupError as exc:
                     warnings.warn(
                         f"Magnetic-field lookup failed for survey_date "
