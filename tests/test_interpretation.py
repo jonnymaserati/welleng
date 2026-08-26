@@ -223,3 +223,64 @@ def test_msa_apply_sensor_errors_closes_the_loop():
     assert np.abs(Bcorr - Btrue).max() < 5.0   # recovers the true field (nT)
     # only_estimable path runs and preserves shape
     assert apply_sensor_errors(Bmeas, res, only_estimable=True).shape == Bmeas.shape
+
+
+# -- correction-uncertainty MC (the C_sag-style wrapper) ---------------------
+
+def test_correction_mc_zero_input_uncertainty_gives_zero_cov():
+    # deterministic limit: no input spread -> zero covariance (regression gate)
+    from welleng.interpretation import correction_covariance_mc
+    base = np.array([0.01, 0.02, 0.03])
+    res = correction_covariance_mc(lambda rng: (lambda: base), n_draws=50,
+                                   rng=np.random.default_rng(0))
+    assert np.allclose(res.covariance, 0.0)
+    assert np.allclose(res.mean, base)
+
+
+def test_correction_mc_matches_linear_analytical_oracle():
+    # correction = a * x with x ~ N(0, sig^2)  =>  cov = sig^2 * a a^T exactly
+    from welleng.interpretation import correction_covariance_mc
+    a = np.array([0.5, 1.0, 2.0])
+    sig = 0.03
+    rng = np.random.default_rng(1)
+
+    def draw(r):
+        x = r.normal(0.0, sig)
+        return lambda: a * x
+
+    res = correction_covariance_mc(draw, n_draws=60000, rng=rng)
+    np.testing.assert_allclose(res.covariance, sig**2 * np.outer(a, a),
+                               rtol=0.03, atol=1e-8)
+    # full cross-station correlation: one input realisation -> corr == 1
+    corr = res.covariance[0, 2] / (res.std[0] * res.std[2])
+    assert abs(corr - 1.0) < 1e-6
+
+
+def test_correction_mc_mixed_systematic_and_random_inputs():
+    # a per-run systematic + a per-station random must give corr strictly
+    # between 0 and 1 across stations, and the correct total variance
+    from welleng.interpretation import correction_covariance_mc
+    sig_s, sig_r = 0.02, 0.01
+    rng = np.random.default_rng(2)
+
+    def draw(r):
+        s = r.normal(0.0, sig_s)                    # systematic (per run)
+        e = r.normal(0.0, sig_r, size=4)            # random (per station)
+        return lambda: s + e
+
+    res = correction_covariance_mc(draw, n_draws=60000, rng=rng)
+    np.testing.assert_allclose(np.diag(res.covariance),
+                               (sig_s**2 + sig_r**2) * np.ones(4), rtol=0.04)
+    np.testing.assert_allclose(res.covariance[0, 1], sig_s**2, rtol=0.06)
+    # convergence handle present and sane
+    assert res.n_draws == 60000
+    assert np.all(res.se_std < res.std)
+
+
+def test_correction_mc_shape_errors():
+    from welleng.interpretation import correction_covariance_mc
+    with pytest.raises(ValueError, match="n_draws"):
+        correction_covariance_mc(lambda r: (lambda: np.zeros(3)), n_draws=1)
+    with pytest.raises(ValueError, match="1-D"):
+        correction_covariance_mc(lambda r: (lambda: np.zeros((2, 2))),
+                                 n_draws=5)

@@ -44,8 +44,14 @@ from .qc import (
     dual_depth_difference,
 )
 from .msa import MSAResult, estimate_sensor_errors, apply_sensor_errors
+from .correction_uncertainty import (
+    CorrectionUncertainty,
+    correction_covariance_mc,
+)
 
 __all__ = [
+    "CorrectionUncertainty",
+    "correction_covariance_mc",
     "sensor_to_survey",
     "gyro_to_survey",
     "earth_rate_components",
