@@ -10,6 +10,7 @@ Subpackages
    welleng.catalog
    welleng.errors
    welleng.exchange
+   welleng.interpretation
    welleng.kick_tolerance
 
 Submodules
