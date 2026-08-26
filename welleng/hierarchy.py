@@ -997,8 +997,12 @@ class WellNetwork:
                 "inc": list(np.asarray(s.inc_rad).tolist()), "deg": False,
                 "azi": list(np.asarray(getattr(s, f"azi_{azi_ref}_rad")).tolist()),
                 "azi_reference": azi_ref,
+                # ``mag_model`` is DERIVED provenance (re-computed by the header
+                # from the lookup), not a constructor arg -- exclude it like the
+                # non-scalar ``mag_source`` already is, else it round-trips as an
+                # unexpected SurveyHeader() kwarg.
                 "header": {k: v for k, v in vars(hdr).items()
-                           if not k.startswith("_")
+                           if not k.startswith("_") and k != "mag_model"
                            and isinstance(v, (str, int, float, bool,
                                               type(None)))} if hdr else None,
                 "start_nev": list(np.asarray(s.start_nev).tolist()),

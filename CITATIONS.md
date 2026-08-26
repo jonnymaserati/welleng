@@ -135,6 +135,19 @@ If your work relies on a specific method, please **also** cite the relevant pape
   Eq. 1, specialised to a horizontal plane; *Turning Point*, Eq. 31, to
   segment each arc into monotonic-TVD spans).
 
+### Geomagnetic reference field
+
+- **World Magnetic Model (WMM2025)** — Chulliat, A., et al. (2024). *The US/UK
+  World Magnetic Model for 2025-2030.* NOAA National Centers for Environmental
+  Information / British Geological Survey.
+  [doi:10.25923/prbc-s316](https://doi.org/10.25923/prbc-s316) — the bundled
+  offline geomagnetic model in `welleng.geomag.local_field` (spherical-harmonic
+  synthesis of the WMM2025 coefficients). The WMM is a joint US (NOAA/NGA) and UK
+  (DSTL/BGS) product and a US Government work in the public domain; the
+  coefficient file (`welleng/data/wmm2025.json`, from `WMM2025.COF`) is
+  redistributed under those terms. Online IGRF / historic / out-of-window lookups
+  use the BGS `GMModels` web service.
+
 ### Anti-collision / separation
 
 - **Separation rule** — Sawaryn, S. J., et al. (2019). *Well-Collision-Avoidance
