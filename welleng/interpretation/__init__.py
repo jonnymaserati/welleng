@@ -43,7 +43,7 @@ from .qc import (
     DualDepthResult,
     dual_depth_difference,
 )
-from .msa import MSAResult, estimate_sensor_errors
+from .msa import MSAResult, estimate_sensor_errors, apply_sensor_errors
 
 __all__ = [
     "sensor_to_survey",
@@ -57,4 +57,5 @@ __all__ = [
     "dual_depth_difference",
     "MSAResult",
     "estimate_sensor_errors",
+    "apply_sensor_errors",
 ]

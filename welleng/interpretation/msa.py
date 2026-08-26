@@ -42,7 +42,7 @@ import numpy as np
 
 from .qc import GeomagReference
 
-__all__ = ["MSAResult", "estimate_sensor_errors"]
+__all__ = ["MSAResult", "estimate_sensor_errors", "apply_sensor_errors"]
 
 _AXES = ("x", "y", "z")
 
@@ -169,3 +169,41 @@ def estimate_sensor_errors(
         n_stations=n,
         condition_number=float(np.linalg.cond(AtA)),
     )
+
+
+def apply_sensor_errors(triad, result, *, only_estimable=False):
+    """Correct triad readings for the MSA-estimated bias and scale errors.
+
+    Closes the MSA loop: :func:`estimate_sensor_errors` measures the sensor
+    errors, this removes them, ``B_true = (B_meas - b) / (1 + s)`` (the model of
+    the closed form above), so the corrected triad can be re-run through
+    :func:`~welleng.interpretation.forward.sensor_to_survey` for a corrected
+    survey. The correction is opt-in — MSA is often used to *flag* out-of-model
+    tool performance, not to auto-correct raw sensors.
+
+    Parameters
+    ----------
+    triad : array_like, shape (n, 3)
+        Per-station triad readings (same sensor/units as passed to
+        :func:`estimate_sensor_errors`).
+    result : MSAResult
+        The estimate to apply.
+    only_estimable : bool, default False
+        If True, apply a component's bias/scale only where
+        ``result.estimable`` is set (poorly-observed components — typically the
+        axial term — are left uncorrected rather than corrected by a meaningless
+        estimate). If False, apply all six.
+
+    Returns
+    -------
+    numpy.ndarray
+        (n, 3) corrected triad.
+    """
+    B = np.atleast_2d(np.asarray(triad, dtype=float))
+    bias = np.asarray(result.bias, dtype=float).copy()
+    scale = np.asarray(result.scale, dtype=float).copy()
+    if only_estimable:
+        est = np.asarray(result.estimable, dtype=bool)
+        bias[~est[:3]] = 0.0
+        scale[~est[3:]] = 0.0
+    return (B - bias) / (1.0 + scale)
