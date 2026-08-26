@@ -59,11 +59,11 @@ class CorrectionUncertainty:
         against the sigma you are quoting.
     """
 
-    mean: np.ndarray
-    covariance: np.ndarray
-    std: np.ndarray
-    n_draws: int
-    se_std: np.ndarray
+    mean: np.ndarray        # (n,) mean correction over the draws (rad or model units)
+    covariance: np.ndarray  # (n,n) correction covariance, cross-station correlated
+    std: np.ndarray         # (n,) per-station 1-sigma (sqrt of the diagonal)
+    n_draws: int            # Monte-Carlo draws used
+    se_std: np.ndarray      # (n,) MC standard error of std (convergence handle)
 
 
 def correction_covariance_mc(draw, n_draws=1000, rng=None):
