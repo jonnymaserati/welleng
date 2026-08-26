@@ -361,3 +361,81 @@ def test_combine_surveys_return_trajectory_roundtrip():
     assert np.allclose(rec.md, mds)                    # MD held exact
     assert np.allclose(rec_pos - rec_pos[0],
                        r.pos_fused - r.pos_fused[0], atol=0.05)
+
+
+def _dia_surveys(seed=5, n=120, xcl_representation="dia"):
+    h = we.survey.SurveyHeader(name="t", azi_reference="grid", latitude=58.0,
+                               b_total=50000.0, dip=72.0, declination=1.0,
+                               xcl_representation=xcl_representation)
+    md = np.linspace(0, 2000, n)
+    inc = np.clip((md - 300) / 1500 * 60, 1.0, 60.0)
+    azi = 30 + np.clip((md - 500) / 1500, 0, 1) * 40
+    rng = np.random.default_rng(seed)
+    A = we.survey.Survey(md=md, inc=inc + rng.normal(0, 0.15, n),
+                         azi=azi + rng.normal(0, 0.3, n),
+                         header=h, error_model="MWD+SRGM", deg=True)
+    B = we.survey.Survey(md=md, inc=inc + rng.normal(0, 0.15, n),
+                         azi=azi + rng.normal(0, 0.3, n),
+                         header=h, error_model="GYRO-NS-CT", deg=True)
+    return h, A, B, md[md >= 300]
+
+
+def test_cov_dia_xcl_representation_is_clean_dia_error():
+    # XCL is a real course-length ANGLE error (Codling SPE-187249). Under
+    # xcl_representation="dia" the error model folds it into the correct inc/azi
+    # component -> a physical DIA covariance (a few tenths of a degree). Under the
+    # default "nev_direct" the XCL e_DIA lands in the wrong column and inflates
+    # raw sig_inc to several degrees (must be excluded there).
+    _, A_dia, _, mds = _dia_surveys(xcl_representation="dia")
+    _, A_nd, _, _ = _dia_surveys(xcl_representation="nev_direct")
+    m = float(mds[len(mds) // 2])
+    sig_dia = np.degrees(A_dia.err.cov_dia_at(m)[1, 1] ** 0.5)          # XCL included
+    sig_nd_full = np.degrees(A_nd.err.cov_dia_at(m)[1, 1] ** 0.5)
+    sig_nd_trim = np.degrees(
+        A_nd.err.cov_dia_at(m, exclude=("XCLA", "XCLH"))[1, 1] ** 0.5)
+    assert sig_dia < 1.5                  # 'dia' recast: clean, modest angle error
+    assert sig_nd_full > 3 * sig_nd_trim  # 'nev_direct': XCL mislabelled, inflated
+
+
+def test_combine_surveys_dia_space_physical_and_agrees():
+    # DIA-space fusion returns the MIA path DIRECTLY: min-curve-valid by
+    # construction (0 chord>dmd, no reconstruction) and agreeing with the
+    # NEV-position BLUE within the EOU. xcl_representation="dia" -> XCL is INCLUDED
+    # (a clean course-length angle error), consistent with cov_nev_at.
+    h, A, B, mds = _dia_surveys(xcl_representation="dia")
+    dia = combine_surveys(A, B, mds, return_trajectory=True, space="dia")
+    nev = combine_surveys(A, B, mds, return_trajectory=True, space="nev")
+    assert dia.md is not None and dia.cov_dia is not None
+    assert np.allclose(dia.md, mds)                         # MD held exact
+    # the returned (md,inc,azi) IS the path -> rebuilding it reproduces pos_fused
+    rec = we.survey.Survey(md=dia.md, inc=dia.inc, azi=dia.azi, header=h, deg=True)
+    pos = np.c_[rec.n, rec.e, rec.tvd]
+    assert np.allclose(pos, dia.pos_fused, atol=1e-6)       # MIA is the output
+    # physical: every leg chord <= dmd (min-curve by construction)
+    dmd = np.diff(mds)
+    chord = np.linalg.norm(np.diff(pos, axis=0), axis=1)
+    assert (chord <= dmd + 1e-9).all()
+    # agrees with the NEV-position BLUE within the EOU (origin-independent)
+    eou = dia.sigma_fused.max()
+    d = np.linalg.norm((dia.pos_fused - dia.pos_fused[0])
+                       - (nev.pos_fused - nev.pos_fused[0]), axis=1)
+    assert d.max() < 0.10 * eou
+    # fused DIA angle uncertainty is physical (XCL folded in as a clean angle error)
+    assert np.degrees(dia.cov_dia[len(mds) // 2, 1, 1] ** 0.5) < 1.5
+
+
+def test_combine_surveys_dia_warns_without_dia_representation():
+    # nev_direct surveys: XCL has no clean measurement-space e_DIA, so DIA fusion
+    # must WARN and exclude it (still returns a physical survey).
+    h, A, B, mds = _dia_surveys(xcl_representation="nev_direct")
+    with pytest.warns(RuntimeWarning, match="xcl_representation='dia'"):
+        dia = combine_surveys(A, B, mds, return_trajectory=True, space="dia")
+    dmd = np.diff(mds)
+    chord = np.linalg.norm(np.diff(dia.pos_fused, axis=0), axis=1)
+    assert (chord <= dmd + 1e-9).all()
+
+
+def test_combine_surveys_space_invalid_raises():
+    _, A, B, mds = _dia_surveys()
+    with pytest.raises(ValueError, match="space must be"):
+        combine_surveys(A, B, mds, space="xyz")

@@ -102,6 +102,7 @@ class FusedSurvey:
     md: NDArray[np.float64] | None = None   # (k,) fused trajectory measured depth
     inc: NDArray[np.float64] | None = None  # (k,) fused trajectory inclination (deg)
     azi: NDArray[np.float64] | None = None  # (k,) fused trajectory azimuth (deg)
+    cov_dia: NDArray[np.float64] | None = None  # (n,3,3) fused DIA cov (space="dia")
 
 
 def _psd(cov: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -218,13 +219,68 @@ def fuse_covariances(
     )
 
 
+def _interp_at(survey, mds):
+    """Vectorised (inc_rad, azi_grid_rad, pos_nev) at ``mds`` -- one min-curve
+    interpolation over the whole survey, not a per-md ``interpolate_md`` loop
+    (~500x faster, bit-identical). ``mds`` must lie within the survey range."""
+    r = survey.interpolate_mds(np.asarray(mds, dtype=float))
+    idx = np.searchsorted(r.md, mds)
+    if not np.allclose(r.md[idx], mds):
+        # fall back to nearest (defensive: interpolate_mds inserts the exact mds)
+        idx = np.abs(r.md[:, None] - np.asarray(mds)[None, :]).argmin(axis=0)
+    pos = np.column_stack([r.n, r.e, r.tvd])[idx]
+    return r.inc_rad[idx], r.azi_grid_rad[idx], pos
+
+
 def _fuse_positions(survey_a, survey_b, mds, cross):
     """Fused NEV covariance + BLUE position at each md (helper)."""
     cov_a = np.stack([np.asarray(survey_a.err.cov_nev_at(float(m))) for m in mds])
     cov_b = np.stack([np.asarray(survey_b.err.cov_nev_at(float(m))) for m in mds])
-    pos_a = np.array([survey_a.interpolate_md(float(m)).pos_nev for m in mds])
-    pos_b = np.array([survey_b.interpolate_md(float(m)).pos_nev for m in mds])
+    pos_a = _interp_at(survey_a, mds)[2]
+    pos_b = _interp_at(survey_b, mds)[2]
     return fuse_covariances(cov_a, cov_b, cross=cross, pos_a=pos_a, pos_b=pos_b)
+
+
+# XCL course-length terms (XCLA/XCLH, Codling SPE-187249): a REAL angular
+# (course-length) uncertainty, NOT non-physical -- and there is a proper way to
+# express them as DIA errors. With ``SurveyHeader.xcl_representation == "dia"`` the
+# error model recasts XCL as an effective inc/azi angle error (``_xcl_dia``,
+# Codling Eq. 1 = 0.167*DL*course-length; reproduces the NEV-direct STATION
+# covariance to machine precision), so ``cov_DIA`` carries them in the correct
+# inc/azi component and they are INCLUDED in the fusion -- consistent with
+# ``cov_nev_at`` (which also includes XCL). Only under the default "nev_direct"
+# representation is the XCL ``e_DIA`` not a clean measurement error (it lands in
+# the wrong column, inflating raw sig_inc to several degrees); there it must be
+# excluded. See projects/specs/2026-08-26_dia_space_survey_fusion.md.
+_XCL_TERMS = ("XCLA", "XCLH")
+
+
+def _fuse_dia(survey_a, survey_b, mds, exclude):
+    """Fuse (inc, azi) per station in DIA space by BLUE on the angle covariance.
+
+    Returns (inc_f rad, azi_f grid rad, cov_dia (n,3,3) with the fused (inc,azi)
+    block; md variance 0 -- measured depth is shared, not fused).
+    """
+    iA, aA, _ = _interp_at(survey_a, mds)      # inc, azi (grid) rad -- vectorised
+    iB, aB, _ = _interp_at(survey_b, mds)
+    Ca = np.stack([np.asarray(survey_a.err.cov_dia_at(float(m), exclude=exclude))
+                   for m in mds])[:, 1:, 1:]          # (n,2,2) (inc,azi) block
+    Cb = np.stack([np.asarray(survey_b.err.cov_dia_at(float(m), exclude=exclude))
+                   for m in mds])[:, 1:, 1:]
+    xa = np.stack([iA, aA], axis=1)
+    xb = np.stack([iB, aB], axis=1)
+    # unwrap azimuth relative to A so the fusion is not corrupted by the 0/2pi seam
+    daz = (xb[:, 1] - xa[:, 1] + np.pi) % (2 * np.pi) - np.pi
+    xb = xb.copy()
+    xb[:, 1] = xa[:, 1] + daz
+    Cai = np.linalg.inv(Ca)
+    Cbi = np.linalg.inv(Cb)
+    Cf = np.linalg.inv(Cai + Cbi)                     # fused angle covariance
+    xf = (np.einsum("nij,njk,nk->ni", Cf, Cai, xa)
+          + np.einsum("nij,njk,nk->ni", Cf, Cbi, xb))
+    cov_dia = np.zeros((len(mds), 3, 3))
+    cov_dia[:, 1:, 1:] = Cf
+    return xf[:, 0], xf[:, 1] % (2 * np.pi), cov_dia
 
 
 def combine_surveys(
@@ -234,6 +290,8 @@ def combine_surveys(
     *,
     cross=None,
     return_trajectory=False,
+    space="nev",
+    exclude_dia=None,
 ) -> FusedSurvey:
     """BLUE-combine two overlapping surveys of the same well at arbitrary MDs.
 
@@ -268,6 +326,35 @@ def combine_surveys(
         against the raw BLUE points (typically cm, below the metre-scale
         position uncertainty). See the note on :attr:`FusedSurvey.md` -- this
         reconstruction is a concept pending field validation.
+    space : {"nev", "dia"}, default "nev"
+        The space the fusion is performed in.
+
+        - ``"nev"`` -- BLUE on the NEV position covariance (as above). Optimises
+          the position estimate; a trajectory (``return_trajectory``) is then
+          *reconstructed* from the fused positions, carrying a small residual.
+        - ``"dia"`` -- BLUE on the DIA (measured-depth, inclination, azimuth)
+          covariance: fuse the **angles** per station (MD is the shared index),
+          giving the fused (md, inc, azi) listing *directly*. The path is
+          minimum-curvature-valid by construction (no reconstruction, no
+          chord>MD residual), and agrees with the NEV fusion within the EOU.
+          ``.md/.inc/.azi`` and ``.pos_fused`` are the DIA-fused survey;
+          ``.cov_fused`` is the NEV position EOU (the reported ellipsoid);
+          ``.cov_dia`` is the fused angle covariance. This is the principled
+          space for producing a fused *survey* -- see
+          ``projects/specs/2026-08-26_dia_space_survey_fusion.md`` (concept
+          pending field validation). The rigorous ``C_nev = V C_dia V^T``
+          propagation and the correlated (single-station-lifts-all) form are
+          follow-on work.
+    exclude_dia : iterable of str, optional (``space="dia"`` only)
+        Error-source codes omitted from the DIA fusion weighting. Default
+        ``None`` = **auto**: the XCL course-length terms are INCLUDED when both
+        surveys use ``SurveyHeader.xcl_representation == "dia"`` (then they are a
+        clean angular error -- Codling SPE-187249, folded into the right inc/azi
+        component), and EXCLUDED with a warning otherwise (under the default
+        "nev_direct" representation the XCL ``e_DIA`` is not a clean measurement
+        error). Pass an explicit iterable to override -- e.g. ``()`` to force the
+        full budget, or a wider set to also drop MSA / sag-correction /
+        non-physical-misalignment terms once identified (an expert judgment).
 
     Returns
     -------
@@ -277,6 +364,40 @@ def combine_surveys(
     for name, s in (("survey_a", survey_a), ("survey_b", survey_b)):
         if getattr(s, "err", None) is None:
             raise ValueError(f"{name} has no error model applied (survey.err is None)")
+    if space not in ("nev", "dia"):
+        raise ValueError(f"space must be 'nev' or 'dia', got {space!r}")
+
+    if space == "dia":
+        from .survey import Survey
+        if exclude_dia is None:                    # auto XCL handling
+            both_dia = all(
+                getattr(s.header, "xcl_representation", "nev_direct") == "dia"
+                for s in (survey_a, survey_b)
+            )
+            if both_dia:
+                exclude_dia = ()                   # XCL is a clean DIA error -> include
+            else:
+                import warnings
+                warnings.warn(
+                    "DIA fusion: surveys not built with "
+                    "SurveyHeader(xcl_representation='dia'); the XCL course-length "
+                    "terms (XCLA/XCLH) have no clean measurement-space e_DIA under "
+                    "'nev_direct' and are EXCLUDED from the fusion. Rebuild the "
+                    "surveys with xcl_representation='dia' to include the "
+                    "course-length uncertainty properly.",
+                    RuntimeWarning,
+                )
+                exclude_dia = _XCL_TERMS
+        inc_f, azi_f, cov_dia = _fuse_dia(survey_a, survey_b, mds, exclude_dia)
+        base = _fuse_positions(survey_a, survey_b, mds, cross)   # NEV EOU + sigmas
+        if not return_trajectory:
+            return replace(base, cov_dia=cov_dia)
+        rec = Survey(md=mds, inc=np.degrees(inc_f), azi=np.degrees(azi_f),
+                     header=survey_a.header, deg=True)
+        pos = np.column_stack([rec.n, rec.e, rec.tvd])
+        return replace(base, md=mds, inc=np.degrees(inc_f), azi=np.degrees(azi_f),
+                       pos_fused=pos, cov_dia=cov_dia)
+
     if not return_trajectory:
         cov_a = np.stack([np.asarray(survey_a.err.cov_nev_at(float(m))) for m in mds])
         cov_b = np.stack([np.asarray(survey_b.err.cov_nev_at(float(m))) for m in mds])

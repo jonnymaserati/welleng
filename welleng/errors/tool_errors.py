@@ -398,22 +398,42 @@ class ToolError:
         self.cov_NEVs_global = np.zeros(shape)
         self.cov_NEVs_well = np.zeros(shape)
         self.cov_NEVs_within_pad = np.zeros(shape)
+        # DIA-space (survey-parameter) covariance: the per-station covariance of
+        # the (measured-depth, inclination, azimuth) error, in SI (m, rad, rad),
+        # BEFORE the geometric propagation to NEV. Each source already carries a
+        # per-station ``cov_DIA`` (= e_DIA e_DIA^T, e_DIA measurement-space); we
+        # sum them here exactly as for NEV. This is the natural space for
+        # combining two surveys of the same well (fuse the angles, then
+        # propagate), and the pre-propagation intermediate of C_nev = V C_dia V^T.
+        # See projects/specs/2026-08-26_dia_space_survey_fusion.md.
+        self.cov_DIAs = np.zeros(shape)
+        self.cov_DIAs_random = np.zeros(shape)
+        self.cov_DIAs_systematic = np.zeros(shape)
+        self.cov_DIAs_global = np.zeros(shape)
+        self.cov_DIAs_well = np.zeros(shape)
+        self.cov_DIAs_within_pad = np.zeros(shape)
         for _, value in self.errors.items():
             self.cov_NEVs += value.cov_NEV
+            self.cov_DIAs += value.cov_DIA
             if value.propagation == 'random':
                 self.cov_NEVs_random += value.cov_NEV
+                self.cov_DIAs_random += value.cov_DIA
             elif value.propagation == 'systematic':
                 self.cov_NEVs_systematic += value.cov_NEV
+                self.cov_DIAs_systematic += value.cov_DIA
             elif value.propagation == 'global':
                 self.cov_NEVs_global += value.cov_NEV
+                self.cov_DIAs_global += value.cov_DIA
             elif value.propagation == 'well':
                 # 'well' (COMPASS tie W): systematic throughout the WELL —
                 # one realisation across every run/tool in the wellbore.
                 # Without its own bucket these terms are in the total but
                 # invisible to bucket consumers (composition dropped them).
                 self.cov_NEVs_well += value.cov_NEV
+                self.cov_DIAs_well += value.cov_DIA
             elif value.propagation == 'within_pad':
                 self.cov_NEVs_within_pad += value.cov_NEV
+                self.cov_DIAs_within_pad += value.cov_DIA
 
         self.cov_HLAs = NEV_to_HLA(self.e.survey_rad, self.cov_NEVs)
 
