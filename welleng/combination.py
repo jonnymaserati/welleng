@@ -102,6 +102,7 @@ class FusedSurvey:
     md: NDArray[np.float64] | None = None   # (k,) fused trajectory measured depth
     inc: NDArray[np.float64] | None = None  # (k,) fused trajectory inclination (deg)
     azi: NDArray[np.float64] | None = None  # (k,) fused trajectory azimuth (deg)
+    cov_dia: NDArray[np.float64] | None = None  # (n,3,3) fused DIA cov (space="dia")
 
 
 def _psd(cov: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -227,6 +228,50 @@ def _fuse_positions(survey_a, survey_b, mds, cross):
     return fuse_covariances(cov_a, cov_b, cross=cross, pos_a=pos_a, pos_b=pos_b)
 
 
+# Local-curvature error terms: between-station curvature-representation uncertainty,
+# NOT the tool's angular measurement at the station. They inflate the raw DIA
+# inclination/azimuth covariance to several degrees, so they are non-physical for
+# angle fusion and excluded from the DIA-space weighting by default. See
+# projects/specs/2026-08-26_dia_space_survey_fusion.md and the FusedSurvey.cov_dia note.
+DEFAULT_DIA_EXCLUDE = ("XCLA", "XCLH")
+
+
+def _fuse_dia(survey_a, survey_b, mds, exclude):
+    """Fuse (inc, azi) per station in DIA space by BLUE on the angle covariance.
+
+    Returns (inc_f rad, azi_f grid rad, cov_dia (n,3,3) with the fused (inc,azi)
+    block; md variance 0 -- measured depth is shared, not fused).
+    """
+    from .utils import get_angles
+
+    def angles(S):
+        v = np.array([np.asarray(S.interpolate_md(float(m)).vec_nev, float)
+                      for m in mds])
+        a = np.array([get_angles(v[k][None], nev=True)[0] for k in range(len(v))])
+        return a[:, 0], a[:, 1]        # inc, azi (grid) rad
+
+    iA, aA = angles(survey_a)
+    iB, aB = angles(survey_b)
+    Ca = np.stack([np.asarray(survey_a.err.cov_dia_at(float(m), exclude=exclude))
+                   for m in mds])[:, 1:, 1:]          # (n,2,2) (inc,azi) block
+    Cb = np.stack([np.asarray(survey_b.err.cov_dia_at(float(m), exclude=exclude))
+                   for m in mds])[:, 1:, 1:]
+    xa = np.stack([iA, aA], axis=1)
+    xb = np.stack([iB, aB], axis=1)
+    # unwrap azimuth relative to A so the fusion is not corrupted by the 0/2pi seam
+    daz = (xb[:, 1] - xa[:, 1] + np.pi) % (2 * np.pi) - np.pi
+    xb = xb.copy()
+    xb[:, 1] = xa[:, 1] + daz
+    Cai = np.linalg.inv(Ca)
+    Cbi = np.linalg.inv(Cb)
+    Cf = np.linalg.inv(Cai + Cbi)                     # fused angle covariance
+    xf = (np.einsum("nij,njk,nk->ni", Cf, Cai, xa)
+          + np.einsum("nij,njk,nk->ni", Cf, Cbi, xb))
+    cov_dia = np.zeros((len(mds), 3, 3))
+    cov_dia[:, 1:, 1:] = Cf
+    return xf[:, 0], xf[:, 1] % (2 * np.pi), cov_dia
+
+
 def combine_surveys(
     survey_a,
     survey_b,
@@ -234,6 +279,8 @@ def combine_surveys(
     *,
     cross=None,
     return_trajectory=False,
+    space="nev",
+    exclude_dia=DEFAULT_DIA_EXCLUDE,
 ) -> FusedSurvey:
     """BLUE-combine two overlapping surveys of the same well at arbitrary MDs.
 
@@ -268,6 +315,32 @@ def combine_surveys(
         against the raw BLUE points (typically cm, below the metre-scale
         position uncertainty). See the note on :attr:`FusedSurvey.md` -- this
         reconstruction is a concept pending field validation.
+    space : {"nev", "dia"}, default "nev"
+        The space the fusion is performed in.
+
+        - ``"nev"`` -- BLUE on the NEV position covariance (as above). Optimises
+          the position estimate; a trajectory (``return_trajectory``) is then
+          *reconstructed* from the fused positions, carrying a small residual.
+        - ``"dia"`` -- BLUE on the DIA (measured-depth, inclination, azimuth)
+          covariance: fuse the **angles** per station (MD is the shared index),
+          giving the fused (md, inc, azi) listing *directly*. The path is
+          minimum-curvature-valid by construction (no reconstruction, no
+          chord>MD residual), and agrees with the NEV fusion within the EOU.
+          ``.md/.inc/.azi`` and ``.pos_fused`` are the DIA-fused survey;
+          ``.cov_fused`` is the NEV position EOU (the reported ellipsoid);
+          ``.cov_dia`` is the fused angle covariance. This is the principled
+          space for producing a fused *survey* -- see
+          ``projects/specs/2026-08-26_dia_space_survey_fusion.md`` (concept
+          pending field validation). The rigorous ``C_nev = V C_dia V^T``
+          propagation and the correlated (single-station-lifts-all) form are
+          follow-on work.
+    exclude_dia : iterable of str, default ("XCLA", "XCLH")
+        Error-source codes omitted from the DIA fusion weighting (``space="dia"``
+        only). Defaults to the local-curvature terms, which are non-physical for
+        angle fusion (they inflate raw sigma_inc to several degrees, not the
+        tool's angular measurement). Pass ``()`` to fuse on the full budget, or a
+        wider set to also drop MSA / sag-correction / non-physical-misalignment
+        terms once identified (an expert judgment -- see the spec).
 
     Returns
     -------
@@ -277,6 +350,21 @@ def combine_surveys(
     for name, s in (("survey_a", survey_a), ("survey_b", survey_b)):
         if getattr(s, "err", None) is None:
             raise ValueError(f"{name} has no error model applied (survey.err is None)")
+    if space not in ("nev", "dia"):
+        raise ValueError(f"space must be 'nev' or 'dia', got {space!r}")
+
+    if space == "dia":
+        from .survey import Survey
+        inc_f, azi_f, cov_dia = _fuse_dia(survey_a, survey_b, mds, exclude_dia)
+        base = _fuse_positions(survey_a, survey_b, mds, cross)   # NEV EOU + sigmas
+        if not return_trajectory:
+            return replace(base, cov_dia=cov_dia)
+        rec = Survey(md=mds, inc=np.degrees(inc_f), azi=np.degrees(azi_f),
+                     header=survey_a.header, deg=True)
+        pos = np.column_stack([rec.n, rec.e, rec.tvd])
+        return replace(base, md=mds, inc=np.degrees(inc_f), azi=np.degrees(azi_f),
+                       pos_fused=pos, cov_dia=cov_dia)
+
     if not return_trajectory:
         cov_a = np.stack([np.asarray(survey_a.err.cov_nev_at(float(m))) for m in mds])
         cov_b = np.stack([np.asarray(survey_b.err.cov_nev_at(float(m))) for m in mds])

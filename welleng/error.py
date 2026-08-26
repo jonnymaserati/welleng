@@ -823,6 +823,51 @@ class ErrorModel():
                 cov_NEV
             )
 
+    def cov_dia_at(self, md, exclude=None):
+        """DIA-space (survey-parameter) covariance at ``md``, SI (m, rad, rad).
+
+        The (3, 3) covariance of the (measured-depth, inclination, azimuth) error
+        -- the pre-propagation intermediate of ``C_nev = V C_dia V^T`` and the
+        natural space for combining two surveys of the same well. Unlike
+        :meth:`cov_nev_at`, this is a **linear interpolation** of the per-station
+        ``cov_DIA`` between the bounding stations: measurement-space uncertainty
+        is smooth in measured depth, so the arc-faithful partial-leg propagation
+        that NEV needs (to avoid the ~25% dogleg under-report) does not apply here.
+
+        Parameters
+        ----------
+        md : float
+            Measured depth, within the survey range.
+        exclude : iterable of str, optional
+            Error-source codes to omit from the sum. Use it to drop terms that
+            are non-physical for angle fusion -- notably the local-curvature
+            terms ``XCLA`` / ``XCLH``, which represent between-station curvature
+            representation uncertainty (they inflate raw sigma_inc to several
+            degrees), not the tool's angular measurement at the station. See
+            ``projects/specs/2026-08-26_dia_space_survey_fusion.md``.
+
+        Returns
+        -------
+        numpy.ndarray
+            (3, 3) DIA covariance, SI (m, rad, rad).
+        """
+        te = self.errors                       # ToolError
+        if exclude:
+            exclude = set(exclude)
+            terms = [np.asarray(v.cov_DIA) for k, v in te.errors.items()
+                     if k not in exclude]
+            cov = (np.sum(terms, axis=0) if terms
+                   else np.zeros((len(self.survey_rad), 3, 3)))
+        else:
+            cov = te.cov_DIAs
+        smd = self.survey_rad[:, 0]
+        n = len(smd)
+        i = int(np.searchsorted(smd, md) - 1)
+        i = max(0, min(i, n - 2))
+        seg = smd[i + 1] - smd[i]
+        f = 0.0 if seg == 0.0 else float((md - smd[i]) / seg)
+        return (1.0 - f) * cov[i] + f * cov[i + 1]
+
     def drk_dDepth(self, survey):
         """Derivative of position with respect to measured depth at each station.
 

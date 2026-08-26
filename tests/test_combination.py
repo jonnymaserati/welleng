@@ -361,3 +361,65 @@ def test_combine_surveys_return_trajectory_roundtrip():
     assert np.allclose(rec.md, mds)                    # MD held exact
     assert np.allclose(rec_pos - rec_pos[0],
                        r.pos_fused - r.pos_fused[0], atol=0.05)
+
+
+def _dia_surveys(seed=5, n=120):
+    h = we.survey.SurveyHeader(name="t", azi_reference="grid", latitude=58.0,
+                               b_total=50000.0, dip=72.0, declination=1.0)
+    md = np.linspace(0, 2000, n)
+    inc = np.clip((md - 300) / 1500 * 60, 1.0, 60.0)
+    azi = 30 + np.clip((md - 500) / 1500, 0, 1) * 40
+    rng = np.random.default_rng(seed)
+    A = we.survey.Survey(md=md, inc=inc + rng.normal(0, 0.15, n),
+                         azi=azi + rng.normal(0, 0.3, n),
+                         header=h, error_model="MWD+SRGM", deg=True)
+    B = we.survey.Survey(md=md, inc=inc + rng.normal(0, 0.15, n),
+                         azi=azi + rng.normal(0, 0.3, n),
+                         header=h, error_model="GYRO-NS-CT", deg=True)
+    return h, A, B, md[md >= 300]
+
+
+def test_cov_dia_at_exposed_and_local_curvature_dominates():
+    # C_dia is the DIA-space (angle) covariance; the local-curvature terms
+    # XCLA/XCLH inflate raw sig_inc to several degrees (non-physical for angle
+    # fusion). Excluding them recovers the physical measurement uncertainty.
+    _, A, _, mds = _dia_surveys()
+    m = float(mds[len(mds) // 2])
+    full = A.err.cov_dia_at(m)
+    trim = A.err.cov_dia_at(m, exclude=("XCLA", "XCLH"))
+    sig_inc_full = np.degrees(full[1, 1] ** 0.5)
+    sig_inc_trim = np.degrees(trim[1, 1] ** 0.5)
+    assert sig_inc_full > 3 * sig_inc_trim    # local-curvature dominates the raw budget
+    assert sig_inc_trim < 1.0                 # physical measurement uncertainty
+
+
+def test_combine_surveys_dia_space_physical_and_agrees():
+    # DIA-space fusion returns the MIA path DIRECTLY: min-curve-valid by
+    # construction (0 chord>dmd, no reconstruction) and agreeing with the
+    # NEV-position BLUE within the EOU.
+    h, A, B, mds = _dia_surveys()
+    dia = combine_surveys(A, B, mds, return_trajectory=True, space="dia")
+    nev = combine_surveys(A, B, mds, return_trajectory=True, space="nev")
+    assert dia.md is not None and dia.cov_dia is not None
+    assert np.allclose(dia.md, mds)                         # MD held exact
+    # the returned (md,inc,azi) IS the path -> rebuilding it reproduces pos_fused
+    rec = we.survey.Survey(md=dia.md, inc=dia.inc, azi=dia.azi, header=h, deg=True)
+    pos = np.c_[rec.n, rec.e, rec.tvd]
+    assert np.allclose(pos, dia.pos_fused, atol=1e-6)       # MIA is the output
+    # physical: every leg chord <= dmd (min-curve by construction)
+    dmd = np.diff(mds)
+    chord = np.linalg.norm(np.diff(pos, axis=0), axis=1)
+    assert (chord <= dmd + 1e-9).all()
+    # agrees with the NEV-position BLUE within the EOU (origin-independent)
+    eou = dia.sigma_fused.max()
+    d = np.linalg.norm((dia.pos_fused - dia.pos_fused[0])
+                       - (nev.pos_fused - nev.pos_fused[0]), axis=1)
+    assert d.max() < 0.10 * eou
+    # fused DIA angle uncertainty is physical (local-curvature excluded)
+    assert np.degrees(dia.cov_dia[len(mds) // 2, 1, 1] ** 0.5) < 1.0
+
+
+def test_combine_surveys_space_invalid_raises():
+    _, A, B, mds = _dia_surveys()
+    with pytest.raises(ValueError, match="space must be"):
+        combine_surveys(A, B, mds, space="xyz")
