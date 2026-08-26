@@ -572,3 +572,21 @@ def test_compass_gyro_parity_raises_sigma_v(ipm):
         return np.sqrt(s.cov_nev[-1, 2, 2])
 
     assert sigV(True) > sigV(False)   # parity adds vertical depth-scale
+
+
+def test_ipm_lenient_skips_malformed_weighting_function():
+    # a hand-edited COMPASS IPM can carry a typo'd weighting function; strict
+    # raises, strict=False warns and skips that term (keeping the good ones).
+    from welleng.errors.edm_ipm import EDMIPMError
+    tool = IPMTool(tool_id="x", name="x", terms=[
+        IPMTerm(name="good", sequence_no=1, vector_type="a", tie_type="s",
+                value=1.0, units="d", formula="cos(inc)"),
+        IPMTerm(name="typo", sequence_no=2, vector_type="a", tie_type="s",
+                value=1.0, units="d", formula="sin(inc"),      # unclosed paren
+    ])
+    with pytest.raises(EDMIPMError, match="unparseable"):
+        ipm_to_error_model(tool)                                # strict default
+    with pytest.warns(RuntimeWarning, match="skipped"):
+        model = ipm_to_error_model(tool, strict=False)
+    names = [t["name"] for t in model["terms"]]
+    assert "good" in names and "typo" not in names
