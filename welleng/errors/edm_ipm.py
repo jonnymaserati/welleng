@@ -45,11 +45,32 @@ referencing formulas before evaluation.
 
 from __future__ import annotations
 
+import ast
 import re
+import warnings
 from dataclasses import dataclass, field, replace
 from typing import Dict, List
 
 from ..exchange.edm_stream import ToolKind, classify_tool
+from .interpreter import _rewrite_excel_to_python, _validate
+
+_FORMULA_KEYS = ("depth_formula", "inclination_formula", "azimuth_formula")
+
+
+def _first_unparseable_formula(entry):
+    """Return ``(formula_key, error)`` for the first term formula that does not
+    parse (syntax typo / unknown function), else None. Uses the same rewrite +
+    AST whitelist the evaluator does, so it catches at import what would
+    otherwise raise mid-covariance."""
+    for key in _FORMULA_KEYS:
+        f = entry.get(key)
+        if not f or f == "0":
+            continue
+        try:
+            _validate(ast.parse(_rewrite_excel_to_python(str(f)), mode="eval"))
+        except (SyntaxError, ValueError) as e:
+            return key, str(e)
+    return None
 
 # a formula identifier token (a survey variable, math function, or an EDM
 # intermediate name); used by ``normalise_edm_model`` to inline intermediates
@@ -305,11 +326,20 @@ COMPASS_GYRO_TVDSF = 2.73e-4
 
 
 def ipm_to_error_model(tool: IPMTool, normalise: bool = False,
-                       compass_gyro_parity: bool = False) -> dict:
+                       compass_gyro_parity: bool = False,
+                       strict: bool = True) -> dict:
     """Convert one tool's IPM to the welleng (ISCWSA-JSON-shaped) model dict.
 
     The dict can be passed straight to ``Survey(..., error_model=model)`` /
     ``ErrorModel(survey, error_model=model)``.
+
+    ``strict=True`` (default) raises :class:`EDMIPMError` on a term whose
+    weighting-function formula does not parse (a syntax typo, an unknown
+    function). Real-world COMPASS IPM files that users have hand-edited can carry
+    such malformed weighting functions; ``strict=False`` instead **warns and
+    skips** the offending term, so one bad term does not abort the whole import.
+    (Structural problems -- an unsupported vector/tie type, a zero reference with
+    a non-zero component -- always raise: they are data errors, not typos.)
 
     With ``normalise=True`` the EDM intermediates are inlined into the term
     formulas (:func:`normalise_edm_model`) so the model is self-contained for a
@@ -449,6 +479,16 @@ def ipm_to_error_model(tool: IPMTool, normalise: bool = False,
             # the term contributes zero.
             entry["inc_min_deg"] = ref.min_inc
             entry["inc_max_deg"] = ref.max_inc
+        bad = _first_unparseable_formula(entry)
+        if bad is not None:
+            fname, err = bad
+            msg = (f"tool {tool.name!r} term {name!r}: unparseable "
+                   f"{fname} {entry[fname]!r} ({err})")
+            if strict:
+                raise EDMIPMError(msg)
+            warnings.warn(msg + " -- term skipped (strict=False)",
+                          RuntimeWarning, stacklevel=2)
+            continue
         terms.append(entry)
 
     model = {
