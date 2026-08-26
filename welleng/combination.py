@@ -228,12 +228,18 @@ def _fuse_positions(survey_a, survey_b, mds, cross):
     return fuse_covariances(cov_a, cov_b, cross=cross, pos_a=pos_a, pos_b=pos_b)
 
 
-# Local-curvature error terms: between-station curvature-representation uncertainty,
-# NOT the tool's angular measurement at the station. They inflate the raw DIA
-# inclination/azimuth covariance to several degrees, so they are non-physical for
-# angle fusion and excluded from the DIA-space weighting by default. See
-# projects/specs/2026-08-26_dia_space_survey_fusion.md and the FusedSurvey.cov_dia note.
-DEFAULT_DIA_EXCLUDE = ("XCLA", "XCLH")
+# XCL course-length terms (XCLA/XCLH, Codling SPE-187249): a REAL angular
+# (course-length) uncertainty, NOT non-physical -- and there is a proper way to
+# express them as DIA errors. With ``SurveyHeader.xcl_representation == "dia"`` the
+# error model recasts XCL as an effective inc/azi angle error (``_xcl_dia``,
+# Codling Eq. 1 = 0.167*DL*course-length; reproduces the NEV-direct STATION
+# covariance to machine precision), so ``cov_DIA`` carries them in the correct
+# inc/azi component and they are INCLUDED in the fusion -- consistent with
+# ``cov_nev_at`` (which also includes XCL). Only under the default "nev_direct"
+# representation is the XCL ``e_DIA`` not a clean measurement error (it lands in
+# the wrong column, inflating raw sig_inc to several degrees); there it must be
+# excluded. See projects/specs/2026-08-26_dia_space_survey_fusion.md.
+_XCL_TERMS = ("XCLA", "XCLH")
 
 
 def _fuse_dia(survey_a, survey_b, mds, exclude):
@@ -280,7 +286,7 @@ def combine_surveys(
     cross=None,
     return_trajectory=False,
     space="nev",
-    exclude_dia=DEFAULT_DIA_EXCLUDE,
+    exclude_dia=None,
 ) -> FusedSurvey:
     """BLUE-combine two overlapping surveys of the same well at arbitrary MDs.
 
@@ -334,13 +340,16 @@ def combine_surveys(
           pending field validation). The rigorous ``C_nev = V C_dia V^T``
           propagation and the correlated (single-station-lifts-all) form are
           follow-on work.
-    exclude_dia : iterable of str, default ("XCLA", "XCLH")
-        Error-source codes omitted from the DIA fusion weighting (``space="dia"``
-        only). Defaults to the local-curvature terms, which are non-physical for
-        angle fusion (they inflate raw sigma_inc to several degrees, not the
-        tool's angular measurement). Pass ``()`` to fuse on the full budget, or a
-        wider set to also drop MSA / sag-correction / non-physical-misalignment
-        terms once identified (an expert judgment -- see the spec).
+    exclude_dia : iterable of str, optional (``space="dia"`` only)
+        Error-source codes omitted from the DIA fusion weighting. Default
+        ``None`` = **auto**: the XCL course-length terms are INCLUDED when both
+        surveys use ``SurveyHeader.xcl_representation == "dia"`` (then they are a
+        clean angular error -- Codling SPE-187249, folded into the right inc/azi
+        component), and EXCLUDED with a warning otherwise (under the default
+        "nev_direct" representation the XCL ``e_DIA`` is not a clean measurement
+        error). Pass an explicit iterable to override -- e.g. ``()`` to force the
+        full budget, or a wider set to also drop MSA / sag-correction /
+        non-physical-misalignment terms once identified (an expert judgment).
 
     Returns
     -------
@@ -355,6 +364,25 @@ def combine_surveys(
 
     if space == "dia":
         from .survey import Survey
+        if exclude_dia is None:                    # auto XCL handling
+            both_dia = all(
+                getattr(s.header, "xcl_representation", "nev_direct") == "dia"
+                for s in (survey_a, survey_b)
+            )
+            if both_dia:
+                exclude_dia = ()                   # XCL is a clean DIA error -> include
+            else:
+                import warnings
+                warnings.warn(
+                    "DIA fusion: surveys not built with "
+                    "SurveyHeader(xcl_representation='dia'); the XCL course-length "
+                    "terms (XCLA/XCLH) have no clean measurement-space e_DIA under "
+                    "'nev_direct' and are EXCLUDED from the fusion. Rebuild the "
+                    "surveys with xcl_representation='dia' to include the "
+                    "course-length uncertainty properly.",
+                    RuntimeWarning,
+                )
+                exclude_dia = _XCL_TERMS
         inc_f, azi_f, cov_dia = _fuse_dia(survey_a, survey_b, mds, exclude_dia)
         base = _fuse_positions(survey_a, survey_b, mds, cross)   # NEV EOU + sigmas
         if not return_trajectory:
