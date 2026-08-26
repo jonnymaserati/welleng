@@ -204,3 +204,22 @@ def test_msa_correlation_matrix_shape_and_diag():
                                  sensor="mag", noise=50.0)
     assert res.correlation.shape == (6, 6)
     assert np.allclose(np.diag(res.correlation), 1.0, atol=1e-9)
+
+
+def test_msa_apply_sensor_errors_closes_the_loop():
+    # estimate -> apply -> the corrected triad's total field matches the
+    # reference (the MSA objective) and recovers the true field.
+    from welleng.interpretation import apply_sensor_errors
+    Btrue = _geometry_rich()
+    b_inj = np.array([180.0, -120.0, 250.0])
+    s_inj = np.array([0.002, -0.0015, 0.003])
+    Bmeas = (1 + s_inj) * Btrue + b_inj
+    ref = GeomagReference(b_total=B_REF, dip=np.degrees(DIP), g_total=G_REF)
+    res = estimate_sensor_errors(Bmeas, ref, sensor="mag")
+    Bcorr = apply_sensor_errors(Bmeas, res)
+    raw_err = np.abs(np.linalg.norm(Bmeas, axis=1) - B_REF).max()
+    corr_err = np.abs(np.linalg.norm(Bcorr, axis=1) - B_REF).max()
+    assert corr_err < 0.05 * raw_err           # loop closed toward the reference
+    assert np.abs(Bcorr - Btrue).max() < 5.0   # recovers the true field (nT)
+    # only_estimable path runs and preserves shape
+    assert apply_sensor_errors(Bmeas, res, only_estimable=True).shape == Bmeas.shape
