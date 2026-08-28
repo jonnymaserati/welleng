@@ -61,3 +61,26 @@ def test_schema_documents_the_oracle(edm):
     f = edm.schema["CD_ASSEMBLY_COMP"]["fields"]
     assert f["axial_rating"] == "stored pipe-body yield (klbf)"
     assert "not a result" in f["critical_percent_collapse"]
+
+
+def test_component_surfaces_rich_geometry_connection_material_fields(edm):
+    # the BHA/T&D-relevant fields that used to live only in .raw are now named
+    dp = edm.assemblies("WB1")[1].components[0]
+    assert dp.description == "Drill Pipe 5.5 in S-135"
+    assert dp.length == 9.5
+    assert dp.approximate_weight == 24.98          # surfaced RAW (unverified nominal)
+    assert dp.od_connection == 7.0 and dp.id_connection == 3.75
+    assert dp.length_tool_joint == 0.42
+    assert dp.connection_name == "5 1/2 FH"
+    assert dp.material == "steel" and dp.material_id == "STL01"
+    assert dp.density == 7850.0
+    assert dp.youngs_modulus == 30000000.0 and dp.poissons_ratio == 0.3
+    assert dp.makeup_torque == 56261.0
+
+
+def test_component_rich_fields_default_none_when_absent(edm):
+    # the casing comp (A1) has none of the new attrs -> clean defaults, no crash
+    cas = edm.assemblies("WB1")[0].components[0]
+    assert cas.description == "" and cas.connection_name == ""
+    assert cas.approximate_weight is None and cas.length_tool_joint is None
+    assert cas.youngs_modulus is None

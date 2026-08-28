@@ -74,6 +74,6 @@
   <!-- casing component: rated (axial/burst/collapse present) -->
   <CD_ASSEMBLY_COMP well_id="W1" wellbore_id="WB1" assembly_id="A1" assembly_comp_id="C1" sect_type_code="CAS" grade="P-110" od_body="9.625" id_body="8.535" min_yield_stress="110000" axial_rating="1710.06" pipe_pressure_burst="10900" pressure_collapse="7950" critical_percent_collapse="100.0" sequence_no="2"/>
   <!-- drill pipe component: unrated (no ratings) -->
-  <CD_ASSEMBLY_COMP well_id="W1" wellbore_id="WB1" assembly_id="A2" assembly_comp_id="C2" sect_type_code="DP" grade="S-135" od_body="5.5" id_body="4.778" min_yield_stress="135000" makeup_torque="56261" sequence_no="1"/>
+  <CD_ASSEMBLY_COMP well_id="W1" wellbore_id="WB1" assembly_id="A2" assembly_comp_id="C2" sect_type_code="DP" grade="S-135" od_body="5.5" id_body="4.778" min_yield_stress="135000" makeup_torque="56261" sequence_no="1" catalog_key_desc="Drill Pipe 5.5 in S-135" length="9.5" approximate_weight="24.98" od_connection="7.0" id_connection="3.75" length_tool_joint="0.42" connection_name="5 1/2 FH" material="steel" material_id="STL01" density="7850" youngs_modulus="30000000" poissons_ratio="0.3"/>
 </TOPLEVEL>
 </export>
