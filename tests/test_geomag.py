@@ -1,6 +1,7 @@
 """Offline WMM validation against NOAA's official WMM2025 test values."""
 import os
 
+import numpy as np
 import pytest
 
 from welleng.geomag import (
@@ -138,3 +139,67 @@ def test_bundled_wmm_not_expired():
             f"bundled WMM expires {vt:.0f} (<6 months); schedule the refresh",
             RuntimeWarning, stacklevel=2,
         )
+
+
+# -- per-station field along a survey (the opt-in refinement) -----------------
+
+def _erd_survey(lat=71.0, lon=25.0, reach_n=5000.0, reach_e=3000.0, tvd=3500.0):
+    import welleng as we
+    n = 200
+    md = np.linspace(0, np.hypot(reach_n, reach_e) + tvd, n)
+    inc = np.clip(np.linspace(0, 88, n), 0, 90)
+    azi = np.full(n, np.degrees(np.arctan2(reach_e, reach_n)))
+    sh = we.survey.SurveyHeader(
+        name="erd", azi_reference="grid", latitude=lat, longitude=lon,
+        b_total=54000.0, dip=79.0, declination=15.0, survey_date="2027-06-01")
+    return we.survey.Survey(md=md, inc=inc, azi=azi, header=sh, deg=True)
+
+
+def test_field_along_survey_station0_is_wellhead_reference():
+    from welleng.geomag import field_along_survey, local_field
+    s = _erd_survey()
+    sf = field_along_survey(s)
+    ref = local_field(71.0, 25.0, 0.0, "2027-06-01")["field-value"]
+    assert abs(sf.declination[0] - ref["declination"]["value"]) < 1e-9
+    assert abs(sf.d_declination[0]) < 1e-9          # delta is zero at station 0
+    assert abs(sf.d_b_total[0]) < 1e-6
+    assert sf.declination.shape == s.md.shape
+
+
+def test_field_along_survey_lateral_gradient_is_real_and_bounded():
+    # high-lat ERD: declination varies across the stepout (~0.05-0.1 deg span)
+    from welleng.geomag import field_along_survey
+    sf = field_along_survey(_erd_survey())
+    span = sf.d_declination.max() - sf.d_declination.min()
+    assert span > 0.01                              # a real, non-trivial shift
+    assert span < 1.0                               # but not absurd
+
+
+def test_field_along_survey_descend_adds_vertical():
+    from welleng.geomag import field_along_survey
+    s = _erd_survey()
+    lateral = field_along_survey(s, descend=False).d_declination.max()
+    descended = field_along_survey(s, descend=True).d_declination.max()
+    # the TVD downward-continuation adds a little more on top of the lateral
+    assert descended > lateral
+    # but both are small (the vertical effect is minor)
+    assert descended - lateral < 0.1
+
+
+def test_field_along_survey_requires_wellhead_location():
+    import welleng as we
+    from welleng.geomag import field_along_survey, GeomagLookupError
+    sh = we.survey.SurveyHeader(name="t", azi_reference="grid",
+                                b_total=51000.0, dip=72.0, declination=1.0)
+    s = we.survey.Survey(md=np.array([0., 1000.]), inc=np.array([0., 30.]),
+                         azi=np.array([0., 45.]), header=sh, deg=True)
+    with pytest.raises(GeomagLookupError, match="latitude/longitude"):
+        field_along_survey(s)
+
+
+def test_field_along_survey_typical_well_negligible():
+    # a short, mid-latitude well: per-station refinement is below noise
+    from welleng.geomag import field_along_survey
+    s = _erd_survey(lat=58.44, lon=1.89, reach_n=600.0, reach_e=300.0, tvd=2500.0)
+    sf = field_along_survey(s)
+    assert abs(sf.d_declination).max() < 0.01       # < 0.01 deg -> not worth it here

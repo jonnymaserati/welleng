@@ -27,6 +27,7 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 from functools import lru_cache
 from importlib.resources import files
 
@@ -72,6 +73,23 @@ def wmm_validity():
     return vf, vt
 
 
+@lru_cache(maxsize=4)
+def _schmidt_norm(N):
+    """Gauss-normalised -> Schmidt semi-normalised factors S[n,m].
+
+    Depends only on the degree N (not on position), so it is model-invariant --
+    cached rather than rebuilt on every field evaluation.
+    """
+    S = np.zeros((N + 1, N + 1))
+    S[0, 0] = 1.0
+    for n in range(1, N + 1):
+        S[n, 0] = S[n - 1, 0] * (2 * n - 1) / n
+        for m in range(1, n + 1):
+            fac = (2.0 if m == 1 else 1.0) * (n - m + 1) / (n + m)
+            S[n, m] = S[n, m - 1] * np.sqrt(fac)
+    return S
+
+
 def _schmidt_legendre(theta, N):
     """Schmidt semi-normalised ``P[n,m](cos theta)`` and ``dP/dtheta``."""
     ct, st = np.cos(theta), np.sin(theta)
@@ -90,14 +108,7 @@ def _schmidt_legendre(theta, N):
                        / ((2 * n - 1) * (2 * n - 3))) if n > 1 else 0.0
                 P[n, m] = ct * P[n - 1, m] - Knm * Pn2
                 dP[n, m] = ct * dP[n - 1, m] - st * P[n - 1, m] - Knm * dPn2
-    # Gauss-normalised -> Schmidt semi-normalised
-    S = np.zeros((N + 1, N + 1))
-    S[0, 0] = 1.0
-    for n in range(1, N + 1):
-        S[n, 0] = S[n - 1, 0] * (2 * n - 1) / n
-        for m in range(1, n + 1):
-            fac = (2.0 if m == 1 else 1.0) * (n - m + 1) / (n + m)
-            S[n, m] = S[n, m - 1] * np.sqrt(fac)
+    S = _schmidt_norm(N)
     return P * S, dP * S
 
 
@@ -318,4 +329,136 @@ def lookup_field(
                 pass                                    # fall through to BGS
     return _bgs_field(
         latitude, longitude, altitude, date, model, revision, timeout
+    )
+
+
+_M_PER_DEG_LAT = 111320.0
+
+
+@dataclass(frozen=True)
+class SurveyField:
+    """Per-station geomagnetic reference field along a survey (offline WMM).
+
+    Attributes
+    ----------
+    md : (n,) ndarray
+        Station measured depths (echoed from the survey).
+    b_total : (n,) ndarray
+        Total field per station, nT.
+    dip : (n,) ndarray
+        Magnetic dip (inclination) per station, deg, positive down.
+    declination : (n,) ndarray
+        Declination per station, deg, positive east.
+    d_b_total, d_dip, d_declination : (n,) ndarray
+        Difference of each quantity from the wellhead reference (station 0) --
+        the SIZE of the per-station refinement. ``d_declination`` is the one
+        that matters: it rotates azimuth, so its span over the well is the
+        potential lateral-position gain of using a per-station reference.
+    reference : dict
+        The single wellhead-reference field ``local_field`` returns, for
+        comparison / the conventional single-value path.
+    """
+
+    md: np.ndarray            # (n,) station measured depths, echoed
+    b_total: np.ndarray       # (n,) total field per station, nT
+    dip: np.ndarray           # (n,) magnetic dip per station, deg (down +)
+    declination: np.ndarray   # (n,) declination per station, deg (east +)
+    d_b_total: np.ndarray     # (n,) b_total minus the wellhead reference, nT
+    d_dip: np.ndarray         # (n,) dip minus the wellhead reference, deg
+    d_declination: np.ndarray  # (n,) declination minus wellhead ref, deg (the key one)
+    reference: dict           # the single wellhead-reference local_field payload
+
+
+def field_along_survey(survey, date=None, descend=False):
+    """Per-station geomagnetic reference field along a survey, computed OFFLINE.
+
+    An **opt-in refinement**: instead of one wellhead declination/dip/B for the
+    whole well, evaluate the bundled WMM at each station's own geographic
+    position. For an extended-reach well crossing a field gradient the
+    declination varies across the trajectory; using a single surface value puts
+    a small systematic azimuth error on the deep, stepped-out sections. The
+    effect is negligible for ordinary wells (< 0.01 deg declination) and reaches
+    ~0.1-0.2 deg (~10-20 m of lateral position over the reach) only for long
+    extended-reach wells at high latitude or near a magnetic anomaly.
+
+    By default this varies the horizontal position (latitude/longitude from the
+    wellhead plus the survey's north/east) and holds altitude at the wellhead
+    reference -- the LATERAL gradient, which is the real, physically-clean
+    effect. The vertical (downward-continuation to true vertical depth) is
+    deliberately NOT applied by default: it is both tiny (< 0.03 deg over 3 km)
+    and outside the WMM's certified altitude range (its floor is -1 km, and the
+    crustal field a well actually descends into is not in the model). Pass
+    ``descend=True`` to evaluate at ``-tvd`` anyway, understanding it is a minor
+    extrapolation.
+
+    Horizontal position uses a local flat-earth step from the wellhead
+    (``dlat = north / 111320``, ``dlon = east / (111320 cos lat)``); over a
+    well's extent that is well within the smoothness of the geomagnetic field.
+
+    Parameters
+    ----------
+    survey : welleng.survey.Survey
+        A survey whose header carries ``latitude``/``longitude`` (the wellhead)
+        and which exposes ``n``/``e``/``tvd`` station positions.
+    date : str or float, optional
+        ``yyyy-mm-dd`` or a decimal year. Defaults to the header's
+        ``survey_date`` if set, else the model epoch.
+    descend : bool, default False
+        If True, evaluate at each station's ``-tvd`` (downward continuation);
+        default holds altitude at the wellhead reference (lateral gradient only).
+
+    Returns
+    -------
+    SurveyField
+
+    Notes
+    -----
+    - This is the SCALAR reference applied per station (one ``local_field`` call
+      each) -- the open, auditable form. A vectorised/batched field kernel for
+      scale is welleng-api's (HARD RULE).
+    - It changes the reference field's MEAN, not the ISCWSA declination
+      UNCERTAINTY term (which still covers the spread). And it is a modelling
+      refinement of the TRUE field -- do not use it to silently re-correct a
+      survey whose azimuths already had a declination applied at acquisition;
+      its value is on the raw magnetic-to-true path.
+    """
+    hdr = survey.header
+    lat0 = getattr(hdr, "latitude", None)
+    lon0 = getattr(hdr, "longitude", None)
+    if lat0 is None or lon0 is None or getattr(hdr, "_location_defaulted", False):
+        raise GeomagLookupError(
+            "survey header has no real latitude/longitude (wellhead) to anchor "
+            "the per-station field -- a defaulted location is fictitious; set "
+            "the header's latitude/longitude"
+        )
+    if date is None:
+        date = getattr(hdr, "survey_date", None)
+    alt0 = float(getattr(hdr, "altitude", 0.0) or 0.0)
+
+    n = np.asarray(survey.n, dtype=float)
+    e = np.asarray(survey.e, dtype=float)
+    tvd = np.asarray(survey.tvd, dtype=float)
+    lats = lat0 + n / _M_PER_DEG_LAT
+    lons = lon0 + e / (_M_PER_DEG_LAT * np.cos(np.radians(lat0)))
+    alts = (alt0 - tvd) if descend else np.full(lats.shape, alt0)
+
+    B = np.empty(lats.shape)
+    D = np.empty(lats.shape)
+    Dec = np.empty(lats.shape)
+    for i in range(lats.shape[0]):
+        fv = local_field(float(lats[i]), float(lons[i]),
+                         float(alts[i]), date)["field-value"]
+        B[i] = fv["total-intensity"]["value"]
+        D[i] = fv["inclination"]["value"]
+        Dec[i] = fv["declination"]["value"]
+
+    reference = local_field(lat0, lon0, alt0, date)
+    rfv = reference["field-value"]
+    return SurveyField(
+        md=np.asarray(survey.md, dtype=float),
+        b_total=B, dip=D, declination=Dec,
+        d_b_total=B - rfv["total-intensity"]["value"],
+        d_dip=D - rfv["inclination"]["value"],
+        d_declination=Dec - rfv["declination"]["value"],
+        reference=reference,
     )
