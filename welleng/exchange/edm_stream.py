@@ -306,7 +306,9 @@ EDM_SCHEMA = {
             "sect_type_code": "DP | CAS | ... (section type)",
             "grade": "pipe grade",
             "od_body": "body OD (in)",
-            "id_body": "body ID (in)",
+            "id_body": ("body ID (in) -- ⚠ can be a 3.000in collar-bore PLACEHOLDER "
+                        "(detectable only by the same ID across DISTINCT ODs); "
+                        "wrong on small pipe, overstates steel/weight"),
             "min_yield_stress": "min yield stress",
             "axial_rating": "stored pipe-body yield (klbf)",
             "pipe_pressure_burst": "stored burst rating (psi)",
