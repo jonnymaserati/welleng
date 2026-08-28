@@ -53,7 +53,6 @@ dependencies = [
     "pint",
     "pyproj",
     "PyYAML",
-    "setuptools",
 ]
 
 [project.optional-dependencies]
