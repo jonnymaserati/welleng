@@ -305,14 +305,25 @@ EDM_SCHEMA = {
         "fields": {
             "sect_type_code": "DP | CAS | ... (section type)",
             "grade": "pipe grade",
-            "od_body": "body OD",
-            "id_body": "body ID",
+            "od_body": "body OD (in)",
+            "id_body": "body ID (in)",
             "min_yield_stress": "min yield stress",
             "axial_rating": "stored pipe-body yield (klbf)",
             "pipe_pressure_burst": "stored burst rating (psi)",
             "pressure_collapse": "stored collapse rating (psi)",
             "critical_percent_collapse": "collapse derating INPUT (not a result)",
             "makeup_torque": "connection make-up torque",
+            "catalog_key_desc": "description -> AssemblyComponent.description",
+            "length": "component length (ft)",
+            "approximate_weight": ("stated nominal unit weight lb/ft -- ⚠ UNVERIFIED; "
+                                   "a tool-joint uplift convention can overstate it, "
+                                   "cross-check against OD/ID geometry"),
+            "od_connection": "connection OD (in)",
+            "id_connection": "connection ID (in)",
+            "length_tool_joint": "tool-joint length (ft)",
+            "connection_name": "connection / thread name",
+            "material / material_id / density / youngs_modulus / poissons_ratio":
+                "material properties (for T&D / stress / sag consumers)",
         },
     },
 }
@@ -803,6 +814,14 @@ class AssemblyComponent:
     returned **verbatim as an oracle** -- welleng recomputes them, it does not
     treat them as truth. Note ``critical_percent_*`` are derating **inputs**
     (all 100.0 in Volve), not utilisation results. Full row in :attr:`raw`.
+
+    Geometry / connection / material fields are surfaced verbatim in Landmark's
+    stored units (OD/ID inches, lengths feet, ``approximate_weight`` lb/ft,
+    moduli psi) -- the reader returns raw table data; the consumer converts and
+    interprets. ⚠ ``approximate_weight`` is a stated nominal that does NOT always
+    survive a geometry/measurement check (a tool-joint uplift convention can put
+    it well above the plain-pipe weight); treat it as unverified, cross-check
+    against the OD/ID geometry before trusting it.
     """
 
     assembly_id: str
@@ -815,6 +834,21 @@ class AssemblyComponent:
     pipe_pressure_burst: Optional[float]
     pressure_collapse: Optional[float]
     sequence_no: Optional[int]
+    # geometry / connection / mass (Landmark stored units; raw, see the ⚠ above)
+    description: str = ""                        # catalog_key_desc
+    length: Optional[float] = None              # component length, ft
+    approximate_weight: Optional[float] = None  # nominal unit weight lb/ft (UNVERIFIED)
+    od_connection: Optional[float] = None       # connection OD, in
+    id_connection: Optional[float] = None       # connection ID, in
+    length_tool_joint: Optional[float] = None   # tool-joint length, ft
+    connection_name: str = ""                   # connection / thread name
+    # material properties (for T&D / stress / sag consumers)
+    material: str = ""                          # material name
+    material_id: str = ""                       # material key
+    density: Optional[float] = None             # material density (Landmark units)
+    youngs_modulus: Optional[float] = None      # psi
+    poissons_ratio: Optional[float] = None
+    makeup_torque: Optional[float] = None       # connection make-up torque
     raw: Dict[str, str] = field(default_factory=dict, repr=False)
 
 
@@ -1273,6 +1307,19 @@ class EDMReader:
                         pipe_pressure_burst=_f(a, "pipe_pressure_burst"),
                         pressure_collapse=_f(a, "pressure_collapse"),
                         sequence_no=_i(a, "sequence_no"),
+                        description=a.get("catalog_key_desc", ""),
+                        length=_f(a, "length"),
+                        approximate_weight=_f(a, "approximate_weight"),
+                        od_connection=_f(a, "od_connection"),
+                        id_connection=_f(a, "id_connection"),
+                        length_tool_joint=_f(a, "length_tool_joint"),
+                        connection_name=a.get("connection_name", ""),
+                        material=a.get("material", ""),
+                        material_id=a.get("material_id", ""),
+                        density=_f(a, "density"),
+                        youngs_modulus=_f(a, "youngs_modulus"),
+                        poissons_ratio=_f(a, "poissons_ratio"),
+                        makeup_torque=_f(a, "makeup_torque"),
                         raw=a,
                     ))
             elif tag == "TU_LOAD_PROFILE":
