@@ -46,13 +46,18 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "numpy",
-    "scipy",
-    "openpyxl",
-    "pandas",
-    "pint",
-    "pyproj",
-    "PyYAML",
+    # numpy majors reliably break the scientific-Python ecosystem, so it is
+    # major-CAPPED (tested on 2.x); the rest carry lower bounds only (a floor
+    # for reproducibility without blocking forward moves). Raise the numpy cap
+    # only after re-running the suite against the new major. CoolProp (the
+    # [kick] extra) is bounded+gated the same way for the same reason.
+    "numpy>=1.24,<3",
+    "scipy>=1.10",
+    "openpyxl>=3.1",
+    "pandas>=2.0",
+    "pint>=0.20",
+    "pyproj>=3.4",
+    "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
