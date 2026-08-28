@@ -13,7 +13,7 @@ header-includes: |
   \emergencystretch=3em
 ---
 
-**Version 1.1 — 2026-08-25** · concept DOI: [10.5281/zenodo.22080773](https://doi.org/10.5281/zenodo.22080773) (v1.1 adds §2 trajectory reconstruction)
+**Version 2.0 — 2026-08-28** · concept DOI: [10.5281/zenodo.22080773](https://doi.org/10.5281/zenodo.22080773) (v2.0 adds the covariated ellipse of uncertainty (Bulychenkov 2026, *Covariance EOU*, [10.5281/zenodo.22148755](https://doi.org/10.5281/zenodo.22148755)) and correlated single-station fusion, §3)
 
 ## Abstract
 
@@ -35,10 +35,16 @@ constraint reduces the MWD covariance in the deeper, gyro-free section. On Volve
 well F-4 the combination reduces the vertical 1-sigma by a factor of 1.4 over
 the overlap; carrying the gyro-observed declination forward reduces the deep
 MWD-only lateral 1-sigma unconditionally, and by roughly a factor of two when
-the same MWD tool is reused below. Neither method is novel — both
-adopt established estimation theory — so the contribution is the open
-implementation, the analytical/continuous formulation, and the quantified
-demonstration on public field data.
+the same MWD tool is reused below. Third, it generalises the carry to the
+*covariated* ellipse of uncertainty (Bulychenkov, 2026): the whole well as one
+block covariance with off-diagonal cross-station correlation, so conditioning on
+a single gyro station propagates through the correlation to tighten the entire
+run — on F-4, about a third at total depth from one station, about a half from
+the whole overlap — with the forward-carry recovered as its forward-only slice.
+None of the methods is novel — they adopt established estimation theory, and the
+covariated approach is due to Bulychenkov — so the contribution is the open,
+validated implementation, the analytical/continuous formulation, and the
+quantified demonstration on public field data.
 
 ## 1. Introduction
 
@@ -164,74 +170,48 @@ practice depends on the actual gyro's quality, and the demonstration below,
 which uses the survey tools' own exported error models, is correspondingly a
 conservative floor.
 
-### Reconstructing the fused trajectory as a survey
+### Recovering the fused trajectory as a survey
 
-The combination returns a covariance and a best-estimate position at each
-measured depth, in the north-east-vertical frame. Conventional survey software
-and reporting, however, expect a minimum-curvature (measured depth,
-inclination, azimuth) listing, and recovering one from the fused position path
-was raised as a practical obstacle. It is in fact analytical: with the tie-in
-tangent fixed, each leg's end tangent is the start tangent *reflected about the
-chord*,
+The combination returns a covariance and a best estimate at every measured
+depth; conventional survey software expects a minimum-curvature (measured depth,
+inclination, azimuth) listing. Which is easier to recover depends on the *space*
+in which the fusion is performed.
+
+**The direct route — fuse in survey (DIA) space.** Measured depth is the shared,
+measured index of both surveys, so combining them reduces to combining
+inclination and azimuth per station, inverse-covariance-weighted in survey space.
+The fused quantity *is* the (md, inc, azi) listing — a valid minimum-curvature
+survey by construction, needing no reconstruction and physically consistent (the
+straight-line chord between consecutive fused stations never exceeds the
+measured-depth interval). welleng exposes this as
+`combine_surveys(..., space="dia")`; it is the natural, residual-free way to
+produce a fused survey.
+
+**The alternative — fuse in position (NEV) space, then reconstruct.** If the
+combination is instead done on the NEV position covariance (the continuous BLUE
+above), the fused quantity is a position path and a survey must be recovered from
+it. This too is analytical: with the tie-in tangent fixed, each leg's end tangent
+is the start tangent *reflected about the chord*,
 
 $$\hat{t}_{i+1} = 2\,(\hat{c}\cdot\hat{t}_i)\,\hat{c} - \hat{t}_i,$$
 
-which is the minimum-curvature chord-bisector property. The tangents therefore
-march out in a single pass with no iteration (welleng's
-`survey_from_positions`).
+the minimum-curvature chord-bisector property, marching out in one pass
+(welleng's `survey_from_positions`). But arbitrary fused positions are not exactly
+a minimum-curvature arc chain — averaging two surveys' positions leaves
+consecutive points marginally farther apart than the interval permits, or closer
+— so the reconstruction carries a small position residual (centimetre-scale per
+station, well below the metre-scale position uncertainty) that the direct DIA
+fusion avoids entirely. Where the fused overlap is interior, the reconstructed
+segment is pinned to the continuing single-source survey at the seam. This
+position→survey reconstruction is offered as a concept pending field validation;
+the DIA-space fusion is the preferred route.
 
-Two observations frame the reconstruction. First, the fused stations are
-**calculated, not measured**: the fused position is a derived best estimate, so
-the whole listing is a calculated product — there is no measured station that
-must be preserved verbatim. Measured depth, by contrast, *is* measured, and is
-held exact: it labels the reconstruction, and the single-pass march above
-returns a minimum-curvature listing at the query depths whose dogleg severity
-tracks the input surveys. Second, the fused positions do not, in general, lie on
-a single minimum-curvature arc chain at the query depths: averaging two surveys'
-positions leaves some consecutive fused points marginally farther apart than the
-query interval permits and others marginally closer (in the F-4-style case,
-roughly a 45/55 split, each by up to a few centimetres). With measured depth held
-exact, the reconstruction therefore carries a small position residual against the
-raw fused points — centimetre-scale per station, accumulating to a
-decimetre-scale closure at the segment end. This is a genuine consequence of
-fusing positions, not an error, and it sits three orders of magnitude below the
-metre-scale position uncertainty the survey carries in the first place.
-
-Where the fused overlap is interior — its last station is not the well's total
-depth, the common case — the reconstructed segment must join a single-source
-continuation beyond the overlap. That continuation is a real measured survey (the
-longer of the two), so the seam is pinned to it: the reconstruction's final
-target is the continuing survey's position interpolated at the seam measured
-depth, and the accumulated closure is absorbed in the final section — extending
-or truncating the last leg's chord to land on that point — so the fused segment
-and the continuation form one continuous minimum-curvature path with no position
-jump. This costs the (sub-uncertainty) fusion gain at the single seam station;
-the reconciliation direction is data-dependent (both signs occur across wells)
-and its magnitude is well below the position uncertainty. Because the fused
-covariance is a continuous function of measured depth (Section 2), it is
-evaluated at *every* station, so each carries its own true ellipse of
-uncertainty. The result is a self-consistent fused survey — (measured depth,
-inclination, azimuth, covariance) at every station — drawable as a
-minimum-curvature well path and carrying a true covariance throughout.
-
-The single-arc form is exact when each leg is representable as one
-minimum-curvature arc; its residual grows with the curvature *change* across a
-leg (build-to-turn transitions, dogleg gradients), so it is a function of
-trajectory shape rather than a clean law in dogleg severity and station spacing.
-For a typical build (2–3°/30 m) it stays a small fraction of the EOU at ordinary
-station spacing — of order 1% at ~30 m, within a couple of per cent out to
-~120 m — and becomes a large fraction (metres in absolute terms) only beyond
-~300 m station spacing, a regime in which the survey is under-sampled regardless.
-Where wider spacing or a sharp transition is encountered, the remedy is to sample
-the *continuous* fusion (Section 2) on a finer measured-depth grid so each
-sub-leg is again a single arc, at the cost of calculated inner stations.
-
-This reconstruction is presented as a **concept pending field validation**: it is
-verified here on synthetic and Volve data and is analytically well-posed, but has
-not yet been exercised across a range of real wells with their tie-on and
-continuation practices, which is where its edge behaviour (the closure
-reconciliation above, near-tangential legs, coarse or transition-heavy sections)
-should be confirmed.
+In both cases the fused stations are **calculated, not measured** (the fused
+position is a derived best estimate), measured depth is held exact, and — because
+the fused covariance is continuous in measured depth (Section 2) — every station
+carries its own true ellipse of uncertainty. The result is a self-consistent
+fused survey: (measured depth, inclination, azimuth, covariance) at every
+station, drawable as a minimum-curvature well path.
 
 ## 3. Carrying the calibration forward
 
@@ -315,6 +295,89 @@ with the BLUE gain, the empirical residual covariance matches Equation (2)
 
 ![Figure 3. Validation — analytical prediction versus Monte-Carlo empirical 1-sigma, on the line y = x. (A) BLUE combination over many random shared/independent covariance cases. (B) forward-carry with the systematic re-realising between overlap and deep (persist = global). Both lie on y = x within Monte-Carlo noise.](../figures/combo-fig3-validation.png)
 
+### The covariated generalisation — the solid covariance and single-station fusion
+
+The forward-carry of Section 3 is one direction of a more general object. The
+conventional ellipse of uncertainty treats a well as a string of *independent*
+per-station ellipsoids — a block-*diagonal* covariance. But the shared systematic
+sources (declination, a reused sensor bias) are a *single realisation* spanning
+many stations, so the per-station errors are correlated. Retaining that
+correlation gives the well's **covariated** covariance: one block matrix
+$\mathbf{C}_\text{well}$ whose diagonal blocks are the usual per-station
+covariances and whose **off-diagonal** blocks are the cross-station correlation.
+This "solid" covariance is the covariated EOU of Bulychenkov (2026), who casts it as a matrix
+expansion of the conventional per-station calculation (Williamson, 2000): the
+weighting function becomes a Jacobian, the error magnitude and propagation mode
+become a per-source covariance, and the station-wise sum becomes an integration
+operator, so $\mathbf{C}_\text{well}=\sum_e \mathbf{J}_e\,\mathbf{C}_e\,\mathbf{J}_e^{\mathsf T}$.
+
+The off-diagonals are what let information propagate. Conditioning the covariated
+covariance on an independent observation — a gyro station, say — is the standard
+maximum-likelihood / GLS update (Bar-Shalom et al., 2001),
+$\mathbf{V}_\text{fused}=(\mathbf{H}^{\mathsf T}\mathbf{C}^{-1}\mathbf{H})^{-1}\mathbf{H}^{\mathsf T}\mathbf{C}^{-1}\mathbf{V}$.
+Because the systematic is one realisation across every station it spans, the
+reduction does not stay at the observed station: it propagates through the
+off-diagonal blocks to the *whole* correlated well. A single gyro station thus
+tightens the entire run — most where the systematic has accumulated into a large
+position error, i.e. deep. The forward-carry of Section 3 is exactly the
+forward-only slice of this: there the calibration is carried explicitly into the
+deeper section; here the correlation carries it in every direction it reaches
+(run, well, and — across wells sharing a geomagnetic reference — pad-wide), with
+no separate carry step. The declination cross-well correlation follows a partial-
+correlation table rather than an artificial added term.
+
+welleng implements this as the scalar reference: `covariance_block` assembles
+$\mathbf{C}_\text{well}$ (each correlated source contributing a rank-one
+cross-station block, each random source a diagonal block; its diagonal reproduces
+the conventional per-station covariance to machine precision), and
+`fuse_covariated` performs the conditioning. The conditioning is validated by an
+independent Monte-Carlo gate: simulating the true correlated errors, forming the
+gyro observation, and applying the update, the empirical residual covariance
+matches the analytical posterior to within Monte-Carlo noise. On Volve F-4
+(Section 4), a single gyro station in the overlap reduces the total-depth position
+1-sigma by about a third; the gyro over the whole overlap reduces it by about a
+half — the deep MWD-only section inheriting the gyro-constrained systematic
+through the correlation alone. As with the forward-carry, the gain scales with
+the gyro's real accuracy advantage over the correlated (declination-limited) part
+of the MWD budget; a conservative standard gyro model shows little, a
+representative vendor model the figures above.
+
+**An arc-faithful covariated surface off-station.** Combining two surveys requires
+their covariances on a *common* measured depth, and the two tools rarely share a
+station grid. Bulychenkov's integration operator Ψ (2026, Eqs 25–28) already
+propagates the DIA covariance to points of interest along the well, so off-station
+evaluation is part of his framework; that operator is the same balanced-tangential
+accumulation welleng propagates with. welleng's refinement is in the *diagonal*
+blocks: it forms them from its analytical **arc-faithful interior** covariance
+(`cov_nev_at`, Section 2) — the exact partial-leg propagation — instead of a
+full-leg/linear interior, which avoids the ~25 % dogleg under-report a linear
+interior incurs mid-leg (Section 2). Paired with the correlated sources'
+cross-station structure for the off-diagonals (`covariance_block_at`), the result
+is an off-station covariated covariance whose diagonal stays accurate through
+doglegs. It is also what makes the combination *consistent*: because both surveys
+are evaluated at the same query depth, the result is order-independent — combining
+survey A with B equals combining B with A to numerical precision, whereas
+resampling one survey onto the other's station grid would not be. The arc-faithful
+interior covariance is welleng's own (Section 2); pairing it with the covariated
+block's cross-station structure is the accuracy-relevant contribution of this
+implementation.
+
+**Scope.** This paper applies the covariated structure to the standard
+ISCWSA/OWSG toolcode error budget (Section 4's per-tool IPMs). Bulychenkov's full
+method goes further, replacing certain toolcode terms with dedicated realistic
+error models — an MSA-correction covariance (from the linearised multi-station
+system), a BHA-sag-correction covariance (by Monte-Carlo), and a survey-frequency
+covariance — which this paper does not apply. The figures here are therefore on
+the standard toolcode budget and are not directly comparable to results from his
+full realistic-error model.
+
+The same covariated covariance underlies a cross-well separation factor for
+anti-collision (subtracting the shared covariance between two wells), which is
+beyond this paper's scope. The covariated method and these applications are due
+to Bulychenkov (2026); the contributions here are an open, reproducible
+implementation, its validation on public field data, and the arc-faithful
+off-station covariated surface built on welleng's analytical interior covariance.
+
 ## 4. Demonstration on public Volve data (well F-4)
 
 Volve well F-4 carries an MWD survey over the whole run and a stationary gyro
@@ -353,15 +416,21 @@ The methods are in welleng (open source):
 - `welleng.combination.fuse_covariances` — BLUE fusion (Equation 1), with the
   cross-covariance for shared terms and a positive-semidefinite guard.
 - `welleng.combination.combine_surveys` — continuous combination via the
-  analytical interior covariance `Survey.err.cov_nev_at`; with
-  `return_trajectory=True` it also reconstructs the fused (md, inc, azi) listing
-  (single-arc, measured depth held exact), carrying the covariance at every
-  station.
+  analytical interior covariance `Survey.err.cov_nev_at`. `space="dia"` fuses in
+  survey space and returns the fused (md, inc, azi) listing directly (measured
+  depth held exact, no reconstruction); `space="nev"` (default) fuses positions,
+  with `return_trajectory=True` recovering a survey via the reflection inverse.
 - `welleng.utils.survey_from_positions` — the analytical (reflection) inverse of
   the minimum-curvature method: (md, inc, azi) from a fused position path and a
-  fixed tie-in tangent.
+  fixed tie-in tangent (the NEV-space alternative).
 - `welleng.combination.carry_systematic_forward` — the Schur conditioning of
-  Equation (2).
+  Equation (2) (the forward-only slice of the covariated conditioning).
+- `welleng.combination.covariance_block` / `covariance_block_at` — the covariated
+  ("solid") NEV covariance at survey stations / at arbitrary MDs (the continuous
+  surface: arc-faithful interior diagonals + cross-station off-diagonals).
+- `welleng.combination.fuse_covariated` — conditioning the covariated covariance
+  on a gyro observation (Section 3): the single-station-lifts-the-whole-well
+  update. Implements the covariated method of Bulychenkov (2026).
 
 Each is a scalar reference implementation (one survey pair in, one result out),
 with the correctness gates described above kept as regression tests.
@@ -439,6 +508,19 @@ estimation is textbook; the contribution here is an open, reproducible
 implementation, an analytical continuous formulation, and a quantified
 demonstration on public field data.
 
+## Acknowledgements
+
+The covariated ellipse of uncertainty is the method of **Konstantin Bulychenkov**
+(MWD STD), set out in his *Covariance EOU* framework (2026) and cited throughout
+Section 3 — the joint covariance, the integration operator, the MLE MWD–gyro
+fusion, the OSF, and the realistic-error models are all his. We thank him for
+generously sharing and discussing the work. The contribution of this paper is
+limited to an open, reproducible implementation of the covariated approach, the
+arc-faithful off-station surface built on welleng's analytical interior
+covariance, and validation on public field data. Volve data © Equinor and the
+Volve licence partners, released under CC BY 4.0 (attribution: Equinor and the
+Volve field licence partners).
+
 \newpage
 
 ## References
@@ -449,6 +531,18 @@ demonstration on public field data.
 - Bar-Shalom, Y., Li, X.-R., Kirubarajan, T. (2001). Estimation with
   Applications to Tracking and Navigation. Wiley. ISBN 978-0-471-41655-5.
   [BLUE/cross-covariance fusion (§8.4); Kalman/Gaussian conditioning (§5)]
+- Bulychenkov, K. (2026). Covariance EOU: A Joint-Covariance Framework for Wellbore
+  Positioning and Multisensor Data Fusion. Preprint.
+  https://doi.org/10.5281/zenodo.22148755 [The primary source: the joint ("solid")
+  covariance C_well (Eq 4), the matrix expansion of Williamson (Eqs 8–10), the
+  integration operator Ψ (Eqs 25–28), the MLE MWD–gyro fusion (Eqs 29–30), the OSF
+  (Eqs 6–7, 11–13), and the realistic-error models C_msa/C_sag/C_sf (§3) — the
+  covariated method implemented here.]
+- Bulychenkov, K. (2023). Overcoming Fundamental Restrictions: Novel Multistation
+  Measurement While Drilling Survey Correction. SPE Journal 28(2): 462–476.
+  SPE-210084-PA. https://doi.org/10.2118/210084-PA [The novel multi-run MSA whose
+  a-posteriori covariance is the C_msa of the framework above; App. B carries the
+  covariated DIA→NEV covariance in the MSA context.]
 - Codling, J. (2018). Survey-Error Distribution and Its Effect on Collision
   Avoidance. IADC/SPE-189654-MS. https://doi.org/10.2118/189654-MS
 - Ekseth, R. (1998). Uncertainties in Connection with the Determination of
