@@ -138,6 +138,17 @@ class LogInfo:
 
 @dataclass
 class TubularComponent:
+    """One ``<tubular>`` component row (raw WITSML values).
+
+    ⚠ ``wt_kgm`` (``<wtPerLen>``) is UNRELIABLE unchecked: on real tallies the
+    magnitudes can be right but the ROWS TRANSPOSED between adjacent grades, and
+    a wrong value moves a drag-free hookload row by ~120 kN. Verify against the
+    OD/ID geometry (weight must sit between the annulus steel and a solid bar of
+    the OD, +5-15% tool-joint) before trusting it -- that credibility check is
+    the consumer's (readers-vs-logic), not this raw reader's. See
+    ``docs/dev/WITSML_SCHEMA_MAP.md``.
+    """
+
     sequence: int
     type: str
     od_in: float
