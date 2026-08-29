@@ -352,7 +352,7 @@ def gas_z(
     selected) but CoolProp is not installed, this **falls back to Hall-Yarborough**
     when a ``gas_gravity``/pseudo-criticals are available (so the correlation path
     always works), and raises only if it has nothing to fall back on. This is the
-    classic/public oracle; the fast analytical (Papay) form lives in welleng-api.
+    classic form.
     """
     if method not in ("auto", "hall_yarborough", "coolprop"):
         raise ValueError(f"unknown method: {method!r}")

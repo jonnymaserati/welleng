@@ -1,9 +1,8 @@
 """Separation-factor acceptance criteria — ISCWSA/OWSG anti-collision.
 
 welleng owns the separation-factor MATHS (:mod:`welleng.clearance`). This module
-adds the small typed POLICY layer the standard also defines, so the four consumers
-of the SF (welleng-api, -probcol, -pathfinder, and any caller) stop each inventing
-"acceptable" privately.
+adds the small typed POLICY layer the standard also defines, so consumers
+of the SF stop each inventing "acceptable" privately.
 
 It is NOT a policy engine. It carries the standard's graded thresholds, the action
 each triggers, the HSE-risk parameter set that accompanies them, and a

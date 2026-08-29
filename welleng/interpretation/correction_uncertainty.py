@@ -94,8 +94,7 @@ def correction_covariance_mc(draw, n_draws=1000, rng=None):
       -- kept as a regression gate.
     - The full (n, n) matrix is returned (not just the diagonal) because the
       within-run input realisation correlates the stations; a covariated error
-      model consumes exactly that block. SCALAR REFERENCE -- batched/GPU forms
-      belong to welleng-api.
+      model consumes exactly that block.
     """
     if rng is None:
         rng = np.random.default_rng()

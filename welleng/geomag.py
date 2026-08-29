@@ -414,8 +414,7 @@ def field_along_survey(survey, date=None, descend=False):
     Notes
     -----
     - This is the SCALAR reference applied per station (one ``local_field`` call
-      each) -- the open, auditable form. A vectorised/batched field kernel for
-      scale is welleng-api's (HARD RULE).
+      each) -- the open, auditable form.
     - It changes the reference field's MEAN, not the ISCWSA declination
       UNCERTAINTY term (which still covers the spread). And it is a modelling
       refinement of the TRUE field -- do not use it to silently re-correct a

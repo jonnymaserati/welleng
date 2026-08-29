@@ -321,9 +321,8 @@ class KickResult:
     # reachable. ``analytical_kick_tolerance`` reports the same situation as
     # ``open_hole_unconstrained``.
     #
-    # Raised by welleng-api against 0.27.0rc2, who put it correctly: a response
-    # that reports overflow in one field and no overflow in another is worse
-    # than either answer alone.
+    # A response that reports overflow in one field and no overflow in another is
+    # worse than either answer alone.
     capacity_negative: bool = False
     # True when A-7 returns a NEGATIVE tolerable influx, which is not a volume.
     # It means the maximum-credible pore pressure already exceeds what the shoe
