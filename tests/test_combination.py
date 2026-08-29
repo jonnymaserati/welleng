@@ -439,3 +439,190 @@ def test_combine_surveys_space_invalid_raises():
     _, A, B, mds = _dia_surveys()
     with pytest.raises(ValueError, match="space must be"):
         combine_surveys(A, B, mds, space="xyz")
+
+
+def test_covariance_block_diagonal_matches_cov_nevs():
+    # the covariated 'solid' block: diagonal (3,3) blocks == per-station cov_NEVs
+    from welleng.combination import covariance_block
+    _, A, _, _ = _dia_surveys(n=40)
+    B = covariance_block(A)
+    n = len(A.md)
+    diag = np.stack([B[3 * i:3 * i + 3, 3 * i:3 * i + 3] for i in range(n)])
+    assert np.allclose(diag, A.err.errors.cov_NEVs, atol=1e-9)
+    # PSD + symmetric
+    assert np.allclose(B, B.T)
+    assert np.linalg.eigvalsh(B).min() > -1e-8
+
+
+def test_fuse_covariated_reduces_and_lifts_downhole():
+    # conditioning an MWD run on a gyro observation reduces the whole well
+    # (single-station-lifts-all), strongest deep where the systematic accumulates.
+    from welleng.combination import fuse_covariated
+    h, A, B, _ = _dia_surveys(n=40)
+    obs_md = float(A.md[20])
+    r = fuse_covariated(A, B, [obs_md])
+    assert r["cov_block"].shape == (120, 120)
+    assert np.linalg.eigvalsh(r["cov_block"]).min() > -1e-8      # PSD
+    assert (r["reduction_factor"] >= 1.0 - 1e-9).all()           # never worse
+    assert r["sigma_post"][20] < r["sigma_prior"][20]           # observed station down
+    # reduction propagates beyond the observed station (off-diagonal reach)
+    assert r["reduction_factor"][39] > 1.0 + 1e-6
+
+
+def test_fuse_covariated_mc_gate():
+    # MC oracle: empirical residual covariance after conditioning == Kalman posterior.
+    from welleng.combination import fuse_covariated, _CORR_MODES
+    h, A, B, _ = _dia_surveys(n=24)
+    n = len(A.md)
+    corr = [np.asarray(v.sigma_e_NEV, float).reshape(-1)
+            for v in A.err.errors.errors.values() if v.propagation in _CORR_MODES]
+    randcov = [sum(np.asarray(v.cov_NEV, float)[i]
+                   for v in A.err.errors.errors.values()
+                   if v.propagation not in _CORR_MODES) for i in range(n)]
+    Lr = [np.linalg.cholesky(c + 1e-15 * np.eye(3)) for c in randcov]
+    s = 15
+    obs_md = float(A.md[s])
+    r = fuse_covariated(A, B, [obs_md])
+    P = r["cov_prior"]
+    Rg = np.asarray(B.err.cov_nev_at(obs_md), float)
+    H = np.zeros((3, 3 * n))
+    H[:, 3 * s:3 * s + 3] = np.eye(3)
+    K = P @ H.T @ np.linalg.inv(H @ P @ H.T + Rg)
+    Lg = np.linalg.cholesky(Rg + 1e-12 * np.eye(3))
+    rng = np.random.default_rng(0)
+    M = 20000
+    resid = np.zeros((M, 3 * n))
+    for m in range(M):
+        x = sum(rng.standard_normal() * sig for sig in corr)
+        for i in range(n):
+            x[3 * i:3 * i + 3] += Lr[i] @ rng.standard_normal(3)
+        z = x[3 * s:3 * s + 3] + Lg @ rng.standard_normal(3)
+        resid[m] = x - K @ z
+    Pemp = np.cov(resid.T)
+    for i in (5, 15, 23):
+        bl = slice(3 * i, 3 * i + 3)
+        e = np.sqrt(max(np.linalg.eigvalsh(Pemp[bl, bl])[-1], 0))
+        k = np.sqrt(max(np.linalg.eigvalsh(r["cov_block"][bl, bl])[-1], 0))
+        assert abs(e / k - 1.0) < 0.05           # within MC noise at 20k
+
+
+def test_covariance_block_at_continuous_surface():
+    # the continuous covariated surface: exact interior diagonals (cov_nev_at) +
+    # cross-station off-diagonals, queryable at any MD, station-consistent.
+    from welleng.combination import covariance_block, covariance_block_at
+    _, A, _, _ = _dia_surveys(n=40)
+    q = np.array([417.3, 933.8, 1541.0, 1888.2])          # off-station
+    Bq = covariance_block_at(A, q)
+    # diagonal blocks == the arc-faithful interior covariance
+    for i in range(len(q)):
+        assert np.allclose(Bq[3*i:3*i+3, 3*i:3*i+3],
+                           A.err.cov_nev_at(float(q[i])), atol=1e-12)
+    assert np.allclose(Bq, Bq.T)                          # symmetric
+    assert np.linalg.eigvalsh(Bq).min() > -1e-6           # PSD
+    # at survey stations, off-diagonals match the station covariated block
+    sm = A.md[[10, 20, 30]]
+    Bs = covariance_block_at(A, sm)
+    Bfull = covariance_block(A)
+    assert np.allclose(Bs[0:3, 3:6],
+                       Bfull[3*10:3*10+3, 3*20:3*20+3], atol=1e-9)
+    # correlation carried at interior points
+    assert np.linalg.norm(Bq[0:3, 9:12]) > 0.0
+
+
+def test_combine_surveys_commutative_ab_equals_ba():
+    # the combination must be order-independent: fusing A with B equals fusing B
+    # with A at any query MD. This holds because both surveys are evaluated at the
+    # SAME query MD via the continuous cov_nev_at surface (a grid-resample of one
+    # onto the other's stations would NOT be symmetric). Consistency guard.
+    _, A, B, _ = _dia_surveys(n=60)
+    mds = np.array([717.3, 1123.8, 1541.0])           # off-station interior
+    ab = combine_surveys(A, B, mds)
+    ba = combine_surveys(B, A, mds)
+    assert np.allclose(ab.cov_fused, ba.cov_fused, atol=1e-10)
+    # and the continuous covariated surface is symmetric station-to-station:
+    # C(m_i, m_j) == C(m_j, m_i)^T
+    from welleng.combination import covariance_block_at
+    Bq = covariance_block_at(A, mds)
+    assert np.allclose(Bq[0:3, 3:6], Bq[3:6, 0:3].T, atol=1e-12)
+
+
+# -- pillar-2 term swap: replace a toolcode term with a correction covariance --
+
+def test_covariance_block_exclude_removes_named_term():
+    from welleng.combination import covariance_block, _CORR_MODES
+    _, A, _, _ = _dia_surveys(n=30)
+    full = covariance_block(A)
+    ex = covariance_block(A, exclude="SAGE")
+    sage = A.err.errors.errors["SAGE"]
+    assert sage.propagation in _CORR_MODES                       # systematic
+    sig = np.asarray(sage.sigma_e_NEV, float).reshape(-1)
+    np.testing.assert_allclose(full - ex, np.outer(sig, sig), atol=1e-12)
+
+
+def test_covariance_block_exclude_unknown_raises():
+    from welleng.combination import covariance_block
+    _, A, _, _ = _dia_surveys(n=10)
+    with pytest.raises(KeyError, match="not in the error model"):
+        covariance_block(A, exclude="NOPE")
+
+
+def test_propagate_dia_axis_reproduces_systematic_source():
+    # the injected-block propagator IS the model's own systematic operator:
+    # propagating a rank-1 inc cov outer(u) == the toolcode term's outer(sigma)
+    from welleng.combination import _propagate_dia_axis_cov
+    _, A, _, _ = _dia_surveys(n=30)
+    sage = A.err.errors.errors["SAGE"]
+    u = np.asarray(sage.e_DIA, float)[:, 1]                       # its inc realisation
+    blk = _propagate_dia_axis_cov(A, np.outer(u, u), "inc")
+    sig = np.asarray(sage.sigma_e_NEV, float).reshape(-1)
+    np.testing.assert_allclose(blk, np.outer(sig, sig), atol=1e-12)
+
+
+def test_swap_covariated_term_roundtrip_restores_toolcode_term():
+    # exclude SAGE then inject its OWN implied inc covariance -> full block back
+    from welleng.combination import covariance_block, swap_covariated_term
+    _, A, _, _ = _dia_surveys(n=30)
+    full = covariance_block(A)
+    u = np.asarray(A.err.errors.errors["SAGE"].e_DIA, float)[:, 1]
+    swapped = swap_covariated_term(A, "SAGE", np.outer(u, u), axis="inc")
+    np.testing.assert_allclose(swapped, full, atol=1e-12)
+
+
+def test_swap_covariated_term_deterministic_and_zero_limits():
+    # None or zero injection == the excluded block (perfect / no-uncertainty corr)
+    from welleng.combination import covariance_block, swap_covariated_term
+    _, A, _, _ = _dia_surveys(n=20)
+    n = len(A.md)
+    ex = covariance_block(A, exclude="SAGE")
+    np.testing.assert_allclose(swap_covariated_term(A, "SAGE", None), ex, atol=0)
+    np.testing.assert_allclose(
+        swap_covariated_term(A, "SAGE", np.zeros((n, n)), axis="inc"),
+        ex, atol=1e-12)
+
+
+def test_swap_covariated_term_psd_and_smaller_than_blanket():
+    # a realistic small sag residual (< the blanket SAGE) -> valid PSD block with
+    # LESS vertical uncertainty than the uncorrected toolcode term
+    from welleng.combination import covariance_block, swap_covariated_term
+    _, A, _, _ = _dia_surveys(n=30)
+    n = len(A.md)
+    sage = A.err.errors.errors["SAGE"]
+    u = np.asarray(sage.e_DIA, float)[:, 1]
+    Csag = 0.09 * np.outer(u, u)                     # 0.3^2: a 30%-of-blanket residual
+    full = covariance_block(A)
+    sw = swap_covariated_term(A, "SAGE", Csag, axis="inc")
+    assert np.allclose(sw, sw.T)
+    assert np.linalg.eigvalsh(sw).min() > -1e-8
+    v_full = np.trace(full[3 * (n - 1):3 * n, 3 * (n - 1):3 * n])
+    v_sw = np.trace(sw[3 * (n - 1):3 * n, 3 * (n - 1):3 * n])
+    assert v_sw < v_full                             # correction tightens the EOU
+
+
+def test_swap_covariated_term_bad_axis_and_shape():
+    from welleng.combination import swap_covariated_term
+    _, A, _, _ = _dia_surveys(n=15)
+    n = len(A.md)
+    with pytest.raises(ValueError, match="axis must be"):
+        swap_covariated_term(A, "SAGE", np.zeros((n, n)), axis="tvd")
+    with pytest.raises(ValueError, match="axis_cov must be"):
+        swap_covariated_term(A, "SAGE", np.zeros((n + 1, n + 1)), axis="inc")

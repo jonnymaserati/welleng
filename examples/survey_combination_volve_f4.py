@@ -28,7 +28,9 @@ import os
 import numpy as np
 
 import welleng as we
-from welleng.combination import carry_systematic_forward, fuse_covariances
+from welleng.combination import (
+    carry_systematic_forward, fuse_covariances, covariance_block, fuse_covariated,
+)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data", "volve_f4_survey_combination.json")
@@ -83,6 +85,33 @@ def main(plot=False):
                                 / fc.cov_carried[-1, i, i])) for i in range(3)]
         print(f"    {lbl}:")
         print(f"        N/E/V = {[round(x, 2) for x in ratios]}")
+
+    # --- 3. Covariated EOU + single-station fusion (v2.0) ---
+    # the "solid" whole-well covariance: off-diagonal cross-station correlation
+    # lets a single gyro station tighten the entire correlated run.
+    def wsig(block, i):                       # worst-direction 1sigma at station i
+        b = block[3 * i:3 * i + 3, 3 * i:3 * i + 3]
+        return float(np.sqrt(max(np.linalg.eigvalsh(b)[-1], 0.0)))
+
+    B = covariance_block(mwd)
+    i, j = int(ovl[len(ovl) // 2]), int(deep[-1])
+    xcorr = np.linalg.norm(B[3 * i:3 * i + 3, 3 * j:3 * j + 3])
+    print("\nCovariated EOU (the solid covariance)")
+    print(f"  cross-station correlation {md[i]:.0f}<->{md[j]:.0f} m: "
+          f"||C_ij|| = {xcorr:.1f} (0 = the conventional independent-ellipsoid model)")
+
+    one = fuse_covariated(mwd, gyro, [float(md[i])])
+    allo = fuse_covariated(mwd, gyro, [float(md[k]) for k in ovl])
+    print(f"  single gyro station at {md[i]:.0f} m -> TD position 1sigma "
+          f"{wsig(one['cov_prior'], deep[-1]):.2f} -> "
+          f"{wsig(one['cov_block'], deep[-1]):.2f} m "
+          f"({100 * (1 - one['reduction_factor'][deep[-1]] ** -1):.0f}% at TD)")
+    print(f"  gyro over the whole overlap        -> TD position 1sigma "
+          f"{wsig(allo['cov_prior'], deep[-1]):.2f} -> "
+          f"{wsig(allo['cov_block'], deep[-1]):.2f} m "
+          f"({100 * (1 - allo['reduction_factor'][deep[-1]] ** -1):.0f}% at TD)")
+    print("  (gain scales with the gyro's real accuracy; a conservative standard "
+          "gyro shows less)")
 
     if plot:
         _plot(md, mwd, gyro, ovl, deep, fused, fc_g, fc_gs, sig)
