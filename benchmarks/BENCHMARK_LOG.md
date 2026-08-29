@@ -645,9 +645,8 @@ Machine: this dev box, .venv312.
 
 ## 2026-07-28 — migrate() env+SICP merged; bit-identical, 1.10x. 0.27.1rc1
 
-welleng-api reported `migrate()` at 303 ms (0.211 ms `drill_kick`, ~1.2 ms
-`analytical_kick_tolerance`) and read it as "each step redoing work". Profiled at
-`n_steps=100` — 1790 `pressure_at_depth` calls, 45,170 Hall-Yarborough Z solves:
+Profiling flagged `migrate()` as redoing work each step. At `n_steps=100` —
+1790 `pressure_at_depth` calls, 45,170 Hall-Yarborough Z solves:
 
 ```
   loop   1582 calls  (88.4%)   15.8 per step   <- damped fixed point on P_rep
