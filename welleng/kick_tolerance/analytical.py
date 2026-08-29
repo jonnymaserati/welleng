@@ -315,7 +315,7 @@ class AnalyticalKickTolerance:
     #                                gas-expansion ratio. The GUI's horizontal panel wants
     #                                this ("full displacement = X bbl"); ``max_influx_bbl``
     #                                is the BH kick tolerance. Both reported, clearly
-    #                                distinct (welleng-api request 2026-08-13).
+    #                                distinct.
 
 
 def _top_for_bottom(gas_bottom, influx_bbl_bh, sections_sorted, bottom_tvd, *,
@@ -928,7 +928,7 @@ def analytical_kick_tolerance(
                rho_influx_bh_gradient_psi_per_ft=float(_ppg_to_grad(_rho_bh)),
                # OPEN-HOLE VOLUMETRIC CAPACITY (hole conditions), reported alongside the
                # BH kick tolerance so the horizontal panel can show "full displacement =
-               # X bbl" without mistaking it for the tolerance (welleng-api request).
+               # X bbl" without mistaking it for the tolerance.
                open_hole_capacity_bbl=float(v_hole))
     try:
         _mr = _maasp(ss, fp, rho_mud_ppg=rho_mud_ppg,
@@ -948,9 +948,9 @@ def analytical_kick_tolerance(
     # reports the full-displacement influx for a well that is losing returns before any
     # gas enters -- the unsafe direction, and the same defect class as the clamped
     # bubble height in `core.drill_kick`. Separate them explicitly.
-    # Raised by welleng-api 2026-07-27 (Finding D): their design-curve sweep shifts FP
-    # down by 2 ppg, hit this at the weakest shoe, and got `open_hole_unconstrained`
-    # with the SAME volume as the strongest shoe in the sweep.
+    # A design-curve sweep that shifts FP down by 2 ppg can hit this at the weakest
+    # shoe and return `open_hole_unconstrained` with the SAME volume as the strongest
+    # shoe in the sweep.
     if not np.isfinite(v_star):
         _mud_breach = [
             float(d) for d in _env_d

@@ -255,8 +255,8 @@ def ppg_to_gradient(rho_ppg: Union[float, np.ndarray]) -> Union[float, np.ndarra
     **This function deliberately uses the ENGINE's constant.** A gradient reported
     with any other one does not reproduce the column weight the engine actually
     applied, and a consumer reconciling the two would be chasing a discrepancy that
-    is purely a choice of constant. (welleng-api lost a morning to exactly that class
-    of mismatch on 2026-07-28.) If you want the gradient under a DIFFERENT convention
+    is purely a choice of constant -- an easy discrepancy to chase for a long time. If
+    you want the gradient under a DIFFERENT convention
     -- to compare against a standard that mandates its own -- multiply the density by
     that constant explicitly, so the choice is visible at the call site.
 
