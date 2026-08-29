@@ -10,7 +10,7 @@ mpmath (the value the math *means*) and assert welleng's own float64
 implementation matches it across the domain, to a locked ulp/relative bound.
 
 A future reconditioning regression trips this gate instead of hiding until a
-downstream (welleng-api) parity run catches it.
+downstream parity run catches it.
 
 The FIRST test is a CALIBRATION per the file's own instruction: the gate must
 detect the already-fixed ``acos(dot)`` defect (K0). A detector that cannot flag

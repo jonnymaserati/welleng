@@ -351,8 +351,7 @@ def test_matches_an_independent_practitioner_worked_case():
 
 
 def test_a_clamped_bubble_height_is_flagged_not_silently_reported():
-    """Raised by welleng-api against 0.27.0rc2, and they framed it correctly: a
-    response that reports overflow in one field and no overflow in another is
+    """A response that reports overflow in one field and no overflow in another is
     worse than either answer alone.
 
     The column solve clips H_gas to the OPEN-HOLE LENGTH. When that clamp binds,
@@ -402,9 +401,9 @@ def test_a_negative_tolerance_is_flagged_because_it_is_not_a_volume():
 
 
 def test_d_already_fractured_is_not_the_shoe_holding():
-    """welleng-api Finding D, 2026-07-27. Their design-curve sweep shifts the FP
-    profile down and re-solves; at the weakest shoe it got `open_hole_unconstrained`
-    with the SAME volume as the strongest shoe, so the sweep broke on its first
+    """A design-curve sweep that shifts the FP profile down and re-solves can, at the
+    weakest shoe, return `open_hole_unconstrained`
+    with the SAME volume as the strongest shoe, so the sweep breaks on its first
     point and the curve came back empty.
 
     An empty breach-candidate set has two OPPOSITE causes and the per-depth solves
@@ -671,8 +670,7 @@ def test_an_unreachable_density_says_what_IS_reachable():
 
 
 def test_gas_gravity_sets_the_pseudo_criticals_not_just_the_molar_mass():
-    """The defect this guards, found 2026-07-28 after I had already reported the wrong
-    number to TA0 and welleng-api.
+    """The defect this guards, found 2026-07-28.
 
     `molar_mass_lbm` scales DENSITY but says nothing about Z, and Hall-Yarborough needs
     PSEUDO-CRITICALS. Leaving them on methane's for a heavier gas is internally
@@ -757,8 +755,8 @@ def test_the_solver_bracket_comes_from_the_correlation_validity_band():
 
 
 def test_the_reference_temperature_makes_the_comparison_the_answer():
-    """welleng-api asked for this: the comparison IS the output, so assembling it from
-    a solved value plus a BHT the client happens to hold is where it goes wrong --
+    """The comparison IS the output, so assembling it from a solved value plus a
+    separately-held BHT is where it goes wrong --
     nothing guarantees they came from the same well.
     """
     from welleng.kick_tolerance import gas_state_from_density as solve
@@ -780,7 +778,7 @@ def test_the_reference_temperature_makes_the_comparison_the_answer():
 
 
 def test_the_analytical_result_reports_its_own_influx_gradient():
-    """welleng-api asked rather than deriving it, which was right. Reported so the GUI
+    """Reported directly rather than derived, so a caller
     never converts with one of the three circulating ppg->psi/ft constants."""
     from welleng.kick_tolerance.analytical import analytical_kick_tolerance
     from welleng.kick_tolerance.core import fahrenheit_to_rankine
@@ -833,9 +831,9 @@ def test_the_gas_property_overrides_exist_and_the_docs_must_not_claim_otherwise(
 
 
 def test_unconstrained_returns_a_bh_influx_not_the_open_hole_capacity():
-    """welleng-api, 2026-07-28: on a hot circulated-kill well `case="drill"` makes the
-    open hole non-constraining, and the note attached to the result said the returned
-    volume is "the full open-hole gas capacity". It is NOT.
+    """On a hot circulated-kill well `case="drill"` makes the
+    open hole non-constraining; a note claiming the returned
+    volume is "the full open-hole gas capacity" would be wrong. It is NOT.
 
     Measured: the returned value is the BOTTOM-HOLE INFLUX whose expanded gas column
     just fills the open hole -- the same KIND of quantity as a fracture-limited

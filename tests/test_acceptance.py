@@ -1,8 +1,7 @@
 """SPE-187073 separation-factor acceptance criteria.
 
-Promised open in core in the A2 ruling (2026-07-27) and consumed by welleng-api,
--probcol and -pathfinder, so the exact bands, the tighten-only override, and the
-re-export location are all contract and are pinned here.
+The exact bands, the tighten-only override, and the re-export location are
+contract for consumers, so they are pinned here.
 """
 import math
 
