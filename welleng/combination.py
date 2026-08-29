@@ -411,6 +411,304 @@ def combine_surveys(
     return replace(fused, md=mds, inc=inc0, azi=azi0)
 
 
+_CORR_MODES = ("systematic", "global", "well", "within_pad")
+
+
+def covariance_block(survey, exclude=None):
+    """The full-well "solid" NEV covariance block ``C_well`` (3n, 3n), SI m^2.
+
+    The **covariated ellipse of uncertainty**: instead of ``n`` independent
+    per-station ellipsoids, the single block matrix whose diagonal (3, 3) blocks
+    are the per-station covariance (equal to ``survey.err.cov_NEVs``) and whose
+    off-diagonal blocks are the cross-station correlation from the shared
+    (systematic / global / well / within_pad) error sources. This is the object
+    that lets a constraint at one station propagate to the whole well.
+
+    The covariated method of Bulychenkov (2026), *Covariance EOU: A Joint-Covariance
+    Framework for Wellbore Positioning and Multisensor Data Fusion*
+    (v1, doi:10.5281/zenodo.22148756, his Eq. 4) -- a matrix expansion of the
+    conventional ISCWSA / Williamson (SPE 67616) per-station calculation
+    (``C_well = sum_e J_e C_e J_e^T``). This is welleng's open implementation of
+    that method. Each correlated source contributes ``outer(sigma_e_NEV)`` (one
+    realisation, fully correlated across the stations it spans); each random source
+    contributes its per-station ``cov_NEV`` on the diagonal only.
+
+    Parameters
+    ----------
+    survey : welleng.survey.Survey
+        A survey with an error model applied (``survey.err`` set).
+    exclude : str or iterable of str, optional
+        Error-source name(s) to omit from the block -- used by the pillar-2
+        term swap (:func:`swap_covariated_term`) to drop a toolcode term (e.g.
+        the blanket sag term ``"vsag"`` / ``SAGE``) before an external
+        correction-uncertainty covariance is injected in its place.
+
+    Returns
+    -------
+    numpy.ndarray
+        (3n, 3n) symmetric PSD block covariance in NEV, SI m^2. The (i, j) block
+        ``[3i:3i+3, 3j:3j+3]`` is ``cov(pos_i, pos_j)``.
+
+    Notes
+    -----
+    Materialises the full (3n, 3n) matrix, so cost grows with the square of
+    the number of stations.
+    """
+    if getattr(survey, "err", None) is None:
+        raise ValueError("survey has no error model applied (survey.err is None)")
+    errs = survey.err.errors.errors
+    excl = frozenset(
+        (exclude,) if isinstance(exclude, str) else (exclude or ())
+    )
+    if excl - set(errs):
+        raise KeyError(
+            f"exclude names not in the error model: {sorted(excl - set(errs))}"
+        )
+    n = len(survey.md)
+    block = np.zeros((3 * n, 3 * n))
+    for name, v in errs.items():
+        if name in excl:
+            continue
+        if v.propagation in _CORR_MODES:
+            sig = np.asarray(v.sigma_e_NEV, dtype=float).reshape(-1)
+            block += np.outer(sig, sig)             # correlated: cross-station
+        else:
+            cn = np.asarray(v.cov_NEV, dtype=float)
+            for i in range(n):
+                block[3 * i:3 * i + 3, 3 * i:3 * i + 3] += cn[i]   # random: diag
+    return 0.5 * (block + block.T)                  # symmetrise float drift
+
+
+_DIA_AXIS = {"depth": 0, "inc": 1, "azi": 2}
+
+
+def _propagate_dia_axis_cov(survey, axis_cov, axis):
+    """NEV block (3n, 3n) of a per-station DIA-*axis* correction covariance.
+
+    A correction-uncertainty covariance (e.g. C_sag over the inclination
+    correction) lives in one DIA axis and is cross-station correlated. Propagate
+    it to NEV through the error model's OWN exact systematic operator -- the
+    balanced-tangential, whole-well-correlated ``e_DIA -> sigma_e_NEV`` map
+    (``_sigma_e_NEV_systematic``, the same one every systematic toolcode term
+    uses) -- so the injected block is consistent with the toolcode term it
+    replaces, to machine precision. ``axis_cov`` is (n, n); it is symmetrised and
+    eigen-decomposed, and each non-negative eigen-realisation is pushed through
+    the operator as a systematic inc/depth/azi DIA error and accumulated as
+    ``outer(sigma)`` (its own correlated realisation).
+    """
+    m = survey.err
+    n = len(survey.md)
+    col = _DIA_AXIS[axis]
+    A = np.asarray(axis_cov, dtype=float)
+    if A.shape != (n, n):
+        raise ValueError(
+            f"axis_cov must be ({n}, {n}) for this survey, got {A.shape}"
+        )
+    A = 0.5 * (A + A.T)
+    w, V = np.linalg.eigh(A)
+    tol = max(1e-18, 1e-12 * float(w.max(initial=0.0)))
+    block = np.zeros((3 * n, 3 * n))
+    for lam, u in zip(w, V.T):
+        if lam <= tol:                       # drop null / negative eigen-noise
+            continue
+        e_dia = np.zeros((n, 3))
+        e_dia[:, col] = np.sqrt(lam) * u
+        sig = m._sigma_e_NEV_systematic(
+            m._e_NEV(e_dia), m._e_NEV_star(e_dia)
+        ).reshape(-1)
+        block += np.outer(sig, sig)
+    return 0.5 * (block + block.T)
+
+
+def swap_covariated_term(survey, exclude, injected_dia_cov, *, axis="inc"):
+    """Covariated NEV block with a toolcode term REPLACED by a correction's
+    residual-uncertainty covariance -- the pillar-2 term swap.
+
+    When a survey correction is applied (BHA sag, a depth-stretch model, an MSA
+    solve), the blanket toolcode term that *assumed* a generic correction is no
+    longer right: it must be replaced by the residual uncertainty of the ACTUAL
+    correction for this BHA / hole. This returns::
+
+        covariance_block(survey, exclude=exclude) + propagate(injected_dia_cov)
+
+    i.e. ``C_well`` with the named toolcode term(s) dropped and the external
+    correction-uncertainty covariance (from
+    :func:`welleng.interpretation.correction_covariance_mc`, in the given DIA
+    axis) injected in their place, propagated to NEV through the model's own
+    systematic operator so the swap is consistent to machine precision.
+
+    Never keep the toolcode term AND add the correction covariance (double
+    count) nor drop both (under-count): correct the survey, ``exclude`` the term,
+    inject its residual. C_msa reuses this exact hook (``axis="inc"``/``"azi"``).
+
+    Parameters
+    ----------
+    survey : welleng.survey.Survey
+        Survey with an error model applied.
+    exclude : str or iterable of str
+        Toolcode source name(s) the correction supersedes (e.g. ``"vsag"``).
+    injected_dia_cov : (n, n) array_like or None
+        The correction's residual covariance in ``axis`` space, one entry per
+        survey station. ``None`` returns the excluded block unchanged (the
+        deterministic limit -- a perfect, zero-uncertainty correction).
+    axis : {"inc", "depth", "azi"}, default "inc"
+        Which DIA axis the correction acts on (sag -> ``"inc"``).
+
+    Returns
+    -------
+    numpy.ndarray
+        (3n, 3n) symmetric NEV block. The pillar-2 realistic-error models this
+        consumes are Bulychenkov (2026), §3, v1, doi:10.5281/zenodo.22148756.
+    """
+    base = covariance_block(survey, exclude=exclude)
+    if injected_dia_cov is None:
+        return base
+    if axis not in _DIA_AXIS:
+        raise ValueError(f"axis must be one of {sorted(_DIA_AXIS)}, got {axis!r}")
+    swapped = base + _propagate_dia_axis_cov(survey, injected_dia_cov, axis)
+    return 0.5 * (swapped + swapped.T)
+
+
+def covariance_block_at(survey, mds):
+    """The **continuous** covariated covariance block at arbitrary measured depths.
+
+    Bulychenkov's integration operator (2026, Eqs. 25-28, v1,
+    doi:10.5281/zenodo.22148756) already propagates the
+    covariance to points of interest along the well; this couples that off-station
+    covariated structure to welleng's arc-faithful interior covariance for accuracy:
+
+    - the diagonal (i, i) blocks are the **analytical arc-faithful interior**
+      covariance :meth:`welleng.error.ErrorModel.cov_nev_at` -- exact at any MD,
+      on or off a survey station (avoids the ~25% dogleg under-report a full-leg /
+      linear interior incurs mid-leg); and
+    - the off-diagonal (i, j) blocks are the **cross-station correlation** of the
+      covariated EOU (:func:`covariance_block`), evaluated at the query MDs.
+
+    The arc-faithful interior diagonal is welleng's accuracy refinement; pairing it
+    with the covariated block's cross-station structure gives a covariated covariance
+    **queryable at any MD** -- which makes the continuous combination of two surveys
+    on different station grids consistent (it is evaluated at the same query MD for
+    both, so the combination is order-independent) and accurate off-station.
+
+    Parameters
+    ----------
+    survey : welleng.survey.Survey
+        Survey with an error model applied.
+    mds : array-like
+        Query measured depths (within the survey range).
+
+    Returns
+    -------
+    numpy.ndarray
+        (3k, 3k) symmetric block covariance at the k query MDs.
+
+    Notes
+    -----
+    Diagonal blocks are exact (``cov_nev_at``). Off-diagonal blocks use the
+    correlated sources' cumulative ``sigma_e_NEV`` interpolated to the query MDs
+    (first-order interior for the cross terms; exact at survey stations).
+    """
+    if getattr(survey, "err", None) is None:
+        raise ValueError("survey has no error model applied (survey.err is None)")
+    mds = np.atleast_1d(np.asarray(mds, dtype=float))
+    k = len(mds)
+    smd = np.asarray(survey.md, dtype=float)
+    errs = survey.err.errors.errors
+    block = np.zeros((3 * k, 3 * k))
+    # off-diagonals from the correlated sources' interior cumulative sigma_e_NEV
+    for v in errs.values():
+        if v.propagation in _CORR_MODES:
+            sig = np.asarray(v.sigma_e_NEV, dtype=float)          # (n, 3)
+            si = np.column_stack([np.interp(mds, smd, sig[:, c]) for c in range(3)])
+            flat = si.reshape(-1)                                 # (3k,)
+            block += np.outer(flat, flat)
+    # exact interior diagonal blocks (overwrite the interpolated i==i term)
+    for i in range(k):
+        block[3 * i:3 * i + 3, 3 * i:3 * i + 3] = np.asarray(
+            survey.err.cov_nev_at(float(mds[i])), dtype=float)
+    return 0.5 * (block + block.T)
+
+
+def fuse_covariated(survey_target, survey_obs, obs_mds):
+    """Condition a survey's covariated EOU on another survey's positions -- the
+    covariated MWD-Gyro fusion (single-station-lifts-the-whole-well).
+
+    The MWD-gyro fusion of Bulychenkov (2026, Eqs. 29-30, v1,
+    doi:10.5281/zenodo.22148756). Builds the target's full-well block covariance
+    (:func:`covariance_block`) and conditions it, in the maximum-likelihood / GLS
+    sense (the standard update, SPE 85111 in block form), on the observing survey's
+    position estimates at ``obs_mds``. Because
+    the target's shared systematic (declination, reused-tool bias) is one
+    realisation across every station it spans, the reduction **propagates through
+    all correlated stations** -- not only the observed ones -- so a gyro over a
+    short interval tightens the whole MWD run (strongest where the systematic has
+    accumulated, i.e. deep). This is the general form that subsumes
+    :func:`carry_systematic_forward` (the forward-only slice).
+
+    Parameters
+    ----------
+    survey_target : welleng.survey.Survey
+        The survey being improved (e.g. the MWD run), full well.
+    survey_obs : welleng.survey.Survey
+        The observing survey (e.g. a gyro), providing position constraints.
+    obs_mds : array-like
+        Measured depths (within both surveys) at which ``survey_obs`` observes.
+
+    Returns
+    -------
+    dict
+        ``{"cov_block": (3n,3n) posterior block, "cov_prior": (3n,3n) prior,
+        "sigma_prior": (n,), "sigma_post": (n,), "reduction_factor": (n,)}`` --
+        ``sigma_*`` are worst-direction 1sigma per target station.
+
+    Notes
+    -----
+    The observation is treated as independent of the target (the ``correlate="N"``
+    case -- true for MWD vs gyro, which share no declination error). Where the two
+    genuinely share a systematic, a cross-covariance term is needed (not modelled
+    here). **Gyro-model caveat:** the gain scales with the gyro's real accuracy
+    advantage; the standard OWSG gyro model is deliberately conservative, so the
+    lift is small unless a representative (vendor / IFR) gyro model is used.
+    """
+    obs_mds = np.atleast_1d(np.asarray(obs_mds, dtype=float))
+    n = len(survey_target.md)
+    P = covariance_block(survey_target)                     # prior (3n,3n)
+    # observation selection H (3k, 3n): the target station nearest each obs md
+    tmd = np.asarray(survey_target.md, dtype=float)
+    idx = np.abs(tmd[:, None] - obs_mds[None, :]).argmin(axis=0)
+    k = len(idx)
+    H = np.zeros((3 * k, 3 * n))
+    for r, i in enumerate(idx):
+        H[3 * r:3 * r + 3, 3 * i:3 * i + 3] = np.eye(3)
+    # observation covariance R: the obs survey's OWN correlated block over the
+    # observed stations -- NOT block-diagonal. The gyro's systematic correlates
+    # its own stations, so treating multiple observations as independent
+    # over-counts the information (inflates the reduction). Take the sub-block of
+    # its covariated EOU at the stations nearest obs_mds.
+    omd = np.asarray(survey_obs.md, dtype=float)
+    oidx = np.abs(omd[:, None] - obs_mds[None, :]).argmin(axis=0)
+    Bobs = covariance_block(survey_obs)
+    sel = np.concatenate([[3 * i, 3 * i + 1, 3 * i + 2] for i in oidx])
+    R = Bobs[np.ix_(sel, sel)]
+    HP = H @ P
+    gain = HP.T @ np.linalg.inv(HP @ H.T + R)               # (3n, 3k)
+    Ppost = P - gain @ HP
+    Ppost = 0.5 * (Ppost + Ppost.T)
+
+    def _sig(M):
+        return np.array([
+            np.sqrt(max(np.linalg.eigvalsh(
+                M[3 * i:3 * i + 3, 3 * i:3 * i + 3])[-1], 0.0))
+            for i in range(n)
+        ])
+
+    sp, sq = _sig(P), _sig(Ppost)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rf = np.where(sq > 0, sp / sq, 1.0)
+    return {"cov_block": Ppost, "cov_prior": P,
+            "sigma_prior": sp, "sigma_post": sq, "reduction_factor": rf}
+
+
 @dataclass(frozen=True)
 class ForwardCarry:
     """Result of carrying a reference-calibrated systematic into deep stations.
