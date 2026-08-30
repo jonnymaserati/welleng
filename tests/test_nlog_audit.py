@@ -80,6 +80,11 @@ def _synthetic_dump(tmp_path):
     for md, inc, azi in [(0, 0.0, 0), (999, 2.0, 0), (1000, 32.0, 0),
                          (1001, 32.0, 0)]:
         add("W_SPIKE", md, inc, azi)
+    # torsion: an azimuth FLIP (~180 deg) between two curved legs -> the
+    # osculating plane inverts, invisible to DLS
+    for md, inc, azi in [(0, 0.0, 0), (300, 20.0, 45), (600, 35.0, 45),
+                         (900, 20.0, 225), (1200, 35.0, 225)]:
+        add("W_FLIP", md, inc, azi)
 
     df = pd.DataFrame(rows)
     p = tmp_path / "dirstelsel.csv"
@@ -89,7 +94,7 @@ def _synthetic_dump(tmp_path):
 
 def test_audit_dump_end_to_end(tmp_path):
     audit = A.audit_dump(_synthetic_dump(tmp_path))
-    assert audit.n_wellbores == 4
+    assert audit.n_wellbores == 5
     # surface coords are internally consistent -> no defects
     assert audit.n_surface_defects == 0
     assert audit.surface_p95_m["rd_vs_ed50"] < 1.0
@@ -105,6 +110,10 @@ def test_audit_dump_end_to_end(tmp_path):
     spike = next(w for w in audit.wellbores if w.wellbore == "W_SPIKE")
     assert spike.n_dls_spikes >= 1 and spike.max_dls_deg30m > 30
     assert audit.n_dls_wells >= 1
+    # the azimuth flip is caught by TORSION, not DLS
+    flip = next(w for w in audit.wellbores if w.wellbore == "W_FLIP")
+    assert flip.n_plane_inversions >= 1 and flip.max_torsion_deg > 150
+    assert audit.n_torsion_wells >= 1
 
 
 def test_report_is_text(tmp_path):

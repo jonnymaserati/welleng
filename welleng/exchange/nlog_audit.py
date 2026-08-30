@@ -29,7 +29,10 @@ truth needed):
    annulus" case: the true horizontal position error is a *ring* at radius
    ``R = MD*sin(inc)``, which a per-station covariance cannot represent.
 4. **Dogleg severity** — flag physically impossible spikes (> 30 deg/30 m).
-5. **Structural** — non-monotonic / duplicate measured depths, and TVD drift
+5. **Torsion** — out-of-plane twist of the osculating plane between consecutive
+   curved legs. Curvature (DLS) is in-plane; a near-180 deg plane flip is
+   out-of-plane and betrays an azimuth flip / +-180 ambiguity that DLS cannot see.
+6. **Structural** — non-monotonic / duplicate measured depths, and TVD drift
    (min-curvature TVD vs the reported ``TV_DEPTH_NAP``).
 
 The checks are geometric and self-contained, so the report is reproducible by
@@ -88,6 +91,8 @@ class WellboreAudit:
     grid_rotation_deg: Optional[float] = None    # residual vs correct declared ref
     max_dls_deg30m: Optional[float] = None       # worst dogleg severity
     n_dls_spikes: int = 0                        # stations with DLS > 30 deg/30m
+    max_torsion_deg: Optional[float] = None      # worst plane twist, curved legs
+    n_plane_inversions: int = 0                  # legs with >150 deg plane flip
     nonmonotonic_md: int = 0                     # MD steps <= 0
     duplicate_md: int = 0                        # repeated MDs
     tvd_worst_step_m: Optional[float] = None     # worst |computed-reported| dTVD
@@ -103,14 +108,16 @@ class DumpAudit:
     projection: dict = field(default_factory=dict)         # grid_status -> count
     provenance: dict = field(default_factory=dict)         # provenance -> count
     n_dls_wells: int = 0                         # wells with any DLS spike
+    n_torsion_wells: int = 0                      # wells with a plane inversion
     wellbores: list = field(default_factory=list)          # list[WellboreAudit]
 
     def defects(self):
-        """The wellbores worth a consumer's attention (grid or DLS or structural)."""
+        """Wellbores worth attention (grid / DLS / torsion / structural)."""
         return [
             w for w in self.wellbores
             if (w.grid_status not in (None, "ok", "unclassified"))
-            or w.n_dls_spikes or w.nonmonotonic_md or w.duplicate_md
+            or w.n_dls_spikes or w.n_plane_inversions
+            or w.nonmonotonic_md or w.duplicate_md
         ]
 
 
@@ -229,6 +236,25 @@ def _wellbore_metrics(name, g):
     w.max_dls_deg30m = float(np.max(dls)) if len(dls) else 0.0
     w.n_dls_spikes = int(np.sum(dls > 30.0))
 
+    # torsion: how much the osculating plane twists between consecutive curved
+    # legs. Curvature (DLS) is in-plane; a near-180 deg plane flip is out-of-plane
+    # and betrays an azimuth flip / +-180 ambiguity that DLS cannot see.
+    tvec = np.column_stack([np.sin(inc) * np.cos(azi),
+                            np.sin(inc) * np.sin(azi), np.cos(inc)])
+    bvec = np.cross(tvec[:-1], tvec[1:])
+    nb = np.linalg.norm(bvec, axis=1)
+    bok = nb > 1e-3
+    w.max_torsion_deg = 0.0
+    if bok.sum() >= 3:
+        bu = bvec[bok] / nb[bok][:, None]
+        leg_dl = np.degrees(dl)[bok]
+        twist = np.degrees(np.arccos(
+            np.clip(np.sum(bu[:-1] * bu[1:], axis=1), -1, 1)))
+        curved = (leg_dl[:-1] > 3.0) & (leg_dl[1:] > 3.0)
+        if curved.any():
+            w.max_torsion_deg = float(np.max(twist[curved]))
+            w.n_plane_inversions = int(np.sum(twist[curved] > 150.0))
+
     w.max_inc = float(np.nanmax(inc_deg))
     w.annulus_radius_m = float(np.nanmax(md * np.sin(np.radians(inc_deg))))
     dev = inc_deg > 3.0
@@ -307,6 +333,7 @@ def audit_dump(path, surface_defect_m=50.0):
         projection=proj,
         provenance=prov,
         n_dls_wells=int(sum(1 for w in rows if w.n_dls_spikes)),
+        n_torsion_wells=int(sum(1 for w in rows if w.n_plane_inversions)),
         wellbores=rows,
     )
 
@@ -325,6 +352,7 @@ def _report(audit):
     for k, v in sorted(audit.provenance.items(), key=lambda kv: -kv[1]):
         lines.append(f"    {k:15s} {v}")
     lines.append(f"  wellbores with DLS spikes (>30 deg/30m): {audit.n_dls_wells}")
+    lines.append(f"  wellbores with a plane inversion: {audit.n_torsion_wells}")
     return "\n".join(lines)
 
 
