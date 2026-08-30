@@ -36,6 +36,16 @@ welleng.exchange.wbp module
    :undoc-members:
    :show-inheritance:
 
+.. automodule:: welleng.exchange.nlog
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: welleng.exchange.nlog_audit
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
