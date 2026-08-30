@@ -1481,3 +1481,56 @@ def get_toolface_fast(pos1: NDArray, vec1: NDArray, pos2: NDArray) -> float:
     return np.arctan2(numerator, denominator) % (2 * np.pi)
 
 
+
+
+def best_fit_rotation_2d(a, b, weights=None):
+    """Closed-form 2D rotation angle that best aligns vectors ``a`` onto ``b``.
+
+    Solves the 2D orthogonal-Procrustes (Wahba) problem: the rotation angle
+    ``theta`` minimising ``sum_i w_i |R(theta) a_i - b_i|^2`` has the exact
+    closed form
+
+        theta = atan2( sum_i w_i (a_i x b_i),  sum_i w_i (a_i . b_i) )
+
+    where ``a_i x b_i = a_ix b_iy - a_iy b_ix`` (the 2D cross product) and
+    ``a_i . b_i`` is the dot product. No iteration; a single ``atan2``.
+
+    With ``weights=None`` the vectors enter at their own magnitude, so longer
+    vectors dominate the fit -- useful when ``a``/``b`` are displacement steps
+    and the longer steps are the more reliable direction estimates. Pass unit
+    vectors (or explicit ``weights``) to weight every pair equally.
+
+    In directional surveying this recovers the single rotation between two sets
+    of directions -- e.g. the grid-convergence / reference offset between a
+    survey's stated azimuths and the direction of its position steps, or between
+    two surveys of the same well.
+
+    Parameters
+    ----------
+    a, b : (n, 2) array_like
+        Two sets of 2D vectors, paired by row. ``b_i`` is ``a_i`` rotated
+        (plus noise). Any consistent axis convention works (e.g. columns
+        ``(north, east)``); the result is the rotation from ``a`` to ``b``.
+    weights : (n,) array_like, optional
+        Per-pair weights. Default ``None`` weights by vector magnitude.
+
+    Returns
+    -------
+    float
+        The best-fit rotation angle in radians, in ``(-pi, pi]``.
+
+    Notes
+    -----
+    Derivation: minimising ``sum w_i |R a_i - b_i|^2`` over rotations is
+    maximising ``sum w_i b_i^T R a_i``. Writing ``R(theta)`` and differentiating
+    gives ``tan(theta) = sum w_i (a_i x b_i) / sum w_i (a_i . b_i)``, resolved to
+    the correct quadrant by ``atan2``. This is the 2D case of Kabsch/Wahba.
+    """
+    a = np.asarray(a, dtype=float)
+    b = np.asarray(b, dtype=float)
+    if a.shape != b.shape or a.ndim != 2 or a.shape[1] != 2:
+        raise ValueError("a and b must be matching (n, 2) arrays")
+    w = 1.0 if weights is None else np.asarray(weights, dtype=float)[:, None]
+    cross = np.sum(w * (a[:, 0:1] * b[:, 1:2] - a[:, 1:2] * b[:, 0:1]))
+    dot = np.sum(w * (a[:, 0:1] * b[:, 0:1] + a[:, 1:2] * b[:, 1:2]))
+    return float(np.arctan2(cross, dot))
