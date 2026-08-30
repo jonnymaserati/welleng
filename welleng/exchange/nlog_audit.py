@@ -26,8 +26,15 @@ truth needed):
 3. **Azimuth provenance** — classify each well ``vertical`` / ``deviated``
    (azimuth recorded and varying) / ``single_bearing`` (near-constant azimuth) /
    ``azi_unrecorded`` (deviated but azimuth missing). The last is the "hollow
-   annulus" case: the true horizontal position error is a *ring* at radius
-   ``R = MD*sin(inc)``, which a per-station covariance cannot represent.
+   annulus" case -- BUT only for a *single sustained* deviation, where the
+   (unknown) azimuth is held: the true horizontal position error is then a
+   *ring* at radius ``R = sum sin(inc)*dMD`` (the integrated horizontal closure),
+   which a per-station covariance cannot represent. If the path passes back
+   through (near-)vertical and re-deviates, each deviated leg carries an
+   *independent* unknown azimuth: the legs decorrelate, the locus fills in to a
+   disk (Minkowski sum of circles), and in the many-leg limit tends to the 2D
+   Gaussian the covariance already models. ``annulus_valid`` marks the single-leg
+   case where the ring mismatch actually applies.
 4. **Dogleg severity** — flag physically impossible spikes (> 30 deg/30 m).
 5. **Torsion** — out-of-plane twist of the osculating plane between consecutive
    curved legs. Curvature (DLS) is in-plane; a near-180 deg plane flip is
@@ -91,7 +98,9 @@ class WellboreAudit:
     n_stations: int                              # survey station count
     max_inc: Optional[float] = None              # maximum inclination
     provenance: str = "too_short"                # provenance class (see module doc)
-    annulus_radius_m: Optional[float] = None     # max MD*sin(inc), annulus radius
+    annulus_radius_m: Optional[float] = None     # sum sin(inc)*dMD, ring radius
+    annulus_valid: bool = False                  # single sustained deviation (ring holds)
+    n_vertical_crossings: int = 0                # deviated->vertical->deviated transitions
     grid_declared: Optional[str] = None          # COORD_SYSTEM_CD as declared
     grid_actual: Optional[str] = None            # actual azimuth reference
     grid_status: Optional[str] = None            # grid defect class (see module doc)
@@ -116,6 +125,7 @@ class DumpAudit:
     provenance: dict = field(default_factory=dict)         # provenance -> count
     n_dls_wells: int = 0                         # wells with any DLS spike
     n_torsion_wells: int = 0                      # wells with a plane inversion
+    n_true_annuli: int = 0                        # azi_unrecorded, single sustained deviation
     wellbores: list = field(default_factory=list)          # list[WellboreAudit]
 
     def defects(self):
@@ -270,7 +280,23 @@ def _wellbore_metrics(name, g):
             w.n_plane_inversions = int(np.sum(twist[keep] > 150.0))
 
     w.max_inc = float(np.nanmax(inc_deg))
-    w.annulus_radius_m = float(np.nanmax(md * np.sin(np.radians(inc_deg))))
+    # ring radius = integrated horizontal closure (held-azimuth single leg),
+    # NOT max(md*sin inc) which overstates it when the well is not fully deviated.
+    dh = 0.5 * dmd * (np.sin(i1) + np.sin(i2)) * rf
+    w.annulus_radius_m = float(np.nansum(dh))
+    # porpoise gate: count deviated -> (near-)vertical -> deviated transitions.
+    # each re-deviation carries an INDEPENDENT unknown azimuth, so the ring only
+    # holds for a single sustained deviation (zero crossings).
+    _VERT, _DEV = 3.0, 5.0
+    state, crossings, been_dev = "vert", 0, False
+    for iv in inc_deg[np.isfinite(inc_deg)]:
+        if iv >= _DEV:
+            if state == "vert" and been_dev:
+                crossings += 1
+            state, been_dev = "dev", True
+        elif iv < _VERT:
+            state = "vert"
+    w.n_vertical_crossings = crossings
     dev = inc_deg > 3.0
     if w.max_inc < 3.0:
         w.provenance = "vertical"
@@ -278,6 +304,7 @@ def _wellbore_metrics(name, g):
         adev = azi_deg[dev]
         if adev.size == 0 or np.mean(~np.isfinite(adev)) > 0.8:
             w.provenance = "azi_unrecorded"
+            w.annulus_valid = (crossings == 0 and been_dev)
         else:
             a = np.radians(adev[np.isfinite(adev)])
             R = np.hypot(np.mean(np.sin(a)), np.mean(np.cos(a)))
@@ -353,6 +380,7 @@ def audit_dump(path, surface_defect_m=50.0):
         provenance=prov,
         n_dls_wells=int(sum(1 for w in rows if w.n_dls_spikes)),
         n_torsion_wells=int(sum(1 for w in rows if w.n_plane_inversions)),
+        n_true_annuli=int(sum(1 for w in rows if w.annulus_valid)),
         wellbores=rows,
     )
 
@@ -370,6 +398,8 @@ def _report(audit):
     lines.append("  azimuth provenance:")
     for k, v in sorted(audit.provenance.items(), key=lambda kv: -kv[1]):
         lines.append(f"    {k:15s} {v}")
+    lines.append(f"    (of which true annuli, single sustained deviation: "
+                 f"{audit.n_true_annuli})")
     lines.append(f"  wellbores with DLS spikes (>30 deg/30m): {audit.n_dls_wells}")
     lines.append(f"  wellbores with a plane inversion: {audit.n_torsion_wells}")
     return "\n".join(lines)
