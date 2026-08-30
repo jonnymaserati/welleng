@@ -173,24 +173,24 @@ def _classify_grid(azi_offset, g_utm, g_rd, declared, tol=1.5):
     dec = _DECLARED_GRID[declared]
     dec_name = {"rd": "rd", "utm": "utm", None: "true"}.get(dec, None)
 
-    def err(target):
+    def _err(target):
         return abs(_wrap180(azi_offset - target))
 
     # 1. correct as declared?
-    if dec_name and err(clean[dec_name]) < tol:
-        return dec_name, "ok", err(clean[dec_name])
+    if dec_name and _err(clean[dec_name]) < tol:
+        return dec_name, "ok", _err(clean[dec_name])
     # 2. wrong-sign convergence on the declared grid (2*gamma bug)?
     if dec_name in ("rd", "utm"):
         g_dec = grids[dec_name]
-        if err(-g_dec - g_utm) < tol:
-            return dec_name, "wrong_sign", err(-g_dec - g_utm)
+        if _err(-g_dec - g_utm) < tol:
+            return dec_name, "wrong_sign", _err(-g_dec - g_utm)
     # 3. reflected azimuth (mirrored about north)?
-    if dec_name and err(-clean[dec_name]) < tol:
-        return dec_name, "reflected", err(-clean[dec_name])
+    if dec_name and _err(-clean[dec_name]) < tol:
+        return dec_name, "reflected", _err(-clean[dec_name])
     # 4. a DIFFERENT grid (mis-declared)?
-    best = min(clean, key=lambda n: err(clean[n]))
-    if err(clean[best]) < tol:
-        return best, "mis_grid", err(clean[best])
+    best = min(clean, key=lambda n: _err(clean[n]))
+    if _err(clean[best]) < tol:
+        return best, "mis_grid", _err(clean[best])
     return None, "unexplained", None
 
 
