@@ -120,3 +120,30 @@ def test_report_is_text(tmp_path):
     audit = A.audit_dump(_synthetic_dump(tmp_path))
     txt = A._report(audit)
     assert "NLOG dump audit" in txt and "grid-azimuth" in txt
+
+
+# -- analytical grid-alignment rotation (Procrustes) -------------------------
+
+def test_procrustes_recovers_known_rotation_exactly():
+    # PROVE: the closed form recovers an applied rotation to machine precision,
+    # regardless of the (varied) vector lengths.
+    rng = np.random.default_rng(7)
+    for deg in (0.0, 2.0, -3.4, 17.3, 179.0):
+        th = np.radians(deg)
+        a = rng.normal(size=(30, 2)) * rng.uniform(1, 50, (30, 1))
+        R = np.array([[np.cos(th), -np.sin(th)], [np.sin(th), np.cos(th)]])
+        b = (R @ a.T).T
+        got = A._procrustes_rotation(a[:, 0], a[:, 1], b[:, 0], b[:, 1])
+        assert abs(A._wrap180(got - deg)) < 1e-9
+
+
+def test_procrustes_is_length_weighted():
+    # a long, consistent leg dominates a short noisy one (vs an unweighted mean)
+    a_n = np.array([100.0, 0.5])
+    a_e = np.array([0.0, 0.5])
+    # rotate the long leg by 2 deg, the short leg by 40 deg
+    th1, th2 = np.radians(2.0), np.radians(40.0)
+    b_n = np.array([100 * np.cos(th1), 0.5 * (np.cos(th2) - np.sin(th2))])
+    b_e = np.array([100 * np.sin(th1), 0.5 * (np.sin(th2) + np.cos(th2))])
+    got = A._procrustes_rotation(a_n, a_e, b_n, b_e)
+    assert abs(got - 2.0) < 1.0          # pulled toward the long leg's 2 deg

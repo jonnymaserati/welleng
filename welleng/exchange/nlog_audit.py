@@ -76,6 +76,20 @@ def _wrap180(a):
     return (a + 180.0) % 360.0 - 180.0
 
 
+def _procrustes_rotation(a_n, a_e, b_n, b_e):
+    """Closed-form 2D rotation (deg) best aligning vectors ``a`` to ``b``.
+
+    The orthogonal-Procrustes / Wahba solution: the angle ``theta`` minimising
+    ``sum |R(theta) a_i - b_i|^2`` is ``atan2(sum a_i x b_i, sum a_i . b_i)`` --
+    exact, no iteration, and length-weighted by the vector magnitudes (longer,
+    more reliable legs dominate). Used to align survey step directions to the
+    reported position step directions for the grid-azimuth check.
+    """
+    cross = np.sum(a_n * b_e - a_e * b_n)
+    dot = np.sum(a_n * b_n + a_e * b_e)
+    return float(np.degrees(np.arctan2(cross, dot)))
+
+
 @dataclass
 class WellboreAudit:
     """Per-wellbore audit result (all angles in degrees, lengths in metres)."""
@@ -270,16 +284,19 @@ def _wellbore_metrics(name, g):
             spread = np.degrees(np.sqrt(max(0.0, -2 * np.log(min(R, 1.0)))))
             w.provenance = "single_bearing" if spread < 5.0 else "deviated"
 
-    # azimuth offset vs ED50-UTM31 position steps (for the grid check)
+    # azimuth offset vs ED50-UTM31 position steps (for the grid check).
+    # The offset is the single rotation theta that best aligns the survey step
+    # vectors to the reported position step vectors -- the 2D orthogonal-Procrustes
+    # (Wahba) solution in closed form: theta = atan2(sum cross, sum dot), where
+    # cross_i = a_i x b_i and dot_i = a_i . b_i for a = survey step, b = position
+    # step. It is exact (no iteration) and length-weighted by the displacements,
+    # so longer, more reliable legs dominate. (Minimises sum |R(theta) a - b|^2.)
     step_e, step_n = np.diff(dx), np.diff(dy)
     horiz = np.hypot(de, dn)
     m = ok & (horiz > 2.0) & (np.hypot(step_e, step_n) > 1.0)
     azi_offset = np.nan
     if np.sum(m) >= 5:
-        d = _wrap180(np.degrees(np.arctan2(step_e[m], step_n[m]))
-                     - np.degrees(np.arctan2(de[m], dn[m])))
-        s, c = np.median(np.sin(np.radians(d))), np.median(np.cos(np.radians(d)))
-        azi_offset = float(np.degrees(np.arctan2(s, c)))
+        azi_offset = _procrustes_rotation(dn[m], de[m], step_n[m], step_e[m])
 
     tvd_ok = np.isfinite(tvd[1:]) & np.isfinite(tvd[:-1]) & ok
     if np.sum(tvd_ok) >= 5:
