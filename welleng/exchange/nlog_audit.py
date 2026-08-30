@@ -46,6 +46,8 @@ from typing import Optional
 
 import numpy as np
 
+from ..utils import best_fit_rotation_2d
+
 try:
     import pandas as pd
     from pyproj import Proj, Transformer
@@ -72,22 +74,13 @@ _DECLARED_GRID = {
 }
 
 
+#: minimum inclination (deg) for a torsion pivot -- below this the azimuth is
+#: ill-defined and near-vertical wobble flips the osculating plane spuriously.
+_TORSION_INC_FLOOR = 10.0
+
+
 def _wrap180(a):
     return (a + 180.0) % 360.0 - 180.0
-
-
-def _procrustes_rotation(a_n, a_e, b_n, b_e):
-    """Closed-form 2D rotation (deg) best aligning vectors ``a`` to ``b``.
-
-    The orthogonal-Procrustes / Wahba solution: the angle ``theta`` minimising
-    ``sum |R(theta) a_i - b_i|^2`` is ``atan2(sum a_i x b_i, sum a_i . b_i)`` --
-    exact, no iteration, and length-weighted by the vector magnitudes (longer,
-    more reliable legs dominate). Used to align survey step directions to the
-    reported position step directions for the grid-azimuth check.
-    """
-    cross = np.sum(a_n * b_e - a_e * b_n)
-    dot = np.sum(a_n * b_n + a_e * b_e)
-    return float(np.degrees(np.arctan2(cross, dot)))
 
 
 @dataclass
@@ -252,22 +245,29 @@ def _wellbore_metrics(name, g):
 
     # torsion: how much the osculating plane twists between consecutive curved
     # legs. Curvature (DLS) is in-plane; a near-180 deg plane flip is out-of-plane
-    # and betrays an azimuth flip / +-180 ambiguity that DLS cannot see.
-    tvec = np.column_stack([np.sin(inc) * np.cos(azi),
-                            np.sin(inc) * np.sin(azi), np.cos(inc)])
-    bvec = np.cross(tvec[:-1], tvec[1:])
-    nb = np.linalg.norm(bvec, axis=1)
-    bok = nb > 1e-3
+    # and betrays an azimuth flip / +-180 ambiguity that DLS cannot see. Restrict
+    # to legs where all three stations are DEVIATED (inc > _TORSION_INC_FLOOR):
+    # near vertical the azimuth is ill-defined and ordinary wobble flips the plane
+    # spuriously, which would otherwise dominate the flag.
     w.max_torsion_deg = 0.0
-    if bok.sum() >= 3:
-        bu = bvec[bok] / nb[bok][:, None]
-        leg_dl = np.degrees(dl)[bok]
-        twist = np.degrees(np.arccos(
+    if n >= 4:
+        tvec = np.column_stack([np.sin(inc) * np.cos(azi),
+                                np.sin(inc) * np.sin(azi), np.cos(inc)])
+        bvec = np.cross(tvec[:-1], tvec[1:])         # per leg
+        nb = np.linalg.norm(bvec, axis=1)
+        bok = nb > 1e-3
+        bu = np.zeros_like(bvec)
+        bu[bok] = bvec[bok] / nb[bok][:, None]
+        twist = np.degrees(np.arccos(               # pivot = station j+1
             np.clip(np.sum(bu[:-1] * bu[1:], axis=1), -1, 1)))
-        curved = (leg_dl[:-1] > 3.0) & (leg_dl[1:] > 3.0)
-        if curved.any():
-            w.max_torsion_deg = float(np.max(twist[curved]))
-            w.n_plane_inversions = int(np.sum(twist[curved] > 150.0))
+        dl_deg = np.degrees(dl)
+        inc3 = np.minimum(np.minimum(inc_deg[:-2], inc_deg[1:-1]), inc_deg[2:])
+        keep = (bok[:-1] & bok[1:]                   # both legs give a plane
+                & (dl_deg[:-1] > 3.0) & (dl_deg[1:] > 3.0)   # both curved
+                & (inc3 > _TORSION_INC_FLOOR))       # all 3 stations deviated
+        if keep.any():
+            w.max_torsion_deg = float(np.max(twist[keep]))
+            w.n_plane_inversions = int(np.sum(twist[keep] > 150.0))
 
     w.max_inc = float(np.nanmax(inc_deg))
     w.annulus_radius_m = float(np.nanmax(md * np.sin(np.radians(inc_deg))))
@@ -296,7 +296,9 @@ def _wellbore_metrics(name, g):
     m = ok & (horiz > 2.0) & (np.hypot(step_e, step_n) > 1.0)
     azi_offset = np.nan
     if np.sum(m) >= 5:
-        azi_offset = _procrustes_rotation(dn[m], de[m], step_n[m], step_e[m])
+        azi_offset = np.degrees(best_fit_rotation_2d(
+            np.column_stack([dn[m], de[m]]),
+            np.column_stack([step_n[m], step_e[m]])))
 
     tvd_ok = np.isfinite(tvd[1:]) & np.isfinite(tvd[:-1]) & ok
     if np.sum(tvd_ok) >= 5:

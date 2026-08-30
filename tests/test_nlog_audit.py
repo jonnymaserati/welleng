@@ -80,11 +80,16 @@ def _synthetic_dump(tmp_path):
     for md, inc, azi in [(0, 0.0, 0), (999, 2.0, 0), (1000, 32.0, 0),
                          (1001, 32.0, 0)]:
         add("W_SPIKE", md, inc, azi)
-    # torsion: an azimuth FLIP (~180 deg) between two curved legs -> the
-    # osculating plane inverts, invisible to DLS
+    # torsion: an azimuth FLIP (~180 deg) between two curved DEVIATED legs ->
+    # the osculating plane inverts, invisible to DLS
     for md, inc, azi in [(0, 0.0, 0), (300, 20.0, 45), (600, 35.0, 45),
                          (900, 20.0, 225), (1200, 35.0, 225)]:
         add("W_FLIP", md, inc, azi)
+    # near-vertical wobble: big azimuth swings at low inclination -> the plane
+    # flips geometrically but it is NOT a defect; the inc floor must NOT flag it
+    for md, inc, azi in [(0, 0.0, 0), (300, 2.0, 20), (600, 3.0, 200),
+                         (900, 2.0, 40), (1200, 3.0, 220)]:
+        add("W_WOBBLE", md, inc, azi)
 
     df = pd.DataFrame(rows)
     p = tmp_path / "dirstelsel.csv"
@@ -94,7 +99,7 @@ def _synthetic_dump(tmp_path):
 
 def test_audit_dump_end_to_end(tmp_path):
     audit = A.audit_dump(_synthetic_dump(tmp_path))
-    assert audit.n_wellbores == 5
+    assert audit.n_wellbores == 6
     # surface coords are internally consistent -> no defects
     assert audit.n_surface_defects == 0
     assert audit.surface_p95_m["rd_vs_ed50"] < 1.0
@@ -114,6 +119,9 @@ def test_audit_dump_end_to_end(tmp_path):
     flip = next(w for w in audit.wellbores if w.wellbore == "W_FLIP")
     assert flip.n_plane_inversions >= 1 and flip.max_torsion_deg > 150
     assert audit.n_torsion_wells >= 1
+    # near-vertical wobble is NOT flagged (inc floor) despite the plane flipping
+    wobble = next(w for w in audit.wellbores if w.wellbore == "W_WOBBLE")
+    assert wobble.n_plane_inversions == 0
 
 
 def test_report_is_text(tmp_path):
@@ -133,7 +141,8 @@ def test_procrustes_recovers_known_rotation_exactly():
         a = rng.normal(size=(30, 2)) * rng.uniform(1, 50, (30, 1))
         R = np.array([[np.cos(th), -np.sin(th)], [np.sin(th), np.cos(th)]])
         b = (R @ a.T).T
-        got = A._procrustes_rotation(a[:, 0], a[:, 1], b[:, 0], b[:, 1])
+        from welleng.utils import best_fit_rotation_2d
+        got = np.degrees(best_fit_rotation_2d(a, b))
         assert abs(A._wrap180(got - deg)) < 1e-9
 
 
@@ -145,5 +154,7 @@ def test_procrustes_is_length_weighted():
     th1, th2 = np.radians(2.0), np.radians(40.0)
     b_n = np.array([100 * np.cos(th1), 0.5 * (np.cos(th2) - np.sin(th2))])
     b_e = np.array([100 * np.sin(th1), 0.5 * (np.sin(th2) + np.cos(th2))])
-    got = A._procrustes_rotation(a_n, a_e, b_n, b_e)
+    from welleng.utils import best_fit_rotation_2d
+    got = np.degrees(best_fit_rotation_2d(
+        np.column_stack([a_n, a_e]), np.column_stack([b_n, b_e])))
     assert abs(got - 2.0) < 1.0          # pulled toward the long leg's 2 deg
