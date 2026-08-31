@@ -99,8 +99,8 @@ class WellboreAudit:
     max_inc: Optional[float] = None              # maximum inclination
     provenance: str = "too_short"                # provenance class (see module doc)
     annulus_radius_m: Optional[float] = None     # sum sin(inc)*dMD, ring radius
-    annulus_valid: bool = False                  # single sustained deviation (ring holds)
-    n_vertical_crossings: int = 0                # deviated->vertical->deviated transitions
+    annulus_valid: bool = False                  # single sustained dev (ring holds)
+    n_vertical_crossings: int = 0                # dev->vertical->dev transitions
     grid_declared: Optional[str] = None          # COORD_SYSTEM_CD as declared
     grid_actual: Optional[str] = None            # actual azimuth reference
     grid_status: Optional[str] = None            # grid defect class (see module doc)
@@ -125,7 +125,7 @@ class DumpAudit:
     provenance: dict = field(default_factory=dict)         # provenance -> count
     n_dls_wells: int = 0                         # wells with any DLS spike
     n_torsion_wells: int = 0                      # wells with a plane inversion
-    n_true_annuli: int = 0                        # azi_unrecorded, single sustained deviation
+    n_true_annuli: int = 0                        # azi_unrecorded, single sustained
     wellbores: list = field(default_factory=list)          # list[WellboreAudit]
 
     def defects(self):
