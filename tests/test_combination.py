@@ -12,6 +12,39 @@ def _spd(seed, scale=1.0):
     return (M @ M.T + 3 * np.eye(3)) * scale
 
 
+# -- innovation QC gate (Bulychenkov review, comment 3) ---------------------
+
+def test_innovation_qc_passes_consistent_and_flags_a_bad_station():
+    # Two surveys agreeing within their stated uncertainty -> no station flagged;
+    # move ONE station's B position far outside its combined sigma -> only that
+    # station trips the chi-square(3) gate. Opposite conditions report differently.
+    n = 6
+    A = np.stack([_spd(i, 4.0) for i in range(n)])       # ~m^2 covariances
+    B = np.stack([_spd(i + 100, 4.0) for i in range(n)])
+    xa = np.zeros((n, 3))
+    xb = np.zeros((n, 3))                                 # coincident -> d = 0
+    clean = fuse_covariances(A, B, pos_a=xa, pos_b=xb)
+    assert clean.innovation_flag is not None
+    assert not clean.innovation_flag.any()
+    assert np.all(clean.innovation_mahalanobis < 1e-9)
+
+    xb_bad = xb.copy()
+    xb_bad[3] = np.array([50.0, 50.0, 50.0])             # ~many sigma at station 3
+    with pytest.warns(RuntimeWarning, match="innovation exceeds the QC gate"):
+        bad = fuse_covariances(A, B, pos_a=xa, pos_b=xb_bad)
+    assert bad.innovation_flag[3]
+    assert bad.innovation_flag.sum() == 1                 # ONLY the bad station
+    assert bad.innovation_mahalanobis[3] > bad.innovation_mahalanobis[0]
+
+
+def test_innovation_qc_absent_without_positions():
+    # No positions supplied -> no innovation to check; fields stay None (the
+    # gate cannot silently pass on data it never saw).
+    S = np.stack([_spd(1)])
+    r = fuse_covariances(S, S)
+    assert r.innovation_flag is None and r.innovation_mahalanobis is None
+
+
 # -- correctness properties -------------------------------------------------
 
 def test_independent_equal_inputs_halve_variance():
