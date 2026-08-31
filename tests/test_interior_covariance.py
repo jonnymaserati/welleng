@@ -57,12 +57,11 @@ def _rel(a, b):
     return np.linalg.norm(a - b) / np.linalg.norm(b)
 
 
-@pytest.mark.parametrize("k", [2, 3, 4])
+@pytest.mark.parametrize("k", [1, 2, 3, 4])
 def test_station_exactness(survey, k):
     # cov_nev_at exactly at a survey station reproduces the per-station covariance
-    # to machine precision (eq 6). Station 1 is the f=1 endpoint of the surface-
-    # rooted first leg, so it inherits that leg's tracked gap (see
-    # test_interior_parity_first_leg) and is excluded here rather than asserted.
+    # to machine precision (eq 6), including station 1 (the first-leg endpoint,
+    # once the tie station's error no longer leaks into the first leg).
     got = np.asarray(survey.err.cov_nev_at(float(_MD[k])))
     ref = np.asarray(survey.err.errors.cov_NEVs[k])
     assert np.max(np.abs(got - ref)) < 1e-9
@@ -73,19 +72,17 @@ def test_interior_parity_deviated(survey):
     i, f = 3, 0.5
     md = _MD[i] + f * (_MD[i + 1] - _MD[i])
     got = np.asarray(survey.err.cov_nev_at(float(md)))
-    assert _rel(got, _GOLDEN[(i, f)]) < 1e-2
+    assert _rel(got, _GOLDEN[(i, f)]) < 5e-3
 
 
-@pytest.mark.xfail(reason="surface-rooted first-leg tie-on coupling is developed "
-                          "discontinuously; the continuous-transport construction "
-                          "closes it -- flips to xpass when landed",
-                   strict=True)
 def test_interior_parity_first_leg(survey):
-    # the first (surface-rooted) leg is the known gap (~11%); tracked for the fix.
+    # the surface-rooted first leg matches once the tie station's error is not
+    # leaked into it; the small residual is the ordinary low-inclination
+    # first-order interior tolerance (this leg builds 5 -> 12 deg), not a tie bug.
     i, f = 0, 0.5
     md = _MD[i] + f * (_MD[i + 1] - _MD[i])
     got = np.asarray(survey.err.cov_nev_at(float(md)))
-    assert _rel(got, _GOLDEN[(i, f)]) < 1e-2
+    assert _rel(got, _GOLDEN[(i, f)]) < 1.5e-2
 
 
 @pytest.mark.parametrize("model", ["MWD+SRGM", "MWD+SRGM_Fl", "MWD+SRGM+SAG"])

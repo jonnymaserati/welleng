@@ -701,6 +701,20 @@ class ErrorModel():
         J = np.stack((dd, di, da))                   # drk(i->q),      (3, 3)
         Jp = np.stack((pd, pi_, pa))                 # drkplus1(i->q), (3, 3)
         E_i, E_j = st["e_DIA"][:, i], st["e_DIA"][:, i + 1]
+        if i == 0 and smd[0] != 0.0:
+            # A NON-surface tie station (md[0] != 0) is a fixed origin whose
+            # measurement error does not propagate downstream (e_NEV[0] = 0, and
+            # the interpolated-position Monte Carlo zeros it), yet the partial-leg
+            # terms qi/coup are built from the RAW e_DIA[0], leaking its error into
+            # the first leg's interior (~11% at the leg midpoint). Zero it so the
+            # first leg is consistent with the tie everywhere else.
+            #
+            # A SURFACE tie (md[0] == 0) is NOT zeroed: there the model seeds
+            # station 0's depth error into the propagation (star[0] =
+            # tangent_0 * e_DIA_depth[0]), so its contribution is real and the
+            # first leg is already station-exact without this adjustment. Zeroing
+            # it there would REMOVE the seed and break exactness at station 1.
+            E_i = np.zeros_like(E_i)
         qi = E_i @ J                                 # drk(i->q) . e_DIA[i]
         qj = E_j @ J                                 # drk(i->q) . e_DIA[i+1]
         coup = E_i @ Jp                              # station-i partial coupling
