@@ -60,6 +60,19 @@ class FusedSurvey:
         tightens the better of the two inputs (>= 1; 1 = no gain).
     pos_fused : (n, 3) ndarray or None
         The fused position estimate, if positions were supplied.
+    innovation_mahalanobis, innovation_flag : (n,) ndarray or None
+        Set when positions are supplied. ``innovation_mahalanobis`` is the
+        Mahalanobis distance of the overlap innovation ``d = x_B - x_A`` under
+        the innovation covariance ``S = A + B - C - C^T`` -- i.e.
+        ``sqrt(d^T S^-1 d)`` per station. Under the null (the two surveys agree
+        within their stated uncertainty) ``d`` is zero-mean Gaussian with
+        covariance ``S``, so ``d^T S^-1 d`` is chi-square with 3 dof.
+        ``innovation_flag`` is ``True`` where it exceeds ``qc_chi2`` -- a station
+        whose two surveys disagree by more than their combined uncertainty
+        allows, i.e. a bad station or an under-stated input covariance. Because
+        the covariance-EOU conditioning is joint, one such station propagates
+        through the off-diagonals and biases the whole run, so it must be caught
+        BEFORE conditioning, not after.
     md, inc, azi : (n,) ndarray or None
         The fused best-estimate trajectory as a minimum-curvature listing --
         set only when a trajectory was requested (``combine_surveys(...,
@@ -103,6 +116,8 @@ class FusedSurvey:
     inc: NDArray[np.float64] | None = None  # (k,) fused trajectory inclination (deg)
     azi: NDArray[np.float64] | None = None  # (k,) fused trajectory azimuth (deg)
     cov_dia: NDArray[np.float64] | None = None  # (n,3,3) fused DIA cov (space="dia")
+    innovation_mahalanobis: NDArray[np.float64] | None = None  # (n,) sqrt(d' S^-1 d)
+    innovation_flag: NDArray[np.bool_] | None = None  # (n,) overlap-QC gate tripped
 
 
 def _psd(cov: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -130,6 +145,7 @@ def fuse_covariances(
     cross: NDArray[np.float64] | None = None,
     pos_a: NDArray[np.float64] | None = None,
     pos_b: NDArray[np.float64] | None = None,
+    qc_chi2: float = 16.266,
 ) -> FusedSurvey:
     """BLUE-combine two overlapping surveys' per-station covariances.
 
@@ -146,7 +162,14 @@ def fuse_covariances(
         ``C`` are preserved (do not reduce).
     pos_a, pos_b : (n, 3) ndarray, optional
         NEV positions of each survey; if both given, the fused position is
-        returned in :attr:`FusedSurvey.pos_fused`.
+        returned in :attr:`FusedSurvey.pos_fused`, and the overlap innovation is
+        QC-gated (see ``qc_chi2`` and :attr:`FusedSurvey.innovation_flag`).
+    qc_chi2 : float, default 16.266
+        Chi-square(3) threshold for the overlap-innovation QC gate (default is
+        the 99.9th percentile; use 11.345 for 99%, 7.815 for 95%). A station
+        whose innovation ``d^T S^-1 d`` exceeds this is flagged in
+        :attr:`FusedSurvey.innovation_flag` and a warning is raised. Only active
+        when ``pos_a`` and ``pos_b`` are both supplied.
 
     Returns
     -------
@@ -207,15 +230,39 @@ def fuse_covariances(
         red = np.where(sigma_f > 0, np.minimum(sigma_a, sigma_b) / sigma_f, np.nan)
 
     pos_fused = None
+    innov_mahal = None
+    innov_flag = None
     if pos_a is not None and pos_b is not None:
         xa = np.asarray(pos_a, dtype=float).reshape(n, 3)
         xb = np.asarray(pos_b, dtype=float).reshape(n, 3)
-        pos_fused = xa + np.einsum("...ij,...j->...i", gain, (xb - xa))
+        d = xb - xa                                  # overlap innovation
+        pos_fused = xa + np.einsum("...ij,...j->...i", gain, d)
+        # Innovation QC BEFORE the conditioning is trusted: d^T S^-1 d is
+        # chi-square(3) under the null. A station above qc_chi2 is inconsistent
+        # beyond its combined uncertainty; because the covariance-EOU update is
+        # joint, one bad station biases the whole run through the off-diagonals,
+        # so it is gated here rather than left to the caller.
+        m2 = np.einsum("...i,...ij,...j->...", d, Sinv, d)
+        innov_mahal = np.sqrt(np.clip(m2, 0.0, None))
+        innov_flag = m2 > qc_chi2
+        if innov_flag.any():
+            import warnings
+            bad = np.where(innov_flag)[0]
+            warnings.warn(
+                f"overlap innovation exceeds the QC gate (chi-square(3) > "
+                f"{qc_chi2:g}) at station index(es) {bad.tolist()[:20]} -- the "
+                "two surveys disagree by more than their combined uncertainty "
+                "(a bad station, or an under-stated input covariance). Review "
+                "before trusting the joint conditioning, which propagates a bad "
+                "station through the whole run.",
+                RuntimeWarning,
+            )
 
     return FusedSurvey(
         cov_fused=cov_fused, cov_a=A, cov_b=B,
         sigma_a=sigma_a, sigma_b=sigma_b, sigma_fused=sigma_f,
         reduction_factor=red, pos_fused=pos_fused,
+        innovation_mahalanobis=innov_mahal, innovation_flag=innov_flag,
     )
 
 
