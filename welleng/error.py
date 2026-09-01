@@ -177,6 +177,8 @@ class ErrorModel():
                 self.survey.inc_rad,
                 self.survey.azi_true_rad
             ), axis=-1)
+            self._iscwsa_surface_tieon = self._wants_surface_tieon(error_model)
+            self._first_station_is_root = self._resolve_first_station_root()
             self.survey_drdp = self.survey_rad
             self.drdp = self._drdp(self.survey_drdp)
             self.drdp_sing = self._drdp_sing(self.survey_drdp)
@@ -199,6 +201,8 @@ class ErrorModel():
         assert error_model in ERROR_MODELS, "Unrecognized error model"
         self.error_model = error_model
         self.survey = survey
+        self._iscwsa_surface_tieon = self._wants_surface_tieon(error_model)
+        self._first_station_is_root = self._resolve_first_station_root()
 
         self.survey_rad = np.stack((
             self.survey.md,
@@ -280,6 +284,60 @@ class ErrorModel():
                 "geomagnetic web service."
             )
 
+    def _resolve_first_station_root(self):
+        """Whether the first survey station is the well's own root/slot (fresh
+        attitude + depth-reference uncertainty seeded there) as opposed to a
+        tie-on carrying prior-surveyed uncertainty in externally.
+
+        Governs BOTH the ISCWSA surface tie-on (§4.7.1.1 slot-attitude
+        allowance) AND the station-0 depth-reference (DRFR) seed. Resolved from
+        the header's explicit ``tie_on`` when set; otherwise inferred from the
+        measured depth (``md[0] == 0`` -> root), which reproduces the
+        conventional/reference covariance (a below-datum first station carries
+        ~zero uncertainty).
+
+        The explicit ``header.tie_on = False`` targets a SUBSEA well, whose slot
+        is the wellhead at ``md != 0`` -- a root the depth inference mis-reads as
+        a tie-on and so under-seeds. NOTE this is a PLACEHOLDER: it re-engages
+        the surface-root seed at the wellhead as a first-order stand-in; a
+        validated subsea wellhead-uncertainty model is future work (see the
+        ``tie_on`` note on :class:`~welleng.survey.SurveyHeader`). The default
+        (``None`` -> depth inference) matches the reference covariance and is
+        unchanged.
+        """
+        tie = getattr(self.survey.header, 'tie_on', None)
+        if tie is None:
+            return bool(self.survey.md[0] == 0.0)
+        return not bool(tie)
+
+    @staticmethod
+    def _wants_surface_tieon(error_model):
+        """Whether the Rev5 surface tie-on (slot-attitude allowance, ISCWSA
+        §4.7.1.1) applies to this model.
+
+        It is an ISCWSA-MWD-STANDARD Rev5+ convention, and ONLY that:
+        - **Rev4 and earlier** predate the slot allowance (Rev5 introduced it) --
+          excluded.
+        - **COMPASS IPM imports** carry their OWN tie-on (the ``tie_type`` rows /
+          ``dinit``/``deltad`` intermediates, evaluated at the actual tie depth),
+          so the ISCWSA doubling must NOT be stacked on top -- excluded.
+
+        Keyed on model metadata (``framework`` + integer ``revision_number``),
+        not a name-string suffix: an imported COMPASS tool is named by its vendor
+        descriptor ("Magnetic, std, mag-corr"), which no ``rev`` match would
+        catch. Note it never fires unless the survey is surface-rooted
+        (``md[0] == 0``) anyway -- a tied-on survey (e.g. Volve, md[0] != 0)
+        gets no doubling regardless.
+        """
+        if isinstance(error_model, dict):
+            meta = error_model.get('metadata', {})
+            fw = str(meta.get('framework', '')).lower()
+            rev = meta.get('revision_number')
+            return fw.startswith('iscwsa') and (rev is None or rev >= 5)
+        # registry string model: pre-Rev5 ISCWSA models predate the surface tie-on
+        tok = str(error_model).lower().split()[-1]
+        return tok not in ('rev0', 'rev1', 'rev2', 'rev3', 'rev4')
+
     def _e_NEV(self, e_DIA):
         D, I, A = e_DIA.T
         arr = np.column_stack([
@@ -327,6 +385,43 @@ class ErrorModel():
         return arr
 
     def _sigma_e_NEV_systematic(self, e_NEV, e_NEV_star):
+        """Correlated running sum for a systematic source (ISCWSA Rev5.13 eq. 27).
+
+        A systematic source is fully correlated station-to-station, so its
+        position contribution at station K is the vector SUM over the run,
+        squared: ``(Σ_{k<K} e_k + e*_K)``. Here ``e_NEV`` (``e_k``) is the
+        two-leg-coupled weight -- the station's effect on BOTH adjacent
+        minimum-curvature segments -- accumulated over the prior stations, and
+        ``e_NEV_star`` (``e*_K``) is the own-station star weight (the leg into K
+        only) added at the current station. This returns that inner sum;
+        ``cov_NEVs`` squares it (:meth:`_cov_NEV`).
+
+        WHY THE FIRST LEG LOOKS "HEAVY" -- a recurring false alarm, NOT a bug.
+        The star term ``e*_K`` adds the current station's own contribution ON TOP
+        of the running sum, and at a surface root the first station additionally
+        carries the Rev5 slot-attitude allowance (the ``result[1,3:9]*=2``
+        doubling in :meth:`_drdp`, ISCWSA §4.7.1.1 eq. 32-34). Together these make
+        core's first-leg covariance ~``(1 + 0.5/k)^2`` of a bare minimum-curvature
+        propagation -- 1.5x at station 1, decaying ~1/k (measured 22.9% at k=5,
+        1.8% at k=55). A physical Monte-Carlo started from a PERFECTLY KNOWN tie
+        reads 1.0x, so it disagrees with core on the first leg by exactly this
+        factor. The gap IS the mandated slot allowance plus the star term; both
+        sides are correct. Do NOT "fix" core, and do NOT re-weight an independent
+        MC to close it (that would fake an allowance the physical propagation
+        deliberately omits). This is DISTINCT from the non-surface tie-leak
+        correction (:meth:`cov_nev_at`, the ``smd[0] != 0.0`` guard), which was a
+        genuine bug. See docs/dev/VALIDATION.md ("first-leg tie-on") and
+        tests/test_iscwsa_surface_tieon.py.
+
+        REVISION APPLICABILITY. The star-vector summation (eq. 27) is the general
+        model framework -- ALL revisions. The surface slot allowance (the
+        doubling) is Rev5 AND LATER only; Rev4 and earlier assume the slot
+        attitude is known perfectly and get no doubling. Also excluded: COMPASS
+        IPM imports, which carry their own tie-on (``tie_type`` rows) and must
+        not have the ISCWSA doubling stacked on top. Gated by
+        :meth:`_wants_surface_tieon` (keyed on model framework +
+        ``revision_number``, not a name-string suffix).
+        """
         return e_NEV_star + np.vstack(
             (
                 e_NEV[0],
@@ -701,7 +796,7 @@ class ErrorModel():
         J = np.stack((dd, di, da))                   # drk(i->q),      (3, 3)
         Jp = np.stack((pd, pi_, pa))                 # drkplus1(i->q), (3, 3)
         E_i, E_j = st["e_DIA"][:, i], st["e_DIA"][:, i + 1]
-        if i == 0 and smd[0] != 0.0:
+        if i == 0 and not self._first_station_is_root:
             # A NON-surface tie station (md[0] != 0) is a fixed origin whose
             # measurement error does not propagate downstream (e_NEV[0] = 0, and
             # the interpolated-position Monte Carlo zeros it), yet the partial-leg
@@ -917,7 +1012,7 @@ class ErrorModel():
             np.cos(inc1) + np.cos(inc2), # V
         ), axis=-1)
         md0, i0, a0 = np.array(survey[0]).T
-        if md0 == 0.0:
+        if self._first_station_is_root:
             row0 = np.array([
                 np.sin(i0) * np.cos(a0),
                 np.sin(i0) * np.sin(a0),
@@ -962,7 +1057,7 @@ class ErrorModel():
         # there, but E/V bite for a deviated slot. Only at a true surface root
         # (md[0] == 0); a below-datum tie-on carries station 0 externally. rev4
         # predates the tie-on.
-        if md1[0] == 0.0 and self.error_model.lower().split()[-1] != 'rev4':
+        if self._first_station_is_root and self._iscwsa_surface_tieon:
             N[0] *= 2
             E[0] *= 2
             V[0] *= 2
@@ -999,7 +1094,7 @@ class ErrorModel():
         # double the FIRST station's azi column (N,E; azi-V is identically 0).
         # Only at a true surface root (md[0] == 0); a below-datum tie-on carries
         # station 0 externally.
-        if md1[0] == 0.0 and self.error_model.lower().split()[-1] != 'rev4':
+        if self._first_station_is_root and self._iscwsa_surface_tieon:
             N[0] *= 2
             E[0] *= 2
 
@@ -1213,9 +1308,9 @@ class ErrorModel():
         result[:-1, 15:18] = half * (-kk_c * du_da1 * tsum + rf_c * dt_da[:-1])
 
         # surface-boundary conventions (identical to _drdp)
-        if md[0] == 0.0:
+        if self._first_station_is_root:
             result[0, 0:3] = [si[0] * ca[0], si[0] * sa[0], ci[0]]
-        if md[0] == 0.0 and self.error_model.lower().split()[-1] != 'rev4':
+        if self._first_station_is_root and self._iscwsa_surface_tieon:
             result[1, 3:9] *= 2
         return result
 
@@ -1278,7 +1373,7 @@ class ErrorModel():
         # exactly as the pre-0.25.0 datum. This keeps the station-0 term local
         # to the random branch AND preserves the composition/hierarchy tie
         # invariant that a sub-run's station 0 injects no new error.
-        if md[0] == 0.0:
+        if self._first_station_is_root:
             result[0, 0] = si[0] * ca[0]
             result[0, 1] = si[0] * sa[0]
             result[0, 2] = ci[0]
@@ -1298,7 +1393,9 @@ class ErrorModel():
         # modelled by doubling the FIRST station's inc AND azi weighting columns
         # -- the full middle and right-hand columns of eq. (10), i.e. inc-{N,E,V}
         # and azi-{N,E} (azi-V is identically 0). Applied after both columns are
-        # populated. rev4 predates the surface tie-on, so it is excluded.
+        # populated, and ONLY when :meth:`_wants_surface_tieon` is true -- an
+        # ISCWSA-standard Rev5+ model (Rev4/earlier predate it; COMPASS IPM
+        # imports carry their own tie-on and are excluded).
         #
         # NB the ISCWSA reference well #1 is vertical-North at station 1
         # (inc=azi=0), so only the inc-N term is non-zero there; doubling inc-N
@@ -1310,7 +1407,11 @@ class ErrorModel():
         # station-0 attitude uncertainty externally, so no fresh slot allowance
         # is injected. Mirrors the station-0 depth (DRFR) gate above and the
         # composition/hierarchy tie invariant.
-        if md[0] == 0.0 and self.error_model.lower().split()[-1] != 'rev4':
+        #
+        # Consequence (documented once in :meth:`_sigma_e_NEV_systematic`): this
+        # doubling makes the first leg ~1.5x a bare minimum-curvature MC. That is
+        # the mandated slot allowance, NOT a bug -- do not re-weight an MC to it.
+        if self._first_station_is_root and self._iscwsa_surface_tieon:
             result[1, 3:9] *= 2
 
         # drkplus1_dDepth: rows 0..n-2 (negated dc)

@@ -361,6 +361,7 @@ class SurveyHeader:
         vertical_inc_limit: float = 0.0001,
         xcl_representation: str = "nev_direct",
         dp_basis: str = "balanced_tangent",
+        tie_on: Optional[bool] = None,
         deg: bool = True,
         depth_unit: str = 'meters',
         surface_unit: str = 'meters',
@@ -434,6 +435,37 @@ class SurveyHeader:
             For survey inclination angles less than the vertical_inc_limit
             (in degrees), calculations are approximated to avoid
             singularities and errors.
+        tie_on: bool or None (default: None)
+            Whether the first survey station is tied on to a prior surveyed
+            section (its attitude/depth uncertainty carried in externally) as
+            opposed to being the well's own root/slot (fresh uncertainty seeded
+            there). Governs the ISCWSA surface tie-on (§4.7.1.1 slot-attitude
+            allowance) and the station-0 depth-reference seed in the error
+            model.
+
+            ``None`` (default) infers the role from the measured depth --
+            ``md[0] == 0`` is a surface root, ``md[0] != 0`` a tie-on. This
+            default reproduces the conventional/tool-vendor covariances (a
+            definitive survey that starts below the datum carries ~zero
+            uncertainty at its first station), and is the recommended setting
+            for reproducing a reference covariance.
+
+            Set ``False`` to force a root at a non-zero first depth. The intent
+            is a SUBSEA well, whose slot is the wellhead on the seabed at
+            ``md != 0`` (the datum is the RKB/MSL at surface): the depth-inferred
+            default would mis-classify that root as a tie-on and seed no
+            first-station uncertainty. Setting ``tie_on=False`` re-engages the
+            slot-attitude allowance and station-0 depth seed at the wellhead.
+
+            NOTE -- PLACEHOLDER FOR FUTURE WORK. The ``False`` path is a
+            first-order stand-in, not a validated subsea root-uncertainty model:
+            it re-uses the surface-root seed (slot-attitude allowance +
+            station-0 depth reference) at the first station. A proper subsea
+            model (the wellhead position/attitude uncertainty and how it should
+            propagate, validated against field/tool-vendor covariances) is not
+            yet implemented -- treat ``tie_on=False`` as opt-in, deliberately
+            more conservative than the reference default, pending that work.
+            Leave it ``None`` to match a reference covariance exactly.
         deg: bool (default: True)
             Indicates whether the survey angles are measured in degrees
             (True) or radians (False).
@@ -473,6 +505,7 @@ class SurveyHeader:
         self.vertical_inc_limit = vertical_inc_limit
         self.xcl_representation = xcl_representation
         self.dp_basis = dp_basis
+        self.tie_on = tie_on
         self.grid_scale_factor = grid_scale_factor
         # Global datum (georeferencing truth lives on the header). Survey resolves
         # these from its data/args and writes them here; the position transform

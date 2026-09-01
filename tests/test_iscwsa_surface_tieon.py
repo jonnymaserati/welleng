@@ -13,6 +13,7 @@ conformance workbook does not.
 """
 import numpy as np
 
+from welleng.error import ErrorModel
 from welleng.survey import Survey, SurveyHeader
 
 MAG = dict(b_total=50000, dip=70, declination=0, convergence=0,
@@ -83,3 +84,56 @@ def test_vertical_north_slot_reproduces_reference_behaviour():
     half = 0.5 * (30. - 0.)
     np.testing.assert_allclose(row5[3], 2.0 * half, rtol=1e-9)   # inc-N doubled
     np.testing.assert_allclose(row5[4:9], 0.0, atol=1e-12)       # rest vanish
+
+
+def test_surface_tieon_gate_keys_on_framework_and_revision():
+    """The Rev5 surface tie-on is keyed on model metadata (framework +
+    revision_number), NOT a name-string suffix. Verdict on known cases:
+    fires for ISCWSA-standard Rev5+, silent for Rev4/earlier AND for a COMPASS
+    IPM import (which carries its OWN tie-on and whose vendor-descriptor name
+    would slip a string-suffix gate)."""
+    w = ErrorModel._wants_surface_tieon
+    # FIRES -- ISCWSA-standard Rev5+ (registry string + OWSG/ISCWSA-JSON dict)
+    assert w("ISCWSA MWD Rev5.11") is True
+    assert w({"metadata": {"framework": "ISCWSA Rev5", "revision_number": 5,
+                           "short_name": "MWD+SRGM"}}) is True
+    # SILENT -- Rev4 and earlier predate the slot allowance
+    assert w("ISCWSA MWD Rev4") is False
+    assert w("ISCWSA MWD Rev3") is False           # JJ: pre-rev4 must not fire
+    assert w({"metadata": {"framework": "ISCWSA Rev4",
+                           "revision_number": 4}}) is False
+    # SILENT -- COMPASS IPM import (own tie-on); a vendor-descriptor name
+    # ("...mag-corr") slips a string-suffix gate, the framework keys it out.
+    assert w({"metadata": {"framework": "COMPASS IPM",
+                           "short_name": "Magnetic, std, mag-corr"}}) is False
+
+
+def _first_station_sigma_v(md0, tie_on):
+    """sigma_V at the first station for a survey rooted at md0, given tie_on."""
+    md = [md0, md0 + 30., md0 + 100., md0 + 200.]
+    s = Survey(md=md, inc=[0., 20., 30., 45.], azi=[0., 45., 40., 50.],
+               header=SurveyHeader(tie_on=tie_on, **MAG), error_model="ISCWSA MWD Rev5.11")
+    return float(np.sqrt(np.asarray(s.err.errors.cov_NEVs)[0, 2, 2])), s.err._first_station_is_root
+
+
+def test_tie_on_flag_role_governs_first_station_root():
+    """The first-station role (root vs tie-on) governs the seed, not the md
+    value. Default (None) infers from md==0 -- a below-datum start is a tie-on
+    with ~zero first-station uncertainty (reference behaviour). tie_on=False
+    forces a SUBSEA root at md!=0, re-engaging the station-0 seed (placeholder
+    subsea path). tie_on=True forces a tie-on even at md==0."""
+    # default at surface root (md==0): seeded
+    sv_surf, root_surf = _first_station_sigma_v(0.0, None)
+    assert root_surf is True and sv_surf > 0.0
+    # default below datum (md!=0): tie-on, no first-station seed (matches reference)
+    sv_tie, root_tie = _first_station_sigma_v(91.0, None)
+    assert root_tie is False and sv_tie == 0.0
+    # SUBSEA opt-in: force root at md!=0 -> seed re-engages (magnitude ~ the
+    # surface-root seed; not identical -- the depth error's scale component is
+    # evaluated at the station's own md, so a 91 m root seeds slightly more)
+    sv_subsea, root_subsea = _first_station_sigma_v(91.0, False)
+    assert root_subsea is True and sv_subsea > 0.0
+    np.testing.assert_allclose(sv_subsea, sv_surf, rtol=0.05)
+    # force tie-on at md==0 -> no seed
+    sv_forced_tie, root_forced_tie = _first_station_sigma_v(0.0, True)
+    assert root_forced_tie is False and sv_forced_tie == 0.0
