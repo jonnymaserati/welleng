@@ -56,6 +56,10 @@ If your work relies on a specific method, please **also** cite the relevant pape
   *Survey Resolution — Not Survey Frequency or Model Order — Bounds
   Trajectory-Derived Fidelity: a worked, self-correcting note.* Zenodo.
   [doi:10.5281/zenodo.21906319](https://doi.org/10.5281/zenodo.21906319)
+- **Exact continuous interior covariance** — Corcutt, J. (2026).
+  *An Exact Continuous Interior Ellipse of Uncertainty for Minimum-Curvature
+  Wellbore Surveys.* Zenodo.
+  [doi:10.5281/zenodo.22232546](https://doi.org/10.5281/zenodo.22232546)
 
 ## Built on — software dependencies
 

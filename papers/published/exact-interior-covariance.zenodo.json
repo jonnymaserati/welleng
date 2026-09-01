@@ -1,0 +1,80 @@
+{
+  "upload_type": "publication",
+  "publication_type": "preprint",
+  "title": "An Exact Continuous Interior Ellipse of Uncertainty for Minimum-Curvature Wellbore Surveys",
+  "creators": [
+    {
+      "name": "Corcutt, Jonathan",
+      "affiliation": "Corcutt Beheer B.V., Wassenaar, Netherlands",
+      "orcid": "0009-0008-1953-7760"
+    }
+  ],
+  "description": "An open, validated method for the position covariance (ellipse of uncertainty) of a wellbore survey at any measured depth between stations. The ISCWSA/OWSG error model defines the covariance at survey stations; between them, practice either interpolates the assembled covariance or adds a statistical micro-dogleg term, neither being the exact covariance of the resolved arc. This paper propagates each error source onto the minimum-curvature arc through the partial-leg Jacobian, giving the covariance C(f) as a closed form that is exact at the stations and continuous between them. It is validated against an interpolated-position Monte-Carlo oracle: the analytical-vs-Monte-Carlo difference falls as 1/sqrt(N) with no plateau (to N=4e6), the signature of an exact form. The mechanism is standard state-transition covariance propagation (as in aided inertial navigation, Kalman smoothing and geodetic adjustment); the contribution is its exact application to the wellbore interior in an open validated implementation. Linear interpolation mis-states the interior covariance near doglegs by an amount that is survey-interval dependent (negligible at the ~30 m ISCWSA-assumed spacing, growing on coarse or high-dogleg surveys) and of a sign set by the approach geometry; the exact form removes that error at any interior point and, being continuous in measured depth, makes anti-collision (separation factor and probability of collision, evaluated at the interior point of closest approach) and gradient-based well planning exact and smooth. Complements the covariance-EOU framework of K. Bulychenkov, whose between-station term models the unresolved micro-dogleg geometry rather than the resolved arc.",
+  "license": "cc-by-4.0",
+  "access_right": "open",
+  "keywords": [
+    "directional drilling",
+    "wellbore surveying",
+    "wellbore position uncertainty",
+    "ellipse of uncertainty",
+    "minimum curvature",
+    "covariance propagation",
+    "anti-collision",
+    "separation factor",
+    "probability of collision",
+    "ISCWSA",
+    "OWSG",
+    "Monte-Carlo validation",
+    "open source"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.5281/zenodo.22080773",
+      "relation": "references",
+      "scheme": "doi",
+      "resource_type": "publication-preprint"
+    },
+    {
+      "identifier": "10.5281/zenodo.20976872",
+      "relation": "references",
+      "scheme": "doi",
+      "resource_type": "publication-preprint"
+    },
+    {
+      "identifier": "10.5281/zenodo.21901641",
+      "relation": "references",
+      "scheme": "doi",
+      "resource_type": "publication-preprint"
+    },
+    {
+      "identifier": "10.5281/zenodo.22148755",
+      "relation": "references",
+      "scheme": "doi",
+      "resource_type": "publication-preprint"
+    },
+    {
+      "identifier": "10.5281/zenodo.20968887",
+      "relation": "isSupplementedBy",
+      "scheme": "doi",
+      "resource_type": "software"
+    },
+    {
+      "identifier": "10.2118/116155-PA",
+      "relation": "cites",
+      "scheme": "doi",
+      "resource_type": "publication-article"
+    },
+    {
+      "identifier": "10.2118/67616-PA",
+      "relation": "cites",
+      "scheme": "doi",
+      "resource_type": "publication-article"
+    },
+    {
+      "identifier": "10.2118/84246-PA",
+      "relation": "cites",
+      "scheme": "doi",
+      "resource_type": "publication-article"
+    }
+  ]
+}

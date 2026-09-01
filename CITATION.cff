@@ -117,3 +117,14 @@ references:
         orcid: "https://orcid.org/0009-0008-1953-7760"
     year: 2026
     doi: 10.5281/zenodo.21906319
+  - type: article
+    title: >-
+      An Exact Continuous Interior Ellipse of Uncertainty for
+      Minimum-Curvature Wellbore Surveys
+    authors:
+      - family-names: Corcutt
+        given-names: Jonathan
+        affiliation: "Corcutt Beheer B.V., Wassenaar, Netherlands"
+        orcid: "https://orcid.org/0009-0008-1953-7760"
+    year: 2026
+    doi: 10.5281/zenodo.22232546
