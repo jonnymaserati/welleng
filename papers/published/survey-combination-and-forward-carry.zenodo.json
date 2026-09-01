@@ -1,7 +1,7 @@
 {
   "upload_type": "publication",
   "publication_type": "preprint",
-  "version": "2.0",
+  "version": "2.1",
   "title": "Combining and Forward-Carrying Overlapping Wellbore Surveys: An Open Implementation Demonstrated on Public Volve Data",
   "creators": [
     {
@@ -10,7 +10,7 @@
       "orcid": "0009-0008-1953-7760"
     }
   ],
-  "description": "Version 2.0. An open, reproducible implementation (welleng) for combining and forward-carrying overlapping wellbore surveys, demonstrated end-to-end on the public Volve dataset. Combination uses the best linear unbiased estimator on the analytical arc-faithful interior covariance so the result is continuous in measured depth; forward-carry conditions an MWD run's systematic (magnetic) error on an overlapping gyro and carries the reduced systematic into the gyro-free section below. v2.0 adds the covariated ellipse of uncertainty: the whole well as one block covariance with off-diagonal cross-station correlation, so conditioning on a single gyro station propagates through the correlation to tighten the entire run (on F-4, about a third at total depth from one station, about a half from the whole overlap), with the forward-carry recovered as its forward-only slice; plus an arc-faithful off-station covariated surface. The covariated framework is the method of K. Bulychenkov (Covariance EOU, 2026, doi:10.5281/zenodo.22148755); this paper is its open, validated implementation and a quantified demonstration on public field data. Estimation theory (BLUE fusion, Gaussian conditioning) is standard and cited; validated against an independent stacked-GLS oracle (1e-8), a Monte-Carlo oracle, and reproduces the ~29% equal-accuracy reduction of Bang (2019, SPE-195621). Volve data (c) Equinor and the Volve licence partners, CC BY 4.0. Use requires citation of this work and welleng.",
+  "description": "Version 2.1. An open, reproducible implementation (welleng) for combining and forward-carrying overlapping wellbore surveys, demonstrated end-to-end on the public Volve dataset. Combination uses the best linear unbiased estimator on the analytical arc-faithful interior covariance so the result is continuous in measured depth; forward-carry conditions an MWD run's systematic (magnetic) error on an overlapping gyro and carries the reduced systematic into the gyro-free section below. v2.0 added the covariance EOU (formerly the 'covariated' ellipse of uncertainty): the whole well as one block covariance with off-diagonal cross-station correlation, so conditioning on a single gyro station propagates through the correlation to tighten the entire run (on F-4, about a third at total depth from one station, about a half from the whole overlap), with the forward-carry recovered as its forward-only slice; plus an arc-faithful off-station covariance-EOU surface. The covariance-EOU framework is the method of K. Bulychenkov (2026, concept doi:10.5281/zenodo.22148755, v1 doi:10.5281/zenodo.22148756); this paper is its open, validated implementation and a quantified demonstration on public field data. v2.1 adds an overlap-innovation QC gate before conditioning, the smooth separation-factor-constraint application for gradient-based planning, and an open-benchmark framing, following peer review by K. Bulychenkov. Estimation theory (BLUE fusion, Gaussian conditioning) is standard and cited; validated against an independent stacked-GLS oracle (1e-8), a Monte-Carlo oracle, and reproduces the ~29% equal-accuracy reduction of Bang (2019, SPE-195621). Volve data (c) Equinor and the Volve licence partners, CC BY 4.0. Use requires citation of this work and welleng.",
   "license": "cc-by-4.0",
   "access_right": "open",
   "keywords": [
@@ -73,6 +73,12 @@
       "relation": "isSupplementTo",
       "scheme": "doi",
       "resource_type": "software"
+    },
+    {
+      "identifier": "10.5281/zenodo.22232546",
+      "relation": "references",
+      "scheme": "doi",
+      "resource_type": "publication-preprint"
     }
   ],
   "notes": "Reference DOIs verified against local PDFs / doi.org; none fabricated. Chia (2003) and Ledroz (2016) are credited in the text via Bang (2019) but not cited directly (not held/read). Software (welleng) concept DOI: 10.5281/zenodo.20968887."
