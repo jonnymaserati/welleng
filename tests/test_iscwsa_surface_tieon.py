@@ -112,8 +112,10 @@ def _first_station_sigma_v(md0, tie_on):
     """sigma_V at the first station for a survey rooted at md0, given tie_on."""
     md = [md0, md0 + 30., md0 + 100., md0 + 200.]
     s = Survey(md=md, inc=[0., 20., 30., 45.], azi=[0., 45., 40., 50.],
-               header=SurveyHeader(tie_on=tie_on, **MAG), error_model="ISCWSA MWD Rev5.11")
-    return float(np.sqrt(np.asarray(s.err.errors.cov_NEVs)[0, 2, 2])), s.err._first_station_is_root
+               header=SurveyHeader(tie_on=tie_on, **MAG),
+               error_model="ISCWSA MWD Rev5.11")
+    cov = np.asarray(s.err.errors.cov_NEVs)
+    return float(np.sqrt(cov[0, 2, 2])), s.err._first_station_is_root
 
 
 def test_tie_on_flag_role_governs_first_station_root():
