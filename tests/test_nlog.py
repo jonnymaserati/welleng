@@ -88,3 +88,63 @@ def test_single_bearing_ignores_undeflected_wells():
     s = _sv_xy([0, 500, 1000, 1500], [0.1, 0.1, 0.1, 0.1],
                [10, 20, 30, 40], [0., 0., 0., 0.], [0., 0., 0., 0.])
     assert s.azimuth_provenance() == "measured"
+
+
+# -- boreholes() + save_document(): offline, monkeypatched transport ------
+import json as _json  # noqa: E402
+
+from welleng.exchange import nlog as _nlog  # noqa: E402
+
+
+class _FakeResp:
+    def __init__(self, data):
+        self._data = data
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self):
+        return self._data
+
+
+def test_boreholes_posts_empty_filter_and_parses(monkeypatch):
+    seen = {}
+
+    def fake_urlopen(req, timeout=None):
+        seen["url"] = req.full_url
+        seen["body"] = req.data
+        return _FakeResp(b'[{"boreholeName":"F06-07","boreholeDbk":123,'
+                         b'"statusDescription":"Plugged and abandoned"}]')
+
+    monkeypatch.setattr(_nlog.urllib.request, "urlopen", fake_urlopen)
+    rows = _nlog.NLOGClient().boreholes()
+    assert seen["url"].endswith("/brh/boreholes")
+    assert seen["body"] == b"{}"                       # {} = whole catalogue
+    assert rows[0]["boreholeDbk"] == 123
+    assert "abandoned" in rows[0]["statusDescription"]
+
+
+def test_boreholes_passes_filter_through(monkeypatch):
+    seen = {}
+
+    def fake_urlopen(req, timeout=None):
+        seen["body"] = req.data
+        return _FakeResp(b"[]")
+
+    monkeypatch.setattr(_nlog.urllib.request, "urlopen", fake_urlopen)
+    _nlog.NLOGClient().boreholes({"resultCode": "OAG"})
+    assert _json.loads(seen["body"]) == {"resultCode": "OAG"}
+
+
+def test_save_document_writes_bytes(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        _nlog.urllib.request, "urlopen",
+        lambda req, timeout=None: _FakeResp(b"%PDF-1.7 fake"),
+    )
+    p = tmp_path / "doc.pdf"
+    n = _nlog.NLOGClient().save_document(999, p)
+    assert n == len(b"%PDF-1.7 fake")
+    assert p.read_bytes().startswith(b"%PDF")

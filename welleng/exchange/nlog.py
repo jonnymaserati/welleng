@@ -18,6 +18,13 @@ Endpoint shape, determined by reading the app bundle
     GET  /brh-web/rest/brh/document/<bfileDbk>       (scanned reports)
     GET  /brh-web/rest/brh/logdocument/<bfileDbk>    (LIS/LAS/DLIS/TXT)
 
+    POST /nlog-mapviewer/rest/brh/boreholes
+    body: a JSON filter object ({} = the whole catalogue)
+    -> the datacenter overview list, one row per borehole keyed by
+       boreholeDbk, with status/purpose/result/dates. This is the
+       discovery endpoint: select wells by status (e.g. 'Plugged and
+       abandoned') here, then feed boreholeDbk to the per-well resources.
+
 The borehole id is the number in a map-viewer URL, e.g.
 ``nlog.nl/nlog-mapviewer/brh/106523583`` -> ``106523583``.
 
@@ -239,6 +246,32 @@ class NLOGClient:
                 return int(hit["objectId"])
         return None
 
+    def boreholes(self, filters: dict | None = None) -> list[dict]:
+        """The full borehole catalogue (the datacenter overview list).
+
+        POST /brh/boreholes with a JSON filter object; ``{}`` (the
+        default) returns every borehole. Each row carries ``boreholeName``,
+        ``boreholeDbk``, ``statusDescription`` (e.g. 'Plugged and
+        abandoned'), ``resultCode``, ``purposeCd``, ``onOffshore`` and
+        ``startDate``/``endDate``/``confidentialityDate`` (epoch ms).
+
+        This is the discovery endpoint that ``suggest`` (name lookup)
+        cannot replace: filter by status/purpose/date here, then feed the
+        ``boreholeDbk`` to ``details``/``documents``/``log_documents``.
+        """
+        req = urllib.request.Request(
+            f"{API}/boreholes",
+            data=json.dumps(filters or {}).encode(),
+            headers={"Content-Type": "application/json",
+                     "User-Agent": self.user_agent},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                out = json.load(r)
+        except Exception as exc:  # noqa: BLE001
+            raise NLOGError(f"boreholes failed: {exc}") from exc
+        return out if isinstance(out, list) else out.get("boreholes", [])
+
     def documents(self, borehole_id: int) -> list[dict]:
         d = self._post("documents", borehole_id)
         return d if isinstance(d, list) else d.get("documents", [])
@@ -278,6 +311,16 @@ class NLOGClient:
         req = urllib.request.Request(url, headers={"User-Agent": self.user_agent})
         with urllib.request.urlopen(req, timeout=self.timeout) as r:
             return r.read()
+
+    def save_document(
+        self, bfile_dbk: int | str, path, *, log: bool = False
+    ) -> int:
+        """Download a document/log file to ``path``; return bytes written."""
+        import pathlib
+
+        data = self.fetch_document(bfile_dbk, log=log)
+        pathlib.Path(path).write_bytes(data)
+        return len(data)
 
     # -- convenience --------------------------------------------------
     def survey_documents(
