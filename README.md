@@ -524,6 +524,36 @@ If your work concerns **survey resolution, survey frequency, or torque-and-drag 
 }
 ```
 
+If your work uses the **overlapping-survey combination and forward-carry** methods (`welleng.combination`), please also cite:
+
+> Corcutt, J. (2026). *Combining and Forward-Carrying Overlapping Wellbore Surveys: An Open Implementation Demonstrated on Public Volve Data.* Zenodo. <https://doi.org/10.5281/zenodo.22080773>
+
+```bibtex
+@misc{corcutt2026combination,
+  author    = {Corcutt, Jonathan},
+  title     = {Combining and Forward-Carrying Overlapping Wellbore Surveys: An Open Implementation Demonstrated on Public Volve Data},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.22080773},
+  url       = {https://doi.org/10.5281/zenodo.22080773}
+}
+```
+
+If your work uses the **exact continuous interior covariance** (`ErrorModel.cov_nev_at`), please also cite:
+
+> Corcutt, J. (2026). *An Exact Continuous Interior Ellipse of Uncertainty for Minimum-Curvature Wellbore Surveys.* Zenodo. <https://doi.org/10.5281/zenodo.22232546>
+
+```bibtex
+@misc{corcutt2026interior,
+  author    = {Corcutt, Jonathan},
+  title     = {An Exact Continuous Interior Ellipse of Uncertainty for Minimum-Curvature Wellbore Surveys},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.22232546},
+  url       = {https://doi.org/10.5281/zenodo.22232546}
+}
+```
+
 **Built on:** welleng stands on NumPy, SciPy, pandas, trimesh, FCL and more, and implements published methods (ISCWSA, Brooks, Sawaryn, …) — see [CITATIONS.md](CITATIONS.md) for the dependency and method references to credit.
 
 ## License
