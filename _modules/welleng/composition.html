@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.composition &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.composition</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.composition</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Compose a single wellbore&#39;s survey sections into one tied survey.</span>
+
+<span class="sd">A wellbore is rarely surveyed by a single continuous run of one tool. It is</span>
+<span class="sd">drilled and surveyed in ordered *sections* (legs), each potentially using a</span>
+<span class="sd">different survey tool / ISCWSA error model, and each tied on to the end of the</span>
+<span class="sd">previous section. Naively concatenating the per-section covariances is wrong</span>
+<span class="sd">in two opposite ways:</span>
+
+<span class="sd">- **Restarting the systematic error at every section** understates the</span>
+<span class="sd">  uncertainty of a section that is really one continuous survey (the</span>
+<span class="sd">  systematic sensor biases keep accumulating *correlated* down the hole — they</span>
+<span class="sd">  are one physical realisation, not a fresh draw per section).</span>
+<span class="sd">- **Treating a genuine tool change as one continuous survey** overstates the</span>
+<span class="sd">  correlation: a new tool&#39;s sensor biases are an *independent* realisation, so</span>
+<span class="sd">  its systematic error must restart (while the accumulated *position*</span>
+<span class="sd">  uncertainty of course carries forward).</span>
+
+<span class="sd">``SurveyComposition`` ties the sections together with per-component-correct</span>
+<span class="sd">covariance carry:</span>
+
+<span class="sd">1. Consecutive sections sharing a tool (same ``error_model`` *and* ``tool_id``)</span>
+<span class="sd">   are grouped into **one** :class:`~welleng.survey.Survey` so their systematic</span>
+<span class="sd">   error accumulates correlated — exactly as if surveyed in one run.</span>
+<span class="sd">2. At a tool change the next group is tied on at the previous group&#39;s end</span>
+<span class="sd">   position, carrying the accumulated covariance. The new tool&#39;s *systematic*</span>
+<span class="sd">   is independent (restarts); only the accumulated *position* covariance and</span>
+<span class="sd">   the shared *global* geomagnetic terms carry across the tie.</span>
+<span class="sd">3. Whether the *global* (declination / B-field, ``DECG`` / ``DBHG``) and</span>
+<span class="sd">   *systematic* terms are shared across a given tie is controlled by a</span>
+<span class="sd">   :data:`~welleng.conditioning.ShareMode`, defaulting to the ISCWSA Side-track</span>
+<span class="sd">   Clearance RP (2022) recommendation: within one wellbore / campaign the</span>
+<span class="sd">   global geomag terms stay *correlated* across the tie (same geomag date and</span>
+<span class="sd">   model), while sensor systematic *resets* at a tool change. A section drilled</span>
+<span class="sd">   in a different campaign (e.g. a side-track years later, different geomag</span>
+<span class="sd">   secular variation) can be marked ``all_independent``.</span>
+
+<span class="sd">The result is one unified :class:`~welleng.survey.Survey` whose total covariance</span>
+<span class="sd">*and* per-component (``cov_nev_global`` / ``cov_nev_systematic`` /</span>
+<span class="sd">``cov_nev_random``) breakdown are correctly composed. Preserving that breakdown</span>
+<span class="sd">is what lets the relative-error / anti-collision framework</span>
+<span class="sd">(:func:`welleng.conditioning.combine_covariances`) later difference two composed</span>
+<span class="sd">wellbores with correct cancellation of shared global terms.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">numpy.typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">ArrayLike</span><span class="p">,</span> <span class="n">NDArray</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.conditioning</span><span class="w"> </span><span class="kn">import</span> <span class="n">ShareMode</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.survey</span><span class="w"> </span><span class="kn">import</span> <span class="n">Survey</span><span class="p">,</span> <span class="n">SurveyHeader</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;SurveySection&quot;</span><span class="p">,</span> <span class="s2">&quot;SurveyComposition&quot;</span><span class="p">]</span>
+
+<span class="c1">#: Default ISCWSA error model when a section does not name one.</span>
+<span class="n">DEFAULT_ERROR_MODEL</span> <span class="o">=</span> <span class="s2">&quot;ISCWSA MWD Rev5.11&quot;</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_model_key</span><span class="p">(</span><span class="n">error_model</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">object</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Hashable identity for a section&#39;s error model.</span>
+
+<span class="sd">    Named models are their string; prebuilt model DICTS (e.g. an EDM/COMPASS</span>
+<span class="sd">    IPM from ``welleng.errors.edm_ipm``) are unhashable, so key on the</span>
+<span class="sd">    object&#39;s identity — two sections share a tool run only when they carry</span>
+<span class="sd">    the SAME model object, which is the correct correlation semantics for a</span>
+<span class="sd">    tool-specific imported IPM.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">error_model</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">error_model</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="nb">id</span><span class="p">(</span><span class="n">error_model</span><span class="p">)</span>
+
+<span class="c1">#: Survey-date gap (years) beyond which an unspecified tie auto-defaults to</span>
+<span class="c1">#: ``all_independent`` (geomag secular variation makes the global realisation</span>
+<span class="c1">#: effectively independent between campaigns this far apart).</span>
+<span class="n">_DATE_INDEPENDENCE_YEARS</span> <span class="o">=</span> <span class="mf">2.0</span>
+
+<span class="n">_TIE_MD_TOL</span> <span class="o">=</span> <span class="mf">1e-6</span>
+
+
+<div class="viewcode-block" id="SurveySection">
+<a class="viewcode-back" href="../../welleng.html#welleng.composition.SurveySection">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SurveySection</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;One surveyed section (leg) of a wellbore, tied on to the previous one.</span>
+
+<span class="sd">    Provide either raw ``md`` / ``inc`` / ``azi`` arrays (with ``deg`` and an</span>
+<span class="sd">    optional ``header``) or an existing :class:`~welleng.survey.Survey` via</span>
+<span class="sd">    ``survey``. The first station of each section must coincide (in measured</span>
+<span class="sd">    depth) with the last station of the previous section — that shared station</span>
+<span class="sd">    is the tie-on.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    md, inc, azi : array_like, optional</span>
+<span class="sd">        Section geometry. Ignored if ``survey`` is given.</span>
+<span class="sd">    survey : welleng.survey.Survey, optional</span>
+<span class="sd">        An existing survey to take geometry (and, if not overridden, the</span>
+<span class="sd">        ``error_model`` / ``header``) from.</span>
+<span class="sd">    deg : bool, default True</span>
+<span class="sd">        Whether ``inc`` / ``azi`` are in degrees.</span>
+<span class="sd">    error_model : str, optional</span>
+<span class="sd">        ISCWSA error model name for this section&#39;s tool. Defaults to</span>
+<span class="sd">        :data:`DEFAULT_ERROR_MODEL`.</span>
+<span class="sd">    tool_id : str, optional</span>
+<span class="sd">        Identifier of the physical survey tool / run. Consecutive sections with</span>
+<span class="sd">        the *same* ``error_model`` and ``tool_id`` are treated as one</span>
+<span class="sd">        continuous survey (systematic error stays correlated). A change of</span>
+<span class="sd">        ``tool_id`` (or ``error_model``) marks a tool change / tie. ``None`` is</span>
+<span class="sd">        treated as &quot;the same unspecified tool continuing&quot; — so if you never say</span>
+<span class="sd">        the tool changed, it does not.</span>
+<span class="sd">    survey_date : str, optional</span>
+<span class="sd">        ``YYYY-MM-DD`` date the section was surveyed. Used only to auto-pick a</span>
+<span class="sd">        default ``share_mode`` at the tie *before* this section.</span>
+<span class="sd">    geomag_model : str, optional</span>
+<span class="sd">        Name of the geomagnetic reference model (e.g. ``&quot;BGGM2020&quot;``). Used only</span>
+<span class="sd">        to auto-pick a default ``share_mode``.</span>
+<span class="sd">    share_mode : {&#39;all_independent&#39;, &#39;globals_shared&#39;, \</span>
+<span class="sd">&#39;globals_and_systematic_shared&#39;}, optional</span>
+<span class="sd">        Explicit override for how the tie *before* this section shares error</span>
+<span class="sd">        components with the previous group. If ``None``, auto-picked from the</span>
+<span class="sd">        context keys (see :class:`SurveyComposition`).</span>
+<span class="sd">    header : welleng.survey.SurveyHeader, optional</span>
+<span class="sd">        Survey header (geomag field, dip, location) for this section&#39;s error</span>
+<span class="sd">        model. Falls back to the composition-level default.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">md</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ArrayLike</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">inc</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ArrayLike</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">azi</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ArrayLike</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">survey</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Survey</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">deg</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">error_model</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">tool_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">survey_date</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">geomag_model</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">share_mode</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ShareMode</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">header</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">SurveyHeader</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">survey</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="p">,</span> <span class="n">Survey</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;`survey` must be a welleng.survey.Survey&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">error_model</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">error_model</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">error_model</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">header</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">md</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">inc</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">azi</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;SurveySection needs either `survey` or all of md/inc/azi&quot;</span>
+            <span class="p">)</span></div>
+
+
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">_Group</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A run of consecutive same-tool sections, built as one Survey.&quot;&quot;&quot;</span>
+
+    <span class="n">md</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>           <span class="c1"># grid-radian geometry (tie station incl.)</span>
+    <span class="n">inc_rad</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>
+    <span class="n">azi_grid_rad</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>
+    <span class="n">error_model</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">header</span><span class="p">:</span> <span class="n">SurveyHeader</span>
+    <span class="n">share_mode</span><span class="p">:</span> <span class="n">ShareMode</span>             <span class="c1"># tie BEFORE this group (ignored for [0])</span>
+    <span class="n">survey</span><span class="p">:</span> <span class="n">Survey</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="nb">repr</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="SurveyComposition">
+<a class="viewcode-back" href="../../welleng.html#welleng.composition.SurveyComposition">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SurveyComposition</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tie a wellbore&#39;s ordered survey sections into one continuous survey.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    sections : sequence of SurveySection</span>
+<span class="sd">        Ordered from shallow to deep. Each section ties on to the previous.</span>
+<span class="sd">    header : welleng.survey.SurveyHeader, optional</span>
+<span class="sd">        Default header applied to any section that does not carry its own.</span>
+<span class="sd">    share_mode : ShareMode, optional</span>
+<span class="sd">        Default share mode for every tie whose section does not set one and</span>
+<span class="sd">        for which the context keys do not force a choice. Defaults to</span>
+<span class="sd">        ``&quot;globals_shared&quot;`` (the ISCWSA side-track RP recommendation).</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    **Auto share-mode.** When a section&#39;s ``share_mode`` is ``None`` the tie</span>
+<span class="sd">    before it is resolved from context: if the two sides name *different*</span>
+<span class="sd">    ``geomag_model`` values, or their ``survey_date`` values differ by more</span>
+<span class="sd">    than two years, the tie is ``all_independent`` (the global geomagnetic</span>
+<span class="sd">    realisation has drifted / changed model and no longer cancels); otherwise</span>
+<span class="sd">    the composition ``share_mode`` (default ``globals_shared``) is used.</span>
+
+<span class="sd">    **Mixed error models across a shared tie.** The *shared* (globally- or</span>
+<span class="sd">    systematically-correlated) component of a multi-group run is computed by</span>
+<span class="sd">    building that run as a single survey using the run&#39;s first section&#39;s error</span>
+<span class="sd">    model. This is exact when all groups in the run use the same error model</span>
+<span class="sd">    (the common case). If they differ, the shared component uses the first</span>
+<span class="sd">    model as the reference and a warning is issued.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="SurveyComposition.__init__">
+<a class="viewcode-back" href="../../welleng.html#welleng.composition.SurveyComposition.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">sections</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">SurveySection</span><span class="p">],</span>
+        <span class="n">header</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">SurveyHeader</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">share_mode</span><span class="p">:</span> <span class="n">ShareMode</span> <span class="o">=</span> <span class="s2">&quot;globals_shared&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">sections</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">sections</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">sections</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;SurveyComposition needs at least one section&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sections</span> <span class="o">=</span> <span class="n">sections</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">default_header</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">default_share_mode</span> <span class="o">=</span> <span class="n">share_mode</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_groups</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_groups</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_survey</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Survey</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------ #</span>
+    <span class="c1"># public API</span>
+    <span class="c1"># ------------------------------------------------------------------ #</span>
+<div class="viewcode-block" id="SurveyComposition.survey">
+<a class="viewcode-back" href="../../welleng.html#welleng.composition.SurveyComposition.survey">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">survey</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Survey</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the unified, tied :class:`~welleng.survey.Survey`.</span>
+
+<span class="sd">        The result carries the composed total covariance (``cov_nev`` /</span>
+<span class="sd">        ``cov_hla``) and its per-component breakdown (``cov_nev_global`` /</span>
+<span class="sd">        ``cov_nev_systematic`` / ``cov_nev_random``). It is cached.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_survey</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_survey</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compose</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_survey</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------ #</span>
+    <span class="c1"># grouping</span>
+    <span class="c1"># ------------------------------------------------------------------ #</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_header</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">section</span><span class="p">:</span> <span class="n">SurveySection</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SurveyHeader</span><span class="p">:</span>
+        <span class="n">header</span> <span class="o">=</span> <span class="n">section</span><span class="o">.</span><span class="n">header</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">default_header</span>
+        <span class="k">if</span> <span class="n">header</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">header</span> <span class="o">=</span> <span class="n">SurveyHeader</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">header</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_section_grid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">section</span><span class="p">:</span> <span class="n">SurveySection</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Normalise a section to (md, inc_rad, azi_grid_rad) + resolved meta.&quot;&quot;&quot;</span>
+        <span class="n">header</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_header</span><span class="p">(</span><span class="n">section</span><span class="p">)</span>
+        <span class="n">error_model</span> <span class="o">=</span> <span class="n">section</span><span class="o">.</span><span class="n">error_model</span> <span class="ow">or</span> <span class="n">DEFAULT_ERROR_MODEL</span>
+        <span class="k">if</span> <span class="n">section</span><span class="o">.</span><span class="n">survey</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="n">section</span><span class="o">.</span><span class="n">survey</span>
+            <span class="n">md</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">md</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+            <span class="n">inc_rad</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+            <span class="n">azi_grid_rad</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">azi_grid_rad</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Build a geometry-only survey to normalise angles to grid radians</span>
+            <span class="c1"># regardless of the section&#39;s azi_reference / deg convention.</span>
+            <span class="n">geom</span> <span class="o">=</span> <span class="n">Survey</span><span class="p">(</span>
+                <span class="n">md</span><span class="o">=</span><span class="n">section</span><span class="o">.</span><span class="n">md</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">section</span><span class="o">.</span><span class="n">inc</span><span class="p">,</span> <span class="n">azi</span><span class="o">=</span><span class="n">section</span><span class="o">.</span><span class="n">azi</span><span class="p">,</span>
+                <span class="n">deg</span><span class="o">=</span><span class="n">section</span><span class="o">.</span><span class="n">deg</span><span class="p">,</span> <span class="n">header</span><span class="o">=</span><span class="n">header</span><span class="p">,</span> <span class="n">error_model</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">md</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">geom</span><span class="o">.</span><span class="n">md</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+            <span class="n">inc_rad</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">geom</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+            <span class="n">azi_grid_rad</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">geom</span><span class="o">.</span><span class="n">azi_grid_rad</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">md</span><span class="p">,</span> <span class="n">inc_rad</span><span class="p">,</span> <span class="n">azi_grid_rad</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">error_model</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_groups</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">_Group</span><span class="p">]:</span>
+        <span class="n">groups</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">_Group</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">prev_key</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">for</span> <span class="n">section</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">sections</span><span class="p">:</span>
+            <span class="n">md</span><span class="p">,</span> <span class="n">inc_rad</span><span class="p">,</span> <span class="n">azi_grid_rad</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">error_model</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_section_grid</span><span class="p">(</span><span class="n">section</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">_model_key</span><span class="p">(</span><span class="n">error_model</span><span class="p">),</span> <span class="n">section</span><span class="o">.</span><span class="n">tool_id</span><span class="p">)</span>
+            <span class="n">same_tool</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">groups</span><span class="p">)</span> <span class="ow">and</span> <span class="n">key</span> <span class="o">==</span> <span class="n">prev_key</span>
+
+            <span class="k">if</span> <span class="n">same_tool</span><span class="p">:</span>
+                <span class="n">g</span> <span class="o">=</span> <span class="n">groups</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_assert_tie</span><span class="p">(</span><span class="n">g</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="c1"># drop the duplicate tie station of the appended section</span>
+                <span class="n">g</span><span class="o">.</span><span class="n">md</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">((</span><span class="n">g</span><span class="o">.</span><span class="n">md</span><span class="p">,</span> <span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">:]))</span>
+                <span class="n">g</span><span class="o">.</span><span class="n">inc_rad</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">((</span><span class="n">g</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">,</span> <span class="n">inc_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:]))</span>
+                <span class="n">g</span><span class="o">.</span><span class="n">azi_grid_rad</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">((</span><span class="n">g</span><span class="o">.</span><span class="n">azi_grid_rad</span><span class="p">,</span> <span class="n">azi_grid_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">:]))</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">groups</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_assert_tie</span><span class="p">(</span><span class="n">groups</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="n">share_mode</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_share_mode</span><span class="p">(</span><span class="n">section</span><span class="p">,</span> <span class="n">groups</span><span class="p">)</span>
+                <span class="n">groups</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_Group</span><span class="p">(</span>
+                    <span class="n">md</span><span class="o">=</span><span class="n">md</span><span class="p">,</span> <span class="n">inc_rad</span><span class="o">=</span><span class="n">inc_rad</span><span class="p">,</span> <span class="n">azi_grid_rad</span><span class="o">=</span><span class="n">azi_grid_rad</span><span class="p">,</span>
+                    <span class="n">error_model</span><span class="o">=</span><span class="n">error_model</span><span class="p">,</span> <span class="n">header</span><span class="o">=</span><span class="n">header</span><span class="p">,</span>
+                    <span class="n">share_mode</span><span class="o">=</span><span class="n">share_mode</span><span class="p">,</span>
+                <span class="p">))</span>
+            <span class="n">prev_key</span> <span class="o">=</span> <span class="n">key</span>
+        <span class="k">return</span> <span class="n">groups</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_assert_tie</span><span class="p">(</span><span class="n">md_prev_end</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">md_next_start</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">md_prev_end</span> <span class="o">-</span> <span class="n">md_next_start</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">_TIE_MD_TOL</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;section tie mismatch: previous section ends at MD &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">md_prev_end</span><span class="si">:</span><span class="s2">g</span><span class="si">}</span><span class="s2"> but next starts at MD </span><span class="si">{</span><span class="n">md_next_start</span><span class="si">:</span><span class="s2">g</span><span class="si">}</span><span class="s2">; &quot;</span>
+                <span class="s2">&quot;each section must tie on at the previous section&#39;s last MD&quot;</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_share_mode</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">section</span><span class="p">:</span> <span class="n">SurveySection</span><span class="p">,</span> <span class="n">groups</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ShareMode</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">section</span><span class="o">.</span><span class="n">share_mode</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">section</span><span class="o">.</span><span class="n">share_mode</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">groups</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">default_share_mode</span>  <span class="c1"># no tie before the first group</span>
+        <span class="n">prev_section</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_last_section_of_group</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">groups</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="c1"># Different geomag model -&gt; independent globals.</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">section</span><span class="o">.</span><span class="n">geomag_model</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="n">prev_section</span><span class="o">.</span><span class="n">geomag_model</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="n">section</span><span class="o">.</span><span class="n">geomag_model</span> <span class="o">!=</span> <span class="n">prev_section</span><span class="o">.</span><span class="n">geomag_model</span>
+        <span class="p">):</span>
+            <span class="k">return</span> <span class="s2">&quot;all_independent&quot;</span>
+        <span class="c1"># Far-apart survey dates -&gt; independent globals.</span>
+        <span class="n">d_new</span> <span class="o">=</span> <span class="n">_parse_date</span><span class="p">(</span><span class="n">section</span><span class="o">.</span><span class="n">survey_date</span><span class="p">)</span>
+        <span class="n">d_old</span> <span class="o">=</span> <span class="n">_parse_date</span><span class="p">(</span><span class="n">prev_section</span><span class="o">.</span><span class="n">survey_date</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">d_new</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">d_old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">years</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">((</span><span class="n">d_new</span> <span class="o">-</span> <span class="n">d_old</span><span class="p">)</span><span class="o">.</span><span class="n">days</span><span class="p">)</span> <span class="o">/</span> <span class="mf">365.25</span>
+            <span class="k">if</span> <span class="n">years</span> <span class="o">&gt;</span> <span class="n">_DATE_INDEPENDENCE_YEARS</span><span class="p">:</span>
+                <span class="k">return</span> <span class="s2">&quot;all_independent&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">default_share_mode</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_last_section_of_group</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">group_index</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SurveySection</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;The final input section that fed a given group (for context keys).&quot;&quot;&quot;</span>
+        <span class="c1"># Re-walk the section list mirroring _build_groups&#39; grouping to find the</span>
+        <span class="c1"># last section belonging to `group_index`.</span>
+        <span class="n">gi</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+        <span class="n">prev_key</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">last</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sections</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">section</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">sections</span><span class="p">:</span>
+            <span class="n">error_model</span> <span class="o">=</span> <span class="n">section</span><span class="o">.</span><span class="n">error_model</span> <span class="ow">or</span> <span class="n">DEFAULT_ERROR_MODEL</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">_model_key</span><span class="p">(</span><span class="n">error_model</span><span class="p">),</span> <span class="n">section</span><span class="o">.</span><span class="n">tool_id</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">gi</span> <span class="o">&gt;=</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">key</span> <span class="o">==</span> <span class="n">prev_key</span><span class="p">):</span>
+                <span class="n">gi</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="n">gi</span> <span class="o">==</span> <span class="n">group_index</span><span class="p">:</span>
+                <span class="n">last</span> <span class="o">=</span> <span class="n">section</span>
+            <span class="k">elif</span> <span class="n">gi</span> <span class="o">&gt;</span> <span class="n">group_index</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="n">prev_key</span> <span class="o">=</span> <span class="n">key</span>
+        <span class="k">return</span> <span class="n">last</span>
+
+    <span class="c1"># ------------------------------------------------------------------ #</span>
+    <span class="c1"># composition</span>
+    <span class="c1"># ------------------------------------------------------------------ #</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_group_survey</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">g</span><span class="p">:</span> <span class="n">_Group</span><span class="p">,</span> <span class="n">start_nev</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Survey</span><span class="p">:</span>
+        <span class="c1"># geometry-only (covariance components come from _run_component); this</span>
+        <span class="c1"># is used purely to chain group start positions.</span>
+        <span class="k">if</span> <span class="n">g</span><span class="o">.</span><span class="n">survey</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">g</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">start_nev</span><span class="p">,</span> <span class="n">start_nev</span><span class="p">):</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">survey</span> <span class="o">=</span> <span class="n">Survey</span><span class="p">(</span>
+                <span class="n">md</span><span class="o">=</span><span class="n">g</span><span class="o">.</span><span class="n">md</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">g</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">,</span> <span class="n">azi</span><span class="o">=</span><span class="n">g</span><span class="o">.</span><span class="n">azi_grid_rad</span><span class="p">,</span> <span class="n">deg</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="n">header</span><span class="o">=</span><span class="n">g</span><span class="o">.</span><span class="n">header</span><span class="p">,</span> <span class="n">error_model</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                <span class="n">start_nev</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">start_nev</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">),</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">g</span><span class="o">.</span><span class="n">survey</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_compose</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Survey</span><span class="p">:</span>
+        <span class="n">groups</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_groups</span>
+
+        <span class="c1"># 1. Chain group start positions (only TVD affects covariance, but we</span>
+        <span class="c1">#    need continuous positions anyway).</span>
+        <span class="n">start_nev</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>
+        <span class="n">group_surveys</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Survey</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">start_nevs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">:</span>
+            <span class="n">start_nevs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">start_nev</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_group_survey</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="n">start_nev</span><span class="p">)</span>
+            <span class="n">group_surveys</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+            <span class="n">start_nev</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">pos_nev</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="c1"># 2. Compose each error component across the groups with its own</span>
+        <span class="c1">#    correlation rule.</span>
+        <span class="n">share_global</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">share_mode</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;globals_shared&quot;</span><span class="p">,</span> <span class="s2">&quot;globals_and_systematic_shared&quot;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">groups</span>
+        <span class="p">]</span>
+        <span class="n">share_systematic</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">share_mode</span> <span class="o">==</span> <span class="s2">&quot;globals_and_systematic_shared&quot;</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">groups</span>
+        <span class="p">]</span>
+        <span class="c1"># Random noise accumulates continuously and depends only on the tool</span>
+        <span class="c1"># *type* (error model), never on the tool instance — so it stays</span>
+        <span class="c1"># correlated (one continuous run) across any tie that keeps the same</span>
+        <span class="c1"># error model, breaking only at a genuine model change. Composing it</span>
+        <span class="c1"># per-group instead would inject a small propagation-context artifact</span>
+        <span class="c1"># at every tool change.</span>
+        <span class="n">share_random</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">_model_key</span><span class="p">(</span><span class="n">groups</span><span class="p">[</span><span class="n">k</span><span class="p">]</span><span class="o">.</span><span class="n">error_model</span><span class="p">)</span>
+            <span class="o">==</span> <span class="n">_model_key</span><span class="p">(</span><span class="n">groups</span><span class="p">[</span><span class="n">k</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">error_model</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">groups</span><span class="p">))</span>
+        <span class="p">]</span>
+        <span class="c1"># k=0 has no tie before it.</span>
+        <span class="n">share_global</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">share_systematic</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">share_random</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="c1"># &#39;well&#39; terms (COMPASS tie W): systematic throughout the WELL —</span>
+        <span class="c1"># ONE realisation chained across every tie (severed only by an</span>
+        <span class="c1"># explicit all_independent campaign break), as the flag says. An</span>
+        <span class="c1"># earlier empirical rejection of this rule was an artifact of the</span>
+        <span class="c1"># non-telescoping chained evaluation this module used to have; with</span>
+        <span class="c1"># the Williamson A-14-exact per-term path the chained form</span>
+        <span class="c1"># reproduces the operator-stored covariances.</span>
+        <span class="n">share_well</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">share_global</span><span class="p">)</span>
+
+        <span class="c1"># One propagation per (run, depth-datum) instead of one per component</span>
+        <span class="c1"># -- see _run_component. Scoped to this call: cleared below so a</span>
+        <span class="c1"># mutated composition can never read a stale run.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_run_cache</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">glob</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compose_component</span><span class="p">(</span>
+            <span class="s2">&quot;cov_nev_global&quot;</span><span class="p">,</span> <span class="n">share_global</span><span class="p">,</span> <span class="n">start_nevs</span>
+        <span class="p">)</span>
+        <span class="n">syst</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compose_component</span><span class="p">(</span>
+            <span class="s2">&quot;cov_nev_systematic&quot;</span><span class="p">,</span> <span class="n">share_systematic</span><span class="p">,</span> <span class="n">start_nevs</span>
+        <span class="p">)</span>
+        <span class="n">rand</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compose_component</span><span class="p">(</span>
+            <span class="s2">&quot;cov_nev_random&quot;</span><span class="p">,</span> <span class="n">share_random</span><span class="p">,</span> <span class="n">start_nevs</span>
+        <span class="p">)</span>
+        <span class="n">well</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compose_component</span><span class="p">(</span>
+            <span class="s2">&quot;cov_nev_well&quot;</span><span class="p">,</span> <span class="n">share_well</span><span class="p">,</span> <span class="n">start_nevs</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_run_cache</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="c1"># 3. Stitch per-group arrays (drop duplicate tie station of each</span>
+        <span class="c1">#    subsequent group) into unified per-station arrays.</span>
+        <span class="n">cov_global</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stitch</span><span class="p">(</span><span class="n">glob</span><span class="p">)</span>
+        <span class="n">cov_systematic</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stitch</span><span class="p">(</span><span class="n">syst</span><span class="p">)</span>
+        <span class="n">cov_random</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stitch</span><span class="p">(</span><span class="n">rand</span><span class="p">)</span>
+        <span class="n">cov_well</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stitch</span><span class="p">(</span><span class="n">well</span><span class="p">)</span>
+
+        <span class="c1"># 3a. Re-bucket the non-cancellable global. The ``cov_nev_global``</span>
+        <span class="c1">#     bucket is what cancels against another wellbore that shares the</span>
+        <span class="c1">#     campaign&#39;s geomagnetic realisation. An ``all_independent`` tie</span>
+        <span class="c1">#     marks a change of that realisation (different geomag date/model),</span>
+        <span class="c1">#     so everything the well accumulates *after* the first such tie is</span>
+        <span class="c1">#     no longer cancellable against the campaign baseline — its global</span>
+        <span class="c1">#     contribution is folded into the (non-cancelling) systematic</span>
+        <span class="c1">#     bucket. The accumulated baseline global is frozen as a constant</span>
+        <span class="c1">#     offset downstream. This is total-preserving: it only moves</span>
+        <span class="c1">#     covariance between buckets, never changes ``cov_nev``.</span>
+        <span class="n">cov_global</span><span class="p">,</span> <span class="n">cov_systematic</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rebucket_global</span><span class="p">(</span>
+            <span class="n">cov_global</span><span class="p">,</span> <span class="n">cov_systematic</span><span class="p">,</span> <span class="n">share_global</span>
+        <span class="p">)</span>
+        <span class="n">cov_nev</span> <span class="o">=</span> <span class="n">cov_global</span> <span class="o">+</span> <span class="n">cov_systematic</span> <span class="o">+</span> <span class="n">cov_random</span> <span class="o">+</span> <span class="n">cov_well</span>
+
+        <span class="c1"># 4. Unified geometry -&gt; one Survey with the composed covariance.</span>
+        <span class="n">md</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stitch_1d</span><span class="p">([</span><span class="n">g</span><span class="o">.</span><span class="n">md</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">])</span>
+        <span class="n">inc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stitch_1d</span><span class="p">([</span><span class="n">g</span><span class="o">.</span><span class="n">inc_rad</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">])</span>
+        <span class="n">azi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stitch_1d</span><span class="p">([</span><span class="n">g</span><span class="o">.</span><span class="n">azi_grid_rad</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">])</span>
+
+        <span class="n">header</span> <span class="o">=</span> <span class="n">groups</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">header</span>
+        <span class="c1"># Compose in the grid domain; force the unified header to match so the</span>
+        <span class="c1"># supplied grid angles are interpreted consistently.</span>
+        <span class="k">if</span> <span class="n">header</span><span class="o">.</span><span class="n">azi_reference</span> <span class="o">!=</span> <span class="s2">&quot;grid&quot;</span><span class="p">:</span>
+            <span class="n">header</span> <span class="o">=</span> <span class="n">_grid_header</span><span class="p">(</span><span class="n">header</span><span class="p">)</span>
+
+        <span class="n">survey</span> <span class="o">=</span> <span class="n">Survey</span><span class="p">(</span>
+            <span class="n">md</span><span class="o">=</span><span class="n">md</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">inc</span><span class="p">,</span> <span class="n">azi</span><span class="o">=</span><span class="n">azi</span><span class="p">,</span> <span class="n">deg</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">header</span><span class="o">=</span><span class="n">header</span><span class="p">,</span>
+            <span class="n">start_nev</span><span class="o">=</span><span class="n">group_surveys</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">start_nev</span><span class="p">,</span>
+            <span class="n">start_xyz</span><span class="o">=</span><span class="n">group_surveys</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">start_xyz</span><span class="p">,</span>
+            <span class="n">cov_nev</span><span class="o">=</span><span class="n">cov_nev</span><span class="p">,</span> <span class="n">error_model</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">survey</span><span class="o">.</span><span class="n">cov_nev_global</span> <span class="o">=</span> <span class="n">cov_global</span>
+        <span class="n">survey</span><span class="o">.</span><span class="n">cov_nev_systematic</span> <span class="o">=</span> <span class="n">cov_systematic</span>
+        <span class="n">survey</span><span class="o">.</span><span class="n">cov_nev_random</span> <span class="o">=</span> <span class="n">cov_random</span>
+        <span class="n">survey</span><span class="o">.</span><span class="n">cov_nev_well</span> <span class="o">=</span> <span class="n">cov_well</span>
+        <span class="k">return</span> <span class="n">survey</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_rebucket_global</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cov_global</span><span class="p">,</span> <span class="n">cov_systematic</span><span class="p">,</span> <span class="n">share_global</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Fold post-``all_independent`` global into the systematic bucket.</span>
+
+<span class="sd">        Returns ``(cov_global_cancellable, cov_systematic_adjusted)`` with an</span>
+<span class="sd">        unchanged sum. See the caller for the rationale.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># first group tied on with a non-shared (all_independent) global</span>
+        <span class="n">break_group</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">k</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_groups</span><span class="p">))</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">share_global</span><span class="p">[</span><span class="n">k</span><span class="p">]),</span>
+            <span class="kc">None</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">break_group</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">cov_global</span><span class="p">,</span> <span class="n">cov_systematic</span>  <span class="c1"># everything cancellable</span>
+
+        <span class="c1"># unified index of the last station still connected to the baseline</span>
+        <span class="c1"># geomag realisation (the tie station into ``break_group``).</span>
+        <span class="n">n_pref</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_groups</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">md</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">break_group</span><span class="p">):</span>
+            <span class="n">n_pref</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_groups</span><span class="p">[</span><span class="n">k</span><span class="p">]</span><span class="o">.</span><span class="n">md</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="n">b</span> <span class="o">=</span> <span class="n">n_pref</span> <span class="o">-</span> <span class="mi">1</span>
+
+        <span class="n">baseline</span> <span class="o">=</span> <span class="n">cov_global</span><span class="p">[</span><span class="n">b</span><span class="p">]</span>
+        <span class="n">cov_global_cancellable</span> <span class="o">=</span> <span class="n">cov_global</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">cov_systematic_adjusted</span> <span class="o">=</span> <span class="n">cov_systematic</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="c1"># downstream of the break: freeze the baseline global, move the rest</span>
+        <span class="c1"># (post-break global accumulation) into the systematic bucket.</span>
+        <span class="n">post</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">b</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">cov_systematic_adjusted</span><span class="p">[</span><span class="n">post</span><span class="p">]</span> <span class="o">+=</span> <span class="n">cov_global</span><span class="p">[</span><span class="n">post</span><span class="p">]</span> <span class="o">-</span> <span class="n">baseline</span>
+        <span class="n">cov_global_cancellable</span><span class="p">[</span><span class="n">post</span><span class="p">]</span> <span class="o">=</span> <span class="n">baseline</span>
+        <span class="k">return</span> <span class="n">cov_global_cancellable</span><span class="p">,</span> <span class="n">cov_systematic_adjusted</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_compose_component</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">attr</span><span class="p">,</span> <span class="n">share</span><span class="p">,</span> <span class="n">start_nevs</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return a list of per-group composed arrays (each incl tie station 0).</span>
+
+<span class="sd">        ``share[k]`` (k&gt;=1) is True when this component continues *correlated*</span>
+<span class="sd">        across the tie before group k. Correlated runs are computed by building</span>
+<span class="sd">        the run as one survey; a carry (freeze + independent add) is applied</span>
+<span class="sd">        across run boundaries.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_groups</span><span class="p">)</span>
+        <span class="n">out</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span><span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="n">n</span>
+        <span class="n">carry</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+        <span class="n">k</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">while</span> <span class="n">k</span> <span class="o">&lt;</span> <span class="n">n</span><span class="p">:</span>
+            <span class="c1"># maximal run [k..j] joined by shared ties</span>
+            <span class="n">j</span> <span class="o">=</span> <span class="n">k</span>
+            <span class="k">while</span> <span class="n">j</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">&lt;</span> <span class="n">n</span> <span class="ow">and</span> <span class="n">share</span><span class="p">[</span><span class="n">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]:</span>
+                <span class="n">j</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">run_comp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_component</span><span class="p">(</span><span class="n">attr</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">start_nevs</span><span class="p">[</span><span class="n">k</span><span class="p">])</span>
+            <span class="n">run_composed</span> <span class="o">=</span> <span class="n">carry</span> <span class="o">+</span> <span class="n">run_comp</span>
+
+            <span class="c1"># slice run back into per-group arrays (each incl its tie station)</span>
+            <span class="n">idx</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">for</span> <span class="n">gi</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+                <span class="n">n_g</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_groups</span><span class="p">[</span><span class="n">gi</span><span class="p">]</span><span class="o">.</span><span class="n">md</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">gi</span> <span class="o">==</span> <span class="n">k</span><span class="p">:</span>
+                    <span class="n">out</span><span class="p">[</span><span class="n">gi</span><span class="p">]</span> <span class="o">=</span> <span class="n">run_composed</span><span class="p">[</span><span class="n">idx</span><span class="p">:</span><span class="n">idx</span> <span class="o">+</span> <span class="n">n_g</span><span class="p">]</span>
+                    <span class="n">idx</span> <span class="o">+=</span> <span class="n">n_g</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">tie</span> <span class="o">=</span> <span class="n">run_composed</span><span class="p">[</span><span class="n">idx</span> <span class="o">-</span> <span class="mi">1</span><span class="p">][</span><span class="kc">None</span><span class="p">]</span>
+                    <span class="n">out</span><span class="p">[</span><span class="n">gi</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">((</span><span class="n">tie</span><span class="p">,</span> <span class="n">run_composed</span><span class="p">[</span><span class="n">idx</span><span class="p">:</span><span class="n">idx</span> <span class="o">+</span> <span class="n">n_g</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]))</span>
+                    <span class="n">idx</span> <span class="o">+=</span> <span class="n">n_g</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="n">carry</span> <span class="o">=</span> <span class="n">run_composed</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">k</span> <span class="o">=</span> <span class="n">j</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="k">return</span> <span class="n">out</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_run_component</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">attr</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">start_nev</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Component of groups k..j computed as ONE correlated survey.</span>
+
+<span class="sd">        A &quot;ghost&quot; continuation station (the first post-tie station of group</span>
+<span class="sd">        ``j+1``, if any) is appended so the run&#39;s final station — the tie into</span>
+<span class="sd">        the next group — is computed *with* its true following interval, exactly</span>
+<span class="sd">        as it would be in a single unified survey. The ghost is then discarded.</span>
+<span class="sd">        Several ISCWSA weight-function terms use the interval to the *next*</span>
+<span class="sd">        station, so without this the tie station would be mis-computed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">groups</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_groups</span><span class="p">[</span><span class="n">k</span><span class="p">:</span><span class="n">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="n">models</span> <span class="o">=</span> <span class="p">{</span><span class="n">_model_key</span><span class="p">(</span><span class="n">g</span><span class="o">.</span><span class="n">error_model</span><span class="p">)</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">}</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">models</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="c1"># Different models sharing a realisation cannot be built as one</span>
+            <span class="c1"># reference-model survey (that evaluates the wrong weights over</span>
+            <span class="c1"># the other runs&#39; spans and badly overstates the shared growth).</span>
+            <span class="c1"># Chain per-term instead: each run with its OWN model, same-name</span>
+            <span class="c1"># error sources continuing one realisation across the ties.</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_component_per_term</span><span class="p">(</span><span class="n">attr</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">start_nev</span><span class="p">)</span>
+        <span class="n">md</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stitch_1d</span><span class="p">([</span><span class="n">g</span><span class="o">.</span><span class="n">md</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">])</span>
+        <span class="n">inc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stitch_1d</span><span class="p">([</span><span class="n">g</span><span class="o">.</span><span class="n">inc_rad</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">])</span>
+        <span class="n">azi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stitch_1d</span><span class="p">([</span><span class="n">g</span><span class="o">.</span><span class="n">azi_grid_rad</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">])</span>
+        <span class="n">n_real</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">md</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">j</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_groups</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_groups</span><span class="p">[</span><span class="n">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">md</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">nxt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_groups</span><span class="p">[</span><span class="n">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+            <span class="n">md</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">md</span><span class="p">,</span> <span class="n">nxt</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">inc</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">inc</span><span class="p">,</span> <span class="n">nxt</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">azi</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">azi</span><span class="p">,</span> <span class="n">nxt</span><span class="o">.</span><span class="n">azi_grid_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">header</span> <span class="o">=</span> <span class="n">groups</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">header</span>
+        <span class="c1"># ONE propagation serves every component that shares this run&#39;s</span>
+        <span class="c1"># geometry AND its depth datum. `attr` selects which covariance to read</span>
+        <span class="c1"># off a build; it does not change the build -- the only thing that does</span>
+        <span class="c1"># is the severed-run `_tmd_datum` override below. So a run needs at most</span>
+        <span class="c1"># TWO propagations (with and without the override), not one per</span>
+        <span class="c1"># component. Un-cached, a 2-section compose ran EIGHT full ErrorModel</span>
+        <span class="c1"># propagations where 2-3 suffice, discarding three quarters of each</span>
+        <span class="c1"># result (measured at 93% of a downstream consumer&#39;s programme setup).</span>
+        <span class="n">severed</span> <span class="o">=</span> <span class="n">attr</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;cov_nev_systematic&quot;</span><span class="p">,</span> <span class="s2">&quot;cov_nev_well&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">k</span> <span class="o">&gt;</span> <span class="mi">0</span>
+        <span class="n">cache</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_run_cache&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cache</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">cache</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_cache</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">severed</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">start_nev</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">ravel</span><span class="p">()))</span>
+        <span class="n">cached</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cached</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cached</span><span class="p">,</span> <span class="n">attr</span><span class="p">)[:</span><span class="n">n_real</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">severed</span><span class="p">:</span>
+            <span class="c1"># A severed run&#39;s own systematic/well realisations act on the</span>
+            <span class="c1"># depth measured BY THAT RUN. COMPASS-formula terms weighted by</span>
+            <span class="c1"># ``tmd`` (e.g. a dsf depth-scale error) must see run-relative</span>
+            <span class="c1"># depth — depth-from-surface transferred at the tie, so the new</span>
+            <span class="c1"># realisation carries none of it. (Named ISCWSA models bind</span>
+            <span class="c1"># ``MD`` and are unaffected.)</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
+            <span class="n">header</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">header</span><span class="p">)</span>
+            <span class="n">header</span><span class="o">.</span><span class="n">_tmd_datum</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">groups</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">run</span> <span class="o">=</span> <span class="n">Survey</span><span class="p">(</span>
+            <span class="n">md</span><span class="o">=</span><span class="n">md</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">inc</span><span class="p">,</span> <span class="n">azi</span><span class="o">=</span><span class="n">azi</span><span class="p">,</span> <span class="n">deg</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">header</span><span class="o">=</span><span class="n">header</span><span class="p">,</span>
+            <span class="n">error_model</span><span class="o">=</span><span class="n">groups</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">error_model</span><span class="p">,</span> <span class="n">start_nev</span><span class="o">=</span><span class="n">start_nev</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">cache</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">run</span>
+        <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">run</span><span class="p">,</span> <span class="n">attr</span><span class="p">)[:</span><span class="n">n_real</span><span class="p">]</span>
+
+    <span class="c1">#: composed-covariance attribute -&gt; the term propagation mode it holds</span>
+    <span class="n">_ATTR_TO_PROPAGATION</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;cov_nev_global&quot;</span><span class="p">:</span> <span class="s2">&quot;global&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;cov_nev_systematic&quot;</span><span class="p">:</span> <span class="s2">&quot;systematic&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;cov_nev_well&quot;</span><span class="p">:</span> <span class="s2">&quot;well&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_run_component_per_term</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">attr</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">start_nev</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Shared component of a MULTI-MODEL run, chained per error source</span>
+<span class="sd">        (Williamson SPE-67616-PA Eq. A-14: one realisation, e-vectors summed</span>
+<span class="sd">        linearly across legs, each leg under its OWN model&#39;s weights).</span>
+
+<span class="sd">        Implementation note — why full-geometry evaluation. A leg evaluated</span>
+<span class="sd">        as a standalone survey zeroes its tie station, which DISCARDS that</span>
+<span class="sd">        endpoint&#39;s telescoped contribution: for scale-type weights</span>
+<span class="sd">        (e.g. depth-scale, ``w ~ tmd``) the two-sided station differentials</span>
+<span class="sd">        (Eqs. A-4a/A-4b) cancel at interior stations, so the leg total is an</span>
+<span class="sd">        ENDPOINT DIFFERENCE — drop the tie endpoint and every chained leg</span>
+<span class="sd">        re-counts the full accumulated magnitude (measured: x2 per leg on a</span>
+<span class="sd">        straight well, xN_legs on the composed covariance). So instead each</span>
+<span class="sd">        leg&#39;s model is evaluated over the FULL run geometry (every station</span>
+<span class="sd">        interior, telescoping intact) and the per-station sigma increments</span>
+<span class="sd">        are mixed by the station&#39;s OWNING leg:</span>
+
+<span class="sd">            v(s) = sum_{k&lt;=s} (sigma_own(k)[k] - sigma_own(k)[k-1])</span>
+
+<span class="sd">        which reduces to the engine&#39;s own accumulation when one model owns</span>
+<span class="sd">        every station, and gives each tie interval one half from each of its</span>
+<span class="sd">        two tools (the physically measured split). Covariance is the sum</span>
+<span class="sd">        over source names of the outer product of ``v`` (independent</span>
+<span class="sd">        sources; correlation one within a source across legs — Eq. A-14).</span>
+
+<span class="sd">        Random components never take this path (``share_random`` requires an</span>
+<span class="sd">        identical model).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">prop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ATTR_TO_PROPAGATION</span><span class="p">[</span><span class="n">attr</span><span class="p">]</span>
+        <span class="n">groups</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_groups</span><span class="p">[</span><span class="n">k</span><span class="p">:</span><span class="n">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="n">md</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stitch_1d</span><span class="p">([</span><span class="n">g</span><span class="o">.</span><span class="n">md</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">])</span>
+        <span class="n">inc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stitch_1d</span><span class="p">([</span><span class="n">g</span><span class="o">.</span><span class="n">inc_rad</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">])</span>
+        <span class="n">azi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stitch_1d</span><span class="p">([</span><span class="n">g</span><span class="o">.</span><span class="n">azi_grid_rad</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">])</span>
+        <span class="n">n_real</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">md</span><span class="p">)</span>
+        <span class="c1"># ghost continuation station (see _run_component)</span>
+        <span class="k">if</span> <span class="n">j</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_groups</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_groups</span><span class="p">[</span><span class="n">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">md</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">nxt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_groups</span><span class="p">[</span><span class="n">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+            <span class="n">md</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">md</span><span class="p">,</span> <span class="n">nxt</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">inc</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">inc</span><span class="p">,</span> <span class="n">nxt</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">azi</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">azi</span><span class="p">,</span> <span class="n">nxt</span><span class="o">.</span><span class="n">azi_grid_rad</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+
+        <span class="c1"># owner[s] = index into `groups` of the leg that measured station s</span>
+        <span class="c1"># (the tie station belongs to the EARLIER leg; its following interval</span>
+        <span class="c1"># is split between the two tools by the two-sided differentials).</span>
+        <span class="n">owner</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">md</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+        <span class="n">pos</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">groups</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">md</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">gi</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">groups</span><span class="p">)):</span>
+            <span class="n">n_g</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">groups</span><span class="p">[</span><span class="n">gi</span><span class="p">]</span><span class="o">.</span><span class="n">md</span><span class="p">)</span>
+            <span class="n">owner</span><span class="p">[</span><span class="n">pos</span><span class="p">:</span><span class="n">pos</span> <span class="o">+</span> <span class="n">n_g</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">gi</span>
+            <span class="n">pos</span> <span class="o">+=</span> <span class="n">n_g</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="n">owner</span><span class="p">[</span><span class="n">pos</span><span class="p">:]</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">groups</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>          <span class="c1"># ghost rides the last leg</span>
+
+        <span class="c1"># Per-model sigma profiles over the full geometry, per term name. The</span>
+        <span class="c1"># Survey per group depends only on the geometry, header and model --</span>
+        <span class="c1"># NOT on `attr`, which only selects which propagation mode to filter</span>
+        <span class="c1"># for -- so the same builds serve every component that reaches this</span>
+        <span class="c1"># path (global / systematic / well; random never does). Cached, or the</span>
+        <span class="c1"># multi-model run re-propagates each leg three times over.</span>
+        <span class="n">cache</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_run_cache&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cache</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">cache</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_cache</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;per_term&quot;</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">start_nev</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">ravel</span><span class="p">()))</span>
+        <span class="n">runs</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">runs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">runs</span> <span class="o">=</span> <span class="n">cache</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">Survey</span><span class="p">(</span>
+                    <span class="n">md</span><span class="o">=</span><span class="n">md</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">inc</span><span class="p">,</span> <span class="n">azi</span><span class="o">=</span><span class="n">azi</span><span class="p">,</span> <span class="n">deg</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">header</span><span class="o">=</span><span class="n">g</span><span class="o">.</span><span class="n">header</span><span class="p">,</span>
+                    <span class="n">error_model</span><span class="o">=</span><span class="n">g</span><span class="o">.</span><span class="n">error_model</span><span class="p">,</span> <span class="n">start_nev</span><span class="o">=</span><span class="n">start_nev</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">groups</span>
+            <span class="p">]</span>
+        <span class="n">sigmas</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="n">name</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">sigma_e_NEV</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">term</span> <span class="ow">in</span> <span class="n">run</span><span class="o">.</span><span class="n">err</span><span class="o">.</span><span class="n">errors</span><span class="o">.</span><span class="n">errors</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">term</span><span class="o">.</span><span class="n">propagation</span> <span class="o">==</span> <span class="n">prop</span>
+            <span class="p">}</span>
+            <span class="k">for</span> <span class="n">run</span> <span class="ow">in</span> <span class="n">runs</span>
+        <span class="p">]</span>
+
+        <span class="n">names</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">({</span><span class="n">n</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">sigmas</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">s</span><span class="p">})</span>
+        <span class="n">cov</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">n_real</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+        <span class="n">zero</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">md</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">:</span>
+            <span class="n">profiles</span> <span class="o">=</span> <span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">zero</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">sigmas</span><span class="p">]</span>
+            <span class="c1"># mixed per-station increments, chained (one realisation)</span>
+            <span class="n">v</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">n_real</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">s_i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_real</span><span class="p">):</span>
+                <span class="n">sig_own</span> <span class="o">=</span> <span class="n">profiles</span><span class="p">[</span><span class="n">owner</span><span class="p">[</span><span class="n">s_i</span><span class="p">]]</span>
+                <span class="n">v</span><span class="p">[</span><span class="n">s_i</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="n">s_i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="n">sig_own</span><span class="p">[</span><span class="n">s_i</span><span class="p">]</span> <span class="o">-</span> <span class="n">sig_own</span><span class="p">[</span><span class="n">s_i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">])</span>
+            <span class="n">cov</span> <span class="o">+=</span> <span class="n">v</span><span class="p">[:,</span> <span class="p">:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="n">v</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">,</span> <span class="p">:]</span>
+        <span class="k">return</span> <span class="n">cov</span>
+
+    <span class="c1"># ------------------------------------------------------------------ #</span>
+    <span class="c1"># stitching helpers (drop the duplicate tie station of each next group)</span>
+    <span class="c1"># ------------------------------------------------------------------ #</span>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_stitch</span><span class="p">(</span><span class="n">arrays</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]:</span>
+        <span class="n">parts</span> <span class="o">=</span> <span class="p">[</span><span class="n">arrays</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">+</span> <span class="p">[</span><span class="n">a</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">arrays</span><span class="p">[</span><span class="mi">1</span><span class="p">:]]</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">parts</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_stitch_1d</span><span class="p">(</span><span class="n">arrays</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]:</span>
+        <span class="n">parts</span> <span class="o">=</span> <span class="p">[</span><span class="n">arrays</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">+</span> <span class="p">[</span><span class="n">a</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">arrays</span><span class="p">[</span><span class="mi">1</span><span class="p">:]]</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_parse_date</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">value</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">for</span> <span class="n">fmt</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot;%Y/%m/</span><span class="si">%d</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">%d</span><span class="s2">/%m/%Y&quot;</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">strptime</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">fmt</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">continue</span>
+    <span class="k">return</span> <span class="kc">None</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_grid_header</span><span class="p">(</span><span class="n">header</span><span class="p">:</span> <span class="n">SurveyHeader</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SurveyHeader</span><span class="p">:</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
+    <span class="n">h</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">header</span><span class="p">)</span>
+    <span class="n">h</span><span class="o">.</span><span class="n">azi_reference</span> <span class="o">=</span> <span class="s2">&quot;grid&quot;</span>
+    <span class="k">return</span> <span class="n">h</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.units &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.units</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.units</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Optional, opt-in unit helpers for welleng (pint-backed).</span>
+
+<span class="sd">welleng&#39;s core API works in plain floats — SI inside the engine, field units at</span>
+<span class="sd">the API boundary. This module is a convenience layer for users who *want*</span>
+<span class="sd">unit-tagged quantities and safe conversions: build a quantity, convert it, or</span>
+<span class="sd">strip it back to a float to feed the core. Importing welleng does not require</span>
+<span class="sd">using any of this, and the core signatures stay plain ``float``.</span>
+
+<span class="sd">Everything shares the single welleng ``ureg`` registry. Mixing pint registries</span>
+<span class="sd">breaks quantity interoperation, so always build quantities through these helpers</span>
+<span class="sd">(or ``ureg`` itself) rather than instantiating a fresh ``UnitRegistry``.</span>
+
+<span class="sd">Examples</span>
+<span class="sd">--------</span>
+<span class="sd">&gt;&gt;&gt; from welleng import units</span>
+<span class="sd">&gt;&gt;&gt; round(units.to(units.length(1000, &#39;ft&#39;), &#39;m&#39;), 6)</span>
+<span class="sd">304.8</span>
+<span class="sd">&gt;&gt;&gt; round(units.to(units.hydrostatic_gradient(units.mud_weight(12.5, &#39;ppg&#39;)), &#39;psi/ft&#39;), 4)</span>
+<span class="sd">0.6494</span>
+<span class="sd">&gt;&gt;&gt; round(units.to_rad(units.deg(180)), 6)</span>
+<span class="sd">3.141593</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pint</span>
+
+<span class="n">ureg</span><span class="p">:</span> <span class="n">pint</span><span class="o">.</span><span class="n">UnitRegistry</span> <span class="o">=</span> <span class="n">pint</span><span class="o">.</span><span class="n">UnitRegistry</span><span class="p">()</span>
+<span class="n">Q_</span> <span class="o">=</span> <span class="n">ureg</span><span class="o">.</span><span class="n">Quantity</span>
+
+<span class="c1"># scalar or array value moving through the boundary converter</span>
+<span class="n">Numeric</span> <span class="o">=</span> <span class="n">Union</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span>
+
+<span class="c1"># --- custom units -------------------------------------------------------------</span>
+<span class="c1"># TODO import custom units from file instead of defining here</span>
+<span class="n">ureg</span><span class="o">.</span><span class="n">define</span><span class="p">(</span><span class="s1">&#39;ft_lbf = ft * lbf&#39;</span><span class="p">)</span>
+<span class="c1"># Drilling mud-density units absent from pint&#39;s default registry. ``ppg`` is</span>
+<span class="c1"># pounds per US gallon; ``sg`` (specific gravity) is treated as a density</span>
+<span class="c1"># relative to fresh water (1 sg = 1000 kg/m^3) so it converts against ppg/kg·m⁻³.</span>
+<span class="n">ureg</span><span class="o">.</span><span class="n">define</span><span class="p">(</span><span class="s1">&#39;ppg = pound / gallon&#39;</span><span class="p">)</span>
+<span class="n">ureg</span><span class="o">.</span><span class="n">define</span><span class="p">(</span><span class="s1">&#39;sg = 1000 * kilogram / meter ** 3&#39;</span><span class="p">)</span>
+
+<span class="n">Number</span> <span class="o">=</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span>
+<span class="n">UnitLike</span> <span class="o">=</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pint</span><span class="o">.</span><span class="n">Unit</span><span class="p">]</span>
+
+
+<span class="c1"># --- angles -------------------------------------------------------------------</span>
+<div class="viewcode-block" id="deg">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.deg">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">deg</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Number</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A quantity of ``value`` degrees.</span>
+
+<span class="sd">    &gt;&gt;&gt; deg(90).to(&#39;radian&#39;).magnitude</span>
+<span class="sd">    1.5707963267948966</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">value</span> <span class="o">*</span> <span class="n">ureg</span><span class="o">.</span><span class="n">degree</span></div>
+
+
+
+<div class="viewcode-block" id="rad">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.rad">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">rad</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Number</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A quantity of ``value`` radians.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">value</span> <span class="o">*</span> <span class="n">ureg</span><span class="o">.</span><span class="n">radian</span></div>
+
+
+
+<div class="viewcode-block" id="to_deg">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.to_deg">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">to_deg</span><span class="p">(</span><span class="n">angle</span><span class="p">:</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Magnitude of ``angle`` in degrees (float).</span>
+
+<span class="sd">    &gt;&gt;&gt; round(to_deg(rad(3.141592653589793)), 6)</span>
+<span class="sd">    180.0</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">angle</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">ureg</span><span class="o">.</span><span class="n">degree</span><span class="p">)</span><span class="o">.</span><span class="n">magnitude</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="to_rad">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.to_rad">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">to_rad</span><span class="p">(</span><span class="n">angle</span><span class="p">:</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Magnitude of ``angle`` in radians (float).&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">angle</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">ureg</span><span class="o">.</span><span class="n">radian</span><span class="p">)</span><span class="o">.</span><span class="n">magnitude</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># --- typed quantity constructors ----------------------------------------------</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_quantity</span><span class="p">(</span>
+    <span class="n">value</span><span class="p">:</span> <span class="n">Number</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="n">UnitLike</span><span class="p">,</span> <span class="n">dimensionality</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+    <span class="n">q</span> <span class="o">=</span> <span class="n">ureg</span><span class="o">.</span><span class="n">Quantity</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">unit</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">q</span><span class="o">.</span><span class="n">check</span><span class="p">(</span><span class="n">dimensionality</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> unit </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">unit</span><span class="p">)</span><span class="si">!r}</span><span class="s2"> is not a </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">dimensionality</span><span class="si">}</span><span class="s2">)&quot;</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">q</span>
+
+
+<div class="viewcode-block" id="length">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.length">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">length</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Number</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="n">UnitLike</span> <span class="o">=</span> <span class="s1">&#39;meter&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A length quantity (default metres).</span>
+
+<span class="sd">    &gt;&gt;&gt; round(to(length(1, &#39;ft&#39;), &#39;m&#39;), 6)</span>
+<span class="sd">    0.3048</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_quantity</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">unit</span><span class="p">,</span> <span class="s1">&#39;[length]&#39;</span><span class="p">,</span> <span class="s1">&#39;length&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="pressure">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.pressure">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">pressure</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Number</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="n">UnitLike</span> <span class="o">=</span> <span class="s1">&#39;psi&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A pressure quantity (default psi).&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_quantity</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">unit</span><span class="p">,</span> <span class="s1">&#39;[pressure]&#39;</span><span class="p">,</span> <span class="s1">&#39;pressure&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="mud_weight">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.mud_weight">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">mud_weight</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Number</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="n">UnitLike</span> <span class="o">=</span> <span class="s1">&#39;ppg&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A mud-weight (density) quantity (default ppg).</span>
+
+<span class="sd">    &gt;&gt;&gt; round(to(mud_weight(1.2, &#39;sg&#39;), &#39;ppg&#39;), 3)</span>
+<span class="sd">    10.014</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_quantity</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">unit</span><span class="p">,</span> <span class="s1">&#39;[mass] / [length] ** 3&#39;</span><span class="p">,</span> <span class="s1">&#39;mud weight&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="force">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.force">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">force</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Number</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="n">UnitLike</span> <span class="o">=</span> <span class="s1">&#39;newton&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A force quantity (default newtons).&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_quantity</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">unit</span><span class="p">,</span> <span class="s1">&#39;[force]&#39;</span><span class="p">,</span> <span class="s1">&#39;force&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="torque">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.torque">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">torque</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Number</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="n">UnitLike</span> <span class="o">=</span> <span class="s1">&#39;newton * meter&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A torque quantity (default N·m).</span>
+
+<span class="sd">    Note: torque and energy share a dimensionality in pint, so this does not</span>
+<span class="sd">    reject energy units.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_quantity</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">unit</span><span class="p">,</span> <span class="s1">&#39;[force] * [length]&#39;</span><span class="p">,</span> <span class="s1">&#39;torque&#39;</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># --- thermal-domain constructors ----------------------------------------------</span>
+<span class="c1"># CRITICAL: an absolute temperature is an OFFSET unit (degF &lt;-&gt; kelvin add a</span>
+<span class="c1"># constant), whereas every gradient / heat-capacity / conductivity term uses a</span>
+<span class="c1"># temperature DIFFERENCE (delta_degF &lt;-&gt; kelvin, a pure scale). Mixing the</span>
+<span class="c1"># two silently injects ~255 K. Use :func:`temperature` for a state (a reading)</span>
+<span class="c1"># and :func:`temperature_delta` for any per-degree term.</span>
+<div class="viewcode-block" id="temperature">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.temperature">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">temperature</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Number</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="n">UnitLike</span> <span class="o">=</span> <span class="s1">&#39;degF&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;An absolute temperature (default degF) — an OFFSET unit.</span>
+
+<span class="sd">    Convert with :func:`to`/:func:`to_si` (kelvin): the constant offset is</span>
+<span class="sd">    applied. Do NOT use this for gradients or specific heats — use</span>
+<span class="sd">    :func:`temperature_delta`.</span>
+
+<span class="sd">    &gt;&gt;&gt; round(to(temperature(60, &#39;degF&#39;), &#39;kelvin&#39;), 2)</span>
+<span class="sd">    288.71</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_quantity</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">unit</span><span class="p">,</span> <span class="s1">&#39;[temperature]&#39;</span><span class="p">,</span> <span class="s1">&#39;temperature&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="temperature_delta">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.temperature_delta">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">temperature_delta</span><span class="p">(</span>
+    <span class="n">value</span><span class="p">:</span> <span class="n">Number</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="n">UnitLike</span> <span class="o">=</span> <span class="s1">&#39;delta_degF&#39;</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A temperature DIFFERENCE (default delta_degF) — a pure scale.</span>
+
+<span class="sd">    For the per-degree part of gradients, specific heats and conductivities.</span>
+
+<span class="sd">    &gt;&gt;&gt; round(to(temperature_delta(1, &#39;delta_degF&#39;), &#39;kelvin&#39;), 4)</span>
+<span class="sd">    0.5556</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_quantity</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">unit</span><span class="p">,</span> <span class="s1">&#39;[temperature]&#39;</span><span class="p">,</span> <span class="s1">&#39;temperature difference&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="mass_rate">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.mass_rate">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">mass_rate</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Number</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="n">UnitLike</span> <span class="o">=</span> <span class="s1">&#39;kilogram / second&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A mass flow rate (default kg/s).&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_quantity</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">unit</span><span class="p">,</span> <span class="s1">&#39;[mass] / [time]&#39;</span><span class="p">,</span> <span class="s1">&#39;mass rate&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="specific_heat">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.specific_heat">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">specific_heat</span><span class="p">(</span>
+    <span class="n">value</span><span class="p">:</span> <span class="n">Number</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="n">UnitLike</span> <span class="o">=</span> <span class="s1">&#39;joule / (kilogram * kelvin)&#39;</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A specific heat capacity (default J/(kg·K)). Uses delta temperature.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_quantity</span><span class="p">(</span>
+        <span class="n">value</span><span class="p">,</span> <span class="n">unit</span><span class="p">,</span> <span class="s1">&#39;[energy] / [mass] / [temperature]&#39;</span><span class="p">,</span> <span class="s1">&#39;specific heat&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="thermal_conductivity">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.thermal_conductivity">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">thermal_conductivity</span><span class="p">(</span>
+    <span class="n">value</span><span class="p">:</span> <span class="n">Number</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="n">UnitLike</span> <span class="o">=</span> <span class="s1">&#39;watt / (meter * kelvin)&#39;</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A thermal conductivity (default W/(m·K)). Uses delta temperature.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_quantity</span><span class="p">(</span>
+        <span class="n">value</span><span class="p">,</span> <span class="n">unit</span><span class="p">,</span> <span class="s1">&#39;[power] / [length] / [temperature]&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;thermal conductivity&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="thermal_diffusivity">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.thermal_diffusivity">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">thermal_diffusivity</span><span class="p">(</span>
+    <span class="n">value</span><span class="p">:</span> <span class="n">Number</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="n">UnitLike</span> <span class="o">=</span> <span class="s1">&#39;meter ** 2 / second&#39;</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A thermal diffusivity (default m²/s).&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_quantity</span><span class="p">(</span>
+        <span class="n">value</span><span class="p">,</span> <span class="n">unit</span><span class="p">,</span> <span class="s1">&#39;[length] ** 2 / [time]&#39;</span><span class="p">,</span> <span class="s1">&#39;thermal diffusivity&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="heat_transfer_coefficient">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.heat_transfer_coefficient">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">heat_transfer_coefficient</span><span class="p">(</span>
+    <span class="n">value</span><span class="p">:</span> <span class="n">Number</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="n">UnitLike</span> <span class="o">=</span> <span class="s1">&#39;watt / (meter ** 2 * kelvin)&#39;</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A heat-transfer coefficient (default W/(m²·K)). Uses delta temperature.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_quantity</span><span class="p">(</span>
+        <span class="n">value</span><span class="p">,</span> <span class="n">unit</span><span class="p">,</span> <span class="s1">&#39;[power] / [length] ** 2 / [temperature]&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;heat transfer coefficient&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="temperature_gradient">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.temperature_gradient">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">temperature_gradient</span><span class="p">(</span>
+    <span class="n">value</span><span class="p">:</span> <span class="n">Number</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="n">UnitLike</span> <span class="o">=</span> <span class="s1">&#39;kelvin / meter&#39;</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A temperature gradient (default K/m) — delta-based (K/m, degF/ft).&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_quantity</span><span class="p">(</span>
+        <span class="n">value</span><span class="p">,</span> <span class="n">unit</span><span class="p">,</span> <span class="s1">&#39;[temperature] / [length]&#39;</span><span class="p">,</span> <span class="s1">&#39;temperature gradient&#39;</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># --- converters / guards ------------------------------------------------------</span>
+<div class="viewcode-block" id="to">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.to">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="n">quantity</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="n">UnitLike</span><span class="p">,</span> <span class="n">to_unit</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">UnitLike</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Magnitude expressed in a target unit (float). Two call forms:</span>
+
+<span class="sd">    ``to(quantity, unit)`` -- express an existing Quantity in ``unit``; or</span>
+<span class="sd">    ``to(value, from_unit, to_unit)`` -- a value + its unit-string, converted</span>
+<span class="sd">    to ``to_unit`` (drops the ``Q_(value, from_unit)`` boilerplate).</span>
+
+<span class="sd">    &gt;&gt;&gt; to(pressure(1, &#39;bar&#39;), &#39;Pa&#39;)</span>
+<span class="sd">    100000.0</span>
+<span class="sd">    &gt;&gt;&gt; to(1.0, &#39;bar&#39;, &#39;Pa&#39;)</span>
+<span class="sd">    100000.0</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">to_unit</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">quantity</span> <span class="o">=</span> <span class="n">quantity</span> <span class="o">*</span> <span class="n">ureg</span><span class="p">(</span><span class="n">unit</span><span class="p">)</span>
+        <span class="n">unit</span> <span class="o">=</span> <span class="n">to_unit</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">quantity</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">unit</span><span class="p">)</span><span class="o">.</span><span class="n">magnitude</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="to_si">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.to_si">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">to_si</span><span class="p">(</span><span class="n">quantity</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">UnitLike</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Magnitude in SI base units (float). Two call forms:</span>
+
+<span class="sd">    ``to_si(Q_(value, unit))`` or the boilerplate-free ``to_si(value, unit)``.</span>
+
+<span class="sd">    &gt;&gt;&gt; to_si(pressure(1, &#39;bar&#39;))</span>
+<span class="sd">    100000.0</span>
+<span class="sd">    &gt;&gt;&gt; to_si(1.0, &#39;bar&#39;)</span>
+<span class="sd">    100000.0</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">unit</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">quantity</span> <span class="o">=</span> <span class="n">quantity</span> <span class="o">*</span> <span class="n">ureg</span><span class="p">(</span><span class="n">unit</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">quantity</span><span class="o">.</span><span class="n">to_base_units</span><span class="p">()</span><span class="o">.</span><span class="n">magnitude</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="magnitude">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.magnitude">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">magnitude</span><span class="p">(</span><span class="n">quantity</span><span class="p">:</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The bare magnitude of ``quantity`` (float), unit unchanged.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">quantity</span><span class="o">.</span><span class="n">magnitude</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="is_valid_unit">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.is_valid_unit">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">is_valid_unit</span><span class="p">(</span><span class="n">unit_str</span><span class="p">:</span> <span class="n">UnitLike</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;True if ``unit_str`` is a unit the registry understands.</span>
+
+<span class="sd">    A public predicate for validating a user-supplied unit string at an API/GUI</span>
+<span class="sd">    boundary BEFORE conversion, without a ``try``/``except`` around ``Q_``.</span>
+
+<span class="sd">    &gt;&gt;&gt; is_valid_unit(&#39;lbf/(100*ft**2)&#39;)</span>
+<span class="sd">    True</span>
+<span class="sd">    &gt;&gt;&gt; is_valid_unit(&#39;not_a_unit&#39;)</span>
+<span class="sd">    False</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># A blank string is a user error at an API/GUI edge, not &quot;dimensionless&quot;.</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">unit_str</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">unit_str</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="c1"># Parse as an expression (not a strict Unit) so composite units carrying a</span>
+    <span class="c1"># numeric factor -- e.g. YP in lbf/(100*ft**2) -- pass; matches the ``ureg``</span>
+    <span class="c1"># path the 2-arg to_si / to use.</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">ureg</span><span class="p">(</span><span class="n">unit_str</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span></div>
+
+
+
+<span class="c1"># --- drilling helpers ---------------------------------------------------------</span>
+<div class="viewcode-block" id="hydrostatic_gradient">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.hydrostatic_gradient">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">hydrostatic_gradient</span><span class="p">(</span>
+    <span class="n">mud_weight_q</span><span class="p">:</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="n">UnitLike</span> <span class="o">=</span> <span class="s1">&#39;psi/ft&#39;</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Vertical hydrostatic pressure gradient of a static mud column, dP/dz = ρg.</span>
+
+<span class="sd">    &gt;&gt;&gt; round(to(hydrostatic_gradient(mud_weight(10, &#39;ppg&#39;)), &#39;psi/ft&#39;), 4)</span>
+<span class="sd">    0.5195</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">mud_weight_q</span> <span class="o">*</span> <span class="n">ureg</span><span class="p">(</span><span class="s1">&#39;standard_gravity&#39;</span><span class="p">))</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">unit</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="mud_weight_from_gradient">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.mud_weight_from_gradient">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">mud_weight_from_gradient</span><span class="p">(</span>
+    <span class="n">gradient_q</span><span class="p">:</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="n">UnitLike</span> <span class="o">=</span> <span class="s1">&#39;ppg&#39;</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Equivalent mud weight (density) of a hydrostatic gradient, ρ = (dP/dz)/g.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">gradient_q</span> <span class="o">/</span> <span class="n">ureg</span><span class="p">(</span><span class="s1">&#39;standard_gravity&#39;</span><span class="p">))</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">unit</span><span class="p">)</span></div>
+
+
+
+<span class="c1">#: Hydrostatic gradient of a 1 ppg fluid at STANDARD gravity [psi/ft].</span>
+<span class="c1">#: 1 lb / 231 in^3 x 12 in/ft = 0.05194805..., computed here rather than typed.</span>
+<span class="c1">#:</span>
+<span class="c1">#: **Do not quote this to more figures than gravity justifies.** g varies with</span>
+<span class="c1">#: latitude by about +-0.27% about standard (9.7803 m/s^2 at the equator to</span>
+<span class="c1">#: 9.8322 at the poles), so the physically achievable range is roughly 0.051809</span>
+<span class="c1">#: to 0.052083 -- a 0.53% spread. Any digit beyond the fourth is a statement</span>
+<span class="c1">#: about where the well is, not about arithmetic.</span>
+<span class="c1">#:</span>
+<span class="c1">#: **But it mostly CANCELS, which is why the literature does not fuss about it.**</span>
+<span class="c1">#: Where pressures are expressed as equivalent mud weights -- the industry</span>
+<span class="c1">#: convention -- the constant divides out of a hydrostatic balance. For the</span>
+<span class="c1">#: kick-tolerance gas height, ``BHP = PP.g.TD`` and ``FRAC = LOT.g.shoe`` are</span>
+<span class="c1">#: both gradient-derived, so</span>
+<span class="c1">#:</span>
+<span class="c1">#:     h = [rho_mud.(TD - shoe) - (PP.TD - LOT.shoe)] / (rho_mud - rho_gas)</span>
+<span class="c1">#:</span>
+<span class="c1">#: contains no g at all; and the Boyle ratio ``FRAC/BHP = (LOT.shoe)/(PP.TD)``</span>
+<span class="c1">#: cancels it as well. With ideal gas the kick tolerance is COMPLETELY</span>
+<span class="c1">#: independent of this constant, and welleng&#39;s 0.0521 versus the exact value</span>
+<span class="c1">#: makes no difference to it.</span>
+<span class="c1">#:</span>
+<span class="c1">#: g survives only where an ABSOLUTE pressure enters that is not gradient-derived</span>
+<span class="c1">#: with the same constant -- an annular-pressure-loss term in psi, or a real-gas</span>
+<span class="c1">#: Z(P, T) evaluation, which needs a true absolute pressure. Those are</span>
+<span class="c1">#: second-order.</span>
+<span class="c1">#:</span>
+<span class="c1">#: (Recorded because it was got wrong once: comparing two models by matching</span>
+<span class="c1">#: their PSI values, rather than their equivalent mud weights, makes the constant</span>
+<span class="c1">#: appear to matter by several percent. It is an artefact of the comparison.)</span>
+<span class="n">PSI_PER_PPG_PER_FT</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span>
+    <span class="p">(</span><span class="n">ureg</span><span class="p">(</span><span class="s1">&#39;1 lb/gal&#39;</span><span class="p">)</span> <span class="o">*</span> <span class="n">ureg</span><span class="p">(</span><span class="s1">&#39;standard_gravity&#39;</span><span class="p">))</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="s1">&#39;psi/ft&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">magnitude</span>
+<span class="p">)</span>
+
+
+<div class="viewcode-block" id="gravity_at_latitude">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.gravity_at_latitude">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">gravity_at_latitude</span><span class="p">(</span>
+    <span class="n">latitude_deg</span><span class="p">:</span> <span class="n">Number</span><span class="p">,</span> <span class="n">altitude_m</span><span class="p">:</span> <span class="n">Number</span> <span class="o">=</span> <span class="mf">0.0</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Normal gravity [m/s^2] at a latitude, WGS84 (Somigliana), with a</span>
+<span class="sd">    free-air correction for altitude.</span>
+
+<span class="sd">    &gt;&gt;&gt; round(gravity_at_latitude(0.0), 5)</span>
+<span class="sd">    9.78033</span>
+<span class="sd">    &gt;&gt;&gt; round(gravity_at_latitude(90.0), 5)</span>
+<span class="sd">    9.83218</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">phi</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">latitude_deg</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
+    <span class="n">sin2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">phi</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="mf">9.7803253359</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="mf">0.00193185265241</span> <span class="o">*</span> <span class="n">sin2</span><span class="p">)</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span>
+        <span class="mf">1.0</span> <span class="o">-</span> <span class="mf">0.00669437999013</span> <span class="o">*</span> <span class="n">sin2</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">g</span> <span class="o">-</span> <span class="mf">3.086e-6</span> <span class="o">*</span> <span class="nb">float</span><span class="p">(</span><span class="n">altitude_m</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="hydrostatic_gradient_at_latitude">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.hydrostatic_gradient_at_latitude">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">hydrostatic_gradient_at_latitude</span><span class="p">(</span>
+    <span class="n">mud_weight_q</span><span class="p">:</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">,</span>
+    <span class="n">latitude_deg</span><span class="p">:</span> <span class="n">Number</span><span class="p">,</span>
+    <span class="n">unit</span><span class="p">:</span> <span class="n">UnitLike</span> <span class="o">=</span> <span class="s1">&#39;psi/ft&#39;</span><span class="p">,</span>
+    <span class="n">altitude_m</span><span class="p">:</span> <span class="n">Number</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pint</span><span class="o">.</span><span class="n">Quantity</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Hydrostatic gradient using LOCAL gravity rather than standard gravity.</span>
+
+<span class="sd">    A North Sea well (58 deg N) and a Gulf of Mexico well (28 deg N) differ by</span>
+<span class="sd">    0.26% in gravity. Note this rarely changes an answer -- see the cancellation</span>
+<span class="sd">    note on :data:`PSI_PER_PPG_PER_FT`. Use it where an absolute pressure is</span>
+<span class="sd">    genuinely needed, not to &quot;improve&quot; a hydrostatic balance expressed in</span>
+<span class="sd">    equivalent mud weights, where the constant divides out.</span>
+
+<span class="sd">    &gt;&gt;&gt; round(to(hydrostatic_gradient_at_latitude(mud_weight(1, &#39;ppg&#39;), 58.0),</span>
+<span class="sd">    ...          &#39;psi/ft&#39;), 7)</span>
+<span class="sd">    0.0520059</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">gravity_at_latitude</span><span class="p">(</span><span class="n">latitude_deg</span><span class="p">,</span> <span class="n">altitude_m</span><span class="p">)</span> <span class="o">*</span> <span class="n">ureg</span><span class="p">(</span><span class="s1">&#39;m/s**2&#39;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">mud_weight_q</span> <span class="o">*</span> <span class="n">g</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">unit</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># --- fast boundary converter --------------------------------------------------</span>
+<span class="c1"># Canonical SI unit per named quantity. welleng engines compute in these; the</span>
+<span class="c1"># `Units` boundary converts user I/O to/from them. Performance-critical callers</span>
+<span class="c1"># work in canonical units directly and skip the converter entirely (zero cost);</span>
+<span class="c1"># a single-well / interactive user pays one trivial conversion at each edge.</span>
+<span class="n">CANONICAL</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;length&quot;</span><span class="p">:</span> <span class="s2">&quot;meter&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;angle&quot;</span><span class="p">:</span> <span class="s2">&quot;radian&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;pressure&quot;</span><span class="p">:</span> <span class="s2">&quot;pascal&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;density&quot;</span><span class="p">:</span> <span class="s2">&quot;kilogram / meter ** 3&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;force&quot;</span><span class="p">:</span> <span class="s2">&quot;newton&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;torque&quot;</span><span class="p">:</span> <span class="s2">&quot;newton * meter&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="s2">&quot;kelvin&quot;</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="c1"># Default user system (metric-ish field defaults); override per-quantity.</span>
+<span class="n">_DEFAULT_SYSTEM</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;length&quot;</span><span class="p">:</span> <span class="s2">&quot;meter&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;angle&quot;</span><span class="p">:</span> <span class="s2">&quot;degree&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;pressure&quot;</span><span class="p">:</span> <span class="s2">&quot;pascal&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;density&quot;</span><span class="p">:</span> <span class="s2">&quot;kilogram / meter ** 3&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;force&quot;</span><span class="p">:</span> <span class="s2">&quot;newton&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;torque&quot;</span><span class="p">:</span> <span class="s2">&quot;newton * meter&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="s2">&quot;kelvin&quot;</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<div class="viewcode-block" id="Units">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.Units">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Units</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fast, generic unit-conversion boundary — pint at setup, numpy at runtime.</span>
+
+<span class="sd">    welleng engines compute in canonical SI (see :data:`CANONICAL`). This converts</span>
+<span class="sd">    user inputs to canonical on ingest and canonical to user units on output, and</span>
+<span class="sd">    ONLY there — performance-critical callers use the canonical core directly and</span>
+<span class="sd">    bypass this entirely.</span>
+
+<span class="sd">    Speed: the affine ``(factor, offset)`` for each unit pair is computed ONCE via</span>
+<span class="sd">    pint and cached; conversion is then pure numpy arithmetic (``value * factor</span>
+<span class="sd">    (+ offset)``), scalar or array, with no pint on the hot path. Affine units</span>
+<span class="sd">    (e.g. temperature) carry a non-zero offset; multiplicative units do not.</span>
+
+<span class="sd">    Generic + reusable across welleng modules (survey, drilling, kick, api).</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">    &gt;&gt;&gt; u = Units(length=&quot;ft&quot;, angle=&quot;degree&quot;)</span>
+<span class="sd">    &gt;&gt;&gt; round(u.to_canonical(1000.0, &quot;length&quot;), 4)        # ft -&gt; m</span>
+<span class="sd">    304.8</span>
+<span class="sd">    &gt;&gt;&gt; round(u.from_canonical(3.14159265, &quot;angle&quot;), 3)   # rad -&gt; deg</span>
+<span class="sd">    180.0</span>
+<span class="sd">    &gt;&gt;&gt; round(u.convert(100.0, &quot;psi&quot;, &quot;bar&quot;), 6)          # generic pair</span>
+<span class="sd">    6.894757</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="Units.__init__">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.Units.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">system</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">system</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">_DEFAULT_SYSTEM</span><span class="p">,</span> <span class="o">**</span><span class="n">system</span><span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_factor_offset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">src</span><span class="p">:</span> <span class="n">UnitLike</span><span class="p">,</span> <span class="n">dst</span><span class="p">:</span> <span class="n">UnitLike</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">src</span><span class="p">),</span> <span class="nb">str</span><span class="p">(</span><span class="n">dst</span><span class="p">))</span>
+        <span class="n">fo</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">fo</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">zero</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">ureg</span><span class="o">.</span><span class="n">Quantity</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">src</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dst</span><span class="p">)</span><span class="o">.</span><span class="n">magnitude</span><span class="p">)</span>
+            <span class="n">one</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">ureg</span><span class="o">.</span><span class="n">Quantity</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">src</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dst</span><span class="p">)</span><span class="o">.</span><span class="n">magnitude</span><span class="p">)</span>
+            <span class="n">fo</span> <span class="o">=</span> <span class="p">(</span><span class="n">one</span> <span class="o">-</span> <span class="n">zero</span><span class="p">,</span> <span class="n">zero</span><span class="p">)</span>   <span class="c1"># affine: y = x * factor + offset</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">fo</span>
+        <span class="k">return</span> <span class="n">fo</span>
+
+<div class="viewcode-block" id="Units.convert">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.Units.convert">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">convert</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">Numeric</span><span class="p">,</span> <span class="n">src</span><span class="p">:</span> <span class="n">UnitLike</span><span class="p">,</span> <span class="n">dst</span><span class="p">:</span> <span class="n">UnitLike</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Numeric</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Convert ``value`` (scalar or ndarray) from ``src`` to ``dst`` units.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">src</span><span class="p">)</span> <span class="o">==</span> <span class="nb">str</span><span class="p">(</span><span class="n">dst</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">value</span>
+        <span class="n">factor</span><span class="p">,</span> <span class="n">offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_factor_offset</span><span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="n">dst</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">value</span> <span class="o">*</span> <span class="n">factor</span> <span class="o">+</span> <span class="n">offset</span> <span class="k">if</span> <span class="n">offset</span> <span class="k">else</span> <span class="n">value</span> <span class="o">*</span> <span class="n">factor</span></div>
+
+
+<div class="viewcode-block" id="Units.to_canonical">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.Units.to_canonical">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_canonical</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">Numeric</span><span class="p">,</span> <span class="n">quantity</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Numeric</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;User-units ``value`` -&gt; canonical SI for the named ``quantity``.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">convert</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">system</span><span class="p">[</span><span class="n">quantity</span><span class="p">],</span> <span class="n">CANONICAL</span><span class="p">[</span><span class="n">quantity</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="Units.from_canonical">
+<a class="viewcode-back" href="../../welleng.html#welleng.units.Units.from_canonical">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_canonical</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">Numeric</span><span class="p">,</span> <span class="n">quantity</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Numeric</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Canonical-SI ``value`` -&gt; the user&#39;s units for the named ``quantity``.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">convert</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">CANONICAL</span><span class="p">[</span><span class="n">quantity</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">system</span><span class="p">[</span><span class="n">quantity</span><span class="p">])</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

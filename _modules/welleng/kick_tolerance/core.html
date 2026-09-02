@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.kick_tolerance.core &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../kick_tolerance.html">welleng.kick_tolerance</a></li>
+      <li class="breadcrumb-item active">welleng.kick_tolerance.core</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.kick_tolerance.core</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Single-bubble kick-tolerance margin module (clean-room).</span>
+
+<span class="sd">Implements the public single-bubble kick-tolerance closed form, Eqs. A-1...A-9,</span>
+<span class="sd">as derived in Appendix A of the public SPE paper SPE-208788-PA (Thorogood et al.,</span>
+<span class="sd">&quot;Kick Tolerance ...&quot;, SPE Drilling &amp; Completion, September 2022, pp. 242-243).</span>
+<span class="sd">The equations are transcribed faithfully from that public source only.</span>
+
+<span class="sd">Clean-room scope</span>
+<span class="sd">----------------</span>
+<span class="sd">Gas properties (the real-gas compressibility factors ``Z_s``, ``Z_td`` and the</span>
+<span class="sd">influx gas density at the shoe ``rho_gas_s``) are COMPUTED by the clean-room</span>
+<span class="sd">Hall &amp; Yarborough (1973) backend in ``gas_z.py`` from the influx composition</span>
+<span class="sd">(Tier 0 = pure methane) and the model&#39;s own pressure/temperature conditions.</span>
+<span class="sd">They may still be INJECTED as overrides (any of ``Z_s``, ``Z_td``,</span>
+<span class="sd">``rho_gas_s`` left as ``None`` is computed; a numeric value is used verbatim),</span>
+<span class="sd">which keeps mixtures / CO2-bearing systems (e.g. a CoolProp HEOS backend)</span>
+<span class="sd">pluggable. No external, third-party, or private gas-property data source is</span>
+<span class="sd">referenced.</span>
+
+<span class="sd">Where the gas properties are evaluated</span>
+<span class="sd">--------------------------------------</span>
+<span class="sd">The influx gas is a single migrating bubble. Its properties are evaluated once</span>
+<span class="sd">per scenario at two physical stations and shared by both the drill and swab</span>
+<span class="sd">cases (as in the reference derivation):</span>
+
+<span class="sd">  * TD station -- (P_td, T_td), with P_td the A-1 bottom-hole pressure at the</span>
+<span class="sd">    maximum-credible pore pressure. Gives ``Z_td`` and (unused) ``rho_gas_td``.</span>
+<span class="sd">  * Influx station -- (P_shoe, T_influx). ``P_shoe`` is the influx-gas pressure</span>
+<span class="sd">    at the casing shoe: the bottom-hole pressure reduced by the static</span>
+<span class="sd">    influx-gas column over the open-hole section (a standard, source-free</span>
+<span class="sd">    gas-gradient step). Gives ``Z_s`` and ``rho_gas_s``.</span>
+
+<span class="sd">    ``T_influx`` is REVISION-DEPENDENT (see ``MODEL_REVISIONS``). As published</span>
+<span class="sd">    it is the shoe temperature ``T_s``; from welleng 0.26.0 the default is the</span>
+<span class="sd">    INFLUX COLUMN&#39;s mean temperature, because the column hangs BELOW the shoe</span>
+<span class="sd">    and the shoe is its cool end. Evaluating at the shoe made the gas denser</span>
+<span class="sd">    than the column, inflating A and OVERSTATING the tolerable influx by ~3% on</span>
+<span class="sd">    the Table-1 case (anti-conservative). See ``_influx_temperature``.</span>
+
+<span class="sd">Note on the reference case: the reference paper&#39;s printed shoe Z (1.123) sits</span>
+<span class="sd">above the value at the shoe *fracture* pressure P_lot - P_apl (~1.04); it</span>
+<span class="sd">corresponds to a near-bottom-hole influx-gas pressure, which is what the static</span>
+<span class="sd">gas column recovers. Reproducing the paper&#39;s Table-1 gas properties therefore</span>
+<span class="sd">lands the kick volumes within ~1-1.3% -- the paper&#39;s own Table-1 inconsistency,</span>
+<span class="sd">not a backend error.</span>
+
+<span class="sd">Two first-class cases (kept SEPARATE by design)</span>
+<span class="sd">-----------------------------------------------</span>
+<span class="sd">  * ``drill_kick``  -- the drillability gate. A-7 tolerable-influx capacity</span>
+<span class="sd">    evaluated at the maximum-credible pore pressure (PP + kick intensity).</span>
+<span class="sd">    This is the section PASS/FAIL.</span>
+<span class="sd">  * ``swab_kick``   -- the unmitigated free-trip limit (A-8), i.e. A-7 with the</span>
+<span class="sd">    bottom-hole pressure set to the mud hydrostatic. This is a MITIGABLE</span>
+<span class="sd">    operational limit: a swab failure flags &quot;pump out of the hole&quot; -- and pumping</span>
+<span class="sd">    out is itself the drill case, which is already assessed. Swab NEVER overrides</span>
+<span class="sd">    drill; the two are reported separately and are never blind-min&#39;d / AND-gated.</span>
+
+<span class="sd">Units</span>
+<span class="sd">-----</span>
+<span class="sd">Depths ft; densities ppg; pressures psi; temperatures input in degF and</span>
+<span class="sd">converted to absolute degR internally; annular capacity ``V_dpa`` in bbl/ft so</span>
+<span class="sd">that capacities come out in bbl. Gravitational constant g = 0.0521</span>
+<span class="sd">psi.ppg^-1.ft^-1 (oilfield units); atmospheric pressure P_atm = 14.7 psi.</span>
+
+<span class="sd">Note (from the derivation): the gas density at TD, rho_gas_td, appears in NO</span>
+<span class="sd">equation of the closed form -- only rho_gas_s does (via the A-5 constant A).</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">lru_cache</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">math</span><span class="w"> </span><span class="kn">import</span> <span class="n">cos</span><span class="p">,</span> <span class="n">radians</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.gas_z</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">gas_density_ppg</span><span class="p">,</span>
+    <span class="n">hall_yarborough_z</span><span class="p">,</span>
+    <span class="n">hall_yarborough_z_and_y</span><span class="p">,</span>
+    <span class="n">methane_properties</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="c1"># `migration` imports nothing from this package, so this direction is acyclic.</span>
+<span class="c1"># SINGLE SOURCE OF TRUTH for the ppg-&gt;psi/ft constant and the density&lt;-&gt;gradient</span>
+<span class="c1"># conversion. core.py previously declared its own `G_PSI_PER_PPG_FT = 0.0521`</span>
+<span class="c1"># alongside migration.py&#39;s: two definitions of one physical constant, agreeing by</span>
+<span class="c1"># coincidence of maintenance, with nothing that would fail if one moved. Re-exported</span>
+<span class="c1"># below so `from welleng.kick_tolerance.core import G_PSI_PER_PPG_FT` still resolves.</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.migration</span><span class="w"> </span><span class="kn">import</span> <span class="n">G_PSI_PER_PPG_FT</span><span class="p">,</span> <span class="n">ppg_to_gradient</span>
+
+<span class="c1"># --- Constants (public, oilfield units) -------------------------------------</span>
+<span class="c1"># G_PSI_PER_PPG_FT is imported from .migration above -- ONE definition, not two.</span>
+<span class="n">P_ATM_PSI</span> <span class="o">=</span> <span class="mf">14.7</span>               <span class="c1"># atmospheric pressure P_atm [psi]</span>
+<span class="n">RANKINE_OFFSET</span> <span class="o">=</span> <span class="mf">460.0</span>         <span class="c1"># degF -&gt; degR (paper convention; A back-solves</span>
+                               <span class="c1">#               to ~241.2 with this offset)</span>
+
+
+<span class="c1"># --- Model revisions --------------------------------------------------------</span>
+<span class="c1">#</span>
+<span class="c1"># A kick-tolerance number ends up in a signed-off well programme, so a result</span>
+<span class="c1"># computed under an earlier model must stay reproducible EXACTLY after the model</span>
+<span class="c1"># changes, by naming the revision it was computed under (a well-control</span>
+<span class="c1"># reproducibility requirement). Hence a named, FROZEN revision rather than a boolean: a boolean</span>
+<span class="c1"># cannot carry a second change, and a revision identifier is what a report can</span>
+<span class="c1"># cite. The revision travels on ``KickResult``, so a stored calculation records</span>
+<span class="c1"># what produced it.</span>
+<span class="c1">#</span>
+<span class="c1"># Published revisions are FROZEN. Never re-tune one; add a new identifier.</span>
+<span class="c1">#</span>
+<span class="c1"># This is deliberately NOT folded into ``ideal_gas`` or ``gas_density_mode``.</span>
+<span class="c1"># Those are user-selectable PHYSICS OPTIONS chosen on the merits of a case; a</span>
+<span class="c1"># revision is a REPRODUCIBILITY ANCHOR that freezes every semantic in the path.</span>
+<span class="c1"># Overloading them would let pinning a revision silently override a physics</span>
+<span class="c1"># choice the user made deliberately.</span>
+<span class="n">MODEL_REVISIONS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="c1"># As published: the influx state is lumped at the SHOE temperature T_s.</span>
+    <span class="c1"># Reproduces SPE-208788-PA Table 1 and is the validation anchor.</span>
+    <span class="s2">&quot;spe-208788&quot;</span><span class="p">:</span> <span class="s2">&quot;influx gas state evaluated at the shoe temperature T_s&quot;</span><span class="p">,</span>
+    <span class="c1"># The influx column hangs BELOW the shoe, so the shoe is its COOL end. The</span>
+    <span class="c1"># state is lumped at the column-mean temperature instead. See</span>
+    <span class="c1"># ``_influx_temperature``.</span>
+    <span class="c1"># SUPERSEDED. Retained and FROZEN so any number computed under welleng</span>
+    <span class="c1"># 0.26.0 reproduces exactly. It evaluates the influx gas at a pressure</span>
+    <span class="c1"># obtained by running a GAS gradient over the whole open hole -- which A-2&#39;s</span>
+    <span class="c1"># simplification (1) explicitly excludes (&quot;the gas column does not fill the</span>
+    <span class="c1"># entire open hole&quot;) -- and at the column-mean temperature. Do not select it</span>
+    <span class="c1"># for new work. Retained only so a number issued under 0.26.0 stays</span>
+    <span class="c1"># reproducible; `bubble-state` is the default and the validated basis.</span>
+    <span class="s2">&quot;column-mean-2026&quot;</span><span class="p">:</span> <span class="s2">&quot;SUPERSEDED. Influx gas at a whole-open-hole gas-gradient &quot;</span>
+                        <span class="s2">&quot;pressure and the column-mean temperature &quot;</span>
+                        <span class="s2">&quot;(welleng 0.26.0). Reproducibility only.&quot;</span><span class="p">,</span>
+    <span class="c1"># The influx gas evaluated at the BUBBLE&#39;s own state, which is what A-2/A-3/A-4</span>
+    <span class="c1"># describe and what NOGEPA-50 Section 3.2 mandates:</span>
+    <span class="c1">#   * BHP is pinned; MUD beneath the bubble sets the bubble-BOTTOM pressure;</span>
+    <span class="c1">#   * the bubble&#39;s own weight sets the gradient across it;</span>
+    <span class="c1">#   * its TOP sits at the shoe fracture limit;</span>
+    <span class="c1">#   * the density is the MASS-WEIGHTED MEAN over the column (one density</span>
+    <span class="c1">#     serves both the A-2 buoyancy term and the volume expansion, because</span>
+    <span class="c1">#     mass is conserved);</span>
+    <span class="c1">#   * the temperature is bracketed by the two mud interfaces.</span>
+    <span class="c1"># Reduces ALGEBRAICALLY EXACTLY to NOGEPA-50 under NOGEPA&#39;s assumptions</span>
+    <span class="c1"># (Z = 1, isothermal, constant gas gradient) -- see tests/test_nogepa.py.</span>
+    <span class="s2">&quot;bubble-state&quot;</span><span class="p">:</span> <span class="s2">&quot;influx gas at the BUBBLE&#39;s own state: mud beneath the &quot;</span>
+                    <span class="s2">&quot;bubble sets its bottom pressure, mass-weighted mean density &quot;</span>
+                    <span class="s2">&quot;over the column, temperature bracketed by the mud &quot;</span>
+                    <span class="s2">&quot;interfaces (default from welleng 0.27.0)&quot;</span><span class="p">,</span>
+<span class="p">}</span>
+<span class="n">DEFAULT_MODEL_REVISION</span> <span class="o">=</span> <span class="s2">&quot;bubble-state&quot;</span>
+
+<span class="c1">#: Revisions that evaluate the influx at the BUBBLE&#39;s own state rather than at a</span>
+<span class="c1">#: whole-open-hole gas-gradient pressure. ``spe-208788`` and ``column-mean-2026``</span>
+<span class="c1">#: are frozen on the old basis and deliberately absent.</span>
+<span class="n">_BUBBLE_STATE</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">&quot;bubble-state&quot;</span><span class="p">})</span>
+
+
+<div class="viewcode-block" id="ppg_to_psi">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.ppg_to_psi">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">ppg_to_psi</span><span class="p">(</span><span class="n">rho_ppg</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">depth_ft</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Hydrostatic / gradient pressure: g * rho * depth  [psi].&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">G_PSI_PER_PPG_FT</span> <span class="o">*</span> <span class="n">rho_ppg</span> <span class="o">*</span> <span class="n">depth_ft</span></div>
+
+
+
+<div class="viewcode-block" id="fahrenheit_to_rankine">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.fahrenheit_to_rankine">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">fahrenheit_to_rankine</span><span class="p">(</span><span class="n">t_degf</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Absolute temperature in degR (paper uses a +460 offset).&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">t_degf</span> <span class="o">+</span> <span class="n">RANKINE_OFFSET</span></div>
+
+
+
+<div class="viewcode-block" id="KickInputs">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.KickInputs">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">KickInputs</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Operational + gas-property inputs for a single-bubble kick-tolerance case.</span>
+
+<span class="sd">    Operational (design-box) inputs:</span>
+<span class="sd">        rho_mud        : drilling fluid density                       [ppg]</span>
+<span class="sd">        PP             : formation pore pressure (mud-weight equiv.)  [ppg]</span>
+<span class="sd">        kick_intensity : kick intensity added to PP for max-credible  [ppg]</span>
+<span class="sd">                         DRILL CASE ONLY. The swab case IGNORES kick_intensity</span>
+<span class="sd">                         by design: its bottom-hole pressure is the mud</span>
+<span class="sd">                         hydrostatic, independent of PP and KI (Nassab</span>
+<span class="sd">                         SPE-202426-PA, Eqs 8-9). See ``swab_kick``.</span>
+<span class="sd">        P_lot          : formation strength / LOT at the shoe         [ppg]</span>
+<span class="sd">        P_apl          : surface-side pressure margin at the shoe      [psi]</span>
+<span class="sd">                         (applied choke/back pressure + safety margin). Annular</span>
+<span class="sd">                         friction is conventionally ZERO here (well killing is</span>
+<span class="sd">                         circulated at a reduced/kill rate, so annular dP is small);</span>
+<span class="sd">                         a user who wants to include it simply ADDS it to this term.</span>
+<span class="sd">        D_td           : measured/true depth at TD                    [ft]</span>
+<span class="sd">        D_lot          : shoe (casing / LOT) depth                    [ft]</span>
+<span class="sd">        T_s            : temperature at the shoe                      [degF]</span>
+<span class="sd">        T_td           : temperature at TD                            [degF]</span>
+<span class="sd">        V_dpa          : annular capacity, drillpipe-in-hole          [bbl/ft]</span>
+
+<span class="sd">    Gas-property inputs (COMPUTED when left as ``None``; a numeric value</span>
+<span class="sd">    overrides). Default backend = clean-room Hall-Yarborough for pure methane;</span>
+<span class="sd">    set ``fluid`` to use the CoolProp real-EOS mixture backend instead:</span>
+<span class="sd">        Z_s        : real-gas Z factor at the shoe station            [-]</span>
+<span class="sd">        Z_td       : real-gas Z factor at the TD station              [-]</span>
+<span class="sd">        rho_gas_s  : influx gas density at the shoe station           [ppg]</span>
+<span class="sd">        fluid      : optional gas COMPOSITION (mole fractions), e.g.</span>
+<span class="sd">                     {&quot;Methane&quot;: 0.9, &quot;CO2&quot;: 0.1}. When set, Z/density are</span>
+<span class="sd">                     computed via CoolProp (real EOS, CO2/CCUS mixtures) --</span>
+<span class="sd">                     requires welleng[kick]. None =&gt; pure-methane Hall-Yarborough.</span>
+
+<span class="sd">    Design threshold:</span>
+<span class="sd">        kt_threshold : required tolerable-kick volume (margin datum)  [bbl]</span>
+
+<span class="sd">    Trajectory (deviated wells):</span>
+<span class="sd">        inc_shoe : hole inclination at the shoe [deg]; 0.0 = vertical (the</span>
+<span class="sd">            SPE-208788 Table-1 case). Converts the gas column&#39;s VERTICAL height</span>
+<span class="sd">            H_gas to an along-hole length L_gas = H_gas / cos(inc) before it</span>
+<span class="sd">            multiplies the per-MD annular capacity V_dpa (Nassab et al.,</span>
+<span class="sd">            SPE-202426-PA). Net effect: A -&gt; A / cos(inc_shoe). D_td / D_lot are</span>
+<span class="sd">            TRUE VERTICAL depths; all hydrostatic terms are TVD-referenced.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">rho_mud</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">PP</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">kick_intensity</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">P_lot</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">P_apl</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">D_td</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">D_lot</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">V_dpa</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">T_s</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1">#  Shoe/influx temperature [degF]. OPTIONAL for a DRILLING kick when an influx</span>
+    <span class="c1">#  density (rho_gas_s) is given: the drill calc then runs ideal-isothermal and the</span>
+    <span class="c1">#  temperature CANCELS out of the column expansion (rho(P) = rho_bh.P/P_bh), so its</span>
+    <span class="c1">#  value does not affect the result. REQUIRED for swab_kick (a trip relaxes the gas</span>
+    <span class="c1">#  column toward formation temperature -- it cannot be ignored). Supply T_s/T_td for</span>
+    <span class="c1">#  a real-gas / composition influx (Z varies with T up the column, ~2%).</span>
+    <span class="n">T_td</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1">#  TD temperature [degF]. See T_s. Omit BOTH (a drilling kick with rho_gas_s) for</span>
+    <span class="c1">#  the ideal-isothermal, temperature-cancels path.</span>
+    <span class="n">Z_s</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">Z_td</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">rho_gas_s</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">fluid</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">kt_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">25.0</span>
+    <span class="n">inc_shoe</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">model_revision</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">DEFAULT_MODEL_REVISION</span>
+    <span class="c1"># Frozen model revision (see MODEL_REVISIONS). Pin ``&quot;spe-208788&quot;`` to</span>
+    <span class="c1"># reproduce a number computed before welleng 0.26.0, or the paper&#39;s Table 1.</span>
+    <span class="n">ideal_gas</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="c1"># Ideal-gas REFERENCE mode: Z == 1 everywhere and isothermal (the influx-gas</span>
+    <span class="c1"># column and expansion use a single temperature). Reproduces a textbook</span>
+    <span class="c1"># single-bubble Boyle&#39;s-law kick-tolerance hand-calc / spreadsheet exactly,</span>
+    <span class="c1"># for cross-checking welleng against ideal-gas references. NOT for design:</span>
+    <span class="c1"># it discards real-gas compressibility (Hall-Yarborough / CoolProp), which</span>
+    <span class="c1"># is the physically correct default. An explicit Z_s/Z_td/rho_gas_s override</span>
+    <span class="c1"># still wins over this flag.</span>
+
+<div class="viewcode-block" id="KickInputs.from_survey">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.KickInputs.from_survey">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_survey</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">survey</span><span class="p">,</span> <span class="n">shoe_md</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">td_md</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="o">**</span><span class="n">params</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build inputs from a welleng ``Survey``, reading the trajectory-derived</span>
+<span class="sd">        quantities off the survey so callers don&#39;t hand-transcribe them.</span>
+
+<span class="sd">        ``D_lot`` / ``D_td`` (true vertical depths at the shoe and TD) and</span>
+<span class="sd">        ``inc_shoe`` (hole inclination at the shoe) are interpolated from the</span>
+<span class="sd">        survey at ``shoe_md`` / ``td_md`` via min-curvature (``interpolate_md``);</span>
+<span class="sd">        every other input (``rho_mud``, ``PP``, ``P_lot``, ``V_dpa``, ...) is</span>
+<span class="sd">        passed through in ``params``. The survey is duck-typed — any object with</span>
+<span class="sd">        ``interpolate_md(md) -&gt; node`` exposing ``pos_nev`` and ``inc_deg`` works.</span>
+
+<span class="sd">        ``Node`` has no direct ``.tvd``; its position is ``pos_nev = [North, East,</span>
+<span class="sd">        Vertical]`` (welleng NEV convention), so ``pos_nev[2]`` IS the TVD. This is</span>
+<span class="sd">        the GLOBAL (datum-referenced, ``start_nev``-inclusive) TVD -- which is the</span>
+<span class="sd">        correct depth for the hydrostatic terms (the mud column is referenced to the</span>
+<span class="sd">        surface datum, not the survey start). It equals ``survey.tvd`` only at a zero</span>
+<span class="sd">        datum (``survey.tvd`` is the LOCAL depth, per the ``Survey`` docstring); on a</span>
+<span class="sd">        datum-shifted / sidetrack survey they differ by ``start_nev``, and the global</span>
+<span class="sd">        ``pos_nev[2]`` is the one KT wants. Reduces to MD for a vertical well.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">shoe</span> <span class="o">=</span> <span class="n">survey</span><span class="o">.</span><span class="n">interpolate_md</span><span class="p">(</span><span class="n">shoe_md</span><span class="p">)</span>
+        <span class="n">td</span> <span class="o">=</span> <span class="n">survey</span><span class="o">.</span><span class="n">interpolate_md</span><span class="p">(</span><span class="n">td_md</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
+            <span class="n">D_lot</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">shoe</span><span class="o">.</span><span class="n">pos_nev</span><span class="p">[</span><span class="mi">2</span><span class="p">]),</span>   <span class="c1"># pos_nev = [N, E, TVD] -&gt; [2] is TVD</span>
+            <span class="n">D_td</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">pos_nev</span><span class="p">[</span><span class="mi">2</span><span class="p">]),</span>
+            <span class="n">inc_shoe</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">shoe</span><span class="o">.</span><span class="n">inc_deg</span><span class="p">),</span>
+            <span class="o">**</span><span class="n">params</span><span class="p">,</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="KickResult">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.KickResult">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">KickResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Result of a single kick-tolerance case.&quot;&quot;&quot;</span>
+
+    <span class="n">case</span><span class="p">:</span> <span class="nb">str</span>            <span class="c1"># &quot;drill&quot; or &quot;swab&quot;</span>
+    <span class="n">P_td</span><span class="p">:</span> <span class="nb">float</span>          <span class="c1"># bottom-hole pressure used            [psi]</span>
+    <span class="n">A</span><span class="p">:</span> <span class="nb">float</span>             <span class="c1"># A-5 constant                          [bbl]</span>
+    <span class="n">B</span><span class="p">:</span> <span class="nb">float</span>             <span class="c1"># A-6 constant                          [psi]</span>
+    <span class="n">capacity</span><span class="p">:</span> <span class="nb">float</span>      <span class="c1"># tolerable influx volume (A-7 / A-8)   [bbl]</span>
+    <span class="n">threshold</span><span class="p">:</span> <span class="nb">float</span>     <span class="c1"># required tolerable-kick volume        [bbl]</span>
+    <span class="n">margin</span><span class="p">:</span> <span class="nb">float</span>        <span class="c1"># capacity - threshold                  [bbl]</span>
+    <span class="n">passed</span><span class="p">:</span> <span class="nb">bool</span>         <span class="c1"># margin &gt;= 0</span>
+    <span class="n">pp_at_threshold</span><span class="p">:</span> <span class="nb">float</span>  <span class="c1"># A-9 pore pressure at kt_threshold  [ppg]</span>
+    <span class="n">model_revision</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">DEFAULT_MODEL_REVISION</span>
+    <span class="c1"># The frozen revision that PRODUCED this number. Travels with the result so</span>
+    <span class="c1"># a stored calculation can be re-run verbatim; cite it in any report.</span>
+    <span class="n">T_influx</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># Influx temperature the gas state was evaluated at [degF] -- T_s under</span>
+    <span class="c1"># &quot;spe-208788&quot;, the column mean under &quot;column-mean-2026&quot;. Reported because</span>
+    <span class="c1"># it is the quantity the revision changes.</span>
+    <span class="n">rho_influx</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># Influx gas density the A-5 constant ACTUALLY used [ppg]. NOT necessarily</span>
+    <span class="c1"># the density at the shoe: under &quot;column-mean-2026&quot; it is the column-mean</span>
+    <span class="c1"># value, and an injected ``rho_gas_s`` overrides either.</span>
+    <span class="n">H_gas</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># Influx-column height at this capacity [ft TVD], from A-2 with</span>
+    <span class="c1"># ``rho_influx``. Reported under BOTH revisions.</span>
+    <span class="n">bubble_length_limited</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="c1"># True when the column solve hit the OPEN-HOLE LENGTH and ``H_gas`` was</span>
+    <span class="c1"># clipped to it, so the reported geometry is a clamp and not a physical</span>
+    <span class="c1"># result: ``H_gas == D_td - D_lot`` exactly, putting the bubble top exactly</span>
+    <span class="c1"># ON the shoe. ``capacity`` is NOT clipped with it, so on a clamped result</span>
+    <span class="c1"># the two disagree -- measured 38.09 bbl against an open hole holding 14.63,</span>
+    <span class="c1"># while the geometry says the bubble exactly fills that open hole.</span>
+    <span class="c1">#</span>
+    <span class="c1"># DO NOT read the geometry and the volume together when this is True. The</span>
+    <span class="c1"># configuration is bubble-length-limited in the sense of SPE/IADC-140113</span>
+    <span class="c1"># (Santos): a single coherent bubble cannot be longer than the open hole it</span>
+    <span class="c1"># occupies, so the limiting configuration this result describes is not</span>
+    <span class="c1"># reachable. ``analytical_kick_tolerance`` reports the same situation as</span>
+    <span class="c1"># ``open_hole_unconstrained``.</span>
+    <span class="c1">#</span>
+    <span class="c1"># A response that reports overflow in one field and no overflow in another is</span>
+    <span class="c1"># worse than either answer alone.</span>
+    <span class="n">capacity_negative</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="c1"># True when A-7 returns a NEGATIVE tolerable influx, which is not a volume.</span>
+    <span class="c1"># It means the maximum-credible pore pressure already exceeds what the shoe</span>
+    <span class="c1"># can hold with no influx at all -- the section is undrillable on these</span>
+    <span class="c1"># inputs rather than tolerant of a negative kick. ``capacity`` is left as</span>
+    <span class="c1"># computed rather than floored, so the magnitude still says how far past the</span>
+    <span class="c1"># limit the case is, but a consumer must not display it as a tolerance.</span>
+    <span class="c1">#</span>
+    <span class="c1"># ``(H_gas, rho_influx)`` are the pair a caller needs to draw the limiting</span>
+    <span class="c1"># pressure profile, and they are the ONLY pair that closes on the fracture</span>
+    <span class="c1"># pressure exactly -- see ``influx_column`` for the identity and for why</span>
+    <span class="c1"># back-deriving H from ``capacity`` instead does not close.</span>
+    <span class="n">maasp_psi</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
+    <span class="c1">#                            Maximum allowable annular surface pressure [psi]:</span>
+    <span class="c1">#                            the shut-in surface pressure that just brings the</span>
+    <span class="c1">#                            shoe to its fracture pressure,</span>
+    <span class="c1">#                            `g.P_lot.D_lot - g.rho_mud.D_lot`.</span>
+    <span class="c1">#                            SHUT-IN, so `P_apl` is NOT deducted -- annular</span>
+    <span class="c1">#                            friction is a CIRCULATING term and subtracting it</span>
+    <span class="c1">#                            here would understate the closed-in limit.</span>
+    <span class="c1">#                            This is the single-shoe form. It assumes the shoe</span>
+    <span class="c1">#                            is the weakest EXPOSED point, which is exact for a</span>
+    <span class="c1">#                            constant fracture gradient and WRONG (too high) if</span>
+    <span class="c1">#                            a weak zone sits below the shoe -- use</span>
+    <span class="c1">#                            `migration.maasp` with a profile for that case.</span>
+    <span class="c1">#                            Unlike the kick tolerance itself, MAASP does NOT</span>
+    <span class="c1">#                            divide out the gravitational constant: it is a</span>
+    <span class="c1">#                            difference of two large pressures, so a source</span>
+    <span class="c1">#                            quoting g = 0.052 differs from welleng&#39;s 0.0521 by</span>
+    <span class="c1">#                            ~0.7% on a typical shoe.</span>
+    <span class="n">rho_influx_gradient_psi_per_ft</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span></div>
+
+    <span class="c1">#                            The influx density `rho_influx` expressed as a</span>
+    <span class="c1">#                            pressure GRADIENT [psi/ft], using this engine&#39;s</span>
+    <span class="c1">#                            own ppg-&gt;psi/ft constant so it reproduces the</span>
+    <span class="c1">#                            column weight actually applied.</span>
+    <span class="c1">#                            Reported because the well-control literature</span>
+    <span class="c1">#                            quotes influx GRADIENTS rather than densities --</span>
+    <span class="c1">#                            NOGEPA-50 states a gas range of 0.05-0.15 psi/ft --</span>
+    <span class="c1">#                            so this is the field a user can check against the</span>
+    <span class="c1">#                            standard they work to, without back-solving</span>
+    <span class="c1">#                            anything. Comparison only: a quoted gradient is</span>
+    <span class="c1">#                            NOT an input path (a non-methane influx goes in as</span>
+    <span class="c1">#                            a composition and welleng computes the density).</span>
+
+
+<span class="c1"># --- Gas-property backend (clean-room Hall &amp; Yarborough 1973) ---------------</span>
+
+<div class="viewcode-block" id="scenario_P_td">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.scenario_P_td">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">scenario_P_td</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">KickInputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A-1 DRILL bottom-hole pressure at the maximum-credible pore pressure [psi].</span>
+
+<span class="sd">    The pressure at which the DRILL influx gas properties are evaluated. This is</span>
+<span class="sd">    the drill scenario (PP + kick intensity, floored at mud hydrostatic); the</span>
+<span class="sd">    SWAB case stations its gas at its own bottom-hole pressure (mud hydrostatic)</span>
+<span class="sd">    instead -- see ``resolve_gas_properties``/``constant_A`` ``P_td`` and</span>
+<span class="sd">    ``swab_kick``. (Sharing this pressure with swab leaked kick_intensity into</span>
+<span class="sd">    the swab number, anti-conservatively -- Nassab SPE-202426-PA Eqs 8-9.)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">P_pp_psi</span> <span class="o">=</span> <span class="n">ppg_to_psi</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">PP</span> <span class="o">+</span> <span class="n">inp</span><span class="o">.</span><span class="n">kick_intensity</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_td</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="n">P_pp_psi</span><span class="p">,</span> <span class="n">ppg_to_psi</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">rho_mud</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_td</span><span class="p">))</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_shoe_gas_pressure</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">KickInputs</span><span class="p">,</span> <span class="n">P_td</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Influx-gas pressure at the casing shoe [psi].</span>
+
+<span class="sd">    ``P_td`` reduced by the static influx-gas column over the open-hole section</span>
+<span class="sd">    (D_td - D_lot). The column is integrated with the Hall-Yarborough density</span>
+<span class="sd">    at the mean pressure/temperature and converged by fixed-point iteration.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">T_s_r</span> <span class="o">=</span> <span class="n">fahrenheit_to_rankine</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">T_s</span><span class="p">)</span>
+    <span class="n">T_td_r</span> <span class="o">=</span> <span class="n">fahrenheit_to_rankine</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">T_td</span><span class="p">)</span>
+    <span class="c1"># Ideal-gas reference mode: Z == 1, isothermal (single temperature T_s).</span>
+    <span class="n">t_mean</span> <span class="o">=</span> <span class="n">T_s_r</span> <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">ideal_gas</span> <span class="k">else</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">T_td_r</span> <span class="o">+</span> <span class="n">T_s_r</span><span class="p">)</span>
+    <span class="n">interval</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_td</span> <span class="o">-</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_lot</span>
+    <span class="n">P_shoe</span> <span class="o">=</span> <span class="n">P_td</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">64</span><span class="p">):</span>
+        <span class="n">p_mean</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">P_td</span> <span class="o">+</span> <span class="n">P_shoe</span><span class="p">)</span>
+        <span class="n">z_mean</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">ideal_gas</span> <span class="k">else</span> <span class="n">hall_yarborough_z</span><span class="p">(</span><span class="n">p_mean</span><span class="p">,</span> <span class="n">t_mean</span><span class="p">)</span>
+        <span class="n">rho_mean</span> <span class="o">=</span> <span class="n">gas_density_ppg</span><span class="p">(</span><span class="n">p_mean</span><span class="p">,</span> <span class="n">t_mean</span><span class="p">,</span> <span class="n">z_mean</span><span class="p">)</span>
+        <span class="n">P_new</span> <span class="o">=</span> <span class="n">P_td</span> <span class="o">-</span> <span class="n">G_PSI_PER_PPG_FT</span> <span class="o">*</span> <span class="n">rho_mean</span> <span class="o">*</span> <span class="n">interval</span>
+        <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">P_new</span> <span class="o">-</span> <span class="n">P_shoe</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">1e-6</span><span class="p">:</span>
+            <span class="n">P_shoe</span> <span class="o">=</span> <span class="n">P_new</span>
+            <span class="k">break</span>
+        <span class="n">P_shoe</span> <span class="o">=</span> <span class="n">P_new</span>
+    <span class="k">return</span> <span class="n">P_shoe</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_inputs_key</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="s2">&quot;KickInputs&quot;</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Complete, hashable key for a ``KickInputs``.</span>
+
+<span class="sd">    Built from EVERY field by reflection rather than a hand-listed subset. A</span>
+<span class="sd">    hand-listed key is how a memo silently breaks a frozen revision: omit</span>
+<span class="sd">    ``model_revision`` and a cached result computed under one revision is</span>
+<span class="sd">    returned for another. Adding a field to ``KickInputs`` extends this key</span>
+<span class="sd">    automatically.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">parts</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">fields</span><span class="p">(</span><span class="n">inp</span><span class="p">):</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">items</span><span class="p">()))</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="n">v</span><span class="p">))</span>
+    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span>
+
+
+<span class="c1">#: One-shot memo for :func:`_bubble_state`. The closed form asks for the SAME</span>
+<span class="c1">#: bubble twice per case -- once from ``constant_A`` for the buoyancy deficit and</span>
+<span class="c1">#: once from ``influx_column`` for the reported state -- and the state costs a</span>
+<span class="c1">#: full column integration. Bit-identical by construction: same inputs, same</span>
+<span class="c1">#: result, no rounding in the key.</span>
+<span class="n">_BUBBLE_STATE_MEMO</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_bubble_state</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">KickInputs</span><span class="p">,</span> <span class="n">P_td</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">256</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The influx bubble&#39;s OWN state. ``(T_bar [degR], H [ft], P_bar, rho_bar)``.</span>
+
+<span class="sd">    The construction A-2/A-3/A-4 describe and NOGEPA-50 Section 3.2 mandates:</span>
+
+<span class="sd">      * BHP is pinned at ``P_td``;</span>
+<span class="sd">      * MUD beneath the bubble sets the bubble-BOTTOM pressure;</span>
+<span class="sd">      * the bubble&#39;s own weight sets the gradient across it;</span>
+<span class="sd">      * its TOP sits at the shoe fracture limit ``P_lot*g*D_lot - P_apl``;</span>
+<span class="sd">      * ``rho_bar`` is the MASS-WEIGHTED MEAN density over the column -- one</span>
+<span class="sd">        density serves BOTH the A-2 buoyancy term and the volume expansion,</span>
+<span class="sd">        because mass is conserved. Integrating also marches P and T together, so</span>
+<span class="sd">        the state is coherent at every point rather than at one chosen depth;</span>
+<span class="sd">      * the temperature is bracketed by the two mud interfaces.</span>
+
+<span class="sd">    WHAT THIS REPLACES. ``_shoe_gas_pressure`` ran a GAS gradient over the whole</span>
+<span class="sd">    open hole, which A-2&#39;s simplification (1) explicitly excludes -- it put the</span>
+<span class="sd">    gas 1290 psi too high (6553.6 vs 5223.1 psia) and 18% too dense on the</span>
+<span class="sd">    SPE-208788 Table-1 case, under-reporting the tolerable influx by ~6%.</span>
+
+<span class="sd">    SELF-CHECK. Two independent routes to the bubble-bottom pressure -- the</span>
+<span class="sd">    bubble&#39;s own weight from the top, and BHP minus the mud column beneath -- must</span>
+<span class="sd">    agree. Measured closure 0.006 psi; a wrong construction would not close.</span>
+<span class="sd">    Asserted by tests/test_kick_bubble_state.py.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">_inputs_key</span><span class="p">(</span><span class="n">inp</span><span class="p">),</span> <span class="n">P_td</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+    <span class="n">cached</span> <span class="o">=</span> <span class="n">_BUBBLE_STATE_MEMO</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">cached</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">cached</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">_bubble_state_impl</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">P_td</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">_BUBBLE_STATE_MEMO</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">4096</span><span class="p">:</span>          <span class="c1"># bounded; an envelope sweep is finite</span>
+        <span class="n">_BUBBLE_STATE_MEMO</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+    <span class="n">_BUBBLE_STATE_MEMO</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">result</span>
+    <span class="k">return</span> <span class="n">result</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_bubble_state_impl</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">KickInputs</span><span class="p">,</span> <span class="n">P_td</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">G_PSI_PER_PPG_FT</span>
+    <span class="n">P_top</span> <span class="o">=</span> <span class="n">ppg_to_psi</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">P_lot</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_lot</span><span class="p">)</span> <span class="o">-</span> <span class="n">inp</span><span class="o">.</span><span class="n">P_apl</span> <span class="o">+</span> <span class="n">P_ATM_PSI</span>
+    <span class="n">interval</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_td</span> <span class="o">-</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_lot</span>
+    <span class="n">B</span> <span class="o">=</span> <span class="n">constant_B</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+    <span class="c1"># ideal_gas is ISOTHERMAL by contract -- one temperature in the calculation.</span>
+    <span class="c1"># bubble-state changes the PRESSURE basis, not that.</span>
+    <span class="n">grad</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span> <span class="k">if</span> <span class="p">(</span><span class="n">interval</span> <span class="o">&lt;=</span> <span class="mf">0.0</span> <span class="ow">or</span> <span class="n">inp</span><span class="o">.</span><span class="n">ideal_gas</span><span class="p">)</span>
+            <span class="k">else</span> <span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">T_td</span> <span class="o">-</span> <span class="n">inp</span><span class="o">.</span><span class="n">T_s</span><span class="p">)</span> <span class="o">/</span> <span class="n">interval</span><span class="p">)</span>
+    <span class="n">H</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">y_seed</span> <span class="o">=</span> <span class="mf">1.0e-3</span>                     <span class="c1"># chained through the column solve below</span>
+    <span class="n">T_bar</span> <span class="o">=</span> <span class="n">fahrenheit_to_rankine</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">T_s</span><span class="p">)</span>
+    <span class="n">rho_bar</span> <span class="o">=</span> <span class="n">_influx_density</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">P_top</span><span class="p">,</span> <span class="n">T_bar</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">64</span><span class="p">):</span>
+        <span class="c1"># The column is EXPONENTIAL, so integrate it in closed form rather than</span>
+        <span class="c1"># marching it. With rho ~ c.P over the column, dP/dh = g.rho gives</span>
+        <span class="c1"># P(h) = P_top.exp(k.h), and the mean density follows from the pressure</span>
+        <span class="c1"># drop alone:</span>
+        <span class="c1">#</span>
+        <span class="c1">#     INT rho dh = dP / g   =&gt;   rho_bar = (P_bottom - P_top) / (g.H)</span>
+        <span class="c1">#</span>
+        <span class="c1"># which is exact for ANY internal distribution -- the same identity</span>
+        <span class="c1"># asserted by test_the_bulk_density_is_pinned_by_the_endpoint_pressures.</span>
+        <span class="c1"># c is taken at the column&#39;s mean pressure and mid-height temperature,</span>
+        <span class="c1"># the treatment `analytical.py` already uses for the same column.</span>
+        <span class="c1">#</span>
+        <span class="c1"># This replaced a 256-point march that cost ~2,500 Hall-Yarborough</span>
+        <span class="c1"># solves per case and made `drill_kick` 245x slower than 0.26.0. The</span>
+        <span class="c1"># benchmark gate caught it; see benchmarks/BENCHMARK_LOG.md.</span>
+        <span class="k">if</span> <span class="n">H</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="n">rho_new</span><span class="p">,</span> <span class="n">y_seed</span> <span class="o">=</span> <span class="n">_influx_density_warm</span><span class="p">(</span>
+                <span class="n">inp</span><span class="p">,</span> <span class="n">P_top</span><span class="p">,</span> <span class="n">fahrenheit_to_rankine</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">T_s</span><span class="p">),</span> <span class="n">y_seed</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">T_mid</span> <span class="o">=</span> <span class="n">fahrenheit_to_rankine</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">T_s</span> <span class="o">+</span> <span class="n">grad</span> <span class="o">*</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">H</span><span class="p">)</span>
+            <span class="n">P_bottom</span> <span class="o">=</span> <span class="n">P_top</span>
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">6</span><span class="p">):</span>                       <span class="c1"># c depends on P; converges fast</span>
+                <span class="n">P_mean</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">P_top</span> <span class="o">+</span> <span class="n">P_bottom</span><span class="p">)</span>
+                <span class="n">rho_mean</span><span class="p">,</span> <span class="n">y_seed</span> <span class="o">=</span> <span class="n">_influx_density_warm</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">P_mean</span><span class="p">,</span> <span class="n">T_mid</span><span class="p">,</span> <span class="n">y_seed</span><span class="p">)</span>
+                <span class="n">c</span> <span class="o">=</span> <span class="n">rho_mean</span> <span class="o">/</span> <span class="n">P_mean</span>
+                <span class="n">P_new</span> <span class="o">=</span> <span class="n">P_top</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">g</span> <span class="o">*</span> <span class="n">c</span> <span class="o">*</span> <span class="n">H</span><span class="p">)</span>
+                <span class="c1"># 1e-5 psi, not 1e-9. The OUTER fixed point on H re-enters this</span>
+                <span class="c1"># loop until H itself converges to 1e-9, so tightening the inner</span>
+                <span class="c1"># pressure beyond the outer&#39;s own tolerance buys nothing but</span>
+                <span class="c1"># Hall-Yarborough solves -- 33 per case against 21, and H-Y is</span>
+                <span class="c1"># 70% of drill_kick. Measured effect on H: 2e-8 ft.</span>
+                <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">P_new</span> <span class="o">-</span> <span class="n">P_bottom</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">1e-5</span><span class="p">:</span>
+                    <span class="n">P_bottom</span> <span class="o">=</span> <span class="n">P_new</span>
+                    <span class="k">break</span>
+                <span class="n">P_bottom</span> <span class="o">=</span> <span class="n">P_new</span>
+            <span class="n">rho_new</span> <span class="o">=</span> <span class="p">(</span><span class="n">P_bottom</span> <span class="o">-</span> <span class="n">P_top</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">g</span> <span class="o">*</span> <span class="n">H</span><span class="p">)</span>
+        <span class="c1"># Mid-height (LENGTH-weighted) mean temperature -- and deliberately not</span>
+        <span class="c1"># the mass-weighted one, which looks more principled and is not.</span>
+        <span class="c1">#</span>
+        <span class="c1"># Mass weighting would weight by this column&#39;s own density profile. That</span>
+        <span class="c1"># profile is DENSITY-INVERTED: across a light gas column the pressure</span>
+        <span class="c1"># rises only slightly (+2.1% over 1462 ft on the Table-1 case) while the</span>
+        <span class="c1"># imposed geothermal gradient lifts T much more (+4.9%), and rho ~</span>
+        <span class="c1"># P/(Z.T), so the model puts the gas 4.3% HEAVIER at its top than at its</span>
+        <span class="c1"># bottom. A static column with the heavy fluid on top is not an</span>
+        <span class="c1"># equilibrium -- the gradient here is ~10x superadiabatic (g/cp for</span>
+        <span class="c1"># methane is ~0.002-0.003 degF/ft against 0.0225 imposed), so a real</span>
+        <span class="c1"># bubble convects and mixes toward near-isothermal: the adiabat over this</span>
+        <span class="c1"># column is ~3 degF against the ~33 degF the profile imposes.</span>
+        <span class="c1">#</span>
+        <span class="c1"># So the density profile is an artefact of solving a static column under</span>
+        <span class="c1"># an imposed geothermal profile, not something to weight by. Mid-height</span>
+        <span class="c1"># is the honest summary of an imposed linear profile. Revisit only with a</span>
+        <span class="c1"># convective/mixing treatment of the bubble, which is a model change, not</span>
+        <span class="c1"># an averaging choice.</span>
+        <span class="n">T_bar</span> <span class="o">=</span> <span class="n">fahrenheit_to_rankine</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">T_s</span> <span class="o">+</span> <span class="n">grad</span> <span class="o">*</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">H</span><span class="p">)</span>
+        <span class="n">deficit</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">rho_mud</span> <span class="o">-</span> <span class="n">rho_new</span>
+        <span class="k">if</span> <span class="n">deficit</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="n">rho_bar</span> <span class="o">=</span> <span class="n">rho_new</span>
+            <span class="k">break</span>                                      <span class="c1"># no buoyant column</span>
+        <span class="n">H_new</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">max</span><span class="p">((</span><span class="n">B</span> <span class="o">-</span> <span class="n">P_td</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">g</span> <span class="o">*</span> <span class="n">deficit</span><span class="p">),</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">interval</span><span class="p">)</span>
+        <span class="n">rho_bar</span> <span class="o">=</span> <span class="n">rho_new</span>
+        <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">H_new</span> <span class="o">-</span> <span class="n">H</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">1e-9</span><span class="p">:</span>
+            <span class="n">H</span> <span class="o">=</span> <span class="n">H_new</span>
+            <span class="k">break</span>
+        <span class="n">H</span> <span class="o">=</span> <span class="n">H_new</span>
+    <span class="n">P_bar</span> <span class="o">=</span> <span class="n">P_top</span> <span class="o">+</span> <span class="n">g</span> <span class="o">*</span> <span class="n">rho_bar</span> <span class="o">*</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">H</span>
+    <span class="k">return</span> <span class="n">T_bar</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">P_bar</span><span class="p">,</span> <span class="n">rho_bar</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_influx_temperature</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">KickInputs</span><span class="p">,</span> <span class="n">P_td</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Temperature the influx gas state is evaluated at [degR], and H_gas [ft].</span>
+
+<span class="sd">    The A-5 constant&#39;s ``T_s``, ``Z_s`` and ``rho_gas_s`` describe the INFLUX,</span>
+<span class="sd">    at the condition A-2 defines: gas top at the casing shoe. The column</span>
+<span class="sd">    therefore hangs BELOW the shoe, over the interval that carries the</span>
+<span class="sd">    geothermal gradient -- so the shoe is its COOL END, not a representative</span>
+<span class="sd">    value for it. Evaluating there makes the gas denser than the column, which</span>
+<span class="sd">    SHRINKS the ``(rho_mud - rho_gas_s)`` deficit in A-5&#39;s denominator, inflates</span>
+<span class="sd">    A, and passes straight through A-7 as an OVERSTATED tolerable influx. The</span>
+<span class="sd">    error is anti-conservative (raised by an external reviewer, 2026-07-26).</span>
+
+<span class="sd">    Note the asymmetry this removes: the pressure side already integrates the</span>
+<span class="sd">    column (``_shoe_gas_pressure``); only the temperature side did not.</span>
+
+<span class="sd">    Support in the primary sources: SPE-202426-PA (Nassab et al.) evaluates its</span>
+<span class="sd">    worked influx at the AVERAGE across the influx -- 89 degC at the top and</span>
+<span class="sd">    92 degC at the bottom giving &quot;an average influx temperature of approximately</span>
+<span class="sd">    91 degC&quot; -- i.e. the symbol denotes the influx&#39;s state, not the temperature</span>
+<span class="sd">    at the shoe depth. NOGEPA-50 Section 5.4.3&#39;s &quot;constant temperature is</span>
+<span class="sd">    conservative&quot; is a DIFFERENT comparison (holding the influx at bottomhole</span>
+<span class="sd">    temperature as it migrates up the hole) and does not bear on which</span>
+<span class="sd">    temperature represents the static column.</span>
+
+<span class="sd">    The column height is an OUTPUT -- ``H = (B - P_td) / [g (rho_mud -</span>
+<span class="sd">    rho_gas)]`` from A-2, and ``rho_gas`` depends on the temperature at the</span>
+<span class="sd">    column&#39;s mid-depth -- so this is a fixed point. It converges monotonically</span>
+<span class="sd">    in a handful of iterations from H = 0 (the shoe value, i.e. the previous</span>
+<span class="sd">    model), and the correction is signed: a warmer column always gives a</span>
+<span class="sd">    SMALLER A.</span>
+
+<span class="sd">    The ``&quot;spe-208788&quot;`` revision (and ``ideal_gas``, which is isothermal by</span>
+<span class="sd">    definition) returns ``T_s`` unchanged.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">T_s_r</span> <span class="o">=</span> <span class="n">fahrenheit_to_rankine</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">T_s</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">model_revision</span> <span class="o">==</span> <span class="s2">&quot;spe-208788&quot;</span> <span class="ow">or</span> <span class="n">inp</span><span class="o">.</span><span class="n">ideal_gas</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">T_s_r</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="n">interval</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_td</span> <span class="o">-</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_lot</span>
+    <span class="k">if</span> <span class="n">interval</span> <span class="o">&lt;=</span> <span class="mf">0.0</span> <span class="ow">or</span> <span class="n">inp</span><span class="o">.</span><span class="n">T_td</span> <span class="o">==</span> <span class="n">inp</span><span class="o">.</span><span class="n">T_s</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">T_s_r</span><span class="p">,</span> <span class="kc">None</span>                             <span class="c1"># nothing to average over</span>
+    <span class="c1"># A single evaluation costs ~7 gas-property solves, and the closed form asks</span>
+    <span class="c1"># for the same station three times per case (constant_A, its</span>
+    <span class="c1"># resolve_gas_properties, and the result&#39;s own reporting). Memoised on the</span>
+    <span class="c1"># scalars it actually depends on, which also keeps an envelope sweep cheap.</span>
+    <span class="k">return</span> <span class="n">_influx_temperature_impl</span><span class="p">(</span>
+        <span class="n">inp</span><span class="o">.</span><span class="n">T_s</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">T_td</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_lot</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_td</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">rho_mud</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">P_lot</span><span class="p">,</span>
+        <span class="n">inp</span><span class="o">.</span><span class="n">P_apl</span><span class="p">,</span> <span class="n">P_td</span><span class="p">,</span>
+        <span class="kc">None</span> <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">fluid</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">fluid</span><span class="o">.</span><span class="n">items</span><span class="p">())),</span>
+    <span class="p">)</span>
+
+
+<span class="nd">@lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">8192</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_influx_temperature_impl</span><span class="p">(</span><span class="n">T_s</span><span class="p">,</span> <span class="n">T_td</span><span class="p">,</span> <span class="n">D_lot</span><span class="p">,</span> <span class="n">D_td</span><span class="p">,</span> <span class="n">rho_mud</span><span class="p">,</span> <span class="n">P_lot</span><span class="p">,</span> <span class="n">P_apl</span><span class="p">,</span>
+                             <span class="n">P_td</span><span class="p">,</span> <span class="n">fluid_key</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fixed point behind :func:`_influx_temperature` (scalars only, cacheable).&quot;&quot;&quot;</span>
+    <span class="n">fluid</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">fluid_key</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">dict</span><span class="p">(</span><span class="n">fluid_key</span><span class="p">)</span>
+    <span class="n">inp</span> <span class="o">=</span> <span class="n">KickInputs</span><span class="p">(</span>
+        <span class="n">rho_mud</span><span class="o">=</span><span class="n">rho_mud</span><span class="p">,</span> <span class="n">PP</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">kick_intensity</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">P_lot</span><span class="o">=</span><span class="n">P_lot</span><span class="p">,</span> <span class="n">P_apl</span><span class="o">=</span><span class="n">P_apl</span><span class="p">,</span>
+        <span class="n">D_td</span><span class="o">=</span><span class="n">D_td</span><span class="p">,</span> <span class="n">D_lot</span><span class="o">=</span><span class="n">D_lot</span><span class="p">,</span> <span class="n">T_s</span><span class="o">=</span><span class="n">T_s</span><span class="p">,</span> <span class="n">T_td</span><span class="o">=</span><span class="n">T_td</span><span class="p">,</span> <span class="n">V_dpa</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">fluid</span><span class="o">=</span><span class="n">fluid</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">interval</span> <span class="o">=</span> <span class="n">D_td</span> <span class="o">-</span> <span class="n">D_lot</span>
+    <span class="n">grad</span> <span class="o">=</span> <span class="p">(</span><span class="n">T_td</span> <span class="o">-</span> <span class="n">T_s</span><span class="p">)</span> <span class="o">/</span> <span class="n">interval</span>                     <span class="c1"># degF/ft</span>
+    <span class="n">B</span> <span class="o">=</span> <span class="n">constant_B</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+    <span class="n">P_shoe</span> <span class="o">=</span> <span class="n">_shoe_gas_pressure</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">P_td</span><span class="p">)</span>
+    <span class="n">H</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">T_r</span> <span class="o">=</span> <span class="n">fahrenheit_to_rankine</span><span class="p">(</span><span class="n">T_s</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">64</span><span class="p">):</span>
+        <span class="n">T_r</span> <span class="o">=</span> <span class="n">fahrenheit_to_rankine</span><span class="p">(</span><span class="n">T_s</span> <span class="o">+</span> <span class="n">grad</span> <span class="o">*</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">H</span><span class="p">)</span>
+        <span class="n">rho</span> <span class="o">=</span> <span class="n">_influx_density</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">P_shoe</span><span class="p">,</span> <span class="n">T_r</span><span class="p">)</span>
+        <span class="n">deficit</span> <span class="o">=</span> <span class="n">rho_mud</span> <span class="o">-</span> <span class="n">rho</span>
+        <span class="k">if</span> <span class="n">deficit</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">break</span>                                      <span class="c1"># no buoyant column</span>
+        <span class="n">H_new</span> <span class="o">=</span> <span class="p">(</span><span class="n">B</span> <span class="o">-</span> <span class="n">P_td</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">G_PSI_PER_PPG_FT</span> <span class="o">*</span> <span class="n">deficit</span><span class="p">)</span>
+        <span class="n">H_new</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="n">H_new</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">interval</span><span class="p">)</span>         <span class="c1"># the column is IN the</span>
+        <span class="c1">#                                                open hole (A-2&#39;s</span>
+        <span class="c1">#                                                simplification (1))</span>
+        <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">H_new</span> <span class="o">-</span> <span class="n">H</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">1e-9</span><span class="p">:</span>
+            <span class="n">H</span> <span class="o">=</span> <span class="n">H_new</span>
+            <span class="k">break</span>
+        <span class="n">H</span> <span class="o">=</span> <span class="n">H_new</span>
+    <span class="k">return</span> <span class="n">T_r</span><span class="p">,</span> <span class="n">H</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_influx_density_warm</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">KickInputs</span><span class="p">,</span> <span class="n">p_psia</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">t_r</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">y0</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;``(density [ppg], y)`` at ``(p_psia, t_r)``, WARM-STARTABLE.</span>
+
+<span class="sd">    ``y`` is Hall-Yarborough&#39;s reduced density; feeding the previous solve&#39;s ``y``</span>
+<span class="sd">    back as ``y0`` cuts its Newton iterations from ~5 to ~2 without changing the</span>
+<span class="sd">    converged root (identical to 1e-12 -- see :func:`gas_z.reduced_density`).</span>
+
+<span class="sd">    The bubble-state column solve walks a sequence of NEARBY pressures, which is</span>
+<span class="sd">    exactly the case that seed was written for, and it was calling the cold path.</span>
+<span class="sd">    ``y`` is meaningless for the ideal and CoolProp backends, which return the</span>
+<span class="sd">    seed unchanged so the caller can chain without branching.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">ideal_gas</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">gas_density_ppg</span><span class="p">(</span><span class="n">p_psia</span><span class="p">,</span> <span class="n">t_r</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span> <span class="n">y0</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">fluid</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.gas_z_coolprop</span><span class="w"> </span><span class="kn">import</span> <span class="n">fluid_z_density</span>
+
+        <span class="k">return</span> <span class="n">fluid_z_density</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">fluid</span><span class="p">,</span> <span class="n">p_psia</span><span class="p">,</span> <span class="n">t_r</span><span class="p">)[</span><span class="mi">1</span><span class="p">],</span> <span class="n">y0</span>
+    <span class="n">z</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">hall_yarborough_z_and_y</span><span class="p">(</span><span class="n">p_psia</span><span class="p">,</span> <span class="n">t_r</span><span class="p">,</span> <span class="n">y0</span><span class="o">=</span><span class="n">y0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">gas_density_ppg</span><span class="p">(</span><span class="n">p_psia</span><span class="p">,</span> <span class="n">t_r</span><span class="p">,</span> <span class="n">z</span><span class="p">),</span> <span class="n">y</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_influx_density</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">KickInputs</span><span class="p">,</span> <span class="n">p_psia</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">t_r</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Influx gas density [ppg] at ``(p_psia, t_r)`` on the active backend.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">ideal_gas</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">gas_density_ppg</span><span class="p">(</span><span class="n">p_psia</span><span class="p">,</span> <span class="n">t_r</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">fluid</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.gas_z_coolprop</span><span class="w"> </span><span class="kn">import</span> <span class="n">fluid_z_density</span>
+
+        <span class="k">return</span> <span class="n">fluid_z_density</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">fluid</span><span class="p">,</span> <span class="n">p_psia</span><span class="p">,</span> <span class="n">t_r</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">methane_properties</span><span class="p">(</span><span class="n">p_psia</span><span class="p">,</span> <span class="n">t_r</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+
+
+<div class="viewcode-block" id="resolve_gas_properties">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.resolve_gas_properties">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_gas_properties</span><span class="p">(</span>
+    <span class="n">inp</span><span class="p">:</span> <span class="n">KickInputs</span><span class="p">,</span> <span class="n">P_td</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return (Z_s, Z_td, rho_gas_s), computing any left as ``None``.</span>
+
+<span class="sd">    TD station:   (P_td, T_td)  -&gt; Z_td.</span>
+<span class="sd">    Shoe station: (P_shoe, T_s) -&gt; Z_s, rho_gas_s.</span>
+
+<span class="sd">    ``P_td`` is the bottom-hole pressure the influx gas is stationed at. Default</span>
+<span class="sd">    ``None`` uses the DRILL scenario pressure ``scenario_P_td(inp)``; the swab</span>
+<span class="sd">    case passes its own P_td (mud hydrostatic) so kick_intensity does not leak</span>
+<span class="sd">    into the swab gas properties (Nassab SPE-202426-PA Eqs 8-9).</span>
+
+<span class="sd">    Backend: pure-methane Hall-Yarborough by default; if ``inp.fluid`` is a</span>
+<span class="sd">    composition dict, the CoolProp real-EOS mixture backend (CO2 / CCUS) is used.</span>
+<span class="sd">    Injected numeric Z_s/Z_td/rho_gas_s values are used verbatim (override).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">model_revision</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">MODEL_REVISIONS</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;unknown kick-tolerance model_revision </span><span class="si">{</span><span class="n">inp</span><span class="o">.</span><span class="n">model_revision</span><span class="si">!r}</span><span class="s2">; &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;known revisions: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">MODEL_REVISIONS</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">P_td</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">P_td</span> <span class="o">=</span> <span class="n">scenario_P_td</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+    <span class="c1"># The influx station&#39;s temperature is revision-dependent -- T_s as</span>
+    <span class="c1"># published, the gas-column mean thereafter (see _influx_temperature).</span>
+    <span class="n">T_s_r</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_influx_temperature</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">P_td</span><span class="p">)</span>
+    <span class="n">T_td_r</span> <span class="o">=</span> <span class="n">fahrenheit_to_rankine</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">T_td</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">ideal_gas</span><span class="p">:</span>
+        <span class="c1"># Ideal-gas reference: Z == 1 everywhere, isothermal (single T_s). An</span>
+        <span class="c1"># explicit numeric override still wins.</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">gas</span><span class="p">(</span><span class="n">p_psia</span><span class="p">,</span> <span class="n">t_r</span><span class="p">):</span>                          <span class="c1"># (Z=1, ideal rho_ppg)</span>
+            <span class="k">return</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">gas_density_ppg</span><span class="p">(</span><span class="n">p_psia</span><span class="p">,</span> <span class="n">T_s_r</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+        <span class="n">T_td_r</span> <span class="o">=</span> <span class="n">T_s_r</span>                                 <span class="c1"># isothermal</span>
+    <span class="k">elif</span> <span class="n">inp</span><span class="o">.</span><span class="n">fluid</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.gas_z_coolprop</span><span class="w"> </span><span class="kn">import</span> <span class="n">fluid_z_density</span>   <span class="c1"># optional CoolProp backend</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">gas</span><span class="p">(</span><span class="n">p_psia</span><span class="p">,</span> <span class="n">t_r</span><span class="p">):</span>                          <span class="c1"># (Z, rho_ppg) for the mixture</span>
+            <span class="k">return</span> <span class="n">fluid_z_density</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">fluid</span><span class="p">,</span> <span class="n">p_psia</span><span class="p">,</span> <span class="n">t_r</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">gas</span> <span class="o">=</span> <span class="n">methane_properties</span>                       <span class="c1"># (Z, rho_ppg) clean-room H-Y</span>
+
+    <span class="n">Z_td</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">Z_td</span> <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">Z_td</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">gas</span><span class="p">(</span><span class="n">P_td</span><span class="p">,</span> <span class="n">T_td_r</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">Z_s</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">inp</span><span class="o">.</span><span class="n">rho_gas_s</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">P_shoe</span> <span class="o">=</span> <span class="n">_shoe_gas_pressure</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">P_td</span><span class="p">)</span>
+        <span class="n">Z_s_c</span><span class="p">,</span> <span class="n">rho_gas_s_c</span> <span class="o">=</span> <span class="n">gas</span><span class="p">(</span><span class="n">P_shoe</span><span class="p">,</span> <span class="n">T_s_r</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">Z_s_c</span> <span class="o">=</span> <span class="n">rho_gas_s_c</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># not needed; both injected</span>
+
+    <span class="n">Z_s</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">Z_s</span> <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">Z_s</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">Z_s_c</span>
+    <span class="n">rho_gas_s</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">rho_gas_s</span> <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">rho_gas_s</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">rho_gas_s_c</span>
+    <span class="k">return</span> <span class="n">Z_s</span><span class="p">,</span> <span class="n">Z_td</span><span class="p">,</span> <span class="n">rho_gas_s</span></div>
+
+
+
+<span class="c1"># --- Closed-form building blocks --------------------------------------------</span>
+
+<div class="viewcode-block" id="constant_A">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.constant_A">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">constant_A</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">KickInputs</span><span class="p">,</span> <span class="n">P_td</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A-5:  A = (P_lot - P_apl) * T_td * Z_td * V_dpa</span>
+<span class="sd">                 / [ g * T_s * Z_s * (rho_mud - rho_gas_s) ]   [bbl]</span>
+
+<span class="sd">    P_lot is converted to a pressure at the shoe depth (g * P_lot * D_lot).</span>
+<span class="sd">    Temperatures are absolute (degR). Gas properties (Z_s, Z_td, rho_gas_s) are</span>
+<span class="sd">    computed by the clean-room Hall-Yarborough backend unless injected, stationed</span>
+<span class="sd">    at ``P_td`` (default: the drill scenario pressure; swab passes mud</span>
+<span class="sd">    hydrostatic -- see ``resolve_gas_properties``).</span>
+
+<span class="sd">    Deviated wells (Nassab et al., SPE-202426-PA): the gas column&#39;s vertical</span>
+<span class="sd">    height H_gas occupies an along-hole length L_gas = H_gas / cos(inc_shoe),</span>
+<span class="sd">    which is what multiplies the per-MD annular capacity V_dpa. This scales A by</span>
+<span class="sd">    1 / cos(inc_shoe). inc_shoe = 0 (vertical) recovers the SPE-208788 Table-1</span>
+<span class="sd">    form exactly. (Exact survey-integral form -- absorbing BHA change-of-section</span>
+<span class="sd">    -- is a documented follow-up; this constant-inclination form is the standard</span>
+<span class="sd">    published convention.)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">P_td</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">P_td</span> <span class="o">=</span> <span class="n">scenario_P_td</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+    <span class="n">injected</span> <span class="o">=</span> <span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">Z_s</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">inp</span><span class="o">.</span><span class="n">Z_td</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="ow">or</span> <span class="n">inp</span><span class="o">.</span><span class="n">rho_gas_s</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">model_revision</span> <span class="ow">in</span> <span class="n">_BUBBLE_STATE</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">injected</span><span class="p">:</span>
+        <span class="c1"># MASS CONSERVATION. From A-2/A-3, V_td = H*V_dpa*rho_bar/rho_td, and A-7</span>
+        <span class="c1"># is V_td = A*(B - P_td)/(P_td + P_atm), so</span>
+        <span class="c1">#     A = V_dpa*rho_bar*(P_td + P_atm) / (g*(rho_mud - rho_bar)*rho_td)</span>
+        <span class="c1"># ONE density serves both the buoyancy deficit and the expansion -- that is</span>
+        <span class="c1"># what &quot;molecular mass held constant&quot; means -- and it sidesteps A-5&#39;s</span>
+        <span class="c1"># pressure bookkeeping. (A-5/A-7 as printed drop P_atm from the shoe term</span>
+        <span class="c1"># relative to A-4; derived symbolically, ~0.27%, and it is exactly the</span>
+        <span class="c1"># residual that remained against NOGEPA-50.)</span>
+        <span class="n">T_bar</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">rho_bar</span> <span class="o">=</span> <span class="n">_bubble_state</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">P_td</span><span class="p">)</span>
+        <span class="n">deficit</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">rho_mud</span> <span class="o">-</span> <span class="n">rho_bar</span>
+        <span class="k">if</span> <span class="n">deficit</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.0</span>
+        <span class="c1"># ideal_gas is isothermal by contract, so the TD state shares the one</span>
+        <span class="c1"># temperature; otherwise the TD state is genuinely at T_td.</span>
+        <span class="n">T_td_r</span> <span class="o">=</span> <span class="n">T_bar</span> <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">ideal_gas</span> <span class="k">else</span> <span class="n">fahrenheit_to_rankine</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">T_td</span><span class="p">)</span>
+        <span class="n">rho_td</span> <span class="o">=</span> <span class="n">_influx_density</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">P_td</span> <span class="o">+</span> <span class="n">P_ATM_PSI</span><span class="p">,</span> <span class="n">T_td_r</span><span class="p">)</span>
+        <span class="n">A</span> <span class="o">=</span> <span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">V_dpa</span> <span class="o">*</span> <span class="n">rho_bar</span> <span class="o">*</span> <span class="p">(</span><span class="n">P_td</span> <span class="o">+</span> <span class="n">P_ATM_PSI</span><span class="p">)</span>
+             <span class="o">/</span> <span class="p">(</span><span class="n">G_PSI_PER_PPG_FT</span> <span class="o">*</span> <span class="n">deficit</span> <span class="o">*</span> <span class="n">rho_td</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">A</span> <span class="o">/</span> <span class="n">cos</span><span class="p">(</span><span class="n">radians</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">inc_shoe</span><span class="p">))</span>
+    <span class="c1"># INJECTED gas properties fall through to the A-5 algebraic form on purpose.</span>
+    <span class="c1"># Injection is the PAPER-REPRODUCTION path (project-owner rule: when we</span>
+    <span class="c1"># validate we use the paper&#39;s method AND inputs), and a paper that assumes a</span>
+    <span class="c1"># constant influx density -- Santos SPE-140113: &quot;constant temperature,</span>
+    <span class="c1"># constant density, no compressibility (Z=1)&quot; -- expands its influx by BOYLE,</span>
+    <span class="c1"># not by mass conservation. Mass conservation with a constant density gives no</span>
+    <span class="c1"># expansion at all, which is not that paper&#39;s model. So a caller supplying gas</span>
+    <span class="c1"># properties gets the algebra those properties belong to.</span>
+    <span class="n">Z_s</span><span class="p">,</span> <span class="n">Z_td</span><span class="p">,</span> <span class="n">rho_gas_s</span> <span class="o">=</span> <span class="n">resolve_gas_properties</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">P_td</span><span class="p">)</span>
+    <span class="n">P_lot_psi</span> <span class="o">=</span> <span class="n">ppg_to_psi</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">P_lot</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_lot</span><span class="p">)</span>
+    <span class="c1"># SAME influx temperature the Z_s / rho_gas_s above were evaluated at --</span>
+    <span class="c1"># this and resolve_gas_properties must never disagree on the station.</span>
+    <span class="n">T_s_r</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_influx_temperature</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">P_td</span><span class="p">)</span>
+    <span class="c1"># Ideal-gas reference mode is isothermal: the T_td/T_s expansion ratio -&gt; 1.</span>
+    <span class="n">T_td_r</span> <span class="o">=</span> <span class="n">T_s_r</span> <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">ideal_gas</span> <span class="k">else</span> <span class="n">fahrenheit_to_rankine</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">T_td</span><span class="p">)</span>
+    <span class="n">num</span> <span class="o">=</span> <span class="p">(</span><span class="n">P_lot_psi</span> <span class="o">-</span> <span class="n">inp</span><span class="o">.</span><span class="n">P_apl</span><span class="p">)</span> <span class="o">*</span> <span class="n">T_td_r</span> <span class="o">*</span> <span class="n">Z_td</span> <span class="o">*</span> <span class="n">inp</span><span class="o">.</span><span class="n">V_dpa</span>
+    <span class="n">den</span> <span class="o">=</span> <span class="n">G_PSI_PER_PPG_FT</span> <span class="o">*</span> <span class="n">T_s_r</span> <span class="o">*</span> <span class="n">Z_s</span> <span class="o">*</span> <span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">rho_mud</span> <span class="o">-</span> <span class="n">rho_gas_s</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">num</span> <span class="o">/</span> <span class="n">den</span><span class="p">)</span> <span class="o">/</span> <span class="n">cos</span><span class="p">(</span><span class="n">radians</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">inc_shoe</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="constant_B">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.constant_B">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">constant_B</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">KickInputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A-6:  B = P_lot - P_apl + g * rho_mud * (D_td - D_lot)   [psi]</span>
+
+<span class="sd">    (the maximum pore pressure at which the tolerable influx is zero).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">P_lot_psi</span> <span class="o">=</span> <span class="n">ppg_to_psi</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">P_lot</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_lot</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">P_lot_psi</span> <span class="o">-</span> <span class="n">inp</span><span class="o">.</span><span class="n">P_apl</span> <span class="o">+</span> <span class="n">G_PSI_PER_PPG_FT</span> <span class="o">*</span> <span class="n">inp</span><span class="o">.</span><span class="n">rho_mud</span> <span class="o">*</span> <span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">D_td</span> <span class="o">-</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_lot</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="P_td_from_A1">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.P_td_from_A1">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">P_td_from_A1</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">KickInputs</span><span class="p">,</span> <span class="n">P_pp_psi</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A-1:  P_td = max{P_pp, D_td * g * rho_mud}   [psi].&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="n">P_pp_psi</span><span class="p">,</span> <span class="n">ppg_to_psi</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">rho_mud</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_td</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="influx_volume_A7">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.influx_volume_A7">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">influx_volume_A7</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">B</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">P_td</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A-7:  V_gas_td = A * (B - P_td) / (P_td + P_atm)   [bbl].</span>
+
+<span class="sd">    Tolerable single-bubble influx volume (zero when P_pp == B).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">A</span> <span class="o">*</span> <span class="p">(</span><span class="n">B</span> <span class="o">-</span> <span class="n">P_td</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">P_td</span> <span class="o">+</span> <span class="n">P_ATM_PSI</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="pp_at_threshold_A9">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.pp_at_threshold_A9">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">pp_at_threshold_A9</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">B</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">V_threshold</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A-9:  P_td = (A * B - V_gas_td * P_atm) / (V_gas_td + A)   [psi],</span>
+
+<span class="sd">    the bottom-hole pressure corresponding to a chosen kick-tolerance volume,</span>
+<span class="sd">    returned as an equivalent pore-pressure mud weight [ppg] at D_td.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">A</span> <span class="o">*</span> <span class="n">B</span> <span class="o">-</span> <span class="n">V_threshold</span> <span class="o">*</span> <span class="n">P_ATM_PSI</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">V_threshold</span> <span class="o">+</span> <span class="n">A</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="influx_column">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.influx_column">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">influx_column</span><span class="p">(</span>
+    <span class="n">inp</span><span class="p">:</span> <span class="n">KickInputs</span><span class="p">,</span> <span class="n">P_td</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The limiting influx column: ``(T_influx [degF], H_gas [ft], rho_influx)``.</span>
+
+<span class="sd">    The three quantities A-5 was actually evaluated with. Use these to draw or</span>
+<span class="sd">    check the limiting pressure profile -- they are the only set that closes.</span>
+
+<span class="sd">    THE IDENTITY. Reconstructing the shoe pressure from this column,</span>
+
+<span class="sd">        P_shoe = P_td - g [ rho_influx * H + rho_mud * (D_td - D_lot - H) ]</span>
+
+<span class="sd">    returns the binding fracture pressure ``g * P_lot * D_lot - P_apl``</span>
+<span class="sd">    EXACTLY, for any ``rho_influx``, because A-2 defines H as</span>
+<span class="sd">    ``(B - P_td) / [g (rho_mud - rho_influx)]`` and B carries the mud column</span>
+<span class="sd">    over the same interval. That is the definition of the limiting condition:</span>
+<span class="sd">    at the tolerable influx the shoe sits ON the fracture pressure. Verified to</span>
+<span class="sd">    0.00 psi under both revisions by ``test_kick_model_revision.py``.</span>
+
+<span class="sd">    DO NOT back-derive H from ``KickResult.capacity`` instead. Expanding the</span>
+<span class="sd">    capacity to the shoe goes through A-4, whose pressure bookkeeping is not</span>
+<span class="sd">    algebraically identical to A-5/A-7 as printed (A-4 pairs</span>
+<span class="sd">    ``P_lot - P_apl + P_atm`` with ``P_td``, while A-7 pairs ``P_lot - P_apl``</span>
+<span class="sd">    with ``P_td + P_atm``). On the Table-1 case that route misses the fracture</span>
+<span class="sd">    pressure by -3.93 psi -- IDENTICALLY under both revisions, so it is the</span>
+<span class="sd">    paper&#39;s own bookkeeping and not the influx-temperature correction. A</span>
+<span class="sd">    profile built that way was already off before 0.26.0; it just did not move.</span>
+
+<span class="sd">    ``rho_influx`` respects an injected ``rho_gas_s``, so the identity holds for</span>
+<span class="sd">    a caller supplying its own gas properties too.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">P_td</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">P_td</span> <span class="o">=</span> <span class="n">scenario_P_td</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">model_revision</span> <span class="ow">in</span> <span class="n">_BUBBLE_STATE</span> <span class="ow">and</span> <span class="n">inp</span><span class="o">.</span><span class="n">Z_s</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="n">inp</span><span class="o">.</span><span class="n">Z_td</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">inp</span><span class="o">.</span><span class="n">rho_gas_s</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="n">T_r</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">rho_influx</span> <span class="o">=</span> <span class="n">_bubble_state</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">P_td</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">T_r</span> <span class="o">-</span> <span class="n">RANKINE_OFFSET</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">rho_influx</span>
+    <span class="n">T_r</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_influx_temperature</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">P_td</span><span class="p">)</span>
+    <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">rho_influx</span> <span class="o">=</span> <span class="n">resolve_gas_properties</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">P_td</span><span class="p">)</span>
+    <span class="n">deficit</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">rho_mud</span> <span class="o">-</span> <span class="n">rho_influx</span>
+    <span class="n">H</span> <span class="o">=</span> <span class="p">((</span><span class="n">constant_B</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span> <span class="o">-</span> <span class="n">P_td</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">G_PSI_PER_PPG_FT</span> <span class="o">*</span> <span class="n">deficit</span><span class="p">)</span>
+         <span class="k">if</span> <span class="n">deficit</span> <span class="o">&gt;</span> <span class="mf">0.0</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">T_r</span> <span class="o">-</span> <span class="n">RANKINE_OFFSET</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">rho_influx</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_psi_to_ppg</span><span class="p">(</span><span class="n">p_psi</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">depth_ft</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Inverse gradient: pressure -&gt; equivalent mud weight [ppg] at depth.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">p_psi</span> <span class="o">/</span> <span class="p">(</span><span class="n">G_PSI_PER_PPG_FT</span> <span class="o">*</span> <span class="n">depth_ft</span><span class="p">)</span>
+
+
+<span class="c1"># --- The two first-class cases ----------------------------------------------</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_with_resolved_temperature</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">KickInputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">KickInputs</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Drilling-kick temperature-optional resolution.</span>
+
+<span class="sd">    Temperature (``T_s``/``T_td``) may be OMITTED for a drilling kick when an influx</span>
+<span class="sd">    density ``rho_gas_s`` is given. The calc then runs ideal-isothermal, where the</span>
+<span class="sd">    temperature value CANCELS out of the gas-column expansion</span>
+<span class="sd">    (``rho(P) = rho_gas_s . P / P_bh``) -- verified independent of the temperature</span>
+<span class="sd">    across 60-400 degF. A neutral placeholder is filled and ``ideal_gas`` forced so</span>
+<span class="sd">    the downstream arithmetic is well-defined; the answer does not depend on the</span>
+<span class="sd">    placeholder.</span>
+
+<span class="sd">    Without a temperature AND without a density the gas state is undetermined -- a</span>
+<span class="sd">    real-gas / composition influx needs a temperature to get ``Z`` up the column --</span>
+<span class="sd">    so that case is refused with a clear message. This is a DRILLING-kick path only;</span>
+<span class="sd">    :func:`swab_kick` requires a real temperature (a trip relaxes toward formation).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">T_s</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">inp</span><span class="o">.</span><span class="n">T_td</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">inp</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">rho_gas_s</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;temperature omitted (T_s/T_td): a drilling kick then runs ideal-isothermal, &quot;</span>
+            <span class="s2">&quot;where temperature cancels -- but that path needs an influx DENSITY. Provide &quot;</span>
+            <span class="s2">&quot;rho_gas_s (ppg), or supply T_s and T_td (a real-gas / composition influx &quot;</span>
+            <span class="s2">&quot;needs a temperature to evaluate Z up the column).&quot;</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">T_s</span><span class="o">=</span><span class="mf">60.0</span><span class="p">,</span> <span class="n">T_td</span><span class="o">=</span><span class="mf">60.0</span><span class="p">,</span> <span class="n">ideal_gas</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="drill_kick">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.drill_kick">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">drill_kick</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">KickInputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">KickResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Drillability gate (section PASS/FAIL).</span>
+
+<span class="sd">    A-7 tolerable-influx capacity at the MAXIMUM-CREDIBLE pore pressure,</span>
+<span class="sd">    P_pp = (PP + kick_intensity) expressed as a pressure at D_td, per A-1.</span>
+
+<span class="sd">    Temperature is OPTIONAL here: omit ``T_s``/``T_td`` and supply an influx density</span>
+<span class="sd">    ``rho_gas_s`` to run the ideal-isothermal, temperature-cancels path (matches a</span>
+<span class="sd">    simple density-based well-control tool). See :func:`_with_resolved_temperature`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">_t_omitted</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">T_s</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">inp</span><span class="o">.</span><span class="n">T_td</span> <span class="ow">is</span> <span class="kc">None</span>   <span class="c1"># ideal-isothermal, T cancels</span>
+    <span class="n">inp</span> <span class="o">=</span> <span class="n">_with_resolved_temperature</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+    <span class="n">A</span> <span class="o">=</span> <span class="n">constant_A</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+    <span class="n">B</span> <span class="o">=</span> <span class="n">constant_B</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+    <span class="n">P_pp_psi</span> <span class="o">=</span> <span class="n">ppg_to_psi</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">PP</span> <span class="o">+</span> <span class="n">inp</span><span class="o">.</span><span class="n">kick_intensity</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_td</span><span class="p">)</span>
+    <span class="n">P_td</span> <span class="o">=</span> <span class="n">P_td_from_A1</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">P_pp_psi</span><span class="p">)</span>
+    <span class="n">T_influx</span><span class="p">,</span> <span class="n">H_gas</span><span class="p">,</span> <span class="n">rho_influx</span> <span class="o">=</span> <span class="n">influx_column</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">P_td</span><span class="p">)</span>
+    <span class="n">capacity</span> <span class="o">=</span> <span class="n">influx_volume_A7</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">P_td</span><span class="p">)</span>
+    <span class="n">margin</span> <span class="o">=</span> <span class="n">capacity</span> <span class="o">-</span> <span class="n">inp</span><span class="o">.</span><span class="n">kt_threshold</span>
+    <span class="n">P_td_thresh</span> <span class="o">=</span> <span class="n">pp_at_threshold_A9</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">kt_threshold</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">KickResult</span><span class="p">(</span>
+        <span class="n">case</span><span class="o">=</span><span class="s2">&quot;drill&quot;</span><span class="p">,</span>
+        <span class="n">P_td</span><span class="o">=</span><span class="n">P_td</span><span class="p">,</span>
+        <span class="n">A</span><span class="o">=</span><span class="n">A</span><span class="p">,</span>
+        <span class="n">B</span><span class="o">=</span><span class="n">B</span><span class="p">,</span>
+        <span class="n">capacity</span><span class="o">=</span><span class="n">capacity</span><span class="p">,</span>
+        <span class="n">threshold</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">kt_threshold</span><span class="p">,</span>
+        <span class="n">margin</span><span class="o">=</span><span class="n">margin</span><span class="p">,</span>
+        <span class="n">passed</span><span class="o">=</span><span class="n">margin</span> <span class="o">&gt;=</span> <span class="mf">0.0</span><span class="p">,</span>
+        <span class="n">pp_at_threshold</span><span class="o">=</span><span class="n">_psi_to_ppg</span><span class="p">(</span><span class="n">P_td_thresh</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_td</span><span class="p">),</span>
+        <span class="n">model_revision</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">model_revision</span><span class="p">,</span>
+        <span class="n">T_influx</span><span class="o">=</span><span class="kc">None</span> <span class="k">if</span> <span class="n">_t_omitted</span> <span class="k">else</span> <span class="n">T_influx</span><span class="p">,</span>   <span class="c1"># don&#39;t report the cancelling placeholder</span>
+        <span class="n">rho_influx</span><span class="o">=</span><span class="n">rho_influx</span><span class="p">,</span>
+        <span class="n">H_gas</span><span class="o">=</span><span class="n">H_gas</span><span class="p">,</span>
+        <span class="c1"># bool(), not the numpy scalar these comparisons produce -- a np.bool_</span>
+        <span class="c1"># fails `is True` and can trip a JSON serialiser downstream.</span>
+        <span class="n">rho_influx_gradient_psi_per_ft</span><span class="o">=</span><span class="p">(</span>
+            <span class="nb">float</span><span class="p">(</span><span class="n">ppg_to_gradient</span><span class="p">(</span><span class="n">rho_influx</span><span class="p">))</span> <span class="k">if</span> <span class="n">rho_influx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
+        <span class="p">),</span>
+        <span class="n">maasp_psi</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span>
+            <span class="n">ppg_to_psi</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">P_lot</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_lot</span><span class="p">)</span> <span class="o">-</span> <span class="n">ppg_to_psi</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">rho_mud</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_lot</span><span class="p">)</span>
+        <span class="p">),</span>
+        <span class="n">bubble_length_limited</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span>
+            <span class="n">H_gas</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">abs</span><span class="p">(</span><span class="n">H_gas</span> <span class="o">-</span> <span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">D_td</span> <span class="o">-</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_lot</span><span class="p">))</span> <span class="o">&lt;</span> <span class="mf">1e-6</span>
+        <span class="p">),</span>
+        <span class="n">capacity_negative</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="n">capacity</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">),</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="swab_kick">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.swab_kick">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">swab_kick</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">KickInputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">KickResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Unmitigated free-trip limit (A-8) -- a MITIGABLE operational limit.</span>
+
+<span class="sd">    A-8 is A-7 with the bottom-hole pressure set to the mud hydrostatic,</span>
+<span class="sd">    P_td = g * rho_mud * D_td (pore pressure &lt;= mud hydrostatic). A swab</span>
+<span class="sd">    failure means &quot;pump out of the hole&quot; -- which is the drill case, assessed</span>
+<span class="sd">    separately. Swab NEVER overrides drill and is never blind-min&#39;d with it.</span>
+
+<span class="sd">    ``kick_intensity`` is DELIBERATELY UNUSED here. For a swabbed kick the</span>
+<span class="sd">    bottom-hole pressure is the mud hydrostatic, independent of formation PP</span>
+<span class="sd">    (and therefore of any intensity margin added to PP): Nassab SPE-202426-PA,</span>
+<span class="sd">    Eqs 8-9 -- &quot;Ptd ... is independent of formation PP and is equal to mud</span>
+<span class="sd">    hydrostatic pressure. This concept is misunderstood ... in many KT models</span>
+<span class="sd">    that assume Ptd is equal to PP for both underbalanced and swabbed kicks[,]</span>
+<span class="sd">    ... [leading] to an overestimated KT value in swabbing conditions.&quot; Carrying</span>
+<span class="sd">    PP or PP+KI into the swab bottom-hole pressure would over-report swab KT</span>
+<span class="sd">    (unsafe); dropping KI for swab is the correct, conservative default. This</span>
+<span class="sd">    includes the influx gas STATIONING: A is evaluated with the swab P_td (mud</span>
+<span class="sd">    hydrostatic), not the drill scenario pressure, so kick_intensity does not</span>
+<span class="sd">    leak into Z/rho either.</span>
+
+<span class="sd">    CONSCIOUS DIVERGENCE FROM SPE-208788-PA. That paper&#39;s worked example shares</span>
+<span class="sd">    ONE A constant across A-7 (drill) and A-8 (swab) -- so its published swab</span>
+<span class="sd">    figure (43.79 bbl, Table-1) stations the swab gas at the drill max-credible</span>
+<span class="sd">    pressure (PP + KI), carrying kick intensity into a swab number. We reproduce</span>
+<span class="sd">    that figure under its own convention in the validation suite, but our MODEL</span>
+<span class="sd">    does not adopt it: a swab kick is not a drill kick, so it carries no kick</span>
+<span class="sd">    intensity (Nassab SPE-202426-PA, Eqs 8-9). The difference is ~1.5% and only</span>
+<span class="sd">    when PP+KI &gt; mud (outside the swab model&#39;s PP &lt;= mud domain).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">T_s</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">inp</span><span class="o">.</span><span class="n">T_td</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;a swab kick requires a formation temperature (T_s and T_td): a trip &quot;</span>
+            <span class="s2">&quot;relaxes the gas column toward formation temperature, so it cannot be &quot;</span>
+            <span class="s2">&quot;dropped the way a circulated drilling kick can. Temperature is optional &quot;</span>
+            <span class="s2">&quot;only for drill_kick (with an influx density).&quot;</span>
+        <span class="p">)</span>
+    <span class="n">P_td</span> <span class="o">=</span> <span class="n">ppg_to_psi</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">rho_mud</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_td</span><span class="p">)</span>  <span class="c1"># A-8 substitution</span>
+    <span class="n">A</span> <span class="o">=</span> <span class="n">constant_A</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">P_td</span><span class="p">)</span>                 <span class="c1"># station gas at the swab P_td (no KI leak)</span>
+    <span class="n">B</span> <span class="o">=</span> <span class="n">constant_B</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+    <span class="n">T_influx</span><span class="p">,</span> <span class="n">H_gas</span><span class="p">,</span> <span class="n">rho_influx</span> <span class="o">=</span> <span class="n">influx_column</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">P_td</span><span class="p">)</span>
+    <span class="n">capacity</span> <span class="o">=</span> <span class="n">influx_volume_A7</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">P_td</span><span class="p">)</span>   <span class="c1"># == A-8 closed form</span>
+    <span class="n">margin</span> <span class="o">=</span> <span class="n">capacity</span> <span class="o">-</span> <span class="n">inp</span><span class="o">.</span><span class="n">kt_threshold</span>
+    <span class="n">P_td_thresh</span> <span class="o">=</span> <span class="n">pp_at_threshold_A9</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">kt_threshold</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">KickResult</span><span class="p">(</span>
+        <span class="n">case</span><span class="o">=</span><span class="s2">&quot;swab&quot;</span><span class="p">,</span>
+        <span class="n">P_td</span><span class="o">=</span><span class="n">P_td</span><span class="p">,</span>
+        <span class="n">A</span><span class="o">=</span><span class="n">A</span><span class="p">,</span>
+        <span class="n">B</span><span class="o">=</span><span class="n">B</span><span class="p">,</span>
+        <span class="n">capacity</span><span class="o">=</span><span class="n">capacity</span><span class="p">,</span>
+        <span class="n">threshold</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">kt_threshold</span><span class="p">,</span>
+        <span class="n">margin</span><span class="o">=</span><span class="n">margin</span><span class="p">,</span>
+        <span class="n">passed</span><span class="o">=</span><span class="n">margin</span> <span class="o">&gt;=</span> <span class="mf">0.0</span><span class="p">,</span>
+        <span class="n">pp_at_threshold</span><span class="o">=</span><span class="n">_psi_to_ppg</span><span class="p">(</span><span class="n">P_td_thresh</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_td</span><span class="p">),</span>
+        <span class="n">model_revision</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">model_revision</span><span class="p">,</span>
+        <span class="n">T_influx</span><span class="o">=</span><span class="n">T_influx</span><span class="p">,</span>
+        <span class="n">rho_influx</span><span class="o">=</span><span class="n">rho_influx</span><span class="p">,</span>
+        <span class="n">H_gas</span><span class="o">=</span><span class="n">H_gas</span><span class="p">,</span>
+        <span class="c1"># bool(), not the numpy scalar these comparisons produce -- a np.bool_</span>
+        <span class="c1"># fails `is True` and can trip a JSON serialiser downstream.</span>
+        <span class="n">rho_influx_gradient_psi_per_ft</span><span class="o">=</span><span class="p">(</span>
+            <span class="nb">float</span><span class="p">(</span><span class="n">ppg_to_gradient</span><span class="p">(</span><span class="n">rho_influx</span><span class="p">))</span> <span class="k">if</span> <span class="n">rho_influx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
+        <span class="p">),</span>
+        <span class="n">maasp_psi</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span>
+            <span class="n">ppg_to_psi</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">P_lot</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_lot</span><span class="p">)</span> <span class="o">-</span> <span class="n">ppg_to_psi</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">rho_mud</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_lot</span><span class="p">)</span>
+        <span class="p">),</span>
+        <span class="n">bubble_length_limited</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span>
+            <span class="n">H_gas</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">abs</span><span class="p">(</span><span class="n">H_gas</span> <span class="o">-</span> <span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">D_td</span> <span class="o">-</span> <span class="n">inp</span><span class="o">.</span><span class="n">D_lot</span><span class="p">))</span> <span class="o">&lt;</span> <span class="mf">1e-6</span>
+        <span class="p">),</span>
+        <span class="n">capacity_negative</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="n">capacity</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">),</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="annular_capacity_dpa">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.annular_capacity_dpa">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">annular_capacity_dpa</span><span class="p">(</span><span class="n">hole_id_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">pipe_od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Convenience: annular capacity V_dpa = (hole^2 - pipe^2) / 1029.4 [bbl/ft].</span>
+
+<span class="sd">    Per the A-3 simplification the influx occupies the drillpipe-in-hole annulus</span>
+<span class="sd">    at the shoe (pipe_od = drillpipe OD). This is a geometry helper only; V_dpa</span>
+<span class="sd">    may equally be supplied directly as an input.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">hole_id_in</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">-</span> <span class="n">pipe_od_in</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">1029.4</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

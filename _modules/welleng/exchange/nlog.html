@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.exchange.nlog &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.exchange.nlog</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.exchange.nlog</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Client for the NLOG (Dutch subsurface data portal) borehole REST API.</span>
+
+<span class="sd">NLOG&#39;s map viewer at ``nlog.nl/nlog-mapviewer`` is a single-page app</span>
+<span class="sd">backed by an undocumented but stable REST API. This module wraps it so</span>
+<span class="sd">that Dutch well data — trajectories, document indexes, log inventories</span>
+<span class="sd">— can be pulled programmatically instead of clicked through, and so</span>
+<span class="sd">that unmeasured (assumed / back-filled) azimuth columns can be</span>
+<span class="sd">detected automatically before an error model is attached to them.</span>
+
+<span class="sd">Endpoint shape, determined by reading the app bundle</span>
+<span class="sd">(``main-*.js``, ``URL_PREFIX = &quot;/nlog-mapviewer&quot;``):</span>
+
+<span class="sd">    POST /nlog-mapviewer/rest/brh/&lt;resource&gt;</span>
+<span class="sd">    body: the bare integer borehole id (NOT JSON-wrapped)</span>
+<span class="sd">    resources: details, dirsurveys, documents, logdocuments,</span>
+<span class="sd">               measurements, coreruns, photos</span>
+
+<span class="sd">    GET  /brh-web/rest/brh/document/&lt;bfileDbk&gt;       (scanned reports)</span>
+<span class="sd">    GET  /brh-web/rest/brh/logdocument/&lt;bfileDbk&gt;    (LIS/LAS/DLIS/TXT)</span>
+
+<span class="sd">    POST /nlog-mapviewer/rest/brh/boreholes</span>
+<span class="sd">    body: a JSON filter object ({} = the whole catalogue)</span>
+<span class="sd">    -&gt; the datacenter overview list, one row per borehole keyed by</span>
+<span class="sd">       boreholeDbk, with status/purpose/result/dates. This is the</span>
+<span class="sd">       discovery endpoint: select wells by status (e.g. &#39;Plugged and</span>
+<span class="sd">       abandoned&#39;) here, then feed boreholeDbk to the per-well resources.</span>
+
+<span class="sd">The borehole id is the number in a map-viewer URL, e.g.</span>
+<span class="sd">``nlog.nl/nlog-mapviewer/brh/106523583`` -&gt; ``106523583``.</span>
+
+<span class="sd">Bulk alternative: NLOG publishes a monthly zip of all directional</span>
+<span class="sd">surveys (``thematische_data_boringen.zip``); prefer it for</span>
+<span class="sd">whole-database work and this API for per-well detail and documents.</span>
+
+<span class="sd">No authentication. Be polite — the portal is a public service.</span>
+
+<span class="sd">Licence note: NLOG data is published by TNO on behalf of the Dutch</span>
+<span class="sd">state under its own terms; check them before redistributing.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">urllib.parse</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">urllib.request</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Literal</span>
+
+<span class="n">BASE</span> <span class="o">=</span> <span class="s2">&quot;https://www.nlog.nl&quot;</span>
+<span class="n">API</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BASE</span><span class="si">}</span><span class="s2">/nlog-mapviewer/rest/brh&quot;</span>
+<span class="n">FILES</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BASE</span><span class="si">}</span><span class="s2">/brh-web/rest/brh&quot;</span>
+
+<span class="n">Resource</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">[</span>
+    <span class="s2">&quot;details&quot;</span><span class="p">,</span> <span class="s2">&quot;dirsurveys&quot;</span><span class="p">,</span> <span class="s2">&quot;documents&quot;</span><span class="p">,</span> <span class="s2">&quot;logdocuments&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;measurements&quot;</span><span class="p">,</span> <span class="s2">&quot;coreruns&quot;</span><span class="p">,</span> <span class="s2">&quot;photos&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+
+<span class="c1"># Provenance verdicts for a directional survey&#39;s azimuth column.</span>
+<span class="n">AzimuthProvenance</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">[</span>
+    <span class="s2">&quot;measured&quot;</span><span class="p">,</span>          <span class="c1"># azimuth varies — a real directional survey</span>
+    <span class="s2">&quot;all_zero_vertical&quot;</span><span class="p">,</span> <span class="c1"># all zero AND effectively vertical: harmless</span>
+    <span class="s2">&quot;all_zero_deviated&quot;</span><span class="p">,</span> <span class="c1"># all zero but the well has angle: FABRICATED</span>
+    <span class="s2">&quot;constant_assumed&quot;</span><span class="p">,</span>  <span class="c1"># one constant non-zero value: assumed direction</span>
+    <span class="s2">&quot;single_bearing&quot;</span><span class="p">,</span>    <span class="c1"># all deflection on ONE bearing: fabricated, any azimuth</span>
+    <span class="s2">&quot;no_survey&quot;</span><span class="p">,</span>         <span class="c1"># &lt;=2 stations: a stub, not a survey</span>
+<span class="p">]</span>
+
+
+<div class="viewcode-block" id="NLOGError">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog.NLOGError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">NLOGError</span><span class="p">(</span><span class="ne">RuntimeError</span><span class="p">):</span>
+    <span class="k">pass</span></div>
+
+
+
+<div class="viewcode-block" id="DirSurvey">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog.DirSurvey">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DirSurvey</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;One directional survey for a borehole, in SI units (m, degrees).&quot;&quot;&quot;</span>
+
+    <span class="n">borehole_name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">md</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span>
+    <span class="n">inc</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span>
+    <span class="n">azi</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span>
+    <span class="n">tvd</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span>
+    <span class="n">dx</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span>
+    <span class="n">dy</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span>
+    <span class="n">north_ref</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span>          <span class="c1"># &#39;G&#39; grid, &#39;T&#39; true, &#39;M&#39; magnetic</span>
+    <span class="n">coord_system</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="n">proc_method</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span>        <span class="c1"># &#39;MC&#39; = minimum curvature</span>
+    <span class="n">convergence</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="n">declination</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="n">proc_date_ms</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="n">remark</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">n_stations</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">md</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">max_inclination</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">inc</span><span class="p">)</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">inc</span> <span class="k">else</span> <span class="mf">0.0</span>
+
+<div class="viewcode-block" id="DirSurvey.azimuth_provenance">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog.DirSurvey.azimuth_provenance">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">azimuth_provenance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inc_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AzimuthProvenance</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Classify whether the azimuth column is a measurement.</span>
+
+<span class="sd">        The distinction matters because an ISCWSA tool model applied to</span>
+<span class="sd">        a fabricated azimuth reports a confident position that was</span>
+<span class="sd">        never surveyed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_stations</span> <span class="o">&lt;=</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;no_survey&quot;</span>
+        <span class="n">distinct</span> <span class="o">=</span> <span class="p">{</span><span class="nb">round</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">azi</span><span class="p">}</span>
+        <span class="k">if</span> <span class="n">distinct</span> <span class="o">==</span> <span class="p">{</span><span class="mf">0.0</span><span class="p">}:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="s2">&quot;all_zero_deviated&quot;</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_inclination</span> <span class="o">&gt;</span> <span class="n">inc_threshold</span>
+                <span class="k">else</span> <span class="s2">&quot;all_zero_vertical&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">distinct</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_inclination</span> <span class="o">&gt;</span> <span class="n">inc_threshold</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;constant_assumed&quot;</span>
+        <span class="c1"># Strongest detector: the whole deflection projected onto ONE</span>
+        <span class="c1"># bearing. A real well never holds a perpendicular offset at</span>
+        <span class="c1"># exactly zero across many stations. Catches back-filled</span>
+        <span class="c1"># non-zero bearings that the azimuth tests above miss — e.g.</span>
+        <span class="c1"># NLOG A12-01, whose 1971 TOTCO report set azimuth to the</span>
+        <span class="c1"># TARGET DIRECTION and reported X deflection as 0.00 at all 21</span>
+        <span class="c1"># stations while Y reached 88.85 m.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_single_bearing</span><span class="p">()</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_inclination</span> <span class="o">&gt;</span> <span class="n">inc_threshold</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;single_bearing&quot;</span>
+        <span class="k">return</span> <span class="s2">&quot;measured&quot;</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_single_bearing</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">min_stations</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;True if one horizontal offset component is identically zero</span>
+<span class="sd">        while the other moves — the signature of deflection projected</span>
+<span class="sd">        onto an assumed bearing rather than surveyed.&quot;&quot;&quot;</span>
+        <span class="n">dx</span> <span class="o">=</span> <span class="p">[</span><span class="n">v</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">dx</span> <span class="k">if</span> <span class="n">v</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="n">dy</span> <span class="o">=</span> <span class="p">[</span><span class="n">v</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">dy</span> <span class="k">if</span> <span class="n">v</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">dx</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">min_stations</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">dy</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">min_stations</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="n">dx_flat</span> <span class="o">=</span> <span class="p">{</span><span class="nb">round</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">dx</span><span class="p">}</span> <span class="o">==</span> <span class="p">{</span><span class="mf">0.0</span><span class="p">}</span>
+        <span class="n">dy_flat</span> <span class="o">=</span> <span class="p">{</span><span class="nb">round</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">dy</span><span class="p">}</span> <span class="o">==</span> <span class="p">{</span><span class="mf">0.0</span><span class="p">}</span>
+        <span class="n">moved</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">dy</span><span class="p">),</span> <span class="nb">max</span><span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">dx</span><span class="p">))</span> <span class="o">&gt;</span> <span class="mf">1.0</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">dx_flat</span> <span class="o">^</span> <span class="n">dy_flat</span><span class="p">)</span> <span class="ow">and</span> <span class="n">moved</span>
+
+<div class="viewcode-block" id="DirSurvey.lateral_displacement">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog.DirSurvey.lateral_displacement">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">lateral_displacement</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Magnitude of lateral displacement implied by the inclination</span>
+<span class="sd">        record — the radius of the annulus when azimuth is unknown.&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+
+        <span class="n">total</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">md</span><span class="p">)):</span>
+            <span class="n">d_md</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span>
+            <span class="n">mean_inc</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">inc</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">inc</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">])</span>
+            <span class="n">total</span> <span class="o">+=</span> <span class="n">d_md</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">mean_inc</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">total</span></div>
+
+
+<div class="viewcode-block" id="DirSurvey.to_welleng">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog.DirSurvey.to_welleng">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_welleng</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">error_model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">header_kwargs</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build a ``welleng.survey.Survey``. Raises if the azimuth is</span>
+<span class="sd">        not a measurement and an error model was requested, because the</span>
+<span class="sd">        result would be a confident position derived from a</span>
+<span class="sd">        placeholder — pass ``error_model=None`` to build geometry only,</span>
+<span class="sd">        or set ``force=True`` in ``header_kwargs`` to override.&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">welleng</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">we</span>
+
+        <span class="n">force</span> <span class="o">=</span> <span class="n">header_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;force&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+        <span class="n">prov</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">azimuth_provenance</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">error_model</span> <span class="ow">and</span> <span class="n">prov</span> <span class="o">!=</span> <span class="s2">&quot;measured&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">force</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">NLOGError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">borehole_name</span><span class="si">}</span><span class="s2">: azimuth provenance is </span><span class="si">{</span><span class="n">prov</span><span class="si">!r}</span><span class="s2"> — &quot;</span>
+                <span class="s2">&quot;applying an error model would report a confident position &quot;</span>
+                <span class="s2">&quot;derived from an unmeasured azimuth. Pass force=True to &quot;</span>
+                <span class="s2">&quot;override, or error_model=None for geometry only.&quot;</span>
+            <span class="p">)</span>
+        <span class="n">header</span> <span class="o">=</span> <span class="n">we</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">SurveyHeader</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">borehole_name</span><span class="p">,</span>
+            <span class="n">azi_reference</span><span class="o">=</span><span class="s2">&quot;grid&quot;</span> <span class="k">if</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">north_ref</span> <span class="ow">or</span> <span class="s2">&quot;G&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;G&quot;</span> <span class="k">else</span> <span class="s2">&quot;true&quot;</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">header_kwargs</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">we</span><span class="o">.</span><span class="n">survey</span><span class="o">.</span><span class="n">Survey</span><span class="p">(</span>
+            <span class="n">md</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">md</span><span class="p">),</span> <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">inc</span><span class="p">),</span>
+            <span class="n">azi</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">azi</span><span class="p">),</span> <span class="n">deg</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">header</span><span class="o">=</span><span class="n">header</span><span class="p">,</span>
+            <span class="n">error_model</span><span class="o">=</span><span class="n">error_model</span><span class="p">,</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="NLOGClient">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog.NLOGClient">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">NLOGClient</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Minimal client for the NLOG borehole API.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="NLOGClient.__init__">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog.NLOGClient.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">30.0</span><span class="p">,</span> <span class="n">user_agent</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;welleng-nlog/1.0&quot;</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="n">timeout</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">user_agent</span> <span class="o">=</span> <span class="n">user_agent</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_post</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">resource</span><span class="p">:</span> <span class="n">Resource</span><span class="p">,</span> <span class="n">borehole_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">Request</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">API</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">resource</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="n">data</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">borehole_id</span><span class="p">))</span><span class="o">.</span><span class="n">encode</span><span class="p">(),</span>
+            <span class="n">headers</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;Content-Type&quot;</span><span class="p">:</span> <span class="s2">&quot;application/json&quot;</span><span class="p">,</span>
+                     <span class="s2">&quot;User-Agent&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">user_agent</span><span class="p">},</span>
+        <span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span> <span class="k">as</span> <span class="n">r</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">r</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># noqa: BLE001 - surface the endpoint context</span>
+            <span class="k">raise</span> <span class="n">NLOGError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">resource</span><span class="si">}</span><span class="s2"> failed for </span><span class="si">{</span><span class="n">borehole_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+
+    <span class="c1"># -- resources ----------------------------------------------------</span>
+<div class="viewcode-block" id="NLOGClient.details">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog.NLOGClient.details">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">details</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">borehole_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Borehole metadata. NOTE the API quirk: unlike the other</span>
+<span class="sd">        resources this one takes a JSON *array of string ids*, not a</span>
+<span class="sd">        bare integer.&quot;&quot;&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">Request</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">API</span><span class="si">}</span><span class="s2">/details&quot;</span><span class="p">,</span>
+            <span class="n">data</span><span class="o">=</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">([</span><span class="nb">str</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">borehole_id</span><span class="p">))])</span><span class="o">.</span><span class="n">encode</span><span class="p">(),</span>
+            <span class="n">headers</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;Content-Type&quot;</span><span class="p">:</span> <span class="s2">&quot;application/json&quot;</span><span class="p">,</span>
+                     <span class="s2">&quot;User-Agent&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">user_agent</span><span class="p">},</span>
+        <span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span> <span class="k">as</span> <span class="n">r</span><span class="p">:</span>
+                <span class="n">out</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">r</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
+            <span class="k">raise</span> <span class="n">NLOGError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;details failed for </span><span class="si">{</span><span class="n">borehole_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+        <span class="k">return</span> <span class="n">out</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="n">out</span> <span class="k">else</span> <span class="n">out</span></div>
+
+
+<div class="viewcode-block" id="NLOGClient.suggest">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog.NLOGClient.suggest">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">suggest</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Name search -&gt; [{objectId, title, xcoordinate, ycoordinate}].</span>
+
+<span class="sd">        This is the bridge between the bulk CSV (which keys on</span>
+<span class="sd">        WELLBORE / NITG_NR / UWI and carries no borehole id) and the</span>
+<span class="sd">        API (which keys on the numeric id in the map-viewer URL).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">url</span> <span class="o">=</span> <span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BASE</span><span class="si">}</span><span class="s2">/nlog-mapviewer/rest/search/suggest/brh/&quot;</span>
+               <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">urllib</span><span class="o">.</span><span class="n">parse</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">query</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">Request</span><span class="p">(</span>
+            <span class="n">url</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;Accept&quot;</span><span class="p">:</span> <span class="s2">&quot;application/json&quot;</span><span class="p">,</span>
+                          <span class="s2">&quot;User-Agent&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">user_agent</span><span class="p">})</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span> <span class="k">as</span> <span class="n">r</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">r</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
+            <span class="k">raise</span> <span class="n">NLOGError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;suggest failed for </span><span class="si">{</span><span class="n">query</span><span class="si">!r}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span></div>
+
+
+<div class="viewcode-block" id="NLOGClient.id_for_name">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog.NLOGClient.id_for_name">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">id_for_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wellbore_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve a bulk-dump WELLBORE name to a borehole id, exact</span>
+<span class="sd">        match on title. Returns None if the portal does not know it.&quot;&quot;&quot;</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="n">wellbore_name</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">hit</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">suggest</span><span class="p">(</span><span class="n">wellbore_name</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;title&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="o">==</span> <span class="n">target</span><span class="p">:</span>
+                <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">hit</span><span class="p">[</span><span class="s2">&quot;objectId&quot;</span><span class="p">])</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="NLOGClient.boreholes">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog.NLOGClient.boreholes">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">boreholes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filters</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;The full borehole catalogue (the datacenter overview list).</span>
+
+<span class="sd">        POST /brh/boreholes with a JSON filter object; ``{}`` (the</span>
+<span class="sd">        default) returns every borehole. Each row carries ``boreholeName``,</span>
+<span class="sd">        ``boreholeDbk``, ``statusDescription`` (e.g. &#39;Plugged and</span>
+<span class="sd">        abandoned&#39;), ``resultCode``, ``purposeCd``, ``onOffshore`` and</span>
+<span class="sd">        ``startDate``/``endDate``/``confidentialityDate`` (epoch ms).</span>
+
+<span class="sd">        This is the discovery endpoint that ``suggest`` (name lookup)</span>
+<span class="sd">        cannot replace: filter by status/purpose/date here, then feed the</span>
+<span class="sd">        ``boreholeDbk`` to ``details``/``documents``/``log_documents``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">Request</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">API</span><span class="si">}</span><span class="s2">/boreholes&quot;</span><span class="p">,</span>
+            <span class="n">data</span><span class="o">=</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">filters</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">encode</span><span class="p">(),</span>
+            <span class="n">headers</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;Content-Type&quot;</span><span class="p">:</span> <span class="s2">&quot;application/json&quot;</span><span class="p">,</span>
+                     <span class="s2">&quot;User-Agent&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">user_agent</span><span class="p">},</span>
+        <span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span> <span class="k">as</span> <span class="n">r</span><span class="p">:</span>
+                <span class="n">out</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">r</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
+            <span class="k">raise</span> <span class="n">NLOGError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;boreholes failed: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+        <span class="k">return</span> <span class="n">out</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;boreholes&quot;</span><span class="p">,</span> <span class="p">[])</span></div>
+
+
+<div class="viewcode-block" id="NLOGClient.documents">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog.NLOGClient.documents">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">documents</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">borehole_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_post</span><span class="p">(</span><span class="s2">&quot;documents&quot;</span><span class="p">,</span> <span class="n">borehole_id</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">d</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;documents&quot;</span><span class="p">,</span> <span class="p">[])</span></div>
+
+
+<div class="viewcode-block" id="NLOGClient.log_documents">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog.NLOGClient.log_documents">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">log_documents</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">borehole_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_post</span><span class="p">(</span><span class="s2">&quot;logdocuments&quot;</span><span class="p">,</span> <span class="n">borehole_id</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">d</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;logDocuments&quot;</span><span class="p">,</span> <span class="p">[])</span></div>
+
+
+<div class="viewcode-block" id="NLOGClient.dir_surveys">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog.NLOGClient.dir_surveys">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">dir_surveys</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">borehole_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">DirSurvey</span><span class="p">]:</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_post</span><span class="p">(</span><span class="s2">&quot;dirsurveys&quot;</span><span class="p">,</span> <span class="n">borehole_id</span><span class="p">)</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;boreholeName&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">(</span><span class="n">borehole_id</span><span class="p">)</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;dirSurveys&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="n">pts</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;dirSurveyPoints&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">DirSurvey</span><span class="p">(</span>
+                <span class="n">borehole_name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+                <span class="n">md</span><span class="o">=</span><span class="p">[</span><span class="n">p</span><span class="p">[</span><span class="s2">&quot;ahDepth&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pts</span><span class="p">],</span>
+                <span class="n">inc</span><span class="o">=</span><span class="p">[</span><span class="n">p</span><span class="p">[</span><span class="s2">&quot;devAngle&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pts</span><span class="p">],</span>
+                <span class="n">azi</span><span class="o">=</span><span class="p">[</span><span class="n">p</span><span class="p">[</span><span class="s2">&quot;azimuth&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pts</span><span class="p">],</span>
+                <span class="n">tvd</span><span class="o">=</span><span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;tvDepth&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pts</span><span class="p">],</span>
+                <span class="n">dx</span><span class="o">=</span><span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;dx&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pts</span><span class="p">],</span>
+                <span class="n">dy</span><span class="o">=</span><span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;dy&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pts</span><span class="p">],</span>
+                <span class="n">north_ref</span><span class="o">=</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;northRefCode&quot;</span><span class="p">),</span>
+                <span class="n">coord_system</span><span class="o">=</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;coordSystemCode&quot;</span><span class="p">),</span>
+                <span class="n">proc_method</span><span class="o">=</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;procMethodCode&quot;</span><span class="p">),</span>
+                <span class="n">convergence</span><span class="o">=</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;convergenceCorr&quot;</span><span class="p">),</span>
+                <span class="n">declination</span><span class="o">=</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;declinationCorr&quot;</span><span class="p">),</span>
+                <span class="n">proc_date_ms</span><span class="o">=</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;procDate&quot;</span><span class="p">),</span>
+                <span class="n">remark</span><span class="o">=</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;remark&quot;</span><span class="p">),</span>
+            <span class="p">))</span>
+        <span class="k">return</span> <span class="n">out</span></div>
+
+
+    <span class="c1"># -- file downloads ----------------------------------------------</span>
+<div class="viewcode-block" id="NLOGClient.fetch_document">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog.NLOGClient.fetch_document">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">fetch_document</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bfile_dbk</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">str</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">log</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Scanned report (``log=False``) or log file (``log=True``).&quot;&quot;&quot;</span>
+        <span class="n">url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">FILES</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="s1">&#39;logdocument&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">log</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;document&#39;</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">bfile_dbk</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">Request</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;User-Agent&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">user_agent</span><span class="p">})</span>
+        <span class="k">with</span> <span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span> <span class="k">as</span> <span class="n">r</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">r</span><span class="o">.</span><span class="n">read</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="NLOGClient.save_document">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog.NLOGClient.save_document">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save_document</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">bfile_dbk</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">str</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">log</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Download a document/log file to ``path``; return bytes written.&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">pathlib</span>
+
+        <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fetch_document</span><span class="p">(</span><span class="n">bfile_dbk</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="n">log</span><span class="p">)</span>
+        <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">write_bytes</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span></div>
+
+
+    <span class="c1"># -- convenience --------------------------------------------------</span>
+<div class="viewcode-block" id="NLOGClient.survey_documents">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog.NLOGClient.survey_documents">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">survey_documents</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">borehole_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">pattern</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="sa">r</span><span class="s2">&quot;dip|survey|devi|direction&quot;</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Documents whose title suggests a directional or dipmeter</span>
+<span class="sd">        record — used to check whether an unmeasured azimuth could be</span>
+<span class="sd">        recovered from an archived report.&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+
+        <span class="n">rx</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">pattern</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">d</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">documents</span><span class="p">(</span><span class="n">borehole_id</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">rx</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">d</span><span class="p">))]</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="audit_borehole">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog.audit_borehole">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">audit_borehole</span><span class="p">(</span><span class="n">borehole_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">client</span><span class="p">:</span> <span class="n">NLOGClient</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;One-shot provenance report for a borehole.</span>
+
+<span class="sd">    Returns the survey classification plus whether any archived</span>
+<span class="sd">    document looks like it might contain the missing azimuth.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">c</span> <span class="o">=</span> <span class="n">client</span> <span class="ow">or</span> <span class="n">NLOGClient</span><span class="p">()</span>
+    <span class="n">surveys</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">dir_surveys</span><span class="p">(</span><span class="n">borehole_id</span><span class="p">)</span>
+    <span class="n">docs</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">survey_documents</span><span class="p">(</span><span class="n">borehole_id</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;borehole_id&quot;</span><span class="p">:</span> <span class="n">borehole_id</span><span class="p">,</span>
+        <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="n">surveys</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">borehole_name</span> <span class="k">if</span> <span class="n">surveys</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">&quot;surveys&quot;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s2">&quot;n_stations&quot;</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">n_stations</span><span class="p">,</span>
+                <span class="s2">&quot;max_inclination&quot;</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">max_inclination</span><span class="p">,</span>
+                <span class="s2">&quot;provenance&quot;</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">azimuth_provenance</span><span class="p">(),</span>
+                <span class="s2">&quot;lateral_displacement_m&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">lateral_displacement</span><span class="p">(),</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="s2">&quot;remark&quot;</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">remark</span><span class="p">,</span>
+                <span class="s2">&quot;north_ref&quot;</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">north_ref</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">surveys</span>
+        <span class="p">],</span>
+        <span class="s2">&quot;candidate_azimuth_documents&quot;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="nb">str</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;fullTitle&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;title&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">d</span><span class="p">)</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">docs</span>
+        <span class="p">],</span>
+    <span class="p">}</span></div>
+
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>  <span class="c1"># pragma: no cover - CLI convenience</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+
+    <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="ow">or</span> <span class="p">[</span><span class="s2">&quot;106523583&quot;</span><span class="p">]:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">audit_borehole</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">arg</span><span class="p">)),</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

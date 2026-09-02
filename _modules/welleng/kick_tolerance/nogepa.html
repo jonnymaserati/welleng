@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.kick_tolerance.nogepa &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../kick_tolerance.html">welleng.kick_tolerance</a></li>
+      <li class="breadcrumb-item active">welleng.kick_tolerance.nogepa</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.kick_tolerance.nogepa</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;NOGEPA Industry Standard No. 50 static single-shoe kick-tolerance formula.</span>
+
+<span class="sd">Faithful implementation of the mandated Netherlands well-control standard&#39;s</span>
+<span class="sd">&quot;current industry practice&quot; closed form (NOGEPA Industry Standard No. 50 --</span>
+<span class="sd">*Kick Tolerances for Well Design and Drilling Operations*, 2020-12-09, §3.2). This</span>
+<span class="sd">is the STATIC single-shoe check: the gas bubble top at the casing shoe, the shoe</span>
+<span class="sd">&quot;normally assumed&quot; the weakest exposed zone, temperature and compressibility (Z)</span>
+<span class="sd">neglected. It is provided so welleng can REPRODUCE the mandated calculation exactly</span>
+<span class="sd">and so the gas-migration engine&#39;s static reduction can be validated against it.</span>
+
+<span class="sd">NOTE (from the standard itself): NOGEPA-50 §3.2 states KT &quot;should be calculated in</span>
+<span class="sd">terms of kick volume which can be circulated out ... [and] should not be</span>
+<span class="sd">oversimplified,&quot; lists the factors this formula neglects (gas velocity/distribution,</span>
+<span class="sd">P &amp; T, gas composition/dispersion/solubility, friction -- &quot;static conditions&quot;), and</span>
+<span class="sd">notes the shoe is only *normally* assumed weakest. The migration engine</span>
+<span class="sd">(:mod:`welleng.kick_tolerance.migration`) is the not-oversimplified circulate-out</span>
+<span class="sd">calculation the standard calls for; this module is the static baseline.</span>
+
+<span class="sd">Drilling-kick equations (NOGEPA-50 p.12-13, verbatim), gas top at the shoe::</span>
+
+<span class="sd">    G_mud = mud_ppg * 0.052                        [psi/ft]</span>
+<span class="sd">    P_frac = LOT_ppg * Z_CSG * 0.052               [psi]  (fracture pressure at shoe)</span>
+<span class="sd">    H    = (P_f - (Z_OH - Z_CSG)*G_mud - P_frac) / (G_gas - G_mud)   [ft]  gas height</span>
+<span class="sd">    V1   = H * CAP_ann                             [bbl]  influx volume at the shoe</span>
+<span class="sd">    V2   = P1 * V1 / P2   (Boyle to bottom hole)   [bbl]  = kick tolerance</span>
+<span class="sd">           with P1 = P_frac (at shoe), P2 = P_f (formation pressure at TD)</span>
+
+<span class="sd">``CAP_ann`` is the annulus capacity between pipe and hole (KT is &quot;hole geometry</span>
+<span class="sd">minus the drill string&quot;); ``G_gas`` is the gas gradient, 0.05-0.15 psi/ft.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+
+<span class="n">NOGEPA_G</span> <span class="o">=</span> <span class="mf">0.052</span>   <span class="c1"># NOGEPA ppg -&gt; psi/ft gradient constant (mud/fracture)</span>
+
+
+<div class="viewcode-block" id="NogepaResult">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.NogepaResult">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">NogepaResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;NOGEPA-50 static drilling-kick tolerance and its intermediates.&quot;&quot;&quot;</span>
+
+    <span class="n">kick_tolerance_bbl</span><span class="p">:</span> <span class="nb">float</span>   <span class="c1"># V2 -- KT at bottom-hole conditions   [bbl]</span>
+    <span class="n">gas_height_ft</span><span class="p">:</span> <span class="nb">float</span>        <span class="c1"># H  -- gas column height at the shoe   [ft]</span>
+    <span class="n">influx_at_shoe_bbl</span><span class="p">:</span> <span class="nb">float</span>   <span class="c1"># V1 -- influx volume at the shoe       [bbl]</span>
+    <span class="n">p_frac_shoe_psi</span><span class="p">:</span> <span class="nb">float</span>      <span class="c1"># fracture pressure at the shoe         [psi]</span></div>
+
+
+
+<div class="viewcode-block" id="nogepa_drilling_kick_tolerance">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.nogepa_drilling_kick_tolerance">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">nogepa_drilling_kick_tolerance</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">formation_pressure_psi</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>   <span class="c1"># P_f  at section TD</span>
+    <span class="n">z_oh_ft</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>                  <span class="c1"># Z_OH vertical depth of open hole at TD</span>
+    <span class="n">z_csg_ft</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>                 <span class="c1"># Z_CSG vertical depth of casing shoe</span>
+    <span class="n">lot_ppg</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>                  <span class="c1"># leak-off test at the shoe</span>
+    <span class="n">mud_ppg</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>                  <span class="c1"># (maximum) mud weight</span>
+    <span class="n">cap_ann_bbl_per_ft</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>       <span class="c1"># CAP_ann pipe-to-hole annulus capacity</span>
+    <span class="n">g_gas_psi_per_ft</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.1</span><span class="p">,</span>   <span class="c1"># gas gradient (NOGEPA range 0.05-0.15)</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">NogepaResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;NOGEPA-50 §3.2 static drilling-kick tolerance [bbl] (the ``V2`` value).</span>
+
+<span class="sd">    Reproduces the mandated formula exactly (T and Z ignored, per the standard).</span>
+<span class="sd">    The migration engine reduces to this when the casing shoe genuinely governs.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">g_mud</span> <span class="o">=</span> <span class="n">mud_ppg</span> <span class="o">*</span> <span class="n">NOGEPA_G</span>
+    <span class="n">p_frac</span> <span class="o">=</span> <span class="n">lot_ppg</span> <span class="o">*</span> <span class="n">z_csg_ft</span> <span class="o">*</span> <span class="n">NOGEPA_G</span>
+    <span class="n">denom</span> <span class="o">=</span> <span class="n">g_gas_psi_per_ft</span> <span class="o">-</span> <span class="n">g_mud</span>            <span class="c1"># &lt; 0 (gas lighter than mud)</span>
+    <span class="k">if</span> <span class="n">denom</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;G_gas equals G_mud; gas height is undefined&quot;</span><span class="p">)</span>
+    <span class="n">H</span> <span class="o">=</span> <span class="p">(</span><span class="n">formation_pressure_psi</span> <span class="o">-</span> <span class="p">(</span><span class="n">z_oh_ft</span> <span class="o">-</span> <span class="n">z_csg_ft</span><span class="p">)</span> <span class="o">*</span> <span class="n">g_mud</span> <span class="o">-</span> <span class="n">p_frac</span><span class="p">)</span> <span class="o">/</span> <span class="n">denom</span>
+    <span class="n">v1</span> <span class="o">=</span> <span class="n">H</span> <span class="o">*</span> <span class="n">cap_ann_bbl_per_ft</span>
+    <span class="n">v2</span> <span class="o">=</span> <span class="n">p_frac</span> <span class="o">*</span> <span class="n">v1</span> <span class="o">/</span> <span class="n">formation_pressure_psi</span>    <span class="c1"># P1*V1/P2, Boyle to bottom hole</span>
+    <span class="k">return</span> <span class="n">NogepaResult</span><span class="p">(</span>
+        <span class="n">kick_tolerance_bbl</span><span class="o">=</span><span class="n">v2</span><span class="p">,</span>
+        <span class="n">gas_height_ft</span><span class="o">=</span><span class="n">H</span><span class="p">,</span>
+        <span class="n">influx_at_shoe_bbl</span><span class="o">=</span><span class="n">v1</span><span class="p">,</span>
+        <span class="n">p_frac_shoe_psi</span><span class="o">=</span><span class="n">p_frac</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

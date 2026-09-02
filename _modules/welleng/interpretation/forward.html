@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.interpretation.forward &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.interpretation.forward</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.interpretation.forward</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Sensor -&gt; survey: the MWD navigation equations.</span>
+
+<span class="sd">Compute inclination, azimuth and toolface from a triad of accelerometer</span>
+<span class="sd">readings (gravity) and a triad of magnetometer readings (Earth&#39;s field), using</span>
+<span class="sd">the standard, public-domain minimum-set MWD equations (Williamson, SPE-67616).</span>
+
+<span class="sd">The equations are scale-free in each sensor (they depend only on ratios), so the</span>
+<span class="sd">accelerometer and magnetometer readings may be supplied in any self-consistent</span>
+<span class="sd">units (e.g. mG and nT, or m/s^2 and T) -- the result is identical.</span>
+
+<span class="sd">Validated against an operator&#39;s commercial-vendor survey (raw sensors -&gt; the</span>
+<span class="sd">vendor&#39;s own computed inc/azi) to 0.005 deg inclination and 0.03 deg azimuth.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;sensor_to_survey&quot;</span><span class="p">,</span> <span class="s2">&quot;gyro_to_survey&quot;</span><span class="p">,</span> <span class="s2">&quot;earth_rate_components&quot;</span><span class="p">,</span> <span class="s2">&quot;EARTH_RATE&quot;</span><span class="p">]</span>
+
+<span class="c1">#: Earth&#39;s sidereal rotation rate (deg/hr): 360 deg / 23.9344696 h.</span>
+<span class="n">EARTH_RATE</span> <span class="o">=</span> <span class="mf">15.041067</span>
+
+
+<div class="viewcode-block" id="earth_rate_components">
+<a class="viewcode-back" href="../../../welleng.interpretation.html#welleng.interpretation.forward.earth_rate_components">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">earth_rate_components</span><span class="p">(</span><span class="n">latitude</span><span class="p">,</span> <span class="n">rate</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">EARTH_RATE</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Local horizontal (true-north) and vertical Earth-rate components.</span>
+
+<span class="sd">    At latitude ``phi`` the Earth-rotation vector has a horizontal component</span>
+<span class="sd">    ``rate*cos(phi)`` pointing true north and a vertical component</span>
+<span class="sd">    ``rate*sin(phi)`` (up). These are the gyro reference values; the Earth-rate</span>
+<span class="sd">    &quot;dip&quot; equals the latitude, so no spatial model/service is required (unlike</span>
+<span class="sd">    the magnetic field).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    latitude : float or array_like</span>
+<span class="sd">        Geographic latitude (deg).</span>
+<span class="sd">    rate : float, default EARTH_RATE</span>
+<span class="sd">        Earth-rotation rate magnitude (deg/hr).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    horizontal, vertical : ndarray</span>
+<span class="sd">        Earth-rate components (deg/hr).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">phi</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">latitude</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">rate</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">phi</span><span class="p">),</span> <span class="n">rate</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">phi</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="sensor_to_survey">
+<a class="viewcode-back" href="../../../welleng.interpretation.html#welleng.interpretation.forward.sensor_to_survey">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">sensor_to_survey</span><span class="p">(</span>
+    <span class="n">g_xyz</span><span class="p">,</span>
+    <span class="n">b_xyz</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">declination</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">grid_convergence</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">axis</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;z&quot;</span><span class="p">,</span>
+    <span class="n">deg</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Inclination, azimuth and toolface from accelerometer + magnetometer.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    g_xyz : array_like, shape (3,) or (n, 3)</span>
+<span class="sd">        Accelerometer readings (gravity vector) in the tool frame.</span>
+<span class="sd">    b_xyz : array_like, shape (3,) or (n, 3)</span>
+<span class="sd">        Magnetometer readings (Earth field) in the tool frame, same station</span>
+<span class="sd">        ordering as ``g_xyz``.</span>
+<span class="sd">    declination : float, default 0.0</span>
+<span class="sd">        Magnetic declination (deg, east-positive). Added to the magnetic</span>
+<span class="sd">        azimuth to give azimuth relative to true north.</span>
+<span class="sd">    grid_convergence : float, default 0.0</span>
+<span class="sd">        Grid convergence (deg). Subtracted to give grid azimuth. With both</span>
+<span class="sd">        ``declination`` and ``grid_convergence`` zero the result is the raw</span>
+<span class="sd">        *magnetic* azimuth.</span>
+<span class="sd">    axis : {&#39;z&#39;, &#39;x&#39;}, default &#39;z&#39;</span>
+<span class="sd">        Which sensor axis is the along-hole (axial) axis. ``&#39;z&#39;`` is the usual</span>
+<span class="sd">        convention; ``&#39;x&#39;`` handles tools/exports that list the axial axis</span>
+<span class="sd">        first (seen in some vendor survey files).</span>
+<span class="sd">    deg : bool, default True</span>
+<span class="sd">        If True (default) return degrees, else radians.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    inc, azi, toolface : float or ndarray</span>
+<span class="sd">        Inclination (0 = vertical), azimuth (grid/true per the corrections</span>
+<span class="sd">        above, wrapped to [0, 360)) and gravity toolface (wrapped to [0, 360)).</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    Classic minimum-set equations (Williamson, SPE-67616; textbook)::</span>
+
+<span class="sd">        inc      = atan2(sqrt(Gx^2 + Gy^2), Gz)</span>
+<span class="sd">        toolface = atan2(Gy, Gx)</span>
+<span class="sd">        azi_mag  = atan2( (Gx By - Gy Bx) |G|,</span>
+<span class="sd">                          Bz (Gx^2 + Gy^2) - Gz (Gx Bx + Gy By) )</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">g_xyz</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">b</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">b_xyz</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">scalar</span> <span class="o">=</span> <span class="n">g</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_2d</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
+    <span class="n">b</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_2d</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">axis</span> <span class="o">==</span> <span class="s2">&quot;x&quot;</span><span class="p">:</span>
+        <span class="c1"># axial-first ordering -&gt; move the axial (first) axis to z</span>
+        <span class="n">g</span> <span class="o">=</span> <span class="n">g</span><span class="p">[:,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">0</span><span class="p">]]</span>
+        <span class="n">b</span> <span class="o">=</span> <span class="n">b</span><span class="p">[:,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">0</span><span class="p">]]</span>
+    <span class="k">elif</span> <span class="n">axis</span> <span class="o">!=</span> <span class="s2">&quot;z&quot;</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;axis must be &#39;z&#39; or &#39;x&#39;, got </span><span class="si">{</span><span class="n">axis</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">gx</span><span class="p">,</span> <span class="n">gy</span><span class="p">,</span> <span class="n">gz</span> <span class="o">=</span> <span class="n">g</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">g</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">g</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span>
+    <span class="n">bx</span><span class="p">,</span> <span class="n">by</span><span class="p">,</span> <span class="n">bz</span> <span class="o">=</span> <span class="n">b</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">b</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">b</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span>
+
+    <span class="n">gxy2</span> <span class="o">=</span> <span class="n">gx</span> <span class="o">*</span> <span class="n">gx</span> <span class="o">+</span> <span class="n">gy</span> <span class="o">*</span> <span class="n">gy</span>
+    <span class="n">gtot</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">gxy2</span> <span class="o">+</span> <span class="n">gz</span> <span class="o">*</span> <span class="n">gz</span><span class="p">)</span>
+
+    <span class="n">inc</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">gxy2</span><span class="p">),</span> <span class="n">gz</span><span class="p">)</span>
+    <span class="n">toolface</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span><span class="n">gy</span><span class="p">,</span> <span class="n">gx</span><span class="p">)</span>
+
+    <span class="n">num</span> <span class="o">=</span> <span class="p">(</span><span class="n">gx</span> <span class="o">*</span> <span class="n">by</span> <span class="o">-</span> <span class="n">gy</span> <span class="o">*</span> <span class="n">bx</span><span class="p">)</span> <span class="o">*</span> <span class="n">gtot</span>
+    <span class="n">den</span> <span class="o">=</span> <span class="n">bz</span> <span class="o">*</span> <span class="n">gxy2</span> <span class="o">-</span> <span class="n">gz</span> <span class="o">*</span> <span class="p">(</span><span class="n">gx</span> <span class="o">*</span> <span class="n">bx</span> <span class="o">+</span> <span class="n">gy</span> <span class="o">*</span> <span class="n">by</span><span class="p">)</span>
+    <span class="n">azi_mag</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span><span class="n">num</span><span class="p">,</span> <span class="n">den</span><span class="p">)</span>
+
+    <span class="n">azi</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">rad2deg</span><span class="p">(</span><span class="n">azi_mag</span><span class="p">)</span> <span class="o">+</span> <span class="n">declination</span> <span class="o">-</span> <span class="n">grid_convergence</span><span class="p">)</span>
+
+    <span class="n">azi</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mod</span><span class="p">(</span><span class="n">azi</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span>
+    <span class="n">toolface</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mod</span><span class="p">(</span><span class="n">toolface</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">deg</span><span class="p">:</span>
+        <span class="n">inc</span><span class="p">,</span> <span class="n">azi</span><span class="p">,</span> <span class="n">toolface</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">rad2deg</span><span class="p">(</span><span class="n">inc</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">rad2deg</span><span class="p">(</span><span class="n">azi</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">rad2deg</span><span class="p">(</span><span class="n">toolface</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">scalar</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">inc</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="n">azi</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="n">toolface</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">inc</span><span class="p">,</span> <span class="n">azi</span><span class="p">,</span> <span class="n">toolface</span></div>
+
+
+
+<div class="viewcode-block" id="gyro_to_survey">
+<a class="viewcode-back" href="../../../welleng.interpretation.html#welleng.interpretation.forward.gyro_to_survey">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">gyro_to_survey</span><span class="p">(</span>
+    <span class="n">g_xyz</span><span class="p">,</span>
+    <span class="n">w_xyz</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">grid_convergence</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">axis</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;z&quot;</span><span class="p">,</span>
+    <span class="n">deg</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Inclination, azimuth and toolface from accelerometer + rate-gyro.</span>
+
+<span class="sd">    Gyrocompassing: the accelerometer gives inclination and toolface (as in</span>
+<span class="sd">    :func:`sensor_to_survey`) and the rate-gyro measures the Earth-rotation</span>
+<span class="sd">    vector in the tool frame, whose horizontal component points *true* north.</span>
+<span class="sd">    The azimuth is obtained from the same minimum-set equation, with the gyro</span>
+<span class="sd">    readings in place of the magnetometer.</span>
+
+<span class="sd">    Unlike a magnetic survey the gyro references true north directly, so **no</span>
+<span class="sd">    magnetic declination is applied** (only grid convergence, if supplied).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    g_xyz : array_like, shape (3,) or (n, 3)</span>
+<span class="sd">        Accelerometer readings (gravity) in the tool frame.</span>
+<span class="sd">    w_xyz : array_like, shape (3,) or (n, 3)</span>
+<span class="sd">        Rate-gyro readings (Earth-rotation rate) in the tool frame, any</span>
+<span class="sd">        self-consistent angular-rate unit.</span>
+<span class="sd">    grid_convergence : float, default 0.0</span>
+<span class="sd">        Grid convergence (deg), subtracted to give grid azimuth.</span>
+<span class="sd">    axis : {&#39;z&#39;, &#39;x&#39;}, default &#39;z&#39;</span>
+<span class="sd">        Along-hole (axial) sensor axis, as in :func:`sensor_to_survey`.</span>
+<span class="sd">    deg : bool, default True</span>
+<span class="sd">        Return degrees if True, else radians.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    inc, azi, toolface : float or ndarray</span>
+<span class="sd">        Inclination, azimuth (true/grid, wrapped to [0, 360)) and toolface.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">sensor_to_survey</span><span class="p">(</span>
+        <span class="n">g_xyz</span><span class="p">,</span>
+        <span class="n">w_xyz</span><span class="p">,</span>
+        <span class="n">declination</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+        <span class="n">grid_convergence</span><span class="o">=</span><span class="n">grid_convergence</span><span class="p">,</span>
+        <span class="n">axis</span><span class="o">=</span><span class="n">axis</span><span class="p">,</span>
+        <span class="n">deg</span><span class="o">=</span><span class="n">deg</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

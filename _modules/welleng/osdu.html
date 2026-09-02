@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.osdu &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.osdu</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.osdu</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;OSDU import/export for the well hierarchy — version-pinned and units-aware.</span>
+
+<span class="sd">Maps `welleng.hierarchy` entities to/from OSDU Well-Known-Schema records so a</span>
+<span class="sd">hierarchy can be **imported** from an OSDU data platform and **exported** back.</span>
+
+<span class="sd">Two hard requirements:</span>
+
+<span class="sd">1. **Explicit schema-version reference + quick adaptation.** OSDU schemas evolve</span>
+<span class="sd">   (minor/patch per M-release). Every mapping pins the exact version in</span>
+<span class="sd">   ``OSDU_SCHEMA_VERSIONS`` (one place to bump), the OSDU ``kind`` string carries</span>
+<span class="sd">   it (``osdu:wks:master-data--Wellbore:1.1.0``), and ``from_osdu`` **recognises</span>
+<span class="sd">   the incoming version** and warns/adapts on a mismatch rather than silently</span>
+<span class="sd">   mis-mapping. To support a new schema version: add its version to the pin and,</span>
+<span class="sd">   if fields moved, a version-specific branch in the entity mapper.</span>
+<span class="sd">2. **Units-aware.** OSDU carries a unit-of-measure per numeric (e.g. a</span>
+<span class="sd">   ``FrameOfReference``/``UnitOfMeasureID`` / ``AsIngestedCoordinates`` UoM).</span>
+<span class="sd">   welleng works internally in **metres**; every length is converted on the</span>
+<span class="sd">   boundary (``_to_m`` on import, ``_from_m`` on export). Volve/EDM sources are</span>
+<span class="sd">   **feet** — do not assume metres.</span>
+
+<span class="sd">The version-pin + kind parsing + units boundary + the round-trip contract are</span>
+<span class="sd">implemented; per-entity field mapping is filled for the load-bearing entities</span>
+<span class="sd">(Well, Wellbore, WellboreTrajectory) and extends by the same pattern. Schemas:</span>
+<span class="sd">``https://community.opengroup.org/osdu/data/data-definitions``.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.hierarchy</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">Datum</span><span class="p">,</span> <span class="n">Field</span><span class="p">,</span> <span class="n">Organisation</span><span class="p">,</span> <span class="n">Site</span><span class="p">,</span> <span class="n">Well</span><span class="p">,</span> <span class="n">Wellbore</span><span class="p">,</span> <span class="n">WellNetwork</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># 1. explicit, pinned OSDU schema versions (bump here when a schema advances)</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1">#: The OSDU WKS versions this module maps against. Pin to your deployment&#39;s</span>
+<span class="c1">#: schema registry. Bumping a value here (+ a version branch in the mapper if</span>
+<span class="c1">#: fields moved) is the whole &quot;adapt quickly&quot; story.</span>
+<span class="n">OSDU_SCHEMA_VERSIONS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;Organisation&quot;</span><span class="p">:</span> <span class="s2">&quot;1.0.0&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Field&quot;</span><span class="p">:</span> <span class="s2">&quot;1.0.0&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;WellSiteStructure&quot;</span><span class="p">:</span> <span class="s2">&quot;1.0.0&quot;</span><span class="p">,</span>     <span class="c1"># our Site</span>
+    <span class="s2">&quot;Well&quot;</span><span class="p">:</span> <span class="s2">&quot;1.1.0&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Wellbore&quot;</span><span class="p">:</span> <span class="s2">&quot;1.1.0&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;WellboreTrajectory&quot;</span><span class="p">:</span> <span class="s2">&quot;1.0.0&quot;</span><span class="p">,</span>    <span class="c1"># work-product-component</span>
+<span class="p">}</span>
+
+<span class="c1">#: entity -&gt; OSDU group-type (master-data vs work-product-component)</span>
+<span class="n">_OSDU_GROUP</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;Organisation&quot;</span><span class="p">:</span> <span class="s2">&quot;master-data&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Field&quot;</span><span class="p">:</span> <span class="s2">&quot;master-data&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;WellSiteStructure&quot;</span><span class="p">:</span> <span class="s2">&quot;master-data&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Well&quot;</span><span class="p">:</span> <span class="s2">&quot;master-data&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Wellbore&quot;</span><span class="p">:</span> <span class="s2">&quot;master-data&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;WellboreTrajectory&quot;</span><span class="p">:</span> <span class="s2">&quot;work-product-component&quot;</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<div class="viewcode-block" id="build_kind">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu.build_kind">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_kind</span><span class="p">(</span><span class="n">entity</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">version</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build an OSDU ``kind`` string for a mapped entity.</span>
+
+<span class="sd">    Assembles the fully-qualified OSDU Well-Known-Schema kind</span>
+<span class="sd">    ``osdu:wks:&lt;group&gt;--&lt;Entity&gt;:&lt;version&gt;`` from the entity name, its</span>
+<span class="sd">    group-type, and the pinned (or overridden) schema version.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    entity : str</span>
+<span class="sd">        The OSDU entity name — a key of :data:`OSDU_SCHEMA_VERSIONS`, e.g.</span>
+<span class="sd">        ``&quot;Wellbore&quot;``, ``&quot;Well&quot;``, ``&quot;WellSiteStructure&quot;``.</span>
+<span class="sd">    version : str or None, default None</span>
+<span class="sd">        Schema version to embed. When ``None`` the pinned version from</span>
+<span class="sd">        :data:`OSDU_SCHEMA_VERSIONS` is used.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    str</span>
+<span class="sd">        The OSDU kind string, e.g. ``&quot;osdu:wks:master-data--Wellbore:1.1.0&quot;``.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    KeyError</span>
+<span class="sd">        If ``entity`` is not a known mapped entity.</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">    &gt;&gt;&gt; from welleng.osdu import build_kind</span>
+<span class="sd">    &gt;&gt;&gt; build_kind(&#39;Wellbore&#39;)</span>
+<span class="sd">    &#39;osdu:wks:master-data--Wellbore:1.1.0&#39;</span>
+<span class="sd">    &gt;&gt;&gt; build_kind(&#39;Wellbore&#39;, version=&#39;1.2.0&#39;)</span>
+<span class="sd">    &#39;osdu:wks:master-data--Wellbore:1.2.0&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">group</span> <span class="o">=</span> <span class="n">_OSDU_GROUP</span><span class="p">[</span><span class="n">entity</span><span class="p">]</span>
+    <span class="n">ver</span> <span class="o">=</span> <span class="n">version</span> <span class="ow">or</span> <span class="n">OSDU_SCHEMA_VERSIONS</span><span class="p">[</span><span class="n">entity</span><span class="p">]</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;osdu:wks:</span><span class="si">{</span><span class="n">group</span><span class="si">}</span><span class="s2">--</span><span class="si">{</span><span class="n">entity</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">ver</span><span class="si">}</span><span class="s2">&quot;</span></div>
+
+
+
+<div class="viewcode-block" id="parse_kind">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu.parse_kind">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">parse_kind</span><span class="p">(</span><span class="n">kind</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Parse an OSDU ``kind`` string into its parts.</span>
+
+<span class="sd">    Inverse of :func:`build_kind`: splits</span>
+<span class="sd">    ``osdu:wks:&lt;group&gt;--&lt;Entity&gt;:&lt;version&gt;`` into its group-type, entity name,</span>
+<span class="sd">    and schema version.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    kind : str</span>
+<span class="sd">        An OSDU kind string, e.g. ``&quot;osdu:wks:master-data--Wellbore:1.1.0&quot;``.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    tuple of (str, str, str)</span>
+<span class="sd">        ``(group, entity, version)`` — e.g.</span>
+<span class="sd">        ``(&quot;master-data&quot;, &quot;Wellbore&quot;, &quot;1.1.0&quot;)``.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If ``kind`` does not match the expected OSDU kind structure.</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">    &gt;&gt;&gt; from welleng.osdu import parse_kind</span>
+<span class="sd">    &gt;&gt;&gt; parse_kind(&#39;osdu:wks:master-data--Wellbore:1.1.0&#39;)</span>
+<span class="sd">    (&#39;master-data&#39;, &#39;Wellbore&#39;, &#39;1.1.0&#39;)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">tail</span> <span class="o">=</span> <span class="n">kind</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>          <span class="c1"># -&gt; &quot;master-data--Wellbore:1.1.0&quot;</span>
+        <span class="n">body</span><span class="p">,</span> <span class="n">version</span> <span class="o">=</span> <span class="n">tail</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">group</span><span class="p">,</span> <span class="n">entity</span> <span class="o">=</span> <span class="n">body</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;--&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">group</span><span class="p">,</span> <span class="n">entity</span><span class="p">,</span> <span class="n">version</span>
+    <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>                    <span class="c1"># pragma: no cover - defensive</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unrecognised OSDU kind: </span><span class="si">{</span><span class="n">kind</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_check_version</span><span class="p">(</span><span class="n">entity</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">version</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Warn when an incoming record&#39;s schema version differs from the pin.</span>
+
+<span class="sd">    Compares ``version`` against the pinned value in</span>
+<span class="sd">    :data:`OSDU_SCHEMA_VERSIONS` and emits a :class:`UserWarning` on a mismatch</span>
+<span class="sd">    — the record is still mapped, so a schema change is *recognised* and can be</span>
+<span class="sd">    adapted rather than silently mis-mapped.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    entity : str</span>
+<span class="sd">        The OSDU entity name being mapped.</span>
+<span class="sd">    version : str</span>
+<span class="sd">        The schema version carried by the incoming record.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    None</span>
+
+<span class="sd">    Warns</span>
+<span class="sd">    -----</span>
+<span class="sd">    UserWarning</span>
+<span class="sd">        When a pinned version exists for ``entity`` and ``version`` differs</span>
+<span class="sd">        from it.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">pinned</span> <span class="o">=</span> <span class="n">OSDU_SCHEMA_VERSIONS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">entity</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">pinned</span> <span class="ow">and</span> <span class="n">version</span> <span class="o">!=</span> <span class="n">pinned</span><span class="p">:</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;OSDU </span><span class="si">{</span><span class="n">entity</span><span class="si">}</span><span class="s2"> record is schema version </span><span class="si">{</span><span class="n">version</span><span class="si">}</span><span class="s2">; this build is &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;pinned to </span><span class="si">{</span><span class="n">pinned</span><span class="si">}</span><span class="s2">. Fields may have moved — verify the mapping / &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;add a version branch in welleng.osdu.&quot;</span><span class="p">,</span>
+            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="p">)</span>
+
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># 2. units boundary (internal = metres)</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># Minimal UoM handling for the common length units; the general case defers to</span>
+<span class="c1"># welleng.units (Pint). OSDU stores the UoM alongside each numeric.</span>
+<span class="n">_LENGTH_TO_M</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;m&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">&quot;metre&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">&quot;meter&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span>
+    <span class="s2">&quot;ft&quot;</span><span class="p">:</span> <span class="mf">0.3048</span><span class="p">,</span> <span class="s2">&quot;foot&quot;</span><span class="p">:</span> <span class="mf">0.3048</span><span class="p">,</span> <span class="s2">&quot;feet&quot;</span><span class="p">:</span> <span class="mf">0.3048</span><span class="p">,</span>
+    <span class="s2">&quot;ftus&quot;</span><span class="p">:</span> <span class="mf">1200.0</span> <span class="o">/</span> <span class="mf">3937.0</span><span class="p">,</span>                      <span class="c1"># US survey foot</span>
+<span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_uom_factor</span><span class="p">(</span><span class="n">uom</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve an OSDU length unit-of-measure to a metres-per-unit factor.</span>
+
+<span class="sd">    Handles the common length units directly and defers the general case to</span>
+<span class="sd">    ``welleng.units`` (Pint).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    uom : str or None</span>
+<span class="sd">        The unit-of-measure token (e.g. ``&quot;m&quot;``, ``&quot;ft&quot;``, ``&quot;ftUS&quot;``), or a</span>
+<span class="sd">        Pint-resolvable persistableReference. ``None`` is treated as metres.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float</span>
+<span class="sd">        The multiplicative factor to convert a value in ``uom`` to metres.</span>
+
+<span class="sd">    Warns</span>
+<span class="sd">    -----</span>
+<span class="sd">    UserWarning</span>
+<span class="sd">        When ``uom`` cannot be resolved; it is then treated as metres</span>
+<span class="sd">        (factor ``1.0``).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">uom</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">1.0</span>                               <span class="c1"># assume already metres (documented)</span>
+    <span class="n">key</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">uom</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">_LENGTH_TO_M</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_LENGTH_TO_M</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+    <span class="c1"># general case: let Pint resolve it (e.g. a persistableReference)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.units</span><span class="w"> </span><span class="kn">import</span> <span class="n">ureg</span>  <span class="c1"># type: ignore</span>
+        <span class="k">return</span> <span class="n">ureg</span><span class="p">(</span><span class="n">key</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="s2">&quot;meter&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">magnitude</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unknown length UoM </span><span class="si">{</span><span class="n">uom</span><span class="si">!r}</span><span class="s2">; treating as metres.&quot;</span><span class="p">,</span> <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="k">return</span> <span class="mf">1.0</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_to_m</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">uom</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert an OSDU length to internal metres.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    value : float or None</span>
+<span class="sd">        The length in ``uom`` units, or ``None``.</span>
+<span class="sd">    uom : str or None</span>
+<span class="sd">        The source unit-of-measure (see :func:`_uom_factor`).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float or None</span>
+<span class="sd">        The length in metres, or ``None`` if ``value`` is ``None``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">value</span> <span class="o">*</span> <span class="n">_uom_factor</span><span class="p">(</span><span class="n">uom</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_from_m</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">uom</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert internal metres to an OSDU length in ``uom``.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    value : float or None</span>
+<span class="sd">        The length in metres, or ``None``.</span>
+<span class="sd">    uom : str or None</span>
+<span class="sd">        The target unit-of-measure (see :func:`_uom_factor`).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float or None</span>
+<span class="sd">        The length expressed in ``uom`` units, or ``None`` if ``value`` is</span>
+<span class="sd">        ``None``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">value</span> <span class="o">/</span> <span class="n">_uom_factor</span><span class="p">(</span><span class="n">uom</span><span class="p">)</span>
+
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># 3. import / export</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<div class="viewcode-block" id="from_osdu">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu.from_osdu">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">from_osdu</span><span class="p">(</span><span class="n">record</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Map one OSDU record to the matching ``welleng.hierarchy`` entity.</span>
+
+<span class="sd">    Dispatches on the record&#39;s ``kind`` to build the corresponding</span>
+<span class="sd">    :mod:`welleng.hierarchy` entity, converting all lengths to internal metres</span>
+<span class="sd">    and checking (warning on) the schema version.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    record : dict</span>
+<span class="sd">        An OSDU record shaped ``{&quot;kind&quot;: ..., &quot;id&quot;: ..., &quot;data&quot;: {...}}``. The</span>
+<span class="sd">        ``data`` payload carries the entity fields; if absent the record itself</span>
+<span class="sd">        is used as the data.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Wellbore or Well or Organisation or Field or Site or dict</span>
+<span class="sd">        The mapped hierarchy entity. ``WellboreTrajectory`` records return a</span>
+<span class="sd">        plain dict of tie metadata (``wellbore_id``, ``top_md``, ``base_md``,</span>
+<span class="sd">        ``azimuth_reference``) because the station bulk is a separately-loaded</span>
+<span class="sd">        referenced dataset.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If the ``kind`` is malformed (via :func:`parse_kind`) or names an</span>
+<span class="sd">        entity that has no ``from_osdu`` mapper.</span>
+
+<span class="sd">    Warns</span>
+<span class="sd">    -----</span>
+<span class="sd">    UserWarning</span>
+<span class="sd">        When the record&#39;s schema version differs from the pinned one.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    Parent links (``WellID`` / ``KickOffWellbore``) are NOT resolved here — the</span>
+<span class="sd">    caller wires them when assembling the :class:`~welleng.hierarchy.WellNetwork`</span>
+<span class="sd">    (see :func:`network_from_osdu`). ``kickoff_md`` is derived, not native OSDU,</span>
+<span class="sd">    so it is left ``None``.</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">    &gt;&gt;&gt; from welleng.osdu import from_osdu</span>
+<span class="sd">    &gt;&gt;&gt; rec = {&#39;kind&#39;: &#39;osdu:wks:master-data--Wellbore:1.1.0&#39;, &#39;id&#39;: &#39;WB1&#39;,</span>
+<span class="sd">    ...        &#39;data&#39;: {&#39;FacilityName&#39;: &#39;TopHole&#39;}}</span>
+<span class="sd">    &gt;&gt;&gt; wb = from_osdu(rec)</span>
+<span class="sd">    &gt;&gt;&gt; type(wb).__name__, wb.id, wb.name</span>
+<span class="sd">    (&#39;Wellbore&#39;, &#39;WB1&#39;, &#39;TopHole&#39;)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">kind</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;kind&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+    <span class="n">_group</span><span class="p">,</span> <span class="n">entity</span><span class="p">,</span> <span class="n">version</span> <span class="o">=</span> <span class="n">parse_kind</span><span class="p">(</span><span class="n">kind</span><span class="p">)</span>
+    <span class="n">_check_version</span><span class="p">(</span><span class="n">entity</span><span class="p">,</span> <span class="n">version</span><span class="p">)</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;data&quot;</span><span class="p">,</span> <span class="n">record</span><span class="p">)</span>
+    <span class="n">rid</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;id&quot;</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;id&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
+    <span class="n">uom</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;LengthUnitOfMeasure&quot;</span><span class="p">)</span>        <span class="c1"># source UoM if the platform tags it</span>
+
+    <span class="k">if</span> <span class="n">entity</span> <span class="o">==</span> <span class="s2">&quot;Wellbore&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">Wellbore</span><span class="p">(</span>
+            <span class="nb">id</span><span class="o">=</span><span class="n">rid</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;FacilityName&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+            <span class="c1"># WellID / KickOffWellbore are the parent links (resolved by the caller</span>
+            <span class="c1"># when assembling the WellNetwork); kickoff_md is DERIVED, not native.</span>
+            <span class="n">kickoff_md</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">entity</span> <span class="o">==</span> <span class="s2">&quot;Well&quot;</span><span class="p">:</span>
+        <span class="n">vm</span> <span class="o">=</span> <span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;VerticalMeasurements&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[{}])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">Well</span><span class="p">(</span>
+            <span class="nb">id</span><span class="o">=</span><span class="n">rid</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;FacilityName&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+            <span class="n">wellhead_depth</span><span class="o">=</span><span class="n">_to_m</span><span class="p">(</span>
+                <span class="n">vm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;VerticalMeasurement&quot;</span><span class="p">),</span>
+                <span class="n">vm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;VerticalMeasurementUnitOfMeasureID&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">uom</span><span class="p">),</span>
+            <span class="n">datum</span><span class="o">=</span><span class="n">Datum</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">vm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;VerticalMeasurementPathID&quot;</span><span class="p">,</span> <span class="s2">&quot;datum&quot;</span><span class="p">),</span>
+                        <span class="n">elevation</span><span class="o">=</span><span class="n">_to_m</span><span class="p">(</span><span class="n">vm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;VerticalMeasurement&quot;</span><span class="p">),</span> <span class="n">uom</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">),</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">entity</span> <span class="o">==</span> <span class="s2">&quot;WellboreTrajectory&quot;</span><span class="p">:</span>
+        <span class="c1"># returns the tie metadata; station bulk is a referenced dataset, loaded</span>
+        <span class="c1"># separately (Datasets[]). TopDepthMeasuredDepth -&gt; section tie.</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;wellbore_id&quot;</span><span class="p">:</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;WellboreID&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+            <span class="s2">&quot;top_md&quot;</span><span class="p">:</span> <span class="n">_to_m</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;TopDepthMeasuredDepth&quot;</span><span class="p">),</span> <span class="n">uom</span><span class="p">),</span>
+            <span class="s2">&quot;base_md&quot;</span><span class="p">:</span> <span class="n">_to_m</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;BaseDepthMeasuredDepth&quot;</span><span class="p">),</span> <span class="n">uom</span><span class="p">),</span>
+            <span class="s2">&quot;azimuth_reference&quot;</span><span class="p">:</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;AzimuthReferenceType&quot;</span><span class="p">),</span>
+        <span class="p">}</span>
+    <span class="k">if</span> <span class="n">entity</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;Organisation&quot;</span><span class="p">,</span> <span class="s2">&quot;Field&quot;</span><span class="p">,</span> <span class="s2">&quot;WellSiteStructure&quot;</span><span class="p">):</span>
+        <span class="bp">cls</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;Organisation&quot;</span><span class="p">:</span> <span class="n">Organisation</span><span class="p">,</span> <span class="s2">&quot;Field&quot;</span><span class="p">:</span> <span class="n">Field</span><span class="p">,</span>
+               <span class="s2">&quot;WellSiteStructure&quot;</span><span class="p">:</span> <span class="n">Site</span><span class="p">}[</span><span class="n">entity</span><span class="p">]</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="n">rid</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;FacilityName&quot;</span><span class="p">)</span>
+                                 <span class="ow">or</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;OrganisationName&quot;</span><span class="p">)</span>
+                                 <span class="ow">or</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;FieldName&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)))</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;no from_osdu mapper for entity </span><span class="si">{</span><span class="n">entity</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="to_osdu">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu.to_osdu">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">to_osdu</span><span class="p">(</span><span class="n">entity</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">version</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">uom</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;m&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Map a ``welleng.hierarchy`` entity to an OSDU record.</span>
+
+<span class="sd">    Inverse of :func:`from_osdu`: emits an OSDU record</span>
+<span class="sd">    (``{&quot;kind&quot;: ..., &quot;id&quot;: ..., &quot;data&quot;: {...}}``) at the pinned (or given)</span>
+<span class="sd">    schema version, converting internal metres to the requested ``uom`` and</span>
+<span class="sd">    encoding the parent edge (Well ``WellID`` or parent-wellbore</span>
+<span class="sd">    ``KickOffWellbore``).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    entity : Wellbore or Well or Organisation or Field or Site</span>
+<span class="sd">        The hierarchy entity to export.</span>
+<span class="sd">    version : str or None, keyword-only, default None</span>
+<span class="sd">        Schema version to embed in the ``kind``; ``None`` uses the pin (see</span>
+<span class="sd">        :func:`build_kind`).</span>
+<span class="sd">    uom : str, keyword-only, default &quot;m&quot;</span>
+<span class="sd">        The length unit-of-measure to emit numeric depths in.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    dict</span>
+<span class="sd">        The OSDU record.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If ``entity`` is not a type with a ``to_osdu`` mapper.</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">    &gt;&gt;&gt; from welleng.hierarchy import Well, Wellbore</span>
+<span class="sd">    &gt;&gt;&gt; from welleng.osdu import to_osdu</span>
+<span class="sd">    &gt;&gt;&gt; top = Wellbore(id=&#39;WB1&#39;, name=&#39;TopHole&#39;, parent=Well(id=&#39;W1&#39;, name=&#39;W1&#39;))</span>
+<span class="sd">    &gt;&gt;&gt; lat = Wellbore(id=&#39;WB2&#39;, name=&#39;Lat1&#39;, parent=top, kickoff_md=1000.0)</span>
+<span class="sd">    &gt;&gt;&gt; rec = to_osdu(lat)</span>
+<span class="sd">    &gt;&gt;&gt; rec[&#39;kind&#39;]</span>
+<span class="sd">    &#39;osdu:wks:master-data--Wellbore:1.1.0&#39;</span>
+<span class="sd">    &gt;&gt;&gt; rec[&#39;id&#39;], rec[&#39;data&#39;]</span>
+<span class="sd">    (&#39;WB2&#39;, {&#39;FacilityName&#39;: &#39;Lat1&#39;, &#39;KickOffWellbore&#39;: &#39;WB1&#39;})</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">entity</span><span class="p">,</span> <span class="n">Wellbore</span><span class="p">):</span>
+        <span class="n">parent</span> <span class="o">=</span> <span class="n">entity</span><span class="o">.</span><span class="n">parent</span>
+        <span class="n">data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;FacilityName&quot;</span><span class="p">:</span> <span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="p">}</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">parent</span><span class="p">,</span> <span class="n">Well</span><span class="p">):</span>
+            <span class="n">data</span><span class="p">[</span><span class="s2">&quot;WellID&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">parent</span><span class="o">.</span><span class="n">id</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">parent</span><span class="p">,</span> <span class="n">Wellbore</span><span class="p">):</span>
+            <span class="n">data</span><span class="p">[</span><span class="s2">&quot;KickOffWellbore&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">parent</span><span class="o">.</span><span class="n">id</span>      <span class="c1"># the parent-wellbore edge</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;kind&quot;</span><span class="p">:</span> <span class="n">build_kind</span><span class="p">(</span><span class="s2">&quot;Wellbore&quot;</span><span class="p">,</span> <span class="n">version</span><span class="p">),</span> <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="n">entity</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="n">data</span><span class="p">}</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">entity</span><span class="p">,</span> <span class="n">Well</span><span class="p">):</span>
+        <span class="n">vm</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">entity</span><span class="o">.</span><span class="n">wellhead_depth</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">entity</span><span class="o">.</span><span class="n">datum</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">vm</span> <span class="o">=</span> <span class="p">[{</span>
+                <span class="s2">&quot;VerticalMeasurement&quot;</span><span class="p">:</span> <span class="n">_from_m</span><span class="p">(</span>
+                    <span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">datum</span><span class="o">.</span><span class="n">elevation</span> <span class="k">if</span> <span class="n">entity</span><span class="o">.</span><span class="n">datum</span>
+                     <span class="k">else</span> <span class="n">entity</span><span class="o">.</span><span class="n">wellhead_depth</span><span class="p">),</span> <span class="n">uom</span><span class="p">),</span>
+                <span class="s2">&quot;VerticalMeasurementUnitOfMeasureID&quot;</span><span class="p">:</span> <span class="n">uom</span><span class="p">,</span>
+            <span class="p">}]</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;kind&quot;</span><span class="p">:</span> <span class="n">build_kind</span><span class="p">(</span><span class="s2">&quot;Well&quot;</span><span class="p">,</span> <span class="n">version</span><span class="p">),</span> <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="n">entity</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+                <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;FacilityName&quot;</span><span class="p">:</span> <span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="s2">&quot;VerticalMeasurements&quot;</span><span class="p">:</span> <span class="n">vm</span><span class="p">}}</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">entity</span><span class="p">,</span> <span class="p">(</span><span class="n">Organisation</span><span class="p">,</span> <span class="n">Field</span><span class="p">,</span> <span class="n">Site</span><span class="p">)):</span>
+        <span class="n">ent</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;Organisation&quot;</span><span class="p">:</span> <span class="s2">&quot;Organisation&quot;</span><span class="p">,</span> <span class="s2">&quot;Field&quot;</span><span class="p">:</span> <span class="s2">&quot;Field&quot;</span><span class="p">,</span>
+               <span class="s2">&quot;Site&quot;</span><span class="p">:</span> <span class="s2">&quot;WellSiteStructure&quot;</span><span class="p">}[</span><span class="nb">type</span><span class="p">(</span><span class="n">entity</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">]</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;kind&quot;</span><span class="p">:</span> <span class="n">build_kind</span><span class="p">(</span><span class="n">ent</span><span class="p">,</span> <span class="n">version</span><span class="p">),</span> <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="n">entity</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+                <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;FacilityName&quot;</span><span class="p">:</span> <span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="p">}}</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;no to_osdu mapper for </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">entity</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="network_from_osdu">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu.network_from_osdu">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">network_from_osdu</span><span class="p">(</span><span class="n">records</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="n">WellNetwork</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Assemble a :class:`~welleng.hierarchy.WellNetwork` from OSDU records.</span>
+
+<span class="sd">    Maps every ``Wellbore`` record via :func:`from_osdu`, then wires the</span>
+<span class="sd">    ``KickOffWellbore`` / ``WellID`` parent edges into a network. Non-wellbore</span>
+<span class="sd">    records are ignored.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    records : list of dict</span>
+<span class="sd">        OSDU records (as passed to :func:`from_osdu`). Only ``Wellbore``</span>
+<span class="sd">        records contribute nodes.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    WellNetwork</span>
+<span class="sd">        The assembled network. A wellbore whose parent is a Well (a root, not</span>
+<span class="sd">        yet added) is left with ``parent=None``.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    Deriving each section&#39;s ``kickoff_md`` from the trajectory tie MDs is a</span>
+<span class="sd">    follow-up, done once the referenced station datasets are loaded (OSDU has no</span>
+<span class="sd">    native ``KickOffMD``).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">net</span> <span class="o">=</span> <span class="n">WellNetwork</span><span class="p">()</span>
+    <span class="n">wellbores</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Wellbore</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">parent_of</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">records</span><span class="p">:</span>
+        <span class="n">_g</span><span class="p">,</span> <span class="n">entity</span><span class="p">,</span> <span class="n">_v</span> <span class="o">=</span> <span class="n">parse_kind</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;kind&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">entity</span> <span class="o">!=</span> <span class="s2">&quot;Wellbore&quot;</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">wb</span> <span class="o">=</span> <span class="n">from_osdu</span><span class="p">(</span><span class="n">rec</span><span class="p">)</span>
+        <span class="n">wellbores</span><span class="p">[</span><span class="n">wb</span><span class="o">.</span><span class="n">id</span><span class="p">]</span> <span class="o">=</span> <span class="n">wb</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;data&quot;</span><span class="p">,</span> <span class="n">rec</span><span class="p">)</span>
+        <span class="n">parent_of</span><span class="p">[</span><span class="n">wb</span><span class="o">.</span><span class="n">id</span><span class="p">]</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;KickOffWellbore&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;WellID&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">wid</span><span class="p">,</span> <span class="n">wb</span> <span class="ow">in</span> <span class="n">wellbores</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">pid</span> <span class="o">=</span> <span class="n">parent_of</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">wid</span><span class="p">)</span>
+        <span class="n">wb</span><span class="o">.</span><span class="n">parent</span> <span class="o">=</span> <span class="n">wellbores</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pid</span><span class="p">)</span>   <span class="c1"># None if parent is a Well (root)</span>
+        <span class="n">net</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">wb</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">net</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

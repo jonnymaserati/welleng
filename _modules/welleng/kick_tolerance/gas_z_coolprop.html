@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.kick_tolerance.gas_z_coolprop &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../kick_tolerance.html">welleng.kick_tolerance</a></li>
+      <li class="breadcrumb-item active">welleng.kick_tolerance.gas_z_coolprop</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.kick_tolerance.gas_z_coolprop</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;CoolProp real-EOS gas-property backend for kick tolerance (mixtures, CO2 / CCUS).</span>
+
+<span class="sd">Optional -- requires the ``coolprop`` extra (``pip install &#39;welleng[kick]&#39;``). The</span>
+<span class="sd">Tier-0 default backend (:mod:`welleng.kick_tolerance.gas_z`) is a clean-room</span>
+<span class="sd">Hall &amp; Yarborough (1973) correlation for *pure methane*; that correlation cannot</span>
+<span class="sd">represent CO2 + impurity influx. This module computes the real-gas Z-factor and</span>
+<span class="sd">density for an arbitrary gas COMPOSITION (mole fractions) via CoolProp&#39;s HEOS</span>
+<span class="sd">reference EOS (GERG-2008 for natural-gas mixtures), enabling CCUS / CO2 kicks.</span>
+
+<span class="sd">CoolProp is MIT-licensed; use the native HEOS backend only (never the paid NIST</span>
+<span class="sd">REFPROP backend). Cite: Bell, I. H. et al. (2014), Ind. Eng. Chem. Res. 53(6):2498.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">hashlib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="c1"># --- unit conversions (oilfield &lt;-&gt; SI) -------------------------------------</span>
+<span class="n">PSIA_TO_PA</span> <span class="o">=</span> <span class="mf">6894.757293168</span>        <span class="c1"># 1 psia -&gt; Pa</span>
+<span class="n">RANKINE_TO_KELVIN</span> <span class="o">=</span> <span class="mf">5.0</span> <span class="o">/</span> <span class="mf">9.0</span>      <span class="c1"># degR -&gt; K</span>
+<span class="n">KG_M3_PER_PPG</span> <span class="o">=</span> <span class="mf">119.8264273</span>        <span class="c1"># 1 ppg (lb/US-gal) -&gt; kg/m^3</span>
+
+<span class="n">_CACHE_DIR</span> <span class="o">=</span> <span class="n">Path</span><span class="o">.</span><span class="n">home</span><span class="p">()</span> <span class="o">/</span> <span class="s2">&quot;.cache&quot;</span> <span class="o">/</span> <span class="s2">&quot;welleng&quot;</span> <span class="o">/</span> <span class="s2">&quot;ztables&quot;</span>
+
+<span class="c1"># friendly component names -&gt; CoolProp fluid names</span>
+<span class="n">_ALIASES</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;methane&quot;</span><span class="p">:</span> <span class="s2">&quot;Methane&quot;</span><span class="p">,</span> <span class="s2">&quot;c1&quot;</span><span class="p">:</span> <span class="s2">&quot;Methane&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;co2&quot;</span><span class="p">:</span> <span class="s2">&quot;CarbonDioxide&quot;</span><span class="p">,</span> <span class="s2">&quot;carbondioxide&quot;</span><span class="p">:</span> <span class="s2">&quot;CarbonDioxide&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;nitrogen&quot;</span><span class="p">:</span> <span class="s2">&quot;Nitrogen&quot;</span><span class="p">,</span> <span class="s2">&quot;n2&quot;</span><span class="p">:</span> <span class="s2">&quot;Nitrogen&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;ethane&quot;</span><span class="p">:</span> <span class="s2">&quot;Ethane&quot;</span><span class="p">,</span> <span class="s2">&quot;c2&quot;</span><span class="p">:</span> <span class="s2">&quot;Ethane&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;propane&quot;</span><span class="p">:</span> <span class="s2">&quot;Propane&quot;</span><span class="p">,</span> <span class="s2">&quot;c3&quot;</span><span class="p">:</span> <span class="s2">&quot;Propane&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;h2s&quot;</span><span class="p">:</span> <span class="s2">&quot;HydrogenSulfide&quot;</span><span class="p">,</span> <span class="s2">&quot;hydrogensulfide&quot;</span><span class="p">:</span> <span class="s2">&quot;HydrogenSulfide&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;water&quot;</span><span class="p">:</span> <span class="s2">&quot;Water&quot;</span><span class="p">,</span> <span class="s2">&quot;h2o&quot;</span><span class="p">:</span> <span class="s2">&quot;Water&quot;</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<span class="c1"># Curated influx-fluid shortlist for a picker (label + engine-consumable mole-</span>
+<span class="c1"># fraction composition, in CoolProp canonical names). The single source of truth</span>
+<span class="c1"># for the API&#39;s /kick/fluids endpoint -- a thin serializer over this, NOT a table</span>
+<span class="c1"># maintained API-side. The full fluid catalogue is CoolProp&#39;s own</span>
+<span class="c1"># ``get_global_param_string(&quot;FluidsList&quot;)`` (enumerate live), not curated here.</span>
+<span class="c1"># Natural-gas / sour compositions are REPRESENTATIVE EXAMPLES (so labelled), not</span>
+<span class="c1"># authoritative standards. Pure methane routes to the free Hall-Yarborough path;</span>
+<span class="c1"># any other composition uses the CoolProp real-EOS backend.</span>
+<span class="n">FLUID_PRESETS</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="p">{</span><span class="s2">&quot;label&quot;</span><span class="p">:</span> <span class="s2">&quot;Methane (CH4)&quot;</span><span class="p">,</span> <span class="s2">&quot;composition&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;Methane&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">}},</span>
+    <span class="p">{</span><span class="s2">&quot;label&quot;</span><span class="p">:</span> <span class="s2">&quot;Carbon dioxide (CO2)&quot;</span><span class="p">,</span> <span class="s2">&quot;composition&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;CarbonDioxide&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">}},</span>
+    <span class="p">{</span><span class="s2">&quot;label&quot;</span><span class="p">:</span> <span class="s2">&quot;Nitrogen (N2)&quot;</span><span class="p">,</span> <span class="s2">&quot;composition&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;Nitrogen&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">}},</span>
+    <span class="p">{</span><span class="s2">&quot;label&quot;</span><span class="p">:</span> <span class="s2">&quot;Natural gas (example blend)&quot;</span><span class="p">,</span>
+     <span class="s2">&quot;composition&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;Methane&quot;</span><span class="p">:</span> <span class="mf">0.90</span><span class="p">,</span> <span class="s2">&quot;Ethane&quot;</span><span class="p">:</span> <span class="mf">0.05</span><span class="p">,</span> <span class="s2">&quot;Propane&quot;</span><span class="p">:</span> <span class="mf">0.02</span><span class="p">,</span>
+                     <span class="s2">&quot;Nitrogen&quot;</span><span class="p">:</span> <span class="mf">0.02</span><span class="p">,</span> <span class="s2">&quot;CarbonDioxide&quot;</span><span class="p">:</span> <span class="mf">0.01</span><span class="p">}},</span>
+    <span class="p">{</span><span class="s2">&quot;label&quot;</span><span class="p">:</span> <span class="s2">&quot;Sour gas (example)&quot;</span><span class="p">,</span>
+     <span class="s2">&quot;composition&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;Methane&quot;</span><span class="p">:</span> <span class="mf">0.85</span><span class="p">,</span> <span class="s2">&quot;HydrogenSulfide&quot;</span><span class="p">:</span> <span class="mf">0.10</span><span class="p">,</span>
+                     <span class="s2">&quot;CarbonDioxide&quot;</span><span class="p">:</span> <span class="mf">0.05</span><span class="p">}},</span>
+<span class="p">)</span>
+
+
+<div class="viewcode-block" id="fluid_presets">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.fluid_presets">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">fluid_presets</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Curated influx-fluid shortlist: ``[{label, composition}, ...]``.</span>
+
+<span class="sd">    ``composition`` is a mole-fraction dict in CoolProp canonical names, consumed</span>
+<span class="sd">    as-is by ``KickInputs.fluid`` / ``analytical_kick_tolerance(gas_composition=)``.</span>
+<span class="sd">    The natural-gas / sour entries are representative examples, not standards. For</span>
+<span class="sd">    the full fluid list use CoolProp&#39;s ``get_global_param_string(&quot;FluidsList&quot;)``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">[{</span><span class="s2">&quot;label&quot;</span><span class="p">:</span> <span class="n">p</span><span class="p">[</span><span class="s2">&quot;label&quot;</span><span class="p">],</span> <span class="s2">&quot;composition&quot;</span><span class="p">:</span> <span class="nb">dict</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="s2">&quot;composition&quot;</span><span class="p">])}</span>
+            <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">FLUID_PRESETS</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="fluid_aliases">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.fluid_aliases">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">fluid_aliases</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Friendly component name -&gt; CoolProp fluid name (e.g. ``co2`` -&gt;</span>
+<span class="sd">    ``CarbonDioxide``). Case-insensitive keys; the same map used to resolve a</span>
+<span class="sd">    composition before it reaches CoolProp.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span><span class="n">_ALIASES</span><span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_coolprop_fluid_string</span><span class="p">(</span><span class="n">composition</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a CoolProp fluid identifier from mole-fraction composition.</span>
+
+<span class="sd">    Single component -&gt; the plain CoolProp name (e.g. ``&quot;CarbonDioxide&quot;``).</span>
+<span class="sd">    Mixture -&gt; ``&quot;HEOS::A[x]&amp;B[y]&quot;`` with fractions normalised to sum to 1.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">composition</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;composition is empty&quot;</span><span class="p">)</span>
+    <span class="n">total</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="nb">sum</span><span class="p">(</span><span class="n">composition</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span>
+    <span class="k">if</span> <span class="n">total</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;composition mole fractions must sum to &gt; 0&quot;</span><span class="p">)</span>
+    <span class="n">resolved</span> <span class="o">=</span> <span class="p">[(</span><span class="n">_ALIASES</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">n</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">(),</span> <span class="n">n</span><span class="p">),</span> <span class="n">f</span> <span class="o">/</span> <span class="n">total</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">composition</span><span class="o">.</span><span class="n">items</span><span class="p">()]</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">resolved</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">resolved</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">return</span> <span class="s2">&quot;HEOS::&quot;</span> <span class="o">+</span> <span class="s2">&quot;&amp;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">[</span><span class="si">{</span><span class="n">frac</span><span class="si">:</span><span class="s2">.10g</span><span class="si">}</span><span class="s2">]&quot;</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">frac</span> <span class="ow">in</span> <span class="n">resolved</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="fluid_z_density">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.fluid_z_density">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">fluid_z_density</span><span class="p">(</span>
+    <span class="n">composition</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span> <span class="n">p_psia</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">t_rankine</span><span class="p">:</span> <span class="nb">float</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Real-gas (Z, density_ppg) for a gas ``composition`` at (P, T) via CoolProp.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    composition : dict</span>
+<span class="sd">        Component mole fractions, e.g. ``{&quot;Methane&quot;: 0.9, &quot;CO2&quot;: 0.1}`` (names are</span>
+<span class="sd">        case-insensitive; common aliases like ``CO2``/``N2``/``H2S`` are mapped).</span>
+<span class="sd">    p_psia, t_rankine : float</span>
+<span class="sd">        Pressure [psia] and absolute temperature [degR].</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    (z, rho_ppg)</span>
+<span class="sd">        Compressibility factor [-] and gas density [ppg mud-weight equivalent].</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">CoolProp.CoolProp</span><span class="w"> </span><span class="kn">import</span> <span class="n">PropsSI</span>
+    <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># optional dependency</span>
+        <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+            <span class="s2">&quot;The CoolProp mixture gas backend requires the optional &#39;coolprop&#39; &quot;</span>
+            <span class="s2">&quot;dependency. Install it with: pip install &#39;welleng[kick]&#39;.&quot;</span>
+        <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+
+    <span class="n">fluid</span> <span class="o">=</span> <span class="n">_coolprop_fluid_string</span><span class="p">(</span><span class="n">composition</span><span class="p">)</span>
+    <span class="n">p_pa</span> <span class="o">=</span> <span class="n">p_psia</span> <span class="o">*</span> <span class="n">PSIA_TO_PA</span>
+    <span class="n">t_k</span> <span class="o">=</span> <span class="n">t_rankine</span> <span class="o">*</span> <span class="n">RANKINE_TO_KELVIN</span>
+    <span class="n">z</span> <span class="o">=</span> <span class="n">PropsSI</span><span class="p">(</span><span class="s2">&quot;Z&quot;</span><span class="p">,</span> <span class="s2">&quot;P&quot;</span><span class="p">,</span> <span class="n">p_pa</span><span class="p">,</span> <span class="s2">&quot;T&quot;</span><span class="p">,</span> <span class="n">t_k</span><span class="p">,</span> <span class="n">fluid</span><span class="p">)</span>
+    <span class="n">rho_kg_m3</span> <span class="o">=</span> <span class="n">PropsSI</span><span class="p">(</span><span class="s2">&quot;D&quot;</span><span class="p">,</span> <span class="s2">&quot;P&quot;</span><span class="p">,</span> <span class="n">p_pa</span><span class="p">,</span> <span class="s2">&quot;T&quot;</span><span class="p">,</span> <span class="n">t_k</span><span class="p">,</span> <span class="n">fluid</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">z</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">rho_kg_m3</span> <span class="o">/</span> <span class="n">KG_M3_PER_PPG</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ZTable">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.ZTable">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ZTable</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Precomputed real-gas ``Z(P,T)`` and density surface for a fixed gas</span>
+<span class="sd">    composition -- the fast path for the CoolProp backend.</span>
+
+<span class="sd">    A single CoolProp GERG-2008 mixture flash costs ~15 ms, so calling it inside</span>
+<span class="sd">    the ~700-evaluation kick-tolerance solve is ~12 s / solve (unusable). Instead</span>
+<span class="sd">    grid the (P, T) box ONCE (Z and density are smooth), then bilinearly</span>
+<span class="sd">    interpolate in the hot loop (~2 us/lookup, interp error ~1e-6 vs CoolProp).</span>
+<span class="sd">    The grid is disk-cached per (composition, box, resolution), so a project&#39;s</span>
+<span class="sd">    fixed composition is built once and reused forever; pure methane stays on the</span>
+<span class="sd">    fast Hall-Yarborough backend and does not need this.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    composition : dict</span>
+<span class="sd">        Mole fractions (same as :func:`fluid_z_density`).</span>
+<span class="sd">    p_psia_range, t_rankine_range : (lo, hi)</span>
+<span class="sd">        The pressure [psia] and temperature [degR] box to tabulate. Pad it beyond</span>
+<span class="sd">        the case&#39;s surface..bottom-hole range so lookups never extrapolate.</span>
+<span class="sd">    n_p, n_t : int</span>
+<span class="sd">        Grid resolution (default 40 x 10 -- Z is smooth, so this is ample).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="ZTable.__init__">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.ZTable.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">composition</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span>
+                 <span class="n">p_psia_range</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span> <span class="n">t_rankine_range</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span>
+                 <span class="n">n_p</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">40</span><span class="p">,</span> <span class="n">n_t</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span> <span class="n">cache</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">p_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">p_psia_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="n">p_psia_range</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="n">n_p</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">t_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">t_rankine_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="n">t_rankine_range</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="n">n_t</span><span class="p">)</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha1</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span>
+            <span class="p">[</span><span class="nb">sorted</span><span class="p">(</span><span class="n">composition</span><span class="o">.</span><span class="n">items</span><span class="p">()),</span> <span class="bp">self</span><span class="o">.</span><span class="n">p_grid</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">t_grid</span><span class="o">.</span><span class="n">tolist</span><span class="p">()],</span>
+            <span class="n">sort_keys</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()[:</span><span class="mi">16</span><span class="p">]</span>
+        <span class="n">cache_file</span> <span class="o">=</span> <span class="n">_CACHE_DIR</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">.npz&quot;</span>
+        <span class="k">if</span> <span class="n">cache</span> <span class="ow">and</span> <span class="n">cache_file</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="n">d</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">cache_file</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_Z</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_RHO</span> <span class="o">=</span> <span class="n">d</span><span class="p">[</span><span class="s2">&quot;Z&quot;</span><span class="p">],</span> <span class="n">d</span><span class="p">[</span><span class="s2">&quot;RHO&quot;</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_Z</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_RHO</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build</span><span class="p">(</span><span class="n">composition</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">cache</span><span class="p">:</span>
+                <span class="n">_CACHE_DIR</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">savez</span><span class="p">(</span><span class="n">cache_file</span><span class="p">,</span> <span class="n">Z</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_Z</span><span class="p">,</span> <span class="n">RHO</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_RHO</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">composition</span><span class="p">):</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">CoolProp.CoolProp</span><span class="w"> </span><span class="kn">import</span> <span class="n">AbstractState</span><span class="p">,</span> <span class="n">PT_INPUTS</span>
+        <span class="n">resolved</span> <span class="o">=</span> <span class="p">[(</span><span class="n">_ALIASES</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">n</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">(),</span> <span class="n">n</span><span class="p">),</span> <span class="n">f</span><span class="p">)</span>
+                    <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">composition</span><span class="o">.</span><span class="n">items</span><span class="p">()]</span>
+        <span class="n">tot</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">f</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">resolved</span><span class="p">)</span>
+        <span class="n">st</span> <span class="o">=</span> <span class="n">AbstractState</span><span class="p">(</span><span class="s2">&quot;HEOS&quot;</span><span class="p">,</span> <span class="s2">&quot;&amp;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">n</span> <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">resolved</span><span class="p">))</span>
+        <span class="n">st</span><span class="o">.</span><span class="n">set_mole_fractions</span><span class="p">([</span><span class="n">f</span> <span class="o">/</span> <span class="n">tot</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">resolved</span><span class="p">])</span>
+        <span class="n">Z</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">t_grid</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">p_grid</span><span class="o">.</span><span class="n">size</span><span class="p">))</span>
+        <span class="n">RHO</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">Z</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">T</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">t_grid</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">j</span><span class="p">,</span> <span class="n">P</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">p_grid</span><span class="p">):</span>
+                <span class="n">st</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">PT_INPUTS</span><span class="p">,</span> <span class="n">P</span> <span class="o">*</span> <span class="n">PSIA_TO_PA</span><span class="p">,</span> <span class="n">T</span> <span class="o">*</span> <span class="n">RANKINE_TO_KELVIN</span><span class="p">)</span>
+                <span class="n">Z</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">compressibility_factor</span><span class="p">()</span>
+                <span class="n">RHO</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">rhomass</span><span class="p">()</span> <span class="o">/</span> <span class="n">KG_M3_PER_PPG</span>      <span class="c1"># ppg</span>
+        <span class="k">return</span> <span class="n">Z</span><span class="p">,</span> <span class="n">RHO</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_bilinear</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">t</span><span class="p">):</span>
+        <span class="c1"># clamp to the box (no extrapolation), then bilinear on the two grids</span>
+        <span class="n">pv</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">p_grid</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">p_grid</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">tv</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">t_grid</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">t_grid</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">jp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">searchsorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">p_grid</span><span class="p">,</span> <span class="n">pv</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">p_grid</span><span class="o">.</span><span class="n">size</span> <span class="o">-</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="n">it</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">searchsorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">t_grid</span><span class="p">,</span> <span class="n">tv</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">t_grid</span><span class="o">.</span><span class="n">size</span> <span class="o">-</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="n">p0</span><span class="p">,</span> <span class="n">p1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">p_grid</span><span class="p">[</span><span class="n">jp</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">p_grid</span><span class="p">[</span><span class="n">jp</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="n">t0</span><span class="p">,</span> <span class="n">t1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">t_grid</span><span class="p">[</span><span class="n">it</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">t_grid</span><span class="p">[</span><span class="n">it</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="n">fp</span> <span class="o">=</span> <span class="p">(</span><span class="n">pv</span> <span class="o">-</span> <span class="n">p0</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">p1</span> <span class="o">-</span> <span class="n">p0</span><span class="p">)</span>
+        <span class="n">ft</span> <span class="o">=</span> <span class="p">(</span><span class="n">tv</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">t1</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span>
+        <span class="n">g00</span> <span class="o">=</span> <span class="n">grid</span><span class="p">[</span><span class="n">it</span><span class="p">,</span> <span class="n">jp</span><span class="p">];</span> <span class="n">g01</span> <span class="o">=</span> <span class="n">grid</span><span class="p">[</span><span class="n">it</span><span class="p">,</span> <span class="n">jp</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="n">g10</span> <span class="o">=</span> <span class="n">grid</span><span class="p">[</span><span class="n">it</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">jp</span><span class="p">];</span> <span class="n">g11</span> <span class="o">=</span> <span class="n">grid</span><span class="p">[</span><span class="n">it</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">jp</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="k">return</span> <span class="p">((</span><span class="mi">1</span> <span class="o">-</span> <span class="n">ft</span><span class="p">)</span> <span class="o">*</span> <span class="p">((</span><span class="mi">1</span> <span class="o">-</span> <span class="n">fp</span><span class="p">)</span> <span class="o">*</span> <span class="n">g00</span> <span class="o">+</span> <span class="n">fp</span> <span class="o">*</span> <span class="n">g01</span><span class="p">)</span>
+                <span class="o">+</span> <span class="n">ft</span> <span class="o">*</span> <span class="p">((</span><span class="mi">1</span> <span class="o">-</span> <span class="n">fp</span><span class="p">)</span> <span class="o">*</span> <span class="n">g10</span> <span class="o">+</span> <span class="n">fp</span> <span class="o">*</span> <span class="n">g11</span><span class="p">))</span>
+
+<div class="viewcode-block" id="ZTable.z">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.ZTable.z">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">z</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p_psia</span><span class="p">,</span> <span class="n">t_rankine</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Interpolated compressibility factor Z(P, T).&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_bilinear</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_Z</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">p_psia</span><span class="p">,</span> <span class="nb">float</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">t_rankine</span><span class="p">,</span> <span class="nb">float</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="ZTable.rho_ppg">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.ZTable.rho_ppg">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rho_ppg</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p_psia</span><span class="p">,</span> <span class="n">t_rankine</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Interpolated gas density [ppg] at (P, T).&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_bilinear</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_RHO</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">p_psia</span><span class="p">,</span> <span class="nb">float</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">t_rankine</span><span class="p">,</span> <span class="nb">float</span><span class="p">))</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>
