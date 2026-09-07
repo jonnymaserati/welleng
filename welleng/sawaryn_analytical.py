@@ -59,7 +59,7 @@ four decades.
 """
 
 import numpy as np
-from scipy.optimize import minimize, minimize_scalar, brentq
+from scipy.optimize import minimize_scalar, brentq
 
 from ._eq15_c0_quartic import eq15_c0_quartic as _eq15_c0_quartic
 
@@ -1254,126 +1254,42 @@ def _target_frame(target):
 
 # The measured-depth surface MD(landing point) has a smooth unit gradient in the
 # feasible interior (verified: |grad MD| = 1, eikonal-like) but is punctured by
-# infeasible pockets. So each face is minimised by a coarse grid seed (to land in
-# a feasible basin) followed by a gradient polish (L-BFGS-B); infeasible evals are
-# clamped so the optimiser steps around the pockets, and the polish is only
-# accepted if it beats the seed and stays in bounds and feasible.
+# infeasible pockets. Because _clc_solutions is vectorised (one companion-
+# eigenvalue solve over N pose-pairs), a whole grid is evaluated in ONE call, so
+# each face is minimised by successive BATCHED grid refinement (_refine_batched)
+# rather than a sequential optimiser: infeasible evals are clamped to _BIG so the
+# refinement steps around the pockets. Fully vectorised end to end.
 _BIG = 1e9
 
 
-def _min_on_grid_1d(fn, lo, hi, seed=41, fn_batch=None):
-    """Minimum of ``fn(s)`` on ``[lo, hi]``: fine grid seed then a bracketed polish.
-
-    Kept grid-robust (not gradient-based): the 1-D face is cheap and its minimum
-    can sit in a narrow well that a gradient step overshoots. ``fn_batch`` (an
-    array of ``s`` -> array of values) evaluates the whole seed grid in one call
-    when given; the scalar ``fn`` is used only for the polish.
+def _refine_batched(fn_batch, lo, hi, stages):
+    """Minimum of a batched objective ``fn_batch((M, d)) -> (M,)`` over the box
+    ``[lo, hi]``, by successive batched grid refinement: each stage evaluates its
+    whole grid in ONE call, then shrinks the box to the neighbouring cell of the
+    best point. Fully vectorised — no sequential optimiser (an optimiser's steps
+    depend on the previous one and cannot batch; here the cheap batched evals make
+    one unnecessary). ``stages`` is the per-stage grid size along each axis, e.g.
+    ``(41, 9)`` for a 1-D face or ``(9, 9, 9)`` for a surface. Returns
+    ``(value, argmin)`` (``argmin`` an ndarray) or ``(inf, None)`` if all
+    infeasible.
     """
-    ss = np.linspace(lo, hi, seed)
-    vals = np.asarray(fn_batch(ss)) if fn_batch is not None else [fn(s) for s in ss]
-    i = int(np.argmin(vals))
-    best = (float(vals[i]), float(ss[i]))
-    if not np.isfinite(best[0]):
-        return best
-    a, b = ss[max(i - 1, 0)], ss[min(i + 1, seed - 1)]
-    r = minimize_scalar(lambda x: min(fn(x), _BIG), bounds=(a, b), method="bounded")
-    fr = fn(float(r.x))
-    if a <= r.x <= b and np.isfinite(fr) and fr < best[0]:
-        best = (float(fr), float(r.x))
-    return best
-
-
-def _min_on_box(fn, lo, hi, seed=5, eps=0.5, fn_batch=None):
-    """Minimum of scalar ``fn(x)`` (``x`` an ndarray) over the box ``[lo, hi]`` of
-    ANY dimension: a coarse grid seed then a gradient (L-BFGS-B) polish, with
-    infeasible evals clamped so the optimiser steps around the pockets. Returns
-    ``(value, argmin)`` (``argmin`` an ndarray) or ``(inf, None)`` if all evals
-    are infeasible. ``eps`` is the finite-difference step (metres for a positional
-    box, radians for an angular one). ``fn_batch`` ((M,d) array -> (M,) values)
-    evaluates the whole seed grid in one call when given; ``fn`` is used only for
-    the polish.
-    """
-    lo = np.asarray(lo, float)
-    hi = np.asarray(hi, float)
-    axes = [np.linspace(lo[i], hi[i], seed) for i in range(len(lo))]
-    grid = np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, len(lo))
-    if fn_batch is not None:
+    lo = np.asarray(lo, float).astype(float).copy()
+    hi = np.asarray(hi, float).astype(float).copy()
+    d = len(lo)
+    best = (np.inf, None)
+    for n in stages:
+        axes = [np.linspace(lo[k], hi[k], n) for k in range(d)]
+        grid = np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, d)
         vals = np.asarray(fn_batch(grid))
         i = int(np.argmin(vals))
-        best = (float(vals[i]), grid[i]) if np.isfinite(vals[i]) else (np.inf, None)
-    else:
-        best = (np.inf, None)
-        for pt in grid:
-            val = fn(pt)
-            if val < best[0]:
-                best = (float(val), pt)
-    if best[1] is None or not np.isfinite(best[0]):
-        return best
-    r = minimize(lambda x: min(fn(x), _BIG), best[1], method="L-BFGS-B",
-                 bounds=list(zip(lo, hi)), options={"eps": eps, "ftol": 1e-7})
-    xr = np.asarray(r.x, float)
-    fr = fn(xr)
-    if (np.all(xr >= lo - 1e-9) and np.all(xr <= hi + 1e-9)
-            and np.isfinite(fr) and fr < best[0]):
-        best = (float(fr), xr)
+        if not np.isfinite(vals[i]):
+            return best
+        best = (float(vals[i]), grid[i])
+        idx = np.unravel_index(i, tuple(n for _ in range(d)))
+        for k in range(d):
+            lo[k] = axes[k][max(idx[k] - 1, 0)]
+            hi[k] = axes[k][min(idx[k] + 1, n - 1)]
     return best
-
-
-def _min_on_surface(fn, lo, hi, coarse=9, fine=9, fn_batch=None):
-    """Minimum of ``fn(angles)`` over a 2-D angular box ``[lo, hi]``: coarse grid
-    locate, local refine around the best cell, then a gradient polish confined to
-    that cell. Used for curved 3-D boundaries (sphere / ellipsoid surface), where
-    the measured-depth surface is eikonal with feasibility pockets and a single
-    coarse grid + gradient step lands unreliably. ``fn_batch`` ((M,2) -> (M,))
-    evaluates each grid in one call when given; ``fn`` is used only for the polish.
-    Returns ``(value, argmin)``.
-    """
-    lo = np.asarray(lo, float)
-    hi = np.asarray(hi, float)
-
-    def _grid(b0, b1, n):
-        g0 = np.linspace(b0[0], b1[0], n)
-        g1 = np.linspace(b0[1], b1[1], n)
-        pts = np.stack(np.meshgrid(g0, g1, indexing="ij"), axis=-1).reshape(-1, 2)
-        vals = np.asarray(fn_batch(pts)) if fn_batch is not None \
-            else np.array([fn(p) for p in pts])
-        m = int(np.argmin(vals))
-        return float(vals[m]), pts[m], (m // n, m % n), g0, g1
-
-    v0, p0, (i, j), a0, a1 = _grid(lo, hi, coarse)
-    if not np.isfinite(v0):
-        return v0, None
-    best = (v0, p0)
-    cl = np.array([a0[max(i - 1, 0)], a1[max(j - 1, 0)]])
-    ch = np.array([a0[min(i + 1, coarse - 1)], a1[min(j + 1, coarse - 1)]])
-    vf, pf, _, _, _ = _grid(cl, ch, fine)          # local refine
-    if vf < best[0]:
-        best = (vf, pf)
-    r = minimize(lambda x: min(fn(x), _BIG), best[1], method="L-BFGS-B",
-                 bounds=list(zip(cl, ch)), options={"eps": 0.02, "ftol": 1e-8})
-    fr = fn(np.asarray(r.x))
-    if np.isfinite(fr) and fr < best[0]:
-        return float(fr), np.asarray(r.x)
-    return best[0], best[1]
-
-
-def _min_from_center(fn, center, lo, hi, eps=0.5):
-    """Single-start (from the region centre) L-BFGS-B minimum of ``fn`` over the
-    box ``[lo, hi]``. For a 3-D region interior: if the optimum is interior it
-    sits in one basin the centre-start reaches, and a boundary optimum is caught
-    by the boundary faces separately — so a full interior grid is wasted work.
-    Returns ``(value, argmin)``.
-    """
-    center = np.asarray(center, float)
-    v0 = fn(center)
-    r = minimize(lambda x: min(fn(x), _BIG), center, method="L-BFGS-B",
-                 bounds=list(zip(np.asarray(lo, float), np.asarray(hi, float))),
-                 options={"eps": eps, "ftol": 1e-7})
-    xr = np.asarray(r.x, float)
-    fr = fn(xr)
-    if np.isfinite(fr) and fr < v0:
-        return float(fr), xr
-    return (float(v0), center) if np.isfinite(v0) else (np.inf, None)
 
 
 def _sphere_dir(angles):
@@ -1456,9 +1372,6 @@ def solve_clc_landing_region(p1, t1, t4, target, R1, R2=None, k=1.0):
             return np.inf, None
         return s["total_md"], s
 
-    def mdf(p4):
-        return _md(p4)[0]
-
     def mdb(pts):
         """Batched measured depth: ``(N, 3)`` points -> ``(N,)`` min feasible MD
         (``inf`` where infeasible), in ONE vectorised ``_clc_solutions`` call. The
@@ -1479,109 +1392,112 @@ def solve_clc_landing_region(p1, t1, t4, target, R1, R2=None, k=1.0):
 
     cands = []          # (md, p4)
     frame = None
+    # every face is minimised by fully-vectorised batched grid refinement — one
+    # _clc_solutions call per stage, no sequential optimiser. Stages are chosen
+    # so the refinement reaches sub-cm on these scales.
+    PLANAR_ST = (9, 9, 7, 7)          # a 2-D face (box / disk interior)
+    CURVE_ST = (49, 9, 9)             # a 1-D curved edge (circle/ellipse boundary)
+    SEG_ST = (17, 9, 9)              # a 1-D straight segment (polygon edge)
+    SURF_ST = (13, 9, 9, 7)          # a 2-D curved surface (sphere / ellipsoid)
+    VOL_ST = (9, 7, 7, 5)            # a 3-D interior
     if shape in _PLANAR:
         c, u, v = frame = _target_frame(target)
-
-        def P(ab):
-            return c + ab[0] * u + ab[1] * v
 
         def Pv(A):                             # vectorised: (M, 2) -> (M, 3)
             A = np.atleast_2d(A)
             return c + A[:, 0:1] * u + A[:, 1:2] * v
 
+        def p4_of(ab):
+            return Pv(np.asarray(ab, float)[None])[0]
+
         if shape == "rectangle":
             (a0, b0), (a1, b1) = g["pos1"], g["pos2"]
             lo = (min(a0, a1), min(b0, b1))
             hi = (max(a0, a1), max(b0, b1))
-            val, ab = _min_on_box(lambda x: mdf(P(x)), lo, hi, seed=5,
-                                  fn_batch=lambda A: mdb(Pv(A)))
+            val, ab = _refine_batched(lambda A: mdb(Pv(A)), lo, hi, PLANAR_ST)
             if ab is not None:
-                cands.append((val, P(ab)))
+                cands.append((val, p4_of(ab)))
         elif shape == "circle":
             r = float(g["radius"])
-            vi, ab = _min_on_box(
-                lambda x: mdf(P(x)) if x[0] ** 2 + x[1] ** 2 <= r * r else _BIG,
-                (-r, -r), (r, r), seed=5,
-                fn_batch=lambda A: np.where(
-                    A[:, 0] ** 2 + A[:, 1] ** 2 <= r * r, mdb(Pv(A)), _BIG))
-            if ab is not None and ab[0] ** 2 + ab[1] ** 2 <= r * r + 1e-9:
-                cands.append((vi, P(ab)))
-            vb, th = _min_on_grid_1d(
-                lambda s: mdf(P((r * np.cos(s), r * np.sin(s)))), 0.0, 2 * np.pi,
-                fn_batch=lambda S: mdb(Pv(np.stack(
-                    [r * np.cos(S), r * np.sin(S)], axis=1))))
-            cands.append((vb, P((r * np.cos(th), r * np.sin(th)))))
+            val, ab = _refine_batched(
+                lambda A: np.where(A[:, 0] ** 2 + A[:, 1] ** 2 <= r * r,
+                                   mdb(Pv(A)), _BIG),
+                (-r, -r), (r, r), PLANAR_ST)
+            if ab is not None and ab[0] ** 2 + ab[1] ** 2 <= r * r + 1e-6:
+                cands.append((val, p4_of(ab)))
+            vb, s = _refine_batched(
+                lambda A: mdb(Pv(np.stack(
+                    [r * np.cos(A[:, 0]), r * np.sin(A[:, 0])], axis=1))),
+                [0.0], [2 * np.pi], CURVE_ST)
+            if s is not None:
+                cands.append((vb, p4_of((r * np.cos(s[0]), r * np.sin(s[0])))))
         elif shape == "ellipse":
             r1, r2 = float(g["radius_1"]), float(g["radius_2"])
-
-            def ein(x):
-                return (x[0] / r1) ** 2 + (x[1] / r2) ** 2 <= 1.0
-            vi, ab = _min_on_box(
-                lambda x: mdf(P(x)) if ein(x) else _BIG, (-r1, -r2), (r1, r2),
-                seed=7, fn_batch=lambda A: np.where(
-                    (A[:, 0] / r1) ** 2 + (A[:, 1] / r2) ** 2 <= 1.0,
-                    mdb(Pv(A)), _BIG))
-            if ab is not None and ein(ab):
-                cands.append((vi, P(ab)))
-            vb, th = _min_on_grid_1d(
-                lambda s: mdf(P((r1 * np.cos(s), r2 * np.sin(s)))), 0.0, 2 * np.pi,
-                fn_batch=lambda S: mdb(Pv(np.stack(
-                    [r1 * np.cos(S), r2 * np.sin(S)], axis=1))))
-            cands.append((vb, P((r1 * np.cos(th), r2 * np.sin(th)))))
+            val, ab = _refine_batched(
+                lambda A: np.where((A[:, 0] / r1) ** 2 + (A[:, 1] / r2) ** 2 <= 1.0,
+                                   mdb(Pv(A)), _BIG),
+                (-r1, -r2), (r1, r2), PLANAR_ST)
+            if ab is not None and (ab[0] / r1) ** 2 + (ab[1] / r2) ** 2 <= 1.0 + 1e-6:
+                cands.append((val, p4_of(ab)))
+            vb, s = _refine_batched(
+                lambda A: mdb(Pv(np.stack(
+                    [r1 * np.cos(A[:, 0]), r2 * np.sin(A[:, 0])], axis=1))),
+                [0.0], [2 * np.pi], CURVE_ST)
+            if s is not None:
+                cands.append((vb, p4_of((r1 * np.cos(s[0]), r2 * np.sin(s[0])))))
         elif shape == "polygon":
             verts = np.asarray(g["vertices"], float)
             lo, hi = verts.min(0), verts.max(0)
 
             def _in_poly_batch(A):
                 return np.array([_point_in_polygon(a, b, verts) for a, b in A])
-            vi, ab = _min_on_box(
-                lambda x: mdf(P(x)) if _point_in_polygon(x[0], x[1], verts) else _BIG,
-                lo, hi, seed=9,
-                fn_batch=lambda A: np.where(_in_poly_batch(A), mdb(Pv(A)), _BIG))
+            val, ab = _refine_batched(
+                lambda A: np.where(_in_poly_batch(A), mdb(Pv(A)), _BIG),
+                lo, hi, PLANAR_ST)
             if ab is not None and _point_in_polygon(ab[0], ab[1], verts):
-                cands.append((vi, P(ab)))
+                cands.append((val, p4_of(ab)))
             for i in range(len(verts)):
                 p, q = verts[i], verts[(i + 1) % len(verts)]
-                vb, s = _min_on_grid_1d(
-                    lambda s, p=p, q=q: mdf(P(p + s * (q - p))), 0.0, 1.0,
-                    fn_batch=lambda S, p=p, q=q: mdb(
-                        Pv(p[None, :] + S[:, None] * (q - p)[None, :])))
-                cands.append((vb, P(p + s * (q - p))))
+                vb, s = _refine_batched(
+                    lambda A, p=p, q=q: mdb(Pv(p[None, :] + A[:, 0:1] * (q - p)[None, :])),
+                    [0.0], [1.0], SEG_ST)
+                if s is not None:
+                    cands.append((vb, p4_of(p + s[0] * (q - p))))
     elif shape == "cube":
         h = np.asarray(g["half_extents"], float)
-        val, x = _min_on_box(mdf, center - h, center + h, seed=5,  # spans all faces
-                             fn_batch=mdb)
+        val, x = _refine_batched(mdb, center - h, center + h, VOL_ST)  # spans faces
         if x is not None:
             cands.append((val, x))
     elif shape == "sphere":
         r = float(g["radius"])
-        vi, x = _min_from_center(
-            lambda p: mdf(p) if np.sum((p - center) ** 2) <= r * r else _BIG,
-            center, center - r, center + r)
+        val, x = _refine_batched(
+            lambda A: np.where(np.sum((A - center) ** 2, axis=1) <= r * r,
+                               mdb(A), _BIG),
+            center - r, center + r, VOL_ST)
         if x is not None and np.sum((x - center) ** 2) <= r * r + 1e-6:
-            cands.append((vi, x))
-        vb, a = _min_on_surface(
-            lambda a: mdf(center + r * _sphere_dir(a)), (0.0, 0.0),
-            (np.pi, 2 * np.pi), fn_batch=lambda A: mdb(center + r * _sphere_dirs(A)))
+            cands.append((val, x))
+        vb, a = _refine_batched(lambda A: mdb(center + r * _sphere_dirs(A)),
+                                [0.0, 0.0], [np.pi, 2 * np.pi], SURF_ST)
         if a is not None:
             cands.append((vb, center + r * _sphere_dir(a)))
     elif shape == "gaussian":
         if target.cov is None:
             raise ValueError("a gaussian target needs a covariance (cov)")
         L = np.linalg.cholesky(target.cov)
+        Li = np.linalg.inv(L)
         ext = k * np.sqrt(np.diag(target.cov))
 
-        def maha(p):
-            d = np.linalg.solve(L, p - center)
-            return d @ d
-        vi, x = _min_from_center(lambda p: mdf(p) if maha(p) <= k * k else _BIG,
-                                 center, center - ext, center + ext)
-        if x is not None and maha(x) <= k * k + 1e-6:
-            cands.append((vi, x))
-        vb, a = _min_on_surface(
-            lambda a: mdf(center + k * (L @ _sphere_dir(a))), (0.0, 0.0),
-            (np.pi, 2 * np.pi),
-            fn_batch=lambda A: mdb(center + k * (_sphere_dirs(A) @ L.T)))
+        def maha_b(A):
+            D = (np.atleast_2d(A) - center) @ Li.T
+            return np.sum(D * D, axis=1)
+        val, x = _refine_batched(
+            lambda A: np.where(maha_b(A) <= k * k, mdb(A), _BIG),
+            center - ext, center + ext, VOL_ST)
+        if x is not None and maha_b(x)[0] <= k * k + 1e-6:
+            cands.append((val, x))
+        vb, a = _refine_batched(
+            lambda A: mdb(center + k * (_sphere_dirs(A) @ L.T)),
+            [0.0, 0.0], [np.pi, 2 * np.pi], SURF_ST)
         if a is not None:
             cands.append((vb, center + k * (L @ _sphere_dir(a))))
     else:
