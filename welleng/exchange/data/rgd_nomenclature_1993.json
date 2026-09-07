@@ -1,0 +1,2166 @@
+{
+ "_provenance": {
+  "source": "Van Adrichem Boogaert & Kouwe (1993), Stratigraphic Nomenclature of the Netherlands, revision RGD/NOGEPA, Mededelingen RGD vol. 50",
+  "version": "pre-2020 RGD (the nomenclature NLOG stratinterpretations use)",
+  "extracted": "2026-09-07 from a pdftotext OCR of the scanned PDF; code set unioned with the DINO-2021 302-code set for completeness",
+  "hierarchy": "parent = longest proper-prefix that is itself a code (RGD codes are prefix-nested by construction); verified on the P11 De Ruyter code set + 302 DINO-2021 survivors",
+  "names": "OCR-raw and UNVERIFIED \u2014 the scan spaces letters and confuses w/vv, r/n etc.; use codes+hierarchy, treat names as indicative"
+ },
+ "units": {
+  "AKZO": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "AMOCO": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "AT": {
+   "name": "Altena Group",
+   "rank": "group",
+   "parent": null
+  },
+  "ATAL": {
+   "name": "Aalburg Formation",
+   "rank": "formation",
+   "parent": "AT"
+  },
+  "ATBR": {
+   "name": "Brabant Formation",
+   "rank": "formation",
+   "parent": "AT"
+  },
+  "ATBR1": {
+   "name": "Brabant Limestone Member, Lower",
+   "rank": "member",
+   "parent": "ATBR"
+  },
+  "ATBR2": {
+   "name": "Brabant Limestone Member, Middle",
+   "rank": "member",
+   "parent": "ATBR"
+  },
+  "ATBR3": {
+   "name": "Brabant Limestone Member, Upper",
+   "rank": "member",
+   "parent": "ATBR"
+  },
+  "ATBRK": {
+   "name": null,
+   "rank": null,
+   "parent": "ATBR"
+  },
+  "ATBRL": {
+   "name": "Brabant Marl Member, Lower",
+   "rank": "member",
+   "parent": "ATBR"
+  },
+  "ATBRM": {
+   "name": "Brabant Marl Member, Middle",
+   "rank": "member",
+   "parent": "ATBR"
+  },
+  "ATBRO": {
+   "name": "Oisterwijk Limestone Member",
+   "rank": "member",
+   "parent": "ATBR"
+  },
+  "ATBRU": {
+   "name": "Brabant Ma rl Member, Upper",
+   "rank": "member",
+   "parent": "ATBR"
+  },
+  "ATPO": {
+   "name": "Posidonia Shale Formation",
+   "rank": "formation",
+   "parent": "AT"
+  },
+  "ATRT": {
+   "name": "Sleen Formation",
+   "rank": "formation",
+   "parent": "AT"
+  },
+  "ATWD": {
+   "name": "Werkendam Formation",
+   "rank": "formation",
+   "parent": "AT"
+  },
+  "ATWDL": {
+   "name": "Lovver Werkendam Member",
+   "rank": "member",
+   "parent": "ATWD"
+  },
+  "ATWDM": {
+   "name": "Werkendam Member, Middle",
+   "rank": "member",
+   "parent": "ATWD"
+  },
+  "ATWDU": {
+   "name": "Werkendam Member, Upper",
+   "rank": "member",
+   "parent": "ATWD"
+  },
+  "BP": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "CF": {
+   "name": "Farne Group",
+   "rank": "group",
+   "parent": null
+  },
+  "CFCS": {
+   "name": "Cementstone Formation",
+   "rank": "formation",
+   "parent": "CF"
+  },
+  "CFEB": {
+   "name": "Elleboog Formation",
+   "rank": "formation",
+   "parent": "CF"
+  },
+  "CFVD": {
+   "name": "Yoredale Formation",
+   "rank": "formation",
+   "parent": "CF"
+  },
+  "CFYD": {
+   "name": "Yoredale Formation",
+   "rank": "formation",
+   "parent": "CF"
+  },
+  "CK": {
+   "name": "Chalk Group",
+   "rank": "group",
+   "parent": null
+  },
+  "CKAK": {
+   "name": "Aken Formation",
+   "rank": "formation",
+   "parent": "CK"
+  },
+  "CKEK": {
+   "name": "Ekofisk Formation",
+   "rank": "formation",
+   "parent": "CK"
+  },
+  "CKGP": {
+   "name": "Gulpen Formation",
+   "rank": "formation",
+   "parent": "CK"
+  },
+  "CKGR": {
+   "name": "Ommelanden Formation",
+   "rank": "formation",
+   "parent": "CK"
+  },
+  "CKHM": {
+   "name": "Houthem Formation",
+   "rank": "formation",
+   "parent": "CK"
+  },
+  "CKMA": {
+   "name": "Maastricht Formation",
+   "rank": "formation",
+   "parent": "CK"
+  },
+  "CKTX": {
+   "name": "Texel Formation",
+   "rank": "formation",
+   "parent": "CK"
+  },
+  "CKTXG": {
+   "name": "Texel Greensand Member",
+   "rank": "member",
+   "parent": "CKTX"
+  },
+  "CKTXM": {
+   "name": "_1.2 Texel Mar/stone Member",
+   "rank": "member",
+   "parent": "CKTX"
+  },
+  "CKTXP": {
+   "name": "Plenus Marl Member",
+   "rank": "member",
+   "parent": "CKTX"
+  },
+  "CKVA": {
+   "name": "Vaals Formation",
+   "rank": "formation",
+   "parent": "CK"
+  },
+  "CL": {
+   "name": "Carboniferous Limestone Group",
+   "rank": "group",
+   "parent": null
+  },
+  "CLZL": {
+   "name": "Zeeland Formation",
+   "rank": "formation",
+   "parent": "CL"
+  },
+  "CLZLB": {
+   "name": "Beveland Member",
+   "rank": "member",
+   "parent": "CLZL"
+  },
+  "CLZLG": {
+   "name": "Goeree Member",
+   "rank": "member",
+   "parent": "CLZL"
+  },
+  "CLZLS": {
+   "name": "Schouwen Member",
+   "rank": "member",
+   "parent": "CLZL"
+  },
+  "DC": {
+   "name": "Limburg Group",
+   "rank": "group",
+   "parent": null
+  },
+  "DCC": {
+   "name": "Caumer Subgroup",
+   "rank": "subgroup",
+   "parent": "DC"
+  },
+  "DCCB": {
+   "name": "Baarlo Formation",
+   "rank": "formation",
+   "parent": "DCC"
+  },
+  "DCCK": {
+   "name": "Klaverbank Formation",
+   "rank": "formation",
+   "parent": "DCC"
+  },
+  "DCCKB": {
+   "name": "Botney Member",
+   "rank": "member",
+   "parent": "DCCK"
+  },
+  "DCCKM": {
+   "name": null,
+   "rank": null,
+   "parent": "DCCK"
+  },
+  "DCCR": {
+   "name": "Ruurlo Formation",
+   "rank": "formation",
+   "parent": "DCC"
+  },
+  "DCCU": {
+   "name": "Maurits Formation",
+   "rank": "formation",
+   "parent": "DCC"
+  },
+  "DCCUK": {
+   "name": "Kernperkoul Member",
+   "rank": "member",
+   "parent": "DCCU"
+  },
+  "DCCUM": {
+   "name": null,
+   "rank": null,
+   "parent": "DCCU"
+  },
+  "DCD": {
+   "name": "Dinkel Subgroup",
+   "rank": "subgroup",
+   "parent": "DC"
+  },
+  "DCDG": {
+   "name": "Hospital G r ound Formation",
+   "rank": "formation",
+   "parent": "DCD"
+  },
+  "DCDH": {
+   "name": "Hellevoetsluis Formation",
+   "rank": "formation",
+   "parent": "DCD"
+  },
+  "DCDN": {
+   "name": "Neeroeteren Formation",
+   "rank": "formation",
+   "parent": "DCD"
+  },
+  "DCDT": {
+   "name": "Tubbergen Formation",
+   "rank": "formation",
+   "parent": "DCD"
+  },
+  "DCG": {
+   "name": "Geul Subgroup",
+   "rank": "subgroup",
+   "parent": "DC"
+  },
+  "DCGE": {
+   "name": "Epen Formation",
+   "rank": "formation",
+   "parent": "DCG"
+  },
+  "DCGEG": {
+   "name": "Geverik Member",
+   "rank": "member",
+   "parent": "DCGE"
+  },
+  "DCGEM": {
+   "name": null,
+   "rank": null,
+   "parent": "DCGE"
+  },
+  "DCGET": {
+   "name": null,
+   "rank": null,
+   "parent": "DCGE"
+  },
+  "DCGEU": {
+   "name": "Ubachsberg Member",
+   "rank": "member",
+   "parent": "DCGE"
+  },
+  "DCGM": {
+   "name": "Millstone Grit Formation",
+   "rank": "formation",
+   "parent": "DCG"
+  },
+  "DCH": {
+   "name": "Hunze Subgroup",
+   "rank": "subgroup",
+   "parent": "DC"
+  },
+  "DCHL": {
+   "name": "De Lutte Formation",
+   "rank": "formation",
+   "parent": "DCH"
+  },
+  "DCHP": {
+   "name": "Step Graben Formation",
+   "rank": "formation",
+   "parent": "DCH"
+  },
+  "DCHS": {
+   "name": "Strijen Formation",
+   "rank": "formation",
+   "parent": "DCH"
+  },
+  "DSM": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "FINA": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "GAPS": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "ICS": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "IUGS": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "KB172": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "KN": {
+   "name": "Rijnland Group",
+   "rank": "group",
+   "parent": null
+  },
+  "KNGL": {
+   "name": "Holland Formation",
+   "rank": "formation",
+   "parent": "KN"
+  },
+  "KNGLG": {
+   "name": "Holland Greensand Member",
+   "rank": "member",
+   "parent": "KNGL"
+  },
+  "KNGLL": {
+   "name": "Lovver Holland Marl Member",
+   "rank": "member",
+   "parent": "KNGL"
+  },
+  "KNGLM": {
+   "name": "Middle Holland Claystone Member",
+   "rank": "member",
+   "parent": "KNGL"
+  },
+  "KNGLS": {
+   "name": "Spijkenisse Greensand Member",
+   "rank": "member",
+   "parent": "KNGL"
+  },
+  "KNGLU": {
+   "name": "Holland Marl Member, Upper",
+   "rank": "member",
+   "parent": "KNGL"
+  },
+  "KNNC": {
+   "name": "Vl ieland Claystone Formation",
+   "rank": "formation",
+   "parent": "KN"
+  },
+  "KNNCA": {
+   "name": "!Jsselmonde Claystone Member",
+   "rank": "member",
+   "parent": "KNNC"
+  },
+  "KNNCE": {
+   "name": "Ruinen Member",
+   "rank": "member",
+   "parent": "KNNC"
+  },
+  "KNNCK": {
+   "name": "Vlie land Marl Member",
+   "rank": "member",
+   "parent": "KNNC"
+  },
+  "KNNCM": {
+   "name": null,
+   "rank": null,
+   "parent": "KNNC"
+  },
+  "KNNCR": {
+   "name": null,
+   "rank": null,
+   "parent": "KNNC"
+  },
+  "KNNCS": {
+   "name": null,
+   "rank": null,
+   "parent": "KNNC"
+  },
+  "KNNCU": {
+   "name": "Eemhaven Member",
+   "rank": "member",
+   "parent": "KNNC"
+  },
+  "KNNCV": {
+   "name": "Bentheim Claystone Member",
+   "rank": "member",
+   "parent": "KNNC"
+  },
+  "KNNCW": {
+   "name": "Westerbork Member",
+   "rank": "member",
+   "parent": "KNNC"
+  },
+  "KNNGR": {
+   "name": null,
+   "rank": null,
+   "parent": "KN"
+  },
+  "KNNS": {
+   "name": "Vlieland Sandstone Formation",
+   "rank": "formation",
+   "parent": "KN"
+  },
+  "KNNSB": {
+   "name": "Berke! Sandstone Member",
+   "rank": "member",
+   "parent": "KNNS"
+  },
+  "KNNSC": {
+   "name": "Berke! Sand-Claystone Member",
+   "rank": "member",
+   "parent": "KNNS"
+  },
+  "KNNSD": {
+   "name": null,
+   "rank": null,
+   "parent": "KNNS"
+  },
+  "KNNSF": {
+   "name": "Fries/and Member",
+   "rank": "member",
+   "parent": "KNNS"
+  },
+  "KNNSG": {
+   "name": "Gildehaus Sandstone Member",
+   "rank": "member",
+   "parent": "KNNS"
+  },
+  "KNNSH": {
+   "name": "Helder Member",
+   "rank": "member",
+   "parent": "KNNS"
+  },
+  "KNNSI": {
+   "name": "Rijn Member",
+   "rank": "member",
+   "parent": "KNNS"
+  },
+  "KNNSK": {
+   "name": "Kotter Member",
+   "rank": "member",
+   "parent": "KNNS"
+  },
+  "KNNSL": {
+   "name": "De Lier Member",
+   "rank": "member",
+   "parent": "KNNS"
+  },
+  "KNNSN": {
+   "name": null,
+   "rank": null,
+   "parent": "KNNS"
+  },
+  "KNNSO": {
+   "name": null,
+   "rank": null,
+   "parent": "KNNS"
+  },
+  "KNNSP": {
+   "name": "Bentheim Sandstone Member",
+   "rank": "member",
+   "parent": "KNNS"
+  },
+  "KNNSR": {
+   "name": "Rijswijk Member",
+   "rank": "member",
+   "parent": "KNNS"
+  },
+  "KNNSY": {
+   "name": "!Jsselmonde Sandstone Member",
+   "rank": "member",
+   "parent": "KNNS"
+  },
+  "NAM": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "NL": {
+   "name": "Lovver North Sea Group",
+   "rank": "group",
+   "parent": null
+  },
+  "NLDO": {
+   "name": null,
+   "rank": null,
+   "parent": "NL"
+  },
+  "NLDOAS": {
+   "name": null,
+   "rank": null,
+   "parent": "NLDO"
+  },
+  "NLDOBM": {
+   "name": null,
+   "rank": null,
+   "parent": "NLDO"
+  },
+  "NLDOBR": {
+   "name": null,
+   "rank": null,
+   "parent": "NLDO"
+  },
+  "NLDOEN": {
+   "name": null,
+   "rank": null,
+   "parent": "NLDO"
+  },
+  "NLDOIE": {
+   "name": null,
+   "rank": null,
+   "parent": "NLDO"
+  },
+  "NLDOOO": {
+   "name": null,
+   "rank": null,
+   "parent": "NLDO"
+  },
+  "NLDOWY": {
+   "name": null,
+   "rank": null,
+   "parent": "NLDO"
+  },
+  "NLFF": {
+   "name": "Dongen Formation",
+   "rank": "formation",
+   "parent": "NL"
+  },
+  "NLFFB": {
+   "name": "Asse Member",
+   "rank": "member",
+   "parent": "NLFF"
+  },
+  "NLFFC": {
+   "name": null,
+   "rank": null,
+   "parent": "NLFF"
+  },
+  "NLFFD": {
+   "name": "Dongen Sand Member, Basal",
+   "rank": "member",
+   "parent": "NLFF"
+  },
+  "NLFFM": {
+   "name": "Brussels Marl Member",
+   "rank": "member",
+   "parent": "NLFF"
+  },
+  "NLFFS": {
+   "name": "Brussels Sand Member",
+   "rank": "member",
+   "parent": "NLFF"
+  },
+  "NLFFT": {
+   "name": "Dongen Tuffite Member, Basal",
+   "rank": "member",
+   "parent": "NLFF"
+  },
+  "NLFFY": {
+   "name": "-2.3 leper Member",
+   "rank": "member",
+   "parent": "NLFF"
+  },
+  "NLLA": {
+   "name": null,
+   "rank": null,
+   "parent": "NL"
+  },
+  "NLLAGE": {
+   "name": null,
+   "rank": null,
+   "parent": "NLLA"
+  },
+  "NLLALI": {
+   "name": null,
+   "rank": null,
+   "parent": "NLLA"
+  },
+  "NLLAOR": {
+   "name": null,
+   "rank": null,
+   "parent": "NLLA"
+  },
+  "NLLARE": {
+   "name": null,
+   "rank": null,
+   "parent": "NLLA"
+  },
+  "NLLASW": {
+   "name": null,
+   "rank": null,
+   "parent": "NLLA"
+  },
+  "NLLF": {
+   "name": "Landen Formation",
+   "rank": "formation",
+   "parent": "NL"
+  },
+  "NLLFC": {
+   "name": "Landen Clay Member",
+   "rank": "member",
+   "parent": "NLLF"
+  },
+  "NLLFG": {
+   "name": "Gelinden Member",
+   "rank": "member",
+   "parent": "NLLF"
+  },
+  "NLLFL": {
+   "name": "Svvalmen Member",
+   "rank": "member",
+   "parent": "NLLF"
+  },
+  "NLLFR": {
+   "name": "Reusel Member",
+   "rank": "member",
+   "parent": "NLLF"
+  },
+  "NLLFS": {
+   "name": "Heers Member",
+   "rank": "member",
+   "parent": "NLLF"
+  },
+  "NM": {
+   "name": "North Sea Group, Middle",
+   "rank": "group",
+   "parent": null
+  },
+  "NMRF": {
+   "name": "Rupel Formation",
+   "rank": "formation",
+   "parent": "NM"
+  },
+  "NMRFB": {
+   "name": "Boom (Clay) Member",
+   "rank": "member",
+   "parent": "NMRF"
+  },
+  "NMRFC": {
+   "name": "Rupel Clay Member",
+   "rank": "member",
+   "parent": "NMRF"
+  },
+  "NMRFH": {
+   "name": "Brinkheurne Member",
+   "rank": "member",
+   "parent": "NMRF"
+  },
+  "NMRFN": {
+   "name": "Kleine Spouwen Member",
+   "rank": "member",
+   "parent": "NMRF"
+  },
+  "NMRFR": {
+   "name": "Ratum Member",
+   "rank": "member",
+   "parent": "NMRF"
+  },
+  "NMRFS": {
+   "name": "Berg (Sand) Member",
+   "rank": "member",
+   "parent": "NMRF"
+  },
+  "NMRFT": {
+   "name": "Steensel Member",
+   "rank": "member",
+   "parent": "NMRF"
+  },
+  "NMRFV": {
+   "name": "Vessem Member",
+   "rank": "member",
+   "parent": "NMRF"
+  },
+  "NMRFW": {
+   "name": "Winterswijk Member",
+   "rank": "member",
+   "parent": "NMRF"
+  },
+  "NMRU": {
+   "name": null,
+   "rank": null,
+   "parent": "NM"
+  },
+  "NMRUBE": {
+   "name": null,
+   "rank": null,
+   "parent": "NMRU"
+  },
+  "NMRUBO": {
+   "name": null,
+   "rank": null,
+   "parent": "NMRU"
+  },
+  "NMRUKS": {
+   "name": null,
+   "rank": null,
+   "parent": "NMRU"
+  },
+  "NMRUST": {
+   "name": null,
+   "rank": null,
+   "parent": "NMRU"
+  },
+  "NMRUWA": {
+   "name": null,
+   "rank": null,
+   "parent": "NMRU"
+  },
+  "NMTF": {
+   "name": "Tongeren Formation",
+   "rank": "formation",
+   "parent": "NM"
+  },
+  "NMTFG": {
+   "name": "Goudsberg Member",
+   "rank": "member",
+   "parent": "NMTF"
+  },
+  "NMTFK": {
+   "name": "Klimmen Member",
+   "rank": "member",
+   "parent": "NMTF"
+  },
+  "NMTO": {
+   "name": null,
+   "rank": null,
+   "parent": "NM"
+  },
+  "NMTOBA": {
+   "name": null,
+   "rank": null,
+   "parent": "NMTO"
+  },
+  "NMTOGO": {
+   "name": null,
+   "rank": null,
+   "parent": "NMTO"
+  },
+  "NMTOKL": {
+   "name": null,
+   "rank": null,
+   "parent": "NMTO"
+  },
+  "NMTORU": {
+   "name": null,
+   "rank": null,
+   "parent": "NMTO"
+  },
+  "NMTOWA": {
+   "name": null,
+   "rank": null,
+   "parent": "NMTO"
+  },
+  "NMVE": {
+   "name": null,
+   "rank": null,
+   "parent": "NM"
+  },
+  "NMVESO": {
+   "name": null,
+   "rank": null,
+   "parent": "NMVE"
+  },
+  "NMVEVO": {
+   "name": null,
+   "rank": null,
+   "parent": "NMVE"
+  },
+  "NMVEWI": {
+   "name": null,
+   "rank": null,
+   "parent": "NMVE"
+  },
+  "NMVF": {
+   "name": "Veldhoven Formation",
+   "rank": "formation",
+   "parent": "NM"
+  },
+  "NMVFO": {
+   "name": "Veldhoven Clay Member",
+   "rank": "member",
+   "parent": "NMVF"
+  },
+  "NMVFS": {
+   "name": "Someren Member",
+   "rank": "member",
+   "parent": "NMVF"
+  },
+  "NMVFV": {
+   "name": "Voort Member",
+   "rank": "member",
+   "parent": "NMVF"
+  },
+  "NOGEPA": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "NP21": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "NP22": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "NP25": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "NU": {
+   "name": "North Sea Group, Upper",
+   "rank": "group",
+   "parent": null
+  },
+  "NUAP": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUBA": {
+   "name": "Breda Formation",
+   "rank": "formation",
+   "parent": "NU"
+  },
+  "NUBAA": {
+   "name": "Aalten Member",
+   "rank": "member",
+   "parent": "NUBA"
+  },
+  "NUBAD": {
+   "name": "Delden Member",
+   "rank": "member",
+   "parent": "NUBA"
+  },
+  "NUBAE": {
+   "name": "Eibergen Member",
+   "rank": "member",
+   "parent": "NUBA"
+  },
+  "NUBAK": {
+   "name": "Kakert Member",
+   "rank": "member",
+   "parent": "NUBA"
+  },
+  "NUBAL": {
+   "name": null,
+   "rank": null,
+   "parent": "NUBA"
+  },
+  "NUBAN": {
+   "name": "Nieuweschans Member",
+   "rank": "member",
+   "parent": "NUBA"
+  },
+  "NUBAU": {
+   "name": null,
+   "rank": null,
+   "parent": "NUBA"
+  },
+  "NUBAV": {
+   "name": "Vrijherenberg Member",
+   "rank": "member",
+   "parent": "NUBA"
+  },
+  "NUBAZ": {
+   "name": "Zenderen Member",
+   "rank": "member",
+   "parent": "NUBA"
+  },
+  "NUBE": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUBR": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUBX": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUDN": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUDR": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUEC": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUEE": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUHS": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUHT": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUIE": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUIN": {
+   "name": "lnden Formation",
+   "rank": "formation",
+   "parent": "NU"
+  },
+  "NUKI": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUKK": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUKO": {
+   "name": "Kieseloiilite Formation",
+   "rank": "formation",
+   "parent": "NU"
+  },
+  "NUKOB": {
+   "name": "Brunssum Clay Member",
+   "rank": "member",
+   "parent": "NUKO"
+  },
+  "NUKOV": {
+   "name": "Venlo Clay Member",
+   "rank": "member",
+   "parent": "NUKO"
+  },
+  "NUKOW": {
+   "name": "Waubach Sand and Gravel Member",
+   "rank": "member",
+   "parent": "NUKO"
+  },
+  "NUKR": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUKW": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUMS": {
+   "name": "Pleistocene Maassluis Formation",
+   "rank": "formation",
+   "parent": "NU"
+  },
+  "NUNA": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUNI": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUOO": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUOT": {
+   "name": "Oosterhout Formation",
+   "rank": "formation",
+   "parent": "NU"
+  },
+  "NUPE": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUPZ": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUSA": {
+   "name": "Scheemda Formation",
+   "rank": "formation",
+   "parent": "NU"
+  },
+  "NUSAL": {
+   "name": "Lieve lde Member",
+   "rank": "member",
+   "parent": "NUSA"
+  },
+  "NUSAW": {
+   "name": "Weerselo Member",
+   "rank": "member",
+   "parent": "NUSA"
+  },
+  "NUST": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUSY": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUUR": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUVI": {
+   "name": "Vi lle Formation",
+   "rank": "formation",
+   "parent": "NU"
+  },
+  "NUVIH": {
+   "name": "Heksenberg Member",
+   "rank": "member",
+   "parent": "NUVI"
+  },
+  "NUWA": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "NUWB": {
+   "name": null,
+   "rank": null,
+   "parent": "NU"
+  },
+  "OB": {
+   "name": "Banjaard Group",
+   "rank": "group",
+   "parent": null
+  },
+  "OBBS": {
+   "name": null,
+   "rank": null,
+   "parent": "OB"
+  },
+  "OBGC": {
+   "name": null,
+   "rank": null,
+   "parent": "OB"
+  },
+  "OCHS": {
+   "name": "Strijen Formation",
+   "rank": "formation",
+   "parent": null
+  },
+  "OR": {
+   "name": "Old Red Group",
+   "rank": "group",
+   "parent": null
+  },
+  "ORBU": {
+   "name": "Buchan Formation",
+   "rank": "formation",
+   "parent": "OR"
+  },
+  "ORBUL": {
+   "name": null,
+   "rank": null,
+   "parent": "ORBU"
+  },
+  "ORBUR": {
+   "name": "Rhyolite Member",
+   "rank": "member",
+   "parent": "ORBU"
+  },
+  "ORBUU": {
+   "name": null,
+   "rank": null,
+   "parent": "ORBU"
+  },
+  "ORPA": {
+   "name": "Patch Formation",
+   "rank": "formation",
+   "parent": "OR"
+  },
+  "ORTP": {
+   "name": "Tayport Formation",
+   "rank": "formation",
+   "parent": "OR"
+  },
+  "PGK": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "PWL": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "RB": {
+   "name": "Lovver Germanic Trias Group",
+   "rank": "group",
+   "parent": null
+  },
+  "RBBM": {
+   "name": null,
+   "rank": null,
+   "parent": "RB"
+  },
+  "RBM": {
+   "name": "Buntsandstein Subgroup, Main",
+   "rank": "subgroup",
+   "parent": "RB"
+  },
+  "RBMD": {
+   "name": "Detfurth Formation",
+   "rank": "formation",
+   "parent": "RBM"
+  },
+  "RBMDC": {
+   "name": "Detfurth Claystone Member",
+   "rank": "member",
+   "parent": "RBMD"
+  },
+  "RBMDL": {
+   "name": "Detfurth Sandstone Member, Lower",
+   "rank": "member",
+   "parent": "RBMD"
+  },
+  "RBMDU": {
+   "name": "Detfurth Sandstone Member, Upper",
+   "rank": "member",
+   "parent": "RBMD"
+  },
+  "RBMH": {
+   "name": "Hardegsen Formation",
+   "rank": "formation",
+   "parent": "RBM"
+  },
+  "RBMV": {
+   "name": "Volpriehausen Formation",
+   "rank": "formation",
+   "parent": "RBM"
+  },
+  "RBMVA": {
+   "name": null,
+   "rank": null,
+   "parent": "RBMV"
+  },
+  "RBMVC": {
+   "name": "Volpriehause n Clay-Siltstone Member",
+   "rank": "member",
+   "parent": "RBMV"
+  },
+  "RBMVL": {
+   "name": "Volpriehausen Sandstone Member, Lower",
+   "rank": "member",
+   "parent": "RBMV"
+  },
+  "RBMVU": {
+   "name": "Volpriehausen Sandstone Member, Upper",
+   "rank": "member",
+   "parent": "RBMV"
+  },
+  "RBS": {
+   "name": null,
+   "rank": null,
+   "parent": "RB"
+  },
+  "RBSH": {
+   "name": "Lovver Buntsandstein Formation",
+   "rank": "formation",
+   "parent": "RBS"
+  },
+  "RBSHM": {
+   "name": "Claystone Member, Main",
+   "rank": "member",
+   "parent": "RBSH"
+  },
+  "RBSHN": {
+   "name": "Nederweert Sandstone Member",
+   "rank": "member",
+   "parent": "RBSH"
+  },
+  "RBSHR": {
+   "name": "Rogenstein Member",
+   "rank": "member",
+   "parent": "RBSH"
+  },
+  "RBSM": {
+   "name": null,
+   "rank": null,
+   "parent": "RBS"
+  },
+  "RBSN": {
+   "name": null,
+   "rank": null,
+   "parent": "RBS"
+  },
+  "RBSR": {
+   "name": null,
+   "rank": null,
+   "parent": "RBS"
+  },
+  "RGD": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "RN": {
+   "name": "Germanic Trias Group, Upper",
+   "rank": "group",
+   "parent": null
+  },
+  "RNKP": {
+   "name": "Keuper Formation",
+   "rank": "formation",
+   "parent": "RN"
+  },
+  "RNKPC": {
+   "name": null,
+   "rank": null,
+   "parent": "RNKP"
+  },
+  "RNKPD": {
+   "name": "Dolomitic Keuper Member",
+   "rank": "member",
+   "parent": "RNKP"
+  },
+  "RNKPE": {
+   "name": "Red Keuper Evaporite Member",
+   "rank": "member",
+   "parent": "RNKP"
+  },
+  "RNKPL": {
+   "name": "Lower Keuper Claystone Member",
+   "rank": "member",
+   "parent": "RNKP"
+  },
+  "RNKPM": {
+   "name": "Keuper Claystone Member, Middle",
+   "rank": "member",
+   "parent": "RNKP"
+  },
+  "RNKPR": {
+   "name": "Red Keuper Claystone Member",
+   "rank": "member",
+   "parent": "RNKP"
+  },
+  "RNKPS": {
+   "name": "Keuper Evaporite Member, Main",
+   "rank": "member",
+   "parent": "RNKP"
+  },
+  "RNKPU": {
+   "name": "Keuper Claystone Member, Upper",
+   "rank": "member",
+   "parent": "RNKP"
+  },
+  "RNMU": {
+   "name": "Muschelkalk Formation",
+   "rank": "formation",
+   "parent": "RN"
+  },
+  "RNMUA": {
+   "name": "Muschelkalk Marl Member, Midd le",
+   "rank": "member",
+   "parent": "RNMU"
+  },
+  "RNMUC": {
+   "name": null,
+   "rank": null,
+   "parent": "RNMU"
+  },
+  "RNMUE": {
+   "name": "Muschelkalk Evaporite Member",
+   "rank": "member",
+   "parent": "RNMU"
+  },
+  "RNMUL": {
+   "name": "LoiNer Muschelkalk Member",
+   "rank": "member",
+   "parent": "RNMU"
+  },
+  "RNMUU": {
+   "name": "Muschelkalk Member, Upper",
+   "rank": "member",
+   "parent": "RNMU"
+  },
+  "RNR01": {
+   "name": "Main Riit Evaporite Member",
+   "rank": "member",
+   "parent": "RN"
+  },
+  "RNR02": {
+   "name": "Upper Riit Evaporite Member",
+   "rank": "member",
+   "parent": "RN"
+  },
+  "RNRO": {
+   "name": "Riit Formation",
+   "rank": "formation",
+   "parent": "RN"
+  },
+  "RNRO1": {
+   "name": "Riit Eva po rite Member, Main",
+   "rank": "member",
+   "parent": "RNRO"
+  },
+  "RNRO2": {
+   "name": "Riit Evaporite Member, Lower",
+   "rank": "member",
+   "parent": "RNRO"
+  },
+  "RNROC": {
+   "name": "Riit Claystone Member",
+   "rank": "member",
+   "parent": "RNRO"
+  },
+  "RNROF": {
+   "name": "Riit Fringe Sandstone Member",
+   "rank": "member",
+   "parent": "RNRO"
+  },
+  "RNROL": {
+   "name": "Riit Fringe Claystone Member, Lower",
+   "rank": "member",
+   "parent": "RNRO"
+  },
+  "RNROM": {
+   "name": "Intermediate Riit Claystone Member",
+   "rank": "member",
+   "parent": "RNRO"
+  },
+  "RNROS": {
+   "name": "Member",
+   "rank": "member",
+   "parent": "RNRO"
+  },
+  "RNROU": {
+   "name": "Riit Claystone Member, Upper",
+   "rank": "member",
+   "parent": "RNRO"
+  },
+  "RNROY": {
+   "name": "Riit Fringe Claystone Member, Upper",
+   "rank": "member",
+   "parent": "RNRO"
+  },
+  "RNSO": {
+   "name": "Soiling Formation",
+   "rank": "formation",
+   "parent": "RN"
+  },
+  "RNSOB": {
+   "name": "Basa l So iling Sandstone Member",
+   "rank": "member",
+   "parent": "RNSO"
+  },
+  "RNSOC": {
+   "name": "Soi ling Claystone Member",
+   "rank": "member",
+   "parent": "RNSO"
+  },
+  "RNSOM": {
+   "name": null,
+   "rank": null,
+   "parent": "RNSO"
+  },
+  "RNUB": {
+   "name": null,
+   "rank": null,
+   "parent": "RN"
+  },
+  "RO": {
+   "name": "Upper Rotliegend Group",
+   "rank": "group",
+   "parent": null
+  },
+  "ROCL": {
+   "name": "Si lverpit Formation",
+   "rank": "formation",
+   "parent": "RO"
+  },
+  "ROCLA": {
+   "name": "Ameland Member",
+   "rank": "member",
+   "parent": "ROCL"
+  },
+  "ROCLB": {
+   "name": "Buren Member",
+   "rank": "member",
+   "parent": "ROCL"
+  },
+  "ROCLE": {
+   "name": "Silverp it Evaporite Member",
+   "rank": "member",
+   "parent": "ROCL"
+  },
+  "ROCLH": {
+   "name": "Holl um Member",
+   "rank": "member",
+   "parent": "ROCL"
+  },
+  "ROCLL": {
+   "name": "Si lverpit Claystone Member, Lower",
+   "rank": "member",
+   "parent": "ROCL"
+  },
+  "ROCLT": {
+   "name": "Ten Boer Member",
+   "rank": "member",
+   "parent": "ROCL"
+  },
+  "ROCLU": {
+   "name": "Silverpit Claystone Member, Upper",
+   "rank": "member",
+   "parent": "ROCL"
+  },
+  "ROSL": {
+   "name": "Slochteren Formation",
+   "rank": "formation",
+   "parent": "RO"
+  },
+  "ROSLA": {
+   "name": null,
+   "rank": null,
+   "parent": "ROSL"
+  },
+  "ROSLL": {
+   "name": "Slochteren Member, Lower",
+   "rank": "member",
+   "parent": "ROSL"
+  },
+  "ROSLU": {
+   "name": "Slochteren Member, Upper",
+   "rank": "member",
+   "parent": "ROSL"
+  },
+  "RU": {
+   "name": "Rotliegend Group, Upper",
+   "rank": "group",
+   "parent": null
+  },
+  "RV": {
+   "name": "Lovver Rotliegend Group",
+   "rank": "group",
+   "parent": null
+  },
+  "RVBA": {
+   "name": null,
+   "rank": null,
+   "parent": "RV"
+  },
+  "RVVE": {
+   "name": "Em men Volcan ic Formation",
+   "rank": "formation",
+   "parent": "RV"
+  },
+  "RWS": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "SG": {
+   "name": "Scruff Group",
+   "rank": "group",
+   "parent": null
+  },
+  "SGGS": {
+   "name": "Scruff Greensand Formation",
+   "rank": "formation",
+   "parent": "SG"
+  },
+  "SGGSA": {
+   "name": "Scruff Argillaceous Member",
+   "rank": "member",
+   "parent": "SGGS"
+  },
+  "SGGSB": {
+   "name": "Scruff Basal Sandstone Member",
+   "rank": "member",
+   "parent": "SGGS"
+  },
+  "SGGSP": {
+   "name": "Scruff Spicul ite Member",
+   "rank": "member",
+   "parent": "SGGS"
+  },
+  "SGGSS": {
+   "name": "Stortemelk Member",
+   "rank": "member",
+   "parent": "SGGS"
+  },
+  "SGKI": {
+   "name": "Kimmeridge Clay Formation",
+   "rank": "formation",
+   "parent": "SG"
+  },
+  "SGKIC": {
+   "name": "Clay Deep Member",
+   "rank": "member",
+   "parent": "SGKI"
+  },
+  "SGKIM": {
+   "name": null,
+   "rank": null,
+   "parent": "SGKI"
+  },
+  "SGKIS": {
+   "name": "Schill Grund Member",
+   "rank": "member",
+   "parent": "SGKI"
+  },
+  "SGLU": {
+   "name": null,
+   "rank": null,
+   "parent": "SG"
+  },
+  "SGLUC": {
+   "name": null,
+   "rank": null,
+   "parent": "SGLU"
+  },
+  "SGLUS": {
+   "name": null,
+   "rank": null,
+   "parent": "SGLU"
+  },
+  "SGSK": {
+   "name": null,
+   "rank": null,
+   "parent": "SG"
+  },
+  "SGSKL": {
+   "name": null,
+   "rank": null,
+   "parent": "SGSK"
+  },
+  "SGSKN": {
+   "name": null,
+   "rank": null,
+   "parent": "SGSK"
+  },
+  "SGSKO": {
+   "name": null,
+   "rank": null,
+   "parent": "SGSK"
+  },
+  "SGSKT": {
+   "name": null,
+   "rank": null,
+   "parent": "SGSK"
+  },
+  "SIPM": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "SK": {
+   "name": "Niedersachsen Group",
+   "rank": "group",
+   "parent": null
+  },
+  "SKCF": {
+   "name": "Coevorden Formation",
+   "rank": "formation",
+   "parent": "SK"
+  },
+  "SKCFL": {
+   "name": "LoiNer Coevorden Member",
+   "rank": "member",
+   "parent": "SKCF"
+  },
+  "SKCFM": {
+   "name": "Coevorden Member, Middle",
+   "rank": "member",
+   "parent": "SKCF"
+  },
+  "SKCFU": {
+   "name": "Coevorden Member, Upper",
+   "rank": "member",
+   "parent": "SKCF"
+  },
+  "SKWF": {
+   "name": "Weiteveen Formation",
+   "rank": "formation",
+   "parent": "SK"
+  },
+  "SKWFA": {
+   "name": "Weiteveen Basal Clastic Member",
+   "rank": "member",
+   "parent": "SKWF"
+  },
+  "SKWFB": {
+   "name": "Weiteveen Evaporite Member, Lower",
+   "rank": "member",
+   "parent": "SKWF"
+  },
+  "SKWFC": {
+   "name": "Weiteveen Marl Member, Lower",
+   "rank": "member",
+   "parent": "SKWF"
+  },
+  "SKWFD": {
+   "name": "Weiteveen Evaporite Member, Upper",
+   "rank": "member",
+   "parent": "SKWF"
+  },
+  "SKWFE": {
+   "name": "Weiteveen Marl Member, Upper",
+   "rank": "member",
+   "parent": "SKWF"
+  },
+  "SKWFF": {
+   "name": "Serpulite Member",
+   "rank": "member",
+   "parent": "SKWF"
+  },
+  "SKWFM": {
+   "name": null,
+   "rank": null,
+   "parent": "SKWF"
+  },
+  "SL": {
+   "name": "Schieland Group",
+   "rank": "group",
+   "parent": null
+  },
+  "SLC": {
+   "name": "Central Graben Subgroup",
+   "rank": "subgroup",
+   "parent": "SL"
+  },
+  "SLCF": {
+   "name": "Friese Front Formation",
+   "rank": "formation",
+   "parent": "SLC"
+  },
+  "SLCFM": {
+   "name": null,
+   "rank": null,
+   "parent": "SLCF"
+  },
+  "SLCFO": {
+   "name": "Oyster Ground Claystone Member",
+   "rank": "member",
+   "parent": "SLCF"
+  },
+  "SLCFR": {
+   "name": "Rifgronden Member",
+   "rank": "member",
+   "parent": "SLCF"
+  },
+  "SLCFT": {
+   "name": "Terschelling Sandstone Member",
+   "rank": "member",
+   "parent": "SLCF"
+  },
+  "SLCL": {
+   "name": "lovver Graben Formation",
+   "rank": "formation",
+   "parent": "SLC"
+  },
+  "SLCM": {
+   "name": "Graben Formation, Middle",
+   "rank": "formation",
+   "parent": "SLC"
+  },
+  "SLCML": {
+   "name": null,
+   "rank": null,
+   "parent": "SLCM"
+  },
+  "SLCMS": {
+   "name": "Graben Sandstone Member, Middle",
+   "rank": "member",
+   "parent": "SLCM"
+  },
+  "SLCMU": {
+   "name": null,
+   "rank": null,
+   "parent": "SLCM"
+  },
+  "SLCP": {
+   "name": "Puzzle Hole Formation",
+   "rank": "formation",
+   "parent": "SLC"
+  },
+  "SLCU": {
+   "name": "Graben Formation, Upper",
+   "rank": "formation",
+   "parent": "SLC"
+  },
+  "SLD": {
+   "name": "Delfland Subgroup",
+   "rank": "subgroup",
+   "parent": "SL"
+  },
+  "SLDB": {
+   "name": "Breeveertien Formation",
+   "rank": "formation",
+   "parent": "SLD"
+  },
+  "SLDBA": {
+   "name": "Aerdenhout Member",
+   "rank": "member",
+   "parent": "SLDB"
+  },
+  "SLDBB": {
+   "name": "Bloemendaal Member",
+   "rank": "member",
+   "parent": "SLDB"
+  },
+  "SLDBC": {
+   "name": "Fourteens Claystone Member",
+   "rank": "member",
+   "parent": "SLDB"
+  },
+  "SLDBD": {
+   "name": "Driehuis Mottled Claystone Member",
+   "rank": "member",
+   "parent": "SLDB"
+  },
+  "SLDBH": {
+   "name": "He lm Member",
+   "rank": "member",
+   "parent": "SLDB"
+  },
+  "SLDBN": {
+   "name": "Neomiodon Claystone Member",
+   "rank": "member",
+   "parent": "SLDB"
+  },
+  "SLDBS": {
+   "name": "Santpoort Member",
+   "rank": "member",
+   "parent": "SLDB"
+  },
+  "SLDN": {
+   "name": "Nieuvverkerk Formation",
+   "rank": "formation",
+   "parent": "SLD"
+  },
+  "SLDNA": {
+   "name": "Alblasserdam Member",
+   "rank": "member",
+   "parent": "SLDN"
+  },
+  "SLDND": {
+   "name": "Delft Sandstone Member",
+   "rank": "member",
+   "parent": "SLDN"
+  },
+  "SLDNR": {
+   "name": "Rodenrijs Claystone Member",
+   "rank": "member",
+   "parent": "SLDN"
+  },
+  "SLDZ": {
+   "name": "Zurich Formation",
+   "rank": "formation",
+   "parent": "SLD"
+  },
+  "SLDZL": {
+   "name": null,
+   "rank": null,
+   "parent": "SLDZ"
+  },
+  "SLDZU": {
+   "name": null,
+   "rank": null,
+   "parent": "SLDZ"
+  },
+  "SLDZV": {
+   "name": "Wadden Volcaniclastic Member",
+   "rank": "member",
+   "parent": "SLDZ"
+  },
+  "SLOBS": {
+   "name": "Santpoort Member",
+   "rank": "member",
+   "parent": "SL"
+  },
+  "TUD": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "UK": {
+   "name": "Formation",
+   "rank": "formation",
+   "parent": null
+  },
+  "UNION": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "VUA": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "XX": {
+   "name": null,
+   "rank": null,
+   "parent": null
+  },
+  "XXD": {
+   "name": null,
+   "rank": null,
+   "parent": "XX"
+  },
+  "XXE": {
+   "name": null,
+   "rank": null,
+   "parent": "XX"
+  },
+  "XXP": {
+   "name": null,
+   "rank": null,
+   "parent": "XX"
+  },
+  "XXZV": {
+   "name": "Zuidvval Volcanic Formation",
+   "rank": "formation",
+   "parent": "XX"
+  },
+  "ZE": {
+   "name": "Zechstein Group",
+   "rank": "group",
+   "parent": null
+  },
+  "ZECP": {
+   "name": null,
+   "rank": null,
+   "parent": "ZE"
+  },
+  "ZEFC": {
+   "name": null,
+   "rank": null,
+   "parent": "ZE"
+  },
+  "ZEFR": {
+   "name": null,
+   "rank": null,
+   "parent": "ZE"
+  },
+  "ZEFRM": {
+   "name": null,
+   "rank": null,
+   "parent": "ZEFR"
+  },
+  "ZEFRS": {
+   "name": null,
+   "rank": null,
+   "parent": "ZEFR"
+  },
+  "ZESA": {
+   "name": null,
+   "rank": null,
+   "parent": "ZE"
+  },
+  "ZESAL": {
+   "name": null,
+   "rank": null,
+   "parent": "ZESA"
+  },
+  "ZESAU": {
+   "name": null,
+   "rank": null,
+   "parent": "ZESA"
+  },
+  "ZEUC": {
+   "name": "Zechstein Upper Claystone Formation",
+   "rank": "formation",
+   "parent": "ZE"
+  },
+  "ZEZ1": {
+   "name": "Z1 (Werra) Formation",
+   "rank": "formation",
+   "parent": "ZE"
+  },
+  "ZEZ1A": {
+   "name": "Z1 Lovver Anhydrite Member",
+   "rank": "member",
+   "parent": "ZEZ1"
+  },
+  "ZEZ1B": {
+   "name": null,
+   "rank": null,
+   "parent": "ZEZ1"
+  },
+  "ZEZ1C": {
+   "name": "Z1 Carbonate Member",
+   "rank": "member",
+   "parent": "ZEZ1"
+  },
+  "ZEZ1E": {
+   "name": "Fringe Coppershale Member",
+   "rank": "member",
+   "parent": "ZEZ1"
+  },
+  "ZEZ1F": {
+   "name": "Z1 Fringe Ca r bonate Member",
+   "rank": "member",
+   "parent": "ZEZ1"
+  },
+  "ZEZ1G": {
+   "name": "B Z1 Lovver Claystone Member",
+   "rank": "member",
+   "parent": "ZEZ1"
+  },
+  "ZEZ1H": {
+   "name": "Z1 Salt Member",
+   "rank": "member",
+   "parent": "ZEZ1"
+  },
+  "ZEZ1K": {
+   "name": "Coppershale Member",
+   "rank": "member",
+   "parent": "ZEZ1"
+  },
+  "ZEZ1M": {
+   "name": "Z1 Middle Claystone Member",
+   "rank": "member",
+   "parent": "ZEZ1"
+  },
+  "ZEZ1S": {
+   "name": "Z1 Fringe Sandstone Member",
+   "rank": "member",
+   "parent": "ZEZ1"
+  },
+  "ZEZ1T": {
+   "name": "Z1 Anhydrite Member, Upper",
+   "rank": "member",
+   "parent": "ZEZ1"
+  },
+  "ZEZ1W": {
+   "name": "Z1 Anhydrite Member",
+   "rank": "member",
+   "parent": "ZEZ1"
+  },
+  "ZEZ2": {
+   "name": "Z2 (Stassfurt) Formation",
+   "rank": "formation",
+   "parent": "ZE"
+  },
+  "ZEZ2A": {
+   "name": "Z2 Basal Anhydrite Member",
+   "rank": "member",
+   "parent": "ZEZ2"
+  },
+  "ZEZ2C": {
+   "name": "Z2 Carbonate Member",
+   "rank": "member",
+   "parent": "ZEZ2"
+  },
+  "ZEZ2F": {
+   "name": "Z2 Fringe Anhydrite Member",
+   "rank": "member",
+   "parent": "ZEZ2"
+  },
+  "ZEZ2H": {
+   "name": "Z2 Salt Member",
+   "rank": "member",
+   "parent": "ZEZ2"
+  },
+  "ZEZ2M": {
+   "name": "Z2 Middle Claystone Member",
+   "rank": "member",
+   "parent": "ZEZ2"
+  },
+  "ZEZ2R": {
+   "name": "Red-brown Salt Clay Member",
+   "rank": "member",
+   "parent": "ZEZ2"
+  },
+  "ZEZ2S": {
+   "name": "B Z2 Fringe Sandstone Member",
+   "rank": "member",
+   "parent": "ZEZ2"
+  },
+  "ZEZ2T": {
+   "name": "Z2 Roof Anhydrite Member",
+   "rank": "member",
+   "parent": "ZEZ2"
+  },
+  "ZEZ3": {
+   "name": "Z3 (Leine) Formation",
+   "rank": "formation",
+   "parent": "ZE"
+  },
+  "ZEZ3A": {
+   "name": "Z3 Main Anhydrite Member",
+   "rank": "member",
+   "parent": "ZEZ3"
+  },
+  "ZEZ3B": {
+   "name": "Z3 Anhydrite-Carbonate Member",
+   "rank": "member",
+   "parent": "ZEZ3"
+  },
+  "ZEZ3C": {
+   "name": "Z3 Carbonate Member",
+   "rank": "member",
+   "parent": "ZEZ3"
+  },
+  "ZEZ3G": {
+   "name": "Grey Salt Clay Member",
+   "rank": "member",
+   "parent": "ZEZ3"
+  },
+  "ZEZ3H": {
+   "name": "Z3 Sa lt Member",
+   "rank": "member",
+   "parent": "ZEZ3"
+  },
+  "ZEZ3S": {
+   "name": "Z3 Fringe Sandstone Member",
+   "rank": "member",
+   "parent": "ZEZ3"
+  },
+  "ZEZ3U": {
+   "name": "Z3 Fringe Claystone Member",
+   "rank": "member",
+   "parent": "ZEZ3"
+  },
+  "ZEZ4": {
+   "name": "Z4 (Aller) Formation",
+   "rank": "formation",
+   "parent": "ZE"
+  },
+  "ZEZ4A": {
+   "name": "Z4 Pegmatite Anhydrite Member",
+   "rank": "member",
+   "parent": "ZEZ4"
+  },
+  "ZEZ4H": {
+   "name": "Z4 Salt Member",
+   "rank": "member",
+   "parent": "ZEZ4"
+  },
+  "ZEZ4R": {
+   "name": "Red Salt Clay Member",
+   "rank": "member",
+   "parent": "ZEZ4"
+  },
+  "ZEZ4S": {
+   "name": "Z4 Fringe Sandstone Member",
+   "rank": "member",
+   "parent": "ZEZ4"
+  },
+  "ZEZ4T": {
+   "name": null,
+   "rank": null,
+   "parent": "ZEZ4"
+  },
+  "ZEZ5": {
+   "name": "Z5 (Ohre) Formation",
+   "rank": "formation",
+   "parent": "ZE"
+  },
+  "ZEZ5H": {
+   "name": "Z5 Salt Member",
+   "rank": "member",
+   "parent": "ZEZ5"
+  },
+  "ZEZ5R": {
+   "name": "Z5 Salt Clay Member",
+   "rank": "member",
+   "parent": "ZEZ5"
+  }
+ }
+}
