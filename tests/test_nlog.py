@@ -51,6 +51,22 @@ def test_to_welleng_refuses_error_model_on_fabricated_azimuth():
                      b_total=50000., dip=70., declination=0.)
 
 
+def test_to_welleng_datums_tvd_to_first_station():
+    # an NLOG survey starting at MD 30 with its own TVD datum: to_welleng must
+    # produce ABSOLUTE TVD (30 m at the first station), not first-station-relative
+    # (which would read 30 m shallow everywhere and mis-site a casing cut).
+    import numpy as np
+    s = DirSurvey(borehole_name="X", md=[30., 100., 200.], inc=[0., 0., 0.],
+                  azi=[0., 0., 0.], tvd=[30., 100., 200.], dx=[0.] * 3, dy=[0.] * 3,
+                  north_ref="G", coord_system=None, proc_method="MC",
+                  convergence=0., declination=None, proc_date_ms=None, remark=None)
+    sv = s.to_welleng()                       # geometry only (vertical, harmless)
+    assert sv.tvd[0] == pytest.approx(30.0)
+    import welleng as we
+    node = we.survey.interpolate_md(sv, 87.5)
+    assert float(np.asarray(node.tvd).ravel()[-1]) == pytest.approx(87.5)
+
+
 def test_to_welleng_allows_override_and_geometry_only():
     s = _sv([0, 500, 1000, 1500], [0.5, 1, 2, 3], [0, 0, 0, 0])
     geom = s.to_welleng()                      # no error model: fine

@@ -167,7 +167,14 @@ class DirSurvey:
         not a measurement and an error model was requested, because the
         result would be a confident position derived from a
         placeholder — pass ``error_model=None`` to build geometry only,
-        or set ``force=True`` in ``header_kwargs`` to override."""
+        or set ``force=True`` in ``header_kwargs`` to override.
+
+        The survey's TVD is datumed to NLOG's own first-station depth (via
+        ``start_nev``), so TVD is absolute rather than relative to the first
+        station. This matters when the survey does not start at MD 0 — a
+        conductor/tie-in survey beginning at, say, MD 30 m would otherwise report
+        TVD 0 there and read 30 m shallow everywhere below.
+        """
         import numpy as np
         import welleng as we
 
@@ -185,10 +192,14 @@ class DirSurvey:
             azi_reference="grid" if (self.north_ref or "G") == "G" else "true",
             **header_kwargs,
         )
+        kwargs = {}
+        if self.tvd and self.tvd[0] is not None:
+            # datum TVD to NLOG's first-station depth (lateral left relative)
+            kwargs["start_nev"] = np.array([0.0, 0.0, float(self.tvd[0])])
         return we.survey.Survey(
             md=np.asarray(self.md), inc=np.asarray(self.inc),
             azi=np.asarray(self.azi), deg=True, header=header,
-            error_model=error_model,
+            error_model=error_model, **kwargs,
         )
 
 
