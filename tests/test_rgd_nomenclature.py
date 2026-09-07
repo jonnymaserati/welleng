@@ -71,6 +71,22 @@ def test_hierarchy_has_no_dangling_parents():
             assert u["parent"] in units, f"{c} -> dangling parent {u['parent']}"
 
 
+def test_operator_abbreviations_are_not_in_the_table():
+    # operator abbrevs were swept from the scanned legend/columns; they must not
+    # masquerade as lithostratigraphic codes (welleng-projects 2026-09-07)
+    for op in ["BP", "AKZO", "AMOCO", "DSM", "FINA", "GAPS"]:
+        assert rgd.resolve(op) is None, f"{op} should not be a unit"
+
+
+def test_ocr_names_repaired():
+    # the scan read w as vv, and inserted spaces mid-word; repaired names must be
+    # clean enough to print in a regulator-read P&A document
+    assert rgd.resolve("KNNC")["name"] == "Vlieland Claystone Formation"
+    assert rgd.resolve("RBSH")["name"] == "Lower Buntsandstein Formation"
+    assert rgd.resolve("NL")["name"] == "Lower North Sea Group"
+    assert "vv" not in (rgd.resolve("KNGLL")["name"] or "")
+
+
 def test_provenance_flags_ocr_and_version():
     p = rgd.provenance()
     assert "1993" in p["source"]

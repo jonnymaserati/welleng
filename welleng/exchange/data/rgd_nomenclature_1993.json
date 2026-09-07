@@ -7,16 +7,6 @@
   "names": "OCR-raw and UNVERIFIED \u2014 the scan spaces letters and confuses w/vv, r/n etc.; use codes+hierarchy, treat names as indicative"
  },
  "units": {
-  "AKZO": {
-   "name": null,
-   "rank": null,
-   "parent": null
-  },
-  "AMOCO": {
-   "name": null,
-   "rank": null,
-   "parent": null
-  },
   "AT": {
    "name": "Altena Group",
    "rank": "group",
@@ -88,7 +78,7 @@
    "parent": "AT"
   },
   "ATWDL": {
-   "name": "Lovver Werkendam Member",
+   "name": "Lower Werkendam Member",
    "rank": "member",
    "parent": "ATWD"
   },
@@ -101,11 +91,6 @@
    "name": "Werkendam Member, Upper",
    "rank": "member",
    "parent": "ATWD"
-  },
-  "BP": {
-   "name": null,
-   "rank": null,
-   "parent": null
   },
   "CF": {
    "name": "Farne Group",
@@ -273,7 +258,7 @@
    "parent": "DC"
   },
   "DCDG": {
-   "name": "Hospital G r ound Formation",
+   "name": "Hospital Ground Formation",
    "rank": "formation",
    "parent": "DCD"
   },
@@ -347,36 +332,6 @@
    "rank": "formation",
    "parent": "DCH"
   },
-  "DSM": {
-   "name": null,
-   "rank": null,
-   "parent": null
-  },
-  "FINA": {
-   "name": null,
-   "rank": null,
-   "parent": null
-  },
-  "GAPS": {
-   "name": null,
-   "rank": null,
-   "parent": null
-  },
-  "ICS": {
-   "name": null,
-   "rank": null,
-   "parent": null
-  },
-  "IUGS": {
-   "name": null,
-   "rank": null,
-   "parent": null
-  },
-  "KB172": {
-   "name": null,
-   "rank": null,
-   "parent": null
-  },
   "KN": {
    "name": "Rijnland Group",
    "rank": "group",
@@ -393,7 +348,7 @@
    "parent": "KNGL"
   },
   "KNGLL": {
-   "name": "Lovver Holland Marl Member",
+   "name": "Lower Holland Marl Member",
    "rank": "member",
    "parent": "KNGL"
   },
@@ -413,7 +368,7 @@
    "parent": "KNGL"
   },
   "KNNC": {
-   "name": "Vl ieland Claystone Formation",
+   "name": "Vlieland Claystone Formation",
    "rank": "formation",
    "parent": "KN"
   },
@@ -542,13 +497,8 @@
    "rank": "member",
    "parent": "KNNS"
   },
-  "NAM": {
-   "name": null,
-   "rank": null,
-   "parent": null
-  },
   "NL": {
-   "name": "Lovver North Sea Group",
+   "name": "Lower North Sea Group",
    "rank": "group",
    "parent": null
   },
@@ -678,7 +628,7 @@
    "parent": "NLLF"
   },
   "NLLFL": {
-   "name": "Svvalmen Member",
+   "name": "Swalmen Member",
    "rank": "member",
    "parent": "NLLF"
   },
@@ -861,26 +811,6 @@
    "name": "Voort Member",
    "rank": "member",
    "parent": "NMVF"
-  },
-  "NOGEPA": {
-   "name": null,
-   "rank": null,
-   "parent": null
-  },
-  "NP21": {
-   "name": null,
-   "rank": null,
-   "parent": null
-  },
-  "NP22": {
-   "name": null,
-   "rank": null,
-   "parent": null
-  },
-  "NP25": {
-   "name": null,
-   "rank": null,
-   "parent": null
   },
   "NU": {
    "name": "North Sea Group, Upper",
@@ -1137,11 +1067,6 @@
    "rank": null,
    "parent": "OB"
   },
-  "OCHS": {
-   "name": "Strijen Formation",
-   "rank": "formation",
-   "parent": null
-  },
   "OR": {
    "name": "Old Red Group",
    "rank": "group",
@@ -1177,18 +1102,8 @@
    "rank": "formation",
    "parent": "OR"
   },
-  "PGK": {
-   "name": null,
-   "rank": null,
-   "parent": null
-  },
-  "PWL": {
-   "name": null,
-   "rank": null,
-   "parent": null
-  },
   "RB": {
-   "name": "Lovver Germanic Trias Group",
+   "name": "Lower Germanic Trias Group",
    "rank": "group",
    "parent": null
   },
@@ -1238,7 +1153,7 @@
    "parent": "RBMV"
   },
   "RBMVC": {
-   "name": "Volpriehause n Clay-Siltstone Member",
+   "name": "Volpriehausen Clay-Siltstone Member",
    "rank": "member",
    "parent": "RBMV"
   },
@@ -1258,7 +1173,7 @@
    "parent": "RB"
   },
   "RBSH": {
-   "name": "Lovver Buntsandstein Formation",
+   "name": "Lower Buntsandstein Formation",
    "rank": "formation",
    "parent": "RBS"
   },
@@ -1291,11 +1206,6 @@
    "name": null,
    "rank": null,
    "parent": "RBS"
-  },
-  "RGD": {
-   "name": null,
-   "rank": null,
-   "parent": null
   },
   "RN": {
    "name": "Germanic Trias Group, Upper",
@@ -1438,17 +1348,17 @@
    "parent": "RNRO"
   },
   "RNSO": {
-   "name": "Soiling Formation",
+   "name": "Solling Formation",
    "rank": "formation",
    "parent": "RN"
   },
   "RNSOB": {
-   "name": "Basa l So iling Sandstone Member",
+   "name": "Basal Solling Sandstone Member",
    "rank": "member",
    "parent": "RNSO"
   },
   "RNSOC": {
-   "name": "Soi ling Claystone Member",
+   "name": "Solling Claystone Member",
    "rank": "member",
    "parent": "RNSO"
   },
@@ -1527,13 +1437,8 @@
    "rank": "member",
    "parent": "ROSL"
   },
-  "RU": {
-   "name": "Rotliegend Group, Upper",
-   "rank": "group",
-   "parent": null
-  },
   "RV": {
-   "name": "Lovver Rotliegend Group",
+   "name": "Lower Rotliegend Group",
    "rank": "group",
    "parent": null
   },
@@ -1546,11 +1451,6 @@
    "name": "Em men Volcan ic Formation",
    "rank": "formation",
    "parent": "RV"
-  },
-  "RWS": {
-   "name": null,
-   "rank": null,
-   "parent": null
   },
   "SG": {
    "name": "Scruff Group",
@@ -1641,11 +1541,6 @@
    "name": null,
    "rank": null,
    "parent": "SGSK"
-  },
-  "SIPM": {
-   "name": null,
-   "rank": null,
-   "parent": null
   },
   "SK": {
    "name": "Niedersachsen Group",
@@ -1748,7 +1643,7 @@
    "parent": "SLCF"
   },
   "SLCL": {
-   "name": "lovver Graben Formation",
+   "name": "lower Graben Formation",
    "rank": "formation",
    "parent": "SLC"
   },
@@ -1828,7 +1723,7 @@
    "parent": "SLDB"
   },
   "SLDN": {
-   "name": "Nieuvverkerk Formation",
+   "name": "Nieuwerkerk Formation",
    "rank": "formation",
    "parent": "SLD"
   },
@@ -1872,26 +1767,6 @@
    "rank": "member",
    "parent": "SL"
   },
-  "TUD": {
-   "name": null,
-   "rank": null,
-   "parent": null
-  },
-  "UK": {
-   "name": "Formation",
-   "rank": "formation",
-   "parent": null
-  },
-  "UNION": {
-   "name": null,
-   "rank": null,
-   "parent": null
-  },
-  "VUA": {
-   "name": null,
-   "rank": null,
-   "parent": null
-  },
   "XX": {
    "name": null,
    "rank": null,
@@ -1913,7 +1788,7 @@
    "parent": "XX"
   },
   "XXZV": {
-   "name": "Zuidvval Volcanic Formation",
+   "name": "Zuidwal Volcanic Formation",
    "rank": "formation",
    "parent": "XX"
   },
@@ -1973,7 +1848,7 @@
    "parent": "ZE"
   },
   "ZEZ1A": {
-   "name": "Z1 Lovver Anhydrite Member",
+   "name": "Z1 Lower Anhydrite Member",
    "rank": "member",
    "parent": "ZEZ1"
   },
@@ -1993,12 +1868,12 @@
    "parent": "ZEZ1"
   },
   "ZEZ1F": {
-   "name": "Z1 Fringe Ca r bonate Member",
+   "name": "Z1 Fringe Carbonate Member",
    "rank": "member",
    "parent": "ZEZ1"
   },
   "ZEZ1G": {
-   "name": "B Z1 Lovver Claystone Member",
+   "name": "Z1 Lower Claystone Member",
    "rank": "member",
    "parent": "ZEZ1"
   },
