@@ -1310,6 +1310,41 @@ def _min_on_box(fn, lo, hi, seed=5, eps=0.5):
     return best
 
 
+def _min_on_surface(fn, lo, hi, coarse=9, fine=9):
+    """Minimum of ``fn(angles)`` over a 2-D angular box ``[lo, hi]``: coarse grid
+    locate, local refine around the best cell, then a gradient polish confined to
+    that cell. Used for curved 3-D boundaries (sphere / ellipsoid surface), where
+    the measured-depth surface is eikonal with feasibility pockets and a single
+    coarse grid + gradient step lands unreliably. Returns ``(value, argmin)``.
+    """
+    lo = np.asarray(lo, float)
+    hi = np.asarray(hi, float)
+    a0 = np.linspace(lo[0], hi[0], coarse)
+    a1 = np.linspace(lo[1], hi[1], coarse)
+    best = (np.inf, None, (0, 0))
+    for i, t in enumerate(a0):
+        for j, p in enumerate(a1):
+            v = fn(np.array([t, p]))
+            if v < best[0]:
+                best = (v, np.array([t, p]), (i, j))
+    if best[1] is None or not np.isfinite(best[0]):
+        return best[0], best[1]
+    i, j = best[2]
+    cl = np.array([a0[max(i - 1, 0)], a1[max(j - 1, 0)]])
+    ch = np.array([a0[min(i + 1, coarse - 1)], a1[min(j + 1, coarse - 1)]])
+    for t in np.linspace(cl[0], ch[0], fine):
+        for p in np.linspace(cl[1], ch[1], fine):
+            v = fn(np.array([t, p]))
+            if v < best[0]:
+                best = (v, np.array([t, p]), best[2])
+    r = minimize(lambda x: min(fn(x), _BIG), best[1], method="L-BFGS-B",
+                 bounds=list(zip(cl, ch)), options={"eps": 0.02, "ftol": 1e-8})
+    fr = fn(np.asarray(r.x))
+    if np.isfinite(fr) and fr < best[0]:
+        return float(fr), np.asarray(r.x)
+    return best[0], best[1]
+
+
 def _sphere_dir(angles):
     """Unit direction for spherical angles ``(theta, phi)``."""
     th, ph = angles
@@ -1449,11 +1484,11 @@ def solve_clc_landing_region(p1, t1, t4, target, R1, R2=None, k=1.0):
         r = float(g["radius"])
         vi, x = _min_on_box(
             lambda p: mdf(p) if np.sum((p - center) ** 2) <= r * r else _BIG,
-            center - r, center + r, seed=7)
+            center - r, center + r, seed=5)
         if x is not None and np.sum((x - center) ** 2) <= r * r + 1e-6:
             cands.append((vi, x))
-        vb, a = _min_on_box(lambda a: mdf(center + r * _sphere_dir(a)),
-                            (0.0, 0.0), (np.pi, 2 * np.pi), seed=25, eps=0.05)
+        vb, a = _min_on_surface(lambda a: mdf(center + r * _sphere_dir(a)),
+                                (0.0, 0.0), (np.pi, 2 * np.pi))
         if a is not None:
             cands.append((vb, center + r * _sphere_dir(a)))
     elif shape == "gaussian":
@@ -1466,11 +1501,11 @@ def solve_clc_landing_region(p1, t1, t4, target, R1, R2=None, k=1.0):
             d = np.linalg.solve(L, p - center)
             return d @ d
         vi, x = _min_on_box(lambda p: mdf(p) if maha(p) <= k * k else _BIG,
-                            center - ext, center + ext, seed=7)
+                            center - ext, center + ext, seed=5)
         if x is not None and maha(x) <= k * k + 1e-6:
             cands.append((vi, x))
-        vb, a = _min_on_box(lambda a: mdf(center + k * (L @ _sphere_dir(a))),
-                            (0.0, 0.0), (np.pi, 2 * np.pi), seed=25, eps=0.05)
+        vb, a = _min_on_surface(lambda a: mdf(center + k * (L @ _sphere_dir(a))),
+                                (0.0, 0.0), (np.pi, 2 * np.pi))
         if a is not None:
             cands.append((vb, center + k * (L @ _sphere_dir(a))))
     else:
