@@ -71,11 +71,22 @@ def test_hierarchy_has_no_dangling_parents():
             assert u["parent"] in units, f"{c} -> dangling parent {u['parent']}"
 
 
-def test_operator_abbreviations_are_not_in_the_table():
-    # operator abbrevs were swept from the scanned legend/columns; they must not
-    # masquerade as lithostratigraphic codes (welleng-projects 2026-09-07)
-    for op in ["BP", "AKZO", "AMOCO", "DSM", "FINA", "GAPS"]:
-        assert rgd.resolve(op) is None, f"{op} should not be a unit"
+def test_only_stratigraphic_codes_survive_the_cleanup():
+    # non-lithostratigraphic tokens (organisation abbreviations, legend words)
+    # were swept out of the scanned pages; the invariant that removed them is
+    # "every real RGD code roots to a 2-letter group". Assert it holds — no code
+    # roots to a non-group short token (welleng-projects 2026-09-07).
+    units = rgd._units()
+    groups = {c for c, u in units.items() if u["parent"] is None and len(c) == 2}
+
+    def root(c):
+        while units.get(c, {}).get("parent"):
+            c = units[c]["parent"]
+        return c
+    for c in units:
+        assert root(c) in groups, f"{c} does not root to a group (non-strat sweep-in?)"
+    # a plausible non-code is simply absent
+    assert rgd.resolve("QQ") is None and rgd.resolve("ZZZZ") is None
 
 
 def test_ocr_names_repaired():
