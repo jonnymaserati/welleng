@@ -1206,3 +1206,316 @@ def solve_clc_landing(p1, t1, p0, t4, R1, R2=None, return_all=False):
     return feas[0] if feas else None
 
 
+# ---------------------------------------------------------------------------
+# Landing into a target REGION (a Target zone), final tangent fixed.
+#
+# The line landing (``solve_clc_landing``) frees the landing point along a line
+# and exits along that line. A 2D/3D region has no single direction, so here the
+# final tangent ``t4`` is given (fixed) and only the landing POSITION is free,
+# within the target. The result is the minimum-measured-depth CLC that reaches
+# any point of the region with that final tangent.
+#
+# There is no single-formula solution: even the point-to-target CLC reduces to a
+# degree-10 polynomial (Eq. 15), and constraining the landing to a region adds an
+# optimisation on top, so the position is found numerically. The reduction is by
+# faces: a bounded optimum is interior to the region or on a lower-dimensional
+# face of it (an edge, an arc, a vertex), so each face is minimised with the
+# point-to-target solve as the per-point evaluator and the best feasible landing
+# returned. ``solve_clc`` at a point and ``solve_clc_landing`` on a line are the
+# 0- and 1-dimensional cases.
+# ---------------------------------------------------------------------------
+
+def _target_frame(target):
+    """Return (center, u, v) for a Target: its position and two orthonormal
+    in-plane axes (N, E, V vectors).
+
+    Convention: with ``orientation = dip = 0`` the target plane is horizontal,
+    ``u`` = North and ``v`` = East. ``dip`` (degrees) tilts the plane about ``u``
+    (the North axis); ``orientation`` (degrees) rotates ``u``/``v`` about the
+    vertical.
+    """
+    center = target.position
+    if center is None:
+        raise ValueError("target has no position (n/e/tvd)")
+
+    def _rot(axis, deg):
+        a = np.deg2rad(deg)
+        c, s = np.cos(a), np.sin(a)
+        x, y, z = axis
+        return np.array([
+            [c + x * x * (1 - c), x * y * (1 - c) - z * s, x * z * (1 - c) + y * s],
+            [y * x * (1 - c) + z * s, c + y * y * (1 - c), y * z * (1 - c) - x * s],
+            [z * x * (1 - c) - y * s, z * y * (1 - c) + x * s, c + z * z * (1 - c)],
+        ])
+
+    R = _rot((0.0, 0.0, 1.0), target.orientation) @ _rot((1.0, 0.0, 0.0), target.dip)
+    return center, R @ np.array([1.0, 0.0, 0.0]), R @ np.array([0.0, 1.0, 0.0])
+
+
+# The measured-depth surface MD(landing point) has a smooth unit gradient in the
+# feasible interior (verified: |grad MD| = 1, eikonal-like) but is punctured by
+# infeasible pockets. Because _clc_solutions is vectorised (one companion-
+# eigenvalue solve over N pose-pairs), a whole grid is evaluated in ONE call, so
+# each face is minimised by successive BATCHED grid refinement (_refine_batched)
+# rather than a sequential optimiser: infeasible evals are clamped to _BIG so the
+# refinement steps around the pockets. Fully vectorised end to end.
+_BIG = 1e9
+
+
+def _refine_batched(fn_batch, lo, hi, stages):
+    """Minimum of a batched objective ``fn_batch((M, d)) -> (M,)`` over the box
+    ``[lo, hi]``, by successive batched grid refinement: each stage evaluates its
+    whole grid in ONE call, then shrinks the box to the neighbouring cell of the
+    best point. Fully vectorised — no sequential optimiser (an optimiser's steps
+    depend on the previous one and cannot batch; here the cheap batched evals make
+    one unnecessary). ``stages`` is the per-stage grid size along each axis, e.g.
+    ``(41, 9)`` for a 1-D face or ``(9, 9, 9)`` for a surface. Returns
+    ``(value, argmin)`` (``argmin`` an ndarray) or ``(inf, None)`` if all
+    infeasible.
+    """
+    lo = np.asarray(lo, float).astype(float).copy()
+    hi = np.asarray(hi, float).astype(float).copy()
+    d = len(lo)
+    best = (np.inf, None)
+    for n in stages:
+        axes = [np.linspace(lo[k], hi[k], n) for k in range(d)]
+        grid = np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, d)
+        vals = np.asarray(fn_batch(grid))
+        i = int(np.argmin(vals))
+        if not np.isfinite(vals[i]):
+            return best
+        best = (float(vals[i]), grid[i])
+        idx = np.unravel_index(i, tuple(n for _ in range(d)))
+        for k in range(d):
+            lo[k] = axes[k][max(idx[k] - 1, 0)]
+            hi[k] = axes[k][min(idx[k] + 1, n - 1)]
+    return best
+
+
+def _sphere_dir(angles):
+    """Unit direction for spherical angles ``(theta, phi)``."""
+    th, ph = angles
+    return np.array([np.sin(th) * np.cos(ph), np.sin(th) * np.sin(ph), np.cos(th)])
+
+
+def _sphere_dirs(angles):
+    """Vectorised :func:`_sphere_dir`: ``(M, 2)`` angles -> ``(M, 3)`` directions."""
+    th, ph = angles[:, 0], angles[:, 1]
+    return np.stack([np.sin(th) * np.cos(ph),
+                     np.sin(th) * np.sin(ph), np.cos(th)], axis=1)
+
+
+def _point_in_polygon(a, b, verts):
+    """Ray-cast test: is in-plane point ``(a, b)`` inside polygon ``verts`` (N,2)."""
+    inside = False
+    n = len(verts)
+    j = n - 1
+    for i in range(n):
+        xi, yi = verts[i]
+        xj, yj = verts[j]
+        if ((yi > b) != (yj > b)) and (a < (xj - xi) * (b - yi) / (yj - yi) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+_PLANAR = ("rectangle", "circle", "ellipse", "polygon")
+_VOLUME = ("cube", "sphere", "gaussian")
+
+
+def solve_clc_landing_region(p1, t1, t4, target, R1, R2=None, k=1.0):
+    """Minimum-MD CLC landing into a target REGION, final tangent ``t4`` fixed.
+
+    Finds the shortest measured-depth curve-hold-curve path from ``(p1, t1)`` that
+    reaches any point of ``target`` while arriving with tangent ``t4``. The
+    landing position is free within the region; the final tangent is given (a
+    region has no single direction to couple it to).
+
+    Parameters
+    ----------
+    p1, t1 : (3,) array_like
+        Kickoff position and unit tangent (N, E, V).
+    t4 : (3,) array_like
+        Final unit tangent at the landing (fixed).
+    target : welleng.target.Target
+        The landing region. Supported shapes:
+
+        * planar (in the target plane, from position + ``orientation``/``dip``):
+          ``point``, ``rectangle`` (``pos1``/``pos2``), ``circle`` (``radius``),
+          ``ellipse`` (``radius_1``/``radius_2``), ``polygon`` (``vertices``);
+        * volumetric (in NEV): ``cube`` (``half_extents``), ``sphere``
+          (``radius``), ``gaussian`` (the Mahalanobis ellipsoid of ``cov`` at
+          radius ``k``).
+    R1, R2 : float
+        Arc radii; ``R2`` defaults to ``R1``.
+    k : float
+        Mahalanobis radius for a ``gaussian`` target (default 1 = the 1-sigma
+        ellipsoid); ignored for other shapes.
+
+    Returns
+    -------
+    dict or None
+        The shortest landing: ``beta``, ``alpha1``, ``alpha2``, ``total_md``
+        (as :func:`solve_clc`) plus ``p4`` (the solved landing point, NEV); for a
+        planar target also ``ab`` (its in-plane coordinates). ``None`` if no point
+        of the region is reachable with a feasible CLC.
+    """
+    R2 = R1 if R2 is None else R2
+    t4 = np.asarray(t4, float)
+    center = target.position
+    g = target.geometry
+    shape = target.shape
+
+    def _md(p4):
+        s = solve_clc(p1, t1, np.asarray(p4, float), t4, R1, R2)
+        if s is None or s["alpha1"] > np.pi + 1e-9 or s["alpha2"] > np.pi + 1e-9:
+            return np.inf, None
+        return s["total_md"], s
+
+    def mdb(pts):
+        """Batched measured depth: ``(N, 3)`` points -> ``(N,)`` min feasible MD
+        (``inf`` where infeasible), in ONE vectorised ``_clc_solutions`` call. The
+        general degree-10 form may miss a degenerate (planar) pose; the scalar
+        polish (``mdf``) resolves the final point exactly, so this is used only to
+        locate the seed grid."""
+        pts = np.atleast_2d(np.asarray(pts, float))
+        n = len(pts)
+        _, a1, a2, md, valid = _clc_solutions(
+            [p1] * n, [t1] * n, list(pts), [t4] * n, R1, R2)
+        a1, a2, md, valid = map(np.asarray, (a1, a2, md, valid))
+        feas = valid & (a1 <= np.pi + 1e-9) & (a2 <= np.pi + 1e-9)
+        return np.where(feas, md, np.inf).min(axis=1)
+
+    if shape == "point":
+        _, s = _md(center)
+        return None if s is None else {**s, "p4": center, "ab": (0.0, 0.0)}
+
+    cands = []          # (md, p4)
+    frame = None
+    # every face is minimised by fully-vectorised batched grid refinement — one
+    # _clc_solutions call per stage, no sequential optimiser. Stages are chosen
+    # so the refinement reaches sub-cm on these scales.
+    PLANAR_ST = (9, 9, 7, 7)          # a 2-D face (box / disk interior)
+    CURVE_ST = (49, 9, 9)             # a 1-D curved edge (circle/ellipse boundary)
+    SEG_ST = (17, 9, 9)              # a 1-D straight segment (polygon edge)
+    SURF_ST = (13, 9, 9, 7)          # a 2-D curved surface (sphere / ellipsoid)
+    VOL_ST = (9, 7, 7, 5)            # a 3-D interior
+    if shape in _PLANAR:
+        c, u, v = frame = _target_frame(target)
+
+        def Pv(A):                             # vectorised: (M, 2) -> (M, 3)
+            A = np.atleast_2d(A)
+            return c + A[:, 0:1] * u + A[:, 1:2] * v
+
+        def p4_of(ab):
+            return Pv(np.asarray(ab, float)[None])[0]
+
+        if shape == "rectangle":
+            (a0, b0), (a1, b1) = g["pos1"], g["pos2"]
+            lo = (min(a0, a1), min(b0, b1))
+            hi = (max(a0, a1), max(b0, b1))
+            val, ab = _refine_batched(lambda A: mdb(Pv(A)), lo, hi, PLANAR_ST)
+            if ab is not None:
+                cands.append((val, p4_of(ab)))
+        elif shape == "circle":
+            r = float(g["radius"])
+            val, ab = _refine_batched(
+                lambda A: np.where(A[:, 0] ** 2 + A[:, 1] ** 2 <= r * r,
+                                   mdb(Pv(A)), _BIG),
+                (-r, -r), (r, r), PLANAR_ST)
+            if ab is not None and ab[0] ** 2 + ab[1] ** 2 <= r * r + 1e-6:
+                cands.append((val, p4_of(ab)))
+            vb, s = _refine_batched(
+                lambda A: mdb(Pv(np.stack(
+                    [r * np.cos(A[:, 0]), r * np.sin(A[:, 0])], axis=1))),
+                [0.0], [2 * np.pi], CURVE_ST)
+            if s is not None:
+                cands.append((vb, p4_of((r * np.cos(s[0]), r * np.sin(s[0])))))
+        elif shape == "ellipse":
+            r1, r2 = float(g["radius_1"]), float(g["radius_2"])
+            val, ab = _refine_batched(
+                lambda A: np.where((A[:, 0] / r1) ** 2 + (A[:, 1] / r2) ** 2 <= 1.0,
+                                   mdb(Pv(A)), _BIG),
+                (-r1, -r2), (r1, r2), PLANAR_ST)
+            if ab is not None and (ab[0] / r1) ** 2 + (ab[1] / r2) ** 2 <= 1.0 + 1e-6:
+                cands.append((val, p4_of(ab)))
+            vb, s = _refine_batched(
+                lambda A: mdb(Pv(np.stack(
+                    [r1 * np.cos(A[:, 0]), r2 * np.sin(A[:, 0])], axis=1))),
+                [0.0], [2 * np.pi], CURVE_ST)
+            if s is not None:
+                cands.append((vb, p4_of((r1 * np.cos(s[0]), r2 * np.sin(s[0])))))
+        elif shape == "polygon":
+            verts = np.asarray(g["vertices"], float)
+            lo, hi = verts.min(0), verts.max(0)
+
+            def _in_poly_batch(A):
+                return np.array([_point_in_polygon(a, b, verts) for a, b in A])
+            val, ab = _refine_batched(
+                lambda A: np.where(_in_poly_batch(A), mdb(Pv(A)), _BIG),
+                lo, hi, PLANAR_ST)
+            if ab is not None and _point_in_polygon(ab[0], ab[1], verts):
+                cands.append((val, p4_of(ab)))
+            for i in range(len(verts)):
+                p, q = verts[i], verts[(i + 1) % len(verts)]
+                vb, s = _refine_batched(
+                    lambda A, p=p, q=q: mdb(Pv(p[None, :] + A[:, 0:1] * (q - p)[None, :])),
+                    [0.0], [1.0], SEG_ST)
+                if s is not None:
+                    cands.append((vb, p4_of(p + s[0] * (q - p))))
+    elif shape == "cube":
+        h = np.asarray(g["half_extents"], float)
+        val, x = _refine_batched(mdb, center - h, center + h, VOL_ST)  # spans faces
+        if x is not None:
+            cands.append((val, x))
+    elif shape == "sphere":
+        r = float(g["radius"])
+        val, x = _refine_batched(
+            lambda A: np.where(np.sum((A - center) ** 2, axis=1) <= r * r,
+                               mdb(A), _BIG),
+            center - r, center + r, VOL_ST)
+        if x is not None and np.sum((x - center) ** 2) <= r * r + 1e-6:
+            cands.append((val, x))
+        vb, a = _refine_batched(lambda A: mdb(center + r * _sphere_dirs(A)),
+                                [0.0, 0.0], [np.pi, 2 * np.pi], SURF_ST)
+        if a is not None:
+            cands.append((vb, center + r * _sphere_dir(a)))
+    elif shape == "gaussian":
+        if target.cov is None:
+            raise ValueError("a gaussian target needs a covariance (cov)")
+        L = np.linalg.cholesky(target.cov)
+        Li = np.linalg.inv(L)
+        ext = k * np.sqrt(np.diag(target.cov))
+
+        def maha_b(A):
+            D = (np.atleast_2d(A) - center) @ Li.T
+            return np.sum(D * D, axis=1)
+        val, x = _refine_batched(
+            lambda A: np.where(maha_b(A) <= k * k, mdb(A), _BIG),
+            center - ext, center + ext, VOL_ST)
+        if x is not None and maha_b(x)[0] <= k * k + 1e-6:
+            cands.append((val, x))
+        vb, a = _refine_batched(
+            lambda A: mdb(center + k * (_sphere_dirs(A) @ L.T)),
+            [0.0, 0.0], [np.pi, 2 * np.pi], SURF_ST)
+        if a is not None:
+            cands.append((vb, center + k * (L @ _sphere_dir(a))))
+    else:
+        raise NotImplementedError(
+            f"landing into a {shape!r} target is not implemented (supported: "
+            "point, rectangle, circle, ellipse, polygon, cube, sphere, gaussian)"
+        )
+
+    cands = [c for c in cands if c[1] is not None and np.isfinite(c[0])]
+    if not cands:
+        return None
+    _, p4 = min(cands, key=lambda c: c[0])
+    p4 = np.asarray(p4, float)
+    _, s = _md(p4)
+    out = {**s, "p4": p4}
+    if frame is not None:
+        c, u, v = frame
+        out["ab"] = (float((p4 - c) @ u), float((p4 - c) @ v))
+    return out
+
+

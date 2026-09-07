@@ -22,39 +22,31 @@ except ImportError:
 import numpy as np
 from datetime import datetime
 from ..version import __version__ as VERSION
+from ..target import Target
 
-# TODO: need to relocate the class Target to target.py
 
-
-class Target:
-    def __init__(
-        self,
-        name,
-        location=None,
-        geometry={
-            'type': None,
-            'locked': None,
-            'offset': None,
-            'orientation': None,
-            'radius_1': None,
-            'radius_2': None,
-            'dip': None,
-            'azimuth': None,
-            'vertices': [],
-            'thickness_up': None,
-            'thickness_down': None,
-            'color': {
-                'color': None,
-                'interpreter': None,
-                'application': None,
-                'feature': None
-            },
-            'category': None,
+def _default_target_geometry():
+    """Fresh WBP-shaped target-geometry dict (per-target, not a shared default)."""
+    return {
+        'type': None,
+        'locked': None,
+        'offset': None,
+        'orientation': None,
+        'radius_1': None,
+        'radius_2': None,
+        'dip': None,
+        'azimuth': None,
+        'vertices': [],
+        'thickness_up': None,
+        'thickness_down': None,
+        'color': {
+            'color': None,
+            'interpreter': None,
+            'application': None,
+            'feature': None
         },
-    ):
-        self.name = name
-        self.location = location
-        self.geometry = geometry
+        'category': None,
+    }
 
 
 class SurveyPoint:
@@ -287,7 +279,7 @@ class WellPlan:
             self.lines += 1
 
     def _initiate_target(self, name):
-        self.targets.append(Target(name))
+        self.targets.append(Target(name, geometry=_default_target_geometry()))
 
     def _add_target_location(self, data):
         x, y, z = data.split()
