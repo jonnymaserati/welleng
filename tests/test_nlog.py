@@ -148,3 +148,46 @@ def test_save_document_writes_bytes(monkeypatch, tmp_path):
     n = _nlog.NLOGClient().save_document(999, p)
     assert n == len(b"%PDF-1.7 fake")
     assert p.read_bytes().startswith(b"%PDF")
+
+
+# -- id_for_name(): alias-tolerant title resolution -----------------------
+# Real P11 De Ruyter rows (public NLOG identifiers only): NLOG titles a bore
+# "NAME (ALIAS)", which an exact match silently misses. Regression for the
+# welleng-drilling finding (2026-09-06).
+def _patch_suggest(monkeypatch, rows):
+    monkeypatch.setattr(
+        _nlog.NLOGClient, "suggest", lambda self, q: rows, raising=True
+    )
+
+
+def test_id_for_name_resolves_through_parenthetical_alias(monkeypatch):
+    _patch_suggest(monkeypatch, [
+        {"objectId": "228365142", "title": "P11-B-01 (P11-05)"},
+    ])
+    # exact match misses "P11-B-01 (P11-05)"; alias-tolerant resolves it
+    assert _nlog.NLOGClient().id_for_name("P11-B-01") == 228365142
+
+
+def test_id_for_name_prefers_exact_over_sibling_sidetrack(monkeypatch):
+    # P11-A-02 and P11-A-02A are DIFFERENT bores; the exact query must not be
+    # dragged onto the sidetrack by the alias-strip.
+    _patch_suggest(monkeypatch, [
+        {"objectId": "159376436", "title": "P11-A-02"},
+        {"objectId": "163212895", "title": "P11-A-02A"},
+    ])
+    assert _nlog.NLOGClient().id_for_name("P11-A-02") == 159376436
+
+
+def test_id_for_name_returns_none_when_alias_match_is_ambiguous(monkeypatch):
+    # two bores sharing one base name via aliases must NOT silently resolve to
+    # one of them (opposite of the single-hit case above).
+    _patch_suggest(monkeypatch, [
+        {"objectId": "1", "title": "P11-X-01 (P11-90)"},
+        {"objectId": "2", "title": "P11-X-01 (P11-91)"},
+    ])
+    assert _nlog.NLOGClient().id_for_name("P11-X-01") is None
+
+
+def test_id_for_name_none_when_unknown(monkeypatch):
+    _patch_suggest(monkeypatch, [{"objectId": "9", "title": "F06-07"}])
+    assert _nlog.NLOGClient().id_for_name("P11-B-01") is None

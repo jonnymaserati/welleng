@@ -41,10 +41,20 @@ state under its own terms; check them before redistributing.
 from __future__ import annotations
 
 import json
+import re
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any, Literal
+
+# NLOG titles a bore as "NAME (ALIAS)" — the alias is a second registry number
+# (NITG_NR / old field name), e.g. "P11-B-01 (P11-05)". Strip a single trailing
+# parenthetical so a bulk-dump WELLBORE name can still resolve.
+_TITLE_ALIAS = re.compile(r"\s*\([^)]*\)\s*$")
+
+
+def _strip_title_alias(title: str) -> str:
+    return _TITLE_ALIAS.sub("", str(title)).strip()
 
 BASE = "https://www.nlog.nl"
 API = f"{BASE}/nlog-mapviewer/rest/brh"
@@ -238,12 +248,29 @@ class NLOGClient:
             raise NLOGError(f"suggest failed for {query!r}: {exc}") from exc
 
     def id_for_name(self, wellbore_name: str) -> int | None:
-        """Resolve a bulk-dump WELLBORE name to a borehole id, exact
-        match on title. Returns None if the portal does not know it."""
+        """Resolve a bulk-dump WELLBORE name to a borehole id.
+
+        Match on title, preferring an exact hit. NLOG titles some bores
+        ``"NAME (ALIAS)"`` (the alias is a second registry number, e.g.
+        ``"P11-B-01 (P11-05)"``); an exact match would silently miss those, so
+        if no exact hit is found the alias is stripped and an alias-tolerant
+        match is tried — but only accepted when it is UNAMBIGUOUS, so a query
+        can never silently resolve to one of several sidetracks. Returns None
+        if the portal does not know the name or the match is ambiguous.
+        """
         target = wellbore_name.strip().upper()
-        for hit in self.suggest(wellbore_name):
+        hits = self.suggest(wellbore_name)
+        # 1) exact title match (unchanged behaviour)
+        for hit in hits:
             if str(hit.get("title", "")).strip().upper() == target:
                 return int(hit["objectId"])
+        # 2) alias-tolerant, only if exactly one bore has this base name
+        base_hits = [
+            h for h in hits
+            if _strip_title_alias(h.get("title", "")).upper() == target
+        ]
+        if len(base_hits) == 1:
+            return int(base_hits[0]["objectId"])
         return None
 
     def boreholes(self, filters: dict | None = None) -> list[dict]:
