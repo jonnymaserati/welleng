@@ -23,19 +23,21 @@ except ImportError:
 SHAPES = (
     'point',      # 0 DOF
     'line',       # 1 DOF (along the line/segment)
-    'circle',     # 2 DOF (on the plane, |r| <= radius)
-    'ellipse',    # 2 DOF
-    'rectangle',  # 2 DOF
-    'polygon',    # 2 DOF
+    'circle',     # 2 DOF (planar, on the target frame, |r| <= radius)
+    'ellipse',    # 2 DOF (planar)
+    'rectangle',  # 2 DOF (planar)
+    'polygon',    # 2 DOF (planar)
     'volume',     # 3 DOF (extruded region: 2D shape + thickness)
-    'gaussian',   # probabilistic — mean + covariance, no hard boundary
+    'cube',       # 3 DOF (axis-aligned box in NEV: geometry half_extents)
+    'sphere',     # 3 DOF (ball in NEV: geometry radius)
+    'gaussian',   # 3 DOF (Mahalanobis ellipsoid: mean + covariance cov)
 )
 
 # Positional DOF a landing point has within each shape.
 _SHAPE_DIM = {
     'point': 0, 'line': 1,
     'circle': 2, 'ellipse': 2, 'rectangle': 2, 'polygon': 2,
-    'volume': 3, 'gaussian': 3,
+    'volume': 3, 'cube': 3, 'sphere': 3, 'gaussian': 3,
 }
 
 

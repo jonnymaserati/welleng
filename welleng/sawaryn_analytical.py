@@ -1281,32 +1281,66 @@ def _min_on_grid_1d(fn, lo, hi, seed=41):
     return best
 
 
-def _min_on_grid_2d(fn, lo, hi, seed=5):
-    """Minimum of ``fn(a, b)`` on the box ``[lo, hi]``: coarse grid seed then polish."""
+def _min_on_box(fn, lo, hi, seed=5, eps=0.5):
+    """Minimum of scalar ``fn(x)`` (``x`` an ndarray) over the box ``[lo, hi]`` of
+    ANY dimension: a coarse grid seed then a gradient (L-BFGS-B) polish, with
+    infeasible evals clamped so the optimiser steps around the pockets. Returns
+    ``(value, argmin)`` (``argmin`` an ndarray) or ``(inf, None)`` if all evals
+    are infeasible. ``eps`` is the finite-difference step (metres for a positional
+    box, radians for an angular one).
+    """
+    lo = np.asarray(lo, float)
+    hi = np.asarray(hi, float)
+    axes = [np.linspace(lo[i], hi[i], seed) for i in range(len(lo))]
+    grid = np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, len(lo))
     best = (np.inf, None)
-    for a in np.linspace(lo[0], hi[0], seed):
-        for b in np.linspace(lo[1], hi[1], seed):
-            v = fn(a, b)
-            if v < best[0]:
-                best = (v, (float(a), float(b)))
+    for pt in grid:
+        val = fn(pt)
+        if val < best[0]:
+            best = (float(val), pt)
     if best[1] is None or not np.isfinite(best[0]):
         return best
-    r = minimize(lambda x: min(fn(x[0], x[1]), _BIG), np.array(best[1]),
-                 method="L-BFGS-B", bounds=[(lo[0], hi[0]), (lo[1], hi[1])],
-                 options={"eps": 0.25, "ftol": 1e-7})
-    fr = fn(float(r.x[0]), float(r.x[1]))
-    if (lo[0] <= r.x[0] <= hi[0] and lo[1] <= r.x[1] <= hi[1]
+    r = minimize(lambda x: min(fn(x), _BIG), best[1], method="L-BFGS-B",
+                 bounds=list(zip(lo, hi)), options={"eps": eps, "ftol": 1e-7})
+    xr = np.asarray(r.x, float)
+    fr = fn(xr)
+    if (np.all(xr >= lo - 1e-9) and np.all(xr <= hi + 1e-9)
             and np.isfinite(fr) and fr < best[0]):
-        best = (float(fr), (float(r.x[0]), float(r.x[1])))
+        best = (float(fr), xr)
     return best
 
 
-def solve_clc_landing_region(p1, t1, t4, target, R1, R2=None):
+def _sphere_dir(angles):
+    """Unit direction for spherical angles ``(theta, phi)``."""
+    th, ph = angles
+    return np.array([np.sin(th) * np.cos(ph), np.sin(th) * np.sin(ph), np.cos(th)])
+
+
+def _point_in_polygon(a, b, verts):
+    """Ray-cast test: is in-plane point ``(a, b)`` inside polygon ``verts`` (N,2)."""
+    inside = False
+    n = len(verts)
+    j = n - 1
+    for i in range(n):
+        xi, yi = verts[i]
+        xj, yj = verts[j]
+        if ((yi > b) != (yj > b)) and (a < (xj - xi) * (b - yi) / (yj - yi) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+_PLANAR = ("rectangle", "circle", "ellipse", "polygon")
+_VOLUME = ("cube", "sphere", "gaussian")
+
+
+def solve_clc_landing_region(p1, t1, t4, target, R1, R2=None, k=1.0):
     """Minimum-MD CLC landing into a target REGION, final tangent ``t4`` fixed.
 
     Finds the shortest measured-depth curve-hold-curve path from ``(p1, t1)`` that
     reaches any point of ``target`` while arriving with tangent ``t4``. The
-    landing position is free within the region; the final tangent is given.
+    landing position is free within the region; the final tangent is given (a
+    region has no single direction to couple it to).
 
     Parameters
     ----------
@@ -1315,66 +1349,146 @@ def solve_clc_landing_region(p1, t1, t4, target, R1, R2=None):
     t4 : (3,) array_like
         Final unit tangent at the landing (fixed).
     target : welleng.target.Target
-        The landing region. Supported shapes: ``point``, ``rectangle`` (a box in
-        the target plane) and ``circle`` (a disk). The plane and its orientation
-        come from the target's position and ``orientation``/``dip``.
+        The landing region. Supported shapes:
+
+        * planar (in the target plane, from position + ``orientation``/``dip``):
+          ``point``, ``rectangle`` (``pos1``/``pos2``), ``circle`` (``radius``),
+          ``ellipse`` (``radius_1``/``radius_2``), ``polygon`` (``vertices``);
+        * volumetric (in NEV): ``cube`` (``half_extents``), ``sphere``
+          (``radius``), ``gaussian`` (the Mahalanobis ellipsoid of ``cov`` at
+          radius ``k``).
     R1, R2 : float
         Arc radii; ``R2`` defaults to ``R1``.
+    k : float
+        Mahalanobis radius for a ``gaussian`` target (default 1 = the 1-sigma
+        ellipsoid); ignored for other shapes.
 
     Returns
     -------
     dict or None
         The shortest landing: ``beta``, ``alpha1``, ``alpha2``, ``total_md``
-        (as :func:`solve_clc`), plus ``p4`` (the solved landing point, NEV) and
-        ``ab`` (its in-plane coordinates). ``None`` if no point of the region is
-        reachable with a feasible CLC.
+        (as :func:`solve_clc`) plus ``p4`` (the solved landing point, NEV); for a
+        planar target also ``ab`` (its in-plane coordinates). ``None`` if no point
+        of the region is reachable with a feasible CLC.
     """
     R2 = R1 if R2 is None else R2
     t4 = np.asarray(t4, float)
+    center = target.position
+    g = target.geometry
+    shape = target.shape
 
     def _md(p4):
-        s = solve_clc(p1, t1, p4, t4, R1, R2)
+        s = solve_clc(p1, t1, np.asarray(p4, float), t4, R1, R2)
         if s is None or s["alpha1"] > np.pi + 1e-9 or s["alpha2"] > np.pi + 1e-9:
             return np.inf, None
         return s["total_md"], s
 
-    if target.shape == "point":
-        md, s = _md(target.position)
-        return None if s is None else {**s, "p4": target.position, "ab": (0.0, 0.0)}
+    def mdf(p4):
+        return _md(p4)[0]
 
-    center, u, v = _target_frame(target)
+    if shape == "point":
+        _, s = _md(center)
+        return None if s is None else {**s, "p4": center, "ab": (0.0, 0.0)}
 
-    def md_ab(a, b):
-        return _md(center + a * u + b * v)[0]
+    cands = []          # (md, p4)
+    frame = None
+    if shape in _PLANAR:
+        c, u, v = frame = _target_frame(target)
 
-    g = target.geometry
-    cands = []  # (md, (a, b))
-    if target.shape == "rectangle":
-        (a0, b0), (a1, b1) = g["pos1"], g["pos2"]
-        lo = (min(a0, a1), min(b0, b1))
-        hi = (max(a0, a1), max(b0, b1))
-        # a bounded 2-D minimum over the box already spans its edges + corners
-        cands.append(_min_on_grid_2d(md_ab, lo, hi))
-    elif target.shape == "circle":
+        def P(ab):
+            return c + ab[0] * u + ab[1] * v
+
+        if shape == "rectangle":
+            (a0, b0), (a1, b1) = g["pos1"], g["pos2"]
+            lo = (min(a0, a1), min(b0, b1))
+            hi = (max(a0, a1), max(b0, b1))
+            val, ab = _min_on_box(lambda x: mdf(P(x)), lo, hi, seed=5)
+            if ab is not None:
+                cands.append((val, P(ab)))
+        elif shape == "circle":
+            r = float(g["radius"])
+            vi, ab = _min_on_box(
+                lambda x: mdf(P(x)) if x[0] ** 2 + x[1] ** 2 <= r * r else _BIG,
+                (-r, -r), (r, r), seed=5)
+            if ab is not None and ab[0] ** 2 + ab[1] ** 2 <= r * r + 1e-9:
+                cands.append((vi, P(ab)))
+            vb, th = _min_on_grid_1d(
+                lambda s: mdf(P((r * np.cos(s), r * np.sin(s)))), 0.0, 2 * np.pi)
+            cands.append((vb, P((r * np.cos(th), r * np.sin(th)))))
+        elif shape == "ellipse":
+            r1, r2 = float(g["radius_1"]), float(g["radius_2"])
+
+            def ein(x):
+                return (x[0] / r1) ** 2 + (x[1] / r2) ** 2 <= 1.0
+            vi, ab = _min_on_box(lambda x: mdf(P(x)) if ein(x) else _BIG,
+                                 (-r1, -r2), (r1, r2), seed=7)
+            if ab is not None and ein(ab):
+                cands.append((vi, P(ab)))
+            vb, th = _min_on_grid_1d(
+                lambda s: mdf(P((r1 * np.cos(s), r2 * np.sin(s)))), 0.0, 2 * np.pi)
+            cands.append((vb, P((r1 * np.cos(th), r2 * np.sin(th)))))
+        elif shape == "polygon":
+            verts = np.asarray(g["vertices"], float)
+            lo, hi = verts.min(0), verts.max(0)
+            vi, ab = _min_on_box(
+                lambda x: mdf(P(x)) if _point_in_polygon(x[0], x[1], verts) else _BIG,
+                lo, hi, seed=9)
+            if ab is not None and _point_in_polygon(ab[0], ab[1], verts):
+                cands.append((vi, P(ab)))
+            for i in range(len(verts)):
+                p, q = verts[i], verts[(i + 1) % len(verts)]
+                vb, s = _min_on_grid_1d(
+                    lambda s, p=p, q=q: mdf(P(p + s * (q - p))), 0.0, 1.0)
+                cands.append((vb, P(p + s * (q - p))))
+    elif shape == "cube":
+        h = np.asarray(g["half_extents"], float)
+        val, x = _min_on_box(mdf, center - h, center + h, seed=5)  # spans all faces
+        if x is not None:
+            cands.append((val, x))
+    elif shape == "sphere":
         r = float(g["radius"])
-        vi, abi = _min_on_grid_2d(md_ab, (-r, -r), (r, r))   # interior
-        if abi is not None and abi[0] ** 2 + abi[1] ** 2 <= r * r + 1e-9:
-            cands.append((vi, abi))
-        vb, th = _min_on_grid_1d(                             # curved boundary
-            lambda a: md_ab(r * np.cos(a), r * np.sin(a)), 0.0, 2 * np.pi)
-        cands.append((vb, (r * np.cos(th), r * np.sin(th))))
+        vi, x = _min_on_box(
+            lambda p: mdf(p) if np.sum((p - center) ** 2) <= r * r else _BIG,
+            center - r, center + r, seed=7)
+        if x is not None and np.sum((x - center) ** 2) <= r * r + 1e-6:
+            cands.append((vi, x))
+        vb, a = _min_on_box(lambda a: mdf(center + r * _sphere_dir(a)),
+                            (0.0, 0.0), (np.pi, 2 * np.pi), seed=25, eps=0.05)
+        if a is not None:
+            cands.append((vb, center + r * _sphere_dir(a)))
+    elif shape == "gaussian":
+        if target.cov is None:
+            raise ValueError("a gaussian target needs a covariance (cov)")
+        L = np.linalg.cholesky(target.cov)
+        ext = k * np.sqrt(np.diag(target.cov))
+
+        def maha(p):
+            d = np.linalg.solve(L, p - center)
+            return d @ d
+        vi, x = _min_on_box(lambda p: mdf(p) if maha(p) <= k * k else _BIG,
+                            center - ext, center + ext, seed=7)
+        if x is not None and maha(x) <= k * k + 1e-6:
+            cands.append((vi, x))
+        vb, a = _min_on_box(lambda a: mdf(center + k * (L @ _sphere_dir(a))),
+                            (0.0, 0.0), (np.pi, 2 * np.pi), seed=25, eps=0.05)
+        if a is not None:
+            cands.append((vb, center + k * (L @ _sphere_dir(a))))
     else:
         raise NotImplementedError(
-            f"landing into a {target.shape!r} target is not implemented "
-            "(supported: point, rectangle, circle)"
+            f"landing into a {shape!r} target is not implemented (supported: "
+            "point, rectangle, circle, ellipse, polygon, cube, sphere, gaussian)"
         )
 
     cands = [c for c in cands if c[1] is not None and np.isfinite(c[0])]
     if not cands:
         return None
-    _, (a, b) = min(cands, key=lambda c: c[0])
-    p4 = center + a * u + b * v
+    _, p4 = min(cands, key=lambda c: c[0])
+    p4 = np.asarray(p4, float)
     _, s = _md(p4)
-    return {**s, "p4": p4, "ab": (float(a), float(b))}
+    out = {**s, "p4": p4}
+    if frame is not None:
+        c, u, v = frame
+        out["ab"] = (float((p4 - c) @ u), float((p4 - c) @ v))
+    return out
 
 
