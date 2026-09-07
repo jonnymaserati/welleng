@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.combination &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.combination</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.combination</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Combining two overlapping surveys of the SAME well into one best estimate.</span>
+
+<span class="sd">This is the *fusion* (uncertainty-reducing) counterpart to</span>
+<span class="sd">:mod:`welleng.conditioning`, which computes the two-*well* difference</span>
+<span class="sd">covariance for anti-collision. Here two surveys (e.g. MWD + a gyro run)</span>
+<span class="sd">cover an overlapping measured-depth interval of ONE well; their independent</span>
+<span class="sd">error sources let a weighted combination beat *either* survey.</span>
+
+<span class="sd">The estimator is the **Best Linear Unbiased Estimator (BLUE)** for two</span>
+<span class="sd">correlated estimates of the same quantity -- equivalently the weighted</span>
+<span class="sd">least-squares / inverse-covariance weighting described by Chia et al. (2003),</span>
+<span class="sd">Ledroz et al. (2016) and Bang (SPE-195621). It is NOT a Kalman filter: there</span>
+<span class="sd">is no time/sequence, just two estimates of one position. (Kalman is the right</span>
+<span class="sd">tool for the *forward-carry* extension -- a persistent systematic state</span>
+<span class="sd">propagated into a later section -- which is deliberately out of scope here.)</span>
+
+<span class="sd">Given two per-station covariances ``Sigma_A``, ``Sigma_B`` and the</span>
+<span class="sd">cross-covariance ``C = cov(x_A, x_B)`` from their SHARED error sources:</span>
+
+<span class="sd">    Sigma_c = Sigma_A - (Sigma_A - C)(Sigma_A + Sigma_B - C - C^T)^-1 (Sigma_A - C)^T</span>
+<span class="sd">    x_c     = x_A     + (Sigma_A - C)(Sigma_A + Sigma_B - C - C^T)^-1 (x_B - x_A)</span>
+
+<span class="sd">Key property (the correctness anchor): error components that are **fully</span>
+<span class="sd">shared** (common-mode) between the two surveys -- captured in ``C`` -- do NOT</span>
+<span class="sd">reduce. Only the independent part is averaged down. With ``C = 0`` (fully</span>
+<span class="sd">independent -- e.g. every Volve survey tool is flagged ``correlate=&quot;N&quot;``) this</span>
+<span class="sd">collapses to the classic information-add ``(Sigma_A^-1 + Sigma_B^-1)^-1``.</span>
+
+<span class="sd">References</span>
+<span class="sd">----------</span>
+<span class="sd">- Chia, C.R. et al. (2003) -- rigorous weighted averaging of overlapping surveys.</span>
+<span class="sd">- Ledroz, A. et al. (2016) -- combined-IPM construction (constant weights).</span>
+<span class="sd">- Bang, J. (2019) SPE-195621 -- inclination/azimuth-dependent weights.</span>
+<span class="sd">- Torkildsen et al. (2004) SPE-90408 -- simultaneous propagation captures the</span>
+<span class="sd">  correlation between two tools (otherwise the covariance is underestimated).</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">replace</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">numpy.typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">NDArray</span>
+
+<div class="viewcode-block" id="FusedSurvey">
+<a class="viewcode-back" href="../../welleng.html#welleng.combination.FusedSurvey">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">FusedSurvey</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Result of BLUE-combining two overlapping surveys, per station.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    cov_fused : (n, 3, 3) ndarray</span>
+<span class="sd">        The fused covariance -- never larger than either input in any</span>
+<span class="sd">        direction (equal only where the two surveys are fully correlated).</span>
+<span class="sd">    cov_a, cov_b : (n, 3, 3) ndarray</span>
+<span class="sd">        The input covariances, echoed for comparison.</span>
+<span class="sd">    sigma_a, sigma_b, sigma_fused : (n,) ndarray</span>
+<span class="sd">        ``sqrt(max eigenvalue)`` -- worst-direction 1sigma per station.</span>
+<span class="sd">    reduction_factor : (n,) ndarray</span>
+<span class="sd">        ``min(sigma_a, sigma_b) / sigma_fused`` -- how much the fusion</span>
+<span class="sd">        tightens the better of the two inputs (&gt;= 1; 1 = no gain).</span>
+<span class="sd">    pos_fused : (n, 3) ndarray or None</span>
+<span class="sd">        The fused position estimate, if positions were supplied.</span>
+<span class="sd">    innovation_mahalanobis, innovation_flag : (n,) ndarray or None</span>
+<span class="sd">        Set when positions are supplied. ``innovation_mahalanobis`` is the</span>
+<span class="sd">        Mahalanobis distance of the overlap innovation ``d = x_B - x_A`` under</span>
+<span class="sd">        the innovation covariance ``S = A + B - C - C^T`` -- i.e.</span>
+<span class="sd">        ``sqrt(d^T S^-1 d)`` per station. Under the null (the two surveys agree</span>
+<span class="sd">        within their stated uncertainty) ``d`` is zero-mean Gaussian with</span>
+<span class="sd">        covariance ``S``, so ``d^T S^-1 d`` is chi-square with 3 dof.</span>
+<span class="sd">        ``innovation_flag`` is ``True`` where it exceeds ``qc_chi2`` -- a station</span>
+<span class="sd">        whose two surveys disagree by more than their combined uncertainty</span>
+<span class="sd">        allows, i.e. a bad station or an under-stated input covariance. Because</span>
+<span class="sd">        the covariance-EOU conditioning is joint, one such station propagates</span>
+<span class="sd">        through the off-diagonals and biases the whole run, so it must be caught</span>
+<span class="sd">        BEFORE conditioning, not after.</span>
+<span class="sd">    md, inc, azi : (n,) ndarray or None</span>
+<span class="sd">        The fused best-estimate trajectory as a minimum-curvature listing --</span>
+<span class="sd">        set only when a trajectory was requested (``combine_surveys(...,</span>
+<span class="sd">        return_trajectory=True)``). ``(md, inc, azi)`` is drawable by</span>
+<span class="sd">        conventional trajectory software: the query MDs with the single-arc</span>
+<span class="sd">        (reflection) reconstruction of the fused NEV positions. MD is held</span>
+<span class="sd">        exact (it is measured); the reconstruction carries a small position</span>
+<span class="sd">        residual against the raw BLUE points (typically cm, well below the</span>
+<span class="sd">        metre-scale position uncertainty), accumulating to a closure residual</span>
+<span class="sd">        at the segment end. **Every station is CALCULATED, not measured** -- the</span>
+<span class="sd">        fused path is a derived best estimate, so the whole listing is a</span>
+<span class="sd">        calculated product (no measured/calculated split per station).</span>
+<span class="sd">        DLS-faithful: the reconstructed dogleg severity tracks the input surveys.</span>
+
+<span class="sd">        .. note::</span>
+<span class="sd">           This trajectory reconstruction is a **concept pending field</span>
+<span class="sd">           validation** -- verified on synthetic and Volve data, not yet across</span>
+<span class="sd">           a range of real wells. The single-arc form is exact when a leg is one</span>
+<span class="sd">           min-curve arc; its residual grows with the curvature CHANGE across a</span>
+<span class="sd">           leg (build/turn transitions), so it is trajectory-shape dependent. For</span>
+<span class="sd">           a typical build (2-3 deg/30 m) it is ~1% of the EOU at standard ~30 m</span>
+<span class="sd">           spacing, within a couple of per cent to ~120 m, and becomes a large</span>
+<span class="sd">           fraction only beyond ~300 m spacing (an under-sampled survey anyway);</span>
+<span class="sd">           the remedy there is to sample the continuous fusion on a finer MD grid</span>
+<span class="sd">           (calculated inner stations). Where the fused overlap is interior (its</span>
+<span class="sd">           last station is not the well&#39;s total depth), stitching to a</span>
+<span class="sd">           single-source continuation should absorb the closure residual in the</span>
+<span class="sd">           final section (truncate/extend the last leg&#39;s chord so the segment</span>
+<span class="sd">           ends at the correct MD).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">cov_fused</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>      <span class="c1"># (n,3,3) fused BLUE covariance, NEV, m^2</span>
+    <span class="n">cov_a</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>          <span class="c1"># (n,3,3) input survey A covariance, echoed</span>
+    <span class="n">cov_b</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>          <span class="c1"># (n,3,3) input survey B covariance, echoed</span>
+    <span class="n">sigma_a</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>        <span class="c1"># (n,) worst-direction 1sigma of A (m)</span>
+    <span class="n">sigma_b</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>        <span class="c1"># (n,) worst-direction 1sigma of B (m)</span>
+    <span class="n">sigma_fused</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>    <span class="c1"># (n,) worst-direction 1sigma of the fusion (m)</span>
+    <span class="n">reduction_factor</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>  <span class="c1"># (n,) min(sigma_a,sigma_b)/sigma_fused (&gt;=1)</span>
+    <span class="n">pos_fused</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># (n,3) fused NEV pos, if given</span>
+    <span class="n">md</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>   <span class="c1"># (k,) fused trajectory measured depth</span>
+    <span class="n">inc</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># (k,) fused trajectory inclination (deg)</span>
+    <span class="n">azi</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># (k,) fused trajectory azimuth (deg)</span>
+    <span class="n">cov_dia</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># (n,3,3) fused DIA cov (space=&quot;dia&quot;)</span>
+    <span class="n">innovation_mahalanobis</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># (n,) sqrt(d&#39; S^-1 d)</span>
+    <span class="n">innovation_flag</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">bool_</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># (n,) overlap-QC gate tripped</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_psd</span><span class="p">(</span><span class="n">cov</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Symmetrise and clip to positive-semidefinite (float-drift defence).&quot;&quot;&quot;</span>
+    <span class="n">cov</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">cov</span> <span class="o">+</span> <span class="n">cov</span><span class="o">.</span><span class="n">swapaxes</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">2</span><span class="p">))</span>
+    <span class="n">w</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigvalsh</span><span class="p">(</span><span class="n">cov</span><span class="p">)</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">w</span> <span class="o">&lt;</span> <span class="o">-</span><span class="mf">1e-9</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="s2">&quot;combined covariance had negative eigenvalues -- clipping to PSD &quot;</span>
+            <span class="s2">&quot;(float drift / ill-conditioned conditioning at a strongly &quot;</span>
+            <span class="s2">&quot;observed station)&quot;</span><span class="p">,</span>
+            <span class="ne">RuntimeWarning</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">vals</span><span class="p">,</span> <span class="n">vecs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigh</span><span class="p">(</span><span class="n">cov</span><span class="p">)</span>
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">vals</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">cov</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;...ij,...j,...kj-&gt;...ik&quot;</span><span class="p">,</span> <span class="n">vecs</span><span class="p">,</span> <span class="n">vals</span><span class="p">,</span> <span class="n">vecs</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">cov</span>
+
+
+<div class="viewcode-block" id="fuse_covariances">
+<a class="viewcode-back" href="../../welleng.html#welleng.combination.fuse_covariances">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">fuse_covariances</span><span class="p">(</span>
+    <span class="n">cov_a</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">],</span>
+    <span class="n">cov_b</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">cross</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">pos_a</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">pos_b</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">qc_chi2</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">16.266</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FusedSurvey</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;BLUE-combine two overlapping surveys&#39; per-station covariances.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    cov_a, cov_b : (n, 3, 3) ndarray</span>
+<span class="sd">        Per-station NEV covariance of each survey, aligned to the SAME</span>
+<span class="sd">        stations (interpolate both to a common measured depth first).</span>
+<span class="sd">    cross : (n, 3, 3) ndarray, optional</span>
+<span class="sd">        Cross-covariance ``C = cov(x_A, x_B)`` from the error sources shared</span>
+<span class="sd">        by both surveys (global terms realised identically; shared systematic</span>
+<span class="sd">        terms if the same tool/reference). Default ``None`` == 0 == fully</span>
+<span class="sd">        independent (the ``correlate=&quot;N&quot;`` case). Fully-shared components in</span>
+<span class="sd">        ``C`` are preserved (do not reduce).</span>
+<span class="sd">    pos_a, pos_b : (n, 3) ndarray, optional</span>
+<span class="sd">        NEV positions of each survey; if both given, the fused position is</span>
+<span class="sd">        returned in :attr:`FusedSurvey.pos_fused`, and the overlap innovation is</span>
+<span class="sd">        QC-gated (see ``qc_chi2`` and :attr:`FusedSurvey.innovation_flag`).</span>
+<span class="sd">    qc_chi2 : float, default 16.266</span>
+<span class="sd">        Chi-square(3) threshold for the overlap-innovation QC gate (default is</span>
+<span class="sd">        the 99.9th percentile; use 11.345 for 99%, 7.815 for 95%). A station</span>
+<span class="sd">        whose innovation ``d^T S^-1 d`` exceeds this is flagged in</span>
+<span class="sd">        :attr:`FusedSurvey.innovation_flag` and a warning is raised. Only active</span>
+<span class="sd">        when ``pos_a`` and ``pos_b`` are both supplied.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    FusedSurvey</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">cov_a</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+    <span class="n">B</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">cov_b</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">A</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">B</span><span class="o">.</span><span class="n">shape</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;cov_a </span><span class="si">{</span><span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> and cov_b </span><span class="si">{</span><span class="n">B</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> must match (align to &quot;</span>
+            <span class="s2">&quot;common stations first)&quot;</span>
+        <span class="p">)</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">cross</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">C</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">A</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">C</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">cross</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">C</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;cross </span><span class="si">{</span><span class="n">C</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> must match cov_a </span><span class="si">{</span><span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Guard non-finite input up front: a NaN/inf covariance (e.g. from an</span>
+    <span class="c1"># invalid negative/out-of-range inclination that NaNs the error model and</span>
+    <span class="c1"># poisons the systematic running sum) otherwise surfaces only as a cryptic</span>
+    <span class="c1"># &quot;Eigenvalues did not converge&quot; from the PSD clip below. Fail clearly,</span>
+    <span class="c1"># naming the offending stations, so the cause is the survey, not the fuse.</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">M</span> <span class="ow">in</span> <span class="p">((</span><span class="s2">&quot;cov_a&quot;</span><span class="p">,</span> <span class="n">A</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;cov_b&quot;</span><span class="p">,</span> <span class="n">B</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;cross&quot;</span><span class="p">,</span> <span class="n">C</span><span class="p">)):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">M</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+            <span class="n">bad</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="o">~</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">M</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">M</span><span class="p">),</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">))[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> has non-finite values at station index(es) &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">bad</span><span class="o">.</span><span class="n">tolist</span><span class="p">()[:</span><span class="mi">20</span><span class="p">]</span><span class="si">}</span><span class="s2"> -- the input covariance is invalid. A &quot;</span>
+                <span class="s2">&quot;common cause is a negative or out-of-range inclination in the &quot;</span>
+                <span class="s2">&quot;source survey, which NaNs the error model and propagates down &quot;</span>
+                <span class="s2">&quot;the systematic running sum. Fix the survey/error model first.&quot;</span>
+            <span class="p">)</span>
+
+    <span class="c1"># BLUE with correlated estimates (Bar-Shalom fusion).</span>
+    <span class="n">S</span> <span class="o">=</span> <span class="n">A</span> <span class="o">+</span> <span class="n">B</span> <span class="o">-</span> <span class="n">C</span> <span class="o">-</span> <span class="n">C</span><span class="o">.</span><span class="n">swapaxes</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">2</span><span class="p">)</span>          <span class="c1"># innovation covariance</span>
+    <span class="n">K</span> <span class="o">=</span> <span class="n">A</span> <span class="o">-</span> <span class="n">C</span>                                    <span class="c1"># gain numerator (Sigma_A - C)</span>
+    <span class="c1"># inv is ~7x faster than pinv and correct for every VALID input: S is</span>
+    <span class="c1"># positive-definite unless a direction is FULLY shared (C spans the whole</span>
+    <span class="c1"># of it), which makes it exactly singular. Fall back to pinv on that edge</span>
+    <span class="c1"># -&gt; gain 0 in the shared subspace -&gt; that direction does not reduce, the</span>
+    <span class="c1"># correct BLUE limit.</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">Sinv</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">S</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">LinAlgError</span><span class="p">:</span>
+        <span class="n">Sinv</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">pinv</span><span class="p">(</span><span class="n">S</span><span class="p">)</span>                 <span class="c1"># fully-shared singular edge</span>
+    <span class="n">gain</span> <span class="o">=</span> <span class="n">K</span> <span class="o">@</span> <span class="n">Sinv</span>                              <span class="c1"># (n,3,3)</span>
+    <span class="n">cov_fused</span> <span class="o">=</span> <span class="n">_psd</span><span class="p">(</span><span class="n">A</span> <span class="o">-</span> <span class="n">gain</span> <span class="o">@</span> <span class="n">K</span><span class="o">.</span><span class="n">swapaxes</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">2</span><span class="p">))</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_sig</span><span class="p">(</span><span class="n">cov</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigvalsh</span><span class="p">(</span><span class="n">cov</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="mf">0.0</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+
+    <span class="n">sigma_a</span><span class="p">,</span> <span class="n">sigma_b</span> <span class="o">=</span> <span class="n">_sig</span><span class="p">(</span><span class="n">A</span><span class="p">),</span> <span class="n">_sig</span><span class="p">(</span><span class="n">B</span><span class="p">)</span>
+    <span class="n">sigma_f</span> <span class="o">=</span> <span class="n">_sig</span><span class="p">(</span><span class="n">cov_fused</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">divide</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">):</span>
+        <span class="n">red</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">sigma_f</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span><span class="n">sigma_a</span><span class="p">,</span> <span class="n">sigma_b</span><span class="p">)</span> <span class="o">/</span> <span class="n">sigma_f</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+
+    <span class="n">pos_fused</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">innov_mahal</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">innov_flag</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">pos_a</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">pos_b</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">xa</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">pos_a</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="n">xb</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">pos_b</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">xb</span> <span class="o">-</span> <span class="n">xa</span>                                  <span class="c1"># overlap innovation</span>
+        <span class="n">pos_fused</span> <span class="o">=</span> <span class="n">xa</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;...ij,...j-&gt;...i&quot;</span><span class="p">,</span> <span class="n">gain</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
+        <span class="c1"># Innovation QC BEFORE the conditioning is trusted: d^T S^-1 d is</span>
+        <span class="c1"># chi-square(3) under the null. A station above qc_chi2 is inconsistent</span>
+        <span class="c1"># beyond its combined uncertainty; because the covariance-EOU update is</span>
+        <span class="c1"># joint, one bad station biases the whole run through the off-diagonals,</span>
+        <span class="c1"># so it is gated here rather than left to the caller.</span>
+        <span class="n">m2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;...i,...ij,...j-&gt;...&quot;</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">Sinv</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
+        <span class="n">innov_mahal</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">m2</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+        <span class="n">innov_flag</span> <span class="o">=</span> <span class="n">m2</span> <span class="o">&gt;</span> <span class="n">qc_chi2</span>
+        <span class="k">if</span> <span class="n">innov_flag</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+            <span class="n">bad</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">innov_flag</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;overlap innovation exceeds the QC gate (chi-square(3) &gt; &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">qc_chi2</span><span class="si">:</span><span class="s2">g</span><span class="si">}</span><span class="s2">) at station index(es) </span><span class="si">{</span><span class="n">bad</span><span class="o">.</span><span class="n">tolist</span><span class="p">()[:</span><span class="mi">20</span><span class="p">]</span><span class="si">}</span><span class="s2"> -- the &quot;</span>
+                <span class="s2">&quot;two surveys disagree by more than their combined uncertainty &quot;</span>
+                <span class="s2">&quot;(a bad station, or an under-stated input covariance). Review &quot;</span>
+                <span class="s2">&quot;before trusting the joint conditioning, which propagates a bad &quot;</span>
+                <span class="s2">&quot;station through the whole run.&quot;</span><span class="p">,</span>
+                <span class="ne">RuntimeWarning</span><span class="p">,</span>
+            <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">FusedSurvey</span><span class="p">(</span>
+        <span class="n">cov_fused</span><span class="o">=</span><span class="n">cov_fused</span><span class="p">,</span> <span class="n">cov_a</span><span class="o">=</span><span class="n">A</span><span class="p">,</span> <span class="n">cov_b</span><span class="o">=</span><span class="n">B</span><span class="p">,</span>
+        <span class="n">sigma_a</span><span class="o">=</span><span class="n">sigma_a</span><span class="p">,</span> <span class="n">sigma_b</span><span class="o">=</span><span class="n">sigma_b</span><span class="p">,</span> <span class="n">sigma_fused</span><span class="o">=</span><span class="n">sigma_f</span><span class="p">,</span>
+        <span class="n">reduction_factor</span><span class="o">=</span><span class="n">red</span><span class="p">,</span> <span class="n">pos_fused</span><span class="o">=</span><span class="n">pos_fused</span><span class="p">,</span>
+        <span class="n">innovation_mahalanobis</span><span class="o">=</span><span class="n">innov_mahal</span><span class="p">,</span> <span class="n">innovation_flag</span><span class="o">=</span><span class="n">innov_flag</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_interp_at</span><span class="p">(</span><span class="n">survey</span><span class="p">,</span> <span class="n">mds</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Vectorised (inc_rad, azi_grid_rad, pos_nev) at ``mds`` -- one min-curve</span>
+<span class="sd">    interpolation over the whole survey, not a per-md ``interpolate_md`` loop</span>
+<span class="sd">    (~500x faster, bit-identical). ``mds`` must lie within the survey range.&quot;&quot;&quot;</span>
+    <span class="n">r</span> <span class="o">=</span> <span class="n">survey</span><span class="o">.</span><span class="n">interpolate_mds</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">mds</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
+    <span class="n">idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">searchsorted</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">md</span><span class="p">,</span> <span class="n">mds</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">md</span><span class="p">[</span><span class="n">idx</span><span class="p">],</span> <span class="n">mds</span><span class="p">):</span>
+        <span class="c1"># fall back to nearest (defensive: interpolate_mds inserts the exact mds)</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">md</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">mds</span><span class="p">)[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:])</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">pos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">r</span><span class="o">.</span><span class="n">n</span><span class="p">,</span> <span class="n">r</span><span class="o">.</span><span class="n">e</span><span class="p">,</span> <span class="n">r</span><span class="o">.</span><span class="n">tvd</span><span class="p">])[</span><span class="n">idx</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">r</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">[</span><span class="n">idx</span><span class="p">],</span> <span class="n">r</span><span class="o">.</span><span class="n">azi_grid_rad</span><span class="p">[</span><span class="n">idx</span><span class="p">],</span> <span class="n">pos</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_fuse_positions</span><span class="p">(</span><span class="n">survey_a</span><span class="p">,</span> <span class="n">survey_b</span><span class="p">,</span> <span class="n">mds</span><span class="p">,</span> <span class="n">cross</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fused NEV covariance + BLUE position at each md (helper).&quot;&quot;&quot;</span>
+    <span class="n">cov_a</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">survey_a</span><span class="o">.</span><span class="n">err</span><span class="o">.</span><span class="n">cov_nev_at</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">m</span><span class="p">)))</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">mds</span><span class="p">])</span>
+    <span class="n">cov_b</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">survey_b</span><span class="o">.</span><span class="n">err</span><span class="o">.</span><span class="n">cov_nev_at</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">m</span><span class="p">)))</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">mds</span><span class="p">])</span>
+    <span class="n">pos_a</span> <span class="o">=</span> <span class="n">_interp_at</span><span class="p">(</span><span class="n">survey_a</span><span class="p">,</span> <span class="n">mds</span><span class="p">)[</span><span class="mi">2</span><span class="p">]</span>
+    <span class="n">pos_b</span> <span class="o">=</span> <span class="n">_interp_at</span><span class="p">(</span><span class="n">survey_b</span><span class="p">,</span> <span class="n">mds</span><span class="p">)[</span><span class="mi">2</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">fuse_covariances</span><span class="p">(</span><span class="n">cov_a</span><span class="p">,</span> <span class="n">cov_b</span><span class="p">,</span> <span class="n">cross</span><span class="o">=</span><span class="n">cross</span><span class="p">,</span> <span class="n">pos_a</span><span class="o">=</span><span class="n">pos_a</span><span class="p">,</span> <span class="n">pos_b</span><span class="o">=</span><span class="n">pos_b</span><span class="p">)</span>
+
+
+<span class="c1"># XCL course-length terms (XCLA/XCLH, Codling SPE-187249): a REAL angular</span>
+<span class="c1"># (course-length) uncertainty, NOT non-physical -- and there is a proper way to</span>
+<span class="c1"># express them as DIA errors. With ``SurveyHeader.xcl_representation == &quot;dia&quot;`` the</span>
+<span class="c1"># error model recasts XCL as an effective inc/azi angle error (``_xcl_dia``,</span>
+<span class="c1"># Codling Eq. 1 = 0.167*DL*course-length; reproduces the NEV-direct STATION</span>
+<span class="c1"># covariance to machine precision), so ``cov_DIA`` carries them in the correct</span>
+<span class="c1"># inc/azi component and they are INCLUDED in the fusion -- consistent with</span>
+<span class="c1"># ``cov_nev_at`` (which also includes XCL). Only under the default &quot;nev_direct&quot;</span>
+<span class="c1"># representation is the XCL ``e_DIA`` not a clean measurement error (it lands in</span>
+<span class="c1"># the wrong column, inflating raw sig_inc to several degrees); there it must be</span>
+<span class="c1"># excluded. See projects/specs/2026-08-26_dia_space_survey_fusion.md.</span>
+<span class="n">_XCL_TERMS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;XCLA&quot;</span><span class="p">,</span> <span class="s2">&quot;XCLH&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_fuse_dia</span><span class="p">(</span><span class="n">survey_a</span><span class="p">,</span> <span class="n">survey_b</span><span class="p">,</span> <span class="n">mds</span><span class="p">,</span> <span class="n">exclude</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fuse (inc, azi) per station in DIA space by BLUE on the angle covariance.</span>
+
+<span class="sd">    Returns (inc_f rad, azi_f grid rad, cov_dia (n,3,3) with the fused (inc,azi)</span>
+<span class="sd">    block; md variance 0 -- measured depth is shared, not fused).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">iA</span><span class="p">,</span> <span class="n">aA</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_interp_at</span><span class="p">(</span><span class="n">survey_a</span><span class="p">,</span> <span class="n">mds</span><span class="p">)</span>      <span class="c1"># inc, azi (grid) rad -- vectorised</span>
+    <span class="n">iB</span><span class="p">,</span> <span class="n">aB</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_interp_at</span><span class="p">(</span><span class="n">survey_b</span><span class="p">,</span> <span class="n">mds</span><span class="p">)</span>
+    <span class="n">Ca</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">survey_a</span><span class="o">.</span><span class="n">err</span><span class="o">.</span><span class="n">cov_dia_at</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">m</span><span class="p">),</span> <span class="n">exclude</span><span class="o">=</span><span class="n">exclude</span><span class="p">))</span>
+                   <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">mds</span><span class="p">])[:,</span> <span class="mi">1</span><span class="p">:,</span> <span class="mi">1</span><span class="p">:]</span>          <span class="c1"># (n,2,2) (inc,azi) block</span>
+    <span class="n">Cb</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">survey_b</span><span class="o">.</span><span class="n">err</span><span class="o">.</span><span class="n">cov_dia_at</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">m</span><span class="p">),</span> <span class="n">exclude</span><span class="o">=</span><span class="n">exclude</span><span class="p">))</span>
+                   <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">mds</span><span class="p">])[:,</span> <span class="mi">1</span><span class="p">:,</span> <span class="mi">1</span><span class="p">:]</span>
+    <span class="n">xa</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">iA</span><span class="p">,</span> <span class="n">aA</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">xb</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">iB</span><span class="p">,</span> <span class="n">aB</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="c1"># unwrap azimuth relative to A so the fusion is not corrupted by the 0/2pi seam</span>
+    <span class="n">daz</span> <span class="o">=</span> <span class="p">(</span><span class="n">xb</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">xa</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">%</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span>
+    <span class="n">xb</span> <span class="o">=</span> <span class="n">xb</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">xb</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">xa</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">daz</span>
+    <span class="n">Cai</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">Ca</span><span class="p">)</span>
+    <span class="n">Cbi</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">Cb</span><span class="p">)</span>
+    <span class="n">Cf</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">Cai</span> <span class="o">+</span> <span class="n">Cbi</span><span class="p">)</span>                     <span class="c1"># fused angle covariance</span>
+    <span class="n">xf</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;nij,njk,nk-&gt;ni&quot;</span><span class="p">,</span> <span class="n">Cf</span><span class="p">,</span> <span class="n">Cai</span><span class="p">,</span> <span class="n">xa</span><span class="p">)</span>
+          <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;nij,njk,nk-&gt;ni&quot;</span><span class="p">,</span> <span class="n">Cf</span><span class="p">,</span> <span class="n">Cbi</span><span class="p">,</span> <span class="n">xb</span><span class="p">))</span>
+    <span class="n">cov_dia</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">mds</span><span class="p">),</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">cov_dia</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:,</span> <span class="mi">1</span><span class="p">:]</span> <span class="o">=</span> <span class="n">Cf</span>
+    <span class="k">return</span> <span class="n">xf</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">xf</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">%</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">),</span> <span class="n">cov_dia</span>
+
+
+<div class="viewcode-block" id="combine_surveys">
+<a class="viewcode-back" href="../../welleng.html#welleng.combination.combine_surveys">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">combine_surveys</span><span class="p">(</span>
+    <span class="n">survey_a</span><span class="p">,</span>
+    <span class="n">survey_b</span><span class="p">,</span>
+    <span class="n">mds</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">cross</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">return_trajectory</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">space</span><span class="o">=</span><span class="s2">&quot;nev&quot;</span><span class="p">,</span>
+    <span class="n">exclude_dia</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FusedSurvey</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;BLUE-combine two overlapping surveys of the same well at arbitrary MDs.</span>
+
+<span class="sd">    Evaluates each survey&#39;s covariance at every ``md`` via the analytical</span>
+<span class="sd">    arc-faithful interior covariance :meth:`welleng.error.ErrorModel.cov_nev_at`</span>
+<span class="sd">    -- the correct way to bring both surveys onto a common measured depth</span>
+<span class="sd">    (analytical, not the linear covariance interpolation that under-reports</span>
+<span class="sd">    near doglegs). Fusion of the resulting covariances is the same BLUE as</span>
+<span class="sd">    :func:`fuse_covariances`, so the combination is *continuous*: query it at</span>
+<span class="sd">    any MD in the overlap, on or off a survey station.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    survey_a, survey_b : welleng.survey.Survey</span>
+<span class="sd">        Two surveys of the SAME well over an overlapping MD interval, each with</span>
+<span class="sd">        an error model applied (so ``survey.err`` is set).</span>
+<span class="sd">    mds : float or array-like</span>
+<span class="sd">        Measured depth(s) at which to evaluate and combine. Must lie within</span>
+<span class="sd">        both surveys&#39; MD range.</span>
+<span class="sd">    cross : (n, 3, 3) ndarray, optional</span>
+<span class="sd">        Cross-covariance from shared error sources at each MD. Default None == 0</span>
+<span class="sd">        (fully independent -- the ``correlate=&quot;N&quot;`` case). Fully-shared</span>
+<span class="sd">        components do not reduce.</span>
+<span class="sd">    return_trajectory : bool, default False</span>
+<span class="sd">        Also reconstruct the fused best-estimate *trajectory* -- the BLUE</span>
+<span class="sd">        position at each MD, recovered to (md, inc, azi) and returned in</span>
+<span class="sd">        :attr:`FusedSurvey.md`, ``.inc``, ``.azi`` (with ``.pos_fused``), a</span>
+<span class="sd">        min-curve listing of the combined path. The tie-in tangent is taken from</span>
+<span class="sd">        ``survey_a`` at the first MD; ``mds`` must be sorted ascending. This is</span>
+<span class="sd">        the single-arc (reflection) reconstruction at the query MDs: MD is held</span>
+<span class="sd">        exact (measured), DLS-faithful, carrying a small position residual</span>
+<span class="sd">        against the raw BLUE points (typically cm, below the metre-scale</span>
+<span class="sd">        position uncertainty). See the note on :attr:`FusedSurvey.md` -- this</span>
+<span class="sd">        reconstruction is a concept pending field validation.</span>
+<span class="sd">    space : {&quot;nev&quot;, &quot;dia&quot;}, default &quot;nev&quot;</span>
+<span class="sd">        The space the fusion is performed in.</span>
+
+<span class="sd">        - ``&quot;nev&quot;`` -- BLUE on the NEV position covariance (as above). Optimises</span>
+<span class="sd">          the position estimate; a trajectory (``return_trajectory``) is then</span>
+<span class="sd">          *reconstructed* from the fused positions, carrying a small residual.</span>
+<span class="sd">        - ``&quot;dia&quot;`` -- BLUE on the DIA (measured-depth, inclination, azimuth)</span>
+<span class="sd">          covariance: fuse the **angles** per station (MD is the shared index),</span>
+<span class="sd">          giving the fused (md, inc, azi) listing *directly*. The path is</span>
+<span class="sd">          minimum-curvature-valid by construction (no reconstruction, no</span>
+<span class="sd">          chord&gt;MD residual), and agrees with the NEV fusion within the EOU.</span>
+<span class="sd">          ``.md/.inc/.azi`` and ``.pos_fused`` are the DIA-fused survey;</span>
+<span class="sd">          ``.cov_fused`` is the NEV position EOU (the reported ellipsoid);</span>
+<span class="sd">          ``.cov_dia`` is the fused angle covariance. This is the principled</span>
+<span class="sd">          space for producing a fused *survey* -- see</span>
+<span class="sd">          ``projects/specs/2026-08-26_dia_space_survey_fusion.md`` (concept</span>
+<span class="sd">          pending field validation). The rigorous ``C_nev = V C_dia V^T``</span>
+<span class="sd">          propagation and the correlated (single-station-lifts-all) form are</span>
+<span class="sd">          follow-on work.</span>
+<span class="sd">    exclude_dia : iterable of str, optional (``space=&quot;dia&quot;`` only)</span>
+<span class="sd">        Error-source codes omitted from the DIA fusion weighting. Default</span>
+<span class="sd">        ``None`` = **auto**: the XCL course-length terms are INCLUDED when both</span>
+<span class="sd">        surveys use ``SurveyHeader.xcl_representation == &quot;dia&quot;`` (then they are a</span>
+<span class="sd">        clean angular error -- Codling SPE-187249, folded into the right inc/azi</span>
+<span class="sd">        component), and EXCLUDED with a warning otherwise (under the default</span>
+<span class="sd">        &quot;nev_direct&quot; representation the XCL ``e_DIA`` is not a clean measurement</span>
+<span class="sd">        error). Pass an explicit iterable to override -- e.g. ``()`` to force the</span>
+<span class="sd">        full budget, or a wider set to also drop MSA / sag-correction /</span>
+<span class="sd">        non-physical-misalignment terms once identified (an expert judgment).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    FusedSurvey</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">mds</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">mds</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="p">((</span><span class="s2">&quot;survey_a&quot;</span><span class="p">,</span> <span class="n">survey_a</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;survey_b&quot;</span><span class="p">,</span> <span class="n">survey_b</span><span class="p">)):</span>
+        <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="s2">&quot;err&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> has no error model applied (survey.err is None)&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">space</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;nev&quot;</span><span class="p">,</span> <span class="s2">&quot;dia&quot;</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;space must be &#39;nev&#39; or &#39;dia&#39;, got </span><span class="si">{</span><span class="n">space</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">space</span> <span class="o">==</span> <span class="s2">&quot;dia&quot;</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.survey</span><span class="w"> </span><span class="kn">import</span> <span class="n">Survey</span>
+        <span class="k">if</span> <span class="n">exclude_dia</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>                    <span class="c1"># auto XCL handling</span>
+            <span class="n">both_dia</span> <span class="o">=</span> <span class="nb">all</span><span class="p">(</span>
+                <span class="nb">getattr</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">header</span><span class="p">,</span> <span class="s2">&quot;xcl_representation&quot;</span><span class="p">,</span> <span class="s2">&quot;nev_direct&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;dia&quot;</span>
+                <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="p">(</span><span class="n">survey_a</span><span class="p">,</span> <span class="n">survey_b</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">both_dia</span><span class="p">:</span>
+                <span class="n">exclude_dia</span> <span class="o">=</span> <span class="p">()</span>                   <span class="c1"># XCL is a clean DIA error -&gt; include</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+                <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                    <span class="s2">&quot;DIA fusion: surveys not built with &quot;</span>
+                    <span class="s2">&quot;SurveyHeader(xcl_representation=&#39;dia&#39;); the XCL course-length &quot;</span>
+                    <span class="s2">&quot;terms (XCLA/XCLH) have no clean measurement-space e_DIA under &quot;</span>
+                    <span class="s2">&quot;&#39;nev_direct&#39; and are EXCLUDED from the fusion. Rebuild the &quot;</span>
+                    <span class="s2">&quot;surveys with xcl_representation=&#39;dia&#39; to include the &quot;</span>
+                    <span class="s2">&quot;course-length uncertainty properly.&quot;</span><span class="p">,</span>
+                    <span class="ne">RuntimeWarning</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">exclude_dia</span> <span class="o">=</span> <span class="n">_XCL_TERMS</span>
+        <span class="n">inc_f</span><span class="p">,</span> <span class="n">azi_f</span><span class="p">,</span> <span class="n">cov_dia</span> <span class="o">=</span> <span class="n">_fuse_dia</span><span class="p">(</span><span class="n">survey_a</span><span class="p">,</span> <span class="n">survey_b</span><span class="p">,</span> <span class="n">mds</span><span class="p">,</span> <span class="n">exclude_dia</span><span class="p">)</span>
+        <span class="n">base</span> <span class="o">=</span> <span class="n">_fuse_positions</span><span class="p">(</span><span class="n">survey_a</span><span class="p">,</span> <span class="n">survey_b</span><span class="p">,</span> <span class="n">mds</span><span class="p">,</span> <span class="n">cross</span><span class="p">)</span>   <span class="c1"># NEV EOU + sigmas</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">return_trajectory</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">replace</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="n">cov_dia</span><span class="o">=</span><span class="n">cov_dia</span><span class="p">)</span>
+        <span class="n">rec</span> <span class="o">=</span> <span class="n">Survey</span><span class="p">(</span><span class="n">md</span><span class="o">=</span><span class="n">mds</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="n">inc_f</span><span class="p">),</span> <span class="n">azi</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="n">azi_f</span><span class="p">),</span>
+                     <span class="n">header</span><span class="o">=</span><span class="n">survey_a</span><span class="o">.</span><span class="n">header</span><span class="p">,</span> <span class="n">deg</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">pos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">rec</span><span class="o">.</span><span class="n">n</span><span class="p">,</span> <span class="n">rec</span><span class="o">.</span><span class="n">e</span><span class="p">,</span> <span class="n">rec</span><span class="o">.</span><span class="n">tvd</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">replace</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="n">md</span><span class="o">=</span><span class="n">mds</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="n">inc_f</span><span class="p">),</span> <span class="n">azi</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="n">azi_f</span><span class="p">),</span>
+                       <span class="n">pos_fused</span><span class="o">=</span><span class="n">pos</span><span class="p">,</span> <span class="n">cov_dia</span><span class="o">=</span><span class="n">cov_dia</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">return_trajectory</span><span class="p">:</span>
+        <span class="n">cov_a</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">survey_a</span><span class="o">.</span><span class="n">err</span><span class="o">.</span><span class="n">cov_nev_at</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">m</span><span class="p">)))</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">mds</span><span class="p">])</span>
+        <span class="n">cov_b</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">survey_b</span><span class="o">.</span><span class="n">err</span><span class="o">.</span><span class="n">cov_nev_at</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">m</span><span class="p">)))</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">mds</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">fuse_covariances</span><span class="p">(</span><span class="n">cov_a</span><span class="p">,</span> <span class="n">cov_b</span><span class="p">,</span> <span class="n">cross</span><span class="o">=</span><span class="n">cross</span><span class="p">)</span>
+
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">survey_from_positions</span>
+
+    <span class="n">fused</span> <span class="o">=</span> <span class="n">_fuse_positions</span><span class="p">(</span><span class="n">survey_a</span><span class="p">,</span> <span class="n">survey_b</span><span class="p">,</span> <span class="n">mds</span><span class="p">,</span> <span class="n">cross</span><span class="p">)</span>
+    <span class="n">tie</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">survey_a</span><span class="o">.</span><span class="n">interpolate_md</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">mds</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span><span class="o">.</span><span class="n">vec_nev</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">_</span><span class="p">,</span> <span class="n">inc0</span><span class="p">,</span> <span class="n">azi0</span> <span class="o">=</span> <span class="n">survey_from_positions</span><span class="p">(</span><span class="n">fused</span><span class="o">.</span><span class="n">pos_fused</span><span class="p">,</span> <span class="n">tie</span><span class="p">,</span> <span class="n">mds</span><span class="o">=</span><span class="n">mds</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">replace</span><span class="p">(</span><span class="n">fused</span><span class="p">,</span> <span class="n">md</span><span class="o">=</span><span class="n">mds</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">inc0</span><span class="p">,</span> <span class="n">azi</span><span class="o">=</span><span class="n">azi0</span><span class="p">)</span></div>
+
+
+
+<span class="n">_CORR_MODES</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;systematic&quot;</span><span class="p">,</span> <span class="s2">&quot;global&quot;</span><span class="p">,</span> <span class="s2">&quot;well&quot;</span><span class="p">,</span> <span class="s2">&quot;within_pad&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="covariance_block">
+<a class="viewcode-back" href="../../welleng.html#welleng.combination.covariance_block">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">covariance_block</span><span class="p">(</span><span class="n">survey</span><span class="p">,</span> <span class="n">exclude</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The full-well &quot;solid&quot; NEV covariance block ``C_well`` (3n, 3n), SI m^2.</span>
+
+<span class="sd">    The **covariated ellipse of uncertainty**: instead of ``n`` independent</span>
+<span class="sd">    per-station ellipsoids, the single block matrix whose diagonal (3, 3) blocks</span>
+<span class="sd">    are the per-station covariance (equal to ``survey.err.cov_NEVs``) and whose</span>
+<span class="sd">    off-diagonal blocks are the cross-station correlation from the shared</span>
+<span class="sd">    (systematic / global / well / within_pad) error sources. This is the object</span>
+<span class="sd">    that lets a constraint at one station propagate to the whole well.</span>
+
+<span class="sd">    The covariated method of Bulychenkov (2026), *Covariance EOU: A Joint-Covariance</span>
+<span class="sd">    Framework for Wellbore Positioning and Multisensor Data Fusion*</span>
+<span class="sd">    (v1, doi:10.5281/zenodo.22148756, his Eq. 4) -- a matrix expansion of the</span>
+<span class="sd">    conventional ISCWSA / Williamson (SPE 67616) per-station calculation</span>
+<span class="sd">    (``C_well = sum_e J_e C_e J_e^T``). This is welleng&#39;s open implementation of</span>
+<span class="sd">    that method. Each correlated source contributes ``outer(sigma_e_NEV)`` (one</span>
+<span class="sd">    realisation, fully correlated across the stations it spans); each random source</span>
+<span class="sd">    contributes its per-station ``cov_NEV`` on the diagonal only.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    survey : welleng.survey.Survey</span>
+<span class="sd">        A survey with an error model applied (``survey.err`` set).</span>
+<span class="sd">    exclude : str or iterable of str, optional</span>
+<span class="sd">        Error-source name(s) to omit from the block -- used by the pillar-2</span>
+<span class="sd">        term swap (:func:`swap_covariated_term`) to drop a toolcode term (e.g.</span>
+<span class="sd">        the blanket sag term ``&quot;vsag&quot;`` / ``SAGE``) before an external</span>
+<span class="sd">        correction-uncertainty covariance is injected in its place.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    numpy.ndarray</span>
+<span class="sd">        (3n, 3n) symmetric PSD block covariance in NEV, SI m^2. The (i, j) block</span>
+<span class="sd">        ``[3i:3i+3, 3j:3j+3]`` is ``cov(pos_i, pos_j)``.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    Materialises the full (3n, 3n) matrix, so cost grows with the square of</span>
+<span class="sd">    the number of stations.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">survey</span><span class="p">,</span> <span class="s2">&quot;err&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;survey has no error model applied (survey.err is None)&quot;</span><span class="p">)</span>
+    <span class="n">errs</span> <span class="o">=</span> <span class="n">survey</span><span class="o">.</span><span class="n">err</span><span class="o">.</span><span class="n">errors</span><span class="o">.</span><span class="n">errors</span>
+    <span class="n">excl</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span>
+        <span class="p">(</span><span class="n">exclude</span><span class="p">,)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exclude</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="p">(</span><span class="n">exclude</span> <span class="ow">or</span> <span class="p">())</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">excl</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">errs</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;exclude names not in the error model: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">excl</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nb">set</span><span class="p">(</span><span class="n">errs</span><span class="p">))</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">)</span>
+    <span class="n">block</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">3</span> <span class="o">*</span> <span class="n">n</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">n</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">errs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">excl</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">v</span><span class="o">.</span><span class="n">propagation</span> <span class="ow">in</span> <span class="n">_CORR_MODES</span><span class="p">:</span>
+            <span class="n">sig</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">sigma_e_NEV</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">block</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">outer</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="n">sig</span><span class="p">)</span>             <span class="c1"># correlated: cross-station</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">cn</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">cov_NEV</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+                <span class="n">block</span><span class="p">[</span><span class="mi">3</span> <span class="o">*</span> <span class="n">i</span><span class="p">:</span><span class="mi">3</span> <span class="o">*</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">i</span><span class="p">:</span><span class="mi">3</span> <span class="o">*</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">3</span><span class="p">]</span> <span class="o">+=</span> <span class="n">cn</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>   <span class="c1"># random: diag</span>
+    <span class="k">return</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">block</span> <span class="o">+</span> <span class="n">block</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>                  <span class="c1"># symmetrise float drift</span></div>
+
+
+
+<span class="n">_DIA_AXIS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;depth&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;inc&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;azi&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_propagate_dia_axis_cov</span><span class="p">(</span><span class="n">survey</span><span class="p">,</span> <span class="n">axis_cov</span><span class="p">,</span> <span class="n">axis</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;NEV block (3n, 3n) of a per-station DIA-*axis* correction covariance.</span>
+
+<span class="sd">    A correction-uncertainty covariance (e.g. C_sag over the inclination</span>
+<span class="sd">    correction) lives in one DIA axis and is cross-station correlated. Propagate</span>
+<span class="sd">    it to NEV through the error model&#39;s OWN exact systematic operator -- the</span>
+<span class="sd">    balanced-tangential, whole-well-correlated ``e_DIA -&gt; sigma_e_NEV`` map</span>
+<span class="sd">    (``_sigma_e_NEV_systematic``, the same one every systematic toolcode term</span>
+<span class="sd">    uses) -- so the injected block is consistent with the toolcode term it</span>
+<span class="sd">    replaces, to machine precision. ``axis_cov`` is (n, n); it is symmetrised and</span>
+<span class="sd">    eigen-decomposed, and each non-negative eigen-realisation is pushed through</span>
+<span class="sd">    the operator as a systematic inc/depth/azi DIA error and accumulated as</span>
+<span class="sd">    ``outer(sigma)`` (its own correlated realisation).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">survey</span><span class="o">.</span><span class="n">err</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">)</span>
+    <span class="n">col</span> <span class="o">=</span> <span class="n">_DIA_AXIS</span><span class="p">[</span><span class="n">axis</span><span class="p">]</span>
+    <span class="n">A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">axis_cov</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">A</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;axis_cov must be (</span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">) for this survey, got </span><span class="si">{</span><span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="n">A</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">A</span> <span class="o">+</span> <span class="n">A</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
+    <span class="n">w</span><span class="p">,</span> <span class="n">V</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigh</span><span class="p">(</span><span class="n">A</span><span class="p">)</span>
+    <span class="n">tol</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">1e-18</span><span class="p">,</span> <span class="mf">1e-12</span> <span class="o">*</span> <span class="nb">float</span><span class="p">(</span><span class="n">w</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)))</span>
+    <span class="n">block</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">3</span> <span class="o">*</span> <span class="n">n</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">n</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">lam</span><span class="p">,</span> <span class="n">u</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="n">V</span><span class="o">.</span><span class="n">T</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">lam</span> <span class="o">&lt;=</span> <span class="n">tol</span><span class="p">:</span>                       <span class="c1"># drop null / negative eigen-noise</span>
+            <span class="k">continue</span>
+        <span class="n">e_dia</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+        <span class="n">e_dia</span><span class="p">[:,</span> <span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">lam</span><span class="p">)</span> <span class="o">*</span> <span class="n">u</span>
+        <span class="n">sig</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">_sigma_e_NEV_systematic</span><span class="p">(</span>
+            <span class="n">m</span><span class="o">.</span><span class="n">_e_NEV</span><span class="p">(</span><span class="n">e_dia</span><span class="p">),</span> <span class="n">m</span><span class="o">.</span><span class="n">_e_NEV_star</span><span class="p">(</span><span class="n">e_dia</span><span class="p">)</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">block</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">outer</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="n">sig</span><span class="p">)</span>
+    <span class="k">return</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">block</span> <span class="o">+</span> <span class="n">block</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="swap_covariated_term">
+<a class="viewcode-back" href="../../welleng.html#welleng.combination.swap_covariated_term">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">swap_covariated_term</span><span class="p">(</span><span class="n">survey</span><span class="p">,</span> <span class="n">exclude</span><span class="p">,</span> <span class="n">injected_dia_cov</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s2">&quot;inc&quot;</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Covariated NEV block with a toolcode term REPLACED by a correction&#39;s</span>
+<span class="sd">    residual-uncertainty covariance -- the pillar-2 term swap.</span>
+
+<span class="sd">    When a survey correction is applied (BHA sag, a depth-stretch model, an MSA</span>
+<span class="sd">    solve), the blanket toolcode term that *assumed* a generic correction is no</span>
+<span class="sd">    longer right: it must be replaced by the residual uncertainty of the ACTUAL</span>
+<span class="sd">    correction for this BHA / hole. This returns::</span>
+
+<span class="sd">        covariance_block(survey, exclude=exclude) + propagate(injected_dia_cov)</span>
+
+<span class="sd">    i.e. ``C_well`` with the named toolcode term(s) dropped and the external</span>
+<span class="sd">    correction-uncertainty covariance (from</span>
+<span class="sd">    :func:`welleng.interpretation.correction_covariance_mc`, in the given DIA</span>
+<span class="sd">    axis) injected in their place, propagated to NEV through the model&#39;s own</span>
+<span class="sd">    systematic operator so the swap is consistent to machine precision.</span>
+
+<span class="sd">    Never keep the toolcode term AND add the correction covariance (double</span>
+<span class="sd">    count) nor drop both (under-count): correct the survey, ``exclude`` the term,</span>
+<span class="sd">    inject its residual. C_msa reuses this exact hook (``axis=&quot;inc&quot;``/``&quot;azi&quot;``).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    survey : welleng.survey.Survey</span>
+<span class="sd">        Survey with an error model applied.</span>
+<span class="sd">    exclude : str or iterable of str</span>
+<span class="sd">        Toolcode source name(s) the correction supersedes (e.g. ``&quot;vsag&quot;``).</span>
+<span class="sd">    injected_dia_cov : (n, n) array_like or None</span>
+<span class="sd">        The correction&#39;s residual covariance in ``axis`` space, one entry per</span>
+<span class="sd">        survey station. ``None`` returns the excluded block unchanged (the</span>
+<span class="sd">        deterministic limit -- a perfect, zero-uncertainty correction).</span>
+<span class="sd">    axis : {&quot;inc&quot;, &quot;depth&quot;, &quot;azi&quot;}, default &quot;inc&quot;</span>
+<span class="sd">        Which DIA axis the correction acts on (sag -&gt; ``&quot;inc&quot;``).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    numpy.ndarray</span>
+<span class="sd">        (3n, 3n) symmetric NEV block. The pillar-2 realistic-error models this</span>
+<span class="sd">        consumes are Bulychenkov (2026), §3, v1, doi:10.5281/zenodo.22148756.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">base</span> <span class="o">=</span> <span class="n">covariance_block</span><span class="p">(</span><span class="n">survey</span><span class="p">,</span> <span class="n">exclude</span><span class="o">=</span><span class="n">exclude</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">injected_dia_cov</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">base</span>
+    <span class="k">if</span> <span class="n">axis</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_DIA_AXIS</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;axis must be one of </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">_DIA_AXIS</span><span class="p">)</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">axis</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">swapped</span> <span class="o">=</span> <span class="n">base</span> <span class="o">+</span> <span class="n">_propagate_dia_axis_cov</span><span class="p">(</span><span class="n">survey</span><span class="p">,</span> <span class="n">injected_dia_cov</span><span class="p">,</span> <span class="n">axis</span><span class="p">)</span>
+    <span class="k">return</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">swapped</span> <span class="o">+</span> <span class="n">swapped</span><span class="o">.</span><span class="n">T</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="covariance_block_at">
+<a class="viewcode-back" href="../../welleng.html#welleng.combination.covariance_block_at">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">covariance_block_at</span><span class="p">(</span><span class="n">survey</span><span class="p">,</span> <span class="n">mds</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The **continuous** covariated covariance block at arbitrary measured depths.</span>
+
+<span class="sd">    Bulychenkov&#39;s integration operator (2026, Eqs. 25-28, v1,</span>
+<span class="sd">    doi:10.5281/zenodo.22148756) already propagates the</span>
+<span class="sd">    covariance to points of interest along the well; this couples that off-station</span>
+<span class="sd">    covariated structure to welleng&#39;s arc-faithful interior covariance for accuracy:</span>
+
+<span class="sd">    - the diagonal (i, i) blocks are the **analytical arc-faithful interior**</span>
+<span class="sd">      covariance :meth:`welleng.error.ErrorModel.cov_nev_at` -- exact at any MD,</span>
+<span class="sd">      on or off a survey station (avoids the ~25% dogleg under-report a full-leg /</span>
+<span class="sd">      linear interior incurs mid-leg); and</span>
+<span class="sd">    - the off-diagonal (i, j) blocks are the **cross-station correlation** of the</span>
+<span class="sd">      covariated EOU (:func:`covariance_block`), evaluated at the query MDs.</span>
+
+<span class="sd">    The arc-faithful interior diagonal is welleng&#39;s accuracy refinement; pairing it</span>
+<span class="sd">    with the covariated block&#39;s cross-station structure gives a covariated covariance</span>
+<span class="sd">    **queryable at any MD** -- which makes the continuous combination of two surveys</span>
+<span class="sd">    on different station grids consistent (it is evaluated at the same query MD for</span>
+<span class="sd">    both, so the combination is order-independent) and accurate off-station.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    survey : welleng.survey.Survey</span>
+<span class="sd">        Survey with an error model applied.</span>
+<span class="sd">    mds : array-like</span>
+<span class="sd">        Query measured depths (within the survey range).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    numpy.ndarray</span>
+<span class="sd">        (3k, 3k) symmetric block covariance at the k query MDs.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    Diagonal blocks are exact (``cov_nev_at``). Off-diagonal blocks use the</span>
+<span class="sd">    correlated sources&#39; cumulative ``sigma_e_NEV`` interpolated to the query MDs</span>
+<span class="sd">    (first-order interior for the cross terms; exact at survey stations).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">survey</span><span class="p">,</span> <span class="s2">&quot;err&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;survey has no error model applied (survey.err is None)&quot;</span><span class="p">)</span>
+    <span class="n">mds</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">mds</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
+    <span class="n">k</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">mds</span><span class="p">)</span>
+    <span class="n">smd</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">errs</span> <span class="o">=</span> <span class="n">survey</span><span class="o">.</span><span class="n">err</span><span class="o">.</span><span class="n">errors</span><span class="o">.</span><span class="n">errors</span>
+    <span class="n">block</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">3</span> <span class="o">*</span> <span class="n">k</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">k</span><span class="p">))</span>
+    <span class="c1"># off-diagonals from the correlated sources&#39; interior cumulative sigma_e_NEV</span>
+    <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">errs</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">v</span><span class="o">.</span><span class="n">propagation</span> <span class="ow">in</span> <span class="n">_CORR_MODES</span><span class="p">:</span>
+            <span class="n">sig</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">sigma_e_NEV</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>          <span class="c1"># (n, 3)</span>
+            <span class="n">si</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">mds</span><span class="p">,</span> <span class="n">smd</span><span class="p">,</span> <span class="n">sig</span><span class="p">[:,</span> <span class="n">c</span><span class="p">])</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">)])</span>
+            <span class="n">flat</span> <span class="o">=</span> <span class="n">si</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>                                 <span class="c1"># (3k,)</span>
+            <span class="n">block</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">outer</span><span class="p">(</span><span class="n">flat</span><span class="p">,</span> <span class="n">flat</span><span class="p">)</span>
+    <span class="c1"># exact interior diagonal blocks (overwrite the interpolated i==i term)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">k</span><span class="p">):</span>
+        <span class="n">block</span><span class="p">[</span><span class="mi">3</span> <span class="o">*</span> <span class="n">i</span><span class="p">:</span><span class="mi">3</span> <span class="o">*</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">i</span><span class="p">:</span><span class="mi">3</span> <span class="o">*</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
+            <span class="n">survey</span><span class="o">.</span><span class="n">err</span><span class="o">.</span><span class="n">cov_nev_at</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">mds</span><span class="p">[</span><span class="n">i</span><span class="p">])),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="k">return</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">block</span> <span class="o">+</span> <span class="n">block</span><span class="o">.</span><span class="n">T</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="fuse_covariated">
+<a class="viewcode-back" href="../../welleng.html#welleng.combination.fuse_covariated">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">fuse_covariated</span><span class="p">(</span><span class="n">survey_target</span><span class="p">,</span> <span class="n">survey_obs</span><span class="p">,</span> <span class="n">obs_mds</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Condition a survey&#39;s covariated EOU on another survey&#39;s positions -- the</span>
+<span class="sd">    covariated MWD-Gyro fusion (single-station-lifts-the-whole-well).</span>
+
+<span class="sd">    The MWD-gyro fusion of Bulychenkov (2026, Eqs. 29-30, v1,</span>
+<span class="sd">    doi:10.5281/zenodo.22148756). Builds the target&#39;s full-well block covariance</span>
+<span class="sd">    (:func:`covariance_block`) and conditions it, in the maximum-likelihood / GLS</span>
+<span class="sd">    sense (the standard update, SPE 85111 in block form), on the observing survey&#39;s</span>
+<span class="sd">    position estimates at ``obs_mds``. Because</span>
+<span class="sd">    the target&#39;s shared systematic (declination, reused-tool bias) is one</span>
+<span class="sd">    realisation across every station it spans, the reduction **propagates through</span>
+<span class="sd">    all correlated stations** -- not only the observed ones -- so a gyro over a</span>
+<span class="sd">    short interval tightens the whole MWD run (strongest where the systematic has</span>
+<span class="sd">    accumulated, i.e. deep). This is the general form that subsumes</span>
+<span class="sd">    :func:`carry_systematic_forward` (the forward-only slice).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    survey_target : welleng.survey.Survey</span>
+<span class="sd">        The survey being improved (e.g. the MWD run), full well.</span>
+<span class="sd">    survey_obs : welleng.survey.Survey</span>
+<span class="sd">        The observing survey (e.g. a gyro), providing position constraints.</span>
+<span class="sd">    obs_mds : array-like</span>
+<span class="sd">        Measured depths (within both surveys) at which ``survey_obs`` observes.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    dict</span>
+<span class="sd">        ``{&quot;cov_block&quot;: (3n,3n) posterior block, &quot;cov_prior&quot;: (3n,3n) prior,</span>
+<span class="sd">        &quot;sigma_prior&quot;: (n,), &quot;sigma_post&quot;: (n,), &quot;reduction_factor&quot;: (n,)}`` --</span>
+<span class="sd">        ``sigma_*`` are worst-direction 1sigma per target station.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    The observation is treated as independent of the target (the ``correlate=&quot;N&quot;``</span>
+<span class="sd">    case -- true for MWD vs gyro, which share no declination error). Where the two</span>
+<span class="sd">    genuinely share a systematic, a cross-covariance term is needed (not modelled</span>
+<span class="sd">    here). **Gyro-model caveat:** the gain scales with the gyro&#39;s real accuracy</span>
+<span class="sd">    advantage; the standard OWSG gyro model is deliberately conservative, so the</span>
+<span class="sd">    lift is small unless a representative (vendor / IFR) gyro model is used.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">obs_mds</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">obs_mds</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">survey_target</span><span class="o">.</span><span class="n">md</span><span class="p">)</span>
+    <span class="n">P</span> <span class="o">=</span> <span class="n">covariance_block</span><span class="p">(</span><span class="n">survey_target</span><span class="p">)</span>                     <span class="c1"># prior (3n,3n)</span>
+    <span class="c1"># observation selection H (3k, 3n): the target station nearest each obs md</span>
+    <span class="n">tmd</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">survey_target</span><span class="o">.</span><span class="n">md</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">tmd</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">-</span> <span class="n">obs_mds</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:])</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">k</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+    <span class="n">H</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">3</span> <span class="o">*</span> <span class="n">k</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">n</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">r</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">idx</span><span class="p">):</span>
+        <span class="n">H</span><span class="p">[</span><span class="mi">3</span> <span class="o">*</span> <span class="n">r</span><span class="p">:</span><span class="mi">3</span> <span class="o">*</span> <span class="n">r</span> <span class="o">+</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">i</span><span class="p">:</span><span class="mi">3</span> <span class="o">*</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+    <span class="c1"># observation covariance R: the obs survey&#39;s OWN correlated block over the</span>
+    <span class="c1"># observed stations -- NOT block-diagonal. The gyro&#39;s systematic correlates</span>
+    <span class="c1"># its own stations, so treating multiple observations as independent</span>
+    <span class="c1"># over-counts the information (inflates the reduction). Take the sub-block of</span>
+    <span class="c1"># its covariated EOU at the stations nearest obs_mds.</span>
+    <span class="n">omd</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">survey_obs</span><span class="o">.</span><span class="n">md</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">oidx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">omd</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">-</span> <span class="n">obs_mds</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:])</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">Bobs</span> <span class="o">=</span> <span class="n">covariance_block</span><span class="p">(</span><span class="n">survey_obs</span><span class="p">)</span>
+    <span class="n">sel</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([[</span><span class="mi">3</span> <span class="o">*</span> <span class="n">i</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">2</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">oidx</span><span class="p">])</span>
+    <span class="n">R</span> <span class="o">=</span> <span class="n">Bobs</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ix_</span><span class="p">(</span><span class="n">sel</span><span class="p">,</span> <span class="n">sel</span><span class="p">)]</span>
+    <span class="n">HP</span> <span class="o">=</span> <span class="n">H</span> <span class="o">@</span> <span class="n">P</span>
+    <span class="n">gain</span> <span class="o">=</span> <span class="n">HP</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">HP</span> <span class="o">@</span> <span class="n">H</span><span class="o">.</span><span class="n">T</span> <span class="o">+</span> <span class="n">R</span><span class="p">)</span>               <span class="c1"># (3n, 3k)</span>
+    <span class="n">Ppost</span> <span class="o">=</span> <span class="n">P</span> <span class="o">-</span> <span class="n">gain</span> <span class="o">@</span> <span class="n">HP</span>
+    <span class="n">Ppost</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">Ppost</span> <span class="o">+</span> <span class="n">Ppost</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_sig</span><span class="p">(</span><span class="n">M</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigvalsh</span><span class="p">(</span>
+                <span class="n">M</span><span class="p">[</span><span class="mi">3</span> <span class="o">*</span> <span class="n">i</span><span class="p">:</span><span class="mi">3</span> <span class="o">*</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">i</span><span class="p">:</span><span class="mi">3</span> <span class="o">*</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">3</span><span class="p">])[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="mf">0.0</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+        <span class="p">])</span>
+
+    <span class="n">sp</span><span class="p">,</span> <span class="n">sq</span> <span class="o">=</span> <span class="n">_sig</span><span class="p">(</span><span class="n">P</span><span class="p">),</span> <span class="n">_sig</span><span class="p">(</span><span class="n">Ppost</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">divide</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">):</span>
+        <span class="n">rf</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">sq</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="n">sp</span> <span class="o">/</span> <span class="n">sq</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;cov_block&quot;</span><span class="p">:</span> <span class="n">Ppost</span><span class="p">,</span> <span class="s2">&quot;cov_prior&quot;</span><span class="p">:</span> <span class="n">P</span><span class="p">,</span>
+            <span class="s2">&quot;sigma_prior&quot;</span><span class="p">:</span> <span class="n">sp</span><span class="p">,</span> <span class="s2">&quot;sigma_post&quot;</span><span class="p">:</span> <span class="n">sq</span><span class="p">,</span> <span class="s2">&quot;reduction_factor&quot;</span><span class="p">:</span> <span class="n">rf</span><span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="ForwardCarry">
+<a class="viewcode-back" href="../../welleng.html#welleng.combination.ForwardCarry">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ForwardCarry</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Result of carrying a reference-calibrated systematic into deep stations.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    cov_nominal, cov_carried : (m, 3, 3) ndarray</span>
+<span class="sd">        Per-deep-station covariance before / after carrying the overlap</span>
+<span class="sd">        calibration. ``cov_carried`` &lt;= ``cov_nominal`` (systematic reduced;</span>
+<span class="sd">        random unchanged).</span>
+<span class="sd">    sigma_nominal, sigma_carried : (m,) ndarray</span>
+<span class="sd">        Worst-direction 1sigma per deep station.</span>
+<span class="sd">    reduction_factor : (m,) ndarray</span>
+<span class="sd">        ``sigma_nominal / sigma_carried`` (&gt;= 1).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">cov_nominal</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>    <span class="c1"># (m,3,3) deep cov BEFORE carry, NEV, m^2</span>
+    <span class="n">cov_carried</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>    <span class="c1"># (m,3,3) deep cov AFTER carry (&lt;= nominal)</span>
+    <span class="n">sigma_nominal</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>  <span class="c1"># (m,) worst-dir 1sigma before carry (m)</span>
+    <span class="n">sigma_carried</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>  <span class="c1"># (m,) worst-dir 1sigma after carry (m)</span>
+    <span class="n">reduction_factor</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>  <span class="c1"># (m,) sigma_nominal/sigma_carried (&gt;=1)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_correlated_stacks</span><span class="p">(</span><span class="n">survey</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;(A, cov_random, prop) for a survey: A (S, n, 3) = per correlated-source</span>
+<span class="sd">    sigma-scaled NEV running sum; cov_random (n, 3, 3); prop (S,) = each</span>
+<span class="sd">    source&#39;s propagation mode (&#39;global&#39;|&#39;systematic&#39;|&#39;well&#39;). Position error at</span>
+<span class="sd">    station k is ``A[:, k, :].T @ eps + N(0, cov_random[k])``, eps ~ N(0, I).&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">survey</span><span class="p">,</span> <span class="s2">&quot;err&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;survey has no error model applied (survey.err is None)&quot;</span><span class="p">)</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="n">survey</span><span class="o">.</span><span class="n">err</span><span class="o">.</span><span class="n">_interior_stacks</span><span class="p">()</span>
+    <span class="n">keep</span> <span class="o">=</span> <span class="o">~</span><span class="n">s</span><span class="p">[</span><span class="s2">&quot;random&quot;</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">s</span><span class="p">[</span><span class="s2">&quot;sigma_e_NEV&quot;</span><span class="p">][</span><span class="n">keep</span><span class="p">],</span> <span class="n">s</span><span class="p">[</span><span class="s2">&quot;cov_random&quot;</span><span class="p">],</span> <span class="n">s</span><span class="p">[</span><span class="s2">&quot;propagation&quot;</span><span class="p">][</span><span class="n">keep</span><span class="p">]</span>
+
+
+<div class="viewcode-block" id="carry_systematic_forward">
+<a class="viewcode-back" href="../../welleng.html#welleng.combination.carry_systematic_forward">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">carry_systematic_forward</span><span class="p">(</span>
+    <span class="n">target</span><span class="p">,</span>
+    <span class="n">reference</span><span class="p">,</span>
+    <span class="n">overlap_idx</span><span class="p">,</span>
+    <span class="n">deep_idx</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">persist</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">obs_subsample</span><span class="o">=</span><span class="mi">12</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Carry a reference-calibrated systematic into the target&#39;s deep stations.</span>
+
+<span class="sd">    An independent ``reference`` survey (e.g. a gyro) over an overlap constrains</span>
+<span class="sd">    the ``target`` survey&#39;s (e.g. MWD) SYSTEMATIC error realisation; because that</span>
+<span class="sd">    realisation persists down-leg, the constraint reduces the target covariance</span>
+<span class="sd">    at DEEP stations the reference never reached. This is aided-inertial-</span>
+<span class="sd">    navigation / Kalman conditioning (adopt, don&#39;t reinvent; cf. ISCWSA-49 2019</span>
+<span class="sd">    gyro+MWD statistical estimation), in the joint-covariance (Schur) form:</span>
+
+<span class="sd">        overlap obs z = target - reference; the cross-covariance from the</span>
+<span class="sd">        target&#39;s SHARED systematic sources is cov(X_deep, z) = A_deep Hm^T;</span>
+<span class="sd">        conditioned deep cov = cov(X_deep) - cov(X_deep, z) cov(z)^-1 cov(z,</span>
+<span class="sd">        X_deep), with cov(z) = Hm Hm^T + reference cov + target random.</span>
+
+<span class="sd">    (Woodbury-equivalent to the source-space information form</span>
+<span class="sd">    P=(I+H^T R^-1 H)^-1, but inverts the well-conditioned cov(z) rather than the</span>
+<span class="sd">    ill-conditioned R.) Observability is geometry-dependent: the overlap must</span>
+<span class="sd">    excite the systematic terms that matter at depth; validated by MC (tests).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    target, reference : Survey</span>
+<span class="sd">        Same station set, each with an error model. ``reference`` is the</span>
+<span class="sd">        independent, more-accurate survey over the overlap.</span>
+<span class="sd">    overlap_idx : array-like of int</span>
+<span class="sd">        Station indices the reference covers (the calibration interval).</span>
+<span class="sd">    deep_idx : array-like of int</span>
+<span class="sd">        Target-only station indices to carry the calibration to.</span>
+<span class="sd">    persist : None | str | iterable of str, optional</span>
+<span class="sd">        Which propagation classes persist between the overlap and the deep</span>
+<span class="sd">        section (and therefore carry). ``None`` (default) carries every</span>
+<span class="sd">        correlated source. Physically: ``&#39;global&#39;`` (geomagnetic reference /</span>
+<span class="sd">        declination) persists across BHA AND tool changes -- the assumption-free</span>
+<span class="sd">        choice; ``&#39;systematic&#39;`` (sensor bias/scale/misalignment) persists only</span>
+<span class="sd">        if the SAME MWD tool is reused; a source that re-realises (new tool for</span>
+<span class="sd">        that class) is independent between deep and overlap and does not carry.</span>
+<span class="sd">        e.g. ``persist=&#39;global&#39;`` for the unconditional declination carry;</span>
+<span class="sd">        ``persist=(&#39;global&#39;, &#39;systematic&#39;)`` when the tool is reused.</span>
+<span class="sd">    obs_subsample : int</span>
+<span class="sd">        Cap on the number of overlap observation stations used (keeps the</span>
+<span class="sd">        conditioning block modest); evenly spaced. Default 12.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    ForwardCarry</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">overlap_idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">overlap_idx</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+    <span class="n">deep_idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">deep_idx</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+    <span class="n">Am</span><span class="p">,</span> <span class="n">Rm</span><span class="p">,</span> <span class="n">prop_m</span> <span class="o">=</span> <span class="n">_correlated_stacks</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+    <span class="n">Ag</span><span class="p">,</span> <span class="n">Rg</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_correlated_stacks</span><span class="p">(</span><span class="n">reference</span><span class="p">)</span>
+
+    <span class="n">oi</span> <span class="o">=</span> <span class="n">overlap_idx</span>
+    <span class="k">if</span> <span class="n">obs_subsample</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">oi</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">obs_subsample</span><span class="p">:</span>
+        <span class="n">oi</span> <span class="o">=</span> <span class="n">oi</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">oi</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">obs_subsample</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">()</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_stack</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>                       <span class="c1"># (3*len(idx), S)</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([</span><span class="n">A</span><span class="p">[:,</span> <span class="n">k</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">T</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">idx</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_blkdiag</span><span class="p">(</span><span class="n">mats</span><span class="p">):</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">3</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">mats</span><span class="p">),</span> <span class="mi">3</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">mats</span><span class="p">)))</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">mats</span><span class="p">):</span>
+            <span class="n">out</span><span class="p">[</span><span class="mi">3</span> <span class="o">*</span> <span class="n">i</span><span class="p">:</span><span class="mi">3</span> <span class="o">*</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">i</span><span class="p">:</span><span class="mi">3</span> <span class="o">*</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="n">m</span>
+        <span class="k">return</span> <span class="n">out</span>
+
+    <span class="n">Hm</span> <span class="o">=</span> <span class="n">_stack</span><span class="p">(</span><span class="n">Am</span><span class="p">,</span> <span class="n">oi</span><span class="p">)</span>                        <span class="c1"># (3no, S_target)</span>
+    <span class="n">Hg</span> <span class="o">=</span> <span class="n">_stack</span><span class="p">(</span><span class="n">Ag</span><span class="p">,</span> <span class="n">oi</span><span class="p">)</span>                        <span class="c1"># (3no, S_reference)</span>
+    <span class="c1"># observation noise: reference full covariance over the overlap (its</span>
+    <span class="c1"># systematic correlates across stations) + the target&#39;s random.</span>
+    <span class="n">R</span> <span class="o">=</span> <span class="p">(</span><span class="n">Hg</span> <span class="o">@</span> <span class="n">Hg</span><span class="o">.</span><span class="n">T</span>
+         <span class="o">+</span> <span class="n">_blkdiag</span><span class="p">([</span><span class="n">Rg</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">oi</span><span class="p">])</span>
+         <span class="o">+</span> <span class="n">_blkdiag</span><span class="p">([</span><span class="n">Rm</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">oi</span><span class="p">]))</span>
+    <span class="c1"># Schur-complement (joint-covariance) conditioning. Equivalent by Woodbury</span>
+    <span class="c1"># to the source-space information form P=(I+H^T R^-1 H)^-1, but inverts the</span>
+    <span class="c1"># well-conditioned full obs covariance covz = Hm Hm^T + R instead of the</span>
+    <span class="c1"># ill-conditioned R (the reference systematic makes R near-rank-deficient) --</span>
+    <span class="c1"># the source-space form was ~6% off here from that ill-conditioning.</span>
+    <span class="n">covz</span> <span class="o">=</span> <span class="n">Hm</span> <span class="o">@</span> <span class="n">Hm</span><span class="o">.</span><span class="n">T</span> <span class="o">+</span> <span class="n">R</span>                        <span class="c1"># full covariance of the overlap obs</span>
+    <span class="c1"># pinv-fallback: a zero-covariance overlap station (tie at md=0) is singular</span>
+    <span class="c1"># and carries no information; pinv handles it.</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">covz_inv</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">covz</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">LinAlgError</span><span class="p">:</span>
+        <span class="n">covz_inv</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">pinv</span><span class="p">(</span><span class="n">covz</span><span class="p">)</span>
+
+    <span class="n">Ad</span> <span class="o">=</span> <span class="n">Am</span><span class="p">[:,</span> <span class="n">deep_idx</span><span class="p">,</span> <span class="p">:]</span>                     <span class="c1"># (S, m, 3) ALL correlated</span>
+    <span class="n">cov_nom</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;ski,skj-&gt;kij&quot;</span><span class="p">,</span> <span class="n">Ad</span><span class="p">,</span> <span class="n">Ad</span><span class="p">)</span> <span class="o">+</span> <span class="n">Rm</span><span class="p">[</span><span class="n">deep_idx</span><span class="p">]</span>
+    <span class="c1"># Only PERSISTING sources are correlated between deep and overlap, so only</span>
+    <span class="c1"># they enter the cross-covariance (and thus reduce the deep cov). &#39;global&#39;</span>
+    <span class="c1"># (geomag/declination) persists across BHA AND tool; &#39;systematic&#39; (sensor)</span>
+    <span class="c1"># persists only if the same tool is reused; sources that re-realise (a new</span>
+    <span class="c1"># tool/BHA) have independent deep/overlap draws -&gt; zero cross -&gt; no carry.</span>
+    <span class="k">if</span> <span class="n">persist</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">pmask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">Am</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">want</span> <span class="o">=</span> <span class="p">{</span><span class="n">persist</span><span class="p">}</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">persist</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="nb">set</span><span class="p">(</span><span class="n">persist</span><span class="p">)</span>
+        <span class="n">pmask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">p</span> <span class="ow">in</span> <span class="n">want</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">prop_m</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+    <span class="n">Adp</span> <span class="o">=</span> <span class="n">Am</span><span class="p">[</span><span class="n">pmask</span><span class="p">][:,</span> <span class="n">deep_idx</span><span class="p">,</span> <span class="p">:]</span>             <span class="c1"># persisting sources, deep</span>
+    <span class="n">Hmp</span> <span class="o">=</span> <span class="n">_stack</span><span class="p">(</span><span class="n">Am</span><span class="p">[</span><span class="n">pmask</span><span class="p">],</span> <span class="n">oi</span><span class="p">)</span>                 <span class="c1"># persisting sources, overlap</span>
+    <span class="c1"># cross[k] = cov(X_deep_k, z) via persisting sources = A_deep^p (Hm^p)^T ;</span>
+    <span class="c1"># conditioned = nom - cross covz^-1 cross^T</span>
+    <span class="n">cross</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;smi,ps-&gt;mip&quot;</span><span class="p">,</span> <span class="n">Adp</span><span class="p">,</span> <span class="n">Hmp</span><span class="p">)</span>  <span class="c1"># (m, 3, 3no)</span>
+    <span class="n">reduction</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;mip,pq,mjq-&gt;mij&quot;</span><span class="p">,</span> <span class="n">cross</span><span class="p">,</span> <span class="n">covz_inv</span><span class="p">,</span> <span class="n">cross</span><span class="p">)</span>
+    <span class="n">cov_carried</span> <span class="o">=</span> <span class="n">_psd</span><span class="p">(</span><span class="n">cov_nom</span> <span class="o">-</span> <span class="n">reduction</span><span class="p">)</span>    <span class="c1"># symmetrise + clip float drift</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_sig</span><span class="p">(</span><span class="n">C</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigvalsh</span><span class="p">(</span><span class="n">C</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="mf">0.0</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+
+    <span class="n">sn</span><span class="p">,</span> <span class="n">sc</span> <span class="o">=</span> <span class="n">_sig</span><span class="p">(</span><span class="n">cov_nom</span><span class="p">),</span> <span class="n">_sig</span><span class="p">(</span><span class="n">cov_carried</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">divide</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">):</span>
+        <span class="n">red</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">sc</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="n">sn</span> <span class="o">/</span> <span class="n">sc</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">ForwardCarry</span><span class="p">(</span>
+        <span class="n">cov_nominal</span><span class="o">=</span><span class="n">cov_nom</span><span class="p">,</span> <span class="n">cov_carried</span><span class="o">=</span><span class="n">cov_carried</span><span class="p">,</span>
+        <span class="n">sigma_nominal</span><span class="o">=</span><span class="n">sn</span><span class="p">,</span> <span class="n">sigma_carried</span><span class="o">=</span><span class="n">sc</span><span class="p">,</span> <span class="n">reduction_factor</span><span class="o">=</span><span class="n">red</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

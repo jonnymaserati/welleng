@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.geomag &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.geomag</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.geomag</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Geomagnetic field: an offline WMM model + the BGS web-service client.</span>
+
+<span class="sd">Two ways to get declination / dip / total field for a survey location:</span>
+
+<span class="sd">- :func:`local_field` -- **offline**. The bundled World Magnetic Model (WMM2025,</span>
+<span class="sd">  US-Gov public domain) evaluated locally by spherical-harmonic synthesis: no</span>
+<span class="sd">  network, deterministic, fast, valid for its five-year window (2025-2030). This</span>
+<span class="sd">  is the default path of :func:`lookup_field` when the request is in window.</span>
+<span class="sd">- :func:`lookup_field` with ``source=&quot;bgs&quot;`` -- the British Geological Survey</span>
+<span class="sd">  ``GMModels`` web service, for IGRF / historic / out-of-window dates and other</span>
+<span class="sd">  models the local WMM cannot serve. Requires a network.</span>
+
+<span class="sd">``lookup_field`` (``source=&quot;auto&quot;``, the default) uses the offline model when it</span>
+<span class="sd">applies and falls back to BGS otherwise, so the common case (current-epoch WMM)</span>
+<span class="sd">needs no network while the long tail still works online.</span>
+
+<span class="sd">The local model reproduces NOAA&#39;s official WMM2025 test values to &lt; 0.001 nT in</span>
+<span class="sd">every field component (the model&#39;s own numerical-agreement spec is 0.1 nT), far</span>
+<span class="sd">below the model&#39;s ~physical uncertainty. Coefficients: ``welleng/data/wmm2025.json``</span>
+<span class="sd">(converted from ``WMM2025.COF``); see its ``provenance`` field.</span>
+
+<span class="sd">Service documentation:</span>
+<span class="sd">https://geomag.bgs.ac.uk/web_service/GMModels/help/parameters</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">urllib.error</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">urllib.parse</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">urllib.request</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">lru_cache</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">importlib.resources</span><span class="w"> </span><span class="kn">import</span> <span class="n">files</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="n">BGS_GEOMAG_URL</span> <span class="o">=</span> <span class="s2">&quot;https://geomag.bgs.ac.uk/web_service/GMModels&quot;</span>
+
+<span class="c1">#: models useful to welleng: &#39;wmm&#39; (current-epoch default) and &#39;igrf&#39;</span>
+<span class="c1">#: (historic coverage — the fallback for pre-window survey dates).</span>
+<span class="n">KNOWN_MODELS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;wmm&quot;</span><span class="p">,</span> <span class="s2">&quot;igrf&quot;</span><span class="p">)</span>
+
+<span class="c1"># WGS84 ellipsoid + the WMM geomagnetic reference radius.</span>
+<span class="n">_WGS84_A</span> <span class="o">=</span> <span class="mf">6378137.0</span>
+<span class="n">_WGS84_F</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="mf">298.257223563</span>
+
+
+<div class="viewcode-block" id="GeomagLookupError">
+<a class="viewcode-back" href="../../welleng.html#welleng.geomag.GeomagLookupError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">GeomagLookupError</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The geomagnetic lookup failed (bad request, out of window, no network).&quot;&quot;&quot;</span></div>
+
+
+
+<span class="nd">@lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_wmm_model</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load + cache the bundled WMM coefficients as (epoch, N, g, h, gd, hd).&quot;&quot;&quot;</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">files</span><span class="p">(</span><span class="s2">&quot;welleng.data&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">joinpath</span><span class="p">(</span><span class="s2">&quot;wmm2025.json&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">read_text</span><span class="p">()</span>
+    <span class="n">doc</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+    <span class="n">N</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">doc</span><span class="p">[</span><span class="s2">&quot;max_degree&quot;</span><span class="p">])</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="n">h</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="n">gd</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="n">hd</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">gv</span><span class="p">,</span> <span class="n">hv</span><span class="p">,</span> <span class="n">gdv</span><span class="p">,</span> <span class="n">hdv</span> <span class="ow">in</span> <span class="n">doc</span><span class="p">[</span><span class="s2">&quot;coeffs&quot;</span><span class="p">]:</span>
+        <span class="n">g</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">],</span> <span class="n">h</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">],</span> <span class="n">gd</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">],</span> <span class="n">hd</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">]</span> <span class="o">=</span> <span class="n">gv</span><span class="p">,</span> <span class="n">hv</span><span class="p">,</span> <span class="n">gdv</span><span class="p">,</span> <span class="n">hdv</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="nb">float</span><span class="p">(</span><span class="n">doc</span><span class="p">[</span><span class="s2">&quot;epoch&quot;</span><span class="p">]),</span> <span class="n">N</span><span class="p">,</span> <span class="n">g</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">gd</span><span class="p">,</span> <span class="n">hd</span><span class="p">,</span>
+        <span class="nb">float</span><span class="p">(</span><span class="n">doc</span><span class="p">[</span><span class="s2">&quot;reference_radius_m&quot;</span><span class="p">]),</span>
+        <span class="nb">float</span><span class="p">(</span><span class="n">doc</span><span class="p">[</span><span class="s2">&quot;valid_from&quot;</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="n">doc</span><span class="p">[</span><span class="s2">&quot;valid_to&quot;</span><span class="p">]),</span>
+    <span class="p">)</span>
+
+
+<div class="viewcode-block" id="wmm_validity">
+<a class="viewcode-back" href="../../welleng.html#welleng.geomag.wmm_validity">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">wmm_validity</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;(valid_from, valid_to) decimal years of the bundled WMM model.&quot;&quot;&quot;</span>
+    <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">vf</span><span class="p">,</span> <span class="n">vt</span> <span class="o">=</span> <span class="n">_wmm_model</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">vf</span><span class="p">,</span> <span class="n">vt</span></div>
+
+
+
+<span class="nd">@lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_schmidt_norm</span><span class="p">(</span><span class="n">N</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Gauss-normalised -&gt; Schmidt semi-normalised factors S[n,m].</span>
+
+<span class="sd">    Depends only on the degree N (not on position), so it is model-invariant --</span>
+<span class="sd">    cached rather than rebuilt on every field evaluation.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">S</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="n">S</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span>
+    <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="n">S</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">S</span><span class="p">[</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">n</span>
+        <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="n">fac</span> <span class="o">=</span> <span class="p">(</span><span class="mf">2.0</span> <span class="k">if</span> <span class="n">m</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="n">m</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">n</span> <span class="o">+</span> <span class="n">m</span><span class="p">)</span>
+            <span class="n">S</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">]</span> <span class="o">=</span> <span class="n">S</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">fac</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">S</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_schmidt_legendre</span><span class="p">(</span><span class="n">theta</span><span class="p">,</span> <span class="n">N</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Schmidt semi-normalised ``P[n,m](cos theta)`` and ``dP/dtheta``.&quot;&quot;&quot;</span>
+    <span class="n">ct</span><span class="p">,</span> <span class="n">st</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+    <span class="n">P</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="n">dP</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="n">P</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span>
+    <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">n</span> <span class="o">==</span> <span class="n">m</span><span class="p">:</span>
+                <span class="n">P</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">]</span> <span class="o">=</span> <span class="n">st</span> <span class="o">*</span> <span class="n">P</span><span class="p">[</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">m</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span>
+                <span class="n">dP</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">]</span> <span class="o">=</span> <span class="n">st</span> <span class="o">*</span> <span class="n">dP</span><span class="p">[</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">m</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">ct</span> <span class="o">*</span> <span class="n">P</span><span class="p">[</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">m</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">Pn2</span> <span class="o">=</span> <span class="n">P</span><span class="p">[</span><span class="n">n</span> <span class="o">-</span> <span class="mi">2</span><span class="p">,</span> <span class="n">m</span><span class="p">]</span> <span class="k">if</span> <span class="n">m</span> <span class="o">&lt;=</span> <span class="n">n</span> <span class="o">-</span> <span class="mi">2</span> <span class="k">else</span> <span class="mf">0.0</span>
+                <span class="n">dPn2</span> <span class="o">=</span> <span class="n">dP</span><span class="p">[</span><span class="n">n</span> <span class="o">-</span> <span class="mi">2</span><span class="p">,</span> <span class="n">m</span><span class="p">]</span> <span class="k">if</span> <span class="n">m</span> <span class="o">&lt;=</span> <span class="n">n</span> <span class="o">-</span> <span class="mi">2</span> <span class="k">else</span> <span class="mf">0.0</span>
+                <span class="n">Knm</span> <span class="o">=</span> <span class="p">(((</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">-</span> <span class="n">m</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+                       <span class="o">/</span> <span class="p">((</span><span class="mi">2</span> <span class="o">*</span> <span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">n</span> <span class="o">-</span> <span class="mi">3</span><span class="p">)))</span> <span class="k">if</span> <span class="n">n</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="mf">0.0</span>
+                <span class="n">P</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">]</span> <span class="o">=</span> <span class="n">ct</span> <span class="o">*</span> <span class="n">P</span><span class="p">[</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">m</span><span class="p">]</span> <span class="o">-</span> <span class="n">Knm</span> <span class="o">*</span> <span class="n">Pn2</span>
+                <span class="n">dP</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">]</span> <span class="o">=</span> <span class="n">ct</span> <span class="o">*</span> <span class="n">dP</span><span class="p">[</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">m</span><span class="p">]</span> <span class="o">-</span> <span class="n">st</span> <span class="o">*</span> <span class="n">P</span><span class="p">[</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">m</span><span class="p">]</span> <span class="o">-</span> <span class="n">Knm</span> <span class="o">*</span> <span class="n">dPn2</span>
+    <span class="n">S</span> <span class="o">=</span> <span class="n">_schmidt_norm</span><span class="p">(</span><span class="n">N</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">P</span> <span class="o">*</span> <span class="n">S</span><span class="p">,</span> <span class="n">dP</span> <span class="o">*</span> <span class="n">S</span>
+
+
+<div class="viewcode-block" id="local_field">
+<a class="viewcode-back" href="../../welleng.html#welleng.geomag.local_field">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">local_field</span><span class="p">(</span><span class="n">latitude</span><span class="p">,</span> <span class="n">longitude</span><span class="p">,</span> <span class="n">altitude</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">date</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Geomagnetic field from the bundled WMM, computed OFFLINE.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    latitude, longitude : float</span>
+<span class="sd">        Geodetic coordinates in decimal degrees.</span>
+<span class="sd">    altitude : float</span>
+<span class="sd">        Height in METRES above the WGS84 spheroid (negative below datum).</span>
+<span class="sd">    date : float or str, optional</span>
+<span class="sd">        Decimal year (e.g. ``2027.5``) or ``&quot;yyyy-mm-dd&quot;``. ``None`` -&gt; the</span>
+<span class="sd">        model epoch.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    dict</span>
+<span class="sd">        The same shape as :func:`lookup_field` -- a</span>
+<span class="sd">        ``geomagnetic-field-model-result`` payload with ``field-value``</span>
+<span class="sd">        (``total-intensity``/``inclination``/``declination``/</span>
+<span class="sd">        ``horizontal-intensity``/``north-intensity``/``east-intensity``/</span>
+<span class="sd">        ``vertical-intensity``, each ``{&quot;value&quot;, &quot;units&quot;}``), plus</span>
+<span class="sd">        ``model_base_date`` and ``model_name`` -- so it is a drop-in for the</span>
+<span class="sd">        BGS payload.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    GeomagLookupError</span>
+<span class="sd">        If ``date`` is outside the bundled model&#39;s validity window.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">epoch</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">g0</span><span class="p">,</span> <span class="n">h0</span><span class="p">,</span> <span class="n">gd</span><span class="p">,</span> <span class="n">hd</span><span class="p">,</span> <span class="n">re_m</span><span class="p">,</span> <span class="n">vf</span><span class="p">,</span> <span class="n">vt</span> <span class="o">=</span> <span class="n">_wmm_model</span><span class="p">()</span>
+    <span class="n">year</span> <span class="o">=</span> <span class="n">_decimal_year</span><span class="p">(</span><span class="n">date</span><span class="p">)</span> <span class="k">if</span> <span class="n">date</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">epoch</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">vf</span> <span class="o">&lt;=</span> <span class="n">year</span> <span class="o">&lt;=</span> <span class="n">vt</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="n">GeomagLookupError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;date </span><span class="si">{</span><span class="n">year</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> is outside the bundled WMM validity window &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">vf</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">vt</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">]; use lookup_field(source=&#39;bgs&#39;) for &quot;</span>
+            <span class="s2">&quot;IGRF / historic / out-of-window dates&quot;</span>
+        <span class="p">)</span>
+    <span class="n">dt</span> <span class="o">=</span> <span class="n">year</span> <span class="o">-</span> <span class="n">epoch</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">g0</span> <span class="o">+</span> <span class="n">dt</span> <span class="o">*</span> <span class="n">gd</span>
+    <span class="n">h</span> <span class="o">=</span> <span class="n">h0</span> <span class="o">+</span> <span class="n">dt</span> <span class="o">*</span> <span class="n">hd</span>
+
+    <span class="n">lat</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">latitude</span><span class="p">)</span>
+    <span class="n">lon</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">longitude</span><span class="p">)</span>
+    <span class="c1"># geodetic -&gt; geocentric spherical (radius r, colatitude theta)</span>
+    <span class="n">f</span> <span class="o">=</span> <span class="n">_WGS84_F</span>
+    <span class="n">a</span> <span class="o">=</span> <span class="n">_WGS84_A</span>
+    <span class="n">e2</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">f</span> <span class="o">-</span> <span class="n">f</span> <span class="o">*</span> <span class="n">f</span>
+    <span class="n">cl</span><span class="p">,</span> <span class="n">sl</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">lat</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">lat</span><span class="p">)</span>
+    <span class="n">rc</span> <span class="o">=</span> <span class="n">a</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">e2</span> <span class="o">*</span> <span class="n">sl</span> <span class="o">*</span> <span class="n">sl</span><span class="p">)</span>                 <span class="c1"># prime-vertical radius</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="p">(</span><span class="n">rc</span> <span class="o">+</span> <span class="n">altitude</span><span class="p">)</span> <span class="o">*</span> <span class="n">cl</span>
+    <span class="n">z</span> <span class="o">=</span> <span class="p">(</span><span class="n">rc</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">e2</span><span class="p">)</span> <span class="o">+</span> <span class="n">altitude</span><span class="p">)</span> <span class="o">*</span> <span class="n">sl</span>
+    <span class="n">r</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hypot</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">z</span><span class="p">)</span>
+    <span class="n">theta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">z</span><span class="p">)</span>
+    <span class="n">st</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+    <span class="n">st</span> <span class="o">=</span> <span class="n">st</span> <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">st</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mf">1e-12</span> <span class="k">else</span> <span class="mf">1e-12</span>              <span class="c1"># pole guard</span>
+
+    <span class="n">P</span><span class="p">,</span> <span class="n">dP</span> <span class="o">=</span> <span class="n">_schmidt_legendre</span><span class="p">(</span><span class="n">theta</span><span class="p">,</span> <span class="n">N</span><span class="p">)</span>
+    <span class="n">ratio</span> <span class="o">=</span> <span class="n">re_m</span> <span class="o">/</span> <span class="n">r</span>
+    <span class="n">Br</span> <span class="o">=</span> <span class="n">Bt</span> <span class="o">=</span> <span class="n">Bp</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="n">rn</span> <span class="o">=</span> <span class="n">ratio</span> <span class="o">**</span> <span class="p">(</span><span class="n">n</span> <span class="o">+</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="n">cml</span><span class="p">,</span> <span class="n">sml</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">m</span> <span class="o">*</span> <span class="n">lon</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">m</span> <span class="o">*</span> <span class="n">lon</span><span class="p">)</span>
+            <span class="n">gh</span> <span class="o">=</span> <span class="n">g</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">]</span> <span class="o">*</span> <span class="n">cml</span> <span class="o">+</span> <span class="n">h</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">]</span> <span class="o">*</span> <span class="n">sml</span>
+            <span class="n">ghd</span> <span class="o">=</span> <span class="o">-</span><span class="n">g</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">]</span> <span class="o">*</span> <span class="n">sml</span> <span class="o">+</span> <span class="n">h</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">]</span> <span class="o">*</span> <span class="n">cml</span>
+            <span class="n">Br</span> <span class="o">+=</span> <span class="n">rn</span> <span class="o">*</span> <span class="p">(</span><span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">gh</span> <span class="o">*</span> <span class="n">P</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">]</span>
+            <span class="n">Bt</span> <span class="o">+=</span> <span class="o">-</span><span class="n">rn</span> <span class="o">*</span> <span class="n">gh</span> <span class="o">*</span> <span class="n">dP</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">]</span>
+            <span class="n">Bp</span> <span class="o">+=</span> <span class="o">-</span><span class="n">rn</span> <span class="o">*</span> <span class="n">m</span> <span class="o">*</span> <span class="n">ghd</span> <span class="o">*</span> <span class="n">P</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">]</span> <span class="o">/</span> <span class="n">st</span>
+    <span class="c1"># geocentric spherical -&gt; geodetic X(north) Y(east) Z(down)</span>
+    <span class="n">Xg</span><span class="p">,</span> <span class="n">Yg</span><span class="p">,</span> <span class="n">Zg</span> <span class="o">=</span> <span class="o">-</span><span class="n">Bt</span><span class="p">,</span> <span class="n">Bp</span><span class="p">,</span> <span class="o">-</span><span class="n">Br</span>
+    <span class="n">psi</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span> <span class="o">-</span> <span class="n">lat</span><span class="p">)</span> <span class="o">-</span> <span class="n">theta</span>                    <span class="c1"># geocentric-&gt;geodetic tilt</span>
+    <span class="n">X</span> <span class="o">=</span> <span class="n">Xg</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">psi</span><span class="p">)</span> <span class="o">-</span> <span class="n">Zg</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">psi</span><span class="p">)</span>
+    <span class="n">Z</span> <span class="o">=</span> <span class="n">Xg</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">psi</span><span class="p">)</span> <span class="o">+</span> <span class="n">Zg</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">psi</span><span class="p">)</span>
+    <span class="n">Y</span> <span class="o">=</span> <span class="n">Yg</span>
+    <span class="n">H</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hypot</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">)</span>
+    <span class="n">F</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hypot</span><span class="p">(</span><span class="n">H</span><span class="p">,</span> <span class="n">Z</span><span class="p">)</span>
+    <span class="n">D</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span><span class="n">Y</span><span class="p">,</span> <span class="n">X</span><span class="p">))</span>
+    <span class="n">incl</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span><span class="n">Z</span><span class="p">,</span> <span class="n">H</span><span class="p">))</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_v</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">units</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">),</span> <span class="s2">&quot;units&quot;</span><span class="p">:</span> <span class="n">units</span><span class="p">}</span>
+
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;field-value&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;total-intensity&quot;</span><span class="p">:</span> <span class="n">_v</span><span class="p">(</span><span class="n">F</span><span class="p">,</span> <span class="s2">&quot;nT&quot;</span><span class="p">),</span>
+            <span class="s2">&quot;horizontal-intensity&quot;</span><span class="p">:</span> <span class="n">_v</span><span class="p">(</span><span class="n">H</span><span class="p">,</span> <span class="s2">&quot;nT&quot;</span><span class="p">),</span>
+            <span class="s2">&quot;north-intensity&quot;</span><span class="p">:</span> <span class="n">_v</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="s2">&quot;nT&quot;</span><span class="p">),</span>
+            <span class="s2">&quot;east-intensity&quot;</span><span class="p">:</span> <span class="n">_v</span><span class="p">(</span><span class="n">Y</span><span class="p">,</span> <span class="s2">&quot;nT&quot;</span><span class="p">),</span>
+            <span class="s2">&quot;vertical-intensity&quot;</span><span class="p">:</span> <span class="n">_v</span><span class="p">(</span><span class="n">Z</span><span class="p">,</span> <span class="s2">&quot;nT&quot;</span><span class="p">),</span>
+            <span class="s2">&quot;inclination&quot;</span><span class="p">:</span> <span class="n">_v</span><span class="p">(</span><span class="n">incl</span><span class="p">,</span> <span class="s2">&quot;deg (down)&quot;</span><span class="p">),</span>
+            <span class="s2">&quot;declination&quot;</span><span class="p">:</span> <span class="n">_v</span><span class="p">(</span><span class="n">D</span><span class="p">,</span> <span class="s2">&quot;deg (east)&quot;</span><span class="p">),</span>
+        <span class="p">},</span>
+        <span class="s2">&quot;model_name&quot;</span><span class="p">:</span> <span class="s2">&quot;WMM2025&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;model_base_date&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">year</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="s2">&quot;local-wmm&quot;</span><span class="p">,</span>
+    <span class="p">}</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_decimal_year</span><span class="p">(</span><span class="n">date</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A decimal year from a float year or a ``yyyy-mm-dd`` string.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">date</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">)):</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">date</span><span class="p">)</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">date</span> <span class="k">as</span> <span class="n">_d</span>
+    <span class="n">y</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">d</span> <span class="o">=</span> <span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">date</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;-&quot;</span><span class="p">)[:</span><span class="mi">3</span><span class="p">])</span>
+    <span class="n">start</span> <span class="o">=</span> <span class="n">_d</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">toordinal</span><span class="p">()</span>
+    <span class="n">frac</span> <span class="o">=</span> <span class="p">(</span><span class="n">_d</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span><span class="o">.</span><span class="n">toordinal</span><span class="p">()</span> <span class="o">-</span> <span class="n">start</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">_d</span><span class="p">(</span><span class="n">y</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">toordinal</span><span class="p">()</span> <span class="o">-</span> <span class="n">start</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">y</span> <span class="o">+</span> <span class="n">frac</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_url</span><span class="p">(</span>
+    <span class="n">latitude</span><span class="p">,</span>
+    <span class="n">longitude</span><span class="p">,</span>
+    <span class="n">altitude</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">date</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;wmm&quot;</span><span class="p">,</span>
+    <span class="n">revision</span><span class="o">=</span><span class="s2">&quot;current&quot;</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build the GMModels request URL. ``altitude`` is in METRES.&quot;&quot;&quot;</span>
+    <span class="n">params</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;latitude&quot;</span><span class="p">:</span> <span class="n">latitude</span><span class="p">,</span>
+        <span class="s2">&quot;longitude&quot;</span><span class="p">:</span> <span class="n">longitude</span><span class="p">,</span>
+        <span class="c1"># BGS expects km above the WGS84 spheroid; welleng altitudes are m</span>
+        <span class="s2">&quot;altitude&quot;</span><span class="p">:</span> <span class="n">altitude</span> <span class="o">/</span> <span class="mf">1000.0</span><span class="p">,</span>
+        <span class="s2">&quot;format&quot;</span><span class="p">:</span> <span class="s2">&quot;json&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="n">date</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">params</span><span class="p">[</span><span class="s2">&quot;date&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">date</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BGS_GEOMAG_URL</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">model</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">revision</span><span class="si">}</span><span class="s2">?&quot;</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">urllib</span><span class="o">.</span><span class="n">parse</span><span class="o">.</span><span class="n">urlencode</span><span class="p">(</span><span class="n">params</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_bgs_field</span><span class="p">(</span><span class="n">latitude</span><span class="p">,</span> <span class="n">longitude</span><span class="p">,</span> <span class="n">altitude</span><span class="p">,</span> <span class="n">date</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">revision</span><span class="p">,</span> <span class="n">timeout</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;One BGS ``GMModels`` web-service call (network).&quot;&quot;&quot;</span>
+    <span class="n">url</span> <span class="o">=</span> <span class="n">_build_url</span><span class="p">(</span><span class="n">latitude</span><span class="p">,</span> <span class="n">longitude</span><span class="p">,</span> <span class="n">altitude</span><span class="p">,</span> <span class="n">date</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">revision</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">with</span> <span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span> <span class="k">as</span> <span class="n">response</span><span class="p">:</span>
+            <span class="n">payload</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">response</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">urllib</span><span class="o">.</span><span class="n">error</span><span class="o">.</span><span class="n">HTTPError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="n">detail</span> <span class="o">=</span> <span class="n">exc</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s2">&quot;utf-8&quot;</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;replace&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">raise</span> <span class="n">GeomagLookupError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;BGS geomag lookup failed (</span><span class="si">{</span><span class="n">exc</span><span class="o">.</span><span class="n">code</span><span class="si">}</span><span class="s2">): </span><span class="si">{</span><span class="n">detail</span><span class="p">[:</span><span class="mi">300</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">GeomagLookupError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;BGS geomag lookup failed: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">payload</span><span class="p">[</span><span class="s2">&quot;geomagnetic-field-model-result&quot;</span><span class="p">]</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">KeyError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">GeomagLookupError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;BGS geomag lookup returned an unexpected payload: &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">payload</span><span class="p">)[:</span><span class="mi">300</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+
+
+<div class="viewcode-block" id="lookup_field">
+<a class="viewcode-back" href="../../welleng.html#welleng.geomag.lookup_field">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">lookup_field</span><span class="p">(</span>
+    <span class="n">latitude</span><span class="p">,</span>
+    <span class="n">longitude</span><span class="p">,</span>
+    <span class="n">altitude</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">date</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;wmm&quot;</span><span class="p">,</span>
+    <span class="n">revision</span><span class="o">=</span><span class="s2">&quot;current&quot;</span><span class="p">,</span>
+    <span class="n">timeout</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span>
+    <span class="n">source</span><span class="o">=</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Look up the geomagnetic field, offline where possible.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    latitude, longitude : float</span>
+<span class="sd">        Geodetic coordinates in decimal degrees.</span>
+<span class="sd">    altitude : float</span>
+<span class="sd">        Height in METRES above the WGS84 spheroid (negative below — e.g. a</span>
+<span class="sd">        subsea wellhead). Converted to the service&#39;s km at the wire.</span>
+<span class="sd">    date : str or float, optional</span>
+<span class="sd">        ``yyyy-mm-dd`` or a decimal year. Omitted -&gt; the model epoch.</span>
+<span class="sd">    model : str</span>
+<span class="sd">        ``&#39;wmm&#39;`` (default) or ``&#39;igrf&#39;`` (historic; BGS only).</span>
+<span class="sd">    revision : str</span>
+<span class="sd">        BGS model revision; ``&#39;current&#39;`` tracks the latest server-side.</span>
+<span class="sd">    timeout : float</span>
+<span class="sd">        Socket timeout in seconds (BGS path only).</span>
+<span class="sd">    source : {&quot;auto&quot;, &quot;local&quot;, &quot;bgs&quot;}</span>
+<span class="sd">        ``&quot;auto&quot;`` (default): the bundled offline WMM when it applies</span>
+<span class="sd">        (``model=&quot;wmm&quot;`` and ``date`` in its window), else BGS. ``&quot;local&quot;``</span>
+<span class="sd">        forces the offline WMM (raises out of window). ``&quot;bgs&quot;`` forces the web</span>
+<span class="sd">        service.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    dict</span>
+<span class="sd">        A ``geomagnetic-field-model-result`` payload:</span>
+<span class="sd">        ``result[&#39;field-value&#39;][&#39;total-intensity&#39;][&#39;value&#39;]`` (nT),</span>
+<span class="sd">        ``[&#39;inclination&#39;]`` (dip, deg down-positive),</span>
+<span class="sd">        ``[&#39;declination&#39;]`` (deg east-positive). The offline and BGS payloads</span>
+<span class="sd">        share this shape.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    GeomagLookupError</span>
+<span class="sd">        Out-of-window local request, HTTP error, connection failure or bad</span>
+<span class="sd">        payload.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">source</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span> <span class="s2">&quot;local&quot;</span><span class="p">,</span> <span class="s2">&quot;bgs&quot;</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;source must be auto/local/bgs, got </span><span class="si">{</span><span class="n">source</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">source</span> <span class="o">==</span> <span class="s2">&quot;local&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">local_field</span><span class="p">(</span><span class="n">latitude</span><span class="p">,</span> <span class="n">longitude</span><span class="p">,</span> <span class="n">altitude</span><span class="p">,</span> <span class="n">date</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">source</span> <span class="o">==</span> <span class="s2">&quot;auto&quot;</span> <span class="ow">and</span> <span class="n">model</span> <span class="o">==</span> <span class="s2">&quot;wmm&quot;</span><span class="p">:</span>
+        <span class="n">vf</span><span class="p">,</span> <span class="n">vt</span> <span class="o">=</span> <span class="n">wmm_validity</span><span class="p">()</span>
+        <span class="n">year</span> <span class="o">=</span> <span class="n">_decimal_year</span><span class="p">(</span><span class="n">date</span><span class="p">)</span> <span class="k">if</span> <span class="n">date</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">year</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">vf</span> <span class="o">&lt;=</span> <span class="n">year</span> <span class="o">&lt;=</span> <span class="n">vt</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">local_field</span><span class="p">(</span><span class="n">latitude</span><span class="p">,</span> <span class="n">longitude</span><span class="p">,</span> <span class="n">altitude</span><span class="p">,</span> <span class="n">date</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">GeomagLookupError</span><span class="p">:</span>
+                <span class="k">pass</span>                                    <span class="c1"># fall through to BGS</span>
+    <span class="k">return</span> <span class="n">_bgs_field</span><span class="p">(</span>
+        <span class="n">latitude</span><span class="p">,</span> <span class="n">longitude</span><span class="p">,</span> <span class="n">altitude</span><span class="p">,</span> <span class="n">date</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">revision</span><span class="p">,</span> <span class="n">timeout</span>
+    <span class="p">)</span></div>
+
+
+
+<span class="n">_M_PER_DEG_LAT</span> <span class="o">=</span> <span class="mf">111320.0</span>
+
+
+<div class="viewcode-block" id="SurveyField">
+<a class="viewcode-back" href="../../welleng.html#welleng.geomag.SurveyField">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SurveyField</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Per-station geomagnetic reference field along a survey (offline WMM).</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    md : (n,) ndarray</span>
+<span class="sd">        Station measured depths (echoed from the survey).</span>
+<span class="sd">    b_total : (n,) ndarray</span>
+<span class="sd">        Total field per station, nT.</span>
+<span class="sd">    dip : (n,) ndarray</span>
+<span class="sd">        Magnetic dip (inclination) per station, deg, positive down.</span>
+<span class="sd">    declination : (n,) ndarray</span>
+<span class="sd">        Declination per station, deg, positive east.</span>
+<span class="sd">    d_b_total, d_dip, d_declination : (n,) ndarray</span>
+<span class="sd">        Difference of each quantity from the wellhead reference (station 0) --</span>
+<span class="sd">        the SIZE of the per-station refinement. ``d_declination`` is the one</span>
+<span class="sd">        that matters: it rotates azimuth, so its span over the well is the</span>
+<span class="sd">        potential lateral-position gain of using a per-station reference.</span>
+<span class="sd">    reference : dict</span>
+<span class="sd">        The single wellhead-reference field ``local_field`` returns, for</span>
+<span class="sd">        comparison / the conventional single-value path.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">md</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>            <span class="c1"># (n,) station measured depths, echoed</span>
+    <span class="n">b_total</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>       <span class="c1"># (n,) total field per station, nT</span>
+    <span class="n">dip</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>           <span class="c1"># (n,) magnetic dip per station, deg (down +)</span>
+    <span class="n">declination</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>   <span class="c1"># (n,) declination per station, deg (east +)</span>
+    <span class="n">d_b_total</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>     <span class="c1"># (n,) b_total minus the wellhead reference, nT</span>
+    <span class="n">d_dip</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>         <span class="c1"># (n,) dip minus the wellhead reference, deg</span>
+    <span class="n">d_declination</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (n,) declination minus wellhead ref, deg (the key one)</span>
+    <span class="n">reference</span><span class="p">:</span> <span class="nb">dict</span>           <span class="c1"># the single wellhead-reference local_field payload</span></div>
+
+
+
+<div class="viewcode-block" id="field_along_survey">
+<a class="viewcode-back" href="../../welleng.html#welleng.geomag.field_along_survey">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">field_along_survey</span><span class="p">(</span><span class="n">survey</span><span class="p">,</span> <span class="n">date</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">descend</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Per-station geomagnetic reference field along a survey, computed OFFLINE.</span>
+
+<span class="sd">    An **opt-in refinement**: instead of one wellhead declination/dip/B for the</span>
+<span class="sd">    whole well, evaluate the bundled WMM at each station&#39;s own geographic</span>
+<span class="sd">    position. For an extended-reach well crossing a field gradient the</span>
+<span class="sd">    declination varies across the trajectory; using a single surface value puts</span>
+<span class="sd">    a small systematic azimuth error on the deep, stepped-out sections. The</span>
+<span class="sd">    effect is negligible for ordinary wells (&lt; 0.01 deg declination) and reaches</span>
+<span class="sd">    ~0.1-0.2 deg (~10-20 m of lateral position over the reach) only for long</span>
+<span class="sd">    extended-reach wells at high latitude or near a magnetic anomaly.</span>
+
+<span class="sd">    By default this varies the horizontal position (latitude/longitude from the</span>
+<span class="sd">    wellhead plus the survey&#39;s north/east) and holds altitude at the wellhead</span>
+<span class="sd">    reference -- the LATERAL gradient, which is the real, physically-clean</span>
+<span class="sd">    effect. The vertical (downward-continuation to true vertical depth) is</span>
+<span class="sd">    deliberately NOT applied by default: it is both tiny (&lt; 0.03 deg over 3 km)</span>
+<span class="sd">    and outside the WMM&#39;s certified altitude range (its floor is -1 km, and the</span>
+<span class="sd">    crustal field a well actually descends into is not in the model). Pass</span>
+<span class="sd">    ``descend=True`` to evaluate at ``-tvd`` anyway, understanding it is a minor</span>
+<span class="sd">    extrapolation.</span>
+
+<span class="sd">    Horizontal position uses a local flat-earth step from the wellhead</span>
+<span class="sd">    (``dlat = north / 111320``, ``dlon = east / (111320 cos lat)``); over a</span>
+<span class="sd">    well&#39;s extent that is well within the smoothness of the geomagnetic field.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    survey : welleng.survey.Survey</span>
+<span class="sd">        A survey whose header carries ``latitude``/``longitude`` (the wellhead)</span>
+<span class="sd">        and which exposes ``n``/``e``/``tvd`` station positions.</span>
+<span class="sd">    date : str or float, optional</span>
+<span class="sd">        ``yyyy-mm-dd`` or a decimal year. Defaults to the header&#39;s</span>
+<span class="sd">        ``survey_date`` if set, else the model epoch.</span>
+<span class="sd">    descend : bool, default False</span>
+<span class="sd">        If True, evaluate at each station&#39;s ``-tvd`` (downward continuation);</span>
+<span class="sd">        default holds altitude at the wellhead reference (lateral gradient only).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    SurveyField</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    - This is the SCALAR reference applied per station (one ``local_field`` call</span>
+<span class="sd">      each) -- the open, auditable form.</span>
+<span class="sd">    - It changes the reference field&#39;s MEAN, not the ISCWSA declination</span>
+<span class="sd">      UNCERTAINTY term (which still covers the spread). And it is a modelling</span>
+<span class="sd">      refinement of the TRUE field -- do not use it to silently re-correct a</span>
+<span class="sd">      survey whose azimuths already had a declination applied at acquisition;</span>
+<span class="sd">      its value is on the raw magnetic-to-true path.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">hdr</span> <span class="o">=</span> <span class="n">survey</span><span class="o">.</span><span class="n">header</span>
+    <span class="n">lat0</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">hdr</span><span class="p">,</span> <span class="s2">&quot;latitude&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">lon0</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">hdr</span><span class="p">,</span> <span class="s2">&quot;longitude&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">lat0</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">lon0</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">hdr</span><span class="p">,</span> <span class="s2">&quot;_location_defaulted&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="n">GeomagLookupError</span><span class="p">(</span>
+            <span class="s2">&quot;survey header has no real latitude/longitude (wellhead) to anchor &quot;</span>
+            <span class="s2">&quot;the per-station field -- a defaulted location is fictitious; set &quot;</span>
+            <span class="s2">&quot;the header&#39;s latitude/longitude&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">date</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">date</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">hdr</span><span class="p">,</span> <span class="s2">&quot;survey_date&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">alt0</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">hdr</span><span class="p">,</span> <span class="s2">&quot;altitude&quot;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+
+    <span class="n">n</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">survey</span><span class="o">.</span><span class="n">n</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">e</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">survey</span><span class="o">.</span><span class="n">e</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">tvd</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">survey</span><span class="o">.</span><span class="n">tvd</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">lats</span> <span class="o">=</span> <span class="n">lat0</span> <span class="o">+</span> <span class="n">n</span> <span class="o">/</span> <span class="n">_M_PER_DEG_LAT</span>
+    <span class="n">lons</span> <span class="o">=</span> <span class="n">lon0</span> <span class="o">+</span> <span class="n">e</span> <span class="o">/</span> <span class="p">(</span><span class="n">_M_PER_DEG_LAT</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">lat0</span><span class="p">)))</span>
+    <span class="n">alts</span> <span class="o">=</span> <span class="p">(</span><span class="n">alt0</span> <span class="o">-</span> <span class="n">tvd</span><span class="p">)</span> <span class="k">if</span> <span class="n">descend</span> <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="n">lats</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">alt0</span><span class="p">)</span>
+
+    <span class="n">B</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">lats</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+    <span class="n">D</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">lats</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+    <span class="n">Dec</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">lats</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">lats</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+        <span class="n">fv</span> <span class="o">=</span> <span class="n">local_field</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">lats</span><span class="p">[</span><span class="n">i</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="n">lons</span><span class="p">[</span><span class="n">i</span><span class="p">]),</span>
+                         <span class="nb">float</span><span class="p">(</span><span class="n">alts</span><span class="p">[</span><span class="n">i</span><span class="p">]),</span> <span class="n">date</span><span class="p">)[</span><span class="s2">&quot;field-value&quot;</span><span class="p">]</span>
+        <span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">fv</span><span class="p">[</span><span class="s2">&quot;total-intensity&quot;</span><span class="p">][</span><span class="s2">&quot;value&quot;</span><span class="p">]</span>
+        <span class="n">D</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">fv</span><span class="p">[</span><span class="s2">&quot;inclination&quot;</span><span class="p">][</span><span class="s2">&quot;value&quot;</span><span class="p">]</span>
+        <span class="n">Dec</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">fv</span><span class="p">[</span><span class="s2">&quot;declination&quot;</span><span class="p">][</span><span class="s2">&quot;value&quot;</span><span class="p">]</span>
+
+    <span class="n">reference</span> <span class="o">=</span> <span class="n">local_field</span><span class="p">(</span><span class="n">lat0</span><span class="p">,</span> <span class="n">lon0</span><span class="p">,</span> <span class="n">alt0</span><span class="p">,</span> <span class="n">date</span><span class="p">)</span>
+    <span class="n">rfv</span> <span class="o">=</span> <span class="n">reference</span><span class="p">[</span><span class="s2">&quot;field-value&quot;</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">SurveyField</span><span class="p">(</span>
+        <span class="n">md</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">survey</span><span class="o">.</span><span class="n">md</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">),</span>
+        <span class="n">b_total</span><span class="o">=</span><span class="n">B</span><span class="p">,</span> <span class="n">dip</span><span class="o">=</span><span class="n">D</span><span class="p">,</span> <span class="n">declination</span><span class="o">=</span><span class="n">Dec</span><span class="p">,</span>
+        <span class="n">d_b_total</span><span class="o">=</span><span class="n">B</span> <span class="o">-</span> <span class="n">rfv</span><span class="p">[</span><span class="s2">&quot;total-intensity&quot;</span><span class="p">][</span><span class="s2">&quot;value&quot;</span><span class="p">],</span>
+        <span class="n">d_dip</span><span class="o">=</span><span class="n">D</span> <span class="o">-</span> <span class="n">rfv</span><span class="p">[</span><span class="s2">&quot;inclination&quot;</span><span class="p">][</span><span class="s2">&quot;value&quot;</span><span class="p">],</span>
+        <span class="n">d_declination</span><span class="o">=</span><span class="n">Dec</span> <span class="o">-</span> <span class="n">rfv</span><span class="p">[</span><span class="s2">&quot;declination&quot;</span><span class="p">][</span><span class="s2">&quot;value&quot;</span><span class="p">],</span>
+        <span class="n">reference</span><span class="o">=</span><span class="n">reference</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.interpretation.correction_uncertainty &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.interpretation.correction_uncertainty</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.interpretation.correction_uncertainty</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Correction-uncertainty covariance by Monte-Carlo input propagation.</span>
+
+<span class="sd">A survey *correction* (BHA sag, a depth stretch model, an MSA correction) is a</span>
+<span class="sd">deterministic model of uncertain inputs. The **residual uncertainty left after</span>
+<span class="sd">correcting** is the covariance of the correction over those input</span>
+<span class="sd">uncertainties -- propagated here by plain Monte-Carlo: draw perturbed inputs,</span>
+<span class="sd">re-evaluate the correction, take the covariance of the resulting correction</span>
+<span class="sd">vectors. Within one run the draws are single realisations, so the returned</span>
+<span class="sd">matrix carries the full **cross-station correlation** (a biased stabiliser OD</span>
+<span class="sd">mis-corrects every station the same way) -- exactly the block a covariated</span>
+<span class="sd">error model consumes.</span>
+
+<span class="sd">The correction model is **injected** as a callable, so this module stays a</span>
+<span class="sd">generic, model-agnostic propagation utility: welleng-core does not depend on</span>
+<span class="sd">any specific mechanics implementation (e.g. a BHA-sag beam model living in a</span>
+<span class="sd">consumer package plugs in at the call site). Standard uncertainty propagation</span>
+<span class="sd">(JCGM 101 / GUM Supplement 1 -- Monte Carlo method).</span>
+
+<span class="sd">Example (sketch)::</span>
+
+<span class="sd">    def draw(rng):</span>
+<span class="sd">        g = replace(base_geom,</span>
+<span class="sd">                    stabilizer_od=base_geom.stabilizer_od + rng.normal(0, od_sig),</span>
+<span class="sd">                    mud_weight=base_geom.mud_weight + rng.normal(0, mw_sig))</span>
+<span class="sd">        return lambda: sag_correction(g, survey)     # consumer&#39;s model</span>
+
+<span class="sd">    res = correction_covariance_mc(draw, n_draws=1000, rng=rng)</span>
+<span class="sd">    # res.covariance -&gt; (n_stations, n_stations) inc-correction covariance</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;CorrectionUncertainty&quot;</span><span class="p">,</span> <span class="s2">&quot;correction_covariance_mc&quot;</span><span class="p">]</span>
+
+
+<div class="viewcode-block" id="CorrectionUncertainty">
+<a class="viewcode-back" href="../../../welleng.interpretation.html#welleng.interpretation.correction_uncertainty.CorrectionUncertainty">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">CorrectionUncertainty</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Monte-Carlo correction-uncertainty result.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    mean : (n,) ndarray</span>
+<span class="sd">        Mean correction over the draws (the best-estimate correction under</span>
+<span class="sd">        input uncertainty; generally ~ the nominal correction).</span>
+<span class="sd">    covariance : (n, n) ndarray</span>
+<span class="sd">        Covariance of the correction across draws -- the residual uncertainty</span>
+<span class="sd">        the correction leaves behind, WITH cross-station correlation (each draw</span>
+<span class="sd">        is one realisation of the inputs over the whole run).</span>
+<span class="sd">    std : (n,) ndarray</span>
+<span class="sd">        Per-station 1-sigma (sqrt of the diagonal).</span>
+<span class="sd">    n_draws : int</span>
+<span class="sd">        Draws used.</span>
+<span class="sd">    se_std : (n,) ndarray</span>
+<span class="sd">        Monte-Carlo standard error of ``std`` (~ ``std / sqrt(2 (n-1))``) --</span>
+<span class="sd">        the convergence handle: enlarge ``n_draws`` until ``se_std`` is small</span>
+<span class="sd">        against the sigma you are quoting.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">mean</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>        <span class="c1"># (n,) mean correction over the draws (rad or model units)</span>
+    <span class="n">covariance</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (n,n) correction covariance, cross-station correlated</span>
+    <span class="n">std</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>         <span class="c1"># (n,) per-station 1-sigma (sqrt of the diagonal)</span>
+    <span class="n">n_draws</span><span class="p">:</span> <span class="nb">int</span>            <span class="c1"># Monte-Carlo draws used</span>
+    <span class="n">se_std</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>      <span class="c1"># (n,) MC standard error of std (convergence handle)</span></div>
+
+
+
+<div class="viewcode-block" id="correction_covariance_mc">
+<a class="viewcode-back" href="../../../welleng.interpretation.html#welleng.interpretation.correction_uncertainty.correction_covariance_mc">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">correction_covariance_mc</span><span class="p">(</span><span class="n">draw</span><span class="p">,</span> <span class="n">n_draws</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Covariance of a deterministic correction under uncertain inputs (MC).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    draw : callable</span>
+<span class="sd">        ``draw(rng) -&gt; callable() -&gt; (n,) array_like``: draws ONE realisation</span>
+<span class="sd">        of the uncertain inputs (applying each input&#39;s own distribution and</span>
+<span class="sd">        propagation character -- e.g. a systematic stabiliser-OD offset drawn</span>
+<span class="sd">        once per run vs a per-station random enlargement drawn per station</span>
+<span class="sd">        *inside* the closure) and returns a zero-argument callable evaluating</span>
+<span class="sd">        the correction for that realisation. The correction model itself is</span>
+<span class="sd">        whatever the closure wraps -- this function never imports it.</span>
+<span class="sd">    n_draws : int, default 1000</span>
+<span class="sd">        Monte-Carlo draws. The result carries ``se_std`` to judge convergence.</span>
+<span class="sd">    rng : numpy.random.Generator, optional</span>
+<span class="sd">        Source of randomness (default ``numpy.random.default_rng()``).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    CorrectionUncertainty</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    - **Zero input uncertainty =&gt; zero covariance** (the deterministic limit)</span>
+<span class="sd">      -- kept as a regression gate.</span>
+<span class="sd">    - The full (n, n) matrix is returned (not just the diagonal) because the</span>
+<span class="sd">      within-run input realisation correlates the stations; a covariated error</span>
+<span class="sd">      model consumes exactly that block.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">rng</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">n_draws</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;n_draws must be &gt;= 2, got </span><span class="si">{</span><span class="n">n_draws</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">first</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">draw</span><span class="p">(</span><span class="n">rng</span><span class="p">)(),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">first</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;correction must return a 1-D per-station array, got shape &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">first</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="n">first</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">X</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n_draws</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span>
+    <span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">first</span>
+    <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_draws</span><span class="p">):</span>
+        <span class="n">xk</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">draw</span><span class="p">(</span><span class="n">rng</span><span class="p">)(),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">xk</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="n">n</span><span class="p">,):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;draw </span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">: correction shape </span><span class="si">{</span><span class="n">xk</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> != (</span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">,) -- the &quot;</span>
+                <span class="s2">&quot;station set must be identical across draws&quot;</span>
+            <span class="p">)</span>
+        <span class="n">X</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">xk</span>
+    <span class="n">mean</span> <span class="o">=</span> <span class="n">X</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">dev</span> <span class="o">=</span> <span class="n">X</span> <span class="o">-</span> <span class="n">mean</span>
+    <span class="n">cov</span> <span class="o">=</span> <span class="p">(</span><span class="n">dev</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">dev</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">n_draws</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">cov</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">cov</span> <span class="o">+</span> <span class="n">cov</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
+    <span class="n">std</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">cov</span><span class="p">),</span> <span class="mf">0.0</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+    <span class="n">se</span> <span class="o">=</span> <span class="n">std</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="p">(</span><span class="n">n_draws</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">CorrectionUncertainty</span><span class="p">(</span>
+        <span class="n">mean</span><span class="o">=</span><span class="n">mean</span><span class="p">,</span> <span class="n">covariance</span><span class="o">=</span><span class="n">cov</span><span class="p">,</span> <span class="n">std</span><span class="o">=</span><span class="n">std</span><span class="p">,</span> <span class="n">n_draws</span><span class="o">=</span><span class="n">n_draws</span><span class="p">,</span> <span class="n">se_std</span><span class="o">=</span><span class="n">se</span>
+    <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

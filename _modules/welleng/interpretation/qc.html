@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.interpretation.qc &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.interpretation.qc</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.interpretation.qc</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Georeference survey QC: total-gravity, total-field and dip checks.</span>
+
+<span class="sd">The georeference tests compare the *measured* total gravity field, total</span>
+<span class="sd">magnetic field and magnetic dip against known reference values, and flag</span>
+<span class="sd">stations whose residuals exceed tolerance (Ekseth et al., SPE-133417). A</span>
+<span class="sd">total-field or dip failure indicates magnetic interference (e.g. insufficient</span>
+<span class="sd">non-magnetic spacing, or proximity to casing) so the azimuth at that station is</span>
+<span class="sd">unreliable; a total-gravity failure indicates an accelerometer problem.</span>
+
+<span class="sd">Validated: reproduces a commercial vendor&#39;s own per-station DE-QC pass/fail</span>
+<span class="sd">flags to 100% agreement, with the vendor&#39;s total-field / dip tolerances</span>
+<span class="sd">recovered as ~826 nT and ~0.44 deg.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;GeomagReference&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;QCResult&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;georef_checks&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;DualDepthResult&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;dual_depth_difference&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+
+
+<div class="viewcode-block" id="GeomagReference">
+<a class="viewcode-back" href="../../../welleng.interpretation.html#welleng.interpretation.qc.GeomagReference">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">GeomagReference</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Reference geomagnetic + gravity field at the survey location/time.</span>
+
+<span class="sd">    Units are the caller&#39;s, but must match the sensor units passed to the QC</span>
+<span class="sd">    functions (e.g. ``b_total`` in nT with magnetometer readings in nT).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    b_total : float</span>
+<span class="sd">        Reference total magnetic-field strength.</span>
+<span class="sd">    dip : float</span>
+<span class="sd">        Reference magnetic dip angle (deg, down-positive).</span>
+<span class="sd">    g_total : float</span>
+<span class="sd">        Reference total gravity-field strength.</span>
+<span class="sd">    declination : float, default 0.0</span>
+<span class="sd">        Magnetic declination (deg, east-positive).</span>
+<span class="sd">    grid_convergence : float, default 0.0</span>
+<span class="sd">        Grid convergence (deg).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">b_total</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">dip</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">g_total</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">declination</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">grid_convergence</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span></div>
+
+
+
+<span class="c1"># representative single-station MWD tolerances (caller may override)</span>
+<span class="n">DEFAULT_TOLERANCES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;g_total&quot;</span><span class="p">:</span> <span class="mf">3.0</span><span class="p">,</span> <span class="s2">&quot;b_total&quot;</span><span class="p">:</span> <span class="mf">350.0</span><span class="p">,</span> <span class="s2">&quot;dip&quot;</span><span class="p">:</span> <span class="mf">0.5</span><span class="p">}</span>
+
+
+<div class="viewcode-block" id="QCResult">
+<a class="viewcode-back" href="../../../welleng.interpretation.html#welleng.interpretation.qc.QCResult">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">QCResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Per-station georeference QC residuals and pass/fail flags.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    d_g, d_b, d_dip : ndarray</span>
+<span class="sd">        Measured-minus-reference residuals for total gravity, total field and</span>
+<span class="sd">        dip.</span>
+<span class="sd">    flag_g, flag_b, flag_dip : ndarray of bool</span>
+<span class="sd">        True where the residual exceeds tolerance (i.e. the station FAILS that</span>
+<span class="sd">        check).</span>
+<span class="sd">    tolerances : dict</span>
+<span class="sd">        The tolerances applied.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">d_g</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">d_b</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">d_dip</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">flag_g</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">flag_b</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">flag_dip</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">tolerances</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">passed</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;True where the station passes all three checks.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="o">~</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">flag_g</span> <span class="o">|</span> <span class="bp">self</span><span class="o">.</span><span class="n">flag_b</span> <span class="o">|</span> <span class="bp">self</span><span class="o">.</span><span class="n">flag_dip</span><span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_totals</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_2d</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
+    <span class="n">b</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_2d</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
+    <span class="n">g_total</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">b_total</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">dip</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arcsin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">g</span> <span class="o">*</span> <span class="n">b</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">g_total</span> <span class="o">*</span> <span class="n">b_total</span><span class="p">)))</span>
+    <span class="k">return</span> <span class="n">g_total</span><span class="p">,</span> <span class="n">b_total</span><span class="p">,</span> <span class="n">dip</span>
+
+
+<div class="viewcode-block" id="georef_checks">
+<a class="viewcode-back" href="../../../welleng.interpretation.html#welleng.interpretation.qc.georef_checks">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">georef_checks</span><span class="p">(</span>
+    <span class="n">g_xyz</span><span class="p">,</span>
+    <span class="n">b_xyz</span><span class="p">,</span>
+    <span class="n">ref</span><span class="p">:</span> <span class="n">GeomagReference</span><span class="p">,</span>
+    <span class="n">tolerances</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QCResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Run the georeference QC tests on one or more survey stations.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    g_xyz, b_xyz : array_like, shape (3,) or (n, 3)</span>
+<span class="sd">        Accelerometer and magnetometer readings in the tool frame (same units</span>
+<span class="sd">        as ``ref.g_total`` / ``ref.b_total``).</span>
+<span class="sd">    ref : GeomagReference</span>
+<span class="sd">        Reference field.</span>
+<span class="sd">    tolerances : dict, optional</span>
+<span class="sd">        Keys ``&#39;g_total&#39;``, ``&#39;b_total&#39;``, ``&#39;dip&#39;``. Missing keys fall back to</span>
+<span class="sd">        :data:`DEFAULT_TOLERANCES`.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    QCResult</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">tol</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">DEFAULT_TOLERANCES</span><span class="p">,</span> <span class="o">**</span><span class="p">(</span><span class="n">tolerances</span> <span class="ow">or</span> <span class="p">{})}</span>
+    <span class="n">g_total</span><span class="p">,</span> <span class="n">b_total</span><span class="p">,</span> <span class="n">dip</span> <span class="o">=</span> <span class="n">_totals</span><span class="p">(</span><span class="n">g_xyz</span><span class="p">,</span> <span class="n">b_xyz</span><span class="p">)</span>
+
+    <span class="n">d_g</span> <span class="o">=</span> <span class="n">g_total</span> <span class="o">-</span> <span class="n">ref</span><span class="o">.</span><span class="n">g_total</span>
+    <span class="n">d_b</span> <span class="o">=</span> <span class="n">b_total</span> <span class="o">-</span> <span class="n">ref</span><span class="o">.</span><span class="n">b_total</span>
+    <span class="n">d_dip</span> <span class="o">=</span> <span class="n">dip</span> <span class="o">-</span> <span class="n">ref</span><span class="o">.</span><span class="n">dip</span>
+
+    <span class="k">return</span> <span class="n">QCResult</span><span class="p">(</span>
+        <span class="n">d_g</span><span class="o">=</span><span class="n">d_g</span><span class="p">,</span>
+        <span class="n">d_b</span><span class="o">=</span><span class="n">d_b</span><span class="p">,</span>
+        <span class="n">d_dip</span><span class="o">=</span><span class="n">d_dip</span><span class="p">,</span>
+        <span class="n">flag_g</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">d_g</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">tol</span><span class="p">[</span><span class="s2">&quot;g_total&quot;</span><span class="p">],</span>
+        <span class="n">flag_b</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">d_b</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">tol</span><span class="p">[</span><span class="s2">&quot;b_total&quot;</span><span class="p">],</span>
+        <span class="n">flag_dip</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">d_dip</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">tol</span><span class="p">[</span><span class="s2">&quot;dip&quot;</span><span class="p">],</span>
+        <span class="n">tolerances</span><span class="o">=</span><span class="n">tol</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="DualDepthResult">
+<a class="viewcode-back" href="../../../welleng.interpretation.html#welleng.interpretation.qc.DualDepthResult">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DualDepthResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Dual-depth-difference QC test outcome.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    depth_difference_error : ndarray</span>
+<span class="sd">        The measured difference between the two independent depth measurements</span>
+<span class="sd">        (pipe tally vs wireline), i.e. the quantity being tested.</span>
+<span class="sd">    tolerance : ndarray</span>
+<span class="sd">        Allowed difference: the RSS of the two error-model depth uncertainties.</span>
+<span class="sd">    flag : ndarray of bool</span>
+<span class="sd">        True where the difference exceeds tolerance (station FAILS -- a gross</span>
+<span class="sd">        depth error is present).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">depth_difference_error</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">tolerance</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">flag</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">passed</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="k">return</span> <span class="o">~</span><span class="bp">self</span><span class="o">.</span><span class="n">flag</span></div>
+
+
+
+<div class="viewcode-block" id="dual_depth_difference">
+<a class="viewcode-back" href="../../../welleng.interpretation.html#welleng.interpretation.qc.dual_depth_difference">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">dual_depth_difference</span><span class="p">(</span>
+    <span class="n">depth_difference_error</span><span class="p">,</span>
+    <span class="n">sigma_pipe</span><span class="p">,</span>
+    <span class="n">sigma_wll</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Dual-depth-difference QC test (Ekseth et al., SPE-133417).</span>
+
+<span class="sd">    Where an independent second depth measurement exists (e.g. a wireline pass</span>
+<span class="sd">    with a casing-collar locator alongside the drillpipe tally), the difference</span>
+<span class="sd">    between the two depths is checked against the combined error-model</span>
+<span class="sd">    uncertainty. A difference larger than tolerance indicates a gross depth</span>
+<span class="sd">    error not explained by the error models.</span>
+
+<span class="sd">    The allowed difference is the root-sum-square of the two independent depth</span>
+<span class="sd">    uncertainties (same sigma convention -- e.g. both 3-sigma):</span>
+
+<span class="sd">        tolerance = sqrt(sigma_pipe**2 + sigma_wll**2)</span>
+
+<span class="sd">    Reproduces SPE-133417 Table 1a/1b/1c exactly.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    depth_difference_error : float or array_like</span>
+<span class="sd">        Measured pipe-vs-wireline depth-difference error.</span>
+<span class="sd">    sigma_pipe, sigma_wll : float or array_like</span>
+<span class="sd">        Error-model depth uncertainties (same sigma level) for the pipe-tally</span>
+<span class="sd">        and wireline measurements respectively.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    DualDepthResult</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">dd</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">depth_difference_error</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
+    <span class="n">tol</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hypot</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">sigma_pipe</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">),</span>
+                   <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">sigma_wll</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">DualDepthResult</span><span class="p">(</span>
+        <span class="n">depth_difference_error</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">depth_difference_error</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">),</span>
+        <span class="n">tolerance</span><span class="o">=</span><span class="n">tol</span><span class="p">,</span>
+        <span class="n">flag</span><span class="o">=</span><span class="n">dd</span> <span class="o">&gt;</span> <span class="n">tol</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

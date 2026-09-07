@@ -1,0 +1,1690 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.interpretation package &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="_static/documentation_options.js?v=58c9f167"></script>
+        <script src="_static/doctools.js?v=9a2dae69"></script>
+        <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="welleng.kick_tolerance package" href="welleng.kick_tolerance.html" />
+    <link rel="prev" title="welleng.exchange package" href="welleng.exchange.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">welleng</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="welleng.html">welleng package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="welleng.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="welleng.catalog.html">welleng.catalog package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="welleng.errors.html">welleng.errors package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="welleng.exchange.html">welleng.exchange package</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">welleng.interpretation package</a><ul>
+<li class="toctree-l5"><a class="reference internal" href="#module-welleng.interpretation.forward">welleng.interpretation.forward module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-welleng.interpretation.qc">welleng.interpretation.qc module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-welleng.interpretation.msa">welleng.interpretation.msa module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-welleng.interpretation.correction_uncertainty">welleng.interpretation.correction_uncertainty module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-welleng.interpretation">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="welleng.kick_tolerance.html">welleng.kick_tolerance package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#submodules">Submodules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.architecture">welleng.architecture module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.acceptance">welleng.acceptance module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.clearance">welleng.clearance module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.combination">welleng.combination module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.composition">welleng.composition module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.conditioning">welleng.conditioning module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.connector">welleng.connector module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.error">welleng.error module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.fluid">welleng.fluid module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.geomag">welleng.geomag module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.hierarchy">welleng.hierarchy module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.io">welleng.io module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.mesh">welleng.mesh module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.node">welleng.node module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.sawaryn_analytical">welleng.sawaryn_analytical module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.osdu">welleng.osdu module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.survey">welleng.survey module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.surface">welleng.surface module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.target">welleng.target module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.torque_drag">welleng.torque_drag module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.units">welleng.units module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.utils">welleng.utils module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.version">welleng.version module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng.visual">welleng.visual module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="welleng.html#module-welleng">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="modules.html">welleng</a></li>
+          <li class="breadcrumb-item"><a href="welleng.html">welleng package</a></li>
+      <li class="breadcrumb-item active">welleng.interpretation package</li>
+      <li class="wy-breadcrumbs-aside">
+              <a href="https://github.com/jonnymaserati/welleng/blob/main/docs/welleng.interpretation.rst" class="fa fa-github"> Edit on GitHub</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="welleng-interpretation-package">
+<h1>welleng.interpretation package<a class="headerlink" href="#welleng-interpretation-package" title="Link to this heading"></a></h1>
+<p>Directional-survey interpretation: raw sensors to survey, QC, multi-station
+analysis (MSA), and correction-uncertainty propagation.</p>
+<section id="module-welleng.interpretation.forward">
+<span id="welleng-interpretation-forward-module"></span><h2>welleng.interpretation.forward module<a class="headerlink" href="#module-welleng.interpretation.forward" title="Link to this heading"></a></h2>
+<p>Sensor -&gt; survey: the MWD navigation equations.</p>
+<p>Compute inclination, azimuth and toolface from a triad of accelerometer
+readings (gravity) and a triad of magnetometer readings (Earth’s field), using
+the standard, public-domain minimum-set MWD equations (Williamson, SPE-67616).</p>
+<p>The equations are scale-free in each sensor (they depend only on ratios), so the
+accelerometer and magnetometer readings may be supplied in any self-consistent
+units (e.g. mG and nT, or m/s^2 and T) – the result is identical.</p>
+<p>Validated against an operator’s commercial-vendor survey (raw sensors -&gt; the
+vendor’s own computed inc/azi) to 0.005 deg inclination and 0.03 deg azimuth.</p>
+<dl class="py data">
+<dt class="sig sig-object py" id="welleng.interpretation.forward.EARTH_RATE">
+<span class="sig-prename descclassname"><span class="pre">welleng.interpretation.forward.</span></span><span class="sig-name descname"><span class="pre">EARTH_RATE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">15.041067</span></em><a class="headerlink" href="#welleng.interpretation.forward.EARTH_RATE" title="Link to this definition"></a></dt>
+<dd><p>360 deg / 23.9344696 h.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Earth’s sidereal rotation rate (deg/hr)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.interpretation.forward.earth_rate_components">
+<span class="sig-prename descclassname"><span class="pre">welleng.interpretation.forward.</span></span><span class="sig-name descname"><span class="pre">earth_rate_components</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">latitude</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rate</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">15.041067</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/forward.html#earth_rate_components"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.forward.earth_rate_components" title="Link to this definition"></a></dt>
+<dd><p>Local horizontal (true-north) and vertical Earth-rate components.</p>
+<p>At latitude <code class="docutils literal notranslate"><span class="pre">phi</span></code> the Earth-rotation vector has a horizontal component
+<code class="docutils literal notranslate"><span class="pre">rate*cos(phi)</span></code> pointing true north and a vertical component
+<code class="docutils literal notranslate"><span class="pre">rate*sin(phi)</span></code> (up). These are the gyro reference values; the Earth-rate
+“dip” equals the latitude, so no spatial model/service is required (unlike
+the magnetic field).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>latitude</strong> (<em>float</em><em> or </em><em>array_like</em>) – Geographic latitude (deg).</p></li>
+<li><p><strong>rate</strong> (<em>float</em><em>, </em><em>default EARTH_RATE</em>) – Earth-rotation rate magnitude (deg/hr).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>horizontal, vertical</strong> – Earth-rate components (deg/hr).</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.interpretation.forward.gyro_to_survey">
+<span class="sig-prename descclassname"><span class="pre">welleng.interpretation.forward.</span></span><span class="sig-name descname"><span class="pre">gyro_to_survey</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">g_xyz</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">w_xyz</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid_convergence</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">axis</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'z'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">deg</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/forward.html#gyro_to_survey"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.forward.gyro_to_survey" title="Link to this definition"></a></dt>
+<dd><p>Inclination, azimuth and toolface from accelerometer + rate-gyro.</p>
+<p>Gyrocompassing: the accelerometer gives inclination and toolface (as in
+<a class="reference internal" href="#welleng.interpretation.forward.sensor_to_survey" title="welleng.interpretation.forward.sensor_to_survey"><code class="xref py py-func docutils literal notranslate"><span class="pre">sensor_to_survey()</span></code></a>) and the rate-gyro measures the Earth-rotation
+vector in the tool frame, whose horizontal component points <em>true</em> north.
+The azimuth is obtained from the same minimum-set equation, with the gyro
+readings in place of the magnetometer.</p>
+<p>Unlike a magnetic survey the gyro references true north directly, so <strong>no
+magnetic declination is applied</strong> (only grid convergence, if supplied).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>g_xyz</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>3</em><em>,</em><em>) or </em><em>(</em><em>n</em><em>, </em><em>3</em><em>)</em>) – Accelerometer readings (gravity) in the tool frame.</p></li>
+<li><p><strong>w_xyz</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>3</em><em>,</em><em>) or </em><em>(</em><em>n</em><em>, </em><em>3</em><em>)</em>) – Rate-gyro readings (Earth-rotation rate) in the tool frame, any
+self-consistent angular-rate unit.</p></li>
+<li><p><strong>grid_convergence</strong> (<em>float</em><em>, </em><em>default 0.0</em>) – Grid convergence (deg), subtracted to give grid azimuth.</p></li>
+<li><p><strong>axis</strong> (<em>{'z'</em><em>, </em><em>'x'}</em><em>, </em><em>default 'z'</em>) – Along-hole (axial) sensor axis, as in <a class="reference internal" href="#welleng.interpretation.forward.sensor_to_survey" title="welleng.interpretation.forward.sensor_to_survey"><code class="xref py py-func docutils literal notranslate"><span class="pre">sensor_to_survey()</span></code></a>.</p></li>
+<li><p><strong>deg</strong> (<em>bool</em><em>, </em><em>default True</em>) – Return degrees if True, else radians.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>inc, azi, toolface</strong> – Inclination, azimuth (true/grid, wrapped to [0, 360)) and toolface.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float or ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.interpretation.forward.sensor_to_survey">
+<span class="sig-prename descclassname"><span class="pre">welleng.interpretation.forward.</span></span><span class="sig-name descname"><span class="pre">sensor_to_survey</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">g_xyz</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">b_xyz</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">declination</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid_convergence</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">axis</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'z'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">deg</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/forward.html#sensor_to_survey"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.forward.sensor_to_survey" title="Link to this definition"></a></dt>
+<dd><p>Inclination, azimuth and toolface from accelerometer + magnetometer.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>g_xyz</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>3</em><em>,</em><em>) or </em><em>(</em><em>n</em><em>, </em><em>3</em><em>)</em>) – Accelerometer readings (gravity vector) in the tool frame.</p></li>
+<li><p><strong>b_xyz</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>3</em><em>,</em><em>) or </em><em>(</em><em>n</em><em>, </em><em>3</em><em>)</em>) – Magnetometer readings (Earth field) in the tool frame, same station
+ordering as <code class="docutils literal notranslate"><span class="pre">g_xyz</span></code>.</p></li>
+<li><p><strong>declination</strong> (<em>float</em><em>, </em><em>default 0.0</em>) – Magnetic declination (deg, east-positive). Added to the magnetic
+azimuth to give azimuth relative to true north.</p></li>
+<li><p><strong>grid_convergence</strong> (<em>float</em><em>, </em><em>default 0.0</em>) – Grid convergence (deg). Subtracted to give grid azimuth. With both
+<code class="docutils literal notranslate"><span class="pre">declination</span></code> and <code class="docutils literal notranslate"><span class="pre">grid_convergence</span></code> zero the result is the raw
+<em>magnetic</em> azimuth.</p></li>
+<li><p><strong>axis</strong> (<em>{'z'</em><em>, </em><em>'x'}</em><em>, </em><em>default 'z'</em>) – Which sensor axis is the along-hole (axial) axis. <code class="docutils literal notranslate"><span class="pre">'z'</span></code> is the usual
+convention; <code class="docutils literal notranslate"><span class="pre">'x'</span></code> handles tools/exports that list the axial axis
+first (seen in some vendor survey files).</p></li>
+<li><p><strong>deg</strong> (<em>bool</em><em>, </em><em>default True</em>) – If True (default) return degrees, else radians.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>inc, azi, toolface</strong> – Inclination (0 = vertical), azimuth (grid/true per the corrections
+above, wrapped to [0, 360)) and gravity toolface (wrapped to [0, 360)).</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float or ndarray</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>Classic minimum-set equations (Williamson, SPE-67616; textbook):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">inc</span>      <span class="o">=</span> <span class="n">atan2</span><span class="p">(</span><span class="n">sqrt</span><span class="p">(</span><span class="n">Gx</span><span class="o">^</span><span class="mi">2</span> <span class="o">+</span> <span class="n">Gy</span><span class="o">^</span><span class="mi">2</span><span class="p">),</span> <span class="n">Gz</span><span class="p">)</span>
+<span class="n">toolface</span> <span class="o">=</span> <span class="n">atan2</span><span class="p">(</span><span class="n">Gy</span><span class="p">,</span> <span class="n">Gx</span><span class="p">)</span>
+<span class="n">azi_mag</span>  <span class="o">=</span> <span class="n">atan2</span><span class="p">(</span> <span class="p">(</span><span class="n">Gx</span> <span class="n">By</span> <span class="o">-</span> <span class="n">Gy</span> <span class="n">Bx</span><span class="p">)</span> <span class="o">|</span><span class="n">G</span><span class="o">|</span><span class="p">,</span>
+                  <span class="n">Bz</span> <span class="p">(</span><span class="n">Gx</span><span class="o">^</span><span class="mi">2</span> <span class="o">+</span> <span class="n">Gy</span><span class="o">^</span><span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="n">Gz</span> <span class="p">(</span><span class="n">Gx</span> <span class="n">Bx</span> <span class="o">+</span> <span class="n">Gy</span> <span class="n">By</span><span class="p">)</span> <span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+</section>
+<section id="module-welleng.interpretation.qc">
+<span id="welleng-interpretation-qc-module"></span><h2>welleng.interpretation.qc module<a class="headerlink" href="#module-welleng.interpretation.qc" title="Link to this heading"></a></h2>
+<p>Georeference survey QC: total-gravity, total-field and dip checks.</p>
+<p>The georeference tests compare the <em>measured</em> total gravity field, total
+magnetic field and magnetic dip against known reference values, and flag
+stations whose residuals exceed tolerance (Ekseth et al., SPE-133417). A
+total-field or dip failure indicates magnetic interference (e.g. insufficient
+non-magnetic spacing, or proximity to casing) so the azimuth at that station is
+unreliable; a total-gravity failure indicates an accelerometer problem.</p>
+<p>Validated: reproduces a commercial vendor’s own per-station DE-QC pass/fail
+flags to 100% agreement, with the vendor’s total-field / dip tolerances
+recovered as ~826 nT and ~0.44 deg.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.DualDepthResult">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">welleng.interpretation.qc.</span></span><span class="sig-name descname"><span class="pre">DualDepthResult</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">depth_difference_error</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerance</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flag</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/qc.html#DualDepthResult"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.qc.DualDepthResult" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Dual-depth-difference QC test outcome.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.DualDepthResult.depth_difference_error">
+<span class="sig-name descname"><span class="pre">depth_difference_error</span></span><a class="headerlink" href="#welleng.interpretation.qc.DualDepthResult.depth_difference_error" title="Link to this definition"></a></dt>
+<dd><p>The measured difference between the two independent depth measurements
+(pipe tally vs wireline), i.e. the quantity being tested.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.DualDepthResult.tolerance">
+<span class="sig-name descname"><span class="pre">tolerance</span></span><a class="headerlink" href="#welleng.interpretation.qc.DualDepthResult.tolerance" title="Link to this definition"></a></dt>
+<dd><p>Allowed difference: the RSS of the two error-model depth uncertainties.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.DualDepthResult.flag">
+<span class="sig-name descname"><span class="pre">flag</span></span><a class="headerlink" href="#welleng.interpretation.qc.DualDepthResult.flag" title="Link to this definition"></a></dt>
+<dd><p>True where the difference exceeds tolerance (station FAILS – a gross
+depth error is present).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray of bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.DualDepthResult.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">depth_difference_error</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerance</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flag</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#welleng.interpretation.qc.DualDepthResult.__init__" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id0">
+<span class="sig-name descname"><span class="pre">depth_difference_error</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id0" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id1">
+<span class="sig-name descname"><span class="pre">flag</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id1" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.DualDepthResult.passed">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">passed</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#welleng.interpretation.qc.DualDepthResult.passed" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id2">
+<span class="sig-name descname"><span class="pre">tolerance</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id2" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.GeomagReference">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">welleng.interpretation.qc.</span></span><span class="sig-name descname"><span class="pre">GeomagReference</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">b_total</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dip</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">g_total</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">declination</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid_convergence</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/qc.html#GeomagReference"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.qc.GeomagReference" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Reference geomagnetic + gravity field at the survey location/time.</p>
+<p>Units are the caller’s, but must match the sensor units passed to the QC
+functions (e.g. <code class="docutils literal notranslate"><span class="pre">b_total</span></code> in nT with magnetometer readings in nT).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>b_total</strong> (<em>float</em>) – Reference total magnetic-field strength.</p></li>
+<li><p><strong>dip</strong> (<em>float</em>) – Reference magnetic dip angle (deg, down-positive).</p></li>
+<li><p><strong>g_total</strong> (<em>float</em>) – Reference total gravity-field strength.</p></li>
+<li><p><strong>declination</strong> (<em>float</em><em>, </em><em>default 0.0</em>) – Magnetic declination (deg, east-positive).</p></li>
+<li><p><strong>grid_convergence</strong> (<em>float</em><em>, </em><em>default 0.0</em>) – Grid convergence (deg).</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.GeomagReference.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">b_total</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dip</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">g_total</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">declination</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid_convergence</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#welleng.interpretation.qc.GeomagReference.__init__" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.GeomagReference.b_total">
+<span class="sig-name descname"><span class="pre">b_total</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><a class="headerlink" href="#welleng.interpretation.qc.GeomagReference.b_total" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.GeomagReference.declination">
+<span class="sig-name descname"><span class="pre">declination</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></em><a class="headerlink" href="#welleng.interpretation.qc.GeomagReference.declination" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.GeomagReference.dip">
+<span class="sig-name descname"><span class="pre">dip</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><a class="headerlink" href="#welleng.interpretation.qc.GeomagReference.dip" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.GeomagReference.g_total">
+<span class="sig-name descname"><span class="pre">g_total</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><a class="headerlink" href="#welleng.interpretation.qc.GeomagReference.g_total" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.GeomagReference.grid_convergence">
+<span class="sig-name descname"><span class="pre">grid_convergence</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></em><a class="headerlink" href="#welleng.interpretation.qc.GeomagReference.grid_convergence" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.QCResult">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">welleng.interpretation.qc.</span></span><span class="sig-name descname"><span class="pre">QCResult</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">d_g:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d_b:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d_dip:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flag_g:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flag_b:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flag_dip:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerances:</span> <span class="pre">dict</span> <span class="pre">=</span> <span class="pre">&lt;factory&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/qc.html#QCResult"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.qc.QCResult" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Per-station georeference QC residuals and pass/fail flags.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">d_g,</span> <span class="pre">d_b,</span> <span class="pre">d_dip</span></span></dt>
+<dd><p>Measured-minus-reference residuals for total gravity, total field and
+dip.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">flag_g,</span> <span class="pre">flag_b,</span> <span class="pre">flag_dip</span></span></dt>
+<dd><p>True where the residual exceeds tolerance (i.e. the station FAILS that
+check).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray of bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.QCResult.tolerances">
+<span class="sig-name descname"><span class="pre">tolerances</span></span><a class="headerlink" href="#welleng.interpretation.qc.QCResult.tolerances" title="Link to this definition"></a></dt>
+<dd><p>The tolerances applied.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.QCResult.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">d_g:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d_b:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d_dip:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flag_g:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flag_b:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flag_dip:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerances:</span> <span class="pre">dict</span> <span class="pre">=</span> <span class="pre">&lt;factory&gt;</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#welleng.interpretation.qc.QCResult.__init__" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.QCResult.d_b">
+<span class="sig-name descname"><span class="pre">d_b</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#welleng.interpretation.qc.QCResult.d_b" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.QCResult.d_dip">
+<span class="sig-name descname"><span class="pre">d_dip</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#welleng.interpretation.qc.QCResult.d_dip" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.QCResult.d_g">
+<span class="sig-name descname"><span class="pre">d_g</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#welleng.interpretation.qc.QCResult.d_g" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.QCResult.flag_b">
+<span class="sig-name descname"><span class="pre">flag_b</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#welleng.interpretation.qc.QCResult.flag_b" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.QCResult.flag_dip">
+<span class="sig-name descname"><span class="pre">flag_dip</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#welleng.interpretation.qc.QCResult.flag_dip" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.QCResult.flag_g">
+<span class="sig-name descname"><span class="pre">flag_g</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#welleng.interpretation.qc.QCResult.flag_g" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.QCResult.passed">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">passed</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#welleng.interpretation.qc.QCResult.passed" title="Link to this definition"></a></dt>
+<dd><p>True where the station passes all three checks.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id3">
+<span class="sig-name descname"><span class="pre">tolerances</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">dict</span></em><a class="headerlink" href="#id3" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.dual_depth_difference">
+<span class="sig-prename descclassname"><span class="pre">welleng.interpretation.qc.</span></span><span class="sig-name descname"><span class="pre">dual_depth_difference</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">depth_difference_error</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sigma_pipe</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sigma_wll</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/qc.html#dual_depth_difference"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.qc.dual_depth_difference" title="Link to this definition"></a></dt>
+<dd><p>Dual-depth-difference QC test (Ekseth et al., SPE-133417).</p>
+<p>Where an independent second depth measurement exists (e.g. a wireline pass
+with a casing-collar locator alongside the drillpipe tally), the difference
+between the two depths is checked against the combined error-model
+uncertainty. A difference larger than tolerance indicates a gross depth
+error not explained by the error models.</p>
+<p>The allowed difference is the root-sum-square of the two independent depth
+uncertainties (same sigma convention – e.g. both 3-sigma):</p>
+<blockquote>
+<div><p>tolerance = sqrt(sigma_pipe**2 + sigma_wll**2)</p>
+</div></blockquote>
+<p>Reproduces SPE-133417 Table 1a/1b/1c exactly.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>depth_difference_error</strong> (<em>float</em><em> or </em><em>array_like</em>) – Measured pipe-vs-wireline depth-difference error.</p></li>
+<li><p><strong>sigma_pipe</strong> (<em>float</em><em> or </em><em>array_like</em>) – Error-model depth uncertainties (same sigma level) for the pipe-tally
+and wireline measurements respectively.</p></li>
+<li><p><strong>sigma_wll</strong> (<em>float</em><em> or </em><em>array_like</em>) – Error-model depth uncertainties (same sigma level) for the pipe-tally
+and wireline measurements respectively.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#welleng.interpretation.qc.DualDepthResult" title="welleng.interpretation.qc.DualDepthResult">DualDepthResult</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.interpretation.qc.georef_checks">
+<span class="sig-prename descclassname"><span class="pre">welleng.interpretation.qc.</span></span><span class="sig-name descname"><span class="pre">georef_checks</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">g_xyz</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">b_xyz</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ref</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#welleng.interpretation.qc.GeomagReference" title="welleng.interpretation.qc.GeomagReference"><span class="pre">GeomagReference</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerances</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#welleng.interpretation.qc.QCResult" title="welleng.interpretation.qc.QCResult"><span class="pre">QCResult</span></a></span></span><a class="reference internal" href="_modules/welleng/interpretation/qc.html#georef_checks"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.qc.georef_checks" title="Link to this definition"></a></dt>
+<dd><p>Run the georeference QC tests on one or more survey stations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>g_xyz</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>3</em><em>,</em><em>) or </em><em>(</em><em>n</em><em>, </em><em>3</em><em>)</em>) – Accelerometer and magnetometer readings in the tool frame (same units
+as <code class="docutils literal notranslate"><span class="pre">ref.g_total</span></code> / <code class="docutils literal notranslate"><span class="pre">ref.b_total</span></code>).</p></li>
+<li><p><strong>b_xyz</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>3</em><em>,</em><em>) or </em><em>(</em><em>n</em><em>, </em><em>3</em><em>)</em>) – Accelerometer and magnetometer readings in the tool frame (same units
+as <code class="docutils literal notranslate"><span class="pre">ref.g_total</span></code> / <code class="docutils literal notranslate"><span class="pre">ref.b_total</span></code>).</p></li>
+<li><p><strong>ref</strong> (<a class="reference internal" href="#welleng.interpretation.qc.GeomagReference" title="welleng.interpretation.qc.GeomagReference"><em>GeomagReference</em></a>) – Reference field.</p></li>
+<li><p><strong>tolerances</strong> (<em>dict</em><em>, </em><em>optional</em>) – Keys <code class="docutils literal notranslate"><span class="pre">'g_total'</span></code>, <code class="docutils literal notranslate"><span class="pre">'b_total'</span></code>, <code class="docutils literal notranslate"><span class="pre">'dip'</span></code>. Missing keys fall back to
+<code class="xref py py-data docutils literal notranslate"><span class="pre">DEFAULT_TOLERANCES</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#welleng.interpretation.qc.QCResult" title="welleng.interpretation.qc.QCResult">QCResult</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-welleng.interpretation.msa">
+<span id="welleng-interpretation-msa-module"></span><h2>welleng.interpretation.msa module<a class="headerlink" href="#module-welleng.interpretation.msa" title="Link to this heading"></a></h2>
+<p>Multi-station analysis (MSA): estimate the tool’s actual sensor errors.</p>
+<p>Given many survey stations, MSA estimates the constant per-axis sensor <em>bias</em>
+and <em>scale-factor</em> errors of a triad (magnetometer or accelerometer) from the
+redundancy that every station’s measured total field must equal the reference
+(Ekseth et al., SPE-133417, multistation test). This is the inverse of the
+forward error model: instead of assuming the model’s error magnitudes, it
+measures them – so a survey’s <em>actual</em> performance can be checked against the
+error model applied to it (its EOU is only valid if the actual errors are within
+the model).</p>
+<section id="closed-form">
+<h3>Closed form<a class="headerlink" href="#closed-form" title="Link to this heading"></a></h3>
+<p>The constraint <code class="docutils literal notranslate"><span class="pre">|B_true|</span> <span class="pre">=</span> <span class="pre">B_ref</span></code> with <code class="docutils literal notranslate"><span class="pre">B_true</span> <span class="pre">=</span> <span class="pre">(B_meas</span> <span class="pre">-</span> <span class="pre">b)</span> <span class="pre">/</span> <span class="pre">(1</span> <span class="pre">+</span> <span class="pre">s)</span></code>
+linearises (small errors) to a <em>linear</em> equation in the six unknowns
+<code class="docutils literal notranslate"><span class="pre">p</span> <span class="pre">=</span> <span class="pre">[bx,</span> <span class="pre">by,</span> <span class="pre">bz,</span> <span class="pre">sx,</span> <span class="pre">sy,</span> <span class="pre">sz]</span></code> per station:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">2</span> <span class="p">[</span><span class="n">Bx</span><span class="p">,</span> <span class="n">By</span><span class="p">,</span> <span class="n">Bz</span><span class="p">,</span> <span class="n">Bx</span><span class="o">^</span><span class="mi">2</span><span class="p">,</span> <span class="n">By</span><span class="o">^</span><span class="mi">2</span><span class="p">,</span> <span class="n">Bz</span><span class="o">^</span><span class="mi">2</span><span class="p">]</span> <span class="o">.</span> <span class="n">p</span> <span class="o">=</span> <span class="o">|</span><span class="n">B_meas</span><span class="o">|^</span><span class="mi">2</span> <span class="o">-</span> <span class="n">B_ref</span><span class="o">^</span><span class="mi">2</span>
+</pre></div>
+</div>
+<p>Stacking the stations gives <code class="docutils literal notranslate"><span class="pre">A</span> <span class="pre">p</span> <span class="pre">=</span> <span class="pre">d</span></code> solved in closed form by ordinary least
+squares, <code class="docutils literal notranslate"><span class="pre">p</span> <span class="pre">=</span> <span class="pre">(A^T</span> <span class="pre">A)^-1</span> <span class="pre">A^T</span> <span class="pre">d</span></code> – one matrix solve, no iteration. The
+estimate covariance <code class="docutils literal notranslate"><span class="pre">(A^T</span> <span class="pre">A)^-1</span> <span class="pre">A^T</span> <span class="pre">diag(sigma_d^2)</span> <span class="pre">A</span> <span class="pre">(A^T</span> <span class="pre">A)^-1</span></code> is available
+analytically and yields the per-component <em>estimability</em> and the correlation
+matrix, which gate poorly-observed components.</p>
+</section>
+<section id="estimability-the-geometry-gate">
+<h3>Estimability / the geometry gate<a class="headerlink" href="#estimability-the-geometry-gate" title="Link to this heading"></a></h3>
+<p>MSA estimability is governed by the survey’s <em>directional</em> (azimuth / toolface)
+diversity, not its inclination. In particular the <em>axial</em> sensor error is
+intrinsically weakly observed unless the well changes direction substantially;
+in the industry it is handled by a separate axial (drillstring) interference
+correction and in-field referencing. This module therefore returns the estimate
+<em>with</em> its analytical standard errors and a per-component <code class="docutils literal notranslate"><span class="pre">estimable</span></code> verdict,
+rather than a blanket, possibly-meaningless, error vector.</p>
+</section>
+<dl class="py class">
+<dt class="sig sig-object py" id="welleng.interpretation.msa.MSAResult">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">welleng.interpretation.msa.</span></span><span class="sig-name descname"><span class="pre">MSAResult</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bias</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scale</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">covariance</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">std</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">correlation</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">estimable</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_stations</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">condition_number</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/msa.html#MSAResult"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.msa.MSAResult" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Estimated tool sensor errors and their estimability.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.msa.MSAResult.bias">
+<span class="sig-name descname"><span class="pre">bias</span></span><a class="headerlink" href="#welleng.interpretation.msa.MSAResult.bias" title="Link to this definition"></a></dt>
+<dd><p>Estimated per-axis bias (sensor units).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, shape (3,)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.msa.MSAResult.scale">
+<span class="sig-name descname"><span class="pre">scale</span></span><a class="headerlink" href="#welleng.interpretation.msa.MSAResult.scale" title="Link to this definition"></a></dt>
+<dd><p>Estimated per-axis fractional scale-factor error.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, shape (3,)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.msa.MSAResult.covariance">
+<span class="sig-name descname"><span class="pre">covariance</span></span><a class="headerlink" href="#welleng.interpretation.msa.MSAResult.covariance" title="Link to this definition"></a></dt>
+<dd><p>Estimate covariance for <code class="docutils literal notranslate"><span class="pre">[bx,</span> <span class="pre">by,</span> <span class="pre">bz,</span> <span class="pre">sx,</span> <span class="pre">sy,</span> <span class="pre">sz]</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, shape (6, 6)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.msa.MSAResult.std">
+<span class="sig-name descname"><span class="pre">std</span></span><a class="headerlink" href="#welleng.interpretation.msa.MSAResult.std" title="Link to this definition"></a></dt>
+<dd><p>Standard errors (sqrt of the covariance diagonal).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, shape (6,)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.msa.MSAResult.correlation">
+<span class="sig-name descname"><span class="pre">correlation</span></span><a class="headerlink" href="#welleng.interpretation.msa.MSAResult.correlation" title="Link to this definition"></a></dt>
+<dd><p>Correlation matrix of the estimate.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, shape (6, 6)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.msa.MSAResult.estimable">
+<span class="sig-name descname"><span class="pre">estimable</span></span><a class="headerlink" href="#welleng.interpretation.msa.MSAResult.estimable" title="Link to this definition"></a></dt>
+<dd><p>Per-component verdict: False where the standard error exceeds the
+estimability threshold (that component is not reliably observed by this
+survey’s geometry).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray of bool, shape (6,)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.msa.MSAResult.n_stations">
+<span class="sig-name descname"><span class="pre">n_stations</span></span><a class="headerlink" href="#welleng.interpretation.msa.MSAResult.n_stations" title="Link to this definition"></a></dt>
+<dd><p>Number of stations used.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.msa.MSAResult.condition_number">
+<span class="sig-name descname"><span class="pre">condition_number</span></span><a class="headerlink" href="#welleng.interpretation.msa.MSAResult.condition_number" title="Link to this definition"></a></dt>
+<dd><p>Condition number of <code class="docutils literal notranslate"><span class="pre">A^T</span> <span class="pre">A</span></code> (large =&gt; ill-conditioned geometry).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.interpretation.msa.MSAResult.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bias</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scale</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">covariance</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">std</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">correlation</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">estimable</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_stations</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">condition_number</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#welleng.interpretation.msa.MSAResult.__init__" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="welleng.interpretation.msa.MSAResult.axial_estimable">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">axial_estimable</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><a class="headerlink" href="#welleng.interpretation.msa.MSAResult.axial_estimable" title="Link to this definition"></a></dt>
+<dd><p>Whether the axial (z) bias and scale are both reliably observed.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id4">
+<span class="sig-name descname"><span class="pre">bias</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id4" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id5">
+<span class="sig-name descname"><span class="pre">condition_number</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><a class="headerlink" href="#id5" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id6">
+<span class="sig-name descname"><span class="pre">correlation</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id6" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id7">
+<span class="sig-name descname"><span class="pre">covariance</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id7" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id8">
+<span class="sig-name descname"><span class="pre">estimable</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id8" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id9">
+<span class="sig-name descname"><span class="pre">n_stations</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><a class="headerlink" href="#id9" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id10">
+<span class="sig-name descname"><span class="pre">scale</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id10" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id11">
+<span class="sig-name descname"><span class="pre">std</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id11" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.interpretation.msa.apply_sensor_errors">
+<span class="sig-prename descclassname"><span class="pre">welleng.interpretation.msa.</span></span><span class="sig-name descname"><span class="pre">apply_sensor_errors</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">triad</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">result</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">only_estimable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/msa.html#apply_sensor_errors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.msa.apply_sensor_errors" title="Link to this definition"></a></dt>
+<dd><p>Correct triad readings for the MSA-estimated bias and scale errors.</p>
+<p>Closes the MSA loop: <a class="reference internal" href="#welleng.interpretation.msa.estimate_sensor_errors" title="welleng.interpretation.msa.estimate_sensor_errors"><code class="xref py py-func docutils literal notranslate"><span class="pre">estimate_sensor_errors()</span></code></a> measures the sensor
+errors, this removes them, <code class="docutils literal notranslate"><span class="pre">B_true</span> <span class="pre">=</span> <span class="pre">(B_meas</span> <span class="pre">-</span> <span class="pre">b)</span> <span class="pre">/</span> <span class="pre">(1</span> <span class="pre">+</span> <span class="pre">s)</span></code> (the model of
+the closed form above), so the corrected triad can be re-run through
+<a class="reference internal" href="#welleng.interpretation.forward.sensor_to_survey" title="welleng.interpretation.forward.sensor_to_survey"><code class="xref py py-func docutils literal notranslate"><span class="pre">sensor_to_survey()</span></code></a> for a corrected
+survey. The correction is opt-in — MSA is often used to <em>flag</em> out-of-model
+tool performance, not to auto-correct raw sensors.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>triad</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>n</em><em>, </em><em>3</em><em>)</em>) – Per-station triad readings (same sensor/units as passed to
+<a class="reference internal" href="#welleng.interpretation.msa.estimate_sensor_errors" title="welleng.interpretation.msa.estimate_sensor_errors"><code class="xref py py-func docutils literal notranslate"><span class="pre">estimate_sensor_errors()</span></code></a>).</p></li>
+<li><p><strong>result</strong> (<a class="reference internal" href="#welleng.interpretation.msa.MSAResult" title="welleng.interpretation.msa.MSAResult"><em>MSAResult</em></a>) – The estimate to apply.</p></li>
+<li><p><strong>only_estimable</strong> (<em>bool</em><em>, </em><em>default False</em>) – If True, apply a component’s bias/scale only where
+<code class="docutils literal notranslate"><span class="pre">result.estimable</span></code> is set (poorly-observed components — typically the
+axial term — are left uncorrected rather than corrected by a meaningless
+estimate). If False, apply all six.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>(n, 3) corrected triad.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>numpy.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.interpretation.msa.estimate_sensor_errors">
+<span class="sig-prename descclassname"><span class="pre">welleng.interpretation.msa.</span></span><span class="sig-name descname"><span class="pre">estimate_sensor_errors</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">triad</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ref</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#welleng.interpretation.qc.GeomagReference" title="welleng.interpretation.qc.GeomagReference"><span class="pre">GeomagReference</span></a></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sensor</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'mag'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">noise</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bias_estimability</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">500.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scale_estimability</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.01</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_stations</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#welleng.interpretation.msa.MSAResult" title="welleng.interpretation.msa.MSAResult"><span class="pre">MSAResult</span></a></span></span><a class="reference internal" href="_modules/welleng/interpretation/msa.html#estimate_sensor_errors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.msa.estimate_sensor_errors" title="Link to this definition"></a></dt>
+<dd><p>Closed-form multi-station estimate of tool bias + scale errors.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>triad</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>n</em><em>, </em><em>3</em><em>)</em>) – Per-station triad readings (magnetometer if <code class="docutils literal notranslate"><span class="pre">sensor='mag'</span></code>, else
+accelerometer), same units as the matching reference total.</p></li>
+<li><p><strong>ref</strong> (<a class="reference internal" href="#welleng.interpretation.qc.GeomagReference" title="welleng.interpretation.qc.GeomagReference"><em>GeomagReference</em></a>) – Reference field; <code class="docutils literal notranslate"><span class="pre">ref.b_total</span></code> (mag) or <code class="docutils literal notranslate"><span class="pre">ref.g_total</span></code> (accel) is the
+target total.</p></li>
+<li><p><strong>sensor</strong> (<em>{'mag'</em><em>, </em><em>'accel'}</em><em>, </em><em>default 'mag'</em>) – Which triad is supplied (selects the reference total).</p></li>
+<li><p><strong>noise</strong> (<em>float</em><em>, </em><em>optional</em>) – Per-axis measurement noise standard deviation (same units), used to
+propagate the estimate covariance. If None, a unit noise is used so the
+<em>relative</em> estimability and the correlation matrix are still meaningful
+but the absolute standard errors are only proportional.</p></li>
+<li><p><strong>bias_estimability</strong> (<em>float</em>) – Standard-error thresholds above which a bias / scale component is judged
+not estimable by this geometry.</p></li>
+<li><p><strong>scale_estimability</strong> (<em>float</em>) – Standard-error thresholds above which a bias / scale component is judged
+not estimable by this geometry.</p></li>
+<li><p><strong>min_stations</strong> (<em>int</em><em>, </em><em>default 10</em>) – Minimum independent stations required (SPE-133417); fewer raises.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#welleng.interpretation.msa.MSAResult" title="welleng.interpretation.msa.MSAResult">MSAResult</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-welleng.interpretation.correction_uncertainty">
+<span id="welleng-interpretation-correction-uncertainty-module"></span><h2>welleng.interpretation.correction_uncertainty module<a class="headerlink" href="#module-welleng.interpretation.correction_uncertainty" title="Link to this heading"></a></h2>
+<p>Correction-uncertainty covariance by Monte-Carlo input propagation.</p>
+<p>A survey <em>correction</em> (BHA sag, a depth stretch model, an MSA correction) is a
+deterministic model of uncertain inputs. The <strong>residual uncertainty left after
+correcting</strong> is the covariance of the correction over those input
+uncertainties – propagated here by plain Monte-Carlo: draw perturbed inputs,
+re-evaluate the correction, take the covariance of the resulting correction
+vectors. Within one run the draws are single realisations, so the returned
+matrix carries the full <strong>cross-station correlation</strong> (a biased stabiliser OD
+mis-corrects every station the same way) – exactly the block a covariated
+error model consumes.</p>
+<p>The correction model is <strong>injected</strong> as a callable, so this module stays a
+generic, model-agnostic propagation utility: welleng-core does not depend on
+any specific mechanics implementation (e.g. a BHA-sag beam model living in a
+consumer package plugs in at the call site). Standard uncertainty propagation
+(JCGM 101 / GUM Supplement 1 – Monte Carlo method).</p>
+<p>Example (sketch):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">draw</span><span class="p">(</span><span class="n">rng</span><span class="p">):</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">replace</span><span class="p">(</span><span class="n">base_geom</span><span class="p">,</span>
+                <span class="n">stabilizer_od</span><span class="o">=</span><span class="n">base_geom</span><span class="o">.</span><span class="n">stabilizer_od</span> <span class="o">+</span> <span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">od_sig</span><span class="p">),</span>
+                <span class="n">mud_weight</span><span class="o">=</span><span class="n">base_geom</span><span class="o">.</span><span class="n">mud_weight</span> <span class="o">+</span> <span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">mw_sig</span><span class="p">))</span>
+    <span class="k">return</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">sag_correction</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="n">survey</span><span class="p">)</span>     <span class="c1"># consumer&#39;s model</span>
+
+<span class="n">res</span> <span class="o">=</span> <span class="n">correction_covariance_mc</span><span class="p">(</span><span class="n">draw</span><span class="p">,</span> <span class="n">n_draws</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">)</span>
+<span class="c1"># res.covariance -&gt; (n_stations, n_stations) inc-correction covariance</span>
+</pre></div>
+</div>
+<dl class="py class">
+<dt class="sig sig-object py" id="welleng.interpretation.correction_uncertainty.CorrectionUncertainty">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">welleng.interpretation.correction_uncertainty.</span></span><span class="sig-name descname"><span class="pre">CorrectionUncertainty</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mean</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">covariance</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">std</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_draws</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">se_std</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/correction_uncertainty.html#CorrectionUncertainty"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.correction_uncertainty.CorrectionUncertainty" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Monte-Carlo correction-uncertainty result.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.correction_uncertainty.CorrectionUncertainty.mean">
+<span class="sig-name descname"><span class="pre">mean</span></span><a class="headerlink" href="#welleng.interpretation.correction_uncertainty.CorrectionUncertainty.mean" title="Link to this definition"></a></dt>
+<dd><p>Mean correction over the draws (the best-estimate correction under
+input uncertainty; generally ~ the nominal correction).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>(n,) ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.correction_uncertainty.CorrectionUncertainty.covariance">
+<span class="sig-name descname"><span class="pre">covariance</span></span><a class="headerlink" href="#welleng.interpretation.correction_uncertainty.CorrectionUncertainty.covariance" title="Link to this definition"></a></dt>
+<dd><p>Covariance of the correction across draws – the residual uncertainty
+the correction leaves behind, WITH cross-station correlation (each draw
+is one realisation of the inputs over the whole run).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>(n, n) ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.correction_uncertainty.CorrectionUncertainty.std">
+<span class="sig-name descname"><span class="pre">std</span></span><a class="headerlink" href="#welleng.interpretation.correction_uncertainty.CorrectionUncertainty.std" title="Link to this definition"></a></dt>
+<dd><p>Per-station 1-sigma (sqrt of the diagonal).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>(n,) ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.correction_uncertainty.CorrectionUncertainty.n_draws">
+<span class="sig-name descname"><span class="pre">n_draws</span></span><a class="headerlink" href="#welleng.interpretation.correction_uncertainty.CorrectionUncertainty.n_draws" title="Link to this definition"></a></dt>
+<dd><p>Draws used.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.correction_uncertainty.CorrectionUncertainty.se_std">
+<span class="sig-name descname"><span class="pre">se_std</span></span><a class="headerlink" href="#welleng.interpretation.correction_uncertainty.CorrectionUncertainty.se_std" title="Link to this definition"></a></dt>
+<dd><p>Monte-Carlo standard error of <code class="docutils literal notranslate"><span class="pre">std</span></code> (~ <code class="docutils literal notranslate"><span class="pre">std</span> <span class="pre">/</span> <span class="pre">sqrt(2</span> <span class="pre">(n-1))</span></code>) –
+the convergence handle: enlarge <code class="docutils literal notranslate"><span class="pre">n_draws</span></code> until <code class="docutils literal notranslate"><span class="pre">se_std</span></code> is small
+against the sigma you are quoting.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>(n,) ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.interpretation.correction_uncertainty.CorrectionUncertainty.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mean</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">covariance</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">std</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_draws</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">se_std</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#welleng.interpretation.correction_uncertainty.CorrectionUncertainty.__init__" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id12">
+<span class="sig-name descname"><span class="pre">covariance</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id12" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id13">
+<span class="sig-name descname"><span class="pre">mean</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id13" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id14">
+<span class="sig-name descname"><span class="pre">n_draws</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><a class="headerlink" href="#id14" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id15">
+<span class="sig-name descname"><span class="pre">se_std</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id15" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id16">
+<span class="sig-name descname"><span class="pre">std</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id16" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.interpretation.correction_uncertainty.correction_covariance_mc">
+<span class="sig-prename descclassname"><span class="pre">welleng.interpretation.correction_uncertainty.</span></span><span class="sig-name descname"><span class="pre">correction_covariance_mc</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">draw</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_draws</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rng</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/correction_uncertainty.html#correction_covariance_mc"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.correction_uncertainty.correction_covariance_mc" title="Link to this definition"></a></dt>
+<dd><p>Covariance of a deterministic correction under uncertain inputs (MC).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>draw</strong> (<em>callable</em>) – <code class="docutils literal notranslate"><span class="pre">draw(rng)</span> <span class="pre">-&gt;</span> <span class="pre">callable()</span> <span class="pre">-&gt;</span> <span class="pre">(n,)</span> <span class="pre">array_like</span></code>: draws ONE realisation
+of the uncertain inputs (applying each input’s own distribution and
+propagation character – e.g. a systematic stabiliser-OD offset drawn
+once per run vs a per-station random enlargement drawn per station
+<em>inside</em> the closure) and returns a zero-argument callable evaluating
+the correction for that realisation. The correction model itself is
+whatever the closure wraps – this function never imports it.</p></li>
+<li><p><strong>n_draws</strong> (<em>int</em><em>, </em><em>default 1000</em>) – Monte-Carlo draws. The result carries <code class="docutils literal notranslate"><span class="pre">se_std</span></code> to judge convergence.</p></li>
+<li><p><strong>rng</strong> (<em>numpy.random.Generator</em><em>, </em><em>optional</em>) – Source of randomness (default <code class="docutils literal notranslate"><span class="pre">numpy.random.default_rng()</span></code>).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#welleng.interpretation.correction_uncertainty.CorrectionUncertainty" title="welleng.interpretation.correction_uncertainty.CorrectionUncertainty">CorrectionUncertainty</a></p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p><strong>Zero input uncertainty =&gt; zero covariance</strong> (the deterministic limit)
+– kept as a regression gate.</p></li>
+<li><p>The full (n, n) matrix is returned (not just the diagonal) because the
+within-run input realisation correlates the stations; a covariated error
+model consumes exactly that block.</p></li>
+</ul>
+</dd></dl>
+
+</section>
+<section id="module-welleng.interpretation">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-welleng.interpretation" title="Link to this heading"></a></h2>
+<p>Directional-survey interpretation: raw sensors -&gt; survey, QC and multi-station
+analysis (MSA).</p>
+<p>This is welleng’s survey-<em>interpretation</em> layer, upstream of the forward error
+model (which maps inc/azi -&gt; ISCWSA covariance). It is the open, scalar reference
+implementation:</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="#welleng.interpretation.forward.sensor_to_survey" title="welleng.interpretation.forward.sensor_to_survey"><code class="xref py py-func docutils literal notranslate"><span class="pre">sensor_to_survey()</span></code></a> – accelerometer +
+magnetometer -&gt; inclination, azimuth, toolface (public-domain MWD navigation
+equations; Williamson, SPE-67616).</p></li>
+<li><p><a class="reference internal" href="#welleng.interpretation.forward.gyro_to_survey" title="welleng.interpretation.forward.gyro_to_survey"><code class="xref py py-func docutils literal notranslate"><span class="pre">gyro_to_survey()</span></code></a> – accelerometer +
+rate-gyro -&gt; inclination, azimuth (true north, no declination), toolface
+(gyrocompassing). The gyro reference is Earth’s rotation rate – a constant,
+with local components a closed-form function of latitude
+(<a class="reference internal" href="#welleng.interpretation.forward.earth_rate_components" title="welleng.interpretation.forward.earth_rate_components"><code class="xref py py-func docutils literal notranslate"><span class="pre">earth_rate_components()</span></code></a>).</p></li>
+<li><p><a class="reference internal" href="#welleng.interpretation.qc.georef_checks" title="welleng.interpretation.qc.georef_checks"><code class="xref py py-func docutils literal notranslate"><span class="pre">georef_checks()</span></code></a> – georeference QC tests
+(total-gravity, total-field, dip) with pass/fail flags (Ekseth et al.,
+SPE-133417).</p></li>
+<li><p><a class="reference internal" href="#welleng.interpretation.qc.dual_depth_difference" title="welleng.interpretation.qc.dual_depth_difference"><code class="xref py py-func docutils literal notranslate"><span class="pre">dual_depth_difference()</span></code></a> – dual-depth-
+difference depth QC test (pipe tally vs wireline), SPE-133417.</p></li>
+<li><p><a class="reference internal" href="#welleng.interpretation.msa.estimate_sensor_errors" title="welleng.interpretation.msa.estimate_sensor_errors"><code class="xref py py-func docutils literal notranslate"><span class="pre">estimate_sensor_errors()</span></code></a> – multi-station
+analysis: closed-form linear least-squares estimate of the tool’s actual
+sensor biases/scale-factors, with an <em>analytical</em> estimability (correlation)
+matrix that gates unreliable (poorly-observed) components (SPE-133417,
+multistation test).</p></li>
+</ul>
+<p class="rubric">References</p>
+<p>Williamson, H.S. (2000) “Accuracy Prediction for Directional MWD”, SPE-67616.
+Ekseth, R. et al. (2010) “High-Integrity Wellbore Surveying”, SPE-133417.
+Grindrod, S.J. et al. (2016) OWSG survey-tool error models, IADC/SPE-178843.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="welleng.interpretation.CorrectionUncertainty">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">welleng.interpretation.</span></span><span class="sig-name descname"><span class="pre">CorrectionUncertainty</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mean</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">covariance</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">std</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_draws</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">se_std</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/correction_uncertainty.html#CorrectionUncertainty"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.CorrectionUncertainty" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Monte-Carlo correction-uncertainty result.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.CorrectionUncertainty.mean">
+<span class="sig-name descname"><span class="pre">mean</span></span><a class="headerlink" href="#welleng.interpretation.CorrectionUncertainty.mean" title="Link to this definition"></a></dt>
+<dd><p>Mean correction over the draws (the best-estimate correction under
+input uncertainty; generally ~ the nominal correction).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>(n,) ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.CorrectionUncertainty.covariance">
+<span class="sig-name descname"><span class="pre">covariance</span></span><a class="headerlink" href="#welleng.interpretation.CorrectionUncertainty.covariance" title="Link to this definition"></a></dt>
+<dd><p>Covariance of the correction across draws – the residual uncertainty
+the correction leaves behind, WITH cross-station correlation (each draw
+is one realisation of the inputs over the whole run).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>(n, n) ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.CorrectionUncertainty.std">
+<span class="sig-name descname"><span class="pre">std</span></span><a class="headerlink" href="#welleng.interpretation.CorrectionUncertainty.std" title="Link to this definition"></a></dt>
+<dd><p>Per-station 1-sigma (sqrt of the diagonal).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>(n,) ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.CorrectionUncertainty.n_draws">
+<span class="sig-name descname"><span class="pre">n_draws</span></span><a class="headerlink" href="#welleng.interpretation.CorrectionUncertainty.n_draws" title="Link to this definition"></a></dt>
+<dd><p>Draws used.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.CorrectionUncertainty.se_std">
+<span class="sig-name descname"><span class="pre">se_std</span></span><a class="headerlink" href="#welleng.interpretation.CorrectionUncertainty.se_std" title="Link to this definition"></a></dt>
+<dd><p>Monte-Carlo standard error of <code class="docutils literal notranslate"><span class="pre">std</span></code> (~ <code class="docutils literal notranslate"><span class="pre">std</span> <span class="pre">/</span> <span class="pre">sqrt(2</span> <span class="pre">(n-1))</span></code>) –
+the convergence handle: enlarge <code class="docutils literal notranslate"><span class="pre">n_draws</span></code> until <code class="docutils literal notranslate"><span class="pre">se_std</span></code> is small
+against the sigma you are quoting.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>(n,) ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.interpretation.CorrectionUncertainty.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mean</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">covariance</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">std</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_draws</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">se_std</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#welleng.interpretation.CorrectionUncertainty.__init__" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id17">
+<span class="sig-name descname"><span class="pre">covariance</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id17" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id18">
+<span class="sig-name descname"><span class="pre">mean</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id18" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id19">
+<span class="sig-name descname"><span class="pre">n_draws</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><a class="headerlink" href="#id19" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id20">
+<span class="sig-name descname"><span class="pre">se_std</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id20" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id21">
+<span class="sig-name descname"><span class="pre">std</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id21" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="welleng.interpretation.DualDepthResult">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">welleng.interpretation.</span></span><span class="sig-name descname"><span class="pre">DualDepthResult</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">depth_difference_error</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerance</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flag</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/qc.html#DualDepthResult"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.DualDepthResult" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Dual-depth-difference QC test outcome.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.DualDepthResult.depth_difference_error">
+<span class="sig-name descname"><span class="pre">depth_difference_error</span></span><a class="headerlink" href="#welleng.interpretation.DualDepthResult.depth_difference_error" title="Link to this definition"></a></dt>
+<dd><p>The measured difference between the two independent depth measurements
+(pipe tally vs wireline), i.e. the quantity being tested.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.DualDepthResult.tolerance">
+<span class="sig-name descname"><span class="pre">tolerance</span></span><a class="headerlink" href="#welleng.interpretation.DualDepthResult.tolerance" title="Link to this definition"></a></dt>
+<dd><p>Allowed difference: the RSS of the two error-model depth uncertainties.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.DualDepthResult.flag">
+<span class="sig-name descname"><span class="pre">flag</span></span><a class="headerlink" href="#welleng.interpretation.DualDepthResult.flag" title="Link to this definition"></a></dt>
+<dd><p>True where the difference exceeds tolerance (station FAILS – a gross
+depth error is present).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray of bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.interpretation.DualDepthResult.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">depth_difference_error</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerance</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flag</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#welleng.interpretation.DualDepthResult.__init__" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id22">
+<span class="sig-name descname"><span class="pre">depth_difference_error</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id22" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id23">
+<span class="sig-name descname"><span class="pre">flag</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id23" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="welleng.interpretation.DualDepthResult.passed">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">passed</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#welleng.interpretation.DualDepthResult.passed" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id24">
+<span class="sig-name descname"><span class="pre">tolerance</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id24" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="welleng.interpretation.GeomagReference">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">welleng.interpretation.</span></span><span class="sig-name descname"><span class="pre">GeomagReference</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">b_total</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dip</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">g_total</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">declination</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid_convergence</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/qc.html#GeomagReference"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.GeomagReference" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Reference geomagnetic + gravity field at the survey location/time.</p>
+<p>Units are the caller’s, but must match the sensor units passed to the QC
+functions (e.g. <code class="docutils literal notranslate"><span class="pre">b_total</span></code> in nT with magnetometer readings in nT).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>b_total</strong> (<em>float</em>) – Reference total magnetic-field strength.</p></li>
+<li><p><strong>dip</strong> (<em>float</em>) – Reference magnetic dip angle (deg, down-positive).</p></li>
+<li><p><strong>g_total</strong> (<em>float</em>) – Reference total gravity-field strength.</p></li>
+<li><p><strong>declination</strong> (<em>float</em><em>, </em><em>default 0.0</em>) – Magnetic declination (deg, east-positive).</p></li>
+<li><p><strong>grid_convergence</strong> (<em>float</em><em>, </em><em>default 0.0</em>) – Grid convergence (deg).</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.interpretation.GeomagReference.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">b_total</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dip</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">g_total</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">declination</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid_convergence</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#welleng.interpretation.GeomagReference.__init__" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.GeomagReference.b_total">
+<span class="sig-name descname"><span class="pre">b_total</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><a class="headerlink" href="#welleng.interpretation.GeomagReference.b_total" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.GeomagReference.declination">
+<span class="sig-name descname"><span class="pre">declination</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></em><a class="headerlink" href="#welleng.interpretation.GeomagReference.declination" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.GeomagReference.dip">
+<span class="sig-name descname"><span class="pre">dip</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><a class="headerlink" href="#welleng.interpretation.GeomagReference.dip" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.GeomagReference.g_total">
+<span class="sig-name descname"><span class="pre">g_total</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><a class="headerlink" href="#welleng.interpretation.GeomagReference.g_total" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.GeomagReference.grid_convergence">
+<span class="sig-name descname"><span class="pre">grid_convergence</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></em><a class="headerlink" href="#welleng.interpretation.GeomagReference.grid_convergence" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="welleng.interpretation.MSAResult">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">welleng.interpretation.</span></span><span class="sig-name descname"><span class="pre">MSAResult</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bias</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scale</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">covariance</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">std</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">correlation</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">estimable</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_stations</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">condition_number</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/msa.html#MSAResult"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.MSAResult" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Estimated tool sensor errors and their estimability.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.MSAResult.bias">
+<span class="sig-name descname"><span class="pre">bias</span></span><a class="headerlink" href="#welleng.interpretation.MSAResult.bias" title="Link to this definition"></a></dt>
+<dd><p>Estimated per-axis bias (sensor units).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, shape (3,)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.MSAResult.scale">
+<span class="sig-name descname"><span class="pre">scale</span></span><a class="headerlink" href="#welleng.interpretation.MSAResult.scale" title="Link to this definition"></a></dt>
+<dd><p>Estimated per-axis fractional scale-factor error.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, shape (3,)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.MSAResult.covariance">
+<span class="sig-name descname"><span class="pre">covariance</span></span><a class="headerlink" href="#welleng.interpretation.MSAResult.covariance" title="Link to this definition"></a></dt>
+<dd><p>Estimate covariance for <code class="docutils literal notranslate"><span class="pre">[bx,</span> <span class="pre">by,</span> <span class="pre">bz,</span> <span class="pre">sx,</span> <span class="pre">sy,</span> <span class="pre">sz]</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, shape (6, 6)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.MSAResult.std">
+<span class="sig-name descname"><span class="pre">std</span></span><a class="headerlink" href="#welleng.interpretation.MSAResult.std" title="Link to this definition"></a></dt>
+<dd><p>Standard errors (sqrt of the covariance diagonal).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, shape (6,)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.MSAResult.correlation">
+<span class="sig-name descname"><span class="pre">correlation</span></span><a class="headerlink" href="#welleng.interpretation.MSAResult.correlation" title="Link to this definition"></a></dt>
+<dd><p>Correlation matrix of the estimate.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, shape (6, 6)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.MSAResult.estimable">
+<span class="sig-name descname"><span class="pre">estimable</span></span><a class="headerlink" href="#welleng.interpretation.MSAResult.estimable" title="Link to this definition"></a></dt>
+<dd><p>Per-component verdict: False where the standard error exceeds the
+estimability threshold (that component is not reliably observed by this
+survey’s geometry).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray of bool, shape (6,)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.MSAResult.n_stations">
+<span class="sig-name descname"><span class="pre">n_stations</span></span><a class="headerlink" href="#welleng.interpretation.MSAResult.n_stations" title="Link to this definition"></a></dt>
+<dd><p>Number of stations used.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.MSAResult.condition_number">
+<span class="sig-name descname"><span class="pre">condition_number</span></span><a class="headerlink" href="#welleng.interpretation.MSAResult.condition_number" title="Link to this definition"></a></dt>
+<dd><p>Condition number of <code class="docutils literal notranslate"><span class="pre">A^T</span> <span class="pre">A</span></code> (large =&gt; ill-conditioned geometry).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.interpretation.MSAResult.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bias</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scale</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">covariance</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">std</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">correlation</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">estimable</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_stations</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">condition_number</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#welleng.interpretation.MSAResult.__init__" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="welleng.interpretation.MSAResult.axial_estimable">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">axial_estimable</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><a class="headerlink" href="#welleng.interpretation.MSAResult.axial_estimable" title="Link to this definition"></a></dt>
+<dd><p>Whether the axial (z) bias and scale are both reliably observed.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id25">
+<span class="sig-name descname"><span class="pre">bias</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id25" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id26">
+<span class="sig-name descname"><span class="pre">condition_number</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><a class="headerlink" href="#id26" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id27">
+<span class="sig-name descname"><span class="pre">correlation</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id27" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id28">
+<span class="sig-name descname"><span class="pre">covariance</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id28" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id29">
+<span class="sig-name descname"><span class="pre">estimable</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id29" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id30">
+<span class="sig-name descname"><span class="pre">n_stations</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><a class="headerlink" href="#id30" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id31">
+<span class="sig-name descname"><span class="pre">scale</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id31" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id32">
+<span class="sig-name descname"><span class="pre">std</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id32" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="welleng.interpretation.QCResult">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">welleng.interpretation.</span></span><span class="sig-name descname"><span class="pre">QCResult</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">d_g:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d_b:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d_dip:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flag_g:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flag_b:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flag_dip:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerances:</span> <span class="pre">dict</span> <span class="pre">=</span> <span class="pre">&lt;factory&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/qc.html#QCResult"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.QCResult" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Per-station georeference QC residuals and pass/fail flags.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">d_g,</span> <span class="pre">d_b,</span> <span class="pre">d_dip</span></span></dt>
+<dd><p>Measured-minus-reference residuals for total gravity, total field and
+dip.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">flag_g,</span> <span class="pre">flag_b,</span> <span class="pre">flag_dip</span></span></dt>
+<dd><p>True where the residual exceeds tolerance (i.e. the station FAILS that
+check).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray of bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.QCResult.tolerances">
+<span class="sig-name descname"><span class="pre">tolerances</span></span><a class="headerlink" href="#welleng.interpretation.QCResult.tolerances" title="Link to this definition"></a></dt>
+<dd><p>The tolerances applied.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="welleng.interpretation.QCResult.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">d_g:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d_b:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d_dip:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flag_g:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flag_b:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flag_dip:</span> <span class="pre">~numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerances:</span> <span class="pre">dict</span> <span class="pre">=</span> <span class="pre">&lt;factory&gt;</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#welleng.interpretation.QCResult.__init__" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.QCResult.d_b">
+<span class="sig-name descname"><span class="pre">d_b</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#welleng.interpretation.QCResult.d_b" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.QCResult.d_dip">
+<span class="sig-name descname"><span class="pre">d_dip</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#welleng.interpretation.QCResult.d_dip" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.QCResult.d_g">
+<span class="sig-name descname"><span class="pre">d_g</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#welleng.interpretation.QCResult.d_g" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.QCResult.flag_b">
+<span class="sig-name descname"><span class="pre">flag_b</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#welleng.interpretation.QCResult.flag_b" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.QCResult.flag_dip">
+<span class="sig-name descname"><span class="pre">flag_dip</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#welleng.interpretation.QCResult.flag_dip" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="welleng.interpretation.QCResult.flag_g">
+<span class="sig-name descname"><span class="pre">flag_g</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#welleng.interpretation.QCResult.flag_g" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="welleng.interpretation.QCResult.passed">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">passed</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#welleng.interpretation.QCResult.passed" title="Link to this definition"></a></dt>
+<dd><p>True where the station passes all three checks.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id33">
+<span class="sig-name descname"><span class="pre">tolerances</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">dict</span></em><a class="headerlink" href="#id33" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.interpretation.apply_sensor_errors">
+<span class="sig-prename descclassname"><span class="pre">welleng.interpretation.</span></span><span class="sig-name descname"><span class="pre">apply_sensor_errors</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">triad</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">result</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">only_estimable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/msa.html#apply_sensor_errors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.apply_sensor_errors" title="Link to this definition"></a></dt>
+<dd><p>Correct triad readings for the MSA-estimated bias and scale errors.</p>
+<p>Closes the MSA loop: <a class="reference internal" href="#welleng.interpretation.estimate_sensor_errors" title="welleng.interpretation.estimate_sensor_errors"><code class="xref py py-func docutils literal notranslate"><span class="pre">estimate_sensor_errors()</span></code></a> measures the sensor
+errors, this removes them, <code class="docutils literal notranslate"><span class="pre">B_true</span> <span class="pre">=</span> <span class="pre">(B_meas</span> <span class="pre">-</span> <span class="pre">b)</span> <span class="pre">/</span> <span class="pre">(1</span> <span class="pre">+</span> <span class="pre">s)</span></code> (the model of
+the closed form above), so the corrected triad can be re-run through
+<a class="reference internal" href="#welleng.interpretation.forward.sensor_to_survey" title="welleng.interpretation.forward.sensor_to_survey"><code class="xref py py-func docutils literal notranslate"><span class="pre">sensor_to_survey()</span></code></a> for a corrected
+survey. The correction is opt-in — MSA is often used to <em>flag</em> out-of-model
+tool performance, not to auto-correct raw sensors.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>triad</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>n</em><em>, </em><em>3</em><em>)</em>) – Per-station triad readings (same sensor/units as passed to
+<a class="reference internal" href="#welleng.interpretation.estimate_sensor_errors" title="welleng.interpretation.estimate_sensor_errors"><code class="xref py py-func docutils literal notranslate"><span class="pre">estimate_sensor_errors()</span></code></a>).</p></li>
+<li><p><strong>result</strong> (<a class="reference internal" href="#welleng.interpretation.MSAResult" title="welleng.interpretation.MSAResult"><em>MSAResult</em></a>) – The estimate to apply.</p></li>
+<li><p><strong>only_estimable</strong> (<em>bool</em><em>, </em><em>default False</em>) – If True, apply a component’s bias/scale only where
+<code class="docutils literal notranslate"><span class="pre">result.estimable</span></code> is set (poorly-observed components — typically the
+axial term — are left uncorrected rather than corrected by a meaningless
+estimate). If False, apply all six.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>(n, 3) corrected triad.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>numpy.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.interpretation.correction_covariance_mc">
+<span class="sig-prename descclassname"><span class="pre">welleng.interpretation.</span></span><span class="sig-name descname"><span class="pre">correction_covariance_mc</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">draw</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_draws</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rng</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/correction_uncertainty.html#correction_covariance_mc"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.correction_covariance_mc" title="Link to this definition"></a></dt>
+<dd><p>Covariance of a deterministic correction under uncertain inputs (MC).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>draw</strong> (<em>callable</em>) – <code class="docutils literal notranslate"><span class="pre">draw(rng)</span> <span class="pre">-&gt;</span> <span class="pre">callable()</span> <span class="pre">-&gt;</span> <span class="pre">(n,)</span> <span class="pre">array_like</span></code>: draws ONE realisation
+of the uncertain inputs (applying each input’s own distribution and
+propagation character – e.g. a systematic stabiliser-OD offset drawn
+once per run vs a per-station random enlargement drawn per station
+<em>inside</em> the closure) and returns a zero-argument callable evaluating
+the correction for that realisation. The correction model itself is
+whatever the closure wraps – this function never imports it.</p></li>
+<li><p><strong>n_draws</strong> (<em>int</em><em>, </em><em>default 1000</em>) – Monte-Carlo draws. The result carries <code class="docutils literal notranslate"><span class="pre">se_std</span></code> to judge convergence.</p></li>
+<li><p><strong>rng</strong> (<em>numpy.random.Generator</em><em>, </em><em>optional</em>) – Source of randomness (default <code class="docutils literal notranslate"><span class="pre">numpy.random.default_rng()</span></code>).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#welleng.interpretation.CorrectionUncertainty" title="welleng.interpretation.CorrectionUncertainty">CorrectionUncertainty</a></p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p><strong>Zero input uncertainty =&gt; zero covariance</strong> (the deterministic limit)
+– kept as a regression gate.</p></li>
+<li><p>The full (n, n) matrix is returned (not just the diagonal) because the
+within-run input realisation correlates the stations; a covariated error
+model consumes exactly that block.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.interpretation.dual_depth_difference">
+<span class="sig-prename descclassname"><span class="pre">welleng.interpretation.</span></span><span class="sig-name descname"><span class="pre">dual_depth_difference</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">depth_difference_error</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sigma_pipe</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sigma_wll</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/qc.html#dual_depth_difference"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.dual_depth_difference" title="Link to this definition"></a></dt>
+<dd><p>Dual-depth-difference QC test (Ekseth et al., SPE-133417).</p>
+<p>Where an independent second depth measurement exists (e.g. a wireline pass
+with a casing-collar locator alongside the drillpipe tally), the difference
+between the two depths is checked against the combined error-model
+uncertainty. A difference larger than tolerance indicates a gross depth
+error not explained by the error models.</p>
+<p>The allowed difference is the root-sum-square of the two independent depth
+uncertainties (same sigma convention – e.g. both 3-sigma):</p>
+<blockquote>
+<div><p>tolerance = sqrt(sigma_pipe**2 + sigma_wll**2)</p>
+</div></blockquote>
+<p>Reproduces SPE-133417 Table 1a/1b/1c exactly.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>depth_difference_error</strong> (<em>float</em><em> or </em><em>array_like</em>) – Measured pipe-vs-wireline depth-difference error.</p></li>
+<li><p><strong>sigma_pipe</strong> (<em>float</em><em> or </em><em>array_like</em>) – Error-model depth uncertainties (same sigma level) for the pipe-tally
+and wireline measurements respectively.</p></li>
+<li><p><strong>sigma_wll</strong> (<em>float</em><em> or </em><em>array_like</em>) – Error-model depth uncertainties (same sigma level) for the pipe-tally
+and wireline measurements respectively.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#welleng.interpretation.DualDepthResult" title="welleng.interpretation.DualDepthResult">DualDepthResult</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.interpretation.earth_rate_components">
+<span class="sig-prename descclassname"><span class="pre">welleng.interpretation.</span></span><span class="sig-name descname"><span class="pre">earth_rate_components</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">latitude</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rate</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">15.041067</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/forward.html#earth_rate_components"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.earth_rate_components" title="Link to this definition"></a></dt>
+<dd><p>Local horizontal (true-north) and vertical Earth-rate components.</p>
+<p>At latitude <code class="docutils literal notranslate"><span class="pre">phi</span></code> the Earth-rotation vector has a horizontal component
+<code class="docutils literal notranslate"><span class="pre">rate*cos(phi)</span></code> pointing true north and a vertical component
+<code class="docutils literal notranslate"><span class="pre">rate*sin(phi)</span></code> (up). These are the gyro reference values; the Earth-rate
+“dip” equals the latitude, so no spatial model/service is required (unlike
+the magnetic field).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>latitude</strong> (<em>float</em><em> or </em><em>array_like</em>) – Geographic latitude (deg).</p></li>
+<li><p><strong>rate</strong> (<em>float</em><em>, </em><em>default EARTH_RATE</em>) – Earth-rotation rate magnitude (deg/hr).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>horizontal, vertical</strong> – Earth-rate components (deg/hr).</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.interpretation.estimate_sensor_errors">
+<span class="sig-prename descclassname"><span class="pre">welleng.interpretation.</span></span><span class="sig-name descname"><span class="pre">estimate_sensor_errors</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">triad</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ref</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#welleng.interpretation.qc.GeomagReference" title="welleng.interpretation.qc.GeomagReference"><span class="pre">GeomagReference</span></a></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sensor</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'mag'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">noise</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bias_estimability</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">500.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scale_estimability</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.01</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_stations</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#welleng.interpretation.msa.MSAResult" title="welleng.interpretation.msa.MSAResult"><span class="pre">MSAResult</span></a></span></span><a class="reference internal" href="_modules/welleng/interpretation/msa.html#estimate_sensor_errors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.estimate_sensor_errors" title="Link to this definition"></a></dt>
+<dd><p>Closed-form multi-station estimate of tool bias + scale errors.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>triad</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>n</em><em>, </em><em>3</em><em>)</em>) – Per-station triad readings (magnetometer if <code class="docutils literal notranslate"><span class="pre">sensor='mag'</span></code>, else
+accelerometer), same units as the matching reference total.</p></li>
+<li><p><strong>ref</strong> (<a class="reference internal" href="#welleng.interpretation.GeomagReference" title="welleng.interpretation.GeomagReference"><em>GeomagReference</em></a>) – Reference field; <code class="docutils literal notranslate"><span class="pre">ref.b_total</span></code> (mag) or <code class="docutils literal notranslate"><span class="pre">ref.g_total</span></code> (accel) is the
+target total.</p></li>
+<li><p><strong>sensor</strong> (<em>{'mag'</em><em>, </em><em>'accel'}</em><em>, </em><em>default 'mag'</em>) – Which triad is supplied (selects the reference total).</p></li>
+<li><p><strong>noise</strong> (<em>float</em><em>, </em><em>optional</em>) – Per-axis measurement noise standard deviation (same units), used to
+propagate the estimate covariance. If None, a unit noise is used so the
+<em>relative</em> estimability and the correlation matrix are still meaningful
+but the absolute standard errors are only proportional.</p></li>
+<li><p><strong>bias_estimability</strong> (<em>float</em>) – Standard-error thresholds above which a bias / scale component is judged
+not estimable by this geometry.</p></li>
+<li><p><strong>scale_estimability</strong> (<em>float</em>) – Standard-error thresholds above which a bias / scale component is judged
+not estimable by this geometry.</p></li>
+<li><p><strong>min_stations</strong> (<em>int</em><em>, </em><em>default 10</em>) – Minimum independent stations required (SPE-133417); fewer raises.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#welleng.interpretation.MSAResult" title="welleng.interpretation.MSAResult">MSAResult</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.interpretation.georef_checks">
+<span class="sig-prename descclassname"><span class="pre">welleng.interpretation.</span></span><span class="sig-name descname"><span class="pre">georef_checks</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">g_xyz</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">b_xyz</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ref</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#welleng.interpretation.qc.GeomagReference" title="welleng.interpretation.qc.GeomagReference"><span class="pre">GeomagReference</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerances</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#welleng.interpretation.qc.QCResult" title="welleng.interpretation.qc.QCResult"><span class="pre">QCResult</span></a></span></span><a class="reference internal" href="_modules/welleng/interpretation/qc.html#georef_checks"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.georef_checks" title="Link to this definition"></a></dt>
+<dd><p>Run the georeference QC tests on one or more survey stations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>g_xyz</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>3</em><em>,</em><em>) or </em><em>(</em><em>n</em><em>, </em><em>3</em><em>)</em>) – Accelerometer and magnetometer readings in the tool frame (same units
+as <code class="docutils literal notranslate"><span class="pre">ref.g_total</span></code> / <code class="docutils literal notranslate"><span class="pre">ref.b_total</span></code>).</p></li>
+<li><p><strong>b_xyz</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>3</em><em>,</em><em>) or </em><em>(</em><em>n</em><em>, </em><em>3</em><em>)</em>) – Accelerometer and magnetometer readings in the tool frame (same units
+as <code class="docutils literal notranslate"><span class="pre">ref.g_total</span></code> / <code class="docutils literal notranslate"><span class="pre">ref.b_total</span></code>).</p></li>
+<li><p><strong>ref</strong> (<a class="reference internal" href="#welleng.interpretation.GeomagReference" title="welleng.interpretation.GeomagReference"><em>GeomagReference</em></a>) – Reference field.</p></li>
+<li><p><strong>tolerances</strong> (<em>dict</em><em>, </em><em>optional</em>) – Keys <code class="docutils literal notranslate"><span class="pre">'g_total'</span></code>, <code class="docutils literal notranslate"><span class="pre">'b_total'</span></code>, <code class="docutils literal notranslate"><span class="pre">'dip'</span></code>. Missing keys fall back to
+<code class="xref py py-data docutils literal notranslate"><span class="pre">DEFAULT_TOLERANCES</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#welleng.interpretation.QCResult" title="welleng.interpretation.QCResult">QCResult</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.interpretation.gyro_to_survey">
+<span class="sig-prename descclassname"><span class="pre">welleng.interpretation.</span></span><span class="sig-name descname"><span class="pre">gyro_to_survey</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">g_xyz</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">w_xyz</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid_convergence</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">axis</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'z'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">deg</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/forward.html#gyro_to_survey"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.gyro_to_survey" title="Link to this definition"></a></dt>
+<dd><p>Inclination, azimuth and toolface from accelerometer + rate-gyro.</p>
+<p>Gyrocompassing: the accelerometer gives inclination and toolface (as in
+<a class="reference internal" href="#welleng.interpretation.sensor_to_survey" title="welleng.interpretation.sensor_to_survey"><code class="xref py py-func docutils literal notranslate"><span class="pre">sensor_to_survey()</span></code></a>) and the rate-gyro measures the Earth-rotation
+vector in the tool frame, whose horizontal component points <em>true</em> north.
+The azimuth is obtained from the same minimum-set equation, with the gyro
+readings in place of the magnetometer.</p>
+<p>Unlike a magnetic survey the gyro references true north directly, so <strong>no
+magnetic declination is applied</strong> (only grid convergence, if supplied).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>g_xyz</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>3</em><em>,</em><em>) or </em><em>(</em><em>n</em><em>, </em><em>3</em><em>)</em>) – Accelerometer readings (gravity) in the tool frame.</p></li>
+<li><p><strong>w_xyz</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>3</em><em>,</em><em>) or </em><em>(</em><em>n</em><em>, </em><em>3</em><em>)</em>) – Rate-gyro readings (Earth-rotation rate) in the tool frame, any
+self-consistent angular-rate unit.</p></li>
+<li><p><strong>grid_convergence</strong> (<em>float</em><em>, </em><em>default 0.0</em>) – Grid convergence (deg), subtracted to give grid azimuth.</p></li>
+<li><p><strong>axis</strong> (<em>{'z'</em><em>, </em><em>'x'}</em><em>, </em><em>default 'z'</em>) – Along-hole (axial) sensor axis, as in <a class="reference internal" href="#welleng.interpretation.sensor_to_survey" title="welleng.interpretation.sensor_to_survey"><code class="xref py py-func docutils literal notranslate"><span class="pre">sensor_to_survey()</span></code></a>.</p></li>
+<li><p><strong>deg</strong> (<em>bool</em><em>, </em><em>default True</em>) – Return degrees if True, else radians.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>inc, azi, toolface</strong> – Inclination, azimuth (true/grid, wrapped to [0, 360)) and toolface.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float or ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="welleng.interpretation.sensor_to_survey">
+<span class="sig-prename descclassname"><span class="pre">welleng.interpretation.</span></span><span class="sig-name descname"><span class="pre">sensor_to_survey</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">g_xyz</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">b_xyz</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">declination</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid_convergence</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">axis</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'z'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">deg</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/welleng/interpretation/forward.html#sensor_to_survey"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#welleng.interpretation.sensor_to_survey" title="Link to this definition"></a></dt>
+<dd><p>Inclination, azimuth and toolface from accelerometer + magnetometer.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>g_xyz</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>3</em><em>,</em><em>) or </em><em>(</em><em>n</em><em>, </em><em>3</em><em>)</em>) – Accelerometer readings (gravity vector) in the tool frame.</p></li>
+<li><p><strong>b_xyz</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>3</em><em>,</em><em>) or </em><em>(</em><em>n</em><em>, </em><em>3</em><em>)</em>) – Magnetometer readings (Earth field) in the tool frame, same station
+ordering as <code class="docutils literal notranslate"><span class="pre">g_xyz</span></code>.</p></li>
+<li><p><strong>declination</strong> (<em>float</em><em>, </em><em>default 0.0</em>) – Magnetic declination (deg, east-positive). Added to the magnetic
+azimuth to give azimuth relative to true north.</p></li>
+<li><p><strong>grid_convergence</strong> (<em>float</em><em>, </em><em>default 0.0</em>) – Grid convergence (deg). Subtracted to give grid azimuth. With both
+<code class="docutils literal notranslate"><span class="pre">declination</span></code> and <code class="docutils literal notranslate"><span class="pre">grid_convergence</span></code> zero the result is the raw
+<em>magnetic</em> azimuth.</p></li>
+<li><p><strong>axis</strong> (<em>{'z'</em><em>, </em><em>'x'}</em><em>, </em><em>default 'z'</em>) – Which sensor axis is the along-hole (axial) axis. <code class="docutils literal notranslate"><span class="pre">'z'</span></code> is the usual
+convention; <code class="docutils literal notranslate"><span class="pre">'x'</span></code> handles tools/exports that list the axial axis
+first (seen in some vendor survey files).</p></li>
+<li><p><strong>deg</strong> (<em>bool</em><em>, </em><em>default True</em>) – If True (default) return degrees, else radians.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>inc, azi, toolface</strong> – Inclination (0 = vertical), azimuth (grid/true per the corrections
+above, wrapped to [0, 360)) and gravity toolface (wrapped to [0, 360)).</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float or ndarray</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>Classic minimum-set equations (Williamson, SPE-67616; textbook):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">inc</span>      <span class="o">=</span> <span class="n">atan2</span><span class="p">(</span><span class="n">sqrt</span><span class="p">(</span><span class="n">Gx</span><span class="o">^</span><span class="mi">2</span> <span class="o">+</span> <span class="n">Gy</span><span class="o">^</span><span class="mi">2</span><span class="p">),</span> <span class="n">Gz</span><span class="p">)</span>
+<span class="n">toolface</span> <span class="o">=</span> <span class="n">atan2</span><span class="p">(</span><span class="n">Gy</span><span class="p">,</span> <span class="n">Gx</span><span class="p">)</span>
+<span class="n">azi_mag</span>  <span class="o">=</span> <span class="n">atan2</span><span class="p">(</span> <span class="p">(</span><span class="n">Gx</span> <span class="n">By</span> <span class="o">-</span> <span class="n">Gy</span> <span class="n">Bx</span><span class="p">)</span> <span class="o">|</span><span class="n">G</span><span class="o">|</span><span class="p">,</span>
+                  <span class="n">Bz</span> <span class="p">(</span><span class="n">Gx</span><span class="o">^</span><span class="mi">2</span> <span class="o">+</span> <span class="n">Gy</span><span class="o">^</span><span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="n">Gz</span> <span class="p">(</span><span class="n">Gx</span> <span class="n">Bx</span> <span class="o">+</span> <span class="n">Gy</span> <span class="n">By</span><span class="p">)</span> <span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="welleng.exchange.html" class="btn btn-neutral float-left" title="welleng.exchange package" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="welleng.kick_tolerance.html" class="btn btn-neutral float-right" title="welleng.kick_tolerance package" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

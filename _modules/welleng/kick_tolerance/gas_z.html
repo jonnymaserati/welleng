@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.kick_tolerance.gas_z &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../kick_tolerance.html">welleng.kick_tolerance</a></li>
+      <li class="breadcrumb-item active">welleng.kick_tolerance.gas_z</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.kick_tolerance.gas_z</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Clean-room Hall &amp; Yarborough (1973) real-gas Z-factor backend.</span>
+
+<span class="sd">Implements the Hall-Yarborough compressibility-factor correlation from the</span>
+<span class="sd">public source:</span>
+
+<span class="sd">    Hall, K. R. &amp; Yarborough, L. (1973). &quot;A new equation of state for</span>
+<span class="sd">    Z-factor calculations.&quot; Oil &amp; Gas Journal 71(25): 82-92.</span>
+
+<span class="sd">The correlation is a public, widely-published equation of state. It is</span>
+<span class="sd">implemented here from the standard public formulation only -- no external,</span>
+<span class="sd">third-party, or private data source is referenced.</span>
+
+<span class="sd">Formulation</span>
+<span class="sd">-----------</span>
+<span class="sd">Given pseudo-reduced temperature/pressure</span>
+
+<span class="sd">    Tpr = T / Tpc ,   Ppr = P / Ppc ,   t = 1 / Tpr ,</span>
+
+<span class="sd">the reduced density ``y`` solves the implicit Hall-Yarborough equation</span>
+
+<span class="sd">    F(y) = -A</span>
+<span class="sd">           + (y + y^2 + y^3 - y^4) / (1 - y)^3</span>
+<span class="sd">           - (14.76 t - 9.76 t^2 + 4.58 t^3) y^2</span>
+<span class="sd">           + (90.7 t - 242.2 t^2 + 42.4 t^3) y^(2.18 + 2.82 t)</span>
+<span class="sd">         = 0 ,</span>
+
+<span class="sd">with the leading constant</span>
+
+<span class="sd">    A = 0.06125 Ppr t exp[-1.2 (1 - t)^2] .</span>
+
+<span class="sd">``F(y) = 0`` is solved by Newton-Raphson (analytic derivative). The Z-factor</span>
+<span class="sd">follows as</span>
+
+<span class="sd">    Z = A / y = 0.06125 Ppr t exp[-1.2 (1 - t)^2] / y .</span>
+
+<span class="sd">The correlation is valid roughly for 0.1 &lt;= Ppr &lt;= ~24 and 1.15 &lt;= Tpr &lt;= 3.0.</span>
+
+<span class="sd">Tier 0 gas: pure methane</span>
+<span class="sd">------------------------</span>
+<span class="sd">For Tier 0 the influx is treated as pure methane (gas gravity ~0.5539). The</span>
+<span class="sd">pseudo-criticals are methane&#39;s critical constants (equivalently the</span>
+<span class="sd">single-component Standing-Katz values):</span>
+
+<span class="sd">    Tpc = 343.0 degR ,   Ppc = 667.0 psia ,   M = 16.043 lbm/lbmol .</span>
+
+<span class="sd">Units</span>
+<span class="sd">-----</span>
+<span class="sd">Pressure psia; temperature degR; density returned in ppg (mud-weight</span>
+<span class="sd">equivalent) using the field-unit gas law rho = P M / (Z R T) with the universal</span>
+<span class="sd">gas constant R = 10.732 psia.ft^3 / (lbmol.degR) and 7.4805 gal/ft^3.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+
+<span class="c1"># --- Public methane (Tier 0) constants --------------------------------------</span>
+<span class="n">METHANE_GAS_GRAVITY</span> <span class="o">=</span> <span class="mf">0.5539</span>            <span class="c1"># air = 1.0</span>
+<span class="n">METHANE_TPC_RANKINE</span> <span class="o">=</span> <span class="mf">343.0</span>            <span class="c1"># methane pseudo-critical temperature [degR]</span>
+<span class="n">METHANE_PPC_PSIA</span> <span class="o">=</span> <span class="mf">667.0</span>              <span class="c1"># methane pseudo-critical pressure    [psia]</span>
+<span class="n">METHANE_M_LBM_PER_LBMOL</span> <span class="o">=</span> <span class="mf">16.043</span>       <span class="c1"># methane molar mass                 [lbm/lbmol]</span>
+
+<span class="c1"># --- Field-unit gas-law constants -------------------------------------------</span>
+<span class="n">R_FIELD</span> <span class="o">=</span> <span class="mf">10.732</span>                       <span class="c1"># gas constant [psia.ft^3 / (lbmol.degR)]</span>
+<span class="n">GAL_PER_FT3</span> <span class="o">=</span> <span class="mf">7.4805</span>                    <span class="c1"># US gallons per cubic foot</span>
+
+<span class="n">_MAX_ITER</span> <span class="o">=</span> <span class="mi">100</span>
+<span class="n">_TOL</span> <span class="o">=</span> <span class="mf">1.0e-12</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_hy_residual</span><span class="p">(</span><span class="n">y</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">a</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">t</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Hall-Yarborough residual F(y) (root is the reduced density).&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="o">-</span><span class="n">a</span>
+        <span class="o">+</span> <span class="p">(</span><span class="n">y</span> <span class="o">+</span> <span class="n">y</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">y</span> <span class="o">**</span> <span class="mi">3</span> <span class="o">-</span> <span class="n">y</span> <span class="o">**</span> <span class="mi">4</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">y</span><span class="p">)</span> <span class="o">**</span> <span class="mi">3</span>
+        <span class="o">-</span> <span class="p">(</span><span class="mf">14.76</span> <span class="o">*</span> <span class="n">t</span> <span class="o">-</span> <span class="mf">9.76</span> <span class="o">*</span> <span class="n">t</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="mf">4.58</span> <span class="o">*</span> <span class="n">t</span> <span class="o">**</span> <span class="mi">3</span><span class="p">)</span> <span class="o">*</span> <span class="n">y</span> <span class="o">**</span> <span class="mi">2</span>
+        <span class="o">+</span> <span class="p">(</span><span class="mf">90.7</span> <span class="o">*</span> <span class="n">t</span> <span class="o">-</span> <span class="mf">242.2</span> <span class="o">*</span> <span class="n">t</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="mf">42.4</span> <span class="o">*</span> <span class="n">t</span> <span class="o">**</span> <span class="mi">3</span><span class="p">)</span> <span class="o">*</span> <span class="n">y</span> <span class="o">**</span> <span class="p">(</span><span class="mf">2.18</span> <span class="o">+</span> <span class="mf">2.82</span> <span class="o">*</span> <span class="n">t</span><span class="p">)</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_hy_residual_derivative</span><span class="p">(</span><span class="n">y</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">t</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Analytic dF/dy for the Newton-Raphson step.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="mf">4.0</span> <span class="o">*</span> <span class="n">y</span> <span class="o">+</span> <span class="mf">4.0</span> <span class="o">*</span> <span class="n">y</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">-</span> <span class="mf">4.0</span> <span class="o">*</span> <span class="n">y</span> <span class="o">**</span> <span class="mi">3</span> <span class="o">+</span> <span class="n">y</span> <span class="o">**</span> <span class="mi">4</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">y</span><span class="p">)</span> <span class="o">**</span> <span class="mi">4</span>
+        <span class="o">-</span> <span class="p">(</span><span class="mf">29.52</span> <span class="o">*</span> <span class="n">t</span> <span class="o">-</span> <span class="mf">19.52</span> <span class="o">*</span> <span class="n">t</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="mf">9.16</span> <span class="o">*</span> <span class="n">t</span> <span class="o">**</span> <span class="mi">3</span><span class="p">)</span> <span class="o">*</span> <span class="n">y</span>
+        <span class="o">+</span> <span class="p">(</span><span class="mf">2.18</span> <span class="o">+</span> <span class="mf">2.82</span> <span class="o">*</span> <span class="n">t</span><span class="p">)</span>
+        <span class="o">*</span> <span class="p">(</span><span class="mf">90.7</span> <span class="o">*</span> <span class="n">t</span> <span class="o">-</span> <span class="mf">242.2</span> <span class="o">*</span> <span class="n">t</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="mf">42.4</span> <span class="o">*</span> <span class="n">t</span> <span class="o">**</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="o">*</span> <span class="n">y</span> <span class="o">**</span> <span class="p">(</span><span class="mf">1.18</span> <span class="o">+</span> <span class="mf">2.82</span> <span class="o">*</span> <span class="n">t</span><span class="p">)</span>
+    <span class="p">)</span>
+
+
+<div class="viewcode-block" id="reduced_density">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.reduced_density">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">reduced_density</span><span class="p">(</span>
+    <span class="n">p_psia</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">t_rankine</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">t_pc_rankine</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">METHANE_TPC_RANKINE</span><span class="p">,</span>
+    <span class="n">p_pc_psia</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">METHANE_PPC_PSIA</span><span class="p">,</span>
+    <span class="n">y0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0e-3</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Solve the Hall-Yarborough implicit equation for reduced density ``y``.</span>
+
+<span class="sd">    Newton-Raphson from the seed ``y0`` (default a small positive value); ``y`` is</span>
+<span class="sd">    confined to (0, 1). ``y0`` lets a caller WARM-START from a nearby prior solve</span>
+<span class="sd">    (consecutive sub-steps in a gas-column integration have close pressures, so the</span>
+<span class="sd">    previous ``y`` converges in ~2 iterations instead of ~5) -- the converged root</span>
+<span class="sd">    is identical to 1e-12 regardless of the seed.</span>
+
+<span class="sd">    The residual and its analytic derivative are inlined here and the</span>
+<span class="sd">    temperature-dependent coefficient groups are precomputed once (not per Newton</span>
+<span class="sd">    iteration): this is the same arithmetic as :func:`_hy_residual` /</span>
+<span class="sd">    :func:`_hy_residual_derivative` but avoids ~5 Python function calls and repeated</span>
+<span class="sd">    power evaluations per solve, which dominate the migration-engine hot path.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If inputs are non-physical or the iteration fails to converge.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">p_psia</span> <span class="o">&lt;=</span> <span class="mf">0.0</span> <span class="ow">or</span> <span class="n">t_rankine</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;pressure and temperature must be positive&quot;</span><span class="p">)</span>
+
+    <span class="n">t</span> <span class="o">=</span> <span class="n">t_pc_rankine</span> <span class="o">/</span> <span class="n">t_rankine</span>          <span class="c1"># t = 1 / Tpr</span>
+    <span class="n">ppr</span> <span class="o">=</span> <span class="n">p_psia</span> <span class="o">/</span> <span class="n">p_pc_psia</span>
+    <span class="c1"># Validity-band guard: the H-Y correlation holds for ~0.1&lt;=Ppr&lt;=24, 1.15&lt;=Tpr&lt;=3.0.</span>
+    <span class="c1"># Warn (once per call-site, per the warnings filter) on silent extrapolation -- e.g.</span>
+    <span class="c1"># a cold shallow station in a migration temperature profile. The check is 4 float</span>
+    <span class="c1"># comparisons; the extrapolated Z is still returned (warning, not error).</span>
+    <span class="n">tpr</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">t</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="mf">0.1</span> <span class="o">&lt;=</span> <span class="n">ppr</span> <span class="o">&lt;=</span> <span class="mf">24.0</span> <span class="ow">and</span> <span class="mf">1.15</span> <span class="o">&lt;=</span> <span class="n">tpr</span> <span class="o">&lt;=</span> <span class="mf">3.0</span><span class="p">):</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Hall-Yarborough Z evaluated outside its validity band &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;(Ppr=</span><span class="si">{</span><span class="n">ppr</span><span class="si">:</span><span class="s2">.3g</span><span class="si">}</span><span class="s2"> in [0.1, 24], Tpr=</span><span class="si">{</span><span class="n">tpr</span><span class="si">:</span><span class="s2">.3g</span><span class="si">}</span><span class="s2"> in [1.15, 3.0]); &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;the returned Z is extrapolated.&quot;</span><span class="p">,</span>
+            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="n">a</span> <span class="o">=</span> <span class="mf">0.06125</span> <span class="o">*</span> <span class="n">ppr</span> <span class="o">*</span> <span class="n">t</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">1.2</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">t</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+
+    <span class="c1"># t-dependent coefficient groups -- constant across Newton iterations.</span>
+    <span class="n">t2</span> <span class="o">=</span> <span class="n">t</span> <span class="o">*</span> <span class="n">t</span>
+    <span class="n">t3</span> <span class="o">=</span> <span class="n">t2</span> <span class="o">*</span> <span class="n">t</span>
+    <span class="n">c_res</span> <span class="o">=</span> <span class="mf">14.76</span> <span class="o">*</span> <span class="n">t</span> <span class="o">-</span> <span class="mf">9.76</span> <span class="o">*</span> <span class="n">t2</span> <span class="o">+</span> <span class="mf">4.58</span> <span class="o">*</span> <span class="n">t3</span>          <span class="c1"># residual y^2 coefficient</span>
+    <span class="n">c_pow</span> <span class="o">=</span> <span class="mf">90.7</span> <span class="o">*</span> <span class="n">t</span> <span class="o">-</span> <span class="mf">242.2</span> <span class="o">*</span> <span class="n">t2</span> <span class="o">+</span> <span class="mf">42.4</span> <span class="o">*</span> <span class="n">t3</span>          <span class="c1"># residual/derivative power coef</span>
+    <span class="n">expo</span> <span class="o">=</span> <span class="mf">2.18</span> <span class="o">+</span> <span class="mf">2.82</span> <span class="o">*</span> <span class="n">t</span>                             <span class="c1"># residual power exponent</span>
+    <span class="n">c_der</span> <span class="o">=</span> <span class="mf">29.52</span> <span class="o">*</span> <span class="n">t</span> <span class="o">-</span> <span class="mf">19.52</span> <span class="o">*</span> <span class="n">t2</span> <span class="o">+</span> <span class="mf">9.16</span> <span class="o">*</span> <span class="n">t3</span>         <span class="c1"># derivative linear coefficient</span>
+    <span class="n">dexpo</span> <span class="o">=</span> <span class="mf">1.18</span> <span class="o">+</span> <span class="mf">2.82</span> <span class="o">*</span> <span class="n">t</span>                            <span class="c1"># derivative power exponent</span>
+
+    <span class="n">y</span> <span class="o">=</span> <span class="n">y0</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">_MAX_ITER</span><span class="p">):</span>
+        <span class="n">omy</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">y</span>
+        <span class="n">y2</span> <span class="o">=</span> <span class="n">y</span> <span class="o">*</span> <span class="n">y</span>
+        <span class="n">y3</span> <span class="o">=</span> <span class="n">y2</span> <span class="o">*</span> <span class="n">y</span>
+        <span class="n">y4</span> <span class="o">=</span> <span class="n">y3</span> <span class="o">*</span> <span class="n">y</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="o">-</span><span class="n">a</span>
+            <span class="o">+</span> <span class="p">(</span><span class="n">y</span> <span class="o">+</span> <span class="n">y2</span> <span class="o">+</span> <span class="n">y3</span> <span class="o">-</span> <span class="n">y4</span><span class="p">)</span> <span class="o">/</span> <span class="n">omy</span> <span class="o">**</span> <span class="mi">3</span>
+            <span class="o">-</span> <span class="n">c_res</span> <span class="o">*</span> <span class="n">y2</span>
+            <span class="o">+</span> <span class="n">c_pow</span> <span class="o">*</span> <span class="n">y</span> <span class="o">**</span> <span class="n">expo</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">f</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">_TOL</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">y</span>
+        <span class="n">df</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="mf">4.0</span> <span class="o">*</span> <span class="n">y</span> <span class="o">+</span> <span class="mf">4.0</span> <span class="o">*</span> <span class="n">y2</span> <span class="o">-</span> <span class="mf">4.0</span> <span class="o">*</span> <span class="n">y3</span> <span class="o">+</span> <span class="n">y4</span><span class="p">)</span> <span class="o">/</span> <span class="n">omy</span> <span class="o">**</span> <span class="mi">4</span>
+            <span class="o">-</span> <span class="n">c_der</span> <span class="o">*</span> <span class="n">y</span>
+            <span class="o">+</span> <span class="n">expo</span> <span class="o">*</span> <span class="n">c_pow</span> <span class="o">*</span> <span class="n">y</span> <span class="o">**</span> <span class="n">dexpo</span>
+        <span class="p">)</span>
+        <span class="n">y</span> <span class="o">-=</span> <span class="n">f</span> <span class="o">/</span> <span class="n">df</span>
+        <span class="k">if</span> <span class="n">y</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="n">y</span> <span class="o">=</span> <span class="mf">1.0e-8</span>
+        <span class="k">elif</span> <span class="n">y</span> <span class="o">&gt;=</span> <span class="mf">1.0</span><span class="p">:</span>
+            <span class="n">y</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="mf">1.0e-8</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;Hall-Yarborough Newton-Raphson did not converge &quot;</span>
+        <span class="sa">f</span><span class="s2">&quot;(P=</span><span class="si">{</span><span class="n">p_psia</span><span class="si">}</span><span class="s2"> psia, T=</span><span class="si">{</span><span class="n">t_rankine</span><span class="si">}</span><span class="s2"> degR)&quot;</span>
+    <span class="p">)</span></div>
+
+
+
+<span class="n">M_AIR_LBM_PER_LBMOL</span> <span class="o">=</span> <span class="mf">28.9647</span>   <span class="c1"># dry air molar mass [lbm/lbmol]</span>
+
+
+<div class="viewcode-block" id="standing_pseudo_criticals">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.standing_pseudo_criticals">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">standing_pseudo_criticals</span><span class="p">(</span><span class="n">gas_gravity</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Natural-gas pseudo-criticals from gas gravity — Standing (1977)::</span>
+
+<span class="sd">        T_pc = 168 + 325.g - 12.5.g^2   [degR]</span>
+<span class="sd">        P_pc = 677 + 15.0.g - 37.5.g^2  [psia]</span>
+
+<span class="sd">    ``gas_gravity`` is relative to AIR (air = 1.0), i.e. ``M_gas / 28.9647`` — a</span>
+<span class="sd">    COMPOSITION, not a density. Pure methane is 0.5539.</span>
+
+<span class="sd">    **Why this matters and is not a refinement.** Molar mass alone scales density but</span>
+<span class="sd">    says nothing about Z; the Hall &amp; Yarborough correlation needs pseudo-criticals.</span>
+<span class="sd">    Using methane&#39;s for a heavier gas is internally inconsistent, and not by a little:</span>
+<span class="sd">    at 5400 psi, the temperature at which a 0.686-gravity gas reaches 2.00 ppg is</span>
+<span class="sd">    **179.9 degF on methane&#39;s pseudo-criticals and 194.6 degF on Standing&#39;s** — a</span>
+<span class="sd">    14.7 degF error, in a diagnostic whose entire purpose is to expose an implausible</span>
+<span class="sd">    temperature.</span>
+
+<span class="sd">    Valid for sweet natural gases roughly 0.55-1.0. Sour gases (H2S, CO2) need a</span>
+<span class="sd">    Wichert-Aziz correction, which is NOT applied here — pass explicit pseudo-criticals</span>
+<span class="sd">    for those.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">gas_gravity</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span><span class="mf">168.0</span> <span class="o">+</span> <span class="mf">325.0</span> <span class="o">*</span> <span class="n">g</span> <span class="o">-</span> <span class="mf">12.5</span> <span class="o">*</span> <span class="n">g</span> <span class="o">*</span> <span class="n">g</span><span class="p">,</span>
+            <span class="mf">677.0</span> <span class="o">+</span> <span class="mf">15.0</span> <span class="o">*</span> <span class="n">g</span> <span class="o">-</span> <span class="mf">37.5</span> <span class="o">*</span> <span class="n">g</span> <span class="o">*</span> <span class="n">g</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="hall_yarborough_z">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.hall_yarborough_z">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">hall_yarborough_z</span><span class="p">(</span>
+    <span class="n">p_psia</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">t_rankine</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">t_pc_rankine</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">METHANE_TPC_RANKINE</span><span class="p">,</span>
+    <span class="n">p_pc_psia</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">METHANE_PPC_PSIA</span><span class="p">,</span>
+    <span class="n">y0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0e-3</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Real-gas Z-factor by the Hall &amp; Yarborough (1973) correlation.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    p_psia</span>
+<span class="sd">        Absolute pressure [psia].</span>
+<span class="sd">    t_rankine</span>
+<span class="sd">        Absolute temperature [degR].</span>
+<span class="sd">    t_pc_rankine, p_pc_psia</span>
+<span class="sd">        Pseudo-critical temperature [degR] and pressure [psia]. Default to the</span>
+<span class="sd">        Tier-0 pure-methane values.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float</span>
+<span class="sd">        Compressibility factor Z = 0.06125 Ppr t exp[-1.2 (1 - t)^2] / y.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">t</span> <span class="o">=</span> <span class="n">t_pc_rankine</span> <span class="o">/</span> <span class="n">t_rankine</span>
+    <span class="n">ppr</span> <span class="o">=</span> <span class="n">p_psia</span> <span class="o">/</span> <span class="n">p_pc_psia</span>
+    <span class="n">a</span> <span class="o">=</span> <span class="mf">0.06125</span> <span class="o">*</span> <span class="n">ppr</span> <span class="o">*</span> <span class="n">t</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">1.2</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">t</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">reduced_density</span><span class="p">(</span><span class="n">p_psia</span><span class="p">,</span> <span class="n">t_rankine</span><span class="p">,</span> <span class="n">t_pc_rankine</span><span class="p">,</span> <span class="n">p_pc_psia</span><span class="p">,</span> <span class="n">y0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">a</span> <span class="o">/</span> <span class="n">y</span></div>
+
+
+
+<div class="viewcode-block" id="hall_yarborough_z_and_y">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.hall_yarborough_z_and_y">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">hall_yarborough_z_and_y</span><span class="p">(</span>
+    <span class="n">p_psia</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">t_rankine</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">t_pc_rankine</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">METHANE_TPC_RANKINE</span><span class="p">,</span>
+    <span class="n">p_pc_psia</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">METHANE_PPC_PSIA</span><span class="p">,</span>
+    <span class="n">y0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0e-3</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Z factor AND the reduced density ``y`` that produced it.</span>
+
+<span class="sd">    ``y`` is returned so a caller stepping through nearby pressures (a gas-column</span>
+<span class="sd">    integration) can pass it as the ``y0`` warm-start of the next solve, cutting</span>
+<span class="sd">    Newton iterations without changing the converged result.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">t</span> <span class="o">=</span> <span class="n">t_pc_rankine</span> <span class="o">/</span> <span class="n">t_rankine</span>
+    <span class="n">ppr</span> <span class="o">=</span> <span class="n">p_psia</span> <span class="o">/</span> <span class="n">p_pc_psia</span>
+    <span class="n">a</span> <span class="o">=</span> <span class="mf">0.06125</span> <span class="o">*</span> <span class="n">ppr</span> <span class="o">*</span> <span class="n">t</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">1.2</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">t</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">reduced_density</span><span class="p">(</span><span class="n">p_psia</span><span class="p">,</span> <span class="n">t_rankine</span><span class="p">,</span> <span class="n">t_pc_rankine</span><span class="p">,</span> <span class="n">p_pc_psia</span><span class="p">,</span> <span class="n">y0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">a</span> <span class="o">/</span> <span class="n">y</span><span class="p">,</span> <span class="n">y</span></div>
+
+
+
+<div class="viewcode-block" id="gas_density_ppg">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.gas_density_ppg">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">gas_density_ppg</span><span class="p">(</span>
+    <span class="n">p_psia</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">t_rankine</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">z</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">molar_mass_lbm</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">METHANE_M_LBM_PER_LBMOL</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Real-gas density in ppg (mud-weight equivalent).</span>
+
+<span class="sd">    rho = P M / (Z R T)  [lbm/ft^3], converted to ppg via 7.4805 gal/ft^3.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">rho_lbm_per_ft3</span> <span class="o">=</span> <span class="n">p_psia</span> <span class="o">*</span> <span class="n">molar_mass_lbm</span> <span class="o">/</span> <span class="p">(</span><span class="n">z</span> <span class="o">*</span> <span class="n">R_FIELD</span> <span class="o">*</span> <span class="n">t_rankine</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">rho_lbm_per_ft3</span> <span class="o">/</span> <span class="n">GAL_PER_FT3</span></div>
+
+
+
+<div class="viewcode-block" id="methane_properties">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.methane_properties">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">methane_properties</span><span class="p">(</span><span class="n">p_psia</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">t_rankine</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Convenience: (Z, density_ppg) for pure methane at (P, T).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    (z, rho_ppg)</span>
+<span class="sd">        Z-factor [-] and gas density [ppg] for Tier-0 methane.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">z</span> <span class="o">=</span> <span class="n">hall_yarborough_z</span><span class="p">(</span><span class="n">p_psia</span><span class="p">,</span> <span class="n">t_rankine</span><span class="p">)</span>
+    <span class="n">rho</span> <span class="o">=</span> <span class="n">gas_density_ppg</span><span class="p">(</span><span class="n">p_psia</span><span class="p">,</span> <span class="n">t_rankine</span><span class="p">,</span> <span class="n">z</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">z</span><span class="p">,</span> <span class="n">rho</span></div>
+
+
+
+<div class="viewcode-block" id="sutton_pseudo_criticals">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.sutton_pseudo_criticals">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">sutton_pseudo_criticals</span><span class="p">(</span><span class="n">gas_gravity</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Natural-gas pseudo-criticals from gas gravity — Sutton (1985)::</span>
+
+<span class="sd">        T_pc = 169.2 + 349.5.g - 74.0.g^2   [degR]</span>
+<span class="sd">        P_pc = 756.8 - 131.0.g -  3.6.g^2   [psia]</span>
+
+<span class="sd">    An alternative to :func:`standing_pseudo_criticals` fitted to a wider gravity</span>
+<span class="sd">    range; preferred for heavier/associated gases (roughly ``g`` 0.57-1.68). Like</span>
+<span class="sd">    Standing&#39;s, it carries no sour-gas (H2S/CO2) correction -- pass explicit</span>
+<span class="sd">    pseudo-criticals (Wichert-Aziz corrected) for sour gases.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">gas_gravity</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span><span class="mf">169.2</span> <span class="o">+</span> <span class="mf">349.5</span> <span class="o">*</span> <span class="n">g</span> <span class="o">-</span> <span class="mf">74.0</span> <span class="o">*</span> <span class="n">g</span> <span class="o">*</span> <span class="n">g</span><span class="p">,</span>
+            <span class="mf">756.8</span> <span class="o">-</span> <span class="mf">131.0</span> <span class="o">*</span> <span class="n">g</span> <span class="o">-</span> <span class="mf">3.6</span> <span class="o">*</span> <span class="n">g</span> <span class="o">*</span> <span class="n">g</span><span class="p">)</span></div>
+
+
+
+<span class="n">_PC_CORRELATIONS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;standing&quot;</span><span class="p">:</span> <span class="n">standing_pseudo_criticals</span><span class="p">,</span>
+    <span class="s2">&quot;sutton&quot;</span><span class="p">:</span> <span class="n">sutton_pseudo_criticals</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<div class="viewcode-block" id="gas_z">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.gas_z">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">gas_z</span><span class="p">(</span>
+    <span class="n">p_psia</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">t_rankine</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">gas_gravity</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">composition</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">t_pc_rankine</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">p_pc_psia</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">method</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;auto&quot;</span><span class="p">,</span>
+    <span class="n">pc_correlation</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;standing&quot;</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Unified **classic** real-gas Z-factor — Hall-Yarborough or CoolProp EOS.</span>
+
+<span class="sd">    A single entry point that switches between the two classic/public backends:</span>
+
+<span class="sd">    * **Hall &amp; Yarborough** (fast correlation) for a hydrocarbon gas specified by</span>
+<span class="sd">      ``gas_gravity`` (or explicit ``t_pc_rankine``/``p_pc_psia``);</span>
+<span class="sd">    * **CoolProp** real-EOS (accurate) for a ``composition`` mole-fraction dict</span>
+<span class="sd">      (mixtures / non-hydrocarbons like CO2 / N2 / H2S).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    p_psia, t_rankine : float</span>
+<span class="sd">        Absolute pressure [psia] and temperature [degR].</span>
+<span class="sd">    gas_gravity : float, optional</span>
+<span class="sd">        Gas gravity relative to air; pseudo-criticals are derived via</span>
+<span class="sd">        ``pc_correlation``. Ignored if ``t_pc_rankine``/``p_pc_psia`` are given.</span>
+<span class="sd">    composition : dict, optional</span>
+<span class="sd">        Mole-fraction composition (e.g. ``{&quot;Methane&quot;: 0.9, &quot;CO2&quot;: 0.1}``) -&gt; the</span>
+<span class="sd">        CoolProp path.</span>
+<span class="sd">    t_pc_rankine, p_pc_psia : float, optional</span>
+<span class="sd">        Explicit pseudo-criticals for the Hall-Yarborough path (overrides</span>
+<span class="sd">        ``gas_gravity``). Default to Tier-0 methane if nothing is supplied.</span>
+<span class="sd">    method : {&quot;auto&quot;, &quot;hall_yarborough&quot;, &quot;coolprop&quot;}</span>
+<span class="sd">        ``&quot;auto&quot;`` picks CoolProp when a ``composition`` is given, else</span>
+<span class="sd">        Hall-Yarborough. An explicit choice forces the backend.</span>
+<span class="sd">    pc_correlation : {&quot;standing&quot;, &quot;sutton&quot;}</span>
+<span class="sd">        Gas-gravity -&gt; pseudo-critical correlation for the Hall-Yarborough path.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float</span>
+<span class="sd">        The real-gas Z-factor [-].</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    CoolProp is an optional extra. If the CoolProp path is requested (or auto-</span>
+<span class="sd">    selected) but CoolProp is not installed, this **falls back to Hall-Yarborough**</span>
+<span class="sd">    when a ``gas_gravity``/pseudo-criticals are available (so the correlation path</span>
+<span class="sd">    always works), and raises only if it has nothing to fall back on. This is the</span>
+<span class="sd">    classic form.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">method</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span> <span class="s2">&quot;hall_yarborough&quot;</span><span class="p">,</span> <span class="s2">&quot;coolprop&quot;</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unknown method: </span><span class="si">{</span><span class="n">method</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">pc_correlation</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_PC_CORRELATIONS</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unknown pc_correlation: </span><span class="si">{</span><span class="n">pc_correlation</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">resolved</span> <span class="o">=</span> <span class="n">method</span>
+    <span class="k">if</span> <span class="n">resolved</span> <span class="o">==</span> <span class="s2">&quot;auto&quot;</span><span class="p">:</span>
+        <span class="n">resolved</span> <span class="o">=</span> <span class="s2">&quot;coolprop&quot;</span> <span class="k">if</span> <span class="n">composition</span> <span class="k">else</span> <span class="s2">&quot;hall_yarborough&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_hy</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">t_pc_rankine</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">p_pc_psia</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">tpc</span><span class="p">,</span> <span class="n">ppc</span> <span class="o">=</span> <span class="n">t_pc_rankine</span><span class="p">,</span> <span class="n">p_pc_psia</span>
+        <span class="k">elif</span> <span class="n">gas_gravity</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">tpc</span><span class="p">,</span> <span class="n">ppc</span> <span class="o">=</span> <span class="n">_PC_CORRELATIONS</span><span class="p">[</span><span class="n">pc_correlation</span><span class="p">](</span><span class="n">gas_gravity</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">tpc</span><span class="p">,</span> <span class="n">ppc</span> <span class="o">=</span> <span class="n">METHANE_TPC_RANKINE</span><span class="p">,</span> <span class="n">METHANE_PPC_PSIA</span>
+        <span class="k">return</span> <span class="n">hall_yarborough_z</span><span class="p">(</span><span class="n">p_psia</span><span class="p">,</span> <span class="n">t_rankine</span><span class="p">,</span> <span class="n">tpc</span><span class="p">,</span> <span class="n">ppc</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">resolved</span> <span class="o">==</span> <span class="s2">&quot;hall_yarborough&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_hy</span><span class="p">()</span>
+
+    <span class="c1"># CoolProp path</span>
+    <span class="k">if</span> <span class="n">composition</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;method=&#39;coolprop&#39; requires a composition dict&quot;</span><span class="p">)</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.gas_z_coolprop</span><span class="w"> </span><span class="kn">import</span> <span class="n">fluid_z_density</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">z</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">fluid_z_density</span><span class="p">(</span><span class="n">composition</span><span class="p">,</span> <span class="n">p_psia</span><span class="p">,</span> <span class="n">t_rankine</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">z</span>
+    <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">gas_gravity</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="p">(</span>
+            <span class="n">t_pc_rankine</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">p_pc_psia</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="p">):</span>
+            <span class="k">return</span> <span class="n">_hy</span><span class="p">()</span>
+        <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+            <span class="s2">&quot;CoolProp is required for the composition path and is not installed; &quot;</span>
+            <span class="s2">&quot;install the optional extra, or pass gas_gravity/pseudo-criticals to &quot;</span>
+            <span class="s2">&quot;fall back to Hall-Yarborough&quot;</span>
+        <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

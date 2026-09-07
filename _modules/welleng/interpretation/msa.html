@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.interpretation.msa &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.interpretation.msa</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.interpretation.msa</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Multi-station analysis (MSA): estimate the tool&#39;s actual sensor errors.</span>
+
+<span class="sd">Given many survey stations, MSA estimates the constant per-axis sensor *bias*</span>
+<span class="sd">and *scale-factor* errors of a triad (magnetometer or accelerometer) from the</span>
+<span class="sd">redundancy that every station&#39;s measured total field must equal the reference</span>
+<span class="sd">(Ekseth et al., SPE-133417, multistation test). This is the inverse of the</span>
+<span class="sd">forward error model: instead of assuming the model&#39;s error magnitudes, it</span>
+<span class="sd">measures them -- so a survey&#39;s *actual* performance can be checked against the</span>
+<span class="sd">error model applied to it (its EOU is only valid if the actual errors are within</span>
+<span class="sd">the model).</span>
+
+<span class="sd">Closed form</span>
+<span class="sd">-----------</span>
+<span class="sd">The constraint ``|B_true| = B_ref`` with ``B_true = (B_meas - b) / (1 + s)``</span>
+<span class="sd">linearises (small errors) to a *linear* equation in the six unknowns</span>
+<span class="sd">``p = [bx, by, bz, sx, sy, sz]`` per station::</span>
+
+<span class="sd">    2 [Bx, By, Bz, Bx^2, By^2, Bz^2] . p = |B_meas|^2 - B_ref^2</span>
+
+<span class="sd">Stacking the stations gives ``A p = d`` solved in closed form by ordinary least</span>
+<span class="sd">squares, ``p = (A^T A)^-1 A^T d`` -- one matrix solve, no iteration. The</span>
+<span class="sd">estimate covariance ``(A^T A)^-1 A^T diag(sigma_d^2) A (A^T A)^-1`` is available</span>
+<span class="sd">analytically and yields the per-component *estimability* and the correlation</span>
+<span class="sd">matrix, which gate poorly-observed components.</span>
+
+<span class="sd">Estimability / the geometry gate</span>
+<span class="sd">--------------------------------</span>
+<span class="sd">MSA estimability is governed by the survey&#39;s *directional* (azimuth / toolface)</span>
+<span class="sd">diversity, not its inclination. In particular the *axial* sensor error is</span>
+<span class="sd">intrinsically weakly observed unless the well changes direction substantially;</span>
+<span class="sd">in the industry it is handled by a separate axial (drillstring) interference</span>
+<span class="sd">correction and in-field referencing. This module therefore returns the estimate</span>
+<span class="sd">*with* its analytical standard errors and a per-component ``estimable`` verdict,</span>
+<span class="sd">rather than a blanket, possibly-meaningless, error vector.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.qc</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeomagReference</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;MSAResult&quot;</span><span class="p">,</span> <span class="s2">&quot;estimate_sensor_errors&quot;</span><span class="p">,</span> <span class="s2">&quot;apply_sensor_errors&quot;</span><span class="p">]</span>
+
+<span class="n">_AXES</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;x&quot;</span><span class="p">,</span> <span class="s2">&quot;y&quot;</span><span class="p">,</span> <span class="s2">&quot;z&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="MSAResult">
+<a class="viewcode-back" href="../../../welleng.interpretation.html#welleng.interpretation.msa.MSAResult">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MSAResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Estimated tool sensor errors and their estimability.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    bias : ndarray, shape (3,)</span>
+<span class="sd">        Estimated per-axis bias (sensor units).</span>
+<span class="sd">    scale : ndarray, shape (3,)</span>
+<span class="sd">        Estimated per-axis fractional scale-factor error.</span>
+<span class="sd">    covariance : ndarray, shape (6, 6)</span>
+<span class="sd">        Estimate covariance for ``[bx, by, bz, sx, sy, sz]``.</span>
+<span class="sd">    std : ndarray, shape (6,)</span>
+<span class="sd">        Standard errors (sqrt of the covariance diagonal).</span>
+<span class="sd">    correlation : ndarray, shape (6, 6)</span>
+<span class="sd">        Correlation matrix of the estimate.</span>
+<span class="sd">    estimable : ndarray of bool, shape (6,)</span>
+<span class="sd">        Per-component verdict: False where the standard error exceeds the</span>
+<span class="sd">        estimability threshold (that component is not reliably observed by this</span>
+<span class="sd">        survey&#39;s geometry).</span>
+<span class="sd">    n_stations : int</span>
+<span class="sd">        Number of stations used.</span>
+<span class="sd">    condition_number : float</span>
+<span class="sd">        Condition number of ``A^T A`` (large =&gt; ill-conditioned geometry).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">bias</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">scale</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">covariance</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">std</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">correlation</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">estimable</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">n_stations</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">condition_number</span><span class="p">:</span> <span class="nb">float</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">axial_estimable</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Whether the axial (z) bias and scale are both reliably observed.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">estimable</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">estimable</span><span class="p">[</span><span class="mi">5</span><span class="p">])</span></div>
+
+
+
+<div class="viewcode-block" id="estimate_sensor_errors">
+<a class="viewcode-back" href="../../../welleng.interpretation.html#welleng.interpretation.msa.estimate_sensor_errors">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">estimate_sensor_errors</span><span class="p">(</span>
+    <span class="n">triad</span><span class="p">,</span>
+    <span class="n">ref</span><span class="p">:</span> <span class="n">GeomagReference</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">sensor</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;mag&quot;</span><span class="p">,</span>
+    <span class="n">noise</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">bias_estimability</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">500.0</span><span class="p">,</span>
+    <span class="n">scale_estimability</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
+    <span class="n">min_stations</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MSAResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Closed-form multi-station estimate of tool bias + scale errors.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    triad : array_like, shape (n, 3)</span>
+<span class="sd">        Per-station triad readings (magnetometer if ``sensor=&#39;mag&#39;``, else</span>
+<span class="sd">        accelerometer), same units as the matching reference total.</span>
+<span class="sd">    ref : GeomagReference</span>
+<span class="sd">        Reference field; ``ref.b_total`` (mag) or ``ref.g_total`` (accel) is the</span>
+<span class="sd">        target total.</span>
+<span class="sd">    sensor : {&#39;mag&#39;, &#39;accel&#39;}, default &#39;mag&#39;</span>
+<span class="sd">        Which triad is supplied (selects the reference total).</span>
+<span class="sd">    noise : float, optional</span>
+<span class="sd">        Per-axis measurement noise standard deviation (same units), used to</span>
+<span class="sd">        propagate the estimate covariance. If None, a unit noise is used so the</span>
+<span class="sd">        *relative* estimability and the correlation matrix are still meaningful</span>
+<span class="sd">        but the absolute standard errors are only proportional.</span>
+<span class="sd">    bias_estimability, scale_estimability : float</span>
+<span class="sd">        Standard-error thresholds above which a bias / scale component is judged</span>
+<span class="sd">        not estimable by this geometry.</span>
+<span class="sd">    min_stations : int, default 10</span>
+<span class="sd">        Minimum independent stations required (SPE-133417); fewer raises.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    MSAResult</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">sensor</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;mag&quot;</span><span class="p">,</span> <span class="s2">&quot;accel&quot;</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;sensor must be &#39;mag&#39; or &#39;accel&#39;, got </span><span class="si">{</span><span class="n">sensor</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">B</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_2d</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">triad</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">B</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">n</span> <span class="o">&lt;</span> <span class="n">min_stations</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;MSA needs at least </span><span class="si">{</span><span class="n">min_stations</span><span class="si">}</span><span class="s2"> independent stations, got </span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="n">ref_total</span> <span class="o">=</span> <span class="n">ref</span><span class="o">.</span><span class="n">b_total</span> <span class="k">if</span> <span class="n">sensor</span> <span class="o">==</span> <span class="s2">&quot;mag&quot;</span> <span class="k">else</span> <span class="n">ref</span><span class="o">.</span><span class="n">g_total</span>
+
+    <span class="c1"># linearised design matrix  A p = d</span>
+    <span class="n">A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
+    <span class="n">A</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">B</span>
+    <span class="n">A</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">6</span><span class="p">]</span> <span class="o">=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">B</span> <span class="o">*</span> <span class="n">B</span>
+    <span class="n">d</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">B</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">-</span> <span class="n">ref_total</span><span class="o">**</span><span class="mi">2</span>
+
+    <span class="n">AtA</span> <span class="o">=</span> <span class="n">A</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">A</span>
+    <span class="n">AtA_inv</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">AtA</span><span class="p">)</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">AtA_inv</span> <span class="o">@</span> <span class="p">(</span><span class="n">A</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">d</span><span class="p">)</span>
+
+    <span class="c1"># analytical estimate covariance via linearised noise propagation on d:</span>
+    <span class="c1">#   d_i = |B_i|^2 - ref^2  =&gt;  var(d_i) ~ (2 |B_i| sigma)^2   (dominant term)</span>
+    <span class="n">sigma</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="n">noise</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="n">noise</span><span class="p">)</span>
+    <span class="n">sig_d</span> <span class="o">=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">sigma</span>
+    <span class="n">cov</span> <span class="o">=</span> <span class="n">AtA_inv</span> <span class="o">@</span> <span class="p">(</span><span class="n">A</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="p">(</span><span class="n">sig_d</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">A</span><span class="p">))</span> <span class="o">@</span> <span class="n">AtA_inv</span>
+    <span class="n">std</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">cov</span><span class="p">),</span> <span class="mf">0.0</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+
+    <span class="n">denom</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">outer</span><span class="p">(</span><span class="n">std</span><span class="p">,</span> <span class="n">std</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">divide</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">):</span>
+        <span class="n">corr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">denom</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="n">cov</span> <span class="o">/</span> <span class="n">denom</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+
+    <span class="n">thresholds</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">bias_estimability</span><span class="p">]</span> <span class="o">*</span> <span class="mi">3</span> <span class="o">+</span> <span class="p">[</span><span class="n">scale_estimability</span><span class="p">]</span> <span class="o">*</span> <span class="mi">3</span><span class="p">)</span>
+    <span class="n">estimable</span> <span class="o">=</span> <span class="n">std</span> <span class="o">&lt;</span> <span class="n">thresholds</span>
+
+    <span class="k">return</span> <span class="n">MSAResult</span><span class="p">(</span>
+        <span class="n">bias</span><span class="o">=</span><span class="n">p</span><span class="p">[:</span><span class="mi">3</span><span class="p">],</span>
+        <span class="n">scale</span><span class="o">=</span><span class="n">p</span><span class="p">[</span><span class="mi">3</span><span class="p">:],</span>
+        <span class="n">covariance</span><span class="o">=</span><span class="n">cov</span><span class="p">,</span>
+        <span class="n">std</span><span class="o">=</span><span class="n">std</span><span class="p">,</span>
+        <span class="n">correlation</span><span class="o">=</span><span class="n">corr</span><span class="p">,</span>
+        <span class="n">estimable</span><span class="o">=</span><span class="n">estimable</span><span class="p">,</span>
+        <span class="n">n_stations</span><span class="o">=</span><span class="n">n</span><span class="p">,</span>
+        <span class="n">condition_number</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">cond</span><span class="p">(</span><span class="n">AtA</span><span class="p">)),</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="apply_sensor_errors">
+<a class="viewcode-back" href="../../../welleng.interpretation.html#welleng.interpretation.msa.apply_sensor_errors">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">apply_sensor_errors</span><span class="p">(</span><span class="n">triad</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">only_estimable</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Correct triad readings for the MSA-estimated bias and scale errors.</span>
+
+<span class="sd">    Closes the MSA loop: :func:`estimate_sensor_errors` measures the sensor</span>
+<span class="sd">    errors, this removes them, ``B_true = (B_meas - b) / (1 + s)`` (the model of</span>
+<span class="sd">    the closed form above), so the corrected triad can be re-run through</span>
+<span class="sd">    :func:`~welleng.interpretation.forward.sensor_to_survey` for a corrected</span>
+<span class="sd">    survey. The correction is opt-in — MSA is often used to *flag* out-of-model</span>
+<span class="sd">    tool performance, not to auto-correct raw sensors.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    triad : array_like, shape (n, 3)</span>
+<span class="sd">        Per-station triad readings (same sensor/units as passed to</span>
+<span class="sd">        :func:`estimate_sensor_errors`).</span>
+<span class="sd">    result : MSAResult</span>
+<span class="sd">        The estimate to apply.</span>
+<span class="sd">    only_estimable : bool, default False</span>
+<span class="sd">        If True, apply a component&#39;s bias/scale only where</span>
+<span class="sd">        ``result.estimable`` is set (poorly-observed components — typically the</span>
+<span class="sd">        axial term — are left uncorrected rather than corrected by a meaningless</span>
+<span class="sd">        estimate). If False, apply all six.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    numpy.ndarray</span>
+<span class="sd">        (n, 3) corrected triad.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">B</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_2d</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">triad</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
+    <span class="n">bias</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">bias</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">scale</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">scale</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">only_estimable</span><span class="p">:</span>
+        <span class="n">est</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">estimable</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+        <span class="n">bias</span><span class="p">[</span><span class="o">~</span><span class="n">est</span><span class="p">[:</span><span class="mi">3</span><span class="p">]]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">scale</span><span class="p">[</span><span class="o">~</span><span class="n">est</span><span class="p">[</span><span class="mi">3</span><span class="p">:]]</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">B</span> <span class="o">-</span> <span class="n">bias</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="n">scale</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

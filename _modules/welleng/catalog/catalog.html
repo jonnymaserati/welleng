@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.catalog.catalog &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.catalog.catalog</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.catalog.catalog</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;API 5CT casing + tubing dimensional catalogue: loader + resolver.</span>
+
+<span class="sd">The JSON data files (``data/casing.json``, ``data/tubing.json``) carry the</span>
+<span class="sd">as-published imperial dimensional facts (cited to API Spec 5CT) in the same</span>
+<span class="sd">``_meta`` + ``grades`` + rows layout as the companion drilling-mechanics</span>
+<span class="sd">catalogues (``drillpipe.json`` et al.). This module parses them, indexes the</span>
+<span class="sd">rows by ``(od_in, nominal_weight_ppf)`` and resolves a tubular&#39;s derived</span>
+<span class="sd">dimensions (ID, wall, drift) plus - when a grade is given - its minimum yield.</span>
+
+<span class="sd">SI conversion is applied per each file&#39;s ``_meta.to_SI`` factors: every</span>
+<span class="sd">resolved spec carries both the as-published imperial values *and* their SI</span>
+<span class="sd">counterparts (``*_m`` / ``*_pa``), so imperial-in-inches consumers (the</span>
+<span class="sd">``welleng.schematic`` models) and SI-pure consumers are both served.</span>
+
+<span class="sd">OSDU alignment (``TubularComponent.1.0.0``)::</span>
+
+<span class="sd">    od_in              &lt;-&gt; MaximumOuterDiameter / TubularComponentNominalSize</span>
+<span class="sd">    id_in              &lt;-&gt; InnerDiameter</span>
+<span class="sd">    drift_in           &lt;-&gt; DriftDiameter</span>
+<span class="sd">    nominal_weight_ppf &lt;-&gt; TubularComponentNominalWeight</span>
+<span class="sd">    grade              &lt;-&gt; TubularComponentTubingGradeID</span>
+<span class="sd">    yield_psi          &lt;-&gt; TubularComponentTubingGradeStrength</span>
+<span class="sd">    (type)             &lt;-&gt; TubularComponentTypeID</span>
+
+<span class="sd">Wall thickness is derived ((OD-ID)/2) and is not stored in OSDU.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">asdict</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">lru_cache</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="n">_DATA_DIR</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">with_name</span><span class="p">(</span><span class="s2">&quot;data&quot;</span><span class="p">)</span>
+
+<span class="c1"># --- API TR 5C3 (7th ed., 2018) performance-property constants -------------</span>
+<span class="c1"># Wall-tolerance factor for the historical API design equations: the -12.5%</span>
+<span class="c1"># manufacturing tolerance on wall thickness gives k_wall = 0.875</span>
+<span class="c1"># (API TR 5C3, 6.6.2.2 Eq. 10 / 8; = 87.5% minimum wall).</span>
+<span class="n">KWALL</span> <span class="o">=</span> <span class="mf">0.875</span>
+<span class="n">MIN_WALL_PCT</span> <span class="o">=</span> <span class="mf">87.5</span>
+
+<span class="c1"># Empirical collapse-equation factors (Ac, Bc, Cc, Fc, Gc) per grade, read</span>
+<span class="c1"># from API TR 5C3 Table 6 (plastic) + Table 7 (transition). Grades sharing a</span>
+<span class="c1"># specified minimum yield share a factor row (e.g. L80/N80 -&gt; &quot;L-N-80&quot;).</span>
+<span class="c1"># Cc is in psi. Only the grades carried by the catalogue are tabulated here;</span>
+<span class="c1"># an absent grade yields a None collapse rating (flagged, never guessed).</span>
+<span class="n">_COLLAPSE_FACTORS</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="c1"># grade: (Ac, Bc, Cc, Fc, Gc)</span>
+    <span class="s2">&quot;J55&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">2.991</span><span class="p">,</span> <span class="mf">0.0541</span><span class="p">,</span> <span class="mf">1206.0</span><span class="p">,</span> <span class="mf">1.989</span><span class="p">,</span> <span class="mf">0.0360</span><span class="p">),</span>
+    <span class="s2">&quot;K55&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">2.991</span><span class="p">,</span> <span class="mf">0.0541</span><span class="p">,</span> <span class="mf">1206.0</span><span class="p">,</span> <span class="mf">1.989</span><span class="p">,</span> <span class="mf">0.0360</span><span class="p">),</span>
+    <span class="s2">&quot;L80&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">3.071</span><span class="p">,</span> <span class="mf">0.0667</span><span class="p">,</span> <span class="mf">1955.0</span><span class="p">,</span> <span class="mf">1.998</span><span class="p">,</span> <span class="mf">0.0434</span><span class="p">),</span>
+    <span class="s2">&quot;N80&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">3.071</span><span class="p">,</span> <span class="mf">0.0667</span><span class="p">,</span> <span class="mf">1955.0</span><span class="p">,</span> <span class="mf">1.998</span><span class="p">,</span> <span class="mf">0.0434</span><span class="p">),</span>
+    <span class="s2">&quot;P110&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">3.181</span><span class="p">,</span> <span class="mf">0.0819</span><span class="p">,</span> <span class="mf">2852.0</span><span class="p">,</span> <span class="mf">2.066</span><span class="p">,</span> <span class="mf">0.0532</span><span class="p">),</span>
+<span class="p">}</span>
+
+
+<div class="viewcode-block" id="plain_end_weight_ppf">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.plain_end_weight_ppf">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">plain_end_weight_ppf</span><span class="p">(</span><span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">wall_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Plain-end nominal mass (lb/ft) via the API formula ``10.69*(D-t)*t``.</span>
+
+<span class="sd">    Historical API plain-end mass equation (API Spec 5CT / TR 5C3): geometry</span>
+<span class="sd">    only, grade-independent. Rounded to 2 dp.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">round</span><span class="p">(</span><span class="mf">10.69</span> <span class="o">*</span> <span class="p">(</span><span class="n">od_in</span> <span class="o">-</span> <span class="n">wall_in</span><span class="p">)</span> <span class="o">*</span> <span class="n">wall_in</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="pipe_body_yield_klb">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.pipe_body_yield_klb">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">pipe_body_yield_klb</span><span class="p">(</span><span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">id_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">min_yield_psi</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Pipe-body yield strength (klb), API TR 5C3 Eq. (11): ``fymn * Ap``.</span>
+
+<span class="sd">    ``Ap = (pi/4)(D^2 - d^2)`` is the pipe cross-sectional area. Rounded to</span>
+<span class="sd">    the nearest klb (API tabulation convention).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">area</span> <span class="o">=</span> <span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mf">4.0</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">od_in</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">-</span> <span class="n">id_in</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">round</span><span class="p">(</span><span class="n">min_yield_psi</span> <span class="o">*</span> <span class="n">area</span> <span class="o">/</span> <span class="mf">1000.0</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="internal_yield_pressure_psi">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.internal_yield_pressure_psi">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">internal_yield_pressure_psi</span><span class="p">(</span>
+    <span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">wall_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">min_yield_psi</span><span class="p">:</span> <span class="nb">float</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Minimum internal yield pressure (psi), API TR 5C3 Eq. (10) - Barlow.</span>
+
+<span class="sd">    ``piYAPI = 2*fymn*(k_wall*t)/D`` with ``k_wall = 0.875``. Rounded to the</span>
+<span class="sd">    nearest 10 psi (API tabulation convention).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">min_yield_psi</span> <span class="o">*</span> <span class="p">(</span><span class="n">KWALL</span> <span class="o">*</span> <span class="n">wall_in</span><span class="p">)</span> <span class="o">/</span> <span class="n">od_in</span>
+    <span class="k">return</span> <span class="nb">round</span><span class="p">(</span><span class="n">p</span> <span class="o">/</span> <span class="mf">10.0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">10.0</span></div>
+
+
+
+<div class="viewcode-block" id="collapse_pressure_psi">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.collapse_pressure_psi">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">collapse_pressure_psi</span><span class="p">(</span>
+    <span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">wall_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">min_yield_psi</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">grade</span><span class="p">:</span> <span class="nb">str</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Collapse resistance (psi), API TR 5C3 8.4 four-regime design equations.</span>
+
+<span class="sd">    Selects yield / plastic / transition / elastic regime by the D/t ratio</span>
+<span class="sd">    against the boundaries (D/t)yp Eq.(36), (D/t)pt Eq.(38), (D/t)te Eq.(40),</span>
+<span class="sd">    then evaluates Eq.(35)/(37)/(39)/(41). Returns ``None`` (flagged, not</span>
+<span class="sd">    guessed) if the grade&#39;s empirical factors are not tabulated. Rounded to</span>
+<span class="sd">    the nearest 10 psi.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">factors</span> <span class="o">=</span> <span class="n">_COLLAPSE_FACTORS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">grade</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">factors</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">ac</span><span class="p">,</span> <span class="n">bc</span><span class="p">,</span> <span class="n">cc</span><span class="p">,</span> <span class="n">fc</span><span class="p">,</span> <span class="n">gc</span> <span class="o">=</span> <span class="n">factors</span>
+    <span class="n">fy</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">min_yield_psi</span><span class="p">)</span>
+    <span class="n">dt</span> <span class="o">=</span> <span class="n">od_in</span> <span class="o">/</span> <span class="n">wall_in</span>
+    <span class="c1"># regime boundaries (Eqs 36, 38, 40)</span>
+    <span class="n">dt_yp</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">((</span><span class="n">ac</span> <span class="o">-</span> <span class="mf">2.0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="mf">8.0</span> <span class="o">*</span> <span class="p">(</span><span class="n">bc</span> <span class="o">+</span> <span class="n">cc</span> <span class="o">/</span> <span class="n">fy</span><span class="p">))</span> <span class="o">+</span> <span class="p">(</span><span class="n">ac</span> <span class="o">-</span> <span class="mf">2.0</span><span class="p">)</span>
+    <span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="p">(</span><span class="n">bc</span> <span class="o">+</span> <span class="n">cc</span> <span class="o">/</span> <span class="n">fy</span><span class="p">))</span>
+    <span class="n">dt_pt</span> <span class="o">=</span> <span class="p">(</span><span class="n">fy</span> <span class="o">*</span> <span class="p">(</span><span class="n">ac</span> <span class="o">-</span> <span class="n">fc</span><span class="p">))</span> <span class="o">/</span> <span class="p">(</span><span class="n">cc</span> <span class="o">+</span> <span class="n">fy</span> <span class="o">*</span> <span class="p">(</span><span class="n">bc</span> <span class="o">-</span> <span class="n">gc</span><span class="p">))</span>
+    <span class="n">dt_te</span> <span class="o">=</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">+</span> <span class="n">bc</span> <span class="o">/</span> <span class="n">ac</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mf">3.0</span> <span class="o">*</span> <span class="p">(</span><span class="n">bc</span> <span class="o">/</span> <span class="n">ac</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">dt</span> <span class="o">&lt;=</span> <span class="n">dt_yp</span><span class="p">:</span>  <span class="c1"># yield-strength collapse, Eq. (35)</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">fy</span> <span class="o">*</span> <span class="p">(</span><span class="n">dt</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">dt</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">dt</span> <span class="o">&lt;=</span> <span class="n">dt_pt</span><span class="p">:</span>  <span class="c1"># plastic collapse, Eq. (37)</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">fy</span> <span class="o">*</span> <span class="p">(</span><span class="n">ac</span> <span class="o">/</span> <span class="n">dt</span> <span class="o">-</span> <span class="n">bc</span><span class="p">)</span> <span class="o">-</span> <span class="n">cc</span>
+    <span class="k">elif</span> <span class="n">dt</span> <span class="o">&lt;=</span> <span class="n">dt_te</span><span class="p">:</span>  <span class="c1"># transition collapse, Eq. (39)</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">fy</span> <span class="o">*</span> <span class="p">(</span><span class="n">fc</span> <span class="o">/</span> <span class="n">dt</span> <span class="o">-</span> <span class="n">gc</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>  <span class="c1"># elastic collapse, Eq. (41)</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="mf">46.95e6</span> <span class="o">/</span> <span class="p">(</span><span class="n">dt</span> <span class="o">*</span> <span class="p">(</span><span class="n">dt</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">round</span><span class="p">(</span><span class="n">p</span> <span class="o">/</span> <span class="mf">10.0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">10.0</span></div>
+
+
+<span class="c1"># OSDU TubularComponent.1.0.0 alias map (welleng field -&gt; OSDU property).</span>
+<span class="n">OSDU_ALIASES</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;od_in&quot;</span><span class="p">:</span> <span class="s2">&quot;MaximumOuterDiameter&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;id_in&quot;</span><span class="p">:</span> <span class="s2">&quot;InnerDiameter&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;drift_in&quot;</span><span class="p">:</span> <span class="s2">&quot;DriftDiameter&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;nominal_weight_ppf&quot;</span><span class="p">:</span> <span class="s2">&quot;TubularComponentNominalWeight&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;grade&quot;</span><span class="p">:</span> <span class="s2">&quot;TubularComponentTubingGradeID&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;yield_psi&quot;</span><span class="p">:</span> <span class="s2">&quot;TubularComponentTubingGradeStrength&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;TubularComponentTypeID&quot;</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="c1"># The row-array key inside each JSON document.</span>
+<span class="n">_ROW_KEY</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;casing&quot;</span><span class="p">:</span> <span class="s2">&quot;casing&quot;</span><span class="p">,</span> <span class="s2">&quot;tubing&quot;</span><span class="p">:</span> <span class="s2">&quot;tubing&quot;</span><span class="p">}</span>
+
+
+<div class="viewcode-block" id="CatalogError">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.CatalogError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CatalogError</span><span class="p">(</span><span class="ne">KeyError</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Raised when a requested tubular is not in the catalogue.&quot;&quot;&quot;</span></div>
+
+
+
+<div class="viewcode-block" id="TubularSpec">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.TubularSpec">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">TubularSpec</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A resolved tubular: as-published imperial values + SI counterparts.</span>
+
+<span class="sd">    Imperial fields (``*_in``, ``yield_psi``) are the API 5CT facts; the SI</span>
+<span class="sd">    fields (``*_m``, ``yield_pa``) are converted via the file&#39;s ``to_SI``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">kind</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">nominal_weight_ppf</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">wall_in</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">id_in</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">drift_in</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">grade</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">yield_psi</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># --- body performance (API TR 5C3): geometry-only + grade-dependent ---</span>
+    <span class="n">plain_end_weight_ppf</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">min_wall_pct</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">MIN_WALL_PCT</span>
+    <span class="n">max_yield_psi</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">min_uts_psi</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">pipe_body_yield_klb</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">internal_yield_pressure_psi</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">collapse_pressure_psi</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># --- SI ---</span>
+    <span class="n">od_m</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">wall_m</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">id_m</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">drift_m</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">yield_pa</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="TubularSpec.as_dict">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.TubularSpec.as_dict">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">as_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">asdict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Catalog">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.Catalog">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Catalog</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A loaded, indexed dimensional catalogue for one ``kind``.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="Catalog.__init__">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.Catalog.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">kind</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">doc</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">kind</span> <span class="o">=</span> <span class="n">kind</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_meta</span> <span class="o">=</span> <span class="n">doc</span><span class="p">[</span><span class="s2">&quot;_meta&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_to_si</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_meta</span><span class="p">[</span><span class="s2">&quot;to_SI&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">grades</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;grades&quot;</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="n">doc</span><span class="p">[</span><span class="n">_ROW_KEY</span><span class="p">[</span><span class="n">kind</span><span class="p">]]</span>
+        <span class="c1"># index by (od, weight) rounded to avoid float-key mismatch.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_by_key</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_by_key</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_key</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;od_in&quot;</span><span class="p">],</span> <span class="n">row</span><span class="p">[</span><span class="s2">&quot;nominal_weight_ppf&quot;</span><span class="p">])]</span> <span class="o">=</span> <span class="n">row</span></div>
+
+
+    <span class="c1"># -- construction -------------------------------------------------------</span>
+<div class="viewcode-block" id="Catalog.load">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.Catalog.load">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">kind</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Catalog&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">kind</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_ROW_KEY</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;unknown kind </span><span class="si">{</span><span class="n">kind</span><span class="si">!r}</span><span class="s2">; expected one of </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">_ROW_KEY</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">_DATA_DIR</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">kind</span><span class="si">}</span><span class="s2">.json&quot;</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">read_text</span><span class="p">())</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">kind</span><span class="p">,</span> <span class="n">doc</span><span class="p">)</span></div>
+
+
+    <span class="c1"># -- helpers ------------------------------------------------------------</span>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_key</span><span class="p">(</span><span class="n">od</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">weight</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">od</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">weight</span><span class="p">),</span> <span class="mi">2</span><span class="p">))</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_grade_entry</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">grade</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">grades</span><span class="p">[</span><span class="n">grade</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">CatalogError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;unknown grade </span><span class="si">{</span><span class="n">grade</span><span class="si">!r}</span><span class="s2"> for </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">kind</span><span class="si">}</span><span class="s2">; &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;available grades: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">grades</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_suggest</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">od</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">weight</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">same_od</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+            <span class="n">w</span> <span class="k">for</span> <span class="p">(</span><span class="n">o</span><span class="p">,</span> <span class="n">w</span><span class="p">)</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_by_key</span> <span class="k">if</span> <span class="n">o</span> <span class="o">==</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">od</span><span class="p">),</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">same_od</span><span class="p">:</span>
+            <span class="n">nearest</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">same_od</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">w</span><span class="p">:</span> <span class="nb">abs</span><span class="p">(</span><span class="n">w</span> <span class="o">-</span> <span class="n">weight</span><span class="p">))</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;no </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">kind</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">od</span><span class="si">}</span><span class="s2"> in x </span><span class="si">{</span><span class="n">weight</span><span class="si">}</span><span class="s2"> lb/ft; available weights for &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;OD </span><span class="si">{</span><span class="n">od</span><span class="si">}</span><span class="s2"> in: </span><span class="si">{</span><span class="n">same_od</span><span class="si">}</span><span class="s2"> (nearest: </span><span class="si">{</span><span class="n">nearest</span><span class="si">}</span><span class="s2"> lb/ft)&quot;</span>
+            <span class="p">)</span>
+        <span class="n">ods</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">({</span><span class="n">o</span> <span class="k">for</span> <span class="p">(</span><span class="n">o</span><span class="p">,</span> <span class="n">_</span><span class="p">)</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_by_key</span><span class="p">})</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;no </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">kind</span><span class="si">}</span><span class="s2"> with OD </span><span class="si">{</span><span class="n">od</span><span class="si">}</span><span class="s2"> in; available ODs: </span><span class="si">{</span><span class="n">ods</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+
+    <span class="c1"># -- resolution ---------------------------------------------------------</span>
+<div class="viewcode-block" id="Catalog.resolve">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.Catalog.resolve">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">resolve</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">nominal_weight_ppf</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">grade</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TubularSpec</span><span class="p">:</span>
+        <span class="n">row</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_by_key</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_key</span><span class="p">(</span><span class="n">od_in</span><span class="p">,</span> <span class="n">nominal_weight_ppf</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">row</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">CatalogError</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_suggest</span><span class="p">(</span><span class="n">od_in</span><span class="p">,</span> <span class="n">nominal_weight_ppf</span><span class="p">))</span>
+
+        <span class="n">in_to_m</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_to_si</span><span class="p">[</span><span class="s2">&quot;in_to_m&quot;</span><span class="p">]</span>
+        <span class="n">psi_to_pa</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_to_si</span><span class="p">[</span><span class="s2">&quot;psi_to_pa&quot;</span><span class="p">]</span>
+
+        <span class="n">od</span><span class="p">,</span> <span class="n">wall</span><span class="p">,</span> <span class="n">id_</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="s2">&quot;od_in&quot;</span><span class="p">],</span> <span class="n">row</span><span class="p">[</span><span class="s2">&quot;wall_in&quot;</span><span class="p">],</span> <span class="n">row</span><span class="p">[</span><span class="s2">&quot;id_in&quot;</span><span class="p">]</span>
+
+        <span class="c1"># geometry-only body property (grade-independent).</span>
+        <span class="n">pe_weight</span> <span class="o">=</span> <span class="n">plain_end_weight_ppf</span><span class="p">(</span><span class="n">od</span><span class="p">,</span> <span class="n">wall</span><span class="p">)</span>
+
+        <span class="c1"># grade-dependent tensile + performance (None until a grade is given).</span>
+        <span class="n">yield_psi</span> <span class="o">=</span> <span class="n">max_yield</span> <span class="o">=</span> <span class="n">min_uts</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">body_yield</span> <span class="o">=</span> <span class="n">internal_yield</span> <span class="o">=</span> <span class="n">collapse</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">grade</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">entry</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_grade_entry</span><span class="p">(</span><span class="n">grade</span><span class="p">)</span>
+            <span class="n">yield_psi</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">entry</span><span class="p">[</span><span class="s2">&quot;min_yield_psi&quot;</span><span class="p">])</span>
+            <span class="n">max_yield</span> <span class="o">=</span> <span class="n">entry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_yield_psi&quot;</span><span class="p">)</span>
+            <span class="n">min_uts</span> <span class="o">=</span> <span class="n">entry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;min_uts_psi&quot;</span><span class="p">)</span>
+            <span class="n">body_yield</span> <span class="o">=</span> <span class="n">pipe_body_yield_klb</span><span class="p">(</span><span class="n">od</span><span class="p">,</span> <span class="n">id_</span><span class="p">,</span> <span class="n">yield_psi</span><span class="p">)</span>
+            <span class="n">internal_yield</span> <span class="o">=</span> <span class="n">internal_yield_pressure_psi</span><span class="p">(</span><span class="n">od</span><span class="p">,</span> <span class="n">wall</span><span class="p">,</span> <span class="n">yield_psi</span><span class="p">)</span>
+            <span class="n">collapse</span> <span class="o">=</span> <span class="n">collapse_pressure_psi</span><span class="p">(</span><span class="n">od</span><span class="p">,</span> <span class="n">wall</span><span class="p">,</span> <span class="n">yield_psi</span><span class="p">,</span> <span class="n">grade</span><span class="p">)</span>
+        <span class="n">yield_pa</span> <span class="o">=</span> <span class="n">yield_psi</span> <span class="o">*</span> <span class="n">psi_to_pa</span> <span class="k">if</span> <span class="n">yield_psi</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+
+        <span class="k">return</span> <span class="n">TubularSpec</span><span class="p">(</span>
+            <span class="n">kind</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">kind</span><span class="p">,</span>
+            <span class="n">od_in</span><span class="o">=</span><span class="n">od</span><span class="p">,</span>
+            <span class="n">nominal_weight_ppf</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;nominal_weight_ppf&quot;</span><span class="p">],</span>
+            <span class="n">wall_in</span><span class="o">=</span><span class="n">wall</span><span class="p">,</span>
+            <span class="n">id_in</span><span class="o">=</span><span class="n">id_</span><span class="p">,</span>
+            <span class="n">drift_in</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;drift_in&quot;</span><span class="p">],</span>
+            <span class="n">grade</span><span class="o">=</span><span class="n">grade</span><span class="p">,</span>
+            <span class="n">yield_psi</span><span class="o">=</span><span class="n">yield_psi</span><span class="p">,</span>
+            <span class="n">plain_end_weight_ppf</span><span class="o">=</span><span class="n">pe_weight</span><span class="p">,</span>
+            <span class="n">min_wall_pct</span><span class="o">=</span><span class="n">MIN_WALL_PCT</span><span class="p">,</span>
+            <span class="n">max_yield_psi</span><span class="o">=</span><span class="n">max_yield</span><span class="p">,</span>
+            <span class="n">min_uts_psi</span><span class="o">=</span><span class="n">min_uts</span><span class="p">,</span>
+            <span class="n">pipe_body_yield_klb</span><span class="o">=</span><span class="n">body_yield</span><span class="p">,</span>
+            <span class="n">internal_yield_pressure_psi</span><span class="o">=</span><span class="n">internal_yield</span><span class="p">,</span>
+            <span class="n">collapse_pressure_psi</span><span class="o">=</span><span class="n">collapse</span><span class="p">,</span>
+            <span class="n">od_m</span><span class="o">=</span><span class="n">od</span> <span class="o">*</span> <span class="n">in_to_m</span><span class="p">,</span>
+            <span class="n">wall_m</span><span class="o">=</span><span class="n">wall</span> <span class="o">*</span> <span class="n">in_to_m</span><span class="p">,</span>
+            <span class="n">id_m</span><span class="o">=</span><span class="n">id_</span> <span class="o">*</span> <span class="n">in_to_m</span><span class="p">,</span>
+            <span class="n">drift_m</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;drift_in&quot;</span><span class="p">]</span> <span class="o">*</span> <span class="n">in_to_m</span><span class="p">,</span>
+            <span class="n">yield_pa</span><span class="o">=</span><span class="n">yield_pa</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Catalog.list_sizes">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.Catalog.list_sizes">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">list_sizes</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sorted ``(od_in, nominal_weight_ppf)`` pairs available.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_by_key</span><span class="p">)</span></div>
+</div>
+
+
+
+<span class="nd">@lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_catalog</span><span class="p">(</span><span class="n">kind</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Catalog</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">Catalog</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">kind</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="resolve">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.resolve">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve</span><span class="p">(</span>
+    <span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">nominal_weight_ppf</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">grade</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">kind</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;casing&quot;</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TubularSpec</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve a tubular&#39;s dimensions from (OD, weight[, grade]).</span>
+
+<span class="sd">    Returns a :class:`TubularSpec` with ``id_in``, ``wall_in``, ``drift_in``</span>
+<span class="sd">    (imperial + SI) and, when ``grade`` is given, ``yield_psi`` / ``yield_pa``.</span>
+<span class="sd">    Raises :class:`CatalogError` with a nearest-weight suggestion on no match.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_catalog</span><span class="p">(</span><span class="n">kind</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span><span class="n">od_in</span><span class="p">,</span> <span class="n">nominal_weight_ppf</span><span class="p">,</span> <span class="n">grade</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="list_sizes">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.list_sizes">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">list_sizes</span><span class="p">(</span><span class="n">kind</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;casing&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Available ``(od_in, nominal_weight_ppf)`` pairs for ``kind``.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_catalog</span><span class="p">(</span><span class="n">kind</span><span class="p">)</span><span class="o">.</span><span class="n">list_sizes</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="grades">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.grades">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">grades</span><span class="p">(</span><span class="n">kind</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;casing&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Grade -&gt; ``{&#39;min_yield_psi&#39;: ...}`` table for ``kind``.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span><span class="n">_catalog</span><span class="p">(</span><span class="n">kind</span><span class="p">)</span><span class="o">.</span><span class="n">grades</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># ===========================================================================</span>
+<span class="c1"># Couplings / connections (API Spec 5CT Tables E.27-E.30)</span>
+<span class="c1"># ===========================================================================</span>
+
+<span class="c1"># Connection -&gt; catalogue kind (casing round/buttress vs tubing upsets).</span>
+<span class="n">_CONNECTION_KIND</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;STC&quot;</span><span class="p">:</span> <span class="s2">&quot;casing&quot;</span><span class="p">,</span> <span class="s2">&quot;LTC&quot;</span><span class="p">:</span> <span class="s2">&quot;casing&quot;</span><span class="p">,</span> <span class="s2">&quot;BTC&quot;</span><span class="p">:</span> <span class="s2">&quot;casing&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;NUE&quot;</span><span class="p">:</span> <span class="s2">&quot;tubing&quot;</span><span class="p">,</span> <span class="s2">&quot;EUE&quot;</span><span class="p">:</span> <span class="s2">&quot;tubing&quot;</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<div class="viewcode-block" id="CouplingSpec">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.CouplingSpec">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">CouplingSpec</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A resolved API coupling: regular OD (W), special-clearance OD (Wc),</span>
+<span class="sd">    and minimum coupling length (NL), imperial + SI (API Spec 5CT).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">connection</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">kind</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">coupling_od_in</span><span class="p">:</span> <span class="nb">float</span>                         <span class="c1"># W (regular)</span>
+    <span class="n">coupling_length_in</span><span class="p">:</span> <span class="nb">float</span>                     <span class="c1"># NL (minimum)</span>
+    <span class="n">special_clearance_od_in</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># Wc (if API-tabulated)</span>
+    <span class="c1"># --- SI ---</span>
+    <span class="n">coupling_od_m</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">coupling_length_m</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">special_clearance_od_m</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="CouplingSpec.as_dict">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.CouplingSpec.as_dict">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">as_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">asdict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="CouplingCatalog">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.CouplingCatalog">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CouplingCatalog</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Loaded, indexed API 5CT coupling catalogue keyed by ``(od, connection)``.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="CouplingCatalog.__init__">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.CouplingCatalog.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_meta</span> <span class="o">=</span> <span class="n">doc</span><span class="p">[</span><span class="s2">&quot;_meta&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_to_si</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_meta</span><span class="p">[</span><span class="s2">&quot;to_SI&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_by_key</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">doc</span><span class="p">[</span><span class="s2">&quot;couplings&quot;</span><span class="p">]:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_by_key</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_key</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;od_in&quot;</span><span class="p">],</span> <span class="n">row</span><span class="p">[</span><span class="s2">&quot;connection&quot;</span><span class="p">])]</span> <span class="o">=</span> <span class="n">row</span></div>
+
+
+<div class="viewcode-block" id="CouplingCatalog.load">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.CouplingCatalog.load">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;CouplingCatalog&quot;</span><span class="p">:</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">((</span><span class="n">_DATA_DIR</span> <span class="o">/</span> <span class="s2">&quot;couplings.json&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">read_text</span><span class="p">())</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_key</span><span class="p">(</span><span class="n">od</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">od</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span> <span class="nb">str</span><span class="p">(</span><span class="n">connection</span><span class="p">)</span><span class="o">.</span><span class="n">upper</span><span class="p">())</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_suggest</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">od</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">connection</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">connection</span><span class="p">)</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+        <span class="n">conns</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">({</span><span class="n">c</span> <span class="k">for</span> <span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">c</span><span class="p">)</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_by_key</span><span class="p">})</span>
+        <span class="k">if</span> <span class="n">connection</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">conns</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;unknown connection </span><span class="si">{</span><span class="n">connection</span><span class="si">!r}</span><span class="s2">; available connections: &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">conns</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="n">ods</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">({</span><span class="n">o</span> <span class="k">for</span> <span class="p">(</span><span class="n">o</span><span class="p">,</span> <span class="n">c</span><span class="p">)</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_by_key</span> <span class="k">if</span> <span class="n">c</span> <span class="o">==</span> <span class="n">connection</span><span class="p">})</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;no </span><span class="si">{</span><span class="n">connection</span><span class="si">}</span><span class="s2"> coupling for OD </span><span class="si">{</span><span class="n">od</span><span class="si">}</span><span class="s2"> in; available ODs for &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">connection</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">ods</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="CouplingCatalog.resolve">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.CouplingCatalog.resolve">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">resolve</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CouplingSpec</span><span class="p">:</span>
+        <span class="n">row</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_by_key</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_key</span><span class="p">(</span><span class="n">od_in</span><span class="p">,</span> <span class="n">connection</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">row</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">CatalogError</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_suggest</span><span class="p">(</span><span class="n">od_in</span><span class="p">,</span> <span class="n">connection</span><span class="p">))</span>
+        <span class="n">in_to_m</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_to_si</span><span class="p">[</span><span class="s2">&quot;in_to_m&quot;</span><span class="p">]</span>
+        <span class="n">scc</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;special_clearance_od_in&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">CouplingSpec</span><span class="p">(</span>
+            <span class="n">od_in</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;od_in&quot;</span><span class="p">],</span>
+            <span class="n">connection</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;connection&quot;</span><span class="p">],</span>
+            <span class="n">kind</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;kind&quot;</span><span class="p">],</span>
+            <span class="n">coupling_od_in</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;coupling_od_in&quot;</span><span class="p">],</span>
+            <span class="n">coupling_length_in</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;coupling_length_in&quot;</span><span class="p">],</span>
+            <span class="n">special_clearance_od_in</span><span class="o">=</span><span class="n">scc</span><span class="p">,</span>
+            <span class="n">coupling_od_m</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;coupling_od_in&quot;</span><span class="p">]</span> <span class="o">*</span> <span class="n">in_to_m</span><span class="p">,</span>
+            <span class="n">coupling_length_m</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;coupling_length_in&quot;</span><span class="p">]</span> <span class="o">*</span> <span class="n">in_to_m</span><span class="p">,</span>
+            <span class="n">special_clearance_od_m</span><span class="o">=</span><span class="p">(</span><span class="n">scc</span> <span class="o">*</span> <span class="n">in_to_m</span><span class="p">)</span> <span class="k">if</span> <span class="n">scc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CouplingCatalog.connections">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.CouplingCatalog.connections">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">connections</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="nb">sorted</span><span class="p">({</span><span class="n">c</span> <span class="k">for</span> <span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">c</span><span class="p">)</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_by_key</span><span class="p">})</span></div>
+</div>
+
+
+
+<span class="nd">@lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_coupling_catalog</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">CouplingCatalog</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">CouplingCatalog</span><span class="o">.</span><span class="n">load</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="resolve_coupling">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.resolve_coupling">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_coupling</span><span class="p">(</span>
+    <span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">kind</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;casing&quot;</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CouplingSpec</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve API 5CT coupling dimensions from ``(od_in, connection)``.</span>
+
+<span class="sd">    ``connection`` is one of STC/LTC/BTC (casing) or NUE/EUE (tubing).</span>
+<span class="sd">    Returns a :class:`CouplingSpec` with regular OD (W), special-clearance OD</span>
+<span class="sd">    (Wc, when API tabulates one), and minimum coupling length (NL), imperial +</span>
+<span class="sd">    SI. ``kind`` is validated against the connection. Raises</span>
+<span class="sd">    :class:`CatalogError` listing the available connections on no match.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">conn</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">connection</span><span class="p">)</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+    <span class="n">expected</span> <span class="o">=</span> <span class="n">_CONNECTION_KIND</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">conn</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">expected</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">CatalogError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;unknown connection </span><span class="si">{</span><span class="n">conn</span><span class="si">!r}</span><span class="s2">; available connections: &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">_CONNECTION_KIND</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">kind</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">kind</span> <span class="o">!=</span> <span class="n">expected</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">CatalogError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;connection </span><span class="si">{</span><span class="n">conn</span><span class="si">!r}</span><span class="s2"> is a </span><span class="si">{</span><span class="n">expected</span><span class="si">}</span><span class="s2"> connection, not </span><span class="si">{</span><span class="n">kind</span><span class="si">!r}</span><span class="s2">; &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;casing connections: [&#39;BTC&#39;, &#39;LTC&#39;, &#39;STC&#39;], &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;tubing connections: [&#39;EUE&#39;, &#39;NUE&#39;]&quot;</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">_coupling_catalog</span><span class="p">()</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span><span class="n">od_in</span><span class="p">,</span> <span class="n">conn</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="coupling_connections">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.coupling_connections">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">coupling_connections</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;All coupling/connection designations in the catalogue.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_coupling_catalog</span><span class="p">()</span><span class="o">.</span><span class="n">connections</span><span class="p">()</span></div>
+
+
+
+<span class="c1"># ===========================================================================</span>
+<span class="c1"># Connection performance - API TR 5C3 (7th ed., 2018) Sec 9 + Sec 10.2</span>
+<span class="c1"># ===========================================================================</span>
+<span class="c1"># Tensile joint strength (Sec 9) + coupling internal yield pressure</span>
+<span class="c1"># (Sec 10.2). ALL equations transcribed from the PDF equation IMAGES (not</span>
+<span class="c1"># pdftotext, which silently drops superscripts - Eq. 54 carries D^-0.59, NOT</span>
+<span class="c1"># &quot;0.74D - 0.59&quot;). Verified against the duplicate statement in Annex J.</span>
+<span class="c1">#</span>
+<span class="c1"># Thread geometry these equations need but API 5CT does NOT tabulate (perfect-</span>
+<span class="c1"># thread length L7, engaged length Let, coupling-root diameter d1) comes from</span>
+<span class="c1"># API Spec 5B. Only the buttress L7 is baked in below (turn-key, cited to API</span>
+<span class="c1"># 5B Table 5); round-thread Let / d1 are user-supplied (from API 5B) so no</span>
+<span class="c1"># unvalidated per-size thread data is fabricated here.</span>
+<span class="c1">#</span>
+<span class="c1"># Make-up torque: API TR 5C3 gives make-up torque for ROUND thread only</span>
+<span class="c1"># (Sec 15). BUTTRESS make-up torque is NOT in 5C3 (see API RP 5C1 or the</span>
+<span class="c1"># manufacturer) and is deliberately not implemented here.</span>
+
+<span class="c1"># API Spec 5B (16th ed., 2017) Table 5 - buttress perfect-thread length L7</span>
+<span class="c1"># (in.), keyed by pipe OD (in.). L7 is the one per-size value not derivable</span>
+<span class="c1"># from a closed form; E7, IB, Td, hB below ARE closed-form/constant per 5B.</span>
+<span class="n">_BTC_L7_IN</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="mf">4.5</span><span class="p">:</span> <span class="mf">1.6535</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">:</span> <span class="mf">1.7785</span><span class="p">,</span> <span class="mf">5.5</span><span class="p">:</span> <span class="mf">1.8410</span><span class="p">,</span> <span class="mf">6.625</span><span class="p">:</span> <span class="mf">2.0285</span><span class="p">,</span> <span class="mf">7.0</span><span class="p">:</span> <span class="mf">2.2160</span><span class="p">,</span>
+    <span class="mf">7.625</span><span class="p">:</span> <span class="mf">2.4035</span><span class="p">,</span> <span class="mf">8.625</span><span class="p">:</span> <span class="mf">2.5285</span><span class="p">,</span> <span class="mf">9.625</span><span class="p">:</span> <span class="mf">2.5285</span><span class="p">,</span> <span class="mf">10.75</span><span class="p">:</span> <span class="mf">2.5285</span><span class="p">,</span>
+    <span class="mf">11.75</span><span class="p">:</span> <span class="mf">2.5285</span><span class="p">,</span> <span class="mf">13.375</span><span class="p">:</span> <span class="mf">2.5285</span><span class="p">,</span> <span class="mf">16.0</span><span class="p">:</span> <span class="mf">3.1245</span><span class="p">,</span> <span class="mf">18.625</span><span class="p">:</span> <span class="mf">3.1245</span><span class="p">,</span>
+    <span class="mf">20.0</span><span class="p">:</span> <span class="mf">3.1245</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_buttress_d1_in</span><span class="p">(</span><span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Buttress coupling-thread root diameter d1 (in.), API TR 5C3 Eq. (61).</span>
+
+<span class="sd">    ``d1 = E7 - (L7 + IB) Td + hB`` with the API Spec 5B buttress geometry:</span>
+<span class="sd">    E7 = D4 - 0.062 (pitch dia; D4 = D + 0.016 for OD &lt;= 13-3/8 in., else D),</span>
+<span class="sd">    L7 the perfect-thread length (5B Table 5, :data:`_BTC_L7_IN`), taper</span>
+<span class="sd">    Td = 0.0625 in./in. (OD &lt;= 13-3/8) or 0.0833 (larger), triangle-stamp</span>
+<span class="sd">    offset IB = 0.400 (4-1/2), 0.500 (5 .. 13-3/8) or 0.375 (larger), and</span>
+<span class="sd">    buttress thread height hB = 0.062 in. (USC). Raises if L7 is untabulated.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">key</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">od_in</span><span class="p">),</span> <span class="mi">3</span><span class="p">)</span>
+    <span class="n">l7</span> <span class="o">=</span> <span class="n">_BTC_L7_IN</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">l7</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">CatalogError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;no API 5B buttress L7 for OD </span><span class="si">{</span><span class="n">od_in</span><span class="si">}</span><span class="s2"> in; &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;available: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">_BTC_L7_IN</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">key</span> <span class="o">&lt;=</span> <span class="mf">13.375</span><span class="p">:</span>
+        <span class="n">d4</span> <span class="o">=</span> <span class="n">od_in</span> <span class="o">+</span> <span class="mf">0.016</span>
+        <span class="n">td</span> <span class="o">=</span> <span class="mf">0.0625</span>
+        <span class="n">ib</span> <span class="o">=</span> <span class="mf">0.400</span> <span class="k">if</span> <span class="n">key</span> <span class="o">==</span> <span class="mf">4.5</span> <span class="k">else</span> <span class="mf">0.500</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">d4</span> <span class="o">=</span> <span class="n">od_in</span>
+        <span class="n">td</span> <span class="o">=</span> <span class="mf">0.0833</span>
+        <span class="n">ib</span> <span class="o">=</span> <span class="mf">0.375</span>
+    <span class="n">e7</span> <span class="o">=</span> <span class="n">d4</span> <span class="o">-</span> <span class="mf">0.062</span>
+    <span class="k">return</span> <span class="n">e7</span> <span class="o">-</span> <span class="p">(</span><span class="n">l7</span> <span class="o">+</span> <span class="n">ib</span><span class="p">)</span> <span class="o">*</span> <span class="n">td</span> <span class="o">+</span> <span class="mf">0.062</span>
+
+
+<div class="viewcode-block" id="buttress_pipe_thread_strength_klb">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.buttress_pipe_thread_strength_klb">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">buttress_pipe_thread_strength_klb</span><span class="p">(</span>
+    <span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">id_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">min_yield_psi</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">min_uts_psi</span><span class="p">:</span> <span class="nb">float</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Buttress pipe-thread tensile strength (klb), API TR 5C3 Eq. (59).</span>
+
+<span class="sd">    ``Pj = 0.95 Ap fumnp [1.008 - 0.0396 (1.083 - fymnp/fumnp) D]`` with</span>
+<span class="sd">    ``Ap = (pi/4)(D^2 - d^2)``, pipe-body min tensile ``fumnp`` and min yield</span>
+<span class="sd">    ``fymnp``. One of the two buttress limit terms (see Eq. 60). Rounded to</span>
+<span class="sd">    the nearest klb (API tabulation convention).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ap</span> <span class="o">=</span> <span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mf">4.0</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">od_in</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">-</span> <span class="n">id_in</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="n">factor</span> <span class="o">=</span> <span class="mf">1.008</span> <span class="o">-</span> <span class="mf">0.0396</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.083</span> <span class="o">-</span> <span class="n">min_yield_psi</span> <span class="o">/</span> <span class="n">min_uts_psi</span><span class="p">)</span> <span class="o">*</span> <span class="n">od_in</span>
+    <span class="k">return</span> <span class="nb">round</span><span class="p">(</span><span class="mf">0.95</span> <span class="o">*</span> <span class="n">ap</span> <span class="o">*</span> <span class="n">min_uts_psi</span> <span class="o">*</span> <span class="n">factor</span> <span class="o">/</span> <span class="mf">1000.0</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="buttress_coupling_thread_strength_klb">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.buttress_coupling_thread_strength_klb">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">buttress_coupling_thread_strength_klb</span><span class="p">(</span>
+    <span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">coupling_od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">coupling_uts_psi</span><span class="p">:</span> <span class="nb">float</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Buttress coupling-thread tensile strength (klb), API TR 5C3 Eq. (60).</span>
+
+<span class="sd">    ``Pj = 0.95 Ajc fumnc`` with ``Ajc = (pi/4)(W^2 - d1^2)`` (Eq. 57), W the</span>
+<span class="sd">    coupling OD, d1 from :func:`_buttress_d1_in` (Eq. 61) and coupling min</span>
+<span class="sd">    tensile ``fumnc``. The other buttress limit term (see Eq. 59). Rounded to</span>
+<span class="sd">    the nearest klb.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">d1</span> <span class="o">=</span> <span class="n">_buttress_d1_in</span><span class="p">(</span><span class="n">od_in</span><span class="p">)</span>
+    <span class="n">ajc</span> <span class="o">=</span> <span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mf">4.0</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">coupling_od_in</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">-</span> <span class="n">d1</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">round</span><span class="p">(</span><span class="mf">0.95</span> <span class="o">*</span> <span class="n">ajc</span> <span class="o">*</span> <span class="n">coupling_uts_psi</span> <span class="o">/</span> <span class="mf">1000.0</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="buttress_joint_strength_klb">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.buttress_joint_strength_klb">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">buttress_joint_strength_klb</span><span class="p">(</span>
+    <span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">id_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">min_yield_psi</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">min_uts_psi</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">coupling_od_in</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">coupling_uts_psi</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Buttress (BTC) tensile joint strength (klb), API TR 5C3 Sec 9.2.3.</span>
+
+<span class="sd">    The LESSER of the pipe-thread strength (Eq. 59) and the coupling-thread</span>
+<span class="sd">    strength (Eq. 60). ``coupling_od_in`` defaults to the API 5CT coupling OD</span>
+<span class="sd">    (W) from the catalogue; ``coupling_uts_psi`` defaults to the pipe-body</span>
+<span class="sd">    ``min_uts_psi`` (standard API couplings share the pipe grade). Rounded to</span>
+<span class="sd">    the nearest klb.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">pipe</span> <span class="o">=</span> <span class="n">buttress_pipe_thread_strength_klb</span><span class="p">(</span>
+        <span class="n">od_in</span><span class="p">,</span> <span class="n">id_in</span><span class="p">,</span> <span class="n">min_yield_psi</span><span class="p">,</span> <span class="n">min_uts_psi</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">coupling_od_in</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">coupling_od_in</span> <span class="o">=</span> <span class="n">resolve_coupling</span><span class="p">(</span><span class="n">od_in</span><span class="p">,</span> <span class="s2">&quot;BTC&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">coupling_od_in</span>
+    <span class="k">if</span> <span class="n">coupling_uts_psi</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">coupling_uts_psi</span> <span class="o">=</span> <span class="n">min_uts_psi</span>
+    <span class="n">coupling</span> <span class="o">=</span> <span class="n">buttress_coupling_thread_strength_klb</span><span class="p">(</span>
+        <span class="n">od_in</span><span class="p">,</span> <span class="n">coupling_od_in</span><span class="p">,</span> <span class="n">coupling_uts_psi</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">pipe</span><span class="p">,</span> <span class="n">coupling</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="buttress_coupling_internal_yield_psi">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.buttress_coupling_internal_yield_psi">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">buttress_coupling_internal_yield_psi</span><span class="p">(</span>
+    <span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">coupling_od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">coupling_yield_psi</span><span class="p">:</span> <span class="nb">float</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Buttress coupling internal yield pressure (psi), API TR 5C3 Eq. (65).</span>
+
+<span class="sd">    ``piYc = fymnc (W - d1)/W`` with W the coupling OD, d1 from Eq. (67)</span>
+<span class="sd">    (= Eq. 61 buttress form; see :func:`_buttress_d1_in`) and coupling min</span>
+<span class="sd">    yield ``fymnc``. Per Sec 10.1 this limits connection internal pressure</span>
+<span class="sd">    only when lower than the pipe-body internal yield. Rounded to the nearest</span>
+<span class="sd">    10 psi (API tabulation convention).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">d1</span> <span class="o">=</span> <span class="n">_buttress_d1_in</span><span class="p">(</span><span class="n">od_in</span><span class="p">)</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">coupling_yield_psi</span> <span class="o">*</span> <span class="p">(</span><span class="n">coupling_od_in</span> <span class="o">-</span> <span class="n">d1</span><span class="p">)</span> <span class="o">/</span> <span class="n">coupling_od_in</span>
+    <span class="k">return</span> <span class="nb">round</span><span class="p">(</span><span class="n">p</span> <span class="o">/</span> <span class="mf">10.0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">10.0</span></div>
+
+
+
+<div class="viewcode-block" id="round_thread_pipe_fracture_strength_klb">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.round_thread_pipe_fracture_strength_klb">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">round_thread_pipe_fracture_strength_klb</span><span class="p">(</span>
+    <span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">id_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">min_uts_psi</span><span class="p">:</span> <span class="nb">float</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Round-thread (STC/LTC) pipe fracture strength (klb), API TR 5C3 Eq.(53).</span>
+
+<span class="sd">    ``Pj = 0.95 Ajp fumnp`` with the last-perfect-thread pipe area</span>
+<span class="sd">    ``Ajp = (pi/4)[(D - 0.1425)^2 - d^2]`` (Eq. 56). ONE of the three round-</span>
+<span class="sd">    thread limit terms; the joint strength is the least of this, the pull-out</span>
+<span class="sd">    strength (Eq. 54) and coupling fracture (Eq. 55). Rounded to nearest klb.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ajp</span> <span class="o">=</span> <span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mf">4.0</span><span class="p">)</span> <span class="o">*</span> <span class="p">((</span><span class="n">od_in</span> <span class="o">-</span> <span class="mf">0.1425</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">-</span> <span class="n">id_in</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">round</span><span class="p">(</span><span class="mf">0.95</span> <span class="o">*</span> <span class="n">ajp</span> <span class="o">*</span> <span class="n">min_uts_psi</span> <span class="o">/</span> <span class="mf">1000.0</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="round_thread_pullout_strength_klb">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.round_thread_pullout_strength_klb">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">round_thread_pullout_strength_klb</span><span class="p">(</span>
+    <span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">id_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">engaged_thread_length_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">min_yield_psi</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">min_uts_psi</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Round-thread (STC/LTC) pull-out strength (klb), API TR 5C3 Eq. (54).</span>
+
+<span class="sd">    ``Pj = 0.95 Ajp Let [(0.74 D^-0.59 fumnp)/(0.5 Let + 0.14 D)</span>
+<span class="sd">    + fymnp/(Let + 0.14 D)]`` with ``Ajp`` from Eq. (56) and ``Let`` the</span>
+<span class="sd">    engaged thread length (= L4 - M, from API Spec 5B; user-supplied since</span>
+<span class="sd">    API 5CT does not tabulate it). Note ``D^-0.59`` is an EXPONENT (pdftotext</span>
+<span class="sd">    drops it). Pull-out governs for most standard round-thread sizes/grades</span>
+<span class="sd">    (Annex J.2.2.3). Rounded to the nearest klb.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ajp</span> <span class="o">=</span> <span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mf">4.0</span><span class="p">)</span> <span class="o">*</span> <span class="p">((</span><span class="n">od_in</span> <span class="o">-</span> <span class="mf">0.1425</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">-</span> <span class="n">id_in</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="n">lt</span> <span class="o">=</span> <span class="n">engaged_thread_length_in</span>
+    <span class="n">bracket</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">(</span><span class="mf">0.74</span> <span class="o">*</span> <span class="n">od_in</span> <span class="o">**</span> <span class="o">-</span><span class="mf">0.59</span> <span class="o">*</span> <span class="n">min_uts_psi</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">lt</span> <span class="o">+</span> <span class="mf">0.14</span> <span class="o">*</span> <span class="n">od_in</span><span class="p">)</span>
+        <span class="o">+</span> <span class="n">min_yield_psi</span> <span class="o">/</span> <span class="p">(</span><span class="n">lt</span> <span class="o">+</span> <span class="mf">0.14</span> <span class="o">*</span> <span class="n">od_in</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="nb">round</span><span class="p">(</span><span class="mf">0.95</span> <span class="o">*</span> <span class="n">ajp</span> <span class="o">*</span> <span class="n">lt</span> <span class="o">*</span> <span class="n">bracket</span> <span class="o">/</span> <span class="mf">1000.0</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="round_thread_joint_strength_klb">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.round_thread_joint_strength_klb">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">round_thread_joint_strength_klb</span><span class="p">(</span>
+    <span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">id_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">min_yield_psi</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">min_uts_psi</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">engaged_thread_length_in</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">coupling_od_in</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">coupling_uts_psi</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">coupling_root_dia_in</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Round-thread (STC/LTC) tensile joint strength (klb), API TR 5C3 Sec 9.2.2.</span>
+
+<span class="sd">    The LEAST of the pipe fracture strength (Eq. 53), the pull-out strength</span>
+<span class="sd">    (Eq. 54, if ``engaged_thread_length_in`` [Let] is supplied) and the</span>
+<span class="sd">    coupling fracture strength (Eq. 55, if ``coupling_root_dia_in`` [d1, from</span>
+<span class="sd">    API 5B Eq. 58] is supplied). Let and d1 come from API Spec 5B (not 5CT).</span>
+
+<span class="sd">    WARNING: pull-out normally GOVERNS (Annex J.2.2.3); with Let omitted this</span>
+<span class="sd">    returns the fracture-only term, which OVERSTATES the joint strength. Supply</span>
+<span class="sd">    Let for a valid rating. Rounded to the nearest klb.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">terms</span> <span class="o">=</span> <span class="p">[</span><span class="n">round_thread_pipe_fracture_strength_klb</span><span class="p">(</span><span class="n">od_in</span><span class="p">,</span> <span class="n">id_in</span><span class="p">,</span> <span class="n">min_uts_psi</span><span class="p">)]</span>
+    <span class="k">if</span> <span class="n">engaged_thread_length_in</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">terms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="n">round_thread_pullout_strength_klb</span><span class="p">(</span>
+                <span class="n">od_in</span><span class="p">,</span>
+                <span class="n">id_in</span><span class="p">,</span>
+                <span class="n">engaged_thread_length_in</span><span class="p">,</span>
+                <span class="n">min_yield_psi</span><span class="p">,</span>
+                <span class="n">min_uts_psi</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">coupling_root_dia_in</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">coupling_od_in</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">uts</span> <span class="o">=</span> <span class="n">min_uts_psi</span> <span class="k">if</span> <span class="n">coupling_uts_psi</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">coupling_uts_psi</span>
+        <span class="n">ajc</span> <span class="o">=</span> <span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mf">4.0</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">coupling_od_in</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">-</span> <span class="n">coupling_root_dia_in</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="n">terms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">round</span><span class="p">(</span><span class="mf">0.95</span> <span class="o">*</span> <span class="n">ajc</span> <span class="o">*</span> <span class="n">uts</span> <span class="o">/</span> <span class="mf">1000.0</span><span class="p">))</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">terms</span><span class="p">))</span></div>
+
+
+
+<span class="c1"># ===========================================================================</span>
+<span class="c1"># ConnectionSpec - full connection performance schema (VAM-datasheet field set)</span>
+<span class="c1"># ===========================================================================</span>
+
+<div class="viewcode-block" id="ConnectionSpec">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.ConnectionSpec">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ConnectionSpec</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Full connection performance record (VAM/Tenaris datasheet field set).</span>
+
+<span class="sd">    For **API** connections (STC/LTC/BTC/NUE/EUE) only the *dimensional* fields</span>
+<span class="sd">    are populated (from API Spec 5CT Tables E.27-E.30): ``connection_od_in`` =</span>
+<span class="sd">    regular coupling OD (W) and ``coupling_length_in`` = minimum length (NL).</span>
+
+<span class="sd">    All premium-performance fields (efficiencies, strengths, pressure</span>
+<span class="sd">    resistances, make-up torques, delta-turn, bending) are **proprietary,</span>
+<span class="sd">    vendor/user-supplied** for premium threads (VAM, Tenaris TenarisHydril,</span>
+<span class="sd">    etc.) and are deliberately left ``None`` here - they are NOT vendored and</span>
+<span class="sd">    must NOT be fabricated. Populate them from the user&#39;s connection datasheet.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># --- dimensional (API 5CT for API connections; datasheet for premium) ---</span>
+    <span class="n">connection_od_in</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">connection_id_in</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">makeup_loss_in</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">coupling_length_in</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># --- structural efficiencies (% of pipe body) ---</span>
+    <span class="n">tension_eff_pct</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">compression_eff_pct</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">internal_pressure_eff_pct</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">external_pressure_eff_pct</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># --- absolute ratings ---</span>
+    <span class="n">tension_strength_klb</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">compression_strength_klb</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">internal_pressure_resistance_psi</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">external_pressure_resistance_psi</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># --- service limits ---</span>
+    <span class="n">max_bending_deg_per_100ft</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">max_load_coupling_face_klb</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># --- make-up ---</span>
+    <span class="n">makeup_torque_min_ftlb</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">makeup_torque_opt_ftlb</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">makeup_torque_max_ftlb</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">shouldering_torque_min_ftlb</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">shouldering_torque_max_ftlb</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">delta_turn_min</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">delta_turn_max</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># --- identity ---</span>
+    <span class="n">connection_type</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">grade</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="ConnectionSpec.as_dict">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.ConnectionSpec.as_dict">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">as_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">asdict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ConnectionSpec.from_api">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.ConnectionSpec.from_api">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_api</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">od_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">connection</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">kind</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;casing&quot;</span><span class="p">,</span>
+        <span class="n">grade</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ConnectionSpec&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build an API-connection spec: dimensional fields from 5CT only.</span>
+
+<span class="sd">        Fills ``connection_od_in`` (regular coupling OD W),</span>
+<span class="sd">        ``coupling_length_in`` (min length NL), ``connection_type`` and</span>
+<span class="sd">        ``grade``; every premium-performance field is left ``None`` (proprietary,</span>
+<span class="sd">        user-supplied - never fabricated). To also compute API TR 5C3 joint</span>
+<span class="sd">        strength (which needs the pipe wall) use :meth:`from_tubular`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cpl</span> <span class="o">=</span> <span class="n">resolve_coupling</span><span class="p">(</span><span class="n">od_in</span><span class="p">,</span> <span class="n">connection</span><span class="p">,</span> <span class="n">kind</span><span class="o">=</span><span class="n">kind</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
+            <span class="n">connection_od_in</span><span class="o">=</span><span class="n">cpl</span><span class="o">.</span><span class="n">coupling_od_in</span><span class="p">,</span>
+            <span class="n">coupling_length_in</span><span class="o">=</span><span class="n">cpl</span><span class="o">.</span><span class="n">coupling_length_in</span><span class="p">,</span>
+            <span class="n">connection_type</span><span class="o">=</span><span class="n">cpl</span><span class="o">.</span><span class="n">connection</span><span class="p">,</span>
+            <span class="n">grade</span><span class="o">=</span><span class="n">grade</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ConnectionSpec.from_tubular">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.ConnectionSpec.from_tubular">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_tubular</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">spec</span><span class="p">:</span> <span class="s2">&quot;TubularSpec&quot;</span><span class="p">,</span>
+        <span class="n">connection</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ConnectionSpec&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build an API-connection spec from a resolved :class:`TubularSpec`.</span>
+
+<span class="sd">        Adds API TR 5C3 tensile joint strength to the 5CT dimensional fields:</span>
+<span class="sd">        for **BTC** with a graded ``spec`` it fills ``tension_strength_klb``</span>
+<span class="sd">        from the buttress joint strength (Eq. 59/60, turn-key). Round-thread</span>
+<span class="sd">        (STC/LTC) tension is left ``None`` because its governing pull-out term</span>
+<span class="sd">        needs the API 5B engaged length Let (call</span>
+<span class="sd">        :func:`round_thread_joint_strength_klb` with Let). Requires</span>
+<span class="sd">        ``spec.grade`` (and thus ``min_uts_psi``) for any strength value.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">connection</span><span class="p">)</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+        <span class="n">cpl</span> <span class="o">=</span> <span class="n">resolve_coupling</span><span class="p">(</span><span class="n">spec</span><span class="o">.</span><span class="n">od_in</span><span class="p">,</span> <span class="n">conn</span><span class="p">,</span> <span class="n">kind</span><span class="o">=</span><span class="n">spec</span><span class="o">.</span><span class="n">kind</span><span class="p">)</span>
+        <span class="n">tension</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">conn</span> <span class="o">==</span> <span class="s2">&quot;BTC&quot;</span>
+            <span class="ow">and</span> <span class="n">spec</span><span class="o">.</span><span class="n">yield_psi</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="n">spec</span><span class="o">.</span><span class="n">min_uts_psi</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="p">):</span>
+            <span class="n">tension</span> <span class="o">=</span> <span class="n">buttress_joint_strength_klb</span><span class="p">(</span>
+                <span class="n">spec</span><span class="o">.</span><span class="n">od_in</span><span class="p">,</span>
+                <span class="n">spec</span><span class="o">.</span><span class="n">id_in</span><span class="p">,</span>
+                <span class="n">spec</span><span class="o">.</span><span class="n">yield_psi</span><span class="p">,</span>
+                <span class="n">spec</span><span class="o">.</span><span class="n">min_uts_psi</span><span class="p">,</span>
+                <span class="n">coupling_od_in</span><span class="o">=</span><span class="n">cpl</span><span class="o">.</span><span class="n">coupling_od_in</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
+            <span class="n">connection_od_in</span><span class="o">=</span><span class="n">cpl</span><span class="o">.</span><span class="n">coupling_od_in</span><span class="p">,</span>
+            <span class="n">connection_id_in</span><span class="o">=</span><span class="n">spec</span><span class="o">.</span><span class="n">id_in</span><span class="p">,</span>
+            <span class="n">coupling_length_in</span><span class="o">=</span><span class="n">cpl</span><span class="o">.</span><span class="n">coupling_length_in</span><span class="p">,</span>
+            <span class="n">tension_strength_klb</span><span class="o">=</span><span class="n">tension</span><span class="p">,</span>
+            <span class="n">connection_type</span><span class="o">=</span><span class="n">cpl</span><span class="o">.</span><span class="n">connection</span><span class="p">,</span>
+            <span class="n">grade</span><span class="o">=</span><span class="n">spec</span><span class="o">.</span><span class="n">grade</span><span class="p">,</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+<span class="c1"># ===========================================================================</span>
+<span class="c1"># Premium connections (proprietary metal-to-metal / gas-tight) - NAME registry</span>
+<span class="c1"># ===========================================================================</span>
+<span class="c1"># A recognition registry of premium connection designations (VAM, Hydril, ...)</span>
+<span class="c1"># observed in real completion designs. It carries the NAME + (where unambiguous)</span>
+<span class="c1"># the vendor + a provenance note ONLY. Dimensional and performance data are</span>
+<span class="c1"># proprietary and vendor-supplied - deliberately null, never fabricated (the</span>
+<span class="c1"># same policy as the API 5CT grade performance fields; see data/sources.md).</span>
+
+
+<div class="viewcode-block" id="PremiumConnectionSpec">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.PremiumConnectionSpec">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PremiumConnectionSpec</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A registered premium connection designation + provenance.</span>
+
+<span class="sd">    Carries NO dimensions and NO ratings: those are proprietary, published on</span>
+<span class="sd">    the vendor&#39;s public datasheet, and left ``None`` here (never fabricated).</span>
+<span class="sd">    ``vendor`` is ``None`` when the brand owner was not determined with</span>
+<span class="sd">    confidence (not guessed).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">designation</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">vendor</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">vendor_note</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">category</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;premium&quot;</span>
+    <span class="n">spec_source</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># --- proprietary, vendor-supplied; null by policy ---</span>
+    <span class="n">id_in</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">drift_in</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">joint_efficiency</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">pressure_rating_psi</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">makeup_torque_ftlb</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="PremiumConnectionSpec.as_dict">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.PremiumConnectionSpec.as_dict">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">as_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">asdict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="PremiumConnectionCatalog">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.PremiumConnectionCatalog">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PremiumConnectionCatalog</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Loaded registry of premium connection designations, keyed by name.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="PremiumConnectionCatalog.__init__">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.PremiumConnectionCatalog.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_meta</span> <span class="o">=</span> <span class="n">doc</span><span class="p">[</span><span class="s2">&quot;_meta&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_by_name</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">doc</span><span class="p">[</span><span class="s2">&quot;premium_connections&quot;</span><span class="p">]:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_by_name</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;designation&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">upper</span><span class="p">()]</span> <span class="o">=</span> <span class="n">row</span></div>
+
+
+<div class="viewcode-block" id="PremiumConnectionCatalog.load">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.PremiumConnectionCatalog.load">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;PremiumConnectionCatalog&quot;</span><span class="p">:</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">((</span><span class="n">_DATA_DIR</span> <span class="o">/</span> <span class="s2">&quot;premium_connections.json&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">read_text</span><span class="p">())</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="PremiumConnectionCatalog.designations">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.PremiumConnectionCatalog.designations">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">designations</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;designation&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_by_name</span><span class="o">.</span><span class="n">values</span><span class="p">())</span></div>
+
+
+<div class="viewcode-block" id="PremiumConnectionCatalog.resolve">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.PremiumConnectionCatalog.resolve">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">resolve</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">designation</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PremiumConnectionSpec</span><span class="p">:</span>
+        <span class="n">row</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_by_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">designation</span><span class="p">)</span><span class="o">.</span><span class="n">upper</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">row</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">CatalogError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;unknown premium connection </span><span class="si">{</span><span class="n">designation</span><span class="si">!r}</span><span class="s2">; available: &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">designations</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">PremiumConnectionSpec</span><span class="p">(</span>
+            <span class="n">designation</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;designation&quot;</span><span class="p">],</span>
+            <span class="n">vendor</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;vendor&quot;</span><span class="p">),</span>
+            <span class="n">vendor_note</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;vendor_note&quot;</span><span class="p">),</span>
+            <span class="n">category</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;category&quot;</span><span class="p">,</span> <span class="s2">&quot;premium&quot;</span><span class="p">),</span>
+            <span class="n">spec_source</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;spec_source&quot;</span><span class="p">),</span>
+            <span class="n">id_in</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;id_in&quot;</span><span class="p">),</span>
+            <span class="n">drift_in</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;drift_in&quot;</span><span class="p">),</span>
+            <span class="n">joint_efficiency</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;joint_efficiency&quot;</span><span class="p">),</span>
+            <span class="n">pressure_rating_psi</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;pressure_rating_psi&quot;</span><span class="p">),</span>
+            <span class="n">makeup_torque_ftlb</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;makeup_torque_ftlb&quot;</span><span class="p">),</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+<span class="nd">@lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_premium_connection_catalog</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">PremiumConnectionCatalog</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">PremiumConnectionCatalog</span><span class="o">.</span><span class="n">load</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="premium_connections">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.premium_connections">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">premium_connections</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;List the registered premium connection designations (names only).&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_premium_connection_catalog</span><span class="p">()</span><span class="o">.</span><span class="n">designations</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="resolve_premium_connection">
+<a class="viewcode-back" href="../../../welleng.catalog.html#welleng.catalog.resolve_premium_connection">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_premium_connection</span><span class="p">(</span><span class="n">designation</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PremiumConnectionSpec</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve a premium connection&#39;s registry entry (name + provenance).</span>
+
+<span class="sd">    Dimensions/ratings are proprietary and vendor-supplied - the returned spec</span>
+<span class="sd">    carries them as ``None`` (consult the vendor&#39;s public datasheet).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_premium_connection_catalog</span><span class="p">()</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span><span class="n">designation</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

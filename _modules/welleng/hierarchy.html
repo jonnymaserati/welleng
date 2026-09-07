@@ -1,0 +1,1577 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.hierarchy &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.hierarchy</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.hierarchy</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Well hierarchy + wellbore network graph — the container surveys hang on.</span>
+
+<span class="sd">This models the master-data hierarchy that a survey (and its error/clearance</span>
+<span class="sd">results) attaches to, and the **wellbore network graph** used to propagate</span>
+<span class="sd">*relative* position uncertainty correctly between wellbores that share ancestry.</span>
+
+<span class="sd">OSDU schema source (the canonical Well-Known-Schemas this maps to):</span>
+<span class="sd">``https://community.opengroup.org/osdu/data/data-definitions`` — WKS JSON under</span>
+<span class="sd">``Generated/master-data/`` (e.g. ``Wellbore.1.x.0.json``, ``Well``, ``Field``,</span>
+<span class="sd">``Organisation``) and entity-relationship docs under ``E-R/master-data/``.</span>
+
+<span class="sd">Hierarchy (maps to OSDU master-data — see that doc for the field-level mapping,</span>
+<span class="sd">grounded separately):</span>
+
+<span class="sd">    Organisation -&gt; Field -&gt; Site(WellSiteStructure) -&gt; Well(slot + Datum)</span>
+<span class="sd">        -&gt; Wellbore* -&gt; Survey</span>
+
+<span class="sd">The **wellbore graph** is a *forest*: every wellbore section has a parent — a</span>
+<span class="sd">parent wellbore (a sidetrack/lateral kicked off at ``kickoff_md``) or, for a</span>
+<span class="sd">*root* wellbore, the **Well** (its surface location). Wells on one **Site**</span>
+<span class="sd">share the site&#39;s geodetic CRS + convergence (common systematic -&gt; cancels in</span>
+<span class="sd">relative use); each Well carries its own slot position (+ ``slot_radial_error``)</span>
+<span class="sd">and local datum (RKB). EDM cross-check confirms the spine</span>
+<span class="sd">``CD_PROJECT(CRS) -&gt; CD_SITE -&gt; CD_WELL(slot,datum)</span>
+<span class="sd">-&gt; CD_WELLBORE(parent_wellbore_id) -&gt; survey``.</span>
+
+<span class="sd">Why a graph (the load-bearing reason). For relative error between two</span>
+<span class="sd">wellbores (e.g. two laterals off one parent, or two sidetracks) you must NOT</span>
+<span class="sd">sum their full independent uncertainties — the survey they share up to the</span>
+<span class="sd">divergence point carries the SAME systematic errors, which cancel in the</span>
+<span class="sd">relative sense. Walking to the **lowest common ancestor (LCA)** splits the two</span>
+<span class="sd">paths into a shared trunk (systematic-common) and two divergent branches</span>
+<span class="sd">(independent); only the divergent parts sum. This is the correct multilateral /</span>
+<span class="sd">sidetrack relative-uncertainty treatment and the basis for anti-collision</span>
+<span class="sd">between wells of common ancestry.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Iterator</span><span class="p">,</span> <span class="n">Optional</span>
+
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># master-data hierarchy (OSDU-aligned; exact kind/field names wired separately)</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<div class="viewcode-block" id="DatumRealisation">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.DatumRealisation">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DatumRealisation</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;One survey-in of a datum&#39;s position — a link in the datum&#39;s document</span>
+<span class="sd">    chain.</span>
+
+<span class="sd">    A platform / wellhead location is not a fact, it is a *measurement*, and</span>
+<span class="sd">    it gets re-measured: an installed platform is often re-surveyed years</span>
+<span class="sd">    later with better technology, moving the reference every well on it hangs</span>
+<span class="sd">    off. The industry habit of silently overwriting the wellhead coordinates</span>
+<span class="sd">    destroys the audit trail and mixes wells computed under different origin</span>
+<span class="sd">    realisations. A ``DatumRealisation`` is one such measurement, kept</span>
+<span class="sd">    forever: what was measured, when, by which source document, how far it</span>
+<span class="sd">    moved the datum, and how well it is now known.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    id : str</span>
+<span class="sd">        Unique realisation identifier (e.g. ``&quot;D1-v2&quot;``).</span>
+<span class="sd">    date : str or None, default None</span>
+<span class="sd">        Survey date, ``YYYY-MM-DD``.</span>
+<span class="sd">    document : str or None, default None</span>
+<span class="sd">        Reference to the source document (survey report number / URI) — the</span>
+<span class="sd">        provenance link of the chain.</span>
+<span class="sd">    shift : tuple of float, default (0, 0, 0)</span>
+<span class="sd">        Position shift ``(dN, dE, dV)`` in metres FROM the superseded</span>
+<span class="sd">        realisation to this one (the original realisation carries zeros).</span>
+<span class="sd">    radial_error : float, default 0.0</span>
+<span class="sd">        1-sigma horizontal position uncertainty of THIS realisation, metres.</span>
+<span class="sd">        A re-survey usually *reduces* this — the new realisation&#39;s value</span>
+<span class="sd">        replaces (not adds to) the old one for absolute-positioning use.</span>
+<span class="sd">    supersedes : str or None, default None</span>
+<span class="sd">        The ``id`` of the realisation this one supersedes; ``None`` for the</span>
+<span class="sd">        original. Enforced append-only by :meth:`Datum.add_realisation`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="nb">id</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">date</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">document</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">shift</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+    <span class="n">radial_error</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">supersedes</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="Datum">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.Datum">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Datum</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A local spatial / depth datum (e.g. a platform RKB / wellhead reference).</span>
+
+<span class="sd">    Represents the vertical reference a well&#39;s measured depths are quoted</span>
+<span class="sd">    against (rotary kelly bushing, rotary table, wellhead, or mean sea level).</span>
+<span class="sd">    A datum is attached per-Well but is typically physically shared by every</span>
+<span class="sd">    wellbore drilled from one platform.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    name : str</span>
+<span class="sd">        Human-readable datum name / identifier.</span>
+<span class="sd">    elevation : float, default 0.0</span>
+<span class="sd">        Datum elevation, in metres, above mean sea level (or the field</span>
+<span class="sd">        reference given by ``reference``).</span>
+<span class="sd">    reference : str, default &quot;MSL&quot;</span>
+<span class="sd">        The elevation reference frame — one of ``&quot;MSL&quot;``, ``&quot;RKB&quot;``, ``&quot;RT&quot;``,</span>
+<span class="sd">        ``&quot;wellhead&quot;``, etc.</span>
+<span class="sd">    realisations : list of DatumRealisation, optional</span>
+<span class="sd">        The datum&#39;s position-survey history, oldest first — an APPEND-ONLY</span>
+<span class="sd">        document chain (see :class:`DatumRealisation`). Manage it through</span>
+<span class="sd">        :meth:`add_realisation`; never overwrite an entry.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    Because the datum is shared by every wellbore on a platform, the datum&#39;s</span>
+<span class="sd">    own position error is a *common* systematic term between those wellbores</span>
+<span class="sd">    and therefore cancels in relative (wellbore-to-wellbore) uncertainty use.</span>
+<span class="sd">    **This is what makes a datum re-survey benign for on-platform work**: all</span>
+<span class="sd">    wells on the platform move together under a datum shift, so their</span>
+<span class="sd">    relative positions and relative covariance are invariant. Only absolute</span>
+<span class="sd">    positioning — and relative work against wells NOT on this datum — changes.</span>
+
+<span class="sd">    A wellbore records which realisation its positions were computed under via</span>
+<span class="sd">    ``Wellbore.datum_realisation``; :meth:`shift_between` composes the chain&#39;s</span>
+<span class="sd">    shifts so positions quoted under an old realisation can be re-referenced,</span>
+<span class="sd">    and mixed-realisation comparisons become detectable instead of silent.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">elevation</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>                 <span class="c1"># above MSL (or the field reference)</span>
+    <span class="n">reference</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;MSL&quot;</span>                 <span class="c1"># MSL | RKB | RT | wellhead | ...</span>
+    <span class="n">realisations</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">DatumRealisation</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+
+    <span class="c1"># -- the document chain ------------------------------------------------- #</span>
+<div class="viewcode-block" id="Datum.add_realisation">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.Datum.add_realisation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_realisation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">realisation</span><span class="p">:</span> <span class="n">DatumRealisation</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DatumRealisation</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Append a new position realisation to the chain (append-only).</span>
+
+<span class="sd">        The first realisation may carry ``supersedes=None``; every subsequent</span>
+<span class="sd">        one must supersede the current head, so the chain stays a single</span>
+<span class="sd">        unbroken document trail.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        ValueError</span>
+<span class="sd">            If ``realisation.supersedes`` does not reference the current head,</span>
+<span class="sd">            or its ``id`` already exists in the chain.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">id</span> <span class="o">==</span> <span class="n">realisation</span><span class="o">.</span><span class="n">id</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">realisations</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;datum realisation id </span><span class="si">{</span><span class="n">realisation</span><span class="o">.</span><span class="n">id</span><span class="si">!r}</span><span class="s2"> already in the chain&quot;</span>
+            <span class="p">)</span>
+        <span class="n">head</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">realisations</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">id</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">realisations</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">realisation</span><span class="o">.</span><span class="n">supersedes</span> <span class="o">!=</span> <span class="n">head</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;realisation </span><span class="si">{</span><span class="n">realisation</span><span class="o">.</span><span class="n">id</span><span class="si">!r}</span><span class="s2"> must supersede the current &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;head </span><span class="si">{</span><span class="n">head</span><span class="si">!r}</span><span class="s2">, got supersedes=</span><span class="si">{</span><span class="n">realisation</span><span class="o">.</span><span class="n">supersedes</span><span class="si">!r}</span><span class="s2"> &quot;</span>
+                <span class="s2">&quot;(the chain is append-only; do not rewrite history)&quot;</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">realisations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">realisation</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">realisation</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">current_realisation</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">DatumRealisation</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;The head (most recent) realisation, or ``None`` if no chain.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">realisations</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">realisations</span> <span class="k">else</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="Datum.realisation">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.Datum.realisation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">realisation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">id_</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DatumRealisation</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the realisation with ``id_``.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        KeyError</span>
+<span class="sd">            If the id is not in the chain.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">realisations</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">r</span><span class="o">.</span><span class="n">id</span> <span class="o">==</span> <span class="n">id_</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">r</span>
+        <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;no datum realisation </span><span class="si">{</span><span class="n">id_</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Datum.shift_between">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.Datum.shift_between">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">shift_between</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">from_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">to_id</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Composed position shift ``(dN, dE, dV)`` from one realisation&#39;s</span>
+<span class="sd">        frame to another&#39;s, in metres.</span>
+
+<span class="sd">        Walks the chain: consecutive shifts add; walking backwards negates.</span>
+<span class="sd">        Add the result to a position quoted under ``from_id`` to express it</span>
+<span class="sd">        under ``to_id``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span><span class="o">.</span><span class="n">id</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">realisations</span><span class="p">]</span>
+        <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="o">=</span> <span class="n">ids</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">from_id</span><span class="p">),</span> <span class="n">ids</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">to_id</span><span class="p">)</span>
+        <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">((</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">))</span>
+        <span class="c1"># sum of shifts of realisations (lo, hi] — each realisation&#39;s shift is</span>
+        <span class="c1"># FROM its predecessor, so the walk lo -&gt; hi accumulates them.</span>
+        <span class="n">dn</span> <span class="o">=</span> <span class="n">de</span> <span class="o">=</span> <span class="n">dv</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">realisations</span><span class="p">[</span><span class="n">lo</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:</span><span class="n">hi</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]:</span>
+            <span class="n">dn</span> <span class="o">+=</span> <span class="n">r</span><span class="o">.</span><span class="n">shift</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">de</span> <span class="o">+=</span> <span class="n">r</span><span class="o">.</span><span class="n">shift</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">dv</span> <span class="o">+=</span> <span class="n">r</span><span class="o">.</span><span class="n">shift</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">i</span> <span class="o">&gt;</span> <span class="n">j</span><span class="p">:</span>                       <span class="c1"># walking backwards down the chain</span>
+            <span class="n">dn</span><span class="p">,</span> <span class="n">de</span><span class="p">,</span> <span class="n">dv</span> <span class="o">=</span> <span class="o">-</span><span class="n">dn</span><span class="p">,</span> <span class="o">-</span><span class="n">de</span><span class="p">,</span> <span class="o">-</span><span class="n">dv</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">dn</span><span class="p">,</span> <span class="n">de</span><span class="p">,</span> <span class="n">dv</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Datum.provenance">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.Datum.provenance">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">provenance</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;The document chain as ``[(id, date, document), ...]``, oldest</span>
+<span class="sd">        first — the audit trail of every position survey of this datum.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[(</span><span class="n">r</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">r</span><span class="o">.</span><span class="n">date</span><span class="p">,</span> <span class="n">r</span><span class="o">.</span><span class="n">document</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">realisations</span><span class="p">]</span></div>
+</div>
+
+
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">_Node</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Base for the master-data entities: an id, a human name, a parent ref.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    id : str</span>
+<span class="sd">        Unique node identifier (used as the graph key and for parent wiring).</span>
+<span class="sd">    name : str, default &quot;&quot;</span>
+<span class="sd">        Human-readable entity name.</span>
+<span class="sd">    parent : _Node or None, default None</span>
+<span class="sd">        The containing / kick-off parent entity, or ``None`` for a top node.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="nb">id</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">parent</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="s2">&quot;_Node&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+
+<div class="viewcode-block" id="Organisation">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.Organisation">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Organisation</span><span class="p">(</span><span class="n">_Node</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Operating organisation — the top of the master-data hierarchy.</span>
+
+<span class="sd">    Maps to OSDU ``master-data--Organisation``. Inherits the :class:`_Node`</span>
+<span class="sd">    fields (``id``, ``name``, ``parent``); an Organisation normally has no</span>
+<span class="sd">    parent.</span>
+<span class="sd">    &quot;&quot;&quot;</span></div>
+
+
+
+<div class="viewcode-block" id="Field">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.Field">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Field</span><span class="p">(</span><span class="n">_Node</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A field / asset grouping the sites of a development.</span>
+
+<span class="sd">    Maps to OSDU ``master-data--Field``. Inherits the :class:`_Node` fields;</span>
+<span class="sd">    ``parent`` points to the owning :class:`Organisation`.</span>
+<span class="sd">    &quot;&quot;&quot;</span></div>
+
+
+
+<div class="viewcode-block" id="Site">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.Site">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Site</span><span class="p">(</span><span class="n">_Node</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A site / surface structure grouping wells — a platform, pad, or subsea</span>
+<span class="sd">    template.</span>
+
+<span class="sd">    Maps to OSDU ``master-data--WellSiteStructure`` (EDM ``CD_SITE``). Carries</span>
+<span class="sd">    the shared spatial reference for the wells drilled from it, so that the</span>
+<span class="sd">    common geodetic terms can be identified and cancelled in relative use.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    id : str</span>
+<span class="sd">        Unique node identifier (inherited from :class:`_Node`).</span>
+<span class="sd">    name : str, default &quot;&quot;</span>
+<span class="sd">        Human-readable site name (inherited from :class:`_Node`).</span>
+<span class="sd">    parent : _Node or None, default None</span>
+<span class="sd">        The owning :class:`Field` (inherited from :class:`_Node`).</span>
+<span class="sd">    crs : str or None, default None</span>
+<span class="sd">        Geodetic coordinate reference system (zone / datum, e.g. ``&quot;UTM-31N&quot;``</span>
+<span class="sd">        / ``&quot;ED50&quot;``) shared by every well on the site (EDM ``CD_PROJECT``).</span>
+<span class="sd">    convergence : float or None, default None</span>
+<span class="sd">        Grid-vs-true-north convergence, in radians, for the site origin.</span>
+<span class="sd">    is_field_centre : bool, default False</span>
+<span class="sd">        ``True`` if this site is the field-centre coordinate origin.</span>
+<span class="sd">    location : tuple of float or None, default None</span>
+<span class="sd">        Site map location as ``(northing, easting)``, in metres.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    Wells on one site share ``crs`` and ``convergence`` — these are *common*</span>
+<span class="sd">    systematic terms that cancel in the relative (wellbore-to-wellbore)</span>
+<span class="sd">    uncertainty sense. Only the per-well slot offsets differ (see</span>
+<span class="sd">    :class:`Well`).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">crs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>          <span class="c1"># geodetic CRS (zone/datum), shared ref</span>
+    <span class="n">convergence</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>      <span class="c1"># grid vs true north (rad)</span>
+    <span class="n">is_field_centre</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">location</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>   <span class="c1"># (northing, easting) map location</span></div>
+
+
+
+<div class="viewcode-block" id="Well">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.Well">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Well</span><span class="p">(</span><span class="n">_Node</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A well — the surface location / wellhead the root wellbore(s) hang off.</span>
+
+<span class="sd">    Maps to OSDU ``master-data--Well`` (EDM ``CD_WELL``). Holds the slot</span>
+<span class="sd">    position and its uncertainty (the surface-location error source in relative</span>
+<span class="sd">    uncertainty) together with the well&#39;s local depth datum.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    id : str</span>
+<span class="sd">        Unique node identifier (inherited from :class:`_Node`).</span>
+<span class="sd">    name : str, default &quot;&quot;</span>
+<span class="sd">        Human-readable well name (inherited from :class:`_Node`).</span>
+<span class="sd">    parent : _Node or None, default None</span>
+<span class="sd">        The owning :class:`Site` (inherited from :class:`_Node`).</span>
+<span class="sd">    slot : tuple of float or None, default None</span>
+<span class="sd">        Slot offset ``(ns, ew)`` from the site origin, in metres.</span>
+<span class="sd">    slot_radial_error : float, default 0.0</span>
+<span class="sd">        Radial (1-sigma) slot-position uncertainty, in metres.</span>
+<span class="sd">    wellhead_depth : float or None, default None</span>
+<span class="sd">        Wellhead depth, in metres.</span>
+<span class="sd">    datum : Datum or None, default None</span>
+<span class="sd">        The per-well RKB / rotary depth datum (EDM ``CD_DATUM`` is per-well,</span>
+<span class="sd">        not per-site).</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    Two wells on one site share the site CRS, so in relative uncertainty only</span>
+<span class="sd">    their slot offsets and ``slot_radial_error`` differ — the shared CRS /</span>
+<span class="sd">    convergence cancels (see :class:`Site`).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">slot</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>   <span class="c1"># (ns, ew) offset from site origin</span>
+    <span class="n">slot_radial_error</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>               <span class="c1"># slot-position uncertainty</span>
+    <span class="n">wellhead_depth</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">datum</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Datum</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>                <span class="c1"># per-well RKB/rotary datum</span></div>
+
+
+
+<div class="viewcode-block" id="Wellbore">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.Wellbore">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Wellbore</span><span class="p">(</span><span class="n">_Node</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A wellbore *section* — a drilled hole.</span>
+
+<span class="sd">    Maps to OSDU ``master-data--Wellbore`` (EDM ``CD_WELLBORE``). A wellbore is</span>
+<span class="sd">    the unit the graph is built from: it is either a *root* wellbore (top hole,</span>
+<span class="sd">    parented by a :class:`Well`) or a sidetrack / lateral kicked off another</span>
+<span class="sd">    :class:`Wellbore`.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    id : str</span>
+<span class="sd">        Unique node identifier (inherited from :class:`_Node`).</span>
+<span class="sd">    name : str, default &quot;&quot;</span>
+<span class="sd">        Human-readable wellbore name (inherited from :class:`_Node`).</span>
+<span class="sd">    parent : _Node or None, default None</span>
+<span class="sd">        Either the :class:`Well` (root wellbore) or the :class:`Wellbore` this</span>
+<span class="sd">        section kicked off from (sidetrack / lateral). The OSDU edge is</span>
+<span class="sd">        ``Wellbore.KickOffWellbore`` / the EDM ``parent_wellbore_id``.</span>
+<span class="sd">    kickoff_md : float or None, default None</span>
+<span class="sd">        The tie / divergence measured depth on the parent, in metres — the</span>
+<span class="sd">        point at which this section departs its parent. See Notes.</span>
+<span class="sd">    survey : object, default None</span>
+<span class="sd">        The section&#39;s survey (a ``welleng.survey.Survey`` / future MinCurve</span>
+<span class="sd">        result; OSDU ``work-product-component--WellboreTrajectory``), covering</span>
+<span class="sd">        ``[tie_on_md, td_md]``.</span>
+<span class="sd">    survey_date : str or None, default None</span>
+<span class="sd">        Survey acquisition date. An error-source correlation key: geomagnetic</span>
+<span class="sd">        terms (declination / dip / B) are date + location dependent via secular</span>
+<span class="sd">        variation.</span>
+<span class="sd">    tool_id : str or None, default None</span>
+<span class="sd">        Survey tool run identifier. An error-source correlation key: sections</span>
+<span class="sd">        from the same tool run share that tool&#39;s systematic error.</span>
+<span class="sd">    geomag_model : str or None, default None</span>
+<span class="sd">        Geomagnetic model / IFR / IIFR reference used. An error-source</span>
+<span class="sd">        correlation key.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    ``kickoff_md`` is **derived**, not a native OSDU field — OSDU has no</span>
+<span class="sd">    ``KickOffMD``. Infer it from the child trajectory&#39;s top MD relative to the</span>
+<span class="sd">    parent (EDM supplies it directly via ``CD_SURVEY_HEADER.tie_on_depth``). It</span>
+<span class="sd">    is the divergence point the relative-error split needs.</span>
+
+<span class="sd">    The ``survey_date`` / ``tool_id`` / ``geomag_model`` fields are the</span>
+<span class="sd">    error-source *context keys*. They decide how much two sections&#39; errors</span>
+<span class="sd">    correlate even when their trajectories are independent (divergent</span>
+<span class="sd">    branches): sections sharing a key share that systematic error *source*, so</span>
+<span class="sd">    it partly correlates between them — orthogonal to the graph ancestry. The</span>
+<span class="sd">    datum and grid convergence come from the parent Well / Site and are shared</span>
+<span class="sd">    keys too.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">parent</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="s2">&quot;_Node&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>       <span class="c1"># Well (root) or Wellbore (sidetrack)</span>
+    <span class="n">kickoff_md</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>      <span class="c1"># DERIVED tie/divergence MD on the parent</span>
+    <span class="n">survey</span><span class="p">:</span> <span class="nb">object</span> <span class="o">=</span> <span class="kc">None</span>                   <span class="c1"># welleng Survey / MinCurve result</span>
+    <span class="c1"># --- error-source context (the correlation keys) ---------------------- #</span>
+    <span class="c1"># These decide how much two sections&#39; errors correlate even when their</span>
+    <span class="c1"># *trajectories* are independent (divergent branches). Sections that share a</span>
+    <span class="c1"># key share that systematic error SOURCE -&gt; it partly correlates between</span>
+    <span class="c1"># them (reduces relative independence), orthogonal to the graph ancestry.</span>
+    <span class="n">survey_date</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>   <span class="c1"># acquisition date -&gt; geomag terms are</span>
+                                        <span class="c1">#   date+location dependent (secular var.)</span>
+    <span class="n">tool_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>           <span class="c1"># same tool RUN -&gt; shared tool systematic</span>
+    <span class="n">geomag_model</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>      <span class="c1"># geomag model/IFR/IIFR reference used</span>
+    <span class="c1"># (datum + grid convergence come from the parent Well/Site; also shared keys)</span>
+    <span class="n">datum_realisation</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># which DatumRealisation (id) this</span></div>
+
+    <span class="c1">#   wellbore&#39;s positions were computed under -- pins the origin frame so a</span>
+    <span class="c1">#   later datum re-survey never silently mixes frames (see Datum)</span>
+
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># the wellbore network graph</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<div class="viewcode-block" id="WellNetwork">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.WellNetwork">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">WellNetwork</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A forest of wellbore sections rooted at wells / platforms.</span>
+
+<span class="sd">    A lightweight forest (single parent per node) whose nodes are the</span>
+<span class="sd">    master-data entities (Wellbores and their Well / Site / Field /</span>
+<span class="sd">    Organisation ancestors) and whose parent -&gt; child links encode &quot;child</span>
+<span class="sd">    kicks off / hangs off parent&quot;. Provides the ancestry queries (roots,</span>
+<span class="sd">    leaves, lowest common</span>
+<span class="sd">    ancestor) and the shared / divergent split that relative-error propagation</span>
+<span class="sd">    needs, plus native JSON persistence.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    The graph is a *forest*: every wellbore has a parent — a parent wellbore</span>
+<span class="sd">    (sidetrack / lateral) or, for a root wellbore, its Well. The load-bearing</span>
+<span class="sd">    reason for a graph is relative uncertainty: two wellbores of common</span>
+<span class="sd">    ancestry share the same survey up to their divergence point, so those</span>
+<span class="sd">    systematic errors are common and cancel in the relative sense. Walking to</span>
+<span class="sd">    the lowest common ancestor splits the two paths into a shared trunk</span>
+<span class="sd">    (systematic-common) and two independent divergent branches; only the</span>
+<span class="sd">    divergent parts sum. See :meth:`relative_covariance`.</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">    Build a small Site -&gt; Well -&gt; Wellbore tree with two laterals off one top</span>
+<span class="sd">    hole, then query its topology.</span>
+
+<span class="sd">    &gt;&gt;&gt; from welleng.hierarchy import Site, Well, Wellbore, WellNetwork</span>
+<span class="sd">    &gt;&gt;&gt; net = WellNetwork()</span>
+<span class="sd">    &gt;&gt;&gt; site = Site(id=&#39;S1&#39;, name=&#39;PadA&#39;)</span>
+<span class="sd">    &gt;&gt;&gt; well = Well(id=&#39;W1&#39;, name=&#39;W1&#39;, parent=site)</span>
+<span class="sd">    &gt;&gt;&gt; top = Wellbore(id=&#39;WB1&#39;, name=&#39;TopHole&#39;, parent=well)</span>
+<span class="sd">    &gt;&gt;&gt; lat1 = Wellbore(id=&#39;WB2&#39;, name=&#39;Lat1&#39;, parent=top, kickoff_md=1000.0)</span>
+<span class="sd">    &gt;&gt;&gt; lat2 = Wellbore(id=&#39;WB3&#39;, name=&#39;Lat2&#39;, parent=top, kickoff_md=1200.0)</span>
+<span class="sd">    &gt;&gt;&gt; for n in (site, well, top, lat1, lat2):</span>
+<span class="sd">    ...     _ = net.add(n)</span>
+<span class="sd">    &gt;&gt;&gt; [w.id for w in net.roots()]</span>
+<span class="sd">    [&#39;WB1&#39;]</span>
+<span class="sd">    &gt;&gt;&gt; sorted(w.id for w in net.leaves())</span>
+<span class="sd">    [&#39;WB2&#39;, &#39;WB3&#39;]</span>
+<span class="sd">    &gt;&gt;&gt; net.lowest_common_ancestor(&#39;WB2&#39;, &#39;WB3&#39;)</span>
+<span class="sd">    &#39;WB1&#39;</span>
+<span class="sd">    &gt;&gt;&gt; net.shared_and_divergent(&#39;WB2&#39;, &#39;WB3&#39;)</span>
+<span class="sd">    ([&#39;WB1&#39;, &#39;W1&#39;], [&#39;WB2&#39;], [&#39;WB3&#39;])</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="WellNetwork.__init__">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.WellNetwork.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># forest storage: single parent per node, ordered children per parent</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_children</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_parents</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_nodes</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_Node</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+
+    <span class="c1"># -- construction ------------------------------------------------------- #</span>
+<div class="viewcode-block" id="WellNetwork.add">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.WellNetwork.add">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">:</span> <span class="n">_Node</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">_Node</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add a node and wire its parent edge into the graph.</span>
+
+<span class="sd">        Registers ``node`` in the network and, when its ``parent`` is a</span>
+<span class="sd">        :class:`Well` (root wellbore) or a :class:`Wellbore` (sidetrack), adds</span>
+<span class="sd">        the directed ``parent -&gt; node`` edge. The full container ancestor chain</span>
+<span class="sd">        (Well -&gt; Site -&gt; Field -&gt; Organisation) is also registered so the whole</span>
+<span class="sd">        hierarchy serialises and is queryable.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        node : _Node</span>
+<span class="sd">            The entity to add — typically a :class:`Wellbore` or :class:`Well`</span>
+<span class="sd">            (container ancestors are pulled in automatically via ``parent``).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        _Node</span>
+<span class="sd">            The same ``node`` that was passed in (for chaining).</span>
+
+<span class="sd">        Examples</span>
+<span class="sd">        --------</span>
+<span class="sd">        &gt;&gt;&gt; from welleng.hierarchy import Well, Wellbore, WellNetwork</span>
+<span class="sd">        &gt;&gt;&gt; net = WellNetwork()</span>
+<span class="sd">        &gt;&gt;&gt; well = Well(id=&#39;W1&#39;, name=&#39;W1&#39;)</span>
+<span class="sd">        &gt;&gt;&gt; _ = net.add(Wellbore(id=&#39;WB1&#39;, name=&#39;TopHole&#39;, parent=well))</span>
+<span class="sd">        &gt;&gt;&gt; [w.id for w in net.roots()]</span>
+<span class="sd">        [&#39;WB1&#39;]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_nodes</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">id</span><span class="p">]</span> <span class="o">=</span> <span class="n">node</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_children</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="n">parent</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">parent</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">parent</span><span class="p">,</span> <span class="p">(</span><span class="n">Well</span><span class="p">,</span> <span class="n">Wellbore</span><span class="p">)):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_nodes</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">parent</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">parent</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_children</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">parent</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="p">[])</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_children</span><span class="p">[</span><span class="n">parent</span><span class="o">.</span><span class="n">id</span><span class="p">]:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_children</span><span class="p">[</span><span class="n">parent</span><span class="o">.</span><span class="n">id</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_parents</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">id</span><span class="p">]</span> <span class="o">=</span> <span class="n">parent</span><span class="o">.</span><span class="n">id</span>
+        <span class="c1"># register the full container ancestor chain (Well -&gt; Site -&gt; Field -&gt;</span>
+        <span class="c1"># Organisation) in _nodes so the whole hierarchy serialises + is queryable.</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">parent</span>
+        <span class="k">while</span> <span class="n">p</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_nodes</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">p</span><span class="p">)</span>
+            <span class="n">p</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="s2">&quot;parent&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">node</span></div>
+
+
+<div class="viewcode-block" id="WellNetwork.node">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.WellNetwork.node">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">node</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">id_</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">_Node</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the registered entity for a node id.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        id_ : str</span>
+<span class="sd">            The node identifier.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        _Node</span>
+<span class="sd">            The stored entity.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        KeyError</span>
+<span class="sd">            If no node with ``id_`` has been added.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nodes</span><span class="p">[</span><span class="n">id_</span><span class="p">]</span></div>
+
+
+    <span class="c1"># -- topology ----------------------------------------------------------- #</span>
+<div class="viewcode-block" id="WellNetwork.roots">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.WellNetwork.roots">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">roots</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Wellbore</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the root wellbores of the forest.</span>
+
+<span class="sd">        A root wellbore is one whose parent is a :class:`Well` rather than</span>
+<span class="sd">        another wellbore — i.e. the top hole of a drilled tree, with no parent</span>
+<span class="sd">        wellbore.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        list of Wellbore</span>
+<span class="sd">            The root wellbores, in insertion order.</span>
+
+<span class="sd">        Examples</span>
+<span class="sd">        --------</span>
+<span class="sd">        &gt;&gt;&gt; from welleng.hierarchy import Well, Wellbore, WellNetwork</span>
+<span class="sd">        &gt;&gt;&gt; net = WellNetwork()</span>
+<span class="sd">        &gt;&gt;&gt; well = Well(id=&#39;W1&#39;, name=&#39;W1&#39;)</span>
+<span class="sd">        &gt;&gt;&gt; _ = net.add(Wellbore(id=&#39;WB1&#39;, name=&#39;TopHole&#39;, parent=well))</span>
+<span class="sd">        &gt;&gt;&gt; [w.id for w in net.roots()]</span>
+<span class="sd">        [&#39;WB1&#39;]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="n">n</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_wellbores</span><span class="p">()</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nodes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_parent_id</span><span class="p">(</span><span class="n">n</span><span class="o">.</span><span class="n">id</span><span class="p">)),</span> <span class="n">Well</span><span class="p">)</span>
+        <span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="WellNetwork.leaves">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.WellNetwork.leaves">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">leaves</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Wellbore</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the leaf wellbores of the forest.</span>
+
+<span class="sd">        A leaf wellbore has no children — a TD section or the deepest lateral</span>
+<span class="sd">        on its branch.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        list of Wellbore</span>
+<span class="sd">            The childless wellbores.</span>
+
+<span class="sd">        Examples</span>
+<span class="sd">        --------</span>
+<span class="sd">        &gt;&gt;&gt; from welleng.hierarchy import Well, Wellbore, WellNetwork</span>
+<span class="sd">        &gt;&gt;&gt; net = WellNetwork()</span>
+<span class="sd">        &gt;&gt;&gt; well = Well(id=&#39;W1&#39;, name=&#39;W1&#39;)</span>
+<span class="sd">        &gt;&gt;&gt; top = Wellbore(id=&#39;WB1&#39;, name=&#39;TopHole&#39;, parent=well)</span>
+<span class="sd">        &gt;&gt;&gt; lat = Wellbore(id=&#39;WB2&#39;, name=&#39;Lat1&#39;, parent=top, kickoff_md=1000.0)</span>
+<span class="sd">        &gt;&gt;&gt; for n in (well, top, lat):</span>
+<span class="sd">        ...     _ = net.add(n)</span>
+<span class="sd">        &gt;&gt;&gt; [w.id for w in net.leaves()]</span>
+<span class="sd">        [&#39;WB2&#39;]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="n">n</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_wellbores</span><span class="p">()</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_children</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">n</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+        <span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="WellNetwork.ancestors">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.WellNetwork.ancestors">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">ancestors</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">id_</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the ancestry chain of a node, nearest-first.</span>
+
+<span class="sd">        Walks parent edges from ``id_`` up to (and including) its root, so the</span>
+<span class="sd">        returned list starts with ``id_`` itself and ends at the top container</span>
+<span class="sd">        entity on that path.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        id_ : str</span>
+<span class="sd">            The node identifier to start from.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        list of str</span>
+<span class="sd">            Node ids from ``id_`` up to and including the root, nearest-first.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">chain</span><span class="p">,</span> <span class="n">cur</span> <span class="o">=</span> <span class="p">[],</span> <span class="n">id_</span>
+        <span class="n">seen</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">while</span> <span class="n">cur</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">cur</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">:</span>
+            <span class="n">seen</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">cur</span><span class="p">)</span>
+            <span class="n">chain</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cur</span><span class="p">)</span>
+            <span class="n">cur</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parent_id</span><span class="p">(</span><span class="n">cur</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">chain</span></div>
+
+
+<div class="viewcode-block" id="WellNetwork.lowest_common_ancestor">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.WellNetwork.lowest_common_ancestor">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">lowest_common_ancestor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">a</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the lowest common ancestor (LCA) of two nodes.</span>
+
+<span class="sd">        The LCA is the deepest node that is an ancestor of both ``a`` and ``b``</span>
+<span class="sd">        — their divergence point in the forest.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        a : str</span>
+<span class="sd">            First node identifier.</span>
+<span class="sd">        b : str</span>
+<span class="sd">            Second node identifier.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        str or None</span>
+<span class="sd">            The id of the deepest shared ancestor, or ``None`` if the two nodes</span>
+<span class="sd">            share no ancestry (e.g. different platforms).</span>
+
+<span class="sd">        Examples</span>
+<span class="sd">        --------</span>
+<span class="sd">        &gt;&gt;&gt; from welleng.hierarchy import Well, Wellbore, WellNetwork</span>
+<span class="sd">        &gt;&gt;&gt; net = WellNetwork()</span>
+<span class="sd">        &gt;&gt;&gt; well = Well(id=&#39;W1&#39;, name=&#39;W1&#39;)</span>
+<span class="sd">        &gt;&gt;&gt; top = Wellbore(id=&#39;WB1&#39;, name=&#39;TopHole&#39;, parent=well)</span>
+<span class="sd">        &gt;&gt;&gt; lat1 = Wellbore(id=&#39;WB2&#39;, name=&#39;Lat1&#39;, parent=top, kickoff_md=1000.0)</span>
+<span class="sd">        &gt;&gt;&gt; lat2 = Wellbore(id=&#39;WB3&#39;, name=&#39;Lat2&#39;, parent=top, kickoff_md=1200.0)</span>
+<span class="sd">        &gt;&gt;&gt; for n in (well, top, lat1, lat2):</span>
+<span class="sd">        ...     _ = net.add(n)</span>
+<span class="sd">        &gt;&gt;&gt; net.lowest_common_ancestor(&#39;WB2&#39;, &#39;WB3&#39;)</span>
+<span class="sd">        &#39;WB1&#39;</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">anc_a</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ancestors</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+        <span class="n">anc_b</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ancestors</span><span class="p">(</span><span class="n">b</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">anc_a</span><span class="p">:</span>               <span class="c1"># nearest-first from a</span>
+            <span class="k">if</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">anc_b</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">node</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="WellNetwork.shared_and_divergent">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.WellNetwork.shared_and_divergent">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">shared_and_divergent</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">a</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Split the two ancestry paths at their lowest common ancestor.</span>
+
+<span class="sd">        Partitions the ancestry of ``a`` and ``b`` into the shared trunk (the</span>
+<span class="sd">        LCA and everything above it) and the two divergent branches below the</span>
+<span class="sd">        LCA — the partition relative-error propagation is built on.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        a : str</span>
+<span class="sd">            First node identifier.</span>
+<span class="sd">        b : str</span>
+<span class="sd">            Second node identifier.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        tuple of (list of str, list of str, list of str)</span>
+<span class="sd">            ``(shared, branch_a, branch_b)`` where ``shared`` is the common</span>
+<span class="sd">            trunk (LCA and above), ``branch_a`` is the divergent portion of</span>
+<span class="sd">            ``a``&#39;s ancestry below the LCA (nearest-first), and ``branch_b`` the</span>
+<span class="sd">            same for ``b``. If the two nodes share no ancestry, ``shared`` is</span>
+<span class="sd">            empty and each branch is the node&#39;s full ancestry.</span>
+
+<span class="sd">        Notes</span>
+<span class="sd">        -----</span>
+<span class="sd">        Systematic errors on the shared trunk are COMMON to both wellbores and</span>
+<span class="sd">        cancel in the relative sense; only the independent divergent branches</span>
+<span class="sd">        sum. See :meth:`relative_covariance`.</span>
+
+<span class="sd">        Examples</span>
+<span class="sd">        --------</span>
+<span class="sd">        &gt;&gt;&gt; from welleng.hierarchy import Well, Wellbore, WellNetwork</span>
+<span class="sd">        &gt;&gt;&gt; net = WellNetwork()</span>
+<span class="sd">        &gt;&gt;&gt; well = Well(id=&#39;W1&#39;, name=&#39;W1&#39;)</span>
+<span class="sd">        &gt;&gt;&gt; top = Wellbore(id=&#39;WB1&#39;, name=&#39;TopHole&#39;, parent=well)</span>
+<span class="sd">        &gt;&gt;&gt; lat1 = Wellbore(id=&#39;WB2&#39;, name=&#39;Lat1&#39;, parent=top, kickoff_md=1000.0)</span>
+<span class="sd">        &gt;&gt;&gt; lat2 = Wellbore(id=&#39;WB3&#39;, name=&#39;Lat2&#39;, parent=top, kickoff_md=1200.0)</span>
+<span class="sd">        &gt;&gt;&gt; for n in (well, top, lat1, lat2):</span>
+<span class="sd">        ...     _ = net.add(n)</span>
+<span class="sd">        &gt;&gt;&gt; net.shared_and_divergent(&#39;WB2&#39;, &#39;WB3&#39;)</span>
+<span class="sd">        ([&#39;WB1&#39;, &#39;W1&#39;], [&#39;WB2&#39;], [&#39;WB3&#39;])</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">lca</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lowest_common_ancestor</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span>
+        <span class="n">anc_a</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ancestors</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+        <span class="n">anc_b</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ancestors</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">lca</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[],</span> <span class="n">anc_a</span><span class="p">,</span> <span class="n">anc_b</span>          <span class="c1"># no shared trunk -&gt; fully independent</span>
+        <span class="n">branch_a</span> <span class="o">=</span> <span class="n">anc_a</span><span class="p">[:</span> <span class="n">anc_a</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">lca</span><span class="p">)]</span>
+        <span class="n">branch_b</span> <span class="o">=</span> <span class="n">anc_b</span><span class="p">[:</span> <span class="n">anc_b</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">lca</span><span class="p">)]</span>
+        <span class="n">shared</span> <span class="o">=</span> <span class="n">anc_a</span><span class="p">[</span><span class="n">anc_a</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">lca</span><span class="p">):]</span>
+        <span class="k">return</span> <span class="n">shared</span><span class="p">,</span> <span class="n">branch_a</span><span class="p">,</span> <span class="n">branch_b</span></div>
+
+
+    <span class="c1"># -- relative uncertainty (integration point with the error engine) ----- #</span>
+<div class="viewcode-block" id="WellNetwork.relative_covariance">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.WellNetwork.relative_covariance">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">relative_covariance</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">a</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">md_a</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">md_b</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">error_model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;ISCWSA MWD Rev5.11&quot;</span><span class="p">,</span>
+        <span class="n">share_mode</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Relative position covariance between two wellbores of common</span>
+<span class="sd">        ancestry.</span>
+
+<span class="sd">        Computes the NEV covariance of the *difference* in position between the</span>
+<span class="sd">        compared points of wellbores ``a`` and ``b`` (their ends, or their</span>
+<span class="sd">        point of closest approach — the anti-collision use), correctly</span>
+<span class="sd">        cancelling the systematic errors carried by the survey they share up to</span>
+<span class="sd">        their divergence point.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        a : str</span>
+<span class="sd">            First wellbore node identifier.</span>
+<span class="sd">        b : str</span>
+<span class="sd">            Second wellbore node identifier.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        numpy.ndarray</span>
+<span class="sd">            The 3x3 relative-position covariance matrix in the NEV frame, in</span>
+<span class="sd">            metres squared.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        ValueError</span>
+<span class="sd">            If either wellbore has no survey attached (raised by the underlying</span>
+<span class="sd">            :meth:`_abs_cov` helper).</span>
+
+<span class="sd">        Notes</span>
+<span class="sd">        -----</span>
+<span class="sd">        The result is NOT the naive independent sum ``Cov(a) + Cov(b)``. There</span>
+<span class="sd">        are two correlation dimensions:</span>
+
+<span class="sd">        1. **Trajectory ancestry (the graph).** The *shared trunk* is the same</span>
+<span class="sd">           physical survey inherited by both wellbores, so ALL of its error</span>
+<span class="sd">           terms (systematic and the once-realised random) are common and</span>
+<span class="sd">           CANCEL in the difference — net shared-trunk contribution is ~0. Only</span>
+<span class="sd">           the *divergent branches* have independent trajectories.</span>
+<span class="sd">        2. **Error-source context (the keys).** Even the divergent branches are</span>
+<span class="sd">           not fully independent: where they share a source (``tool_id`` = same</span>
+<span class="sd">           tool run, ``survey_date`` + location = same geomagnetic</span>
+<span class="sd">           declination / dip / B, ``geomag_model`` / IFR, the Well ``datum`` /</span>
+<span class="sd">           Site convergence) the *systematic* part of that term correlates</span>
+<span class="sd">           between them, so::</span>
+
+<span class="sd">               Cov_rel ~ Cov(branch_a) + Cov(branch_b)</span>
+<span class="sd">                         - 2 * Cov_shared_source(branch_a, branch_b)</span>
+
+<span class="sd">           with the shared trunk dropped. Drop the cross term (treat as</span>
+<span class="sd">           independent) only when the branches share no tool / geomag / datum</span>
+<span class="sd">           context. This is the multilateral / sidetrack relative-uncertainty</span>
+<span class="sd">           rule.</span>
+
+<span class="sd">        This implements the ISCWSA Side-track Clearance RP (2022) §3.2.2</span>
+<span class="sd">        method (b) — &quot;subtract the covariance at the Side-track point&quot; — which</span>
+<span class="sd">        is Williamson (2000, SPE-67616-PA) Eq. A-24 specialised to a</span>
+<span class="sd">        fully-correlated shared trunk: with ``C_A = C_st + C_branchA`` and</span>
+<span class="sd">        ``C_B = C_st + C_branchB``::</span>
+
+<span class="sd">            C_rel = C_A(a) + C_B(b) - 2 * C_st   ( = C_branchA + C_branchB )</span>
+
+<span class="sd">        where ``C_st`` is the absolute covariance at the deepest common</span>
+<span class="sd">        (side-track) point. Each wellbore&#39;s absolute covariance comes from</span>
+<span class="sd">        welleng&#39;s ``ErrorModel`` (``survey.cov_nev``); the surveys are assumed</span>
+<span class="sd">        full-from-surface (as EDM definitive surveys are), so they agree over</span>
+<span class="sd">        the shared trunk.</span>
+
+<span class="sd">        Implemented is the trunk cancellation (the dominant effect).</span>
+<span class="sd">        **Deferred:** the source-context cross-term</span>
+<span class="sd">        ``- 2 * Cov_shared_source`` between the *divergent* branches (same tool</span>
+<span class="sd">        run / geomag date / datum — the RP&#39;s same-job / different-job</span>
+<span class="sd">        partial-correlation table). Without it two</span>
+<span class="sd">        same-job laterals are treated as independent below the kickoff, which is</span>
+<span class="sd">        slightly *conservative* (over-states relative uncertainty) — the safe</span>
+<span class="sd">        direction. Add it with the per-term systematic / random classification</span>
+<span class="sd">        from the error engine.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+        <span class="c1"># Mixed datum-realisation guard: if both wellbores pin an origin</span>
+        <span class="c1"># realisation and they differ, their absolute positions are quoted in</span>
+        <span class="c1"># DIFFERENT frames (a datum re-survey happened between them). The</span>
+        <span class="c1"># relative covariance itself is frame-invariant, but any absolute</span>
+        <span class="c1"># positions being differenced alongside it are not -- warn so the</span>
+        <span class="c1"># caller re-references one side (Datum.shift_between) first.</span>
+        <span class="n">wb_a</span><span class="p">,</span> <span class="n">wb_b</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">node</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">node</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
+        <span class="n">ra</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">wb_a</span><span class="p">,</span> <span class="s2">&quot;datum_realisation&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">rb</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">wb_b</span><span class="p">,</span> <span class="s2">&quot;datum_realisation&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">ra</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">rb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ra</span> <span class="o">!=</span> <span class="n">rb</span><span class="p">:</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;wellbores </span><span class="si">{</span><span class="n">a</span><span class="si">!r}</span><span class="s2"> and </span><span class="si">{</span><span class="n">b</span><span class="si">!r}</span><span class="s2"> pin different datum realisations &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="n">ra</span><span class="si">!r}</span><span class="s2"> vs </span><span class="si">{</span><span class="n">rb</span><span class="si">!r}</span><span class="s2">): their absolute positions are in &quot;</span>
+                <span class="s2">&quot;different origin frames. Re-reference one side with &quot;</span>
+                <span class="s2">&quot;Datum.shift_between before differencing positions.&quot;</span><span class="p">,</span>
+                <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="n">C_a</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_abs_cov</span><span class="p">(</span><span class="n">wb_a</span><span class="p">,</span> <span class="n">md_a</span><span class="p">,</span> <span class="n">error_model</span><span class="p">)</span>
+        <span class="n">C_b</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_abs_cov</span><span class="p">(</span><span class="n">wb_b</span><span class="p">,</span> <span class="n">md_b</span><span class="p">,</span> <span class="n">error_model</span><span class="p">)</span>
+        <span class="n">lca</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lowest_common_ancestor</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">lca</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>                          <span class="c1"># no shared ancestry -&gt; independent</span>
+            <span class="k">return</span> <span class="n">C_a</span> <span class="o">+</span> <span class="n">C_b</span>
+        <span class="n">st_md</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sidetrack_md</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">st_md</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># No kick-off MD on the divergent branch(es) -&gt; can&#39;t locate the</span>
+            <span class="c1"># shared trunk; fall back to the naive independent sum (no</span>
+            <span class="c1"># cancellation), which is conservative (over-states relative).</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                <span class="s2">&quot;relative_covariance: divergence (kick-off) MD unavailable; &quot;</span>
+                <span class="s2">&quot;returning the naive independent sum (no shared-trunk &quot;</span>
+                <span class="s2">&quot;cancellation)&quot;</span><span class="p">,</span> <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">C_a</span> <span class="o">+</span> <span class="n">C_b</span>
+        <span class="c1"># Covariance at the side-track (divergence) point on the shared trunk.</span>
+        <span class="c1"># Both wellbores share the trunk (full-from-surface surveys), so evaluate</span>
+        <span class="c1"># it on a&#39;s survey.</span>
+        <span class="n">C_st</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_abs_cov</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">node</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="n">st_md</span><span class="p">,</span> <span class="n">error_model</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">share_mode</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">share_mode</span> <span class="o">==</span> <span class="s2">&quot;all_independent&quot;</span><span class="p">:</span>
+            <span class="c1"># Shared trunk cancels; divergent branches treated as independent.</span>
+            <span class="k">return</span> <span class="n">C_a</span> <span class="o">+</span> <span class="n">C_b</span> <span class="o">-</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">C_st</span>
+        <span class="c1"># Per-term source-context sharing between the DIVERGENT branches (same</span>
+        <span class="c1"># tool run / geomag era). Subtract the trunk to get each branch&#39;s own</span>
+        <span class="c1"># covariance components, then combine via welleng.conditioning under the</span>
+        <span class="c1"># requested share_mode (RP same-job/different-job table).</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.conditioning</span><span class="w"> </span><span class="kn">import</span> <span class="n">combine_covariances</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">Ga</span><span class="p">,</span> <span class="n">Sa</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_abs_cov_components</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">node</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="n">md_a</span><span class="p">,</span> <span class="n">error_model</span><span class="p">)</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">Gb</span><span class="p">,</span> <span class="n">Sb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_abs_cov_components</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">node</span><span class="p">(</span><span class="n">b</span><span class="p">),</span> <span class="n">md_b</span><span class="p">,</span> <span class="n">error_model</span><span class="p">)</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">Gst</span><span class="p">,</span> <span class="n">Sst</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_abs_cov_components</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">node</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="n">st_md</span><span class="p">,</span> <span class="n">error_model</span><span class="p">)</span>
+        <span class="n">br_a</span><span class="p">,</span> <span class="n">br_b</span> <span class="o">=</span> <span class="n">C_a</span> <span class="o">-</span> <span class="n">C_st</span><span class="p">,</span> <span class="n">C_b</span> <span class="o">-</span> <span class="n">C_st</span>          <span class="c1"># divergent-branch totals</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">combine_covariances</span><span class="p">(</span>
+            <span class="n">br_a</span><span class="p">[</span><span class="kc">None</span><span class="p">],</span> <span class="n">br_b</span><span class="p">[</span><span class="kc">None</span><span class="p">],</span>
+            <span class="n">cov_global_a</span><span class="o">=</span><span class="p">(</span><span class="n">Ga</span> <span class="o">-</span> <span class="n">Gst</span><span class="p">)[</span><span class="kc">None</span><span class="p">],</span> <span class="n">cov_global_b</span><span class="o">=</span><span class="p">(</span><span class="n">Gb</span> <span class="o">-</span> <span class="n">Gst</span><span class="p">)[</span><span class="kc">None</span><span class="p">],</span>
+            <span class="n">cov_systematic_a</span><span class="o">=</span><span class="p">(</span><span class="n">Sa</span> <span class="o">-</span> <span class="n">Sst</span><span class="p">)[</span><span class="kc">None</span><span class="p">],</span> <span class="n">cov_systematic_b</span><span class="o">=</span><span class="p">(</span><span class="n">Sb</span> <span class="o">-</span> <span class="n">Sst</span><span class="p">)[</span><span class="kc">None</span><span class="p">],</span>
+            <span class="n">share_mode</span><span class="o">=</span><span class="n">share_mode</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">cov_combined</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span></div>
+
+
+    <span class="c1"># -- covariance helpers ------------------------------------------------- #</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_abs_cov</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wb</span><span class="p">:</span> <span class="s2">&quot;Wellbore&quot;</span><span class="p">,</span> <span class="n">md</span><span class="p">,</span> <span class="n">error_model</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Absolute (from-surface) NEV covariance of a wellbore at a depth.</span>
+
+<span class="sd">        Returns the wellbore&#39;s own absolute position covariance at the nearest</span>
+<span class="sd">        survey station to ``md`` (or at TD when ``md`` is ``None``), using the</span>
+<span class="sd">        survey&#39;s cached ``cov_nev`` if present, otherwise computing it via</span>
+<span class="sd">        welleng&#39;s ``ErrorModel``.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        wb : Wellbore</span>
+<span class="sd">            The wellbore whose survey covariance is required.</span>
+<span class="sd">        md : float or None</span>
+<span class="sd">            Measured depth, in metres, at which to sample the covariance; the</span>
+<span class="sd">            nearest survey station is used. ``None`` selects the last (TD)</span>
+<span class="sd">            station.</span>
+<span class="sd">        error_model : str</span>
+<span class="sd">            The welleng error-model name to apply when the survey has no cached</span>
+<span class="sd">            covariance (e.g. ``&quot;ISCWSA MWD Rev5.11&quot;``).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        numpy.ndarray</span>
+<span class="sd">            The 3x3 absolute NEV covariance at the selected station, in metres</span>
+<span class="sd">            squared.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        ValueError</span>
+<span class="sd">            If ``wb`` has no survey attached.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.error</span><span class="w"> </span><span class="kn">import</span> <span class="n">ErrorModel</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">wb</span><span class="o">.</span><span class="n">survey</span>
+        <span class="k">if</span> <span class="n">s</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;wellbore </span><span class="si">{</span><span class="n">wb</span><span class="o">.</span><span class="n">id</span><span class="si">!r}</span><span class="s2"> has no survey&quot;</span><span class="p">)</span>
+        <span class="n">cov</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="s2">&quot;cov_nev&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cov</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">cov</span> <span class="o">=</span> <span class="n">ErrorModel</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">error_model</span><span class="o">=</span><span class="n">error_model</span><span class="p">)</span><span class="o">.</span><span class="n">errors</span><span class="o">.</span><span class="n">cov_nev</span>
+        <span class="n">cov</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">cov</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">md</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">cov</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">md</span><span class="p">)</span> <span class="o">-</span> <span class="n">md</span><span class="p">)))</span>   <span class="c1"># nearest station</span>
+        <span class="k">return</span> <span class="n">cov</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_abs_cov_components</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wb</span><span class="p">:</span> <span class="s2">&quot;Wellbore&quot;</span><span class="p">,</span> <span class="n">md</span><span class="p">,</span> <span class="n">error_model</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Total, global, and systematic NEV covariance components at ``md``.</span>
+
+<span class="sd">        Returns the three ISCWSA propagation-mode covariance buckets a wellbore</span>
+<span class="sd">        exposes (``cov_nev`` total, ``cov_nev_global``, ``cov_nev_systematic``)</span>
+<span class="sd">        at the nearest station to ``md`` (or at TD when ``md`` is ``None``),</span>
+<span class="sd">        computing them via welleng&#39;s ``ErrorModel`` if not cached. Consumed by</span>
+<span class="sd">        :meth:`relative_covariance` when a ``share_mode`` folds the divergent</span>
+<span class="sd">        branches&#39; shared error sources.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        wb : Wellbore</span>
+<span class="sd">            The wellbore whose survey covariance is wanted.</span>
+<span class="sd">        md : float or None</span>
+<span class="sd">            Measured depth, in metres; ``None`` selects the last station.</span>
+<span class="sd">        error_model : str</span>
+<span class="sd">            welleng error-model name used if the survey has no cached error.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        tuple of numpy.ndarray</span>
+<span class="sd">            ``(total, global, systematic)`` — each a 3x3 NEV covariance in</span>
+<span class="sd">            metres squared.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        ValueError</span>
+<span class="sd">            If ``wb`` has no survey attached.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.error</span><span class="w"> </span><span class="kn">import</span> <span class="n">ErrorModel</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">wb</span><span class="o">.</span><span class="n">survey</span>
+        <span class="k">if</span> <span class="n">s</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;wellbore </span><span class="si">{</span><span class="n">wb</span><span class="o">.</span><span class="n">id</span><span class="si">!r}</span><span class="s2"> has no survey&quot;</span><span class="p">)</span>
+        <span class="n">tot</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="s2">&quot;cov_nev&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">glob</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="s2">&quot;cov_nev_global&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">sys</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="s2">&quot;cov_nev_systematic&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">tot</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">glob</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">sys</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">em</span> <span class="o">=</span> <span class="n">ErrorModel</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">error_model</span><span class="o">=</span><span class="n">error_model</span><span class="p">)</span><span class="o">.</span><span class="n">errors</span>
+            <span class="n">tot</span><span class="p">,</span> <span class="n">glob</span><span class="p">,</span> <span class="n">sys</span> <span class="o">=</span> <span class="n">em</span><span class="o">.</span><span class="n">cov_nev</span><span class="p">,</span> <span class="n">em</span><span class="o">.</span><span class="n">cov_NEVs_global</span><span class="p">,</span> <span class="n">em</span><span class="o">.</span><span class="n">cov_NEVs_systematic</span>
+        <span class="n">tot</span><span class="p">,</span> <span class="n">glob</span><span class="p">,</span> <span class="n">sys</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">tot</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">glob</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">sys</span><span class="p">)</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span> <span class="k">if</span> <span class="n">md</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">md</span><span class="p">)</span> <span class="o">-</span> <span class="n">md</span><span class="p">)))</span>
+        <span class="k">return</span> <span class="n">tot</span><span class="p">[</span><span class="n">idx</span><span class="p">],</span> <span class="n">glob</span><span class="p">[</span><span class="n">idx</span><span class="p">],</span> <span class="n">sys</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_sidetrack_md</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">a</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the deepest common measured depth of two wellbores.</span>
+
+<span class="sd">        The side-track point is the shallower of the two branch kickoffs</span>
+<span class="sd">        immediately below the wellbores&#39; lowest common ancestor — the depth up</span>
+<span class="sd">        to which both share a survey.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        a : str</span>
+<span class="sd">            First wellbore node identifier.</span>
+<span class="sd">        b : str</span>
+<span class="sd">            Second wellbore node identifier.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        float or None</span>
+<span class="sd">            The side-track measured depth, in metres, or ``None`` if one</span>
+<span class="sd">            wellbore is an ancestor of the other (no distinct branch on one</span>
+<span class="sd">            side) or a branch kickoff MD is missing.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">_shared</span><span class="p">,</span> <span class="n">branch_a</span><span class="p">,</span> <span class="n">branch_b</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">shared_and_divergent</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span>
+        <span class="c1"># The divergence is the shallower of the two branches&#39; kick-offs. When one</span>
+        <span class="c1"># wellbore is an ancestor of the other, only the descendant has a branch</span>
+        <span class="c1"># below the LCA — its kick-off IS the divergence point (the ancestor&#39;s own</span>
+        <span class="c1"># path below there is the other divergent branch).</span>
+        <span class="n">kos</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">branch_a</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">node</span><span class="p">(</span><span class="n">branch_a</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span><span class="o">.</span><span class="n">kickoff_md</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">kos</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">node</span><span class="p">(</span><span class="n">branch_a</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span><span class="o">.</span><span class="n">kickoff_md</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">branch_b</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">node</span><span class="p">(</span><span class="n">branch_b</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span><span class="o">.</span><span class="n">kickoff_md</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">kos</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">node</span><span class="p">(</span><span class="n">branch_b</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span><span class="o">.</span><span class="n">kickoff_md</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">min</span><span class="p">(</span><span class="n">kos</span><span class="p">)</span> <span class="k">if</span> <span class="n">kos</span> <span class="k">else</span> <span class="kc">None</span>
+
+    <span class="c1"># -- serialisation (native JSON save/load) ------------------------------ #</span>
+<div class="viewcode-block" id="WellNetwork.to_dict">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.WellNetwork.to_dict">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Serialise the whole model to a JSON-safe dict.</span>
+
+<span class="sd">        Emits the entity graph (each node&#39;s type + parent id) together with each</span>
+<span class="sd">        wellbore&#39;s survey (raw md / inc / azi in radians + header + context</span>
+<span class="sd">        keys). Round-trips via :meth:`from_dict`.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        dict</span>
+<span class="sd">            A plain, JSON-serialisable dict with keys</span>
+<span class="sd">            ``&quot;welleng_hierarchy_version&quot;`` and ``&quot;nodes&quot;``.</span>
+
+<span class="sd">        Notes</span>
+<span class="sd">        -----</span>
+<span class="sd">        Azimuth is serialised in the header&#39;s OWN north reference (grid / true /</span>
+<span class="sd">        magnetic) and that reference is recorded alongside it, so the round-trip</span>
+<span class="sd">        is frame-exact and never silently reinterprets one reference as another</span>
+<span class="sd">        (grid and true differ by convergence; true and magnetic by declination,</span>
+<span class="sd">        which is date + location dependent).</span>
+
+<span class="sd">        This is the light welleng-native persistence form; :mod:`welleng.osdu`</span>
+<span class="sd">        is the OSDU interchange form.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_survey_dict</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">s</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+            <span class="n">hdr</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="s2">&quot;header&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="c1"># azimuth is RELATIVE to a north reference (grid/true/magnetic) — grid</span>
+            <span class="c1"># and true differ by convergence, true and magnetic by declination</span>
+            <span class="c1"># (date+location dependent). Serialise azi in the header&#39;s OWN</span>
+            <span class="c1"># reference and record it, so the round-trip is frame-exact and never</span>
+            <span class="c1"># silently reinterprets one reference as another.</span>
+            <span class="n">azi_ref</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">hdr</span><span class="p">,</span> <span class="s2">&quot;azi_reference&quot;</span><span class="p">,</span> <span class="s2">&quot;grid&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="n">hdr</span> <span class="k">else</span> <span class="s2">&quot;grid&quot;</span>
+            <span class="k">return</span> <span class="p">{</span>
+                <span class="s2">&quot;md&quot;</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">md</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()),</span>
+                <span class="s2">&quot;inc&quot;</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">inc_rad</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()),</span> <span class="s2">&quot;deg&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+                <span class="s2">&quot;azi&quot;</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;azi_</span><span class="si">{</span><span class="n">azi_ref</span><span class="si">}</span><span class="s2">_rad&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">tolist</span><span class="p">()),</span>
+                <span class="s2">&quot;azi_reference&quot;</span><span class="p">:</span> <span class="n">azi_ref</span><span class="p">,</span>
+                <span class="c1"># ``mag_model`` is DERIVED provenance (re-computed by the header</span>
+                <span class="c1"># from the lookup), not a constructor arg -- exclude it like the</span>
+                <span class="c1"># non-scalar ``mag_source`` already is, else it round-trips as an</span>
+                <span class="c1"># unexpected SurveyHeader() kwarg.</span>
+                <span class="s2">&quot;header&quot;</span><span class="p">:</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">vars</span><span class="p">(</span><span class="n">hdr</span><span class="p">)</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                           <span class="k">if</span> <span class="ow">not</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">k</span> <span class="o">!=</span> <span class="s2">&quot;mag_model&quot;</span>
+                           <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">bool</span><span class="p">,</span>
+                                              <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">)))}</span> <span class="k">if</span> <span class="n">hdr</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">&quot;start_nev&quot;</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">start_nev</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()),</span>
+                <span class="s2">&quot;error_model&quot;</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="s2">&quot;header&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span> <span class="s2">&quot;error_model&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+            <span class="p">}</span>
+
+        <span class="n">nodes</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nodes</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="n">d</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="n">n</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span> <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="n">n</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="n">n</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                 <span class="s2">&quot;parent_id&quot;</span><span class="p">:</span> <span class="n">n</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">id</span> <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="s2">&quot;parent&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span><span class="p">}</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">Site</span><span class="p">):</span>
+                <span class="n">d</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">crs</span><span class="o">=</span><span class="n">n</span><span class="o">.</span><span class="n">crs</span><span class="p">,</span> <span class="n">convergence</span><span class="o">=</span><span class="n">n</span><span class="o">.</span><span class="n">convergence</span><span class="p">,</span>
+                         <span class="n">is_field_centre</span><span class="o">=</span><span class="n">n</span><span class="o">.</span><span class="n">is_field_centre</span><span class="p">,</span> <span class="n">location</span><span class="o">=</span><span class="n">n</span><span class="o">.</span><span class="n">location</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">Well</span><span class="p">):</span>
+                <span class="n">d</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">slot</span><span class="o">=</span><span class="n">n</span><span class="o">.</span><span class="n">slot</span><span class="p">,</span> <span class="n">slot_radial_error</span><span class="o">=</span><span class="n">n</span><span class="o">.</span><span class="n">slot_radial_error</span><span class="p">,</span>
+                         <span class="n">wellhead_depth</span><span class="o">=</span><span class="n">n</span><span class="o">.</span><span class="n">wellhead_depth</span><span class="p">,</span>
+                         <span class="n">datum</span><span class="o">=</span><span class="n">_datum_dict</span><span class="p">(</span><span class="n">n</span><span class="o">.</span><span class="n">datum</span><span class="p">))</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">Wellbore</span><span class="p">):</span>
+                <span class="n">d</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">kickoff_md</span><span class="o">=</span><span class="n">n</span><span class="o">.</span><span class="n">kickoff_md</span><span class="p">,</span> <span class="n">survey_date</span><span class="o">=</span><span class="n">n</span><span class="o">.</span><span class="n">survey_date</span><span class="p">,</span>
+                         <span class="n">tool_id</span><span class="o">=</span><span class="n">n</span><span class="o">.</span><span class="n">tool_id</span><span class="p">,</span> <span class="n">geomag_model</span><span class="o">=</span><span class="n">n</span><span class="o">.</span><span class="n">geomag_model</span><span class="p">,</span>
+                         <span class="n">datum_realisation</span><span class="o">=</span><span class="n">n</span><span class="o">.</span><span class="n">datum_realisation</span><span class="p">,</span>
+                         <span class="n">survey</span><span class="o">=</span><span class="n">_survey_dict</span><span class="p">(</span><span class="n">n</span><span class="o">.</span><span class="n">survey</span><span class="p">))</span>
+            <span class="n">nodes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;welleng_hierarchy_version&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;nodes&quot;</span><span class="p">:</span> <span class="n">nodes</span><span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="WellNetwork.from_dict">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.WellNetwork.from_dict">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_dict</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;WellNetwork&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Reconstruct a :class:`WellNetwork` from :meth:`to_dict` output.</span>
+
+<span class="sd">        Rebuilds every entity, wires parents by id (recursively, so a child is</span>
+<span class="sd">        built after its parent), and re-creates each wellbore&#39;s</span>
+<span class="sd">        :class:`~welleng.survey.Survey` from the serialised md / inc / azi +</span>
+<span class="sd">        header.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        data : dict</span>
+<span class="sd">            A dict in the shape produced by :meth:`to_dict`.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        WellNetwork</span>
+<span class="sd">            The reconstructed network.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.survey</span><span class="w"> </span><span class="kn">import</span> <span class="n">Survey</span><span class="p">,</span> <span class="n">SurveyHeader</span>
+        <span class="n">net</span> <span class="o">=</span> <span class="bp">cls</span><span class="p">()</span>
+        <span class="n">raw</span> <span class="o">=</span> <span class="p">{</span><span class="n">d</span><span class="p">[</span><span class="s2">&quot;id&quot;</span><span class="p">]:</span> <span class="n">d</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;nodes&quot;</span><span class="p">]}</span>
+        <span class="n">built</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_Node</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">_classes</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;Organisation&quot;</span><span class="p">:</span> <span class="n">Organisation</span><span class="p">,</span> <span class="s2">&quot;Field&quot;</span><span class="p">:</span> <span class="n">Field</span><span class="p">,</span> <span class="s2">&quot;Site&quot;</span><span class="p">:</span> <span class="n">Site</span><span class="p">,</span>
+                    <span class="s2">&quot;Well&quot;</span><span class="p">:</span> <span class="n">Well</span><span class="p">,</span> <span class="s2">&quot;Wellbore&quot;</span><span class="p">:</span> <span class="n">Wellbore</span><span class="p">}</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_build</span><span class="p">(</span><span class="n">nid</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">nid</span> <span class="ow">in</span> <span class="n">built</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">built</span><span class="p">[</span><span class="n">nid</span><span class="p">]</span>
+            <span class="n">d</span> <span class="o">=</span> <span class="n">raw</span><span class="p">[</span><span class="n">nid</span><span class="p">]</span>
+            <span class="n">kind</span> <span class="o">=</span> <span class="n">d</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span>
+            <span class="n">parent</span> <span class="o">=</span> <span class="n">_build</span><span class="p">(</span><span class="n">d</span><span class="p">[</span><span class="s2">&quot;parent_id&quot;</span><span class="p">])</span> <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;parent_id&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;Site&quot;</span><span class="p">:</span>
+                <span class="n">n</span> <span class="o">=</span> <span class="n">Site</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="n">d</span><span class="p">[</span><span class="s2">&quot;id&quot;</span><span class="p">],</span> <span class="n">name</span><span class="o">=</span><span class="n">d</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">],</span> <span class="n">parent</span><span class="o">=</span><span class="n">parent</span><span class="p">,</span> <span class="n">crs</span><span class="o">=</span><span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;crs&quot;</span><span class="p">),</span>
+                         <span class="n">convergence</span><span class="o">=</span><span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;convergence&quot;</span><span class="p">),</span>
+                         <span class="n">is_field_centre</span><span class="o">=</span><span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;is_field_centre&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+                         <span class="n">location</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">d</span><span class="p">[</span><span class="s2">&quot;location&quot;</span><span class="p">])</span> <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;location&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;Well&quot;</span><span class="p">:</span>
+                <span class="n">dm</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;datum&quot;</span><span class="p">)</span>
+                <span class="n">n</span> <span class="o">=</span> <span class="n">Well</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="n">d</span><span class="p">[</span><span class="s2">&quot;id&quot;</span><span class="p">],</span> <span class="n">name</span><span class="o">=</span><span class="n">d</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">],</span> <span class="n">parent</span><span class="o">=</span><span class="n">parent</span><span class="p">,</span>
+                         <span class="n">slot</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">d</span><span class="p">[</span><span class="s2">&quot;slot&quot;</span><span class="p">])</span> <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;slot&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                         <span class="n">slot_radial_error</span><span class="o">=</span><span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;slot_radial_error&quot;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+                         <span class="n">wellhead_depth</span><span class="o">=</span><span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;wellhead_depth&quot;</span><span class="p">),</span>
+                         <span class="n">datum</span><span class="o">=</span><span class="n">_datum_from_dict</span><span class="p">(</span><span class="n">dm</span><span class="p">))</span>
+            <span class="k">elif</span> <span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;Wellbore&quot;</span><span class="p">:</span>
+                <span class="n">sv</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;survey&quot;</span><span class="p">)</span>
+                <span class="n">survey</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="k">if</span> <span class="n">sv</span><span class="p">:</span>
+                    <span class="n">survey</span> <span class="o">=</span> <span class="n">Survey</span><span class="p">(</span>
+                        <span class="n">md</span><span class="o">=</span><span class="n">sv</span><span class="p">[</span><span class="s2">&quot;md&quot;</span><span class="p">],</span> <span class="n">inc</span><span class="o">=</span><span class="n">sv</span><span class="p">[</span><span class="s2">&quot;inc&quot;</span><span class="p">],</span> <span class="n">azi</span><span class="o">=</span><span class="n">sv</span><span class="p">[</span><span class="s2">&quot;azi&quot;</span><span class="p">],</span>
+                        <span class="n">deg</span><span class="o">=</span><span class="n">sv</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;deg&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+                        <span class="n">header</span><span class="o">=</span><span class="p">(</span><span class="n">SurveyHeader</span><span class="p">(</span><span class="o">**</span><span class="n">sv</span><span class="p">[</span><span class="s2">&quot;header&quot;</span><span class="p">])</span>
+                                <span class="k">if</span> <span class="n">sv</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;header&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span><span class="p">),</span>
+                                    <span class="n">start_nev</span><span class="o">=</span><span class="n">sv</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;start_nev&quot;</span><span class="p">,</span> <span class="p">[</span><span class="mf">0.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">]),</span>
+                                    <span class="n">error_model</span><span class="o">=</span><span class="n">sv</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;error_model&quot;</span><span class="p">))</span>
+                <span class="n">n</span> <span class="o">=</span> <span class="n">Wellbore</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="n">d</span><span class="p">[</span><span class="s2">&quot;id&quot;</span><span class="p">],</span> <span class="n">name</span><span class="o">=</span><span class="n">d</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">],</span> <span class="n">parent</span><span class="o">=</span><span class="n">parent</span><span class="p">,</span>
+                             <span class="n">kickoff_md</span><span class="o">=</span><span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;kickoff_md&quot;</span><span class="p">),</span>
+                             <span class="n">survey_date</span><span class="o">=</span><span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;survey_date&quot;</span><span class="p">),</span>
+                             <span class="n">tool_id</span><span class="o">=</span><span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;tool_id&quot;</span><span class="p">),</span>
+                             <span class="n">geomag_model</span><span class="o">=</span><span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geomag_model&quot;</span><span class="p">),</span>
+                             <span class="n">datum_realisation</span><span class="o">=</span><span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;datum_realisation&quot;</span><span class="p">),</span>
+                             <span class="n">survey</span><span class="o">=</span><span class="n">survey</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">n</span> <span class="o">=</span> <span class="n">_classes</span><span class="p">[</span><span class="n">kind</span><span class="p">](</span><span class="nb">id</span><span class="o">=</span><span class="n">d</span><span class="p">[</span><span class="s2">&quot;id&quot;</span><span class="p">],</span> <span class="n">name</span><span class="o">=</span><span class="n">d</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">],</span> <span class="n">parent</span><span class="o">=</span><span class="n">parent</span><span class="p">)</span>
+            <span class="n">built</span><span class="p">[</span><span class="n">nid</span><span class="p">]</span> <span class="o">=</span> <span class="n">n</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="p">(</span><span class="n">Well</span><span class="p">,</span> <span class="n">Wellbore</span><span class="p">)):</span>
+                <span class="n">net</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">net</span><span class="o">.</span><span class="n">_nodes</span><span class="p">[</span><span class="n">n</span><span class="o">.</span><span class="n">id</span><span class="p">]</span> <span class="o">=</span> <span class="n">n</span>
+            <span class="k">return</span> <span class="n">n</span>
+
+        <span class="k">for</span> <span class="n">nid</span> <span class="ow">in</span> <span class="n">raw</span><span class="p">:</span>
+            <span class="n">_build</span><span class="p">(</span><span class="n">nid</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">net</span></div>
+
+
+<div class="viewcode-block" id="WellNetwork.save_json">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.WellNetwork.save_json">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save_json</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Save the model to a JSON file.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        path : str</span>
+<span class="sd">            Filesystem path to write the JSON to (overwritten if it exists).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        None</span>
+
+<span class="sd">        Examples</span>
+<span class="sd">        --------</span>
+<span class="sd">        &gt;&gt;&gt; import os, tempfile</span>
+<span class="sd">        &gt;&gt;&gt; from welleng.hierarchy import Well, Wellbore, WellNetwork</span>
+<span class="sd">        &gt;&gt;&gt; net = WellNetwork()</span>
+<span class="sd">        &gt;&gt;&gt; well = Well(id=&#39;W1&#39;, name=&#39;W1&#39;)</span>
+<span class="sd">        &gt;&gt;&gt; _ = net.add(Wellbore(id=&#39;WB1&#39;, name=&#39;TopHole&#39;, parent=well))</span>
+<span class="sd">        &gt;&gt;&gt; path = os.path.join(tempfile.mkdtemp(), &#39;net.json&#39;)</span>
+<span class="sd">        &gt;&gt;&gt; net.save_json(path)</span>
+<span class="sd">        &gt;&gt;&gt; reloaded = WellNetwork.load_json(path)</span>
+<span class="sd">        &gt;&gt;&gt; [w.id for w in reloaded.roots()]</span>
+<span class="sd">        [&#39;WB1&#39;]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">to_dict</span><span class="p">(),</span> <span class="n">f</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="WellNetwork.load_json">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.WellNetwork.load_json">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_json</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;WellNetwork&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load a model from a JSON file.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        path : str</span>
+<span class="sd">            Filesystem path to a JSON file written by :meth:`save_json`.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        WellNetwork</span>
+<span class="sd">            The reconstructed network. See :meth:`save_json` for a round-trip</span>
+<span class="sd">            example.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">from_dict</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">))</span></div>
+
+
+    <span class="c1"># -- internals ---------------------------------------------------------- #</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_wellbores</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterator</span><span class="p">[</span><span class="n">Wellbore</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">n</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nodes</span><span class="o">.</span><span class="n">values</span><span class="p">()</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">Wellbore</span><span class="p">))</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_parent_id</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">id_</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parents</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">id_</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="network_from_edm">
+<a class="viewcode-back" href="../../welleng.html#welleng.hierarchy.network_from_edm">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">network_from_edm</span><span class="p">(</span><span class="n">reader</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">surveys</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">WellNetwork</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a :class:`WellNetwork` from a parsed EDM/COMPASS export.</span>
+
+<span class="sd">    Maps the EDM master-data spine indexed by</span>
+<span class="sd">    :class:`welleng.exchange.edm_stream.EDMReader` onto the hierarchy</span>
+<span class="sd">    entities and wires the wellbore forest (parent-wellbore sidetrack edges,</span>
+<span class="sd">    root wellbores parented by their Well). All lengths are converted from</span>
+<span class="sd">    the reader&#39;s source units (feet for the public Volve export) to metres</span>
+<span class="sd">    at this boundary; angles arrive in degrees and convergence is stored in</span>
+<span class="sd">    radians.</span>
+
+<span class="sd">    The table -&gt; entity mapping:</span>
+
+<span class="sd">    ========================  =================================================</span>
+<span class="sd">    EDM table                 Hierarchy entity</span>
+<span class="sd">    ========================  =================================================</span>
+<span class="sd">    ``CD_PROJECT``            :class:`Field` (``project_name``); also supplies</span>
+<span class="sd">                              the site CRS (geo datum + zone) when derivable</span>
+<span class="sd">    ``CD_SITE``               :class:`Site` (name, convergence [deg -&gt; rad],</span>
+<span class="sd">                              ``is_field_center``, map location [-&gt; metres])</span>
+<span class="sd">    ``CD_WELL``               :class:`Well` (name, slot ``(ns, ew)`` + radial</span>
+<span class="sd">                              error, wellhead depth [-&gt; metres])</span>
+<span class="sd">    ``CD_DATUM``              :class:`Datum` on its Well (elevation</span>
+<span class="sd">                              [-&gt; metres]; the default datum is preferred)</span>
+<span class="sd">    ``CD_WELLBORE``           :class:`Wellbore`; ``parent_wellbore_id`` is the</span>
+<span class="sd">                              sidetrack edge, ``ko_md`` [-&gt; metres] the</span>
+<span class="sd">                              kickoff; root wellbores parent to their Well</span>
+<span class="sd">    ========================  =================================================</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    reader : welleng.exchange.edm_stream.EDMReader</span>
+<span class="sd">        An indexed EDM reader (or any object exposing the same ``projects``</span>
+<span class="sd">        / ``sites`` / ``wells`` / ``datums`` / ``wellbores`` /</span>
+<span class="sd">        ``source_units`` / ``survey()`` surface).</span>
+<span class="sd">    surveys : bool, keyword-only, default False</span>
+<span class="sd">        When ``True``, attach each wellbore&#39;s definitive ACTUAL survey</span>
+<span class="sd">        (converted to metres, grid azimuth reference) via</span>
+<span class="sd">        ``reader.survey(...)``. A wellbore whose survey is missing or fails</span>
+<span class="sd">        to assemble is skipped with a :class:`UserWarning` — the import</span>
+<span class="sd">        never aborts on a single wellbore. The default (``False``) builds</span>
+<span class="sd">        the cheap structure-only network.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    WellNetwork</span>
+<span class="sd">        The assembled network: Field -&gt; Site -&gt; Well (+ Datum) -&gt; Wellbore</span>
+<span class="sd">        forest, with surveys attached when requested.</span>
+
+<span class="sd">    Warns</span>
+<span class="sd">    -----</span>
+<span class="sd">    UserWarning</span>
+<span class="sd">        Per wellbore whose survey cannot be assembled (``surveys=True``</span>
+<span class="sd">        only), and per wellbore whose ``parent_wellbore_id`` cannot be</span>
+<span class="sd">        resolved (it is rooted to its Well instead).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+
+    <span class="n">src</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">reader</span><span class="p">,</span> <span class="s2">&quot;source_units&quot;</span><span class="p">,</span> <span class="s2">&quot;feet&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="n">length</span> <span class="o">=</span> <span class="mf">0.3048</span> <span class="k">if</span> <span class="n">src</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;feet&quot;</span><span class="p">,</span> <span class="s2">&quot;ft&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="mf">1.0</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_f</span><span class="p">(</span><span class="n">row</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">v</span> <span class="ow">in</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="c1"># -- CD_PROJECT -&gt; Field (+ derivable site CRS) ------------------------- #</span>
+    <span class="n">fields</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Field</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">project_crs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">pid</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">reader</span><span class="o">.</span><span class="n">projects</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">fields</span><span class="p">[</span><span class="n">pid</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="n">pid</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;project_name&quot;</span><span class="p">,</span> <span class="n">pid</span><span class="p">))</span>
+        <span class="c1"># Only the empirically-confirmed combination maps to an EPSG code;</span>
+        <span class="c1"># anything else is left unset rather than guessed.</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geo_datum_id&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;ED50&quot;</span>
+                <span class="ow">and</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geo_zone_id&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;UTM-31N&quot;</span><span class="p">):</span>
+            <span class="n">project_crs</span><span class="p">[</span><span class="n">pid</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;EPSG:23031&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">project_crs</span><span class="p">[</span><span class="n">pid</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="c1"># -- CD_SITE -&gt; Site ---------------------------------------------------- #</span>
+    <span class="n">sites</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Site</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">sid</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">reader</span><span class="o">.</span><span class="n">sites</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">conv</span> <span class="o">=</span> <span class="n">_f</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">&quot;convergence&quot;</span><span class="p">)</span>
+        <span class="n">northing</span> <span class="o">=</span> <span class="n">_f</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">&quot;geo_map_northing&quot;</span><span class="p">)</span>
+        <span class="n">easting</span> <span class="o">=</span> <span class="n">_f</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">&quot;geo_map_easting&quot;</span><span class="p">)</span>
+        <span class="n">location</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="n">northing</span> <span class="o">*</span> <span class="n">length</span><span class="p">,</span> <span class="n">easting</span> <span class="o">*</span> <span class="n">length</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">northing</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">easting</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
+        <span class="n">sites</span><span class="p">[</span><span class="n">sid</span><span class="p">]</span> <span class="o">=</span> <span class="n">Site</span><span class="p">(</span>
+            <span class="nb">id</span><span class="o">=</span><span class="n">sid</span><span class="p">,</span>
+            <span class="n">name</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;site_name&quot;</span><span class="p">,</span> <span class="n">sid</span><span class="p">),</span>
+            <span class="n">parent</span><span class="o">=</span><span class="n">fields</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;project_id&quot;</span><span class="p">)),</span>
+            <span class="n">crs</span><span class="o">=</span><span class="n">project_crs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;project_id&quot;</span><span class="p">)),</span>
+            <span class="n">convergence</span><span class="o">=</span><span class="kc">None</span> <span class="k">if</span> <span class="n">conv</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">math</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">conv</span><span class="p">),</span>
+            <span class="n">is_field_centre</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;is_field_center&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;Y&quot;</span><span class="p">,</span>
+            <span class="n">location</span><span class="o">=</span><span class="n">location</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="c1"># -- CD_WELL (+ CD_DATUM) -&gt; Well --------------------------------------- #</span>
+    <span class="n">wells</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Well</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">wid</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">reader</span><span class="o">.</span><span class="n">wells</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">slot_ns</span><span class="p">,</span> <span class="n">slot_ew</span> <span class="o">=</span> <span class="n">_f</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">&quot;slot_ns&quot;</span><span class="p">),</span> <span class="n">_f</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">&quot;slot_ew&quot;</span><span class="p">)</span>
+        <span class="n">slot</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="n">slot_ns</span> <span class="o">*</span> <span class="n">length</span><span class="p">,</span> <span class="n">slot_ew</span> <span class="o">*</span> <span class="n">length</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">slot_ns</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">slot_ew</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
+        <span class="n">radial</span> <span class="o">=</span> <span class="n">_f</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">&quot;slot_radial_error&quot;</span><span class="p">)</span>
+        <span class="n">wellhead</span> <span class="o">=</span> <span class="n">_f</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">&quot;wellhead_depth&quot;</span><span class="p">)</span>
+        <span class="c1"># Prefer the well&#39;s default datum row; fall back to the first.</span>
+        <span class="n">datum</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">datum_rows</span> <span class="o">=</span> <span class="n">reader</span><span class="o">.</span><span class="n">datums</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">wid</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="k">if</span> <span class="n">datum_rows</span><span class="p">:</span>
+            <span class="n">row_d</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">d</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">datum_rows</span> <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;is_default&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;Y&quot;</span><span class="p">),</span>
+                <span class="n">datum_rows</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+            <span class="p">)</span>
+            <span class="n">elevation</span> <span class="o">=</span> <span class="n">_f</span><span class="p">(</span><span class="n">row_d</span><span class="p">,</span> <span class="s2">&quot;datum_elevation&quot;</span><span class="p">)</span>
+            <span class="n">datum</span> <span class="o">=</span> <span class="n">Datum</span><span class="p">(</span>
+                <span class="n">name</span><span class="o">=</span><span class="n">row_d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;datum_name&quot;</span><span class="p">,</span> <span class="n">row_d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;datum_id&quot;</span><span class="p">,</span> <span class="s2">&quot;datum&quot;</span><span class="p">)),</span>
+                <span class="n">elevation</span><span class="o">=</span><span class="mf">0.0</span> <span class="k">if</span> <span class="n">elevation</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">elevation</span> <span class="o">*</span> <span class="n">length</span><span class="p">,</span>
+                <span class="n">reference</span><span class="o">=</span><span class="s2">&quot;MSL&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="n">wells</span><span class="p">[</span><span class="n">wid</span><span class="p">]</span> <span class="o">=</span> <span class="n">Well</span><span class="p">(</span>
+            <span class="nb">id</span><span class="o">=</span><span class="n">wid</span><span class="p">,</span>
+            <span class="n">name</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;well_common_name&quot;</span><span class="p">,</span> <span class="n">wid</span><span class="p">),</span>
+            <span class="n">parent</span><span class="o">=</span><span class="n">sites</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;site_id&quot;</span><span class="p">)),</span>
+            <span class="n">slot</span><span class="o">=</span><span class="n">slot</span><span class="p">,</span>
+            <span class="n">slot_radial_error</span><span class="o">=</span><span class="mf">0.0</span> <span class="k">if</span> <span class="n">radial</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">radial</span> <span class="o">*</span> <span class="n">length</span><span class="p">,</span>
+            <span class="n">wellhead_depth</span><span class="o">=</span><span class="kc">None</span> <span class="k">if</span> <span class="n">wellhead</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">wellhead</span> <span class="o">*</span> <span class="n">length</span><span class="p">,</span>
+            <span class="n">datum</span><span class="o">=</span><span class="n">datum</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="c1"># -- CD_WELLBORE -&gt; Wellbore forest ------------------------------------- #</span>
+    <span class="n">net</span> <span class="o">=</span> <span class="n">WellNetwork</span><span class="p">()</span>
+    <span class="n">wellbores</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Wellbore</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">wbid</span><span class="p">,</span> <span class="n">wb</span> <span class="ow">in</span> <span class="n">reader</span><span class="o">.</span><span class="n">wellbores</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">ko_md</span> <span class="o">=</span> <span class="n">_f</span><span class="p">(</span><span class="n">wb</span><span class="o">.</span><span class="n">raw</span><span class="p">,</span> <span class="s2">&quot;ko_md&quot;</span><span class="p">)</span>
+        <span class="n">wellbores</span><span class="p">[</span><span class="n">wbid</span><span class="p">]</span> <span class="o">=</span> <span class="n">Wellbore</span><span class="p">(</span>
+            <span class="nb">id</span><span class="o">=</span><span class="n">wbid</span><span class="p">,</span>
+            <span class="n">name</span><span class="o">=</span><span class="n">wb</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="n">kickoff_md</span><span class="o">=</span><span class="kc">None</span> <span class="k">if</span> <span class="n">ko_md</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">ko_md</span> <span class="o">*</span> <span class="n">length</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">for</span> <span class="n">wbid</span><span class="p">,</span> <span class="n">wb</span> <span class="ow">in</span> <span class="n">reader</span><span class="o">.</span><span class="n">wellbores</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">node</span> <span class="o">=</span> <span class="n">wellbores</span><span class="p">[</span><span class="n">wbid</span><span class="p">]</span>
+        <span class="n">pid</span> <span class="o">=</span> <span class="n">wb</span><span class="o">.</span><span class="n">parent_wellbore_id</span>
+        <span class="k">if</span> <span class="n">pid</span> <span class="o">==</span> <span class="n">wbid</span><span class="p">:</span>                      <span class="c1"># self-reference guard</span>
+            <span class="n">pid</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">pid</span> <span class="ow">and</span> <span class="n">pid</span> <span class="ow">in</span> <span class="n">wellbores</span><span class="p">:</span>
+            <span class="n">node</span><span class="o">.</span><span class="n">parent</span> <span class="o">=</span> <span class="n">wellbores</span><span class="p">[</span><span class="n">pid</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">pid</span><span class="p">:</span>
+                <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;wellbore </span><span class="si">{</span><span class="n">wb</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2">: parent wellbore id </span><span class="si">{</span><span class="n">pid</span><span class="si">!r}</span><span class="s2"> not &quot;</span>
+                    <span class="s2">&quot;in the export; rooting it to its well&quot;</span><span class="p">,</span>
+                    <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="n">node</span><span class="o">.</span><span class="n">parent</span> <span class="o">=</span> <span class="n">wells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">wb</span><span class="o">.</span><span class="n">well_id</span><span class="p">)</span>
+        <span class="n">net</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+
+    <span class="c1"># -- optional survey attachment ----------------------------------------- #</span>
+    <span class="k">if</span> <span class="n">surveys</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">wbid</span><span class="p">,</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">wellbores</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">edm_survey</span> <span class="o">=</span> <span class="n">reader</span><span class="o">.</span><span class="n">survey</span><span class="p">(</span>
+                    <span class="n">wbid</span><span class="p">,</span> <span class="n">kind</span><span class="o">=</span><span class="s2">&quot;definitive&quot;</span><span class="p">,</span> <span class="n">phase</span><span class="o">=</span><span class="s2">&quot;ACTUAL&quot;</span>
+                <span class="p">)</span>
+                <span class="n">node</span><span class="o">.</span><span class="n">survey</span> <span class="o">=</span> <span class="n">edm_survey</span><span class="o">.</span><span class="n">to_welleng</span><span class="p">(</span>
+                    <span class="n">units</span><span class="o">=</span><span class="s2">&quot;meters&quot;</span><span class="p">,</span> <span class="n">azi_reference</span><span class="o">=</span><span class="s2">&quot;grid&quot;</span>
+                <span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;wellbore </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2">: no definitive survey attached &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">,</span>
+                    <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+                <span class="p">)</span>
+
+    <span class="c1"># register any well/site/field that has no wellbore (net.add only walks</span>
+    <span class="c1"># ancestors of added wellbores)</span>
+    <span class="k">for</span> <span class="n">entity</span> <span class="ow">in</span> <span class="p">(</span><span class="o">*</span><span class="n">fields</span><span class="o">.</span><span class="n">values</span><span class="p">(),</span> <span class="o">*</span><span class="n">sites</span><span class="o">.</span><span class="n">values</span><span class="p">(),</span> <span class="o">*</span><span class="n">wells</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
+        <span class="n">net</span><span class="o">.</span><span class="n">_nodes</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">entity</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">net</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_datum_dict</span><span class="p">(</span><span class="n">datum</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Datum</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;JSON-safe dict for a :class:`Datum`, realisation chain included.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">datum</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="n">datum</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+        <span class="s2">&quot;elevation&quot;</span><span class="p">:</span> <span class="n">datum</span><span class="o">.</span><span class="n">elevation</span><span class="p">,</span>
+        <span class="s2">&quot;reference&quot;</span><span class="p">:</span> <span class="n">datum</span><span class="o">.</span><span class="n">reference</span><span class="p">,</span>
+        <span class="s2">&quot;realisations&quot;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="s2">&quot;date&quot;</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">date</span><span class="p">,</span> <span class="s2">&quot;document&quot;</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">document</span><span class="p">,</span>
+             <span class="s2">&quot;shift&quot;</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">shift</span><span class="p">),</span> <span class="s2">&quot;radial_error&quot;</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">radial_error</span><span class="p">,</span>
+             <span class="s2">&quot;supersedes&quot;</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">supersedes</span><span class="p">}</span>
+            <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">datum</span><span class="o">.</span><span class="n">realisations</span>
+        <span class="p">],</span>
+    <span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_datum_from_dict</span><span class="p">(</span><span class="n">dm</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Datum</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Rebuild a :class:`Datum` (+ its realisation chain) from a dict.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">dm</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">datum</span> <span class="o">=</span> <span class="n">Datum</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">dm</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">],</span> <span class="n">elevation</span><span class="o">=</span><span class="n">dm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;elevation&quot;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+                  <span class="n">reference</span><span class="o">=</span><span class="n">dm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;reference&quot;</span><span class="p">,</span> <span class="s2">&quot;MSL&quot;</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">dm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;realisations&quot;</span><span class="p">,</span> <span class="p">[]):</span>
+        <span class="n">datum</span><span class="o">.</span><span class="n">add_realisation</span><span class="p">(</span><span class="n">DatumRealisation</span><span class="p">(</span>
+            <span class="nb">id</span><span class="o">=</span><span class="n">r</span><span class="p">[</span><span class="s2">&quot;id&quot;</span><span class="p">],</span> <span class="n">date</span><span class="o">=</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;date&quot;</span><span class="p">),</span> <span class="n">document</span><span class="o">=</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;document&quot;</span><span class="p">),</span>
+            <span class="n">shift</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;shift&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))),</span>
+            <span class="n">radial_error</span><span class="o">=</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;radial_error&quot;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+            <span class="n">supersedes</span><span class="o">=</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;supersedes&quot;</span><span class="p">),</span>
+        <span class="p">))</span>
+    <span class="k">return</span> <span class="n">datum</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

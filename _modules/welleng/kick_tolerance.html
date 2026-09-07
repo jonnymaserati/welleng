@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.kick_tolerance &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.kick_tolerance</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.kick_tolerance</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Tier-0 single-bubble kick-tolerance subpackage (clean-room).</span>
+
+<span class="sd">Public single-bubble kick-tolerance closed form (Eqs. A-1...A-9 of the public</span>
+<span class="sd">SPE paper SPE-208788-PA) with a clean-room Hall &amp; Yarborough (1973) real-gas</span>
+<span class="sd">Z-factor backend for the Tier-0 pure-methane influx.</span>
+
+<span class="sd">Model class &amp; scope (what this is, and is NOT)</span>
+<span class="sd">----------------------------------------------</span>
+<span class="sd">This is a **single-bubble, quasi-static, deterministic** kick-tolerance calculator.</span>
+<span class="sd">One coherent (insoluble) gas influx is sized by the shoe / weak-zone pressure</span>
+<span class="sd">balance (the closed form) and marched up the annulus with Boyle + real-gas Z +</span>
+<span class="sd">optional temperature expansion (the migration engine). It is **CONSERVATIVE</span>
+<span class="sd">(safe-side)**: a single coherent slug imposes the GREATEST shoe pressure, so the</span>
+<span class="sd">tolerable influx it returns is a LOWER BOUND on what a real dispersed / multiphase</span>
+<span class="sd">influx would allow. The literature confirms the direction -- dynamic multiphase</span>
+<span class="sd">simulators return a HIGHER kick tolerance (SPE-208788-PA; Kiani Nassab et al.,</span>
+<span class="sd">SPE-202426-PA, Fig. 12: static single-bubble 13-16 bbl vs dynamic ~17 bbl).</span>
+
+<span class="sd">It is **NOT a transient two-phase flow simulator**: no gas/liquid slip or holdup,</span>
+<span class="sd">no flow-regime transitions, no gas dissolution into the mud, no transient annulus</span>
+<span class="sd">temperature (that is OLGA / Drillbench / &quot;Simulator D&quot; territory). Use this as a</span>
+<span class="sd">fast, reproducible, conservative well-control **barrier check**. A full multiphase</span>
+<span class="sd">model would only RELAX (raise) the tolerance -- a casing-design margin-recovery</span>
+<span class="sd">tool, not a safety improvement -- and its transient two-phase hydraulics belong</span>
+<span class="sd">with a hydraulics kernel, not here.</span>
+
+<span class="sd">WORST-CASE PORE PRESSURE -- the stated convention (READ THIS)</span>
+<span class="sd">--------------------------------------------------------------</span>
+<span class="sd">**welleng uses PP + kick intensity, floored at the mud hydrostatic.**</span>
+
+<span class="sd">    scenario_P_td = max( (PP + kick_intensity) * g * D_td ,  rho_mud * g * D_td )</span>
+
+<span class="sd">This is a CHOICE, and it is the single biggest source of disagreement between</span>
+<span class="sd">kick-tolerance numbers in the industry. Santos &amp; Sonnemann, *Transitional Kick</span>
+<span class="sd">Tolerance*, SPE-159175-MS (2012), names the two families in common use:</span>
+
+<span class="sd">* **PP+KI** -- &quot;Predicted pore pressure + kick intensity&quot;. What we implement.</span>
+<span class="sd">* **MW+KI** -- &quot;Current Mud Density + kick intensity&quot;, i.e. the worst case is</span>
+<span class="sd">  referenced to the fluid in the hole rather than to the predicted pore</span>
+<span class="sd">  pressure.</span>
+
+<span class="sd">They give different answers, and the paper is blunt about the consequence: *&quot;one</span>
+<span class="sd">big issue in the industry today is the lack of consistency about KT calculation,</span>
+<span class="sd">leading to significant confusion and increased risk&quot;*, from *&quot;methods which</span>
+<span class="sd">provide widely diverging results&quot;*. It also warns that &quot;several, slightly</span>
+<span class="sd">different ways&quot; exist WITHIN each family -- our mud-hydrostatic floor is one such</span>
+<span class="sd">variation, so quoting &quot;PP+KI&quot; alone does not pin the number either.</span>
+
+<span class="sd">Quote the convention with the number. Two engineers can both be right and</span>
+<span class="sd">disagree by a wide margin, and neither will know why unless it is stated.</span>
+
+<span class="sd">Not implemented: **Transitional Kick Tolerance** (the same paper) -- KT as a</span>
+<span class="sd">curve over the whole hole section rather than a single value at section TD. The</span>
+<span class="sd">paper&#39;s criticism that the industry focuses &quot;almost exclusively on the KT at the</span>
+<span class="sd">end of a hole section&quot; applies to this package as it stands.</span>
+
+<span class="sd">STRING POSITION -- the stated convention (READ THIS)</span>
+<span class="sd">----------------------------------------------------</span>
+<span class="sd">**A kick tolerance is a number about a stated configuration, and this is ours.**</span>
+<span class="sd">The engine can place the string anywhere; the convention below is what the</span>
+<span class="sd">REPORTED quantity means, not what the code is capable of. Quote it with the</span>
+<span class="sd">number.</span>
+
+<span class="sd">* **Drilling case** (``drill_kick``, and the sectioned solvers used for it) --</span>
+<span class="sd">  the **BHA is ON BOTTOM**. There is no string-position variable: the geometry is</span>
+<span class="sd">  fixed and the kick margin is carried in the bottom-hole pressure. Nothing is</span>
+<span class="sd">  searched over, because nothing moves.</span>
+
+<span class="sd">* **Swab case** (``swab_kick``, tripping) -- the string position IS a variable,</span>
+<span class="sd">  because the BHA can intercept the bubble at any depth as it is run in. The</span>
+<span class="sd">  worst interception is **COMPUTED, not assumed.**</span>
+
+<span class="sd">  Industry commonly assumes the worst case is *bubble top at the shoe with the</span>
+<span class="sd">  bit at the bubble&#39;s bottom*. We do not assume it, because we can afford to</span>
+<span class="sd">  solve for it -- and it is **NOT conservative**. The worst case has the bubble</span>
+<span class="sd">  top at the BINDING depth, which is the shoe only when the shoe is what binds.</span>
+<span class="sd">  Measured against the true worst: the shoe assumption is +0.68%, +0.79% and</span>
+<span class="sd">  **+25.42%** high on a well whose weak zone sits below the shoe. It has the</span>
+<span class="sd">  right shape and the wrong depth.</span>
+
+<span class="sd">  The true worst is determinate, not a search: the gas length ``L(d)`` is</span>
+<span class="sd">  density-driven and capacity-independent, so for each candidate binding depth</span>
+<span class="sd">  ``d`` the worst string position is ``d + L(d)``.</span>
+
+<span class="sd">MAASP -- the stated convention (READ THIS)</span>
+<span class="sd">------------------------------------------</span>
+<span class="sd">``maasp()`` reports **MAASP at the casing shoe**, the industry definition::</span>
+
+<span class="sd">    MAASP = P_frac(shoe) - g.rho_mud.shoe</span>
+
+<span class="sd">That is what a driller computes by hand and what belongs under a field labelled</span>
+<span class="sd">&quot;MAASP&quot;. It is deliberately NOT redefined. ``limiting_psi`` carries the</span>
+<span class="sd">generalisation -- the same quantity minimised over every *exposed* depth. The two</span>
+<span class="sd">are identical for a constant fracture gradient, because ``g.d.(FP_emw - rho_mud)``</span>
+<span class="sd">grows with depth so the shallowest exposed point governs; they separate only when a</span>
+<span class="sd">weak zone sits below the shoe, and then the conventional number is the higher, less</span>
+<span class="sd">safe one (``governed_by_shoe`` tells you which case you are in).</span>
+
+<span class="sd">Three properties that are easy to assume wrongly:</span>
+
+<span class="sd">* **Shut in.** Annular pressure loss is NOT deducted -- APL is a *circulating*</span>
+<span class="sd">  term, and subtracting it would understate the closed-in limit.</span>
+<span class="sd">* **Mud-filled annulus.** MAASP is a PLANNING number, not the shut-in limit during</span>
+<span class="sd">  a kick: with influx in the annulus the column is lighter than mud and the surface</span>
+<span class="sd">  pressure that breaks the shoe down is a different quantity -- the one the</span>
+<span class="sd">  kick-tolerance solve computes. **Do not compare a live SICP against MAASP and</span>
+<span class="sd">  conclude the shoe is safe.**</span>
+<span class="sd">* **``g`` does NOT cancel**, unlike the kick tolerance itself. MAASP is a difference</span>
+<span class="sd">  of two large pressures rather than an equivalent-mud-weight ratio, so a source</span>
+<span class="sd">  quoting ``g = 0.052`` differs from welleng&#39;s ``0.0521`` by ~0.7% on a typical</span>
+<span class="sd">  shoe. Expect that when reconciling against hand calcs and textbook examples.</span>
+
+<span class="sd">A fully cased hole RAISES: nothing is exposed, so MAASP is undefined and the</span>
+<span class="sd">governing limit is casing burst instead.</span>
+
+<span class="sd">Related shut-in quantities ``sidp_psi`` and ``sicp_psi`` are reported per</span>
+<span class="sd">``MigrationStep``. **SICP is a SCHEDULE, not a single value** -- it rises as the</span>
+<span class="sd">bubble expands and migrates, so any displayed SICP must say which position it is.</span>
+
+<span class="sd">INFLUX DENSITY &lt;-&gt; GRADIENT (READ THIS if you compare against a standard)</span>
+<span class="sd">-------------------------------------------------------------------------</span>
+<span class="sd">``ppg_to_gradient(rho_ppg)`` and ``gradient_to_ppg(psi_per_ft)``, and the influx</span>
+<span class="sd">gradient is reported on the result as ``rho_influx_gradient_psi_per_ft`` beside</span>
+<span class="sd">``rho_influx``.</span>
+
+<span class="sd">**Why it exists.** The well-control literature quotes influx **gradients**, not</span>
+<span class="sd">densities -- NOGEPA-50 states a gas range of 0.05-0.15 psi/ft -- so this is how a</span>
+<span class="sd">practitioner checks welleng&#39;s computed density against the standard they work to.</span>
+
+<span class="sd">**Which constant, and why it matters.** In SI a gradient needs no constant at all: it</span>
+<span class="sd">is ``rho * g`` [Pa/m]. The field form folds ``g`` into a ppg-&gt;psi/ft factor and there</span>
+<span class="sd">are THREE in circulation, differing by ~0.3%::</span>
+
+<span class="sd">    0.05210    G_PSI_PER_PPG_FT          -- what THIS engine weights columns with</span>
+<span class="sd">    0.05200    NOGEPA_G                  -- the mandated NOGEPA-50 constant</span>
+<span class="sd">    0.0519481  units.PSI_PER_PPG_PER_FT  -- exact, from standard gravity</span>
+
+<span class="sd">These functions use the **ENGINE&#39;s** constant, deliberately, so a reported gradient</span>
+<span class="sd">reproduces the column weight actually applied. Unlike a kick tolerance expressed in</span>
+<span class="sd">equivalent mud weights, the constant does **NOT** divide out here -- it is an absolute</span>
+<span class="sd">gradient, so the full 0.3% is present. Want another convention? Multiply explicitly, so</span>
+<span class="sd">the choice is visible at the call site.</span>
+
+<span class="sd">**Comparison only -- NOT an input path.** Converting a quoted gradient to a density and</span>
+<span class="sd">feeding it to the engine is hand-injected gas properties arriving through the front</span>
+<span class="sd">door. That is what the gas-property overrides ``Z_s`` / ``Z_td`` / ``rho_gas_s``</span>
+<span class="sd">are for, and they exist for ONE purpose: reproducing a published worked example</span>
+<span class="sd">against the paper&#39;s own tabulated gas properties, independently of our Z backend</span>
+<span class="sd">(``tests/test_spe208788_worked_example.py`` does exactly this). **They are not a way</span>
+<span class="sd">to describe a real influx** -- a non-methane influx goes in as a **composition** and</span>
+<span class="sd">welleng computes the density itself. Use this to check agreement, not to override it.</span>
+
+<span class="sd">UNITS -- the field-units contract (READ THIS)</span>
+<span class="sd">---------------------------------------------</span>
+<span class="sd">**Every input and output of this subpackage is in US oilfield field units**,</span>
+<span class="sd">deliberately, to match the validation papers (SPE-208788, NOGEPA, API RP 59) and</span>
+<span class="sd">industry KT practice. This diverges from welleng&#39;s SI convention: it is the ONE</span>
+<span class="sd">field-units subpackage. Unit conversion is a BOUNDARY concern -- a caller (API, GUI,</span>
+<span class="sd">notebook) converts to/from these units with Pint (``welleng.units`` = a pint</span>
+<span class="sd">registry), the engine itself never converts. The canonical units are:</span>
+
+<span class="sd">    quantity              unit        engine parameters (examples)</span>
+<span class="sd">    --------------------  ----------  -----------------------------------------</span>
+<span class="sd">    density / mud weight  ppg         rho_mud, rho_mud_ppg, rho_gas_s</span>
+<span class="sd">    pressure (equiv. MW)  ppg         PP, kick_intensity, P_lot, pp/fp profiles</span>
+<span class="sd">    pressure (absolute)   psi         P_apl, bhp_psi, and all returned pressures</span>
+<span class="sd">    depth / length        ft          D_td, D_lot, section top/bottom, profile depths</span>
+<span class="sd">                                       -- ALL depths are TRUE VERTICAL DEPTH (TVD)</span>
+<span class="sd">    temperature           degF        T_s, T_td  (KickInputs)</span>
+<span class="sd">    temperature           degR        T_bh in gas_bh_state; temp-profile callables</span>
+<span class="sd">    volume                bbl         influx, kick tolerance, kt_threshold</span>
+<span class="sd">    annular capacity      bbl/ft      V_dpa, WellSection.annular_capacity_bbl_per_ft</span>
+<span class="sd">    inclination           deg         inc_shoe</span>
+<span class="sd">    Z factor / fractions  -           Z_s, Z_td, gas mole fractions (dimensionless)</span>
+
+<span class="sd">``gas_bh_state`` tuple = ``(P_bh [psi], T_bh [degR], Z [-], rho_gas [ppg])`` (any</span>
+<span class="sd">element may be ``None`` -&gt; computed). PP / fracture / kick-intensity are</span>
+<span class="sd">mud-weight-EQUIVALENT densities (ppg), NOT absolute pressures. Temperatures are</span>
+<span class="sd">degF on ``KickInputs`` but degR inside ``gas_bh_state`` and the temp-profile</span>
+<span class="sd">callables -- note the difference. Per-parameter units are also restated in each</span>
+<span class="sd">function/dataclass docstring.</span>
+
+<span class="sd">Layout</span>
+<span class="sd">------</span>
+<span class="sd">* ``core``        -- the margin logic (KickInputs/KickResult, drill/swab cases).</span>
+<span class="sd">* ``gas_z``       -- clean-room Hall &amp; Yarborough (1973) Z-factor backend.</span>
+<span class="sd">* ``envelope``    -- deterministic worst-credible-case barrier envelope.</span>
+<span class="sd">* ``monotonicity``-- per-case SymPy monotonicity analysis feeding the envelope.</span>
+
+<span class="sd">``core`` and ``gas_z`` depend only on the standard library plus numpy/scipy, so</span>
+<span class="sd">they import with no optional dependencies. ``envelope`` and ``monotonicity``</span>
+<span class="sd">require SymPy (the optional ``kick`` extra); when SymPy is absent the envelope</span>
+<span class="sd">API is exposed as a stub that raises a helpful ImportError on use, so that</span>
+<span class="sd">``import welleng`` (and the core kick-tolerance API) still works without it.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.core</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">DEFAULT_MODEL_REVISION</span><span class="p">,</span>
+    <span class="n">MODEL_REVISIONS</span><span class="p">,</span>
+    <span class="n">KickInputs</span><span class="p">,</span>
+    <span class="n">KickResult</span><span class="p">,</span>
+    <span class="n">drill_kick</span><span class="p">,</span>
+    <span class="n">swab_kick</span><span class="p">,</span>
+    <span class="n">influx_column</span><span class="p">,</span>
+    <span class="n">resolve_gas_properties</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.gas_z</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">hall_yarborough_z</span><span class="p">,</span>
+    <span class="n">gas_density_ppg</span><span class="p">,</span>
+    <span class="n">methane_properties</span><span class="p">,</span>
+    <span class="n">gas_z</span><span class="p">,</span>
+    <span class="n">standing_pseudo_criticals</span><span class="p">,</span>
+    <span class="n">sutton_pseudo_criticals</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="c1"># Optional CoolProp real-EOS mixture backend (CO2 / CCUS). The import itself is</span>
+<span class="c1"># safe without CoolProp -- the dependency is only imported when fluid_z_density</span>
+<span class="c1"># is actually called (raises a helpful ImportError then, pointing at welleng[kick]).</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.gas_z_coolprop</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">fluid_z_density</span><span class="p">,</span>
+    <span class="n">fluid_presets</span><span class="p">,</span>
+    <span class="n">fluid_aliases</span><span class="p">,</span>
+    <span class="n">FLUID_PRESETS</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="c1"># Gas-migration engine: bubble migration up the section-wise annulus checked</span>
+<span class="c1"># against the pore/fracture (PPFP) envelope at every exposed depth (conservative,</span>
+<span class="c1"># safe-side). numpy-only -- no optional dependency. The step trajectory is the</span>
+<span class="c1"># animation data.</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.migration</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">WellSection</span><span class="p">,</span>
+    <span class="n">MigrationStep</span><span class="p">,</span>
+    <span class="n">MigrationResult</span><span class="p">,</span>
+    <span class="n">KickToleranceResult</span><span class="p">,</span>
+    <span class="n">migrate</span><span class="p">,</span>
+    <span class="n">_max_influx_circulated</span><span class="p">,</span>
+    <span class="n">pressure_at_depth</span><span class="p">,</span>
+    <span class="n">linear_temp_profile</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="c1"># Analytical (breakpoint) kick-tolerance solver: the migration-form KT evaluated</span>
+<span class="c1"># only at the breakpoints of P(gas position) -- the exact worst position, no march.</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.analytical</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">analytical_kick_tolerance</span><span class="p">,</span> <span class="n">AnalyticalKickTolerance</span><span class="p">,</span>
+    <span class="n">max_influx_contained_at_surface</span><span class="p">,</span> <span class="n">swab_worst_bit</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="c1"># Catalogue-backed geometry: true annular capacity (bore - string), casing IDs</span>
+<span class="c1"># from the API-5CT catalogue. catalog is imported lazily inside the builders.</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.geometry</span><span class="w"> </span><span class="kn">import</span> <span class="n">annular_capacity</span><span class="p">,</span> <span class="n">cased_section</span><span class="p">,</span> <span class="n">open_hole_section</span>
+<span class="c1"># NOGEPA-50 static single-shoe formula (the mandated baseline the migration</span>
+<span class="c1"># engine&#39;s static reduction reproduces).</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.nogepa</span><span class="w"> </span><span class="kn">import</span> <span class="n">nogepa_drilling_kick_tolerance</span><span class="p">,</span> <span class="n">NogepaResult</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.migration</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">maasp</span><span class="p">,</span> <span class="n">MaaspResult</span><span class="p">,</span> <span class="n">ppg_to_gradient</span><span class="p">,</span> <span class="n">gradient_to_ppg</span><span class="p">,</span>
+    <span class="n">gas_state_from_density</span><span class="p">,</span> <span class="n">GasState</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="k">try</span><span class="p">:</span>  <span class="c1"># envelope/monotonicity need SymPy (optional &#39;kick&#39; extra)</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.envelope</span><span class="w"> </span><span class="kn">import</span> <span class="n">evaluate_envelope</span><span class="p">,</span> <span class="n">EnvelopeResult</span>
+<span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">_envelope_import_error</span><span class="p">:</span>  <span class="c1"># pragma: no cover - optional dep</span>
+    <span class="n">_ENVELOPE_IMPORT_ERROR</span> <span class="o">=</span> <span class="n">_envelope_import_error</span>
+
+<div class="viewcode-block" id="evaluate_envelope">
+<a class="viewcode-back" href="../../welleng.kick_tolerance.html#welleng.kick_tolerance.evaluate_envelope">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">evaluate_envelope</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stub raised when the optional ``kick`` extra (SymPy) is missing.&quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+            <span class="s2">&quot;evaluate_envelope requires the optional &#39;kick&#39; extra &quot;</span>
+            <span class="s2">&quot;(SymPy). Install it with: pip install welleng[kick]&quot;</span>
+        <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">_ENVELOPE_IMPORT_ERROR</span></div>
+
+
+    <span class="n">EnvelopeResult</span> <span class="o">=</span> <span class="kc">None</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;MODEL_REVISIONS&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;DEFAULT_MODEL_REVISION&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;KickInputs&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;KickResult&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;drill_kick&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;swab_kick&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;influx_column&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;resolve_gas_properties&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;evaluate_envelope&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;EnvelopeResult&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;hall_yarborough_z&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;gas_density_ppg&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;methane_properties&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;gas_z&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;standing_pseudo_criticals&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;sutton_pseudo_criticals&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;fluid_z_density&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;fluid_presets&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;fluid_aliases&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;FLUID_PRESETS&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;WellSection&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;MigrationStep&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;MigrationResult&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;KickToleranceResult&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;migrate&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;pressure_at_depth&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;linear_temp_profile&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;analytical_kick_tolerance&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;AnalyticalKickTolerance&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;max_influx_contained_at_surface&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;swab_worst_bit&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;annular_capacity&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;cased_section&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;open_hole_section&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;nogepa_drilling_kick_tolerance&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;maasp&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;MaaspResult&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;ppg_to_gradient&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;gradient_to_ppg&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;gas_state_from_density&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;GasState&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;NogepaResult&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.exchange.nlog_audit &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.exchange.nlog_audit</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.exchange.nlog_audit</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Survey-data-quality audit for the NLOG bulk deviation dump.</span>
+
+<span class="sd">NLOG (the Netherlands oil &amp; gas portal) publishes a monthly bulk CSV of every</span>
+<span class="sd">Dutch well&#39;s deviation survey (``nlog_dirstelsel_*.csv`` inside</span>
+<span class="sd">``thematische_data_boringen.zip``). This module audits that dump for the defects</span>
+<span class="sd">that bite a downstream consumer, using only the geometry in the file (no external</span>
+<span class="sd">truth needed):</span>
+
+<span class="sd">1. **Surface coordinates** — the per-well surface position is given in three</span>
+<span class="sd">   datums (RD / ED50-UTM31 / WGS84-UTM31); cross-transform them and flag any that</span>
+<span class="sd">   disagree (a wrong header coordinate).</span>
+<span class="sd">2. **Grid-azimuth alignment** — each well *declares* its azimuth reference in</span>
+<span class="sd">   ``COORD_SYSTEM_CD`` (RD grid / ED50-UTM31 grid / true north / ...). Compare the</span>
+<span class="sd">   stored azimuths against the direction of the reported ED50-UTM31 position steps</span>
+<span class="sd">   (a purely geometric check, no magnetics) and classify the *actual* reference</span>
+<span class="sd">   from the grid convergences. A well is flagged when the declared and actual</span>
+<span class="sd">   references disagree, split by failure mode:</span>
+
+<span class="sd">   - ``mis_grid`` — azimuth is in a *different* grid than declared (a fixed</span>
+<span class="sd">     rotation by the convergence difference, up to ~3.4 deg across NL);</span>
+<span class="sd">   - ``wrong_sign`` — the grid convergence was applied with the **wrong sign**</span>
+<span class="sd">     (a ``2*gamma`` error — the classic loader bug);</span>
+<span class="sd">   - ``reflected`` — the azimuth is mirrored (``360 - azi``);</span>
+<span class="sd">   - ``unexplained`` — matches no known reference (likely corrupt).</span>
+
+<span class="sd">3. **Azimuth provenance** — classify each well ``vertical`` / ``deviated``</span>
+<span class="sd">   (azimuth recorded and varying) / ``single_bearing`` (near-constant azimuth) /</span>
+<span class="sd">   ``azi_unrecorded`` (deviated but azimuth missing). The last is the &quot;hollow</span>
+<span class="sd">   annulus&quot; case: the true horizontal position error is a *ring* at radius</span>
+<span class="sd">   ``R = MD*sin(inc)``, which a per-station covariance cannot represent.</span>
+<span class="sd">4. **Dogleg severity** — flag physically impossible spikes (&gt; 30 deg/30 m).</span>
+<span class="sd">5. **Torsion** — out-of-plane twist of the osculating plane between consecutive</span>
+<span class="sd">   curved legs. Curvature (DLS) is in-plane; a near-180 deg plane flip is</span>
+<span class="sd">   out-of-plane and betrays an azimuth flip / +-180 ambiguity that DLS cannot see.</span>
+<span class="sd">6. **Structural** — non-monotonic / duplicate measured depths, and TVD drift</span>
+<span class="sd">   (min-curvature TVD vs the reported ``TV_DEPTH_NAP``).</span>
+
+<span class="sd">The checks are geometric and self-contained, so the report is reproducible by</span>
+<span class="sd">anyone who downloads the same public dump. Requires ``pandas`` and ``pyproj``</span>
+<span class="sd">(both welleng dependencies).</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">..utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">best_fit_rotation_2d</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">pyproj</span><span class="w"> </span><span class="kn">import</span> <span class="n">Proj</span><span class="p">,</span> <span class="n">Transformer</span>
+<span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>                       <span class="c1"># pragma: no cover</span>
+    <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+        <span class="s2">&quot;nlog_audit needs pandas + pyproj (welleng runtime deps)&quot;</span>
+    <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+
+<span class="c1"># datum EPSG codes used by the dump&#39;s three surface-coordinate columns</span>
+<span class="n">_EPSG_RD</span> <span class="o">=</span> <span class="s2">&quot;EPSG:28992&quot;</span>
+<span class="n">_EPSG_ED50_UTM31</span> <span class="o">=</span> <span class="s2">&quot;EPSG:23031&quot;</span>
+<span class="n">_EPSG_WGS84_UTM31</span> <span class="o">=</span> <span class="s2">&quot;EPSG:32631&quot;</span>
+<span class="n">_EPSG_WGS84_GEO</span> <span class="o">=</span> <span class="s2">&quot;EPSG:4326&quot;</span>
+
+<span class="c1">#: declared COORD_SYSTEM_CD -&gt; the grid whose north the azimuths use. Value is a</span>
+<span class="c1">#: key into the per-well convergence dict; ``None`` means true/geographic north</span>
+<span class="c1">#: (no grid convergence).</span>
+<span class="n">_DECLARED_GRID</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;RD&quot;</span><span class="p">:</span> <span class="s2">&quot;rd&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;ED50-UTM31&quot;</span><span class="p">:</span> <span class="s2">&quot;utm&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;TRUE NORTH&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="s2">&quot;ED50-GEOGR&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="s2">&quot;ETRS89-UTM31&quot;</span><span class="p">:</span> <span class="s2">&quot;utm&quot;</span><span class="p">,</span>          <span class="c1"># ETRS89 ~ WGS84, UTM31 convergence ~ ED50</span>
+<span class="p">}</span>
+
+
+<span class="c1">#: minimum inclination (deg) for a torsion pivot -- below this the azimuth is</span>
+<span class="c1">#: ill-defined and near-vertical wobble flips the osculating plane spuriously.</span>
+<span class="n">_TORSION_INC_FLOOR</span> <span class="o">=</span> <span class="mf">10.0</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_wrap180</span><span class="p">(</span><span class="n">a</span><span class="p">):</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">a</span> <span class="o">+</span> <span class="mf">180.0</span><span class="p">)</span> <span class="o">%</span> <span class="mf">360.0</span> <span class="o">-</span> <span class="mf">180.0</span>
+
+
+<div class="viewcode-block" id="WellboreAudit">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog_audit.WellboreAudit">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">WellboreAudit</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Per-wellbore audit result (all angles in degrees, lengths in metres).&quot;&quot;&quot;</span>
+
+    <span class="n">wellbore</span><span class="p">:</span> <span class="nb">str</span>                                <span class="c1"># NLOG wellbore identifier</span>
+    <span class="n">n_stations</span><span class="p">:</span> <span class="nb">int</span>                              <span class="c1"># survey station count</span>
+    <span class="n">max_inc</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>              <span class="c1"># maximum inclination</span>
+    <span class="n">provenance</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;too_short&quot;</span>                <span class="c1"># provenance class (see module doc)</span>
+    <span class="n">annulus_radius_m</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>     <span class="c1"># max MD*sin(inc), annulus radius</span>
+    <span class="n">grid_declared</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>          <span class="c1"># COORD_SYSTEM_CD as declared</span>
+    <span class="n">grid_actual</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>            <span class="c1"># actual azimuth reference</span>
+    <span class="n">grid_status</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>            <span class="c1"># grid defect class (see module doc)</span>
+    <span class="n">grid_rotation_deg</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>    <span class="c1"># residual vs correct declared ref</span>
+    <span class="n">max_dls_deg30m</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>       <span class="c1"># worst dogleg severity</span>
+    <span class="n">n_dls_spikes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>                        <span class="c1"># stations with DLS &gt; 30 deg/30m</span>
+    <span class="n">max_torsion_deg</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>      <span class="c1"># worst plane twist, curved legs</span>
+    <span class="n">n_plane_inversions</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>                  <span class="c1"># legs with &gt;150 deg plane flip</span>
+    <span class="n">nonmonotonic_md</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>                     <span class="c1"># MD steps &lt;= 0</span>
+    <span class="n">duplicate_md</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>                        <span class="c1"># repeated MDs</span>
+    <span class="n">tvd_worst_step_m</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>     <span class="c1"># worst |computed-reported| dTVD</span></div>
+
+
+
+<div class="viewcode-block" id="DumpAudit">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog_audit.DumpAudit">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DumpAudit</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Whole-dump audit summary + the per-wellbore rows.&quot;&quot;&quot;</span>
+
+    <span class="n">n_wellbores</span><span class="p">:</span> <span class="nb">int</span>                             <span class="c1"># wellbores audited</span>
+    <span class="n">surface_p95_m</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>      <span class="c1"># cross-datum residual p95</span>
+    <span class="n">n_surface_defects</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>                   <span class="c1"># wells with a surface residual &gt; 50 m</span>
+    <span class="n">projection</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>         <span class="c1"># grid_status -&gt; count</span>
+    <span class="n">provenance</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>         <span class="c1"># provenance -&gt; count</span>
+    <span class="n">n_dls_wells</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>                         <span class="c1"># wells with any DLS spike</span>
+    <span class="n">n_torsion_wells</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>                      <span class="c1"># wells with a plane inversion</span>
+    <span class="n">wellbores</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>          <span class="c1"># list[WellboreAudit]</span>
+
+<div class="viewcode-block" id="DumpAudit.defects">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog_audit.DumpAudit.defects">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">defects</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Wellbores worth attention (grid / DLS / torsion / structural).&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="n">w</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">wellbores</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">w</span><span class="o">.</span><span class="n">grid_status</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;ok&quot;</span><span class="p">,</span> <span class="s2">&quot;unclassified&quot;</span><span class="p">))</span>
+            <span class="ow">or</span> <span class="n">w</span><span class="o">.</span><span class="n">n_dls_spikes</span> <span class="ow">or</span> <span class="n">w</span><span class="o">.</span><span class="n">n_plane_inversions</span>
+            <span class="ow">or</span> <span class="n">w</span><span class="o">.</span><span class="n">nonmonotonic_md</span> <span class="ow">or</span> <span class="n">w</span><span class="o">.</span><span class="n">duplicate_md</span>
+        <span class="p">]</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="load_dump">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog_audit.load_dump">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_dump</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Read an NLOG ``nlog_dirstelsel_*.csv`` into a DataFrame (numeric-coerced).&quot;&quot;&quot;</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">sep</span><span class="o">=</span><span class="s2">&quot;;&quot;</span><span class="p">,</span> <span class="n">decimal</span><span class="o">=</span><span class="s2">&quot;,&quot;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;latin-1&quot;</span><span class="p">,</span>
+                     <span class="n">low_memory</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;AH_DEPTH&quot;</span><span class="p">,</span> <span class="s2">&quot;TV_DEPTH_NAP&quot;</span><span class="p">,</span> <span class="s2">&quot;AZIMUTH&quot;</span><span class="p">,</span> <span class="s2">&quot;DEV_ANGLE&quot;</span><span class="p">,</span>
+              <span class="s2">&quot;X_SURFACE_UTM31_ED50&quot;</span><span class="p">,</span> <span class="s2">&quot;Y_SURFACE_UTM31_ED50&quot;</span><span class="p">,</span>
+              <span class="s2">&quot;DX_UTM31_ED50&quot;</span><span class="p">,</span> <span class="s2">&quot;DY_UTM31_ED50&quot;</span><span class="p">,</span>
+              <span class="s2">&quot;X_SURFACE_RD&quot;</span><span class="p">,</span> <span class="s2">&quot;Y_SURFACE_RD&quot;</span><span class="p">,</span>
+              <span class="s2">&quot;X_SURFACE_UTM31_WGS84&quot;</span><span class="p">,</span> <span class="s2">&quot;Y_SURFACE_UTM31_WGS84&quot;</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">df</span><span class="p">:</span>
+            <span class="n">df</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_numeric</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">c</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;coerce&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">df</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_surface_residuals</span><span class="p">(</span><span class="n">heads</span><span class="p">):</span>
+    <span class="n">t_rd</span> <span class="o">=</span> <span class="n">Transformer</span><span class="o">.</span><span class="n">from_crs</span><span class="p">(</span><span class="n">_EPSG_RD</span><span class="p">,</span> <span class="n">_EPSG_ED50_UTM31</span><span class="p">,</span> <span class="n">always_xy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">t_wg</span> <span class="o">=</span> <span class="n">Transformer</span><span class="o">.</span><span class="n">from_crs</span><span class="p">(</span><span class="n">_EPSG_WGS84_UTM31</span><span class="p">,</span> <span class="n">_EPSG_ED50_UTM31</span><span class="p">,</span> <span class="n">always_xy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">xe1</span><span class="p">,</span> <span class="n">ye1</span> <span class="o">=</span> <span class="n">t_rd</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">heads</span><span class="o">.</span><span class="n">X_SURFACE_RD</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">heads</span><span class="o">.</span><span class="n">Y_SURFACE_RD</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
+    <span class="n">xe2</span><span class="p">,</span> <span class="n">ye2</span> <span class="o">=</span> <span class="n">t_wg</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">heads</span><span class="o">.</span><span class="n">X_SURFACE_UTM31_WGS84</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
+                              <span class="n">heads</span><span class="o">.</span><span class="n">Y_SURFACE_UTM31_WGS84</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
+    <span class="n">rd</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hypot</span><span class="p">(</span><span class="n">xe1</span> <span class="o">-</span> <span class="n">heads</span><span class="o">.</span><span class="n">X_SURFACE_UTM31_ED50</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
+                  <span class="n">ye1</span> <span class="o">-</span> <span class="n">heads</span><span class="o">.</span><span class="n">Y_SURFACE_UTM31_ED50</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
+    <span class="n">wg</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hypot</span><span class="p">(</span><span class="n">xe2</span> <span class="o">-</span> <span class="n">heads</span><span class="o">.</span><span class="n">X_SURFACE_UTM31_ED50</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
+                  <span class="n">ye2</span> <span class="o">-</span> <span class="n">heads</span><span class="o">.</span><span class="n">Y_SURFACE_UTM31_ED50</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">rd</span><span class="p">,</span> <span class="n">wg</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_convergences</span><span class="p">(</span><span class="n">heads</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Grid convergence (deg) at each well&#39;s surface, for RD and UTM31.&quot;&quot;&quot;</span>
+    <span class="n">t</span> <span class="o">=</span> <span class="n">Transformer</span><span class="o">.</span><span class="n">from_crs</span><span class="p">(</span><span class="n">_EPSG_ED50_UTM31</span><span class="p">,</span> <span class="n">_EPSG_WGS84_GEO</span><span class="p">,</span> <span class="n">always_xy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">lon</span><span class="p">,</span> <span class="n">lat</span> <span class="o">=</span> <span class="n">t</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">heads</span><span class="o">.</span><span class="n">X_SURFACE_UTM31_ED50</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
+                           <span class="n">heads</span><span class="o">.</span><span class="n">Y_SURFACE_UTM31_ED50</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
+    <span class="n">p_utm</span><span class="p">,</span> <span class="n">p_rd</span> <span class="o">=</span> <span class="n">Proj</span><span class="p">(</span><span class="n">_EPSG_WGS84_UTM31</span><span class="p">),</span> <span class="n">Proj</span><span class="p">(</span><span class="n">_EPSG_RD</span><span class="p">)</span>
+    <span class="n">g_utm</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">p_utm</span><span class="o">.</span><span class="n">get_factors</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span><span class="o">.</span><span class="n">meridian_convergence</span>
+                      <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">lon</span><span class="p">,</span> <span class="n">lat</span><span class="p">)])</span>
+    <span class="n">g_rd</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">p_rd</span><span class="o">.</span><span class="n">get_factors</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span><span class="o">.</span><span class="n">meridian_convergence</span>
+                     <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">lon</span><span class="p">,</span> <span class="n">lat</span><span class="p">)])</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;utm&quot;</span><span class="p">:</span> <span class="n">g_utm</span><span class="p">,</span> <span class="s2">&quot;rd&quot;</span><span class="p">:</span> <span class="n">g_rd</span><span class="p">,</span> <span class="kc">None</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">lon</span><span class="p">))}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_classify_grid</span><span class="p">(</span><span class="n">azi_offset</span><span class="p">,</span> <span class="n">g_utm</span><span class="p">,</span> <span class="n">g_rd</span><span class="p">,</span> <span class="n">declared</span><span class="p">,</span> <span class="n">tol</span><span class="o">=</span><span class="mf">1.5</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Classify a well&#39;s actual azimuth reference from the observed offset.</span>
+
+<span class="sd">    ``azi_offset`` is (ED50-UTM31 position-step direction) minus (survey-azimuth</span>
+<span class="sd">    direction). The correct offset for azimuths in grid ``X`` is ``g_X - g_utm``.</span>
+<span class="sd">    Returns ``(actual, status, rotation)``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">azi_offset</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;unclassified&quot;</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="c1"># a declared system we have no convergence for (e.g. ED50-NEDTM) cannot be</span>
+    <span class="c1"># verified -- leave it unclassified rather than force a spurious grid match.</span>
+    <span class="k">if</span> <span class="n">declared</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_DECLARED_GRID</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;unclassified&quot;</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="n">grids</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;rd&quot;</span><span class="p">:</span> <span class="n">g_rd</span><span class="p">,</span> <span class="s2">&quot;utm&quot;</span><span class="p">:</span> <span class="n">g_utm</span><span class="p">,</span> <span class="s2">&quot;true&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">}</span>
+    <span class="c1"># correct reference for each candidate grid</span>
+    <span class="n">clean</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">g</span> <span class="o">-</span> <span class="n">g_utm</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">grids</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+    <span class="n">dec</span> <span class="o">=</span> <span class="n">_DECLARED_GRID</span><span class="p">[</span><span class="n">declared</span><span class="p">]</span>
+    <span class="n">dec_name</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;rd&quot;</span><span class="p">:</span> <span class="s2">&quot;rd&quot;</span><span class="p">,</span> <span class="s2">&quot;utm&quot;</span><span class="p">:</span> <span class="s2">&quot;utm&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">:</span> <span class="s2">&quot;true&quot;</span><span class="p">}</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">dec</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_err</span><span class="p">(</span><span class="n">target</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">abs</span><span class="p">(</span><span class="n">_wrap180</span><span class="p">(</span><span class="n">azi_offset</span> <span class="o">-</span> <span class="n">target</span><span class="p">))</span>
+
+    <span class="c1"># 1. correct as declared?</span>
+    <span class="k">if</span> <span class="n">dec_name</span> <span class="ow">and</span> <span class="n">_err</span><span class="p">(</span><span class="n">clean</span><span class="p">[</span><span class="n">dec_name</span><span class="p">])</span> <span class="o">&lt;</span> <span class="n">tol</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">dec_name</span><span class="p">,</span> <span class="s2">&quot;ok&quot;</span><span class="p">,</span> <span class="n">_err</span><span class="p">(</span><span class="n">clean</span><span class="p">[</span><span class="n">dec_name</span><span class="p">])</span>
+    <span class="c1"># 2. wrong-sign convergence on the declared grid (2*gamma bug)?</span>
+    <span class="k">if</span> <span class="n">dec_name</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rd&quot;</span><span class="p">,</span> <span class="s2">&quot;utm&quot;</span><span class="p">):</span>
+        <span class="n">g_dec</span> <span class="o">=</span> <span class="n">grids</span><span class="p">[</span><span class="n">dec_name</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">_err</span><span class="p">(</span><span class="o">-</span><span class="n">g_dec</span> <span class="o">-</span> <span class="n">g_utm</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">tol</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">dec_name</span><span class="p">,</span> <span class="s2">&quot;wrong_sign&quot;</span><span class="p">,</span> <span class="n">_err</span><span class="p">(</span><span class="o">-</span><span class="n">g_dec</span> <span class="o">-</span> <span class="n">g_utm</span><span class="p">)</span>
+    <span class="c1"># 3. reflected azimuth (mirrored about north)?</span>
+    <span class="k">if</span> <span class="n">dec_name</span> <span class="ow">and</span> <span class="n">_err</span><span class="p">(</span><span class="o">-</span><span class="n">clean</span><span class="p">[</span><span class="n">dec_name</span><span class="p">])</span> <span class="o">&lt;</span> <span class="n">tol</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">dec_name</span><span class="p">,</span> <span class="s2">&quot;reflected&quot;</span><span class="p">,</span> <span class="n">_err</span><span class="p">(</span><span class="o">-</span><span class="n">clean</span><span class="p">[</span><span class="n">dec_name</span><span class="p">])</span>
+    <span class="c1"># 4. a DIFFERENT grid (mis-declared)?</span>
+    <span class="n">best</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">clean</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">n</span><span class="p">:</span> <span class="n">_err</span><span class="p">(</span><span class="n">clean</span><span class="p">[</span><span class="n">n</span><span class="p">]))</span>
+    <span class="k">if</span> <span class="n">_err</span><span class="p">(</span><span class="n">clean</span><span class="p">[</span><span class="n">best</span><span class="p">])</span> <span class="o">&lt;</span> <span class="n">tol</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">best</span><span class="p">,</span> <span class="s2">&quot;mis_grid&quot;</span><span class="p">,</span> <span class="n">_err</span><span class="p">(</span><span class="n">clean</span><span class="p">[</span><span class="n">best</span><span class="p">])</span>
+    <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;unexplained&quot;</span><span class="p">,</span> <span class="kc">None</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_wellbore_metrics</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">g</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Per-wellbore geometry: provenance, DLS, structural, TVD, azimuth offset.&quot;&quot;&quot;</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">g</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s2">&quot;AH_DEPTH&quot;</span><span class="p">)</span>
+    <span class="n">md</span> <span class="o">=</span> <span class="n">g</span><span class="o">.</span><span class="n">AH_DEPTH</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">inc_deg</span> <span class="o">=</span> <span class="n">g</span><span class="o">.</span><span class="n">DEV_ANGLE</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">azi_deg</span> <span class="o">=</span> <span class="n">g</span><span class="o">.</span><span class="n">AZIMUTH</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">tvd</span> <span class="o">=</span> <span class="n">g</span><span class="o">.</span><span class="n">TV_DEPTH_NAP</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">dx</span> <span class="o">=</span> <span class="n">g</span><span class="o">.</span><span class="n">DX_UTM31_ED50</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">dy</span> <span class="o">=</span> <span class="n">g</span><span class="o">.</span><span class="n">DY_UTM31_ED50</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">md</span><span class="p">)</span>
+    <span class="n">w</span> <span class="o">=</span> <span class="n">WellboreAudit</span><span class="p">(</span><span class="n">wellbore</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">name</span><span class="p">),</span> <span class="n">n_stations</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">n</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">n</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">w</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+
+    <span class="n">inc</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">inc_deg</span><span class="p">)</span>
+    <span class="n">azi</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">azi_deg</span><span class="p">)</span>
+    <span class="n">dmd</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">md</span><span class="p">)</span>
+    <span class="n">w</span><span class="o">.</span><span class="n">nonmonotonic_md</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dmd</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">))</span>
+    <span class="n">w</span><span class="o">.</span><span class="n">duplicate_md</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">dmd</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)))</span>
+    <span class="n">ok</span> <span class="o">=</span> <span class="n">dmd</span> <span class="o">&gt;</span> <span class="mf">0.1</span>
+
+    <span class="n">i1</span><span class="p">,</span> <span class="n">i2</span><span class="p">,</span> <span class="n">a1</span><span class="p">,</span> <span class="n">a2</span> <span class="o">=</span> <span class="n">inc</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">inc</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">azi</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">azi</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+    <span class="n">cos_dl</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">i2</span> <span class="o">-</span> <span class="n">i1</span><span class="p">)</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">i1</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">i2</span><span class="p">)</span>
+                     <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">a2</span> <span class="o">-</span> <span class="n">a1</span><span class="p">)),</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">dl</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arccos</span><span class="p">(</span><span class="n">cos_dl</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">invalid</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">,</span> <span class="n">divide</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">):</span>
+        <span class="n">rf</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">dl</span> <span class="o">&gt;</span> <span class="mf">1e-9</span><span class="p">,</span> <span class="mi">2</span> <span class="o">/</span> <span class="n">dl</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">tan</span><span class="p">(</span><span class="n">dl</span> <span class="o">/</span> <span class="mi">2</span><span class="p">),</span> <span class="mf">1.0</span><span class="p">)</span>
+    <span class="n">dn</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">dmd</span> <span class="o">*</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">i1</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">a1</span><span class="p">)</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">i2</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">a2</span><span class="p">))</span> <span class="o">*</span> <span class="n">rf</span>
+    <span class="n">de</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">dmd</span> <span class="o">*</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">i1</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">a1</span><span class="p">)</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">i2</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">a2</span><span class="p">))</span> <span class="o">*</span> <span class="n">rf</span>
+    <span class="n">dv</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">dmd</span> <span class="o">*</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">i1</span><span class="p">)</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">i2</span><span class="p">))</span> <span class="o">*</span> <span class="n">rf</span>
+
+    <span class="n">dls</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="n">dl</span><span class="p">[</span><span class="n">ok</span><span class="p">])</span> <span class="o">/</span> <span class="n">dmd</span><span class="p">[</span><span class="n">ok</span><span class="p">]</span> <span class="o">*</span> <span class="mf">30.0</span>
+    <span class="n">w</span><span class="o">.</span><span class="n">max_dls_deg30m</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">dls</span><span class="p">))</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">dls</span><span class="p">)</span> <span class="k">else</span> <span class="mf">0.0</span>
+    <span class="n">w</span><span class="o">.</span><span class="n">n_dls_spikes</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dls</span> <span class="o">&gt;</span> <span class="mf">30.0</span><span class="p">))</span>
+
+    <span class="c1"># torsion: how much the osculating plane twists between consecutive curved</span>
+    <span class="c1"># legs. Curvature (DLS) is in-plane; a near-180 deg plane flip is out-of-plane</span>
+    <span class="c1"># and betrays an azimuth flip / +-180 ambiguity that DLS cannot see. Restrict</span>
+    <span class="c1"># to legs where all three stations are DEVIATED (inc &gt; _TORSION_INC_FLOOR):</span>
+    <span class="c1"># near vertical the azimuth is ill-defined and ordinary wobble flips the plane</span>
+    <span class="c1"># spuriously, which would otherwise dominate the flag.</span>
+    <span class="n">w</span><span class="o">.</span><span class="n">max_torsion_deg</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="k">if</span> <span class="n">n</span> <span class="o">&gt;=</span> <span class="mi">4</span><span class="p">:</span>
+        <span class="n">tvec</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">azi</span><span class="p">),</span>
+                                <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">azi</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc</span><span class="p">)])</span>
+        <span class="n">bvec</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cross</span><span class="p">(</span><span class="n">tvec</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">tvec</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>         <span class="c1"># per leg</span>
+        <span class="n">nb</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">bvec</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">bok</span> <span class="o">=</span> <span class="n">nb</span> <span class="o">&gt;</span> <span class="mf">1e-3</span>
+        <span class="n">bu</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">bvec</span><span class="p">)</span>
+        <span class="n">bu</span><span class="p">[</span><span class="n">bok</span><span class="p">]</span> <span class="o">=</span> <span class="n">bvec</span><span class="p">[</span><span class="n">bok</span><span class="p">]</span> <span class="o">/</span> <span class="n">nb</span><span class="p">[</span><span class="n">bok</span><span class="p">][:,</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="n">twist</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arccos</span><span class="p">(</span>               <span class="c1"># pivot = station j+1</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">bu</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">bu</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)))</span>
+        <span class="n">dl_deg</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="n">dl</span><span class="p">)</span>
+        <span class="n">inc3</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span><span class="n">inc_deg</span><span class="p">[:</span><span class="o">-</span><span class="mi">2</span><span class="p">],</span> <span class="n">inc_deg</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span> <span class="n">inc_deg</span><span class="p">[</span><span class="mi">2</span><span class="p">:])</span>
+        <span class="n">keep</span> <span class="o">=</span> <span class="p">(</span><span class="n">bok</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">&amp;</span> <span class="n">bok</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>                   <span class="c1"># both legs give a plane</span>
+                <span class="o">&amp;</span> <span class="p">(</span><span class="n">dl_deg</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mf">3.0</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">dl_deg</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">&gt;</span> <span class="mf">3.0</span><span class="p">)</span>   <span class="c1"># both curved</span>
+                <span class="o">&amp;</span> <span class="p">(</span><span class="n">inc3</span> <span class="o">&gt;</span> <span class="n">_TORSION_INC_FLOOR</span><span class="p">))</span>       <span class="c1"># all 3 stations deviated</span>
+        <span class="k">if</span> <span class="n">keep</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+            <span class="n">w</span><span class="o">.</span><span class="n">max_torsion_deg</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">twist</span><span class="p">[</span><span class="n">keep</span><span class="p">]))</span>
+            <span class="n">w</span><span class="o">.</span><span class="n">n_plane_inversions</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">twist</span><span class="p">[</span><span class="n">keep</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mf">150.0</span><span class="p">))</span>
+
+    <span class="n">w</span><span class="o">.</span><span class="n">max_inc</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">nanmax</span><span class="p">(</span><span class="n">inc_deg</span><span class="p">))</span>
+    <span class="n">w</span><span class="o">.</span><span class="n">annulus_radius_m</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">nanmax</span><span class="p">(</span><span class="n">md</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">inc_deg</span><span class="p">))))</span>
+    <span class="n">dev</span> <span class="o">=</span> <span class="n">inc_deg</span> <span class="o">&gt;</span> <span class="mf">3.0</span>
+    <span class="k">if</span> <span class="n">w</span><span class="o">.</span><span class="n">max_inc</span> <span class="o">&lt;</span> <span class="mf">3.0</span><span class="p">:</span>
+        <span class="n">w</span><span class="o">.</span><span class="n">provenance</span> <span class="o">=</span> <span class="s2">&quot;vertical&quot;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">adev</span> <span class="o">=</span> <span class="n">azi_deg</span><span class="p">[</span><span class="n">dev</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">adev</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="o">~</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">adev</span><span class="p">))</span> <span class="o">&gt;</span> <span class="mf">0.8</span><span class="p">:</span>
+            <span class="n">w</span><span class="o">.</span><span class="n">provenance</span> <span class="o">=</span> <span class="s2">&quot;azi_unrecorded&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">a</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">adev</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">adev</span><span class="p">)])</span>
+            <span class="n">R</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hypot</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">a</span><span class="p">)),</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">a</span><span class="p">)))</span>
+            <span class="n">spread</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">R</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)))))</span>
+            <span class="n">w</span><span class="o">.</span><span class="n">provenance</span> <span class="o">=</span> <span class="s2">&quot;single_bearing&quot;</span> <span class="k">if</span> <span class="n">spread</span> <span class="o">&lt;</span> <span class="mf">5.0</span> <span class="k">else</span> <span class="s2">&quot;deviated&quot;</span>
+
+    <span class="c1"># azimuth offset vs ED50-UTM31 position steps (for the grid check).</span>
+    <span class="c1"># The offset is the single rotation theta that best aligns the survey step</span>
+    <span class="c1"># vectors to the reported position step vectors -- the 2D orthogonal-Procrustes</span>
+    <span class="c1"># (Wahba) solution in closed form: theta = atan2(sum cross, sum dot), where</span>
+    <span class="c1"># cross_i = a_i x b_i and dot_i = a_i . b_i for a = survey step, b = position</span>
+    <span class="c1"># step. It is exact (no iteration) and length-weighted by the displacements,</span>
+    <span class="c1"># so longer, more reliable legs dominate. (Minimises sum |R(theta) a - b|^2.)</span>
+    <span class="n">step_e</span><span class="p">,</span> <span class="n">step_n</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">dx</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">dy</span><span class="p">)</span>
+    <span class="n">horiz</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hypot</span><span class="p">(</span><span class="n">de</span><span class="p">,</span> <span class="n">dn</span><span class="p">)</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">ok</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">horiz</span> <span class="o">&gt;</span> <span class="mf">2.0</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">hypot</span><span class="p">(</span><span class="n">step_e</span><span class="p">,</span> <span class="n">step_n</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mf">1.0</span><span class="p">)</span>
+    <span class="n">azi_offset</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">m</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">5</span><span class="p">:</span>
+        <span class="n">azi_offset</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="n">best_fit_rotation_2d</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">dn</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="n">de</span><span class="p">[</span><span class="n">m</span><span class="p">]]),</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">step_n</span><span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="n">step_e</span><span class="p">[</span><span class="n">m</span><span class="p">]])))</span>
+
+    <span class="n">tvd_ok</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">tvd</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span> <span class="o">&amp;</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">tvd</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span> <span class="o">&amp;</span> <span class="n">ok</span>
+    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">tvd_ok</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">5</span><span class="p">:</span>
+        <span class="n">resid</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">tvd</span><span class="p">)</span> <span class="o">-</span> <span class="n">dv</span><span class="p">)[</span><span class="n">tvd_ok</span><span class="p">]</span>
+        <span class="n">w</span><span class="o">.</span><span class="n">tvd_worst_step_m</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">resid</span><span class="p">)))</span>
+    <span class="k">return</span> <span class="n">w</span><span class="p">,</span> <span class="n">azi_offset</span>
+
+
+<div class="viewcode-block" id="audit_dump">
+<a class="viewcode-back" href="../../../welleng.exchange.html#welleng.exchange.nlog_audit.audit_dump">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">audit_dump</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">surface_defect_m</span><span class="o">=</span><span class="mf">50.0</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Audit an NLOG bulk deviation dump. Returns a :class:`DumpAudit`.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    path : str</span>
+<span class="sd">        Path to an ``nlog_dirstelsel_*.csv`` (unzipped from the monthly</span>
+<span class="sd">        ``thematische_data_boringen.zip``).</span>
+<span class="sd">    surface_defect_m : float</span>
+<span class="sd">        Cross-datum surface residual (m) above which a well is a header defect.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">load_dump</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="n">heads</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s2">&quot;WELLBORE&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+    <span class="n">declared</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s2">&quot;WELLBORE&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">COORD_SYSTEM_CD</span><span class="o">.</span><span class="n">agg</span><span class="p">(</span>
+        <span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">mode</span><span class="p">()</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">mode</span><span class="p">())</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
+
+    <span class="n">rd_res</span><span class="p">,</span> <span class="n">wg_res</span> <span class="o">=</span> <span class="n">_surface_residuals</span><span class="p">(</span><span class="n">heads</span><span class="p">)</span>
+    <span class="n">conv</span> <span class="o">=</span> <span class="n">_convergences</span><span class="p">(</span><span class="n">heads</span><span class="p">)</span>
+    <span class="n">conv_by_wb</span> <span class="o">=</span> <span class="p">{</span><span class="n">wb</span><span class="p">:</span> <span class="p">(</span><span class="n">conv</span><span class="p">[</span><span class="s2">&quot;utm&quot;</span><span class="p">][</span><span class="n">i</span><span class="p">],</span> <span class="n">conv</span><span class="p">[</span><span class="s2">&quot;rd&quot;</span><span class="p">][</span><span class="n">i</span><span class="p">])</span>
+                  <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">wb</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">heads</span><span class="o">.</span><span class="n">WELLBORE</span><span class="o">.</span><span class="n">values</span><span class="p">)}</span>
+    <span class="n">surf_defect</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">((</span><span class="n">rd_res</span> <span class="o">&gt;</span> <span class="n">surface_defect_m</span><span class="p">)</span>
+                             <span class="o">|</span> <span class="p">(</span><span class="n">wg_res</span> <span class="o">&gt;</span> <span class="n">surface_defect_m</span><span class="p">)))</span>
+
+    <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s2">&quot;WELLBORE&quot;</span><span class="p">):</span>
+        <span class="n">w</span><span class="p">,</span> <span class="n">off</span> <span class="o">=</span> <span class="n">_wellbore_metrics</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">g</span><span class="p">)</span>
+        <span class="n">w</span><span class="o">.</span><span class="n">grid_declared</span> <span class="o">=</span> <span class="n">declared</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="n">g_utm</span><span class="p">,</span> <span class="n">g_rd</span> <span class="o">=</span> <span class="n">conv_by_wb</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">))</span>
+        <span class="n">actual</span><span class="p">,</span> <span class="n">status</span><span class="p">,</span> <span class="n">rot</span> <span class="o">=</span> <span class="n">_classify_grid</span><span class="p">(</span><span class="n">off</span><span class="p">,</span> <span class="n">g_utm</span><span class="p">,</span> <span class="n">g_rd</span><span class="p">,</span> <span class="n">w</span><span class="o">.</span><span class="n">grid_declared</span><span class="p">)</span>
+        <span class="n">w</span><span class="o">.</span><span class="n">grid_actual</span><span class="p">,</span> <span class="n">w</span><span class="o">.</span><span class="n">grid_status</span><span class="p">,</span> <span class="n">w</span><span class="o">.</span><span class="n">grid_rotation_deg</span> <span class="o">=</span> <span class="n">actual</span><span class="p">,</span> <span class="n">status</span><span class="p">,</span> <span class="n">rot</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">w</span><span class="p">)</span>
+
+    <span class="n">prov</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">proj</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+        <span class="n">prov</span><span class="p">[</span><span class="n">w</span><span class="o">.</span><span class="n">provenance</span><span class="p">]</span> <span class="o">=</span> <span class="n">prov</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">w</span><span class="o">.</span><span class="n">provenance</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">proj</span><span class="p">[</span><span class="n">w</span><span class="o">.</span><span class="n">grid_status</span><span class="p">]</span> <span class="o">=</span> <span class="n">proj</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">w</span><span class="o">.</span><span class="n">grid_status</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">DumpAudit</span><span class="p">(</span>
+        <span class="n">n_wellbores</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">rows</span><span class="p">),</span>
+        <span class="n">surface_p95_m</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;rd_vs_ed50&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">nanpercentile</span><span class="p">(</span><span class="n">rd_res</span><span class="p">,</span> <span class="mi">95</span><span class="p">)),</span>
+                       <span class="s2">&quot;wgs84_vs_ed50&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">nanpercentile</span><span class="p">(</span><span class="n">wg_res</span><span class="p">,</span> <span class="mi">95</span><span class="p">))},</span>
+        <span class="n">n_surface_defects</span><span class="o">=</span><span class="n">surf_defect</span><span class="p">,</span>
+        <span class="n">projection</span><span class="o">=</span><span class="n">proj</span><span class="p">,</span>
+        <span class="n">provenance</span><span class="o">=</span><span class="n">prov</span><span class="p">,</span>
+        <span class="n">n_dls_wells</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">rows</span> <span class="k">if</span> <span class="n">w</span><span class="o">.</span><span class="n">n_dls_spikes</span><span class="p">)),</span>
+        <span class="n">n_torsion_wells</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">rows</span> <span class="k">if</span> <span class="n">w</span><span class="o">.</span><span class="n">n_plane_inversions</span><span class="p">)),</span>
+        <span class="n">wellbores</span><span class="o">=</span><span class="n">rows</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_report</span><span class="p">(</span><span class="n">audit</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A short text summary of a :class:`DumpAudit`.&quot;&quot;&quot;</span>
+    <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;NLOG dump audit — </span><span class="si">{</span><span class="n">audit</span><span class="o">.</span><span class="n">n_wellbores</span><span class="si">}</span><span class="s2"> wellbores&quot;</span><span class="p">,</span>
+             <span class="sa">f</span><span class="s2">&quot;  surface cross-datum p95: </span><span class="si">{</span><span class="n">audit</span><span class="o">.</span><span class="n">surface_p95_m</span><span class="si">}</span><span class="s2">; &quot;</span>
+             <span class="sa">f</span><span class="s2">&quot;defects (&gt;50 m): </span><span class="si">{</span><span class="n">audit</span><span class="o">.</span><span class="n">n_surface_defects</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+             <span class="s2">&quot;  grid-azimuth status:&quot;</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;ok&quot;</span><span class="p">,</span> <span class="s2">&quot;mis_grid&quot;</span><span class="p">,</span> <span class="s2">&quot;wrong_sign&quot;</span><span class="p">,</span> <span class="s2">&quot;reflected&quot;</span><span class="p">,</span> <span class="s2">&quot;unexplained&quot;</span><span class="p">,</span>
+              <span class="s2">&quot;unclassified&quot;</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">audit</span><span class="o">.</span><span class="n">projection</span><span class="p">:</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    </span><span class="si">{</span><span class="n">k</span><span class="si">:</span><span class="s2">13s</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">audit</span><span class="o">.</span><span class="n">projection</span><span class="p">[</span><span class="n">k</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;  azimuth provenance:&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">audit</span><span class="o">.</span><span class="n">provenance</span><span class="o">.</span><span class="n">items</span><span class="p">(),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">kv</span><span class="p">:</span> <span class="o">-</span><span class="n">kv</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    </span><span class="si">{</span><span class="n">k</span><span class="si">:</span><span class="s2">15s</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">v</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  wellbores with DLS spikes (&gt;30 deg/30m): </span><span class="si">{</span><span class="n">audit</span><span class="o">.</span><span class="n">n_dls_wells</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  wellbores with a plane inversion: </span><span class="si">{</span><span class="n">audit</span><span class="o">.</span><span class="n">n_torsion_wells</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>       <span class="c1"># pragma: no cover - CLI convenience</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;usage: python -m welleng.exchange.nlog_audit &lt;dirstelsel.csv&gt;&quot;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">_report</span><span class="p">(</span><span class="n">audit_dump</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">])))</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

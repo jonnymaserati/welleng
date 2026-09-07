@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.acceptance &mdash; welleng 0.29.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=58c9f167"></script>
+        <script src="../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            welleng
+          </a>
+              <div class="version">
+                0.29.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.acceptance</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.acceptance</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Separation-factor acceptance criteria — ISCWSA/OWSG anti-collision.</span>
+
+<span class="sd">welleng owns the separation-factor MATHS (:mod:`welleng.clearance`). This module</span>
+<span class="sd">adds the small typed POLICY layer the standard also defines, so consumers</span>
+<span class="sd">of the SF stop each inventing &quot;acceptable&quot; privately.</span>
+
+<span class="sd">It is NOT a policy engine. It carries the standard&#39;s graded thresholds, the action</span>
+<span class="sd">each triggers, the HSE-risk parameter set that accompanies them, and a</span>
+<span class="sd">``classify(sf) -&gt; Verdict``. What a consumer DOES with a verdict — reject a</span>
+<span class="sd">candidate, record it, maximise a target — is the consumer&#39;s business, not this</span>
+<span class="sd">module&#39;s.</span>
+
+<span class="sd">Source</span>
+<span class="sd">------</span>
+<span class="sd">Sodling, Clark &amp; Allen, *&quot;The Development and Testing of an Enhanced Anti-Collision</span>
+<span class="sd">Rule&quot;*, SPE-187073 (SPE Drill &amp; Compl 34, 2019), DOI 10.2118/187073-PA -- the same</span>
+<span class="sd">paper whose separation rule :class:`~welleng.clearance.IscwsaClearance` implements.</span>
+<span class="sd">The graded criteria and their actions are the paper&#39;s own; the HSE-risk parameter</span>
+<span class="sd">set (``k = 3.5`` Williamson 1998; the crossing-probability caution Bang 2017) is the</span>
+<span class="sd">recommendation it makes for HSE-risk wells.</span>
+
+<span class="sd">The standard&#39;s own escape hatch is respected: *&quot;where local regulations are more</span>
+<span class="sd">conservative they take precedence&quot;* -- an operator override may only TIGHTEN the</span>
+<span class="sd">critical floor (raise it), never loosen it below the mandatory ``SF = 1``.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">replace</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span>
+
+<span class="c1"># --- The standard&#39;s graded thresholds (SPE-187073) --------------------------</span>
+<span class="n">SF_CRITICAL</span> <span class="o">=</span> <span class="mf">1.0</span>
+<span class="c1">#   SF &lt; 1 is a critical condition -- STOP DRILLING for HSE-risk offset wells;</span>
+<span class="c1">#   SF &gt;= 1 is the mandatory minimum acceptable separation.</span>
+<span class="n">SF_REVIEW</span> <span class="o">=</span> <span class="mf">1.25</span>
+<span class="c1">#   Planning: a prompt for detailed engineering review. Execution: triggers</span>
+<span class="c1">#   preventive measures and a Management of Change (MOC).</span>
+<span class="n">SF_EXCLUDE</span> <span class="o">=</span> <span class="mf">5.0</span>
+<span class="c1">#   Offset wells beyond this are excluded from further scanning (planning</span>
+<span class="c1">#   convenience where hundreds of wells are involved).</span>
+
+<span class="c1"># --- The HSE-risk parameter set that accompanies them -----------------------</span>
+<span class="n">K_HSE</span> <span class="o">=</span> <span class="mf">3.5</span>                     <span class="c1"># position-error multiplier (Williamson 1998)</span>
+<span class="n">SURFACE_MARGIN_M</span> <span class="o">=</span> <span class="mf">0.3</span>          <span class="c1"># Sm, surface margin [m] (~1 ft)</span>
+<span class="n">PROJECT_AHEAD_SIGMA_M</span> <span class="o">=</span> <span class="mf">0.5</span>     <span class="c1"># sigma_pa, project-ahead uncertainty [m] (~1.6 ft)</span>
+
+<span class="n">_SOURCE</span> <span class="o">=</span> <span class="s2">&quot;SPE-187073 (Sodling, Clark &amp; Allen, 2019); DOI 10.2118/187073-PA&quot;</span>
+
+<span class="c1"># The bands, worst -&gt; best. A consumer may key on `band` (these exact strings)</span>
+<span class="c1"># or on the richer Verdict.</span>
+<span class="n">CRITICAL</span> <span class="o">=</span> <span class="s2">&quot;critical&quot;</span>       <span class="c1"># SF below the (mandatory or operator) floor -- STOP</span>
+<span class="n">REVIEW</span> <span class="o">=</span> <span class="s2">&quot;review&quot;</span>           <span class="c1"># acceptable, but below the review/MOC prompt</span>
+<span class="n">ACCEPTABLE</span> <span class="o">=</span> <span class="s2">&quot;acceptable&quot;</span>   <span class="c1"># clear</span>
+<span class="n">EXCLUDE</span> <span class="o">=</span> <span class="s2">&quot;exclude&quot;</span>         <span class="c1"># so far apart it is dropped from scanning</span>
+
+
+<div class="viewcode-block" id="Verdict">
+<a class="viewcode-back" href="../../welleng.html#welleng.acceptance.Verdict">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Verdict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The classification of a single separation factor. Read-only.&quot;&quot;&quot;</span>
+
+    <span class="n">sf</span><span class="p">:</span> <span class="nb">float</span>               <span class="c1"># the separation factor classified</span>
+    <span class="n">band</span><span class="p">:</span> <span class="nb">str</span>                 <span class="c1"># one of CRITICAL / REVIEW / ACCEPTABLE / EXCLUDE</span>
+    <span class="n">acceptable</span><span class="p">:</span> <span class="nb">bool</span>          <span class="c1"># sf &gt;= the effective critical floor (band != CRITICAL)</span>
+    <span class="n">action</span><span class="p">:</span> <span class="nb">str</span>               <span class="c1"># the standard&#39;s action for this band, human-readable</span>
+    <span class="n">criterion</span><span class="p">:</span> <span class="s2">&quot;AcceptanceCriteria&quot;</span>   <span class="c1"># the criterion that produced this verdict</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__bool__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;``bool(verdict)`` is its acceptability -- so ``if not verdict:`` reads.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">acceptable</span>
+
+<div class="viewcode-block" id="Verdict.to_dict">
+<a class="viewcode-back" href="../../welleng.html#welleng.acceptance.Verdict.to_dict">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Canonical JSON-serialisable form, for a provenance stamp.</span>
+
+<span class="sd">        The BLESSED serialisation -- every consumer stamps a verdict identically</span>
+<span class="sd">        rather than each hand-rolling :func:`dataclasses.asdict`, so a stored</span>
+<span class="sd">        result&#39;s record of what &quot;acceptable&quot; meant is byte-identical across repos.</span>
+<span class="sd">        Fields are listed explicitly (not reflected) so the stamp is a stable</span>
+<span class="sd">        contract: a new internal field cannot silently change it. The nested</span>
+<span class="sd">        criterion recurses through its own :meth:`AcceptanceCriteria.to_dict`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;sf&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">sf</span><span class="p">,</span>
+            <span class="s2">&quot;band&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">band</span><span class="p">,</span>
+            <span class="s2">&quot;acceptable&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">acceptable</span><span class="p">,</span>
+            <span class="s2">&quot;action&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">action</span><span class="p">,</span>
+            <span class="s2">&quot;criterion&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">criterion</span><span class="o">.</span><span class="n">to_dict</span><span class="p">(),</span>
+        <span class="p">}</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="AcceptanceCriteria">
+<a class="viewcode-back" href="../../welleng.html#welleng.acceptance.AcceptanceCriteria">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">AcceptanceCriteria</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The standard&#39;s graded acceptance criteria, with an explicit operator override.</span>
+
+<span class="sd">    Construct the standard via :meth:`standard`; tighten it via</span>
+<span class="sd">    :meth:`with_operator_floor`. ``classify`` maps an SF to a :class:`Verdict`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">sf_critical</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">SF_CRITICAL</span>          <span class="c1"># STOP-drilling floor [SF]</span>
+    <span class="n">sf_review</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">SF_REVIEW</span>              <span class="c1"># engineering-review/MOC prompt [SF]</span>
+    <span class="n">sf_exclude</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">SF_EXCLUDE</span>            <span class="c1"># drop-from-scanning threshold [SF]</span>
+    <span class="n">k</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">K_HSE</span>                          <span class="c1"># HSE-risk position-error multiplier</span>
+    <span class="n">surface_margin_m</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">SURFACE_MARGIN_M</span>       <span class="c1"># Sm, surface margin [m]</span>
+    <span class="n">project_ahead_sigma_m</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">PROJECT_AHEAD_SIGMA_M</span>  <span class="c1"># project-ahead sigma [m]</span>
+    <span class="n">source</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">_SOURCE</span>     <span class="c1"># citation string; carries the override note if tightened</span>
+    <span class="n">operator_override</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="c1">#   True when `with_operator_floor` has raised the critical floor above the</span>
+    <span class="c1">#   standard&#39;s SF = 1. A result carrying this must NOT present the number as</span>
+    <span class="c1">#   the standard&#39;s -- the override is the operator&#39;s, deliberately stamped.</span>
+
+<div class="viewcode-block" id="AcceptanceCriteria.standard">
+<a class="viewcode-back" href="../../welleng.html#welleng.acceptance.AcceptanceCriteria.standard">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">standard</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;AcceptanceCriteria&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;The SPE-187073 criteria, unmodified.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="AcceptanceCriteria.with_operator_floor">
+<a class="viewcode-back" href="../../welleng.html#welleng.acceptance.AcceptanceCriteria.with_operator_floor">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">with_operator_floor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sf_min</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;AcceptanceCriteria&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;A tightened copy whose critical floor is ``sf_min``.</span>
+
+<span class="sd">        An override may only TIGHTEN: ``sf_min`` below the mandatory ``SF = 1``</span>
+<span class="sd">        is refused, because more-conservative local regulation takes precedence</span>
+<span class="sd">        over the standard but nothing may drop below its mandatory minimum.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">sf_min</span> <span class="o">&lt;</span> <span class="n">SF_CRITICAL</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;an operator floor may only TIGHTEN the standard: </span><span class="si">{</span><span class="n">sf_min</span><span class="si">}</span><span class="s2"> is &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;below the mandatory SF = </span><span class="si">{</span><span class="n">SF_CRITICAL</span><span class="si">}</span><span class="s2">. More-conservative local &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;regulation takes precedence, but nothing may sit below SF = 1.&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">replace</span><span class="p">(</span>
+            <span class="bp">self</span><span class="p">,</span> <span class="n">sf_critical</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">sf_min</span><span class="p">),</span> <span class="n">operator_override</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">source</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_SOURCE</span><span class="si">}</span><span class="s2">; operator floor SF &gt;= </span><span class="si">{</span><span class="n">sf_min</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="AcceptanceCriteria.classify">
+<a class="viewcode-back" href="../../welleng.html#welleng.acceptance.AcceptanceCriteria.classify">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">classify</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sf</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Verdict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Classify a separation factor into a :class:`Verdict`.</span>
+
+<span class="sd">        Bands, checked in order so an operator floor above the review threshold</span>
+<span class="sd">        still behaves: ``sf &lt; sf_critical`` -&gt; CRITICAL; ``sf &gt; sf_exclude`` -&gt;</span>
+<span class="sd">        EXCLUDE; ``sf &lt; sf_review`` -&gt; REVIEW; else ACCEPTABLE.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">sf</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">sf</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">sf</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">sf_critical</span><span class="p">:</span>
+            <span class="n">band</span><span class="p">,</span> <span class="n">action</span> <span class="o">=</span> <span class="n">CRITICAL</span><span class="p">,</span> <span class="p">(</span>
+                <span class="s2">&quot;critical -- below the mandatory separation; STOP DRILLING for &quot;</span>
+                <span class="s2">&quot;HSE-risk offset wells (SPE-187073)&quot;</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">sf</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">sf_exclude</span><span class="p">:</span>
+            <span class="n">band</span><span class="p">,</span> <span class="n">action</span> <span class="o">=</span> <span class="n">EXCLUDE</span><span class="p">,</span> <span class="p">(</span>
+                <span class="s2">&quot;exclude -- separation so large the offset may be dropped from &quot;</span>
+                <span class="s2">&quot;further scanning&quot;</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">sf</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">sf_review</span><span class="p">:</span>
+            <span class="n">band</span><span class="p">,</span> <span class="n">action</span> <span class="o">=</span> <span class="n">REVIEW</span><span class="p">,</span> <span class="p">(</span>
+                <span class="s2">&quot;review -- acceptable but below the review threshold; prompt a &quot;</span>
+                <span class="s2">&quot;detailed engineering review (planning) / MOC (execution)&quot;</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">band</span><span class="p">,</span> <span class="n">action</span> <span class="o">=</span> <span class="n">ACCEPTABLE</span><span class="p">,</span> <span class="s2">&quot;acceptable -- clear of the review threshold&quot;</span>
+        <span class="k">return</span> <span class="n">Verdict</span><span class="p">(</span>
+            <span class="n">sf</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">band</span><span class="o">=</span><span class="n">band</span><span class="p">,</span> <span class="n">acceptable</span><span class="o">=</span><span class="p">(</span><span class="n">band</span> <span class="o">!=</span> <span class="n">CRITICAL</span><span class="p">),</span> <span class="n">action</span><span class="o">=</span><span class="n">action</span><span class="p">,</span>
+            <span class="n">criterion</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="AcceptanceCriteria.to_dict">
+<a class="viewcode-back" href="../../welleng.html#welleng.acceptance.AcceptanceCriteria.to_dict">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Canonical JSON-serialisable form, for a provenance stamp.</span>
+
+<span class="sd">        The BLESSED serialisation (see :meth:`Verdict.to_dict`) -- fields listed</span>
+<span class="sd">        explicitly so the stamp is a stable contract, not whatever</span>
+<span class="sd">        :func:`dataclasses.asdict` happens to reflect.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;sf_critical&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">sf_critical</span><span class="p">,</span>
+            <span class="s2">&quot;sf_review&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">sf_review</span><span class="p">,</span>
+            <span class="s2">&quot;sf_exclude&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">sf_exclude</span><span class="p">,</span>
+            <span class="s2">&quot;k&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">k</span><span class="p">,</span>
+            <span class="s2">&quot;surface_margin_m&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">surface_margin_m</span><span class="p">,</span>
+            <span class="s2">&quot;project_ahead_sigma_m&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">project_ahead_sigma_m</span><span class="p">,</span>
+            <span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">source</span><span class="p">,</span>
+            <span class="s2">&quot;operator_override&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">operator_override</span><span class="p">,</span>
+        <span class="p">}</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="classify">
+<a class="viewcode-back" href="../../welleng.html#welleng.acceptance.classify">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">classify</span><span class="p">(</span><span class="n">sf</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">criteria</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">AcceptanceCriteria</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Verdict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Classify ``sf`` against ``criteria`` (the SPE-187073 standard by default).&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">criteria</span> <span class="ow">or</span> <span class="n">AcceptanceCriteria</span><span class="o">.</span><span class="n">standard</span><span class="p">())</span><span class="o">.</span><span class="n">classify</span><span class="p">(</span><span class="n">sf</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>
