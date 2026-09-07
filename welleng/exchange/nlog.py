@@ -53,6 +53,7 @@ FILES = f"{BASE}/brh-web/rest/brh"
 Resource = Literal[
     "details", "dirsurveys", "documents", "logdocuments",
     "measurements", "coreruns", "photos",
+    "stratinterpretations", "prodfigures",
 ]
 
 # Provenance verdicts for a directional survey's azimuth column.
@@ -181,6 +182,40 @@ class DirSurvey:
         )
 
 
+@dataclass(frozen=True)
+class StratInterval:
+    """One lithostratigraphic interval. Depths are MD along hole (NLOG serves no
+    TVD for this resource); ``unit_id`` is the raw RGD code (e.g. ``'NU'``)."""
+
+    top_md: float
+    bottom_md: float
+    unit_id: str | None
+    quality: str | None            # e.g. 'TD' on the final interval
+    anomaly: str | None
+    remark: str | None
+
+
+@dataclass(frozen=True)
+class StratColumn:
+    """A borehole's lithostratigraphic interpretation (one of possibly several).
+
+    Depths are MD along hole — NLOG serves no TVD here, so derive it from the
+    directional survey if needed and label it as derived. The depth datum is
+    carried alongside the intervals because the payload is self-describing.
+    """
+
+    borehole_name: str
+    datum_description: str | None      # depthRefPointDescription, e.g. 'Rotary Table'
+    datum_code: str | None             # drpDatumCode, e.g. 'MSL'
+    datum_height_m: float | None       # drpHeightInMeters
+    end_md: float | None               # endAhDepthInMeters
+    source: str | None                 # stratSourceDescription, e.g. 'EINDSLIP'
+    model: str | None                  # stratModelDescription, e.g. 'RGD Litho...'
+    preferred: bool                    # preferredBln == 'J'
+    interpretation_date_ms: int | None
+    intervals: list[StratInterval]
+
+
 class NLOGClient:
     """Minimal client for the NLOG borehole API."""
 
@@ -301,6 +336,54 @@ class NLOGClient:
                 declination=s.get("declinationCorr"),
                 proc_date_ms=s.get("procDate"),
                 remark=s.get("remark"),
+            ))
+        return out
+
+    def stratigraphy(
+        self, borehole_id: int, preferred_only: bool = True
+    ) -> list[StratColumn]:
+        """Lithostratigraphic interpretation(s) for a borehole.
+
+        A borehole can carry more than one interpretation; ``preferred_only``
+        (default) returns only the one NLOG flags preferred (``preferredBln ==
+        'J'``), otherwise all are returned. Depths in the returned intervals are
+        MD along hole — NLOG serves no TVD for this resource. The depth datum is
+        attached to each column. Unit codes are the raw RGD lithostratigraphic
+        codes; NLOG serves no code-to-name lookup on this endpoint.
+        """
+        d = self._post("stratinterpretations", borehole_id)
+        name = d.get("boreholeName") or str(borehole_id)
+        datum_desc = d.get("depthRefPointDescription")
+        datum_code = d.get("drpDatumCode")
+        datum_h = d.get("drpHeightInMeters")
+        end_md = d.get("endAhDepthInMeters")
+        out = []
+        for it in d.get("stratIntprts") or []:
+            preferred = str(it.get("preferredBln") or "").upper() == "J"
+            if preferred_only and not preferred:
+                continue
+            intervals = [
+                StratInterval(
+                    top_md=iv.get("topDepth"),
+                    bottom_md=iv.get("bottomDepth"),
+                    unit_id=iv.get("stratUnitId"),
+                    quality=iv.get("qualityDescription"),
+                    anomaly=iv.get("anomalyCode"),
+                    remark=iv.get("remark"),
+                )
+                for iv in (it.get("stratIntvals") or [])
+            ]
+            out.append(StratColumn(
+                borehole_name=name,
+                datum_description=datum_desc,
+                datum_code=datum_code,
+                datum_height_m=datum_h,
+                end_md=end_md,
+                source=it.get("stratSourceDescription"),
+                model=it.get("stratModelDescription"),
+                preferred=preferred,
+                interpretation_date_ms=it.get("interpretationDate"),
+                intervals=intervals,
             ))
         return out
 

@@ -148,3 +148,72 @@ def test_save_document_writes_bytes(monkeypatch, tmp_path):
     n = _nlog.NLOGClient().save_document(999, p)
     assert n == len(b"%PDF-1.7 fake")
     assert p.read_bytes().startswith(b"%PDF")
+
+
+# -- stratigraphy(): offline, response shape from a live NLOG bore ---------
+_STRAT = {
+    "boreholeName": "P11-A-02A",
+    "depthRefPointDescription": "Rotary Table",
+    "drpDatumCode": "MSL",
+    "drpHeightInMeters": 46.5,
+    "endAhDepthInMeters": 2691,
+    "stratIntprts": [
+        {
+            "interpretationDate": 1161554400000,
+            "stratSourceDescription": "EINDSLIP",
+            "stratModelDescription": "RGD Lithostratigrafie",
+            "preferredBln": "J",
+            "stratIntvals": [
+                {"topDepth": 0, "bottomDepth": 350, "stratUnitId": "NU",
+                 "qualityDescription": None, "anomalyCode": None, "remark": None},
+                {"topDepth": 350, "bottomDepth": 2691, "stratUnitId": "CKGR",
+                 "qualityDescription": "TD", "anomalyCode": "UU", "remark": None},
+            ],
+        },
+        {   # a second, NON-preferred interpretation
+            "interpretationDate": 900000000000,
+            "stratSourceDescription": "OLD",
+            "stratModelDescription": "RGD Lithostratigrafie",
+            "preferredBln": "N",
+            "stratIntvals": [
+                {"topDepth": 0, "bottomDepth": 2691, "stratUnitId": "NU",
+                 "qualityDescription": None, "anomalyCode": None, "remark": None},
+            ],
+        },
+    ],
+}
+
+
+def _patch_strat(monkeypatch):
+    monkeypatch.setattr(_nlog.NLOGClient, "_post",
+                        lambda self, resource, bid: _STRAT, raising=True)
+
+
+def test_stratigraphy_returns_only_preferred_by_default(monkeypatch):
+    _patch_strat(monkeypatch)
+    cols = _nlog.NLOGClient().stratigraphy(163212895)
+    assert len(cols) == 1
+    assert cols[0].preferred is True
+    assert cols[0].source == "EINDSLIP"
+
+
+def test_stratigraphy_exposes_all_interpretations(monkeypatch):
+    _patch_strat(monkeypatch)
+    cols = _nlog.NLOGClient().stratigraphy(163212895, preferred_only=False)
+    assert len(cols) == 2
+    assert [c.preferred for c in cols] == [True, False]
+
+
+def test_stratigraphy_carries_datum_and_md_intervals(monkeypatch):
+    _patch_strat(monkeypatch)
+    col = _nlog.NLOGClient().stratigraphy(163212895)[0]
+    # datum travels with the record
+    assert col.datum_description == "Rotary Table"
+    assert col.datum_code == "MSL"
+    assert col.datum_height_m == 46.5
+    assert col.end_md == 2691
+    # intervals parsed, depths are MD
+    assert len(col.intervals) == 2
+    iv0, iv1 = col.intervals
+    assert (iv0.top_md, iv0.bottom_md, iv0.unit_id) == (0, 350, "NU")
+    assert (iv1.unit_id, iv1.quality, iv1.anomaly) == ("CKGR", "TD", "UU")
