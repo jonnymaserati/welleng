@@ -99,6 +99,21 @@ def test_frame_convention_dip_90():
     assert np.allclose(v, [0, 0, 1], atol=1e-9)   # East -> Down
 
 
+@pytest.mark.parametrize("dip,ori", [(35, 0), (35, 60), (90, 0)])
+def test_dipped_oriented_plane_matches_oracle(dip, ori):
+    # the target plane is at an arbitrary orientation, not just horizontal NE
+    t = Target("t", 180, 20, 300, "rectangle", pos1=[-40, -40], pos2=[40, 40],
+               dip=dip, orientation=ori)
+    sol = solve_clc_landing_region(P1, T1, T4, t, R1)
+    orc = _oracle(t)
+    assert sol is not None
+    assert sol["total_md"] <= orc + 1e-6
+    assert orc - sol["total_md"] < 0.5
+    # the solved landing point lies in the tilted target plane
+    c, u, v = _target_frame(t)
+    assert abs((sol["p4"] - c) @ np.cross(u, v)) < 1e-9
+
+
 def test_unreachable_region_returns_none():
     # a tiny target directly above the kickoff, tangent North: no feasible CLC
     t = Target("bad", 0, 0, -50, "circle", radius=1)
