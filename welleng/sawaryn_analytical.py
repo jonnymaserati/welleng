@@ -59,7 +59,7 @@ four decades.
 """
 
 import numpy as np
-from scipy.optimize import minimize_scalar, brentq
+from scipy.optimize import minimize, minimize_scalar, brentq
 
 from ._eq15_c0_quartic import eq15_c0_quartic as _eq15_c0_quartic
 
@@ -1204,5 +1204,177 @@ def solve_clc_landing(p1, t1, p0, t4, R1, R2=None, return_all=False):
         return sols
     feas = [s for s in sols if s['alpha1'] <= np.pi + 1e-9 and s['alpha2'] <= np.pi + 1e-9]
     return feas[0] if feas else None
+
+
+# ---------------------------------------------------------------------------
+# Landing into a target REGION (a Target zone), final tangent fixed.
+#
+# The line landing (``solve_clc_landing``) frees the landing point along a line
+# and exits along that line. A 2D/3D region has no single direction, so here the
+# final tangent ``t4`` is given (fixed) and only the landing POSITION is free,
+# within the target. The result is the minimum-measured-depth CLC that reaches
+# any point of the region with that final tangent.
+#
+# There is no single-formula solution: even the point-to-target CLC reduces to a
+# degree-10 polynomial (Eq. 15), and constraining the landing to a region adds an
+# optimisation on top, so the position is found numerically. The reduction is by
+# faces: a bounded optimum is interior to the region or on a lower-dimensional
+# face of it (an edge, an arc, a vertex), so each face is minimised with the
+# point-to-target solve as the per-point evaluator and the best feasible landing
+# returned. ``solve_clc`` at a point and ``solve_clc_landing`` on a line are the
+# 0- and 1-dimensional cases.
+# ---------------------------------------------------------------------------
+
+def _target_frame(target):
+    """Return (center, u, v) for a Target: its position and two orthonormal
+    in-plane axes (N, E, V vectors).
+
+    Convention: with ``orientation = dip = 0`` the target plane is horizontal,
+    ``u`` = North and ``v`` = East. ``dip`` (degrees) tilts the plane about ``u``
+    (the North axis); ``orientation`` (degrees) rotates ``u``/``v`` about the
+    vertical.
+    """
+    center = target.position
+    if center is None:
+        raise ValueError("target has no position (n/e/tvd)")
+
+    def _rot(axis, deg):
+        a = np.deg2rad(deg)
+        c, s = np.cos(a), np.sin(a)
+        x, y, z = axis
+        return np.array([
+            [c + x * x * (1 - c), x * y * (1 - c) - z * s, x * z * (1 - c) + y * s],
+            [y * x * (1 - c) + z * s, c + y * y * (1 - c), y * z * (1 - c) - x * s],
+            [z * x * (1 - c) - y * s, z * y * (1 - c) + x * s, c + z * z * (1 - c)],
+        ])
+
+    R = _rot((0.0, 0.0, 1.0), target.orientation) @ _rot((1.0, 0.0, 0.0), target.dip)
+    return center, R @ np.array([1.0, 0.0, 0.0]), R @ np.array([0.0, 1.0, 0.0])
+
+
+# The measured-depth surface MD(landing point) has a smooth unit gradient in the
+# feasible interior (verified: |grad MD| = 1, eikonal-like) but is punctured by
+# infeasible pockets. So each face is minimised by a coarse grid seed (to land in
+# a feasible basin) followed by a gradient polish (L-BFGS-B); infeasible evals are
+# clamped so the optimiser steps around the pockets, and the polish is only
+# accepted if it beats the seed and stays in bounds and feasible.
+_BIG = 1e9
+
+
+def _min_on_grid_1d(fn, lo, hi, seed=41):
+    """Minimum of ``fn(s)`` on ``[lo, hi]``: fine grid seed then a bracketed polish.
+
+    Kept grid-robust (not gradient-based): the 1-D face is cheap and its minimum
+    can sit in a narrow well that a gradient step overshoots.
+    """
+    ss = np.linspace(lo, hi, seed)
+    vals = [fn(s) for s in ss]
+    i = int(np.argmin(vals))
+    best = (float(vals[i]), float(ss[i]))
+    if not np.isfinite(best[0]):
+        return best
+    a, b = ss[max(i - 1, 0)], ss[min(i + 1, seed - 1)]
+    r = minimize_scalar(lambda x: min(fn(x), _BIG), bounds=(a, b), method="bounded")
+    fr = fn(float(r.x))
+    if a <= r.x <= b and np.isfinite(fr) and fr < best[0]:
+        best = (float(fr), float(r.x))
+    return best
+
+
+def _min_on_grid_2d(fn, lo, hi, seed=5):
+    """Minimum of ``fn(a, b)`` on the box ``[lo, hi]``: coarse grid seed then polish."""
+    best = (np.inf, None)
+    for a in np.linspace(lo[0], hi[0], seed):
+        for b in np.linspace(lo[1], hi[1], seed):
+            v = fn(a, b)
+            if v < best[0]:
+                best = (v, (float(a), float(b)))
+    if best[1] is None or not np.isfinite(best[0]):
+        return best
+    r = minimize(lambda x: min(fn(x[0], x[1]), _BIG), np.array(best[1]),
+                 method="L-BFGS-B", bounds=[(lo[0], hi[0]), (lo[1], hi[1])],
+                 options={"eps": 0.25, "ftol": 1e-7})
+    fr = fn(float(r.x[0]), float(r.x[1]))
+    if (lo[0] <= r.x[0] <= hi[0] and lo[1] <= r.x[1] <= hi[1]
+            and np.isfinite(fr) and fr < best[0]):
+        best = (float(fr), (float(r.x[0]), float(r.x[1])))
+    return best
+
+
+def solve_clc_landing_region(p1, t1, t4, target, R1, R2=None):
+    """Minimum-MD CLC landing into a target REGION, final tangent ``t4`` fixed.
+
+    Finds the shortest measured-depth curve-hold-curve path from ``(p1, t1)`` that
+    reaches any point of ``target`` while arriving with tangent ``t4``. The
+    landing position is free within the region; the final tangent is given.
+
+    Parameters
+    ----------
+    p1, t1 : (3,) array_like
+        Kickoff position and unit tangent (N, E, V).
+    t4 : (3,) array_like
+        Final unit tangent at the landing (fixed).
+    target : welleng.target.Target
+        The landing region. Supported shapes: ``point``, ``rectangle`` (a box in
+        the target plane) and ``circle`` (a disk). The plane and its orientation
+        come from the target's position and ``orientation``/``dip``.
+    R1, R2 : float
+        Arc radii; ``R2`` defaults to ``R1``.
+
+    Returns
+    -------
+    dict or None
+        The shortest landing: ``beta``, ``alpha1``, ``alpha2``, ``total_md``
+        (as :func:`solve_clc`), plus ``p4`` (the solved landing point, NEV) and
+        ``ab`` (its in-plane coordinates). ``None`` if no point of the region is
+        reachable with a feasible CLC.
+    """
+    R2 = R1 if R2 is None else R2
+    t4 = np.asarray(t4, float)
+
+    def _md(p4):
+        s = solve_clc(p1, t1, p4, t4, R1, R2)
+        if s is None or s["alpha1"] > np.pi + 1e-9 or s["alpha2"] > np.pi + 1e-9:
+            return np.inf, None
+        return s["total_md"], s
+
+    if target.shape == "point":
+        md, s = _md(target.position)
+        return None if s is None else {**s, "p4": target.position, "ab": (0.0, 0.0)}
+
+    center, u, v = _target_frame(target)
+
+    def md_ab(a, b):
+        return _md(center + a * u + b * v)[0]
+
+    g = target.geometry
+    cands = []  # (md, (a, b))
+    if target.shape == "rectangle":
+        (a0, b0), (a1, b1) = g["pos1"], g["pos2"]
+        lo = (min(a0, a1), min(b0, b1))
+        hi = (max(a0, a1), max(b0, b1))
+        # a bounded 2-D minimum over the box already spans its edges + corners
+        cands.append(_min_on_grid_2d(md_ab, lo, hi))
+    elif target.shape == "circle":
+        r = float(g["radius"])
+        vi, abi = _min_on_grid_2d(md_ab, (-r, -r), (r, r))   # interior
+        if abi is not None and abi[0] ** 2 + abi[1] ** 2 <= r * r + 1e-9:
+            cands.append((vi, abi))
+        vb, th = _min_on_grid_1d(                             # curved boundary
+            lambda a: md_ab(r * np.cos(a), r * np.sin(a)), 0.0, 2 * np.pi)
+        cands.append((vb, (r * np.cos(th), r * np.sin(th))))
+    else:
+        raise NotImplementedError(
+            f"landing into a {target.shape!r} target is not implemented "
+            "(supported: point, rectangle, circle)"
+        )
+
+    cands = [c for c in cands if c[1] is not None and np.isfinite(c[0])]
+    if not cands:
+        return None
+    _, (a, b) = min(cands, key=lambda c: c[0])
+    p4 = center + a * u + b * v
+    _, s = _md(p4)
+    return {**s, "p4": p4, "ab": (float(a), float(b))}
 
 
