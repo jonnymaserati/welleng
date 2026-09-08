@@ -38,14 +38,18 @@ class Well(_Base):
 
     name: str
     uwi: Optional[str] = None  # OSDU FacilityId / unique well identifier
-    # --- datum system (all elevations referenced to MSL = 0; enables inter-datum conversion) ---
-    depth_reference: str = "RKB"  # primary MD datum (RKB/RT/KB/DF/MSL/mudline); labels the axis, e.g. "MD RKB"
-    datum_elevation_m: Optional[float] = None  # RKB/rig-floor elevation above MSL (air gap incl.)
+    # --- datum system: all elevations referenced to MSL = 0, which is what
+    # enables inter-datum conversion ---
+    # primary MD datum (RKB/RT/KB/DF/MSL/mudline); labels the axis, e.g. "MD RKB"
+    depth_reference: str = "RKB"
+    # RKB/rig-floor elevation above MSL (air gap included)
+    datum_elevation_m: Optional[float] = None
     water_depth_m: Optional[float] = None  # MSL to seabed/mudline (offshore)
     ground_elevation_m: Optional[float] = None  # ground level above MSL (onshore)
-    # NOTE: depth conversion RKB<->MSL<->mudline<->TVDSS<->ground handled in welleng.schematic.depth
-    # (see task: datum-conversion). Every entered depth defaults to `depth_reference`; per-value
-    # datum overrides to be added so mixed-datum inputs (e.g. TVDSS formation tops) convert correctly.
+    # NOTE: RKB<->MSL<->mudline<->TVDSS<->ground conversion is handled in
+    # welleng.schematic.depth. Every entered depth defaults to
+    # `depth_reference`; per-value datum overrides are still to be added, so
+    # mixed-datum inputs (e.g. TVDSS formation tops) convert correctly.
 
 
 class SurveyRef(_Base):
@@ -109,7 +113,9 @@ class Tubular(_Base):
         None, description="nominal weight, lb/ft (OSDU TubularComponentNominalWeight)"
     )
     grade: Optional[str] = Field(
-        None, description="material grade, e.g. L80 (OSDU TubularComponentTubingGradeID)"
+        None,
+        description="material grade, e.g. L80 "
+                    "(OSDU TubularComponentTubingGradeID)",
     )
     connection: Optional[str] = Field(
         None, description="thread/connection type, e.g. BTC/LTC/STC/NUE/EUE"

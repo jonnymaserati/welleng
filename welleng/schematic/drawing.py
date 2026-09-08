@@ -74,7 +74,10 @@ class RadialScale:
 # --------------------------------------------------------------------------
 @dataclass
 class Style:
-    """Visual style. ``color``/``fill`` are hex or CSS names; ``None`` fill = no fill."""
+    """Visual style.
+
+    ``color``/``fill`` are hex or CSS names; a ``None`` fill means no fill.
+    """
 
     color: str = "#000000"
     lineweight: float = 0.25          # paper mm
@@ -223,7 +226,8 @@ class Drawing:
         self.add_layer("0")
 
     # --- layers ------------------------------------------------------------
-    def add_layer(self, name: str, color: str = "#000000", visible: bool = True) -> Layer:
+    def add_layer(self, name: str, color: str = "#000000",
+                  visible: bool = True) -> Layer:
         layer = self.layers.get(name)
         if layer is None:
             layer = Layer(name=name, color=color, visible=visible)
@@ -264,7 +268,7 @@ class Drawing:
         self.title_block.update({k: str(v) for k, v in fields.items()})
 
     def visible_layers(self) -> List[str]:
-        return [n for n, l in self.layers.items() if l.visible]
+        return [n for n, layer in self.layers.items() if layer.visible]
 
     def bounds(self):
         """World-coordinate bounding box (xmin, ymin, xmax, ymax) of entities."""

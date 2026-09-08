@@ -213,11 +213,14 @@ def to_svg(drawing: Drawing, path: str, margin: float = 8.0) -> str:
         st: Style = pr["style"]
         if pr["kind"] == "text":
             x, y = sx(pr["pos"][0]), sy(pr["pos"][1])
-            anchor = {"left": "start", "center": "middle", "right": "end"}.get(pr["ha"], "start")
-            rot = f' transform="rotate({-pr["rotation"]:.2f} {x:.2f} {y:.2f})"' if pr["rotation"] else ""
+            anchor = {"left": "start", "center": "middle",
+                      "right": "end"}.get(pr["ha"], "start")
+            rot = (f' transform="rotate({-pr["rotation"]:.2f} '
+                   f'{x:.2f} {y:.2f})"') if pr["rotation"] else ""
             body.append(
                 f'<text x="{x:.2f}" y="{y:.2f}" font-size="{pr["height"]:.2f}" '
-                f'text-anchor="{anchor}" fill="{st.color}"{rot}>{_esc(pr["text"])}</text>'
+                f'text-anchor="{anchor}" fill="{st.color}"{rot}>'
+                f'{_esc(pr["text"])}</text>'
             )
             continue
         pts = " ".join(f"{sx(px):.2f},{sy(py):.2f}" for px, py in pr["pts"])
@@ -246,7 +249,8 @@ def _svg_defs() -> str:
     return (
         '<defs>'
         '<pattern id="pat_cement" width="3" height="3" patternUnits="userSpaceOnUse">'
-        '<path d="M0,3 L3,0 M-1,1 L1,-1 M2,4 L4,2" stroke="#7a6f4a" stroke-width="0.3"/>'
+        '<path d="M0,3 L3,0 M-1,1 L1,-1 M2,4 L4,2" '
+        'stroke="#7a6f4a" stroke-width="0.3"/>'
         '<rect width="3" height="3" fill="#d8cfae" fill-opacity="0.5"/></pattern>'
         '<pattern id="pat_plug" width="2.5" height="2.5" patternUnits="userSpaceOnUse">'
         '<rect width="2.5" height="2.5" fill="#cdbf94"/>'
@@ -261,9 +265,13 @@ def _svg_title_block(body: List[str], drawing: Drawing, w: float, h: float) -> N
     lines = [f"{k}: {v}" for k, v in drawing.title_block.items()]
     y = h - 2.0 - 3.0 * (len(lines) - 1)
     body.append(f'<rect x="1" y="{y - 3:.1f}" width="{min(w - 2, 90):.1f}" '
-                f'height="{3 * len(lines) + 2:.1f}" fill="white" stroke="#888" stroke-width="0.2"/>')
+                f'height="{3 * len(lines) + 2:.1f}" fill="white" '
+                f'stroke="#888" stroke-width="0.2"/>')
     for line in lines:
-        body.append(f'<text x="2.5" y="{y:.1f}" font-size="2.2" fill="#111">{_esc(line)}</text>')
+        body.append(
+            f'<text x="2.5" y="{y:.1f}" font-size="2.2" '
+            f'fill="#111">{_esc(line)}</text>'
+        )
         y += 3.0
 
 

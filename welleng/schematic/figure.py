@@ -95,7 +95,10 @@ class WellFigure:
         """Render via ``backend`` in {dxf, svg, pdf, png, matplotlib}."""
         key = backend.lower()
         if key not in _BACKENDS:
-            raise ValueError(f"unknown backend {backend!r}; choose from {sorted(_BACKENDS)}")
+            raise ValueError(
+                f"unknown backend {backend!r}; "
+                f"choose from {sorted(_BACKENDS)}"
+            )
         fn = _BACKENDS[key]
         if key in ("matplotlib", "mpl"):
             return fn(self.drawing)

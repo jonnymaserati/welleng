@@ -27,7 +27,7 @@ from .drawing import (
     ViewTransform,
 )
 from .models import WellSchematic
-from .symbols import CASING_SHOE, NIPPLE, SCSSV, register_standard_symbols
+from .symbols import CASING_SHOE, register_standard_symbols
 
 # layers
 L_GRID = "GRID"
@@ -100,7 +100,8 @@ def _fluid_fill(f) -> str:
     return _FLUID_DEFAULT
 
 
-def _wall(r: float, d_top: float, d_base: float, radial: RadialScale, sign: int) -> List:
+def _wall(r: float, d_top: float, d_base: float, radial: RadialScale,
+          sign: int) -> List:
     """Stepped world-coordinate points for a wall at physical radius ``r``.
 
     x = ``sign * r * radial.at(depth)`` (exaggerated inches); the radius steps
@@ -319,7 +320,8 @@ def build_column(
         if item.type == "tubing":
             r = item.od_in / 2.0
             for sign in (-1, 1):
-                dwg.add(Polyline(_wall(r, d(item.top_md), d(item.base_md), radial, sign),
+                dwg.add(Polyline(_wall(r, d(item.top_md), d(item.base_md),
+                                       radial, sign),
                                  layer=L_COMPLETION, style=_TUBING))
         else:
             y = d(item.md)
@@ -406,7 +408,8 @@ def build_column(
     return dwg
 
 
-def _add_depth_ruler(dwg: Drawing, ymax: float, radial: RadialScale, max_bit: float) -> None:
+def _add_depth_ruler(dwg: Drawing, ymax: float, radial: RadialScale,
+                     max_bit: float) -> None:
     """Horizontal depth grid lines + a left-hand depth-label ruler."""
     x_extent = max_bit / 2.0 * radial.at(0.0) * 1.1
     step = _nice_step(ymax)
@@ -432,7 +435,8 @@ def _scale_note(radial: RadialScale) -> str:
     return f"x{hi:g}" if lo == hi else f"x{hi:g} (shallow) -> x{lo:g} (deep)"
 
 
-def _fit_transform(dwg: Drawing, target_w: float, target_h: float, margin: float) -> None:
+def _fit_transform(dwg: Drawing, target_w: float, target_h: float,
+                   margin: float) -> None:
     """Set an independent-H/V transform that fits the entities to the sheet."""
     xmin, ymin, xmax, ymax = dwg.bounds()
     w = max(xmax - xmin, 1e-6)

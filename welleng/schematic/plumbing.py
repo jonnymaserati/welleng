@@ -4,7 +4,8 @@ verifiably abandoned -- not each wellpath in isolation.
 
 The insight: a plumbing diagram is just N wellpaths that share geometry above
 their divergence. Each :class:`~welleng.schematic.models.Wellbore` carries its
-own trajectory + tubulars + plugs; a child bore coincides with its parent above
+own trajectory + tubulars + plugs
+a child bore coincides with its parent above
 ``kickoff_md`` and diverges below. Nothing here is bespoke to a particular well
 -- the whole scene is derived from a :class:`~welleng.schematic.models.WellSchematic`
 (i.e. from the OSDU-lean JSON schema).
@@ -18,12 +19,13 @@ Geometry primitive (transferred from the validated prototype, now generic):
   offset is geometrically true everywhere including round the build -- radii are
   exaggerated (``exag``) to be visible, departure is real.
 * :class:`Centreline` exposes ``perp(md, r, side)`` = centreline offset ``r``
-  along the TRUE normal; ALL geometry (casing walls, hole wall, annular
+  along the TRUE normal
+  ALL geometry (casing walls, hole wall, annular
   cement, shoe tri, plug, liner hanger) is built from it. One ``perp``-swept
   polygon draws a straight+curved element in a single go -- never a box laid
   over a fill, never a double-draw.
 
-This renderer is intentionally matplotlib-direct (like the composite tracks);
+This renderer is intentionally matplotlib-direct (like the composite tracks)
 folding it onto the renderer-agnostic :mod:`~welleng.schematic.drawing` model is
 a later step. Assumes each ``Wellbore.survey`` is a full tie-on from surface
 (absolute N/E), so a child's vertical section is continuous with its parent's.
@@ -46,9 +48,11 @@ _IN2M = 0.0254
 class Centreline:
     """A bore's centreline in the shared vertical-section plane.
 
-    ``x`` = vertical-section departure (m) on ``vs_azi``; ``y`` = plotting depth
+    ``x`` = vertical-section departure (m) on ``vs_azi``
+    ``y`` = plotting depth
     (m) in ``mode``. ``exag`` multiplies tubular RADII only (departure is real),
-    so nested strings are visible; equal aspect keeps every offset perpendicular.
+    so nested strings are visible
+    equal aspect keeps every offset perpendicular.
     """
 
     def __init__(
@@ -127,7 +131,8 @@ def _casings(bore: Wellbore, ancestors: Sequence[Wellbore]) -> List[Casing]:
     return out
 
 
-def _bore_r_in(md: float, cas: Sequence[Casing], hole_in: Optional[float]) -> Optional[float]:
+def _bore_r_in(md: float, cas: Sequence[Casing],
+               hole_in: Optional[float]) -> Optional[float]:
     ids = [c.id_in / 2.0 for c in cas if c.top_md <= md <= c.shoe_md]
     if ids:
         return min(ids)
@@ -141,7 +146,8 @@ def _outer_edge_in(
 
     min(next-outer casing ID, drilled hole).
     """
-    ids = [d.id_in / 2.0 for d in cas if d.od_in > c.od_in and d.top_md <= md <= d.shoe_md]
+    ids = [d.id_in / 2.0 for d in cas
+           if d.od_in > c.od_in and d.top_md <= md <= d.shoe_md]
     hr = hole_in if hole_in is not None else (min(ids) if ids else c.od_in / 2.0 + 1.0)
     if ids and min(ids) < hr:
         return min(ids), False           # confined by steel
@@ -168,7 +174,9 @@ _FLUID_DEFAULT = "#e6eef3"
 
 
 def _fluid_fill(f) -> str:
-    """Explicit colour wins; else match the name; else a neutral default."""
+    """Explicit colour wins
+    else match the name
+    else a neutral default."""
     if getattr(f, "colour", None):
         return f.colour
     nm = (getattr(f, "name", "") or "").lower()
@@ -257,11 +265,13 @@ def _draw_casing(ax, cl: Centreline, c: Casing, cas: Sequence[Casing], bore: Wel
     # steel wall
     _band(ax, cl, md, ri, ro, **_STEEL)
     # right-angle black shoe tri: vertical leg UP the outer wall, apex OUTWARD
-    nx, ny = cl.ndir(c.shoe_md); tx, ty = cl.tdir(c.shoe_md)
+    nx, ny = cl.ndir(c.shoe_md)
+    tx, ty = cl.tdir(c.shoe_md)
     nx, ny, tx, ty = nx[0], ny[0], tx[0], ty[0]
     x0, y0 = float(cl.x(c.shoe_md)), float(cl.y(c.shoe_md))
     hh = 0.35 * abs(cl.y(c.shoe_md) - cl.y(c.top_md))
-    hh = float(min(hh, cl.rdraw(2.5) * 6)); w = cl.rdraw(min(0.30 * c.od_in / 2, 2.0))
+    hh = float(min(hh, cl.rdraw(2.5) * 6))
+    w = cl.rdraw(min(0.30 * c.od_in / 2, 2.0))
     for s in (-1, 1):
         ox, oy = x0 + s * ro * nx, y0 + s * ro * ny
         ax.fill([ox, ox - tx * hh, ox + s * w * nx],
@@ -270,11 +280,13 @@ def _draw_casing(ax, cl: Centreline, c: Casing, cas: Sequence[Casing], bore: Wel
     ax.text(float(lx[0]), float(ly[0]), c.name, fontsize=5.2, va="center", zorder=6)
 
 
-def _draw_liner_hanger(ax, cl: Centreline, c: Casing, cas: Sequence[Casing], start_md: float):
+def _draw_liner_hanger(ax, cl: Centreline, c: Casing,
+                       cas: Sequence[Casing], start_md: float):
     """Box-with-X in the annulus each side, at a hung liner's top (top_md > start)."""
     if c.top_md <= start_md + 1e-6:
         return
-    hosts = [d.id_in / 2.0 for d in cas if d.od_in > c.od_in and d.top_md <= c.top_md <= d.shoe_md]
+    hosts = [d.id_in / 2.0 for d in cas
+             if d.od_in > c.od_in and d.top_md <= c.top_md <= d.shoe_md]
     if not hosts:
         return
     ro, hri = cl.rdraw(c.od_in / 2), cl.rdraw(min(hosts))
@@ -283,7 +295,8 @@ def _draw_liner_hanger(ax, cl: Centreline, c: Casing, cas: Sequence[Casing], sta
     hh_md = (hri - ro) / max(abs(ty), 1e-3)
     md = np.linspace(c.top_md, c.top_md + hh_md, 6)
     for s in (-1, 1):
-        xi, yi = cl.perp(md, ro, s); xo, yo = cl.perp(md, hri, s)
+        xi, yi = cl.perp(md, ro, s)
+        xo, yo = cl.perp(md, hri, s)
         ax.fill(np.r_[xi, xo[::-1]], np.r_[yi, yo[::-1]],
                 facecolor="white", edgecolor="k", lw=0.8, zorder=5)
         ax.plot([xi[0], xo[-1]], [yi[0], yo[-1]], color="k", lw=0.6, zorder=6)
@@ -293,13 +306,16 @@ def _draw_liner_hanger(ax, cl: Centreline, c: Casing, cas: Sequence[Casing], sta
 def _draw_plug(ax, cl: Centreline, plug, cas: Sequence[Casing], bore: Wellbore):
     """Grey solid plug, single wall-to-wall polygon, diameter = casing ID it sits in."""
     md = np.linspace(plug.top_md, plug.base_md, 120)
-    rr = np.array([cl.rdraw(_bore_r_in(m, cas, _hole_r_in(m, bore)) or 0.0) for m in md])
-    xl, yl = [], []
+    rr = np.array([cl.rdraw(_bore_r_in(m, cas, _hole_r_in(m, bore)) or 0.0)
+                   for m in md])
     nx, ny = cl.ndir(md)
-    xL = cl.x(md) - rr * nx; yL = cl.y(md) - rr * ny
-    xR = cl.x(md) + rr * nx; yR = cl.y(md) + rr * ny
+    xL = cl.x(md) - rr * nx
+    yL = cl.y(md) - rr * ny
+    xR = cl.x(md) + rr * nx
+    yR = cl.y(md) + rr * ny
     ax.fill(np.r_[xL, xR[::-1]], np.r_[yL, yR[::-1]], **_PLUG)
-    lr = cl.rdraw((_bore_r_in(plug.base_md, cas, _hole_r_in(plug.base_md, bore)) or 0.0))
+    lr = cl.rdraw(
+        _bore_r_in(plug.base_md, cas, _hole_r_in(plug.base_md, bore)) or 0.0)
     lx, ly = cl.perp(plug.base_md, lr + cl.rdraw(1.5), 1)
     ax.text(float(lx[0]), float(cl.y((plug.top_md + plug.base_md) / 2)),
             plug.name, fontsize=5.2, va="center", color="0.35")
@@ -328,7 +344,8 @@ def render_plumbing(
 ):
     """Draw a system-P&A plumbing diagram for a (possibly multilateral) well.
 
-    Each bore is drawn from its ``kickoff_md`` (root from surface) to TD; the
+    Each bore is drawn from its ``kickoff_md`` (root from surface) to TD
+    the
     shared trunk is drawn once by the root, so the whole connected system reads
     as one. Returns the matplotlib ``Axes``.
     """

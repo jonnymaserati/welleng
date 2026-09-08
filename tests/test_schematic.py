@@ -7,7 +7,7 @@ ezdxf = pytest.importorskip("ezdxf")
 pytest.importorskip("pydantic")
 pytest.importorskip("matplotlib")
 
-from welleng.schematic import (
+from welleng.schematic import (  # noqa: E402
     DepthResolver,
     PressureProfile,
     SurveyRef,
@@ -32,9 +32,30 @@ DATA = {
         {"bit_in": 8.5, "top_md": 1200, "base_md": 2600, "radial_scale": 30},
     ],
     "casings": [
-        {"name": "20in", "od_in": 20, "id_in": 18.7, "top_md": 0, "shoe_md": 400, "toc_md": 0},
-        {"name": "13-3/8", "od_in": 13.375, "id_in": 12.4, "top_md": 0, "shoe_md": 1200, "toc_md": 800},
-        {"name": "9-5/8", "od_in": 9.625, "id_in": 8.68, "top_md": 0, "shoe_md": 2600, "toc_md": 1400},
+        {
+            "name": "20in",
+            "od_in": 20,
+            "id_in": 18.7,
+            "top_md": 0,
+            "shoe_md": 400,
+            "toc_md": 0,
+        },
+        {
+            "name": "13-3/8",
+            "od_in": 13.375,
+            "id_in": 12.4,
+            "top_md": 0,
+            "shoe_md": 1200,
+            "toc_md": 800,
+        },
+        {
+            "name": "9-5/8",
+            "od_in": 9.625,
+            "id_in": 8.68,
+            "top_md": 0,
+            "shoe_md": 2600,
+            "toc_md": 1400,
+        },
     ],
     "cement_plugs": [{"name": "Reservoir plug", "top_md": 2350, "base_md": 2600}],
     "completion": [
@@ -106,7 +127,9 @@ def test_radial_scale_monotonic_enforced():
 
 
 def test_pressure_from_emw_increases_with_depth():
-    pp = PressureProfile.from_emw([0, 2000], [0, 1800], [1.0, 1.5], [1.4, 1.8], unit="bar")
+    pp = PressureProfile.from_emw(
+        [0, 2000], [0, 1800], [1.0, 1.5], [1.4, 1.8], unit="bar"
+    )
     assert pp.unit == "bar"
     assert pp.pore[1] > pp.pore[0]
     assert pp.frac[-1] > pp.pore[-1]
@@ -153,7 +176,7 @@ def test_dxf_reopens_with_layers(schematic, tmp_path):
     out = tmp_path / "col.dxf"
     to_dxf(dwg, str(out))
     doc = ezdxf.readfile(str(out))
-    names = {l.dxf.name for l in doc.layers}
+    names = {ln.dxf.name for ln in doc.layers}
     assert {"CASING", "CEMENT", "HOLE"} <= names
     # symbols realised as blocks -> INSERT references present
     assert len(list(doc.modelspace().query("INSERT"))) > 0
