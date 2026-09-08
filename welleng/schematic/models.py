@@ -335,6 +335,34 @@ class Wellbore(_Base):
                 )
         return self
 
+    @model_validator(mode="after")
+    def _plugs_clear_of_tubing(self) -> "Wellbore":
+        """A cement plug cannot occupy the same depths as a tubing run.
+
+        You cannot set a plug in the bore with the completion still in the
+        hole -- the tubing has to be pulled (or cut) first. Left unchecked the
+        schematic will happily draw a plug with tubing running through it,
+        which is a physically impossible well and reads as if it were a real
+        one, so it is refused here rather than rendered.
+
+        Cut-and-pull, where the tubing above a cut is removed and a plug set in
+        the vacated bore, is expressible: shorten the tubing run to the cut
+        depth and the overlap disappears.
+        """
+        runs = [(c.top_md or 0.0, c.base_md)
+                for c in self.completion
+                if c.type == "tubing" and c.base_md is not None]
+        for p in self.cement_plugs:
+            for top, base in runs:
+                if p.top_md < base and p.base_md > top:
+                    raise ValueError(
+                        f"cement plug {p.name!r} ({p.top_md}-{p.base_md} m) "
+                        f"overlaps a tubing run ({top}-{base} m): a plug cannot "
+                        "be set through a completion that is still in the hole. "
+                        "Pull or cut the tubing (shorten the run) first."
+                    )
+        return self
+
 
 class WellSchematic(_Base):
     """Aggregate schematic: a well, a tree of wellbores, and shared geology.

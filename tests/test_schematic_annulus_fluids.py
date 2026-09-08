@@ -374,3 +374,39 @@ def test_labels_live_in_a_gutter_clear_of_the_geometry():
                     if (t.position[0] >= 0) == (side > 0))
         for a, b in zip(ys, ys[1:]):
             assert b - a > 1e-6, "two labels placed at the same depth"
+
+
+# --- a plug cannot be set through a live completion -------------------------- #
+def test_plug_overlapping_tubing_is_refused():
+    """You cannot set a cement plug with the tubing still in the hole.
+
+    Left unchecked the schematic drew a plug with tubing running through it --
+    an impossible well that reads as a real one.
+    """
+    d = {**BASE,
+         "cement_plugs": [{"name": "Barrier plug", "top_md": 900, "base_md": 1100}],
+         "completion": [{"type": "tubing", "od_in": 4.5,
+                         "top_md": 0, "base_md": 1500}]}
+    with pytest.raises(Exception) as exc:
+        WellSchematic.model_validate(d)
+    assert "still in the hole" in str(exc.value)
+
+
+def test_plug_below_the_tubing_shoe_is_fine():
+    d = {**BASE,
+         "cement_plugs": [{"name": "Reservoir plug", "top_md": 1600, "base_md": 1900}],
+         "completion": [{"type": "tubing", "od_in": 4.5,
+                         "top_md": 0, "base_md": 1500}]}
+    s = WellSchematic.model_validate(d)
+    assert len(s.primary.cement_plugs) == 1
+
+
+def test_cut_and_pull_is_expressible():
+    """Shortening the run to the cut depth clears the overlap -- the real
+    operation the check must not forbid."""
+    d = {**BASE,
+         "cement_plugs": [{"name": "Plug", "top_md": 800, "base_md": 1000}],
+         "completion": [{"type": "tubing", "od_in": 4.5,
+                         "top_md": 0, "base_md": 700}]}   # cut at 700 m
+    s = WellSchematic.model_validate(d)
+    assert s.primary.completion[0].base_md == 700

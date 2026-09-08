@@ -56,11 +56,14 @@ DATA = {
         {"name": "Barrier plug", "top_md": 2100, "base_md": 2260},
         {"name": "Surface plug", "top_md": 0, "base_md": 200},
     ],
-    "completion": [
-        {"type": "tubing", "od_in": 4.5, "top_md": 0, "base_md": 2300},
-        {"type": "packer", "name": "Packer", "od_in": 8.68, "md": 2300},
-        {"type": "sssv", "name": "SCSSV", "od_in": 4.5, "md": 350},
-    ],
+    # NO completion: this well is PLUGGED. The tubing, packer and SCSSV have
+    # been pulled -- which is why plugs can be set in the bore at all. Leaving
+    # them in alongside three cement plugs (as this example previously did)
+    # draws a physically impossible well: you cannot set a plug through a
+    # completion that is still in the hole. Wellbore now refuses that
+    # combination, so the example has to pick one, and for a P&A example the
+    # answer is the plugs.
+    "completion": [],
     "formations": [
         {"name": "Nordland", "top_md": 0, "litho": "clay", "color": "#c9e6a8"},
         {"name": "Hordaland", "top_md": 900, "litho": "clay/silt", "color": "#a8d18d"},
