@@ -201,8 +201,9 @@ def test_gaussian_cov_ellipsoid_matches_surface_oracle():
 
 
 def test_region_returns_none_not_crash_on_batched_scalar_mismatch():
-    # a downstream RC validation found: the batched mdb ranks a candidate feasible, but the
-    # scalar re-solve finds it infeasible (a degenerate planar pose the general
+    # a downstream RC validation found: the batched mdb ranks a candidate
+    # feasible, but the scalar re-solve finds it infeasible (a degenerate
+    # planar pose the general
     # degree-10 form misses). Must return None per contract, not raise TypeError.
     p1 = np.array([0.0, 0.0, 0.0])
     t1 = np.array([0.0, 0.0, 1.0])
