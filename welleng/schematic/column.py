@@ -122,6 +122,36 @@ def _band(r_out: float, r_in: float, d_top: float, d_base: float,
     return outer + inner[::-1]
 
 
+def _annulus_outer_r(md: float, inner, casings, hole) -> float:
+    """Outer boundary of ``inner``'s annulus AT ``md``, as a radius in inches.
+
+    The next-outer casing ID where one is actually PRESENT at that depth,
+    otherwise the drilled hole. Taking the next-outer casing ID regardless of
+    depth overshoots wherever that casing has already ended -- a 20in annulus
+    below a 30in conductor shoe is bounded by the 26in HOLE, not the 30in ID,
+    and drawing to the ID puts cement and fluid an inch into rock.
+    """
+    cands = [c.id_in / 2.0 for c in casings
+             if c.od_in > inner.od_in and c.top_md <= md <= c.shoe_md]
+    cands += [h.bit_in / 2.0 for h in hole if h.top_md <= md <= h.base_md]
+    return min(cands) if cands else inner.od_in / 2.0 + 1.0
+
+
+def _annulus_segments(md_top: float, md_base: float, casings, hole):
+    """MD sub-intervals over which the annulus outer boundary is constant."""
+    edges = {md_top, md_base}
+    for c in casings:
+        for m in (c.top_md, c.shoe_md):
+            if md_top < m < md_base:
+                edges.add(m)
+    for h in hole:
+        for m in (h.top_md, h.base_md):
+            if md_top < m < md_base:
+                edges.add(m)
+    ordered = sorted(edges)
+    return list(zip(ordered, ordered[1:]))
+
+
 def build_column(
     schematic: WellSchematic,
     mode: str = "MD",
@@ -167,13 +197,18 @@ def build_column(
         if idx is None or f.base_md <= f.top_md:
             continue                      # names an annulus that is not there
         inner = ordered[idx]
-        r_out = inner.od_in / 2.0
-        r_in = ordered[idx - 1].id_in / 2.0 if idx > 0 else max_bit / 2.0
-        lo, hi = sorted((r_out, r_in))
+        r_in = inner.od_in / 2.0
         fill = Style(color=_fluid_fill(f), lineweight=0.0, fill=_fluid_fill(f))
-        for sign in (-1, 1):
-            dwg.add(Polygon(_band(hi, lo, d(f.top_md), d(f.base_md), radial, sign),
-                            layer=L_FLUID, style=fill))
+        for a, b in _annulus_segments(f.top_md, f.base_md, casings, hole):
+            r_out = _annulus_outer_r((a + b) / 2.0, inner, casings, hole)
+            lo, hi = sorted((r_in, r_out))
+            if hi - lo <= 1e-9:
+                continue
+            for sign in (-1, 1):
+                dwg.add(Polygon(_band(hi, lo, d(a), d(b), radial, sign),
+                                layer=L_FLUID, style=fill))
+        lo, hi = sorted((r_in, _annulus_outer_r(
+            (f.top_md + f.base_md) / 2.0, inner, casings, hole)))
         # Label INSIDE its own annulus, rotated. Nested annuli commonly share a
         # top (all open to surface), so labelling at mid-depth outside the
         # string stacks every label at the same place; each annulus has a
@@ -186,13 +221,16 @@ def build_column(
                      layer=L_ANNOTATION, style=_FLUID_LABEL))
 
     # --- cement in annuli (toc -> shoe) ------------------------------------
-    for i, c in enumerate(ordered):
-        r_out = c.od_in / 2.0
-        r_in = ordered[i - 1].id_in / 2.0 if i > 0 else max_bit / 2.0
-        lo, hi = sorted((r_out, r_in))
-        for sign in (-1, 1):
-            dwg.add(Hatch(_band(hi, lo, d(c.toc_md), d(c.shoe_md), radial, sign),
-                          pattern="cement", layer=L_CEMENT, style=_CEMENT))
+    for c in ordered:
+        r_in = c.od_in / 2.0
+        for a, b in _annulus_segments(c.toc_md, c.shoe_md, casings, hole):
+            r_out = _annulus_outer_r((a + b) / 2.0, c, casings, hole)
+            lo, hi = sorted((r_in, r_out))
+            if hi - lo <= 1e-9:
+                continue
+            for sign in (-1, 1):
+                dwg.add(Hatch(_band(hi, lo, d(a), d(b), radial, sign),
+                              pattern="cement", layer=L_CEMENT, style=_CEMENT))
 
     # --- casing steel walls + shoes ----------------------------------------
     # Shoe glyph proportion. Height must be tied to the WIDTH, not to total

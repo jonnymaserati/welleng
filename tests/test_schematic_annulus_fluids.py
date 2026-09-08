@@ -283,3 +283,52 @@ def test_packer_is_clamped_to_the_string_it_sets_in():
             f"packer reaches {max(xs):.2f}in, past the liner ID {r_liner_id:.2f}in"
         )
         assert max(xs) < r_liner_od, "packer crosses the liner wall"
+
+
+# --- annulus outer boundary is depth-aware ---------------------------------- #
+def test_annulus_never_overshoots_into_rock():
+    """Regression: cement and fluid must stop at the ACTUAL annulus boundary.
+
+    The outer boundary was taken as the next-outer casing ID regardless of
+    depth. Below that casing's shoe the real boundary is the drilled HOLE, so
+    the fill was drawn an inch into rock -- visible as the open-hole wall line
+    running through the fluid colour.
+    """
+    from welleng.schematic.column import L_CEMENT, L_FLUID
+    from welleng.schematic.drawing import Hatch as DwgHatch
+    from welleng.schematic.drawing import Polygon as DwgPolygon
+    d = {"well": {"name": "T"},
+         "survey": {"md": [0, 500], "inc": [0, 0], "azi": [0, 0]},
+         "hole_sections": [
+             {"bit_in": 36.0, "top_md": 0, "base_md": 80, "radial_scale": 50},
+             {"bit_in": 26.0, "top_md": 80, "base_md": 500, "radial_scale": 50},
+         ],
+         "casings": [
+             # conductor ends at 80 m; below that the 26in HOLE bounds the annulus
+             {"name": '30"', "od_in": 30.0, "id_in": 28.0,
+              "top_md": 0, "shoe_md": 80, "toc_md": 0},
+             {"name": '20"', "od_in": 20.0, "id_in": 18.7,
+              "top_md": 0, "shoe_md": 500, "toc_md": 0},
+         ],
+         "annulus_fluids": [
+             {"name": "Seawater", "inside_od_in": 20, "top_md": 0, "base_md": 500},
+         ]}
+    dwg = build_column(WellSchematic.model_validate(d), mode="MD")
+    scale = 50.0
+    checked = 0
+    for e in dwg.entities:
+        if getattr(e, "layer", None) not in (L_FLUID, L_CEMENT):
+            continue
+        if not isinstance(e, (DwgPolygon, DwgHatch)):
+            continue
+        pts = e.boundary if isinstance(e, DwgHatch) else e.points
+        xs = [abs(x) / scale for (x, _y) in pts]
+        ys = [y for (_x, y) in pts]
+        if min(ys) < 79.0:
+            continue                      # the 0-80 m segment, bounded by the 30in ID
+        checked += 1
+        assert max(xs) <= 13.0 + 1e-6, (
+            f"annulus reaches r={max(xs):.2f}in below the conductor shoe, "
+            "past the 26in hole wall at 13.00in"
+        )
+    assert checked, "no sub-conductor annulus segment was drawn"
