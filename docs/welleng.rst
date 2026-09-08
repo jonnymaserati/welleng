@@ -112,6 +112,14 @@ welleng.io module
    :undoc-members:
    :show-inheritance:
 
+welleng.lithology module
+------------------------
+
+.. automodule:: welleng.lithology
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 welleng.mesh module
 -------------------
 

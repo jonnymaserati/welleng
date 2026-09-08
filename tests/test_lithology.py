@@ -1,0 +1,189 @@
+"""Tests for the lithology column renderer (welleng.lithology).
+
+Hermetic: no network, and the FGDC pattern assets are synthesised in a tmp dir,
+since they are a separate CC0 download that a checkout will not have.
+"""
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+
+from welleng.lithology import (
+    FgdcPatterns,
+    LithologyError,
+    TILES_PER_AXIS,
+    group_of,
+    intervals_from_nlog,
+    intervals_from_tops,
+    nl_groups,
+    nl_groups_by_code,
+    pattern_names,
+    plot_lithology,
+)
+
+PIL = pytest.importorskip("PIL")
+pytest.importorskip("matplotlib")
+
+
+@pytest.fixture
+def assets(tmp_path):
+    """A tiny pattern asset dir: transparent background, one opaque line."""
+    from PIL import Image
+    d = tmp_path / "png"
+    d.mkdir()
+    for code in (607, 620, 623, 626, 658, 668):
+        a = np.zeros((16, 16, 4), dtype=np.uint8)
+        a[8, :, 3] = 255                      # one opaque row
+        Image.fromarray(a, mode="RGBA").save(d / f"{code}.png")
+    return str(d)
+
+
+# --- reference data --------------------------------------------------------- #
+def test_reference_table_is_complete():
+    groups = nl_groups()
+    assert len(groups) >= 10
+    for g in groups:
+        assert g.colour.startswith("#") and len(g.colour) == 7
+    by_code = nl_groups_by_code()
+    for code in ("NU", "NL", "CK", "KN", "ZE", "RO"):
+        assert code in by_code, f"{code} missing from the NL table"
+
+
+def test_verified_pattern_codes_are_locked():
+    """The two corrections must not silently regress.
+
+    The prototype had Chalk on 627 (Limestone) and salt on 642 (Dolostone);
+    verified against the FGDC chart, chalk is 626 and salt is 668.
+    """
+    names = pattern_names()
+    assert names[626] == "Chalk"
+    assert names[668] == "Salt"
+    assert names[627] == "Limestone"          # NOT chalk
+    assert names[642] == "Dolostone or dolomite"   # NOT salt
+    by_code = nl_groups_by_code()
+    assert by_code["CK"].pattern == 626
+    assert by_code["ZE"].pattern == 668
+
+
+# --- RGD roll-up ------------------------------------------------------------ #
+@pytest.mark.parametrize("unit,expected", [
+    ("NU", "NU"),        # already group rank
+    ("NLLF", "NL"),      # formation -> group
+    ("CKGR", "CK"),
+    ("CKTXM", "CK"),     # member -> group
+    ("ZEZ1S", "ZE"),
+    ("ROSL", "RO"),
+])
+def test_group_of_rolls_up(unit, expected):
+    assert group_of(unit) == expected
+
+
+def test_group_of_unknown_is_none():
+    assert group_of("NOT_A_CODE") is None
+
+
+# --- interval construction -------------------------------------------------- #
+def _column(rows):
+    return SimpleNamespace(intervals=[
+        SimpleNamespace(top_md=t, bottom_md=b, unit_id=u) for t, b, u in rows
+    ])
+
+
+def test_intervals_from_nlog_binds_by_code():
+    ivs = intervals_from_nlog(_column([
+        (0, 358.3, "NU"), (358.3, 843.4, "NLLF"), (843.4, 1466.8, "CKTXM"),
+        (1466.8, 1815.2, "KNGLU"), (1815.2, 2032.5, "ZEZ1S"),
+    ]))
+    assert [i.name for i in ivs] == [
+        "Upper North Sea Group", "Lower North Sea Group", "Chalk Group",
+        "Rijnland Group", "Zechstein Group",
+    ]
+    assert ivs[2].pattern == 626 and ivs[4].pattern == 668
+
+
+def test_unknown_unit_is_white_not_guessed():
+    ivs = intervals_from_nlog(_column([(0, 100, "NU"), (100, 200, "ZZZZ")]))
+    assert ivs[1].colour == "#ffffff"
+    assert ivs[1].pattern is None
+
+
+def test_interval_without_base_is_dropped():
+    ivs = intervals_from_nlog(_column([(0, 100, "NU"), (100, None, "NL")]))
+    assert len(ivs) == 1
+
+
+def test_intervals_from_tops_unknown_is_white():
+    ivs = intervals_from_tops([("Chalk Group", 0), ("Mystery Fm", 500)], base=900)
+    assert ivs[0].pattern == 626
+    assert ivs[1].colour == "#ffffff" and ivs[1].pattern is None
+
+
+# --- patterns --------------------------------------------------------------- #
+def test_patterns_absent_is_not_fatal(tmp_path):
+    p = FgdcPatterns(None)
+    assert p.available is False
+    assert p.tile(626, 100.0, 10.0) is None
+    out = tmp_path / "flat.png"
+    plot_lithology(intervals_from_nlog(_column([(0, 500, "CK")])),
+                   out=str(out), patterns=None)
+    assert out.exists() and out.stat().st_size > 500
+
+
+def test_tile_repeats_are_zoom_independent(assets):
+    """Regression: repeats must follow the VISIBLE window, not a fixed depth.
+
+    Sizing tiles from interval thickness against a constant made a thick band
+    render as one stretched tile when zoomed in.
+    """
+    p = FgdcPatterns(assets)
+    thickness = 213.0
+    wide = p.tile(668, thickness, 2093.0 / TILES_PER_AXIS)     # whole well
+    zoom = p.tile(668, thickness, 279.0 / TILES_PER_AXIS)      # 280 m window
+    assert wide.shape[0] == 16                                  # a single tile
+    assert zoom.shape[0] > wide.shape[0]                        # many more
+    assert zoom.shape[0] // 16 == pytest.approx(8, abs=1)
+
+
+def test_native_alpha_is_used(assets):
+    p = FgdcPatterns(assets)
+    t = p.tile(626, 100.0, 50.0)
+    assert t.shape[-1] == 4
+    assert t[..., 3].min() == 0.0 and t[..., 3].max() == 1.0
+
+
+# --- rendering -------------------------------------------------------------- #
+def test_depth_range_filters_and_clips(assets, tmp_path):
+    ivs = intervals_from_nlog(_column([(0, 1000, "NU"), (1000, 2000, "ZE")]))
+    ax = plot_lithology(ivs, depth_range=(1200, 1800), patterns=assets)
+    assert ax.get_ylim() == (1800, 1200)          # deep at the BOTTOM
+    with pytest.raises(LithologyError):
+        plot_lithology(ivs, depth_range=(5000, 6000), patterns=assets)
+
+
+def test_empty_intervals_raises():
+    with pytest.raises(LithologyError):
+        plot_lithology([])
+
+
+def test_composed_plot_orientation_and_size(assets, tmp_path):
+    """Regressions: depth must increase DOWNWARD, and a narrow log window on a
+    full-well column must not blow the canvas up via unclipped labels."""
+    from welleng.exchange.las import open_las
+    from welleng.lithology import plot_log_with_lithology
+    las_text = (
+        "~Version\nVERS. 2.0 :\nWRAP. NO :\n~Well\nSTRT.M 1700.0 :\n"
+        "STOP.M 1710.0 :\nSTEP.M 1.0 :\nNULL. -999.25 :\nWELL. T-1 :\n"
+        "~Curve\nDEPT.M :\nGR .GAPI :\n~ASCII\n"
+        + "".join(f" {1700.0+i:.4f} {40+i:.4f}\n" for i in range(11))
+    )
+    las = open_las(las_text)
+    ivs = intervals_from_nlog(_column([(0, 1500, "NU"), (1500, 2100, "ZE")]))
+    out = tmp_path / "composed.png"
+    fig = plot_log_with_lithology(las, ivs, depth_range=(1700, 1710),
+                                  patterns=assets, out=str(out))
+    lo, hi = fig.axes[0].get_ylim()
+    assert lo > hi, "depth must increase downward"
+    assert (lo, hi) == (1710, 1700)
+    w, h = fig.get_size_inches()
+    assert h < 20, "figure grew to fit out-of-window artists"
+    assert out.exists()

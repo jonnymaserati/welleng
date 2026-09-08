@@ -63,25 +63,77 @@ patterns:
   667: Gypsum
   668: Salt
 
-# Dutch lithostratigraphic groups, shallow -> deep. `pattern` is an FGDC code.
+# Dutch lithostratigraphic groups, shallow -> deep.
+#
+# `rgd_group` is the RGD/NLOG group-rank code and is the KEY TO BIND ON. Do not
+# match on name: the RGD names are OCR-raw and inconsistent in word order
+# ("North Sea Group, Upper" vs "Lower North Sea Group"), so name matching fails
+# on exactly the units you most want. An NLOG `unit_id` at formation or member
+# rank rolls up to its group via welleng.exchange.rgd_nomenclature (the last
+# entry of `ancestors`, or the code itself when already group rank).
+#
+# ⚠️ `pattern` is the group's CHARACTERISTIC lithology, which is a
+# SIMPLIFICATION -- a group is lithologically heterogeneous (Zechstein is
+# halite AND anhydrite AND carbonate; Rijnland is marl AND clay AND sandstone).
+# For a truthful column, override per interval at formation/member rank.
+#
+# The first six colours are as originally chosen against a real NL section; the
+# remainder were added to complete the group set. All are OURS, not a standard.
 groups:
   - name: Upper North Sea Group
+    rgd_group: NU
     colour: '#dcefb8'
     pattern: 607
+    lithology: sand and clay
+  - name: Middle North Sea Group
+    rgd_group: NM
+    colour: '#cce6a9'
+    pattern: 607
+    lithology: sand and clay
   - name: Lower North Sea Group
+    rgd_group: NL
     colour: '#bcdd9a'
     pattern: 620
+    lithology: clay dominant
   - name: Chalk Group
+    rgd_group: CK
     colour: '#e6e7ee'
     pattern: 626
+    lithology: chalk
   - name: Rijnland Group
+    rgd_group: KN
     colour: '#9ec27a'
+    pattern: 623
+    lithology: marl, clay and sandstone
+  - name: Schieland Group
+    rgd_group: SL
+    colour: '#8fb96b'
+    pattern: 607
+    lithology: sandstone and claystone
+  - name: Altena Group
+    rgd_group: AT
+    colour: '#7fa9a0'
     pattern: 620
-  - name: Zechstein
+    lithology: shale dominant
+  - name: Lower Germanic Trias Group
+    rgd_group: RB
+    colour: '#e0956b'
+    pattern: 607
+    lithology: sandstone and claystone
+  - name: Zechstein Group
+    rgd_group: ZE
     colour: '#d9c7f0'
     pattern: 668
-    note: evaporite seal (halite/anhydrite)
-  - name: Rotliegend
+    lithology: evaporite (halite, anhydrite, carbonate)
+    note: regional seal
+  - name: Upper Rotliegend Group
+    rgd_group: RO
     colour: '#f4b942'
     pattern: 607
-    note: reservoir sandstone
+    lithology: sandstone
+    note: principal reservoir
+  - name: Limburg Group
+    rgd_group: DC
+    colour: '#9c8f7a'
+    pattern: 658
+    lithology: Carboniferous coal measures, shale and sandstone
