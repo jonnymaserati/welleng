@@ -1359,6 +1359,16 @@ def solve_clc_landing_region(p1, t1, t4, target, R1, R2=None, k=1.0):
         (as :func:`solve_clc`) plus ``p4`` (the solved landing point, NEV); for a
         planar target also ``ab`` (its in-plane coordinates). ``None`` if no point
         of the region is reachable with a feasible CLC.
+
+    Notes
+    -----
+    Feasible here means both doglegs are <= pi (error-modellable). This is
+    STRICTER than :func:`solve_clc`, which also returns paths that loop the long
+    way (a dogleg > pi), so a caller moving from ``solve_clc`` to the region API
+    may see some solutions disappear. Landing on a LINE with the exit tangent
+    along that line is a different problem — use :func:`solve_clc_landing`, not a
+    ``line`` shape here (the region API takes ``t4`` as an independent fixed
+    tangent).
     """
     R2 = R1 if R2 is None else R2
     t4 = np.asarray(t4, float)
@@ -1509,13 +1519,20 @@ def solve_clc_landing_region(p1, t1, t4, target, R1, R2=None, k=1.0):
     cands = [c for c in cands if c[1] is not None and np.isfinite(c[0])]
     if not cands:
         return None
-    _, p4 = min(cands, key=lambda c: c[0])
-    p4 = np.asarray(p4, float)
-    _, s = _md(p4)
-    out = {**s, "p4": p4}
-    if frame is not None:
-        c, u, v = frame
-        out["ab"] = (float((p4 - c) @ u), float((p4 - c) @ v))
-    return out
+    # candidates were ranked by the BATCHED mdb; re-solve each (shortest first)
+    # with the scalar solve_clc, which is authoritative and handles the degenerate
+    # planar pose the general degree-10 form can miss. Return the shortest that is
+    # genuinely feasible; None if none are (never crash on a None re-solve).
+    for _, p4c in sorted(cands, key=lambda c: c[0]):
+        p4 = np.asarray(p4c, float)
+        _, s = _md(p4)
+        if s is None:
+            continue
+        out = {**s, "p4": p4}
+        if frame is not None:
+            c, u, v = frame
+            out["ab"] = (float((p4 - c) @ u), float((p4 - c) @ v))
+        return out
+    return None
 
 

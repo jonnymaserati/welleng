@@ -200,6 +200,19 @@ def test_gaussian_cov_ellipsoid_matches_surface_oracle():
     assert dd @ dd <= 1.0 + 1e-3
 
 
+def test_region_returns_none_not_crash_on_batched_scalar_mismatch():
+    # a downstream RC validation found: the batched mdb ranks a candidate feasible, but the
+    # scalar re-solve finds it infeasible (a degenerate planar pose the general
+    # degree-10 form misses). Must return None per contract, not raise TypeError.
+    p1 = np.array([0.0, 0.0, 0.0])
+    t1 = np.array([0.0, 0.0, 1.0])
+    t4 = np.array([-0.77160022531771877, 0.60145582710856094, -0.20708447630569166])
+    t = Target("s", 1725.1307011140948, -450.11825243686144, 1991.9252845531585,
+               "sphere", radius=1e-6)
+    out = solve_clc_landing_region(p1, t1, t4, t, 760.16728986401961)  # must not raise
+    assert out is None or out["p4"] is not None
+
+
 def test_unreachable_region_returns_none():
     # a tiny target directly above the kickoff, tangent North: no feasible CLC
     t = Target("bad", 0, 0, -50, "circle", radius=1)
