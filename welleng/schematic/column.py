@@ -64,12 +64,12 @@ VALVE_ASPECT = 0.30
 # styles
 _STEEL = Style(color="#222222", lineweight=0.35, fill="#3f3f3f")
 _HOLEWALL = Style(color="#b0b0b0", lineweight=0.2)
-_CEMENT = Style(color="#7a6f4a", lineweight=0.2, fill="#d8cfae")
-_PLUG = Style(color="#6b5d2f", lineweight=0.2, fill="#cdbf94")
+_CEMENT = Style(color="#8a8a8a", lineweight=0.2, fill="#bdbdbd")
+_PLUG = Style(color="#6f6f6f", lineweight=0.25, fill="#a6a6a6")
 _TUBING = Style(color="#1565c0", lineweight=0.45)
 _GRID = Style(color="#cccccc", lineweight=0.15, linestyle="dotted")
 _LABEL = Style(color="#111111", lineweight=0.2)
-_CEMENT_LABEL = Style(color="#6b5d2f", lineweight=0.2)
+_CEMENT_LABEL = Style(color="#5c5c5c", lineweight=0.2)
 _FLUID_LABEL = Style(color="#37627a", lineweight=0.2)
 _PACKER = Style(color="#111111", lineweight=0.25, fill="#1a1a1a")
 _SSSV = Style(color="#8e1b1b", lineweight=0.3, fill="#f2dede")
@@ -230,7 +230,7 @@ def build_column(
                 continue
             for sign in (-1, 1):
                 dwg.add(Hatch(_band(hi, lo, d(a), d(b), radial, sign),
-                              pattern="cement", layer=L_CEMENT, style=_CEMENT))
+                              pattern="solid", layer=L_CEMENT, style=_CEMENT))
 
     # --- casing steel walls + shoes ----------------------------------------
     # Shoe glyph proportion. Height must be tied to the WIDTH, not to total
@@ -276,7 +276,7 @@ def build_column(
         r_in = min(candidates) if candidates else 3.0
         band = _wall(r_in, d(p.top_md), d(p.base_md), radial, 1) \
             + _wall(r_in, d(p.top_md), d(p.base_md), radial, -1)[::-1]
-        dwg.add(Hatch(band, pattern="plug", layer=L_PLUG, style=_PLUG))
+        dwg.add(Hatch(band, pattern="solid", layer=L_PLUG, style=_PLUG))
         s = radial.at(d(mid))
         dwg.add(Text((-r_in * s * 1.1, d(mid)), p.name, height=2.0,
                      ha="right", va="center", layer=L_ANNOTATION, style=_CEMENT_LABEL))
