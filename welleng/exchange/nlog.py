@@ -377,6 +377,29 @@ class NLOGClient:
             ))
         return out
 
+    def production(self, borehole_id: int) -> dict:
+        """Monthly production/injection figures for a borehole (raw rows).
+
+        Returns the payload as served: ``boreholeName``, the depth-datum
+        fields, and ``prodFigures`` -- one row per month with ``startDate``
+        (epoch ms), ``productionTypeCode`` and ``quantityOil`` / ``Gas`` /
+        ``Water`` / ``Condensate`` / ``Brine`` / ``Diesel`` / ``Nitrogen`` /
+        ``Salt`` / ``Inhibitor``.
+
+        🔴 **THE UNITS ARE NOT IN THE PAYLOAD AND THIS METHOD DOES NOT GUESS
+        THEM.** They decide the answer: on one well, reading oil and gas both
+        as m3 gives a GOR of 77 sm3/sm3 -- an oil well with associated gas --
+        while reading oil as 1000 m3 gives 85,000, which would read as dry
+        gas. Same rows, opposite well. Establish the unit basis against the
+        operator's own reporting (or NLOG's portal) before deriving anything
+        from these numbers, and state the basis alongside any figure quoted.
+
+        Rows are returned unconverted and unaggregated on purpose: a caller
+        that has confirmed its units can convert, and one that has not should
+        not be handed a number that looks ready to use.
+        """
+        return self._post("prodfigures", borehole_id)
+
     def stratigraphy(
         self, borehole_id: int, preferred_only: bool = True
     ) -> list[StratColumn]:

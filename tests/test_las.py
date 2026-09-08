@@ -96,3 +96,77 @@ def test_plot_depth_range_and_empty_range(las, tmp_path):
     assert out.exists()
     with pytest.raises(LasError):
         plot_curves(las, depth_range=(9000, 9100), out=str(out))
+
+
+# --- gaps reported by a consumer mining 24 wells ---------------------------- #
+WRAPPED = """~Version
+VERS. 2.0 : CWLS LOG ASCII STANDARD
+WRAP. YES : MULTIPLE LINES PER DEPTH STEP
+~Well
+STRT.M 100.0 :
+STOP.M 102.0 :
+STEP.M  1.0 :
+NULL. -999.25 :
+WELL. WRAPTEST :
+~Curve
+DMEA.M   : DEPTH
+GR  .GAPI : GAMMA
+RHOB.G/C3 : DENSITY
+~ASCII
+   100.0000
+     45.1000   2.3100
+   101.0000
+     46.2000   2.3400
+   102.0000
+     47.3000   2.3600
+"""
+
+
+def test_wrapped_file_reads(tmp_path):
+    """WRAP: YES is common in pre-2000 logs and must not fail.
+
+    Which lasio engine gets picked by default is version dependent -- one
+    warns and falls back, another raises part way through the read -- so the
+    engine is pinned for wrapped files.
+    """
+    from welleng.exchange.las import _is_wrapped
+    p = tmp_path / "wrapped.las"
+    p.write_text(WRAPPED)
+    assert _is_wrapped(str(p))
+    las = open_las(str(p))
+    assert las.mnemonics() == ["DMEA", "GR", "RHOB"]
+    np.testing.assert_allclose(las.depth, [100, 101, 102])
+    np.testing.assert_allclose(las.curve("RHOB"), [2.31, 2.34, 2.36])
+
+
+def test_unwrapped_is_not_flagged_as_wrapped(tmp_path):
+    from welleng.exchange.las import _is_wrapped
+    p = tmp_path / "plain.las"
+    p.write_text(LAS_TEXT)
+    assert _is_wrapped(str(p)) is False
+
+
+def test_index_is_detected_not_assumed(tmp_path):
+    """Mudlogs in some fields use DMEA; assuming DEPT mis-indexes them all."""
+    p = tmp_path / "wrapped.las"
+    p.write_text(WRAPPED)
+    assert open_las(str(p)).index_mnemonic == "DMEA"
+
+
+def test_curves_by_unit_finds_density_whatever_it_is_called(tmp_path):
+    """Mnemonic matching is a trap: density is RHOB / RHOZ / BDCX by vintage.
+
+    A consumer's name-list search reported "no density curve" on 12 of 14
+    wells that had one; matching on the unit found them all.
+    """
+    p = tmp_path / "odd.las"
+    p.write_text(WRAPPED.replace("RHOB.G/C3", "BDCX.G/C3"))
+    las = open_las(str(p))
+    assert "BDCX" not in _POROSITY_NAMES          # not in any name list
+    assert las.curves_by_unit("G/C3") == ["BDCX"]
+    assert las.curves_by_unit(" g/c3 ") == ["BDCX"]     # tolerant
+    assert las.curves_by_unit("OHMM") == []
+    assert las.curves_by_unit()["GAPI"] == ["GR"]
+
+
+_POROSITY_NAMES = ("NPHI", "PHIN", "TNPH", "RHOB", "DEN", "DPHI", "PEF")

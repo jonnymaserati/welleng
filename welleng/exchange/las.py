@@ -17,6 +17,16 @@ Example
 >>> las = open_las("path/to/log.las")            # doctest: +SKIP
 >>> las.mnemonics()                              # doctest: +SKIP
 >>> plot_curves(las, out="log.png")              # doctest: +SKIP
+
+Finding a measurement
+---------------------
+Do NOT match curve mnemonics against a name list. They vary by vintage and
+contractor -- density alone appears as ``RHOB``, ``RHOZ`` and ``BDCX`` -- and a
+name-based search silently reports "not present" for a curve that is there.
+Match on the UNIT instead, via :meth:`LasFile.curves_by_unit`:
+
+>>> las.curves_by_unit("G/C3")        # density, whatever it is called
+>>> las.curves_by_unit()              # everything, grouped by unit
 """
 from __future__ import annotations
 
@@ -68,6 +78,28 @@ class LasFile:
             f"no curve {mnemonic!r}; available: {', '.join(self.mnemonics())}"
         )
 
+    def curves_by_unit(self, unit: str | None = None):
+        """Curves grouped by UNIT -- the reliable way to find a measurement.
+
+        Mnemonics are not guessable. Across one field's wells the density
+        curve appears as ``RHOB``, ``RHOZ`` or ``BDCX`` depending on vintage
+        and contractor, so a consumer matching a name list reported "no
+        density curve" on 12 of 14 wells that had one. Matching on the UNIT
+        (``G/C3``, ``G/CC``, ``K/M3``) found them all. The same argument
+        applies to resistivity (``OHMM``) and sonic (``US/F``).
+
+        With no argument: ``{UNIT: [mnemonic, ...]}`` for every curve.
+        With a unit (case- and whitespace-insensitive): just that unit's
+        mnemonics, or ``[]``.
+        """
+        groups: dict[str, list[str]] = {}
+        for m in self.curves:
+            u = (self.units.get(m) or "").strip().upper()
+            groups.setdefault(u, []).append(m)
+        if unit is None:
+            return groups
+        return groups.get(str(unit).strip().upper(), [])
+
     def describe(self) -> str:
         """One line per curve: mnemonic, unit, description, % non-null."""
         out = []
@@ -78,6 +110,31 @@ class LasFile:
                 f"{self.descriptions.get(m, '')}"
             )
         return "\n".join(out)
+
+
+def _is_wrapped(source) -> bool:
+    """True when the LAS header declares ``WRAP: YES``.
+
+    Reads only the header region, and rewinds a stream afterwards so the
+    caller's read is unaffected.
+    """
+    try:
+        if hasattr(source, "read"):
+            pos = source.tell()
+            head = source.read(4096)
+            source.seek(pos)
+        else:
+            with open(source, "r", encoding="latin-1", errors="ignore") as fh:
+                head = fh.read(4096)
+    except Exception:
+        return False
+    for line in str(head).splitlines():
+        t = line.strip().upper()
+        if t.startswith("WRAP"):
+            return "YES" in t.split(":")[0]
+        if t.startswith("~C") or t.startswith("~A"):
+            break          # past the version section
+    return False
 
 
 def open_las(source: str | bytes | os.PathLike, **kwargs: Any) -> LasFile:
@@ -102,6 +159,15 @@ def open_las(source: str | bytes | os.PathLike, **kwargs: Any) -> LasFile:
     else:
         buf = os.fspath(source)
         name = str(buf)
+
+    # WRAPPED files (``WRAP: YES``, common in pre-2000 logs) can only be read
+    # by lasio's "normal" engine. Which engine it picks by default is version
+    # dependent -- 0.32 warns and falls back, other versions raise part-way
+    # through the read -- so the engine is pinned here rather than left to
+    # chance. A consumer hit this on a vintage composite: the wrapped logs are
+    # exactly the ones carrying the old curves worth having.
+    if "engine" not in kwargs and _is_wrapped(buf):
+        kwargs["engine"] = "normal"
 
     try:
         raw = lasio.read(buf, **kwargs)
