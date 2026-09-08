@@ -332,3 +332,45 @@ def test_annulus_never_overshoots_into_rock():
             "past the 26in hole wall at 13.00in"
         )
     assert checked, "no sub-conductor annulus segment was drawn"
+
+
+# --- annotation does not sit on the drawing --------------------------------- #
+def test_labels_live_in_a_gutter_clear_of_the_geometry():
+    """Regression: labels overlapped the schematic and each other.
+
+    Every string starts at surface, so casing names anchored at the top all
+    landed on depth 0; and an annulus band is often narrower than its own fluid
+    name. Labels now go in a side gutter with leaders.
+    """
+    from welleng.schematic.column import L_ANNOTATION, L_CASING, L_FLUID
+    from welleng.schematic.drawing import Polygon as DwgPolygon
+    from welleng.schematic.drawing import Text as DwgText
+    s = _with([{"name": "WBM", "inside_od_in": 13.375, "top_md": 0,
+                "base_md": 500, "density_sg": 1.35}])
+    dwg = build_column(s, mode="MD")
+
+    # widest drawn geometry (casing steel / fluid bands)
+    geom_x = max(
+        abs(x)
+        for e in dwg.entities
+        if getattr(e, "layer", None) in (L_CASING, L_FLUID)
+        and isinstance(e, DwgPolygon)
+        for (x, _y) in e.points
+    )
+    texts = [e for e in dwg.entities
+             if getattr(e, "layer", None) == L_ANNOTATION
+             and isinstance(e, DwgText)
+             and not e.text.replace(".", "").isdigit()]     # skip depth ruler
+    assert texts, "no annotation drawn"
+    for t in texts:
+        assert abs(t.position[0]) >= geom_x, (
+            f"label {t.text!r} at x={t.position[0]:.1f} sits on the geometry "
+            f"(which reaches {geom_x:.1f})"
+        )
+
+    # and no two labels on the same side share a depth
+    for side in (1, -1):
+        ys = sorted(t.position[1] for t in texts
+                    if (t.position[0] >= 0) == (side > 0))
+        for a, b in zip(ys, ys[1:]):
+            assert b - a > 1e-6, "two labels placed at the same depth"

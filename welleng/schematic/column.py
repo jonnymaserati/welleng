@@ -69,6 +69,7 @@ _PLUG = Style(color="#6f6f6f", lineweight=0.25, fill="#a6a6a6")
 _TUBING = Style(color="#1565c0", lineweight=0.45)
 _GRID = Style(color="#cccccc", lineweight=0.15, linestyle="dotted")
 _LABEL = Style(color="#111111", lineweight=0.2)
+_LEADER = Style(color="#9a9a9a", lineweight=0.12)
 _CEMENT_LABEL = Style(color="#5c5c5c", lineweight=0.2)
 _FLUID_LABEL = Style(color="#37627a", lineweight=0.2)
 _PACKER = Style(color="#111111", lineweight=0.25, fill="#1a1a1a")
@@ -137,6 +138,39 @@ def _annulus_outer_r(md: float, inner, casings, hole) -> float:
     return min(cands) if cands else inner.od_in / 2.0 + 1.0
 
 
+def _place_gutter_labels(dwg, requests, x_gutter: float, ymax: float,
+                         min_gap_frac: float = 0.022) -> None:
+    """Lay labels out in a side gutter with leader lines, de-collided.
+
+    ``requests`` are ``(depth, anchor_x, text, style)``. Labels are placed at
+    ``x_gutter`` on the anchor's side, nudged apart vertically so none overlaps
+    its neighbour, and joined to their feature by a thin leader.
+
+    Placing a label AT its feature does not work on a well schematic: every
+    string starts at surface, so top-anchored labels all land on the same depth
+    and pile up, and an annulus band is routinely narrower than its own fluid
+    name. Separating them in a gutter is what the reference drawings do.
+    """
+    if not requests:
+        return
+    min_gap = ymax * min_gap_frac
+    for side in (1, -1):
+        rows = sorted((r for r in requests if (r[1] >= 0) == (side > 0)),
+                      key=lambda r: r[0])
+        placed: List[float] = []
+        for depth, anchor_x, text, style in rows:
+            y = depth
+            if placed and y - placed[-1] < min_gap:
+                y = placed[-1] + min_gap
+            placed.append(y)
+            gx = side * abs(x_gutter)
+            dwg.add(Line((anchor_x, depth), (gx, y), layer=L_ANNOTATION,
+                         style=_LEADER))
+            dwg.add(Text((gx + side * ymax * 0.001, y), text, height=2.0,
+                         ha="left" if side > 0 else "right", va="center",
+                         layer=L_ANNOTATION, style=style))
+
+
 def _annulus_segments(md_top: float, md_base: float, casings, hole):
     """MD sub-intervals over which the annulus outer boundary is constant."""
     edges = {md_top, md_base}
@@ -177,6 +211,7 @@ def build_column(
     register_standard_symbols(dwg)
 
     ymax = resolver.max_depth(mode)
+    labels: List = []            # (depth, anchor_x, text, style) -> gutter
     casings = bore.casings
     hole = bore.hole_sections
     max_bit = max((h.bit_in for h in hole), default=30.0)
@@ -216,9 +251,7 @@ def build_column(
         y_lbl = d((f.top_md + f.base_md) / 2.0)
         s_lbl = radial.at(y_lbl)
         label = f.name + (f" ({f.density_sg:g} sg)" if f.density_sg else "")
-        dwg.add(Text(((lo + hi) / 2.0 * s_lbl, y_lbl), label, height=1.7,
-                     rotation=90.0, ha="center", va="center",
-                     layer=L_ANNOTATION, style=_FLUID_LABEL))
+        labels.append((y_lbl, (lo + hi) / 2.0 * s_lbl, label, _FLUID_LABEL))
 
     # --- cement in annuli (toc -> shoe) ------------------------------------
     for c in ordered:
@@ -265,9 +298,10 @@ def build_column(
             shoe_h = shoe_w * SHOE_ASPECT
             dwg.place_symbol(CASING_SHOE, (x_out, d(c.shoe_md)),
                              sx=sign * shoe_w, sy=shoe_h, layer=L_SHOE)
-        s = radial.at(d(c.top_md))
-        dwg.add(Text((r_out * s * 1.05, d(c.top_md) + ymax * 0.006), c.name,
-                     height=2.0, va="top", layer=L_ANNOTATION, style=_LABEL))
+        # anchor on the SHOE, not the top: every string starts at surface, so
+        # top-anchored names all collide at depth 0.
+        s_shoe = radial.at(d(c.shoe_md))
+        labels.append((d(c.shoe_md), r_out * s_shoe, c.name, _LABEL))
 
     # --- cement plugs (bore fill) ------------------------------------------
     for p in bore.cement_plugs:
@@ -278,8 +312,7 @@ def build_column(
             + _wall(r_in, d(p.top_md), d(p.base_md), radial, -1)[::-1]
         dwg.add(Hatch(band, pattern="solid", layer=L_PLUG, style=_PLUG))
         s = radial.at(d(mid))
-        dwg.add(Text((-r_in * s * 1.1, d(mid)), p.name, height=2.0,
-                     ha="right", va="center", layer=L_ANNOTATION, style=_CEMENT_LABEL))
+        labels.append((d(mid), -r_in * s, p.name, _CEMENT_LABEL))
 
     # --- completion --------------------------------------------------------
     for item in bore.completion:
@@ -354,8 +387,11 @@ def build_column(
                          (w * 0.72, y + hv / 2.0), (-w, y + hv * 0.10)],
                         layer=L_COMPLETION, style=_SSSV_FLAP))
             if item.name:
-                dwg.add(Text((width * 0.6 + 4.0, y), item.name, height=2.0,
-                             va="center", layer=L_ANNOTATION, style=_TUBING))
+                labels.append((y, width * 0.5, item.name, _TUBING))
+
+    # --- annotations in side gutters, de-collided --------------------------
+    _place_gutter_labels(dwg, labels,
+                         x_gutter=max_bit / 2.0 * radial.at(0.0) * 1.06, ymax=ymax)
 
     # --- depth grid + ruler ------------------------------------------------
     _add_depth_ruler(dwg, ymax, radial, max_bit)
