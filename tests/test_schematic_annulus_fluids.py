@@ -410,3 +410,67 @@ def test_cut_and_pull_is_expressible():
                          "top_md": 0, "base_md": 700}]}   # cut at 700 m
     s = WellSchematic.model_validate(d)
     assert s.primary.completion[0].base_md == 700
+
+
+# --- formation (rock) outside the hole wall --------------------------------- #
+ROCK_DATA = {
+    **BASE,
+    "formations": [
+        {"name": "Shale", "top_md": 0, "color": "#c9e6a8"},
+        {"name": "Seal", "top_md": 1200, "color": "#5e35b1", "seal": True},
+        {"name": "", "top_md": 2000, "color": "#ffffff"},
+    ],
+}
+
+
+def test_rock_is_drawn_behind_the_well():
+    """Rock must paint before casing/cement, or it covers the wellbore."""
+    from welleng.schematic.column import L_CASING, L_ROCK
+    dwg = build_column(WellSchematic.model_validate(ROCK_DATA), mode="MD")
+    layers = [getattr(e, "layer", None) for e in dwg.entities]
+    assert L_ROCK in layers
+    assert layers.index(L_ROCK) < layers.index(L_CASING)
+
+
+def test_rock_colour_is_muted_not_raw():
+    """A raw seal/reservoir colour out-reads the wellbore itself."""
+    from welleng.schematic.column import L_ROCK, _mute
+    from welleng.schematic.drawing import Polygon as DwgPolygon
+    dwg = build_column(WellSchematic.model_validate(ROCK_DATA), mode="MD")
+    fills = {e.style.fill for e in dwg.entities
+             if getattr(e, "layer", None) == L_ROCK and isinstance(e, DwgPolygon)}
+    assert "#5e35b1" not in fills, "raw formation colour used for background"
+    assert _mute("#5e35b1") in fills
+
+
+def test_rock_stops_short_of_the_label_gutter():
+    from welleng.schematic.column import L_ANNOTATION, L_ROCK
+    from welleng.schematic.drawing import Polygon as DwgPolygon
+    from welleng.schematic.drawing import Text as DwgText
+    dwg = build_column(WellSchematic.model_validate(ROCK_DATA), mode="MD")
+    rock_x = max(abs(x) for e in dwg.entities
+                 if getattr(e, "layer", None) == L_ROCK
+                 and isinstance(e, DwgPolygon) for (x, _y) in e.points)
+    labels = [e for e in dwg.entities
+              if getattr(e, "layer", None) == L_ANNOTATION
+              and isinstance(e, DwgText)
+              and not e.text.replace(".", "").isdigit()]
+    assert labels
+    for t in labels:
+        assert abs(t.position[0]) >= rock_x, (
+            f"label {t.text!r} sits on the rock band"
+        )
+
+
+def test_unidentified_formation_is_left_blank():
+    """An interval with no colour must look unidentified, not be given one."""
+    from welleng.schematic.column import L_ROCK
+    from welleng.schematic.drawing import Polygon as DwgPolygon
+    d = {**BASE, "formations": [
+        {"name": "Unknown", "top_md": 0, "color": "#ffffff"},
+        {"name": "", "top_md": 2000, "color": "#ffffff"},
+    ]}
+    dwg = build_column(WellSchematic.model_validate(d), mode="MD")
+    rock = [e for e in dwg.entities
+            if getattr(e, "layer", None) == L_ROCK and isinstance(e, DwgPolygon)]
+    assert not rock, "an uncoloured formation was filled anyway"

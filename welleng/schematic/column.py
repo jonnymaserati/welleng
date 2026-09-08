@@ -32,6 +32,7 @@ from .symbols import CASING_SHOE, register_standard_symbols
 # layers
 L_GRID = "GRID"
 L_HOLE = "HOLE"
+L_ROCK = "ROCK"
 L_CASING = "CASING"
 L_CEMENT = "CEMENT"
 L_FLUID = "FLUID"
@@ -64,6 +65,26 @@ VALVE_ASPECT = 0.30
 # styles
 _STEEL = Style(color="#222222", lineweight=0.35, fill="#3f3f3f")
 _HOLEWALL = Style(color="#b0b0b0", lineweight=0.2)
+# Rock outside the hole wall. The formation is BACKGROUND to the well, so its
+# colour is blended toward light grey before use: a raw seal or reservoir
+# colour (saturated purple, saturated yellow) out-reads the wellbore itself,
+# which inverts what the drawing is about.
+_ROCK_EDGE = "#9e9e9e"
+_ROCK_MUTE = 0.62          # fraction of the way to _ROCK_GROUND
+_ROCK_GROUND = (0.96, 0.96, 0.95)
+
+
+def _mute(colour: str, f: float = _ROCK_MUTE) -> str:
+    """Blend a hex colour toward a near-white ground, for background fills."""
+    c = colour.lstrip("#")
+    if len(c) == 3:
+        c = "".join(ch * 2 for ch in c)
+    try:
+        rgb = tuple(int(c[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+    except ValueError:
+        return colour
+    out = tuple(v + (g - v) * f for v, g in zip(rgb, _ROCK_GROUND))
+    return "#" + "".join(f"{int(round(v * 255)):02x}" for v in out)
 _CEMENT = Style(color="#8a8a8a", lineweight=0.2, fill="#bdbdbd")
 _PLUG = Style(color="#6f6f6f", lineweight=0.25, fill="#a6a6a6")
 _TUBING = Style(color="#1565c0", lineweight=0.45)
@@ -187,6 +208,51 @@ def _annulus_segments(md_top: float, md_base: float, casings, hole):
     return list(zip(ordered, ordered[1:]))
 
 
+def _rock_inner_r(md: float, casings, hole) -> float:
+    """Radius (inches) where rock begins at ``md``: the drilled hole, or the
+    widest string where no hole section is recorded."""
+    holes = [h.bit_in / 2.0 for h in hole if h.top_md <= md <= h.base_md]
+    if holes:
+        return max(holes)
+    ods = [c.od_in / 2.0 for c in casings if c.top_md <= md <= c.shoe_md]
+    return max(ods) if ods else 0.0
+
+
+def _draw_rock(dwg, schematic, casings, hole, radial, d, ymax, max_bit) -> None:
+    """Fill formation bands from the hole wall out to the drawing edge.
+
+    The references all show rock against the hole; without it there is no
+    visual difference between "cemented annulus" and "formation", which is the
+    distinction a reader most needs. Bands step with the hole, so the rock
+    boundary follows the wellbore rather than being a straight edge.
+
+    A formation with no colour is left UNFILLED rather than given one -- an
+    unidentified interval should look unidentified (same rule as the lithology
+    column).
+    """
+    forms = sorted(getattr(schematic, "formations", None) or [],
+                   key=lambda f: f.top_md)
+    if len(forms) < 2:
+        return                      # need a base for the deepest band
+    # stop short of the label gutter (placed at *1.06) so annotation never
+    # sits on top of the rock
+    x_edge = max_bit / 2.0 * radial.at(0.0) * 1.0
+    for f, nxt in zip(forms, forms[1:]):
+        if nxt.top_md <= f.top_md:
+            continue
+        colour = (f.color or "").strip()
+        if not colour or colour.lower() in ("#ffffff", "white"):
+            continue                # unidentified: leave it blank
+        style = Style(color=_ROCK_EDGE, lineweight=0.1, fill=_mute(colour))
+        for a, b in _annulus_segments(f.top_md, nxt.top_md, casings, hole):
+            r_in = _rock_inner_r((a + b) / 2.0, casings, hole)
+            da, db = d(a), d(b)
+            for sign in (-1, 1):
+                inner = _wall(r_in, da, db, radial, sign)
+                pts = inner + [(sign * x_edge, db), (sign * x_edge, da)]
+                dwg.add(Polygon(pts, layer=L_ROCK, style=style))
+
+
 def build_column(
     schematic: WellSchematic,
     mode: str = "MD",
@@ -206,7 +272,7 @@ def build_column(
     dwg = Drawing(name=f"{schematic.well.name}_column_{mode}")
     dwg.h_unit_label = "in (exagg.)"
     dwg.v_unit_label = mode + " m"
-    for layer in (L_GRID, L_HOLE, L_FLUID, L_CASING, L_CEMENT, L_PLUG,
+    for layer in (L_GRID, L_ROCK, L_HOLE, L_FLUID, L_CASING, L_CEMENT, L_PLUG,
                   L_COMPLETION, L_SHOE, L_ANNOTATION):
         dwg.add_layer(layer)
     register_standard_symbols(dwg)
@@ -216,6 +282,9 @@ def build_column(
     casings = bore.casings
     hole = bore.hole_sections
     max_bit = max((h.bit_in for h in hole), default=30.0)
+
+    # --- formation (rock) OUTSIDE the hole wall, drawn first ---------------
+    _draw_rock(dwg, schematic, casings, hole, radial, d, ymax, max_bit)
 
     # --- open hole walls (per section, naturally stepped) ------------------
     for h in hole:
