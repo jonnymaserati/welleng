@@ -86,6 +86,24 @@ DATA = {
             "toc_md": 2050,
         },
     ],
+    # What stands in each annulus where cement does not. Identified by the OD
+    # of the string forming the INNER wall, and the density is stated, never
+    # guessed from the name -- for a barrier argument the density is the number
+    # that matters.
+    "annulus_fluids": [
+        {"name": "Seawater", "inside_od_in": 20, "top_md": 0, "base_md": 400,
+         "density_sg": 1.03},
+        {"name": "WBM", "inside_od_in": 13.375, "top_md": 0, "base_md": 800,
+         "density_sg": 1.35},
+        {"name": "Packer fluid (CaCl2)", "inside_od_in": 9.625,
+         "top_md": 0, "base_md": 1400, "density_sg": 1.18},
+    ],
+    # The reservoir was perforated through the 7in liner before abandonment;
+    # the plug below is set across it.
+    "perforations": [
+        {"top_md": 2380, "base_md": 2480, "casing_od_in": 7.0,
+         "shots_per_m": 39},
+    ],
     "cement_plugs": [
         {"name": "Reservoir plug", "top_md": 2350, "base_md": 2600},
         {"name": "Barrier plug", "top_md": 2100, "base_md": 2260},

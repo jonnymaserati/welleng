@@ -474,3 +474,249 @@ def test_unidentified_formation_is_left_blank():
     rock = [e for e in dwg.entities
             if getattr(e, "layer", None) == L_ROCK and isinstance(e, DwgPolygon)]
     assert not rock, "an uncoloured formation was filled anyway"
+
+
+# --- liner hangers ---------------------------------------------------------- #
+LINER_DATA = {
+    **BASE,
+    "survey": {"md": [0, 2600], "inc": [0, 0], "azi": [0, 0]},
+    "hole_sections": [
+        {"bit_in": 17.5, "top_md": 0, "base_md": 800, "radial_scale": 40},
+        {"bit_in": 12.25, "top_md": 800, "base_md": 2000, "radial_scale": 32},
+        {"bit_in": 8.5, "top_md": 2000, "base_md": 2600, "radial_scale": 30},
+    ],
+    "casings": [
+        *BASE["casings"],
+        {"name": '7" Liner', "od_in": 7.0, "id_in": 6.18,
+         "top_md": 1900, "shoe_md": 2600, "toc_md": 1900},
+    ],
+}
+
+
+def _liner_column(data=None):
+    return build_column(
+        WellSchematic.model_validate(data or LINER_DATA), mode="MD"
+    )
+
+
+def test_hanger_is_drawn_only_for_a_hung_string():
+    """A string run from surface has nothing to hang from -- no hanger."""
+    from welleng.schematic.column import L_HANGER
+    from welleng.schematic.drawing import Polygon as DwgPolygon
+    dwg = _liner_column()
+    boxes = [e for e in dwg.entities
+             if getattr(e, "layer", None) == L_HANGER
+             and isinstance(e, DwgPolygon)]
+    # one liner, two sides -- not one per casing
+    assert len(boxes) == 2, f"{len(boxes)} hanger boxes for one liner"
+
+
+def test_hanger_sits_in_the_annulus_never_in_the_bore():
+    """The hanger carries the liner on the string above: it belongs between
+    the liner OD and the host ID, not inside the liner."""
+    from welleng.schematic.column import L_HANGER
+    from welleng.schematic.drawing import Polygon as DwgPolygon
+    dwg = _liner_column()
+    s = 32.0                                     # radial scale at 1900 m MD
+    r_liner_od, r_host_id = 7.0 / 2.0, 8.68 / 2.0
+    for e in dwg.entities:
+        if getattr(e, "layer", None) != L_HANGER or not isinstance(e, DwgPolygon):
+            continue
+        xs = [abs(x) for x, _y in e.points]
+        assert min(xs) == pytest.approx(r_liner_od * s, rel=1e-6)
+        assert max(xs) == pytest.approx(r_host_id * s, rel=1e-6)
+
+
+def test_hanger_is_mirrored_on_each_side():
+    from welleng.schematic.column import L_HANGER
+    from welleng.schematic.drawing import Polygon as DwgPolygon
+    dwg = _liner_column()
+    signs = set()
+    for e in dwg.entities:
+        if getattr(e, "layer", None) == L_HANGER and isinstance(e, DwgPolygon):
+            signs.add(np.sign(sum(x for x, _y in e.points)))
+    assert signs == {-1.0, 1.0}
+
+
+def test_hanger_top_is_at_the_liner_top():
+    from welleng.schematic.column import L_HANGER
+    from welleng.schematic.drawing import Polygon as DwgPolygon
+    dwg = _liner_column()
+    boxes = [e for e in dwg.entities
+             if getattr(e, "layer", None) == L_HANGER
+             and isinstance(e, DwgPolygon)]
+    for e in boxes:
+        assert min(y for _x, y in e.points) == pytest.approx(1900.0)
+
+
+def test_hanger_height_scales_with_the_annulus_not_with_depth():
+    """Sized off the gap it fills, so it reads square at any depth scale --
+    the failure mode every other symbol here had was a fixed metre height."""
+    from welleng.schematic.column import HANGER_ASPECT, L_HANGER
+    from welleng.schematic.drawing import Polygon as DwgPolygon
+    dwg = _liner_column()
+    width_x = (8.68 - 7.0) / 2.0 * 32.0
+    for e in dwg.entities:
+        if getattr(e, "layer", None) == L_HANGER and isinstance(e, DwgPolygon):
+            ys = [y for _x, y in e.points]
+            assert max(ys) - min(ys) == pytest.approx(
+                width_x * HANGER_ASPECT, rel=1e-6
+            )
+
+
+def test_liner_with_no_host_string_is_skipped_not_fatal():
+    """Bad data -- a liner hung deeper than every outer shoe -- must not raise."""
+    from welleng.schematic.column import L_HANGER
+    d = {**LINER_DATA, "casings": [
+        {"name": '9-5/8"', "od_in": 9.625, "id_in": 8.68,
+         "top_md": 0, "shoe_md": 800, "toc_md": 600},
+        {"name": '7" Liner', "od_in": 7.0, "id_in": 6.18,
+         "top_md": 1900, "shoe_md": 2600, "toc_md": 1900},
+    ]}
+    dwg = _liner_column(d)
+    assert not [e for e in dwg.entities
+                if getattr(e, "layer", None) == L_HANGER]
+
+
+# --- perforations ----------------------------------------------------------- #
+def _perf_column(perfs, data=None):
+    d = {**(data or LINER_DATA), "perforations": perfs}
+    return build_column(WellSchematic.model_validate(d), mode="MD")
+
+
+def test_flat_form_hoists_perforations():
+    s = WellSchematic.model_validate({
+        **LINER_DATA,
+        "perforations": [{"top_md": 2300, "base_md": 2400}],
+    })
+    assert len(s.wellbores[0].perforations) == 1
+    assert s.wellbores[0].perforations[0].base_md == 2400
+
+
+def test_perforations_cross_the_shot_wall_into_the_annulus():
+    from welleng.schematic.column import L_PERF
+    dwg = _perf_column([{"top_md": 2300, "base_md": 2400,
+                         "casing_od_in": 7.0}])
+    ticks = [e for e in dwg.entities if getattr(e, "layer", None) == L_PERF]
+    assert ticks
+    s = 30.0                                    # radial scale below 2000 m
+    r_in, r_hole = 6.18 / 2.0, 8.5 / 2.0
+    for e in ticks:
+        x0, x1 = abs(e.start[0]), abs(e.end[0])
+        assert min(x0, x1) == pytest.approx(r_in * s, rel=1e-6)
+        assert max(x0, x1) == pytest.approx(r_hole * s, rel=1e-6)
+
+
+def test_perforations_never_reach_into_the_bore():
+    """A tick inside the casing ID would read as a hole in the tubing."""
+    from welleng.schematic.column import L_PERF
+    dwg = _perf_column([{"top_md": 2300, "base_md": 2400}])
+    r_in = 6.18 / 2.0 * 30.0
+    for e in dwg.entities:
+        if getattr(e, "layer", None) == L_PERF:
+            assert min(abs(e.start[0]), abs(e.end[0])) >= r_in - 1e-9
+
+
+def test_perforations_are_mirrored_on_each_side():
+    from welleng.schematic.column import L_PERF
+    dwg = _perf_column([{"top_md": 2300, "base_md": 2400}])
+    signs = {np.sign(e.start[0]) for e in dwg.entities
+             if getattr(e, "layer", None) == L_PERF}
+    assert signs == {-1.0, 1.0}
+
+
+def test_perforations_default_to_the_innermost_string_there():
+    """With no ``casing_od_in`` the shots go through the string actually in the
+    way -- the liner, not the 9-5/8in behind it."""
+    from welleng.schematic.column import L_PERF
+    dwg = _perf_column([{"top_md": 2300, "base_md": 2400}])
+    inner = min(abs(e.start[0]) for e in dwg.entities
+                if getattr(e, "layer", None) == L_PERF)
+    assert inner == pytest.approx(6.18 / 2.0 * 30.0, rel=1e-6)
+
+
+def test_perforations_can_name_an_outer_string():
+    """Shot through the 9-5/8in above the liner top: the marks must start at
+    THAT wall, otherwise the named string is ignored."""
+    from welleng.schematic.column import L_PERF
+    dwg = _perf_column([{"top_md": 1500, "base_md": 1600,
+                         "casing_od_in": 9.625}])
+    inner = min(abs(e.start[0]) for e in dwg.entities
+                if getattr(e, "layer", None) == L_PERF)
+    assert inner == pytest.approx(8.68 / 2.0 * 32.0, rel=1e-6)
+
+
+def test_perforations_naming_an_absent_string_are_skipped():
+    from welleng.schematic.column import L_PERF
+    dwg = _perf_column([{"top_md": 2300, "base_md": 2400,
+                         "casing_od_in": 13.375}])
+    assert not [e for e in dwg.entities
+                if getattr(e, "layer", None) == L_PERF]
+
+
+@pytest.mark.parametrize("top,base", [(2400, 2400), (2400, 2300)])
+def test_inverted_or_zero_perforated_interval_is_skipped(top, base):
+    from welleng.schematic.column import L_PERF
+    dwg = _perf_column([{"top_md": top, "base_md": base}])
+    assert not [e for e in dwg.entities
+                if getattr(e, "layer", None) == L_PERF]
+
+
+def test_a_long_perforated_zone_stays_legible():
+    """Tick count is capped: one mark per shot would be a solid black band,
+    which reads as missing casing rather than as perforations."""
+    from welleng.schematic.column import L_PERF
+    dwg = _perf_column([{"top_md": 2000, "base_md": 2600,
+                         "shots_per_m": 39}])
+    depths = {round(e.start[1], 6) for e in dwg.entities
+              if getattr(e, "layer", None) == L_PERF}
+    assert 2 <= len(depths) <= 41, f"{len(depths)} tick depths"
+
+
+def test_perforations_paint_over_cement_and_plugs():
+    """Order matters: cement in the perforated annulus is drawn first, so the
+    marks must come after it or they vanish under the fill."""
+    from welleng.schematic.column import L_CEMENT, L_PERF, L_PLUG
+    d = {**LINER_DATA,
+         "cement_plugs": [{"name": "P", "top_md": 2300, "base_md": 2500}],
+         "perforations": [{"top_md": 2300, "base_md": 2400}]}
+    dwg = build_column(WellSchematic.model_validate(d), mode="MD")
+    layers = [getattr(e, "layer", None) for e in dwg.entities]
+    assert layers.index(L_PERF) > layers.index(L_CEMENT)
+    assert layers.index(L_PERF) > layers.index(L_PLUG)
+
+
+# --- callouts vs the depth ruler -------------------------------------------- #
+def test_callouts_clear_the_depth_ruler_numbers():
+    """The left gutter is shared with the depth numbers. De-colliding the
+    callouts only among themselves put "Reservoir plug" on top of "2500"."""
+    from welleng.schematic.column import L_ANNOTATION, _ruler_depths
+    from welleng.schematic.drawing import Text as DwgText
+    d = {**LINER_DATA, "cement_plugs": [
+        {"name": "Reservoir plug", "top_md": 2350, "base_md": 2600},
+        {"name": "Barrier plug", "top_md": 2100, "base_md": 2260},
+    ]}
+    dwg = build_column(WellSchematic.model_validate(d), mode="MD")
+    ruler = set(_ruler_depths(2600.0))
+    texts = [e for e in dwg.entities
+             if getattr(e, "layer", None) == L_ANNOTATION
+             and isinstance(e, DwgText)]
+    numbers = {round(t.position[1], 6) for t in texts
+               if t.text.replace(".", "").isdigit()}
+    assert numbers & {round(r, 6) for r in ruler}, "ruler numbers not found"
+    min_gap = 2600.0 * 0.022
+    for t in texts:
+        if t.text.replace(".", "").isdigit() or t.position[0] >= 0:
+            continue
+        for r in ruler:
+            assert abs(t.position[1] - r) >= min_gap - 1e-9, (
+                f"callout {t.text!r} at {t.position[1]:.0f} sits on ruler {r:.0f}"
+            )
+
+
+def test_a_free_slot_search_moves_up_when_that_is_nearer():
+    """One-way nudging can only push a label further into what it hit."""
+    from welleng.schematic.column import _free_slot
+    y = _free_slot(2475.0, [2500.0], 57.0, 2600.0)
+    assert y < 2475.0, f"pushed away from its own depth: {y}"
+    assert abs(y - 2500.0) >= 57.0

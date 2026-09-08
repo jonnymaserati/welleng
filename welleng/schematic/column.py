@@ -39,6 +39,8 @@ L_FLUID = "FLUID"
 L_PLUG = "PLUG"
 L_COMPLETION = "COMPLETION"
 L_SHOE = "SHOE"
+L_HANGER = "HANGER"
+L_PERF = "PERF"
 L_ANNOTATION = "ANNOTATION"
 
 # Shoe wedge height as a multiple of its width, and a DIRECT multiple: the
@@ -61,6 +63,9 @@ PACKER_ASPECT = 0.35
 
 # Valve (SSSV / landing nipple) body height, same normalised basis.
 VALVE_ASPECT = 0.30
+
+# Liner-hanger block height, as a multiple of the annulus width it spans.
+HANGER_ASPECT = 1.25
 
 # styles
 _STEEL = Style(color="#222222", lineweight=0.35, fill="#3f3f3f")
@@ -97,6 +102,8 @@ _PACKER = Style(color="#111111", lineweight=0.25, fill="#1a1a1a")
 _SSSV = Style(color="#8e1b1b", lineweight=0.3, fill="#f2dede")
 _SSSV_FLAP = Style(color="#8e1b1b", lineweight=0.25, fill="#a52121")
 _NIPPLE = Style(color="#333333", lineweight=0.3, fill=None)
+_HANGER = Style(color="#1a1a1a", lineweight=0.3, fill="#8c8c8c")
+_PERF = Style(color="#111111", lineweight=0.45)
 
 # Fallback annulus-fluid fills, keyed on the fluid NAME and used only when the
 # fluid carries no explicit colour. Deliberately pale: annulus fluid is
@@ -160,18 +167,41 @@ def _annulus_outer_r(md: float, inner, casings, hole) -> float:
     return min(cands) if cands else inner.od_in / 2.0 + 1.0
 
 
+def _free_slot(y: float, taken, min_gap: float, ymax: float) -> float:
+    """Nearest depth to ``y`` clearing every entry in ``taken`` by ``min_gap``.
+
+    Searched OUTWARD in both directions rather than only downward: a label
+    whose true depth sits just above an immovable one (a depth-ruler number)
+    has to move up, and a one-way nudge can only push it further into the
+    thing it is colliding with.
+    """
+    for k in range(0, 80):
+        cands = (y,) if k == 0 else (y - k * min_gap * 0.5,
+                                     y + k * min_gap * 0.5)
+        for cand in cands:
+            if 0.0 <= cand <= ymax and all(
+                    abs(t - cand) >= min_gap for t in taken):
+                return cand
+    return y
+
+
 def _place_gutter_labels(dwg, requests, x_gutter: float, ymax: float,
-                         min_gap_frac: float = 0.022) -> None:
+                         min_gap_frac: float = 0.022, reserved=()) -> None:
     """Lay labels out in a side gutter with leader lines, de-collided.
 
     ``requests`` are ``(depth, anchor_x, text, style)``. Labels are placed at
-    ``x_gutter`` on the anchor's side, nudged apart vertically so none overlaps
-    its neighbour, and joined to their feature by a thin leader.
+    ``x_gutter`` on the anchor's side, moved to the nearest free depth so none
+    overlaps its neighbour, and joined to their feature by a thin leader.
 
     Placing a label AT its feature does not work on a well schematic: every
     string starts at surface, so top-anchored labels all land on the same depth
     and pile up, and an annulus band is routinely narrower than its own fluid
     name. Separating them in a gutter is what the reference drawings do.
+
+    ``reserved`` are depths on the LEFT already occupied by the depth-ruler
+    numbers. They are immovable and share that gutter, so they have to be part
+    of the same collision problem -- de-collided among themselves the callouts
+    still land on top of the ruler.
     """
     if not requests:
         return
@@ -179,12 +209,10 @@ def _place_gutter_labels(dwg, requests, x_gutter: float, ymax: float,
     for side in (1, -1):
         rows = sorted((r for r in requests if (r[1] >= 0) == (side > 0)),
                       key=lambda r: r[0])
-        placed: List[float] = []
+        taken: List[float] = [float(y) for y in reserved] if side < 0 else []
         for depth, anchor_x, text, style in rows:
-            y = depth
-            if placed and y - placed[-1] < min_gap:
-                y = placed[-1] + min_gap
-            placed.append(y)
+            y = _free_slot(depth, taken, min_gap, ymax)
+            taken.append(y)
             gx = side * abs(x_gutter)
             dwg.add(Line((anchor_x, depth), (gx, y), layer=L_ANNOTATION,
                          style=_LEADER))
@@ -253,6 +281,68 @@ def _draw_rock(dwg, schematic, casings, hole, radial, d, ymax, max_bit) -> None:
                 dwg.add(Polygon(pts, layer=L_ROCK, style=style))
 
 
+def _draw_liner_hangers(dwg, casings, radial, d, x_scale_ref) -> None:
+    """Hanger block in the annulus at a HUNG string's top (``top_md`` > 0).
+
+    A liner is not a casing that happens to start deep: it hangs off the string
+    above, and the hanger is where the load transfers. Without it a liner reads
+    as a string that simply begins in mid-air. Box-with-X, matching the
+    plumbing view so the two do not disagree.
+    """
+    for c in casings:
+        if c.top_md <= 1e-6:
+            continue                        # run from surface: not hung
+        hosts = [h.id_in / 2.0 for h in casings
+                 if h.od_in > c.od_in and h.top_md <= c.top_md <= h.shoe_md]
+        if not hosts:
+            continue                        # nothing to hang from
+        y = d(c.top_md)
+        s = radial.at(y)
+        r_out, r_host = c.od_in / 2.0, min(hosts)
+        lo, hi = sorted((r_out, r_host))
+        # square-ish on paper: height in metres ~ the annulus width in x-units
+        h = max(abs(hi - lo) * s * HANGER_ASPECT, 1e-6)
+        for sign in (-1, 1):
+            x0, x1 = sign * lo * s, sign * hi * s
+            y0, y1 = y, y + h
+            dwg.add(Polygon([(x0, y0), (x1, y0), (x1, y1), (x0, y1)],
+                            layer=L_HANGER, style=_HANGER))
+            dwg.add(Line((x0, y0), (x1, y1), layer=L_HANGER, style=_HANGER))
+            dwg.add(Line((x0, y1), (x1, y0), layer=L_HANGER, style=_HANGER))
+
+
+def _draw_perforations(dwg, bore, casings, hole, radial, d) -> None:
+    """Perforation marks crossing the shot casing wall into the formation.
+
+    Drawn as a ladder of ticks rather than a filled band: perforations are
+    discrete holes through the wall, and a band would read as an interval of
+    missing casing.
+    """
+    for pf in getattr(bore, "perforations", []) or []:
+        if pf.base_md <= pf.top_md:
+            continue
+        mid = (pf.top_md + pf.base_md) / 2.0
+        present = [c for c in casings if c.top_md <= mid <= c.shoe_md]
+        if pf.casing_od_in is not None:
+            shot = next((c for c in present
+                         if abs(c.od_in - pf.casing_od_in) < 1e-6), None)
+        else:
+            shot = min(present, key=lambda c: c.od_in) if present else None
+        if shot is None:
+            continue                        # names a string that is not there
+        r_in = shot.id_in / 2.0
+        # tick spacing from the interval, capped so a long zone stays legible
+        n = max(2, min(int((pf.base_md - pf.top_md) / 8.0), 40))
+        for k in range(n + 1):
+            md = pf.top_md + (pf.base_md - pf.top_md) * k / n
+            y = d(md)
+            s = radial.at(y)
+            r_far = _annulus_outer_r(md, shot, casings, hole)
+            for sign in (-1, 1):
+                dwg.add(Line((sign * r_in * s, y), (sign * r_far * s, y),
+                             layer=L_PERF, style=_PERF))
+
+
 def build_column(
     schematic: WellSchematic,
     mode: str = "MD",
@@ -273,7 +363,7 @@ def build_column(
     dwg.h_unit_label = "in (exagg.)"
     dwg.v_unit_label = mode + " m"
     for layer in (L_GRID, L_ROCK, L_HOLE, L_FLUID, L_CASING, L_CEMENT, L_PLUG,
-                  L_COMPLETION, L_SHOE, L_ANNOTATION):
+                  L_COMPLETION, L_SHOE, L_HANGER, L_PERF, L_ANNOTATION):
         dwg.add_layer(layer)
     register_standard_symbols(dwg)
 
@@ -460,12 +550,24 @@ def build_column(
             if item.name:
                 labels.append((y, width * 0.5, item.name, _TUBING))
 
+    # --- liner hangers + perforations --------------------------------------
+    # Drawn LAST of the geometry: both sit in the annulus or across a wall,
+    # so anything filling that space (annulus cement, a plug, a packer) must
+    # already be down or it paints them out. Insertion order is the z-order
+    # in every backend, so it has to agree with the layer list above.
+    _draw_liner_hangers(dwg, casings, radial, d, max_bit)
+    _draw_perforations(dwg, bore, casings, hole, radial, d)
+
     # --- annotations in side gutters, de-collided --------------------------
+    # One source for the ruler depths: the callout de-collider has to know
+    # where the depth numbers are, and the ruler has to draw them there.
+    ruler_depths = _ruler_depths(ymax)
     _place_gutter_labels(dwg, labels,
-                         x_gutter=max_bit / 2.0 * radial.at(0.0) * 1.06, ymax=ymax)
+                         x_gutter=max_bit / 2.0 * radial.at(0.0) * 1.06,
+                         ymax=ymax, reserved=ruler_depths)
 
     # --- depth grid + ruler ------------------------------------------------
-    _add_depth_ruler(dwg, ymax, radial, max_bit)
+    _add_depth_ruler(dwg, ruler_depths, radial, max_bit)
 
     dwg.set_title_block(
         title=schematic.well.name,
@@ -477,18 +579,25 @@ def build_column(
     return dwg
 
 
-def _add_depth_ruler(dwg: Drawing, ymax: float, radial: RadialScale,
+def _ruler_depths(ymax: float) -> List[float]:
+    """Depths carrying a grid line and a ruler number."""
+    step = _nice_step(ymax)
+    out, depth = [], 0.0
+    while depth <= ymax + 1e-6:
+        out.append(depth)
+        depth += step
+    return out
+
+
+def _add_depth_ruler(dwg: Drawing, depths, radial: RadialScale,
                      max_bit: float) -> None:
     """Horizontal depth grid lines + a left-hand depth-label ruler."""
     x_extent = max_bit / 2.0 * radial.at(0.0) * 1.1
-    step = _nice_step(ymax)
-    depth = 0.0
-    while depth <= ymax + 1e-6:
+    for depth in depths:
         dwg.add(Line((-x_extent, depth), (x_extent, depth),
                      layer=L_GRID, style=_GRID))
         dwg.add(Text((-x_extent * 1.02, depth), f"{depth:.0f}", height=2.0,
                      ha="right", va="center", layer=L_ANNOTATION, style=_LABEL))
-        depth += step
 
 
 def _nice_step(span: float) -> float:

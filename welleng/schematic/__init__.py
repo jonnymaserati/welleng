@@ -45,6 +45,7 @@ from .figure import WellFigure
 from .models import (
     Casing,
     AnnulusFluid,
+    Perforation,
     CementPlug,
     CompletionItem,
     Formation,
@@ -71,8 +72,8 @@ from .tracks import (
 __all__ = [
     # models
     "Well", "Wellbore", "WellSchematic", "SurveyRef", "HoleSection",
-    "Tubular", "Casing", "CementPlug", "AnnulusFluid", "CompletionItem", "Formation",
-    "PressureProfile",
+    "Tubular", "Casing", "CementPlug", "AnnulusFluid", "Perforation",
+    "CompletionItem", "Formation", "PressureProfile",
     # drawing model
     "Drawing", "Layer", "ViewTransform", "RadialScale", "Style", "Symbol",
     "SymbolRef", "Line", "Polyline", "Rect", "Polygon", "Hatch", "Text",

@@ -191,6 +191,25 @@ class CementPlug(_Base):
     base_md: float
 
 
+class Perforation(_Base):
+    """A perforated interval. OSDU ``WellboreCompletionInterval`` (perforated).
+
+    ``casing_od_in`` names the string that was shot, so the marks can be drawn
+    through the right wall when several strings are present at that depth; left
+    None the innermost string there is assumed.
+    """
+
+    name: str = "Perforations"
+    top_md: float
+    base_md: float
+    casing_od_in: Optional[float] = Field(
+        None, description="OD (in) of the string shot; None = innermost there"
+    )
+    shots_per_m: Optional[float] = Field(
+        None, description="shot density, per metre; presentation only"
+    )
+
+
 class AnnulusFluid(_Base):
     """Fluid standing in an annulus -- what is there when it is not cement.
 
@@ -318,6 +337,7 @@ class Wellbore(_Base):
     casings: List[Casing] = Field(default_factory=list)
     cement_plugs: List[CementPlug] = Field(default_factory=list)
     annulus_fluids: List[AnnulusFluid] = Field(default_factory=list)
+    perforations: List[Perforation] = Field(default_factory=list)
     completion: List[CompletionItem] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -395,7 +415,7 @@ class WellSchematic(_Base):
         data = dict(data)  # don't mutate the caller's dict
         bore_keys = (
             "survey", "hole_sections", "casings", "cement_plugs",
-            "annulus_fluids", "completion",
+            "annulus_fluids", "perforations", "completion",
             "id", "parent_id", "kickoff_md",
         )
         bore = {k: data.pop(k) for k in list(data) if k in bore_keys}
