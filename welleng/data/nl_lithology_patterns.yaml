@@ -1,0 +1,87 @@
+# Dutch (NL) lithostratigraphic group colours + FGDC lithologic pattern codes,
+# for rendering a lithology track beside a well schematic.
+#
+# ---------------------------------------------------------------------------
+# PROVENANCE
+# ---------------------------------------------------------------------------
+# Pattern codes: FGDC Digital Cartographic Standard for Geologic Map
+# Symbolization, FGDC-STD-013-2006, Appendix A, section 37 "Lithologic
+# Patterns" (USGS Techniques and Methods 11-A2, 2006). PUBLIC DOMAIN
+# (US federal). Local copy of the standard:
+#   Reference/Geological_patterns/FGDC-geolsym-sec37-lithology-patterns.pdf
+#
+# Pattern IMAGES: the CC0 repackaging at github.com/davenquinn/geologic-patterns
+# (assets/png/<code>.png, 471 patterns). Not vendored here -- clone it and point
+# the renderer at assets/png/.
+#
+# ⚠️ READ THE CODES OFF THE PDF CHART (page 1 = 37.1 sedimentary, page 2 =
+# continued), NOT off a pdftotext extract: the extract SCRAMBLES the grid, so
+# code<->lithology pairings from it are unreliable. Codes below were read from
+# the rendered chart pages.
+#
+# ---------------------------------------------------------------------------
+# TWO CORRECTIONS to the 2026-07-09 prototype (temp/schematic_proto/litho_check.py)
+# ---------------------------------------------------------------------------
+# Its codes were never checked against the chart, and two of four were wrong:
+#   Chalk Gp      used 627 -> 627 is LIMESTONE.        Correct chalk code is 626.
+#   Zechstein salt used 642 -> 642 is DOLOSTONE/DOLOMITE. Correct salt code is 668.
+# (A reference-index note guessing ~629 chalk / ~642 salt was also wrong; 629 is
+# "Fossiliferous clastic limestone".) Verified 2026-09-08 against the chart.
+#
+# ---------------------------------------------------------------------------
+# RENDERING NOTES (hard-won -- do not rediscover)
+# ---------------------------------------------------------------------------
+# * The davenquinn PNGs carry NATIVE TRANSPARENCY: palette images whose
+#   background alpha is 0 with opaque black lines (measured: 88-94% of pixels
+#   fully transparent). Use the RGBA directly -- do NOT derive an alpha channel
+#   from luminance. A luminance "hack" was tried first and is the wrong path.
+# * Overlay method: fill the interval with the flat colour, then tile the
+#   pattern over it and draw with imshow, e.g.
+#       img = asarray(Image.open(f"{code}.png").convert("RGBA")) / 255
+#       tiled = np.tile(img, (max(1, int((base_md - top_md) / 260)), 1, 1))
+#       ax.imshow(tiled, extent=[0, 1, base_md, top_md], aspect="auto",
+#                 interpolation="nearest", zorder=2)
+#   `interpolation="nearest"` keeps the line work crisp; the 260 divisor sets
+#   the tile repeat against depth and is a taste parameter, not a standard.
+#
+# Colours are a presentation choice (chosen to read as a conventional NL well
+# section), NOT part of the FGDC standard.
+
+fgdc_pattern_source:
+  standard: FGDC-STD-013-2006 Appendix A, sec 37 (USGS TM 11-A2, 2006)
+  images: github.com/davenquinn/geologic-patterns (CC0), assets/png/<code>.png
+  licence: standard = US public domain; image repackaging = CC0
+
+# FGDC codes referenced here, with the chart's own wording:
+patterns:
+  607: Massive sand or sandstone
+  620: Clay or clay shale
+  626: Chalk
+  627: Limestone
+  642: Dolostone or dolomite
+  658: Coal
+  667: Gypsum
+  668: Salt
+
+# Dutch lithostratigraphic groups, shallow -> deep. `pattern` is an FGDC code.
+groups:
+  - name: Upper North Sea Group
+    colour: '#dcefb8'
+    pattern: 607
+  - name: Lower North Sea Group
+    colour: '#bcdd9a'
+    pattern: 620
+  - name: Chalk Group
+    colour: '#e6e7ee'
+    pattern: 626
+  - name: Rijnland Group
+    colour: '#9ec27a'
+    pattern: 620
+  - name: Zechstein
+    colour: '#d9c7f0'
+    pattern: 668
+    note: evaporite seal (halite/anhydrite)
+  - name: Rotliegend
+    colour: '#f4b942'
+    pattern: 607
+    note: reservoir sandstone
