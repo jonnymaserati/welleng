@@ -79,6 +79,16 @@ viz = [
 analytical = [
     "python-flint",
 ]
+# LAS well logs (welleng.exchange.las): lasio reads the format, matplotlib
+# renders the track plot. BOTH are lazy imports -- `import welleng` works
+# without either, and the reader wraps lasio behind welleng's own LasFile
+# (numpy arrays + dicts), so the backend can be swapped without touching a
+# consumer. lasio's only hard dependency is numpy, which welleng already has;
+# its pandas path is unused here.
+las = [
+    "lasio",
+    "matplotlib",
+]
 # Kick-tolerance extras: coolprop = optional CCUS / reference-EOS mixture gas
 # backend; sympy = the envelope/monotonicity analysis. Core kick-tolerance
 # (core.py, gas_z.py) needs neither -- only numpy/scipy.
