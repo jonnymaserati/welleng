@@ -523,6 +523,35 @@ class SurveyHeader:
         self.mag_model: Optional[str] = None
         self._get_mag_data(deg)
 
+    def osdu_azi_reference(self) -> Optional[str]:
+        """``azi_reference`` as an OSDU ``AzimuthReferenceType`` code.
+
+        ``"true"`` / ``"grid"`` / ``"magnetic"`` map to ``TrueNorth`` /
+        ``GridNorth`` / ``MagneticNorth``.
+
+        Note the published list carries a **provenance axis welleng does not
+        model**: ``AssumedGridNorth`` and ``InferredMagneticNorth`` say the
+        reference was not stated in the source, and ``CompassNorth`` is a raw
+        needle reading rather than a corrected azimuth. A header that was
+        assumed rather than read cannot be expressed here, and should carry the
+        assumed/inferred code explicitly instead.
+        """
+        from .osdu_ref import resolve            # lazy: keeps import light
+        return resolve("AzimuthReferenceType", self.azi_reference)
+
+    def osdu_magnetic_model(self) -> Optional[str]:
+        """``mag_model`` as an OSDU ``GeoMagneticModel`` code, or ``None``.
+
+        The stored label is a provenance string (``"WMM2025 (local-wmm)"``),
+        not a code, so this strips the source tag and looks up what is left.
+        ``None`` for WMM2025 today: the published list stops at ``WMM2020`` /
+        ``IGRF2020`` / ``HDGM2024`` and has no entry for the current model.
+        """
+        from .osdu_ref import resolve
+        if not self.mag_model:
+            return None
+        return resolve("GeoMagneticModel", str(self.mag_model).split(" (")[0])
+
     def _get_mag_data(self, deg: bool) -> None:
         """
         Initiates b_total if provided, else calculates a value.

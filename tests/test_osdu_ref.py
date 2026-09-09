@@ -226,3 +226,34 @@ def test_las_groups_curves_by_curated_quantity():
     )
     assert las.curves_by_quantity("mass per volume") == ["RHOZ"]
     assert "GR" in las.curves_by_quantity("API gamma ray")
+
+
+# --- survey header ------------------------------------------------------------ #
+@pytest.mark.parametrize("local,code", [
+    ("true", "TrueNorth"), ("grid", "GridNorth"), ("magnetic", "MagneticNorth"),
+])
+def test_survey_header_reports_its_azimuth_reference_as_a_code(local, code):
+    from welleng.survey import SurveyHeader
+    assert SurveyHeader(azi_reference=local).osdu_azi_reference() == code
+
+
+def test_magnetic_model_label_is_stripped_of_its_source_tag():
+    from welleng.survey import SurveyHeader
+    h = SurveyHeader()
+    h.mag_model = "WMM2020 (local-wmm)"
+    assert h.osdu_magnetic_model() == "WMM2020"
+
+
+def test_the_current_model_has_no_published_code_yet():
+    """WMM2025 is not in the list — it stops at WMM2020. Recorded so the gap is
+    visible rather than surprising; raised upstream separately."""
+    from welleng.survey import SurveyHeader
+    h = SurveyHeader()
+    h.mag_model = "WMM2025 (local-wmm)"
+    assert h.osdu_magnetic_model() is None
+    assert "WMM2025" not in osdu_ref.codes("GeoMagneticModel")
+
+
+def test_no_magnetic_model_is_none_not_an_error():
+    from welleng.survey import SurveyHeader
+    assert SurveyHeader().osdu_magnetic_model() is None
