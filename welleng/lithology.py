@@ -147,6 +147,46 @@ def group_of(unit_id: str) -> str | None:
     return anc[-1] if anc else None
 
 
+def colour(unit_id: str) -> str | None:
+    """Colour (hex) for ANY RGD unit code, rolled up to its group. Or ``None``.
+
+    A member or formation inherits its group's colour rather than falling to
+    grey, so a consumer plotting a Dutch column does not have to invent one.
+    ``None`` for a code the nomenclature does not know, or a group the shipped
+    table does not carry -- **deliberately not a fallback palette**: an
+    invented colour that looks official is worse than an obviously absent one,
+    exactly as with the OCR names.
+
+    ⚠️ **These colours are welleng's presentation choice, NOT a published
+    standard.** TNO's DINOloket stratigraphic nomenclature is the authority and
+    is not yet ingested here (``docs/dev/NLOG_STRATIGRAPHY_NOMENCLATURE.md``).
+    Say so on any figure that uses them.
+    """
+    g = group_of(unit_id)
+    if g is None:
+        return None
+    hit = nl_groups_by_code().get(g)
+    return hit.colour if hit else None
+
+
+def pattern(unit_id: str) -> int | None:
+    """FGDC pattern code for ANY RGD unit code, rolled up to its group.
+
+    Same roll-up and same ``None`` policy as :func:`colour`.
+
+    ⚠️ **One pattern per GROUP is a simplification** -- a group spans more than
+    one rock type -- and an ornament carries meaning a colour does not: the
+    box/cross-hatch patterns read as EVAPORITE, so ornamenting a carbonate with
+    one says salt. Override per interval at formation or member rank where the
+    distinction matters.
+    """
+    g = group_of(unit_id)
+    if g is None:
+        return None
+    hit = nl_groups_by_code().get(g)
+    return hit.pattern if hit else None
+
+
 def intervals_from_nlog(column, label: str = "group") -> list[Interval]:
     """Colour an NLOG :class:`~welleng.exchange.nlog.StratColumn` by RGD group.
 

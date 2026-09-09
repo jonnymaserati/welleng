@@ -48,6 +48,14 @@ def resolve(code: str) -> dict | None:
     root. Returns ``None`` if the code is not in the nomenclature (a caller must
     then treat it as unresolved, not guess). ``name`` may be ``None`` (informal or
     OCR-unrecoverable) and is in all cases OCR-raw — see the module docstring.
+
+    ``inherited_name`` is the nearest NAMED ancestor's name when the unit's own
+    is missing, with ``name_from`` saying which code it came from. A consumer
+    that gets ``None`` has to fall back on something, and the observed fallback
+    was a gamma cut-off: ``KNNCM`` (unnamed) sits under ``KNNC``, the *Vlieland
+    Claystone Formation*, logged 74 gAPI against a 75 gAPI shale cut, and was
+    classified as a clean sandstone and a permeable hydraulic unit. The name was
+    one level up the whole time.
     """
     units = _units()
     u = units.get(code)
@@ -57,8 +65,34 @@ def resolve(code: str) -> dict | None:
     while p:
         ancestors.append(p)
         p = units.get(p, {}).get("parent")
+    inherited, source = u["name"], (code if u["name"] else None)
+    if not inherited:
+        for a in ancestors:
+            nm = units.get(a, {}).get("name")
+            if nm:
+                inherited, source = nm, a
+                break
     return {"code": code, "name": u["name"], "rank": u["rank"],
-            "parent": u["parent"], "ancestors": ancestors}
+            "parent": u["parent"], "ancestors": ancestors,
+            "inherited_name": inherited, "name_from": source}
+
+
+def name(code: str) -> str | None:
+    """The unit's name, or the nearest named ancestor's. ``None`` if neither.
+
+    Prefer this to ``resolve(code)["name"]`` unless you specifically need to
+    know that a unit is unnamed in its own right: a missing name is a gap in
+    the digitised table, not a statement that the rock is unclassified, and
+    treating it as one has already mis-classified a claystone as a sandstone.
+
+    ⚠️ **Names are OCR-raw** (see the module docstring). Match lithology on
+    WORD BOUNDARIES, never on a substring: *Buntsandstein* contains "sand" and
+    the Lower Buntsandstein Formation is claystone-dominated in the Dutch
+    section (127 gAPI in one P11 well). Some names are proper nouns that happen
+    to contain a lithology word.
+    """
+    r = resolve(code)
+    return r["inherited_name"] if r else None
 
 
 def related(a: str, b: str) -> Relation:

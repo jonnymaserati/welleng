@@ -1052,3 +1052,61 @@ def test_perforation_and_fluid_carry_their_osdu_code(key, field, code, recwarn):
     s = WellSchematic.model_validate({**BASE, key: [payload]})
     assert getattr(getattr(s.primary, key)[0], field) == code
     assert not recwarn.list
+
+
+# --- the deepest formation must be drawn ------------------------------------ #
+_FORMS = {
+    **BASE,
+    "formations": [
+        {"name": "Overburden", "top_md": 0, "color": "#c9e6a8"},
+        {"name": "Seal", "top_md": 1200, "color": "#5e35b1", "seal": True},
+        {"name": "Reservoir", "top_md": 1600, "color": "#ffca28", "flow": True},
+    ],
+}
+
+
+def test_the_deepest_formation_is_not_dropped():
+    """Each band took its base from the NEXT formation's top, so the deepest
+    had no successor and was silently omitted — and the deepest unit is the
+    reservoir on almost every well. Nothing errored; the sheet looked complete."""
+    from welleng.schematic.tracks import _formation_bands
+    bands = _formation_bands(WellSchematic.model_validate(_FORMS))
+    assert [b[0].name for b in bands] == ["Overburden", "Seal", "Reservoir"]
+    assert bands[-1][1:] == (1600.0, 2000.0)        # base from TD
+
+
+def test_the_flow_zone_reaches_the_seal_flow_track():
+    """The track whose entire purpose is showing what a P&A must isolate."""
+    from welleng.schematic.drawing import Rect as DwgRect
+    from welleng.schematic.tracks import DepthLayout, IntervalsTrack
+    from welleng.schematic.depth import DepthResolver
+    from welleng.schematic.drawing import Drawing
+    s = WellSchematic.model_validate(_FORMS)
+    layout = DepthLayout(mode="MD", resolver=DepthResolver(s.primary.survey),
+                         v_scale=0.1, ymax=2000.0)
+    dwg = Drawing()
+    IntervalsTrack(s).build(dwg, layout, 0.0)
+    bands = [e for e in dwg.entities
+             if getattr(e, "layer", None) == "INTERVALS"
+             and isinstance(e, DwgRect)]
+    assert len(bands) == 2, "seal and flow must both draw"
+
+
+def test_an_explicit_base_md_wins_over_the_next_top():
+    from welleng.schematic.tracks import _formation_bands
+    d = {**BASE, "formations": [
+        {"name": "A", "top_md": 0, "base_md": 500, "color": "#111111"},
+        {"name": "B", "top_md": 1200, "color": "#222222"},
+    ]}
+    bands = _formation_bands(WellSchematic.model_validate(d))
+    assert bands[0][1:] == (0.0, 500.0)          # not 1200
+
+
+def test_a_zero_thickness_band_is_dropped_not_drawn():
+    from welleng.schematic.tracks import _formation_bands
+    d = {**BASE, "formations": [
+        {"name": "A", "top_md": 0, "color": "#111111"},
+        {"name": "sentinel", "top_md": 2000, "color": "#ffffff"},
+    ]}
+    assert [b[0].name for b in _formation_bands(
+        WellSchematic.model_validate(d))] == ["A"]

@@ -138,8 +138,19 @@ class SchematicTrack(Track):
                 dwg.add(Polygon([(sxo - shoe_h, yb), (sxo + shoe_h, yb),
                                  (sxo + sign * shoe_h, yb + shoe_h)],
                                 layer="SHOE", style=_BLACK))
-            dwg.add(Text((rx(r_out, 1) + 1.0, yt + 3.0), c.name, height=1.7,
-                         va="top", layer="ANNOTATION", style=_LABEL))
+            # Anchor on the SHOE, not the top. Every string starts at surface,
+            # so top-anchored names all print on one line at depth 0 and are
+            # unreadable -- column.py fixed exactly this and this track did not
+            # inherit it. Clamped inside the band so a name cannot print across
+            # the neighbouring track.
+            # Flush to the track's RIGHT edge at the shoe depth. The well
+            # fills ~90% of a 66 mm band, so there is no clear space beside the
+            # string: anchoring on the wall printed the name straight across
+            # the casing. The edge is the only place a name can sit and still
+            # belong to this track rather than the next one.
+            dwg.add(Text((x0 + self.width - 0.5, yb), c.name, height=1.7,
+                         ha="right", va="bottom", layer="ANNOTATION",
+                         style=_LABEL))
         # plugs
         for p in bore.cement_plugs:
             mid = (p.top_md + p.base_md) / 2.0
@@ -149,8 +160,10 @@ class SchematicTrack(Track):
             dwg.add(Hatch([(rx(r_in, -1), yt), (rx(r_in, 1), yt),
                            (rx(r_in, 1), yb), (rx(r_in, -1), yb)],
                           pattern="plug", layer="PLUG", style=_PLUG))
-            dwg.add(Text((rx(r_in, -1) - 1.0, (yt + yb) / 2.0), p.name, height=1.7,
-                         ha="right", va="center", layer="ANNOTATION",
+            # Plug names to the LEFT edge, so they cannot collide with the
+            # casing names on the right.
+            dwg.add(Text((x0 + 0.5, (yt + yb) / 2.0), p.name, height=1.7,
+                         ha="left", va="center", layer="ANNOTATION",
                          style=Style(color="#6b5d2f")))
         # completion tubing
         for item in bore.completion:
@@ -161,6 +174,39 @@ class SchematicTrack(Track):
             for sign in (-1, 1):
                 dwg.add(Line((rx(r, sign), yt), (rx(r, sign), yb),
                              layer="COMPLETION", style=_TUBING))
+
+
+def _formation_bands(schematic):
+    """``(formation, top_md, base_md)`` for EVERY formation, deepest included.
+
+    Zipping ``forms[:-1]`` with ``forms[1:]`` takes each band's base from the
+    next formation's top, which leaves the DEEPEST formation with no successor
+    and silently omits it. On almost every well that is the reservoir: on one
+    P&A sheet the oil zone (``flow=True``) was missing from both the lithology
+    and the seal/flow track, nothing errored, and the sheet looked complete.
+
+    The last band's base comes from the wellbore's TD -- the deepest hole
+    section, else the deepest survey station -- unless the caller supplied a
+    ``base_md`` on the formation itself. A formation deeper than TD is dropped,
+    because that is a data error rather than a band.
+    """
+    forms = list(getattr(schematic, "formations", None) or [])
+    if not forms:
+        return []
+    forms.sort(key=lambda f: f.top_md)
+    bore = schematic.primary
+    td = max(
+        [h.base_md for h in (bore.hole_sections or [])]
+        + [max(bore.survey.md) if bore.survey and bore.survey.md else 0.0]
+    )
+    out = []
+    for i, f in enumerate(forms):
+        base = getattr(f, "base_md", None)
+        if base is None:
+            base = forms[i + 1].top_md if i + 1 < len(forms) else td
+        if base > f.top_md:
+            out.append((f, f.top_md, base))
+    return out
 
 
 class LithologyTrack(Track):
@@ -175,9 +221,8 @@ class LithologyTrack(Track):
         dwg.add_layer("LITHO")
         dwg.add_layer("ANNOTATION")
         self._header(dwg, x0)
-        forms = self.schematic.formations
-        for a, b in zip(forms[:-1], forms[1:]):
-            yt, yb = layout.y(a.top_md), layout.y(b.top_md)
+        for a, top, base in _formation_bands(self.schematic):
+            yt, yb = layout.y(top), layout.y(base)
             dwg.add(Rect((x0, yt), self.width, yb - yt, layer="LITHO",
                          style=Style(color="#808080", lineweight=0.15, fill=a.color)))
             if a.name:
@@ -198,11 +243,10 @@ class IntervalsTrack(Track):
         dwg.add_layer("INTERVALS")
         dwg.add_layer("ANNOTATION")
         self._header(dwg, x0)
-        forms = self.schematic.formations
-        for a, b in zip(forms[:-1], forms[1:]):
+        for a, top, base in _formation_bands(self.schematic):
             if not (a.seal or a.flow):
                 continue
-            yt, yb = layout.y(a.top_md), layout.y(b.top_md)
+            yt, yb = layout.y(top), layout.y(base)
             color = "#5e35b1" if a.seal else "#e65100"
             label = "SEAL" if a.seal else "FLOW"
             dwg.add(Rect((x0, yt), self.width, yb - yt, layer="INTERVALS",

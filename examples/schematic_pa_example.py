@@ -135,7 +135,10 @@ DATA = {
             "color": "#ffca28",
             "flow": True,
         },
-        {"name": "", "top_md": 2600, "litho": "", "color": "#ffffff"},
+        # NB no trailing sentinel formation: the deepest band takes its base
+        # from TD. Appending a nameless formation to give the reservoir a base
+        # was the workaround before that, and it made every consumer responsible
+        # for remembering it.
     ],
 }
 

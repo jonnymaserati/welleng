@@ -466,10 +466,21 @@ class CompletionItem(_Base):
 
 
 class Formation(_Base):
-    """A geological marker + lithology band. OSDU ``WellboreMarkerSet`` + litho."""
+    """A geological marker + lithology band. OSDU ``WellboreMarkerSet`` + litho.
+
+    ``color`` defaults to WHITE, so a caller who builds ``Formation`` objects
+    without one gets a blank lithology track and no warning. The NL colours are
+    one call away: :func:`welleng.lithology.colour` takes an RGD unit code and
+    rolls it up to its group.
+    """
 
     name: str = ""
     top_md: float
+    #: Base of the band. ``None`` = the next formation's top, or TD for the
+    #: deepest -- which is what makes the deepest band (usually the reservoir)
+    #: draw at all. Set it explicitly where the base is KNOWN and is not the
+    #: next top: across an unconformity, or where the column has a gap.
+    base_md: Optional[float] = None
     litho: str = ""
     color: str = "#ffffff"
     seal: bool = False  # caprock / barrier
