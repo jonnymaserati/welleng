@@ -1,0 +1,16 @@
+{
+ "list": "VerticalMeasurementPath",
+ "kind": "osdu:wks:Manifest:1.0.0",
+ "governance": "OPEN",
+ "source": "https://community.opengroup.org/osdu/data/data-definitions/-/raw/master/ReferenceValues/Manifests/reference-data/OPEN/VerticalMeasurementPath.1.json",
+ "retrieved": "2026-09-09",
+ "licence": "Apache-2.0",
+ "attribution": [
+  "PPDM Association"
+ ],
+ "codes": {
+  "MeasuredDepth": "Measured depth",
+  "TrueVerticalDepth": "True vertical depth",
+  "TrueVerticalHeight": "True vertical height"
+ }
+}

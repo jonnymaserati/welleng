@@ -459,6 +459,13 @@ def build_column(
                     layer=L_CASING, style=_STEEL))
         shoe_top, _shoe_base, shoe_od, shoe_id = prof[-1]
         r_out, r_in = shoe_od / 2.0, shoe_id / 2.0
+        if not getattr(c, "has_shoe", True):
+            # Screens and junk terminate; they have no shoe, and a shoe is a
+            # BARRIER-RELEVANT symbol -- drawing one asserts a barrier that is
+            # not there. Label off the string end instead.
+            s_end = radial.at(d(c.shoe_md))
+            labels.append((d(c.shoe_md), r_out * s_end, c.name, _LABEL))
+            continue
         for sign in (-1, 1):
             # shoe wedge at the setting depth: anchored ON the casing OD and
             # flared OUTWARD (negative sx mirrors it for the left side), so it

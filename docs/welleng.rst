@@ -152,6 +152,14 @@ welleng.osdu module
    :undoc-members:
    :show-inheritance:
 
+welleng.osdu\_ref module
+------------------------
+
+.. automodule:: welleng.osdu_ref
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 welleng.survey module
 ---------------------
 

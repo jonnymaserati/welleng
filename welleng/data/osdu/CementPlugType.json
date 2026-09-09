@@ -1,0 +1,18 @@
+{
+ "list": "CementPlugType",
+ "kind": "osdu:wks:Manifest:1.0.0",
+ "governance": "OPEN",
+ "source": "https://community.opengroup.org/osdu/data/data-definitions/-/raw/master/ReferenceValues/Manifests/reference-data/OPEN/CementPlugType.1.json",
+ "retrieved": "2026-09-09",
+ "licence": "Apache-2.0",
+ "attribution": [
+  "OSDU"
+ ],
+ "codes": {
+  "KickOff": "Kick Off",
+  "LostCirculation": "Lost Circulation",
+  "Abandonment": "Abandonment",
+  "Suspension": "Suspension",
+  "PlugBack": "Plug Back"
+ }
+}

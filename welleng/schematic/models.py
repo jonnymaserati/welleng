@@ -314,7 +314,29 @@ class Tubular(_Base):
 
 
 class Casing(Tubular):
-    """A casing or liner string. OSDU ``Tubular`` with role=casing/liner."""
+    """A tubular run in the hole. OSDU ``Tubular``.
+
+    ``kind`` says what it is, and the renderer takes the terminating glyph from
+    it. **A shoe is a barrier-relevant symbol**: drawing one on a string that
+    has none asserts a barrier that is not there. Sand screens hung on a
+    packer, and a drill-in assembly left in hole, are both correctly tubulars
+    in the hole and belong on a P&A drawing -- neither has a shoe.
+
+    ``casing`` / ``liner`` terminate in a shoe; ``screen`` and ``tubular``
+    do not. ``tubular`` is the honest catch-all for a string in the hole that
+    is not a cased string -- a fish, junk, a drill-in assembly.
+
+    Maps to OSDU ``TubularComponentType`` (``CAS.CAS``, ``CAS.L*``,
+    ``GPSCRN.GPSCRN``); a screen's own construction is OSDU ``LinerType``
+    (``Slotted`` / ``GravelPacked`` / ``PrePerforated``).
+    """
+
+    kind: Literal["casing", "liner", "screen", "tubular"] = "casing"
+
+    @property
+    def has_shoe(self) -> bool:
+        """True when this string terminates in a shoe."""
+        return self.kind in ("casing", "liner")
 
 
 class CementPlug(_Base):

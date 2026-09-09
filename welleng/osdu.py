@@ -31,6 +31,7 @@ from typing import Any, Optional
 from .hierarchy import (
     Datum, Field, Organisation, Site, Well, Wellbore, WellNetwork,
 )
+from .osdu_ref import osdu_id
 
 # --------------------------------------------------------------------------- #
 # 1. explicit, pinned OSDU schema versions (bump here when a schema advances)
@@ -409,6 +410,15 @@ def to_osdu(entity: Any, *, version: Optional[str] = None,
                      else entity.wellhead_depth), uom),
                 "VerticalMeasurementUnitOfMeasureID": uom,
             }]
+            # The reference FRAME, as a code. A measurement without one says
+            # how far, not from what -- and a consumer cannot tell an RKB
+            # elevation from a seabed one. Omitted rather than guessed when the
+            # local string does not resolve.
+            ref = entity.datum.osdu_reference() if entity.datum else None
+            if ref is not None:
+                vm[0]["VerticalMeasurementTypeID"] = osdu_id(
+                    "VerticalMeasurementType", ref
+                )
         return {"kind": build_kind("Well", version), "id": entity.id,
                 "data": {"FacilityName": entity.name, "VerticalMeasurements": vm}}
     if isinstance(entity, (Organisation, Field, Site)):

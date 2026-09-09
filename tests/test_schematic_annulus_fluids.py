@@ -953,3 +953,60 @@ def test_a_real_gap_between_tubing_runs_is_not_closed():
              and isinstance(e, DwgPolyline) and len(e.points) == 2
              and abs(e.points[0][1] - e.points[1][1]) < 1e-9]
     assert not steps, "a real gap in the completion was closed"
+
+
+# --- a shoe is a barrier symbol: only a cased string gets one --------------- #
+def _kinds_data(kind):
+    return {**BASE, "casings": [
+        {"name": '9-5/8"', "od_in": 9.625, "id_in": 8.68,
+         "top_md": 0, "shoe_md": 1400, "toc_md": 1000},
+        {"name": "5-1/2in screens", "od_in": 5.5, "id_in": 4.89,
+         "top_md": 1350, "shoe_md": 2000, "kind": kind},
+    ]}
+
+
+@pytest.mark.parametrize("kind,n_shoes", [
+    ("casing", 2), ("liner", 2), ("screen", 1), ("tubular", 1),
+])
+def test_only_a_cased_string_draws_a_shoe(kind, n_shoes):
+    """Sand screens hung on a packer, and junk left in hole, are tubulars in
+    the hole with no shoe. Drawing one asserts a barrier that is not there."""
+    from welleng.schematic.column import L_SHOE
+    from welleng.schematic.drawing import SymbolRef
+    dwg = build_column(WellSchematic.model_validate(_kinds_data(kind)),
+                       mode="MD")
+    depths = {round(e.position[1], 1) for e in dwg.entities
+              if getattr(e, "layer", None) == L_SHOE
+              and isinstance(e, SymbolRef)}
+    assert len(depths) == n_shoes, f"{kind}: shoes at {sorted(depths)}"
+    if kind in ("screen", "tubular"):
+        assert 2000.0 not in depths
+
+
+def test_a_shoeless_string_is_still_labelled():
+    """No shoe must not mean no name -- the string is on the drawing."""
+    from welleng.schematic.column import L_ANNOTATION
+    from welleng.schematic.drawing import Text as DwgText
+    dwg = build_column(WellSchematic.model_validate(_kinds_data("screen")),
+                       mode="MD")
+    texts = {e.text for e in dwg.entities
+             if getattr(e, "layer", None) == L_ANNOTATION
+             and isinstance(e, DwgText)}
+    assert "5-1/2in screens" in texts
+
+
+def test_a_shoeless_string_still_draws_its_steel():
+    from welleng.schematic.column import L_CASING
+    from welleng.schematic.drawing import Polygon as DwgPolygon
+    dwg = build_column(WellSchematic.model_validate(_kinds_data("screen")),
+                       mode="MD")
+    deep = [e for e in dwg.entities
+            if getattr(e, "layer", None) == L_CASING
+            and isinstance(e, DwgPolygon)
+            and max(y for _x, y in e.points) > 1900]
+    assert deep, "the screen joint itself vanished"
+
+
+def test_kind_defaults_to_casing_so_existing_data_is_unchanged():
+    s = WellSchematic.model_validate(BASE)
+    assert all(c.kind == "casing" and c.has_shoe for c in s.wellbores[0].casings)

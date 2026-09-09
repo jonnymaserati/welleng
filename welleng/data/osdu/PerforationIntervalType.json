@@ -1,0 +1,17 @@
+{
+ "list": "PerforationIntervalType",
+ "kind": "osdu:wks:Manifest:1.0.0",
+ "governance": "OPEN",
+ "source": "https://community.opengroup.org/osdu/data/data-definitions/-/raw/master/ReferenceValues/Manifests/reference-data/OPEN/PerforationIntervalType.1.json",
+ "retrieved": "2026-09-09",
+ "licence": "Apache-2.0",
+ "attribution": [],
+ "codes": {
+  "Abrasive-HP-FluidJet": "Abrasive HP Fluid Jet",
+  "JetPerforate": "Jet Perforate",
+  "BulletPerf": "BulletPerf",
+  "HPFluidJet": "HPFluidJet",
+  "T-C-Punch": "T/C Punch",
+  "Undefined": "Undefined"
+ }
+}

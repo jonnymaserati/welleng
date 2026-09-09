@@ -1,0 +1,23 @@
+{
+ "list": "AnnularFluidType",
+ "kind": "osdu:wks:Manifest:1.0.0",
+ "governance": "OPEN",
+ "source": "https://community.opengroup.org/osdu/data/data-definitions/-/raw/master/ReferenceValues/Manifests/reference-data/OPEN/AnnularFluidType.1.json",
+ "retrieved": "2026-09-09",
+ "licence": "Apache-2.0",
+ "attribution": [],
+ "codes": {
+  "CaBr": "CaBr",
+  "CaCl2-Water": "CaCl2 Water",
+  "CO2-DryHole": "CO2 (Dry Hole)",
+  "CrudeOil": "Crude Oil",
+  "Diesel": "Diesel",
+  "DrillingMud-Oil": "Drilling Mud (Oil)",
+  "DrillingMud-Water": "Drilling Mud (Water)",
+  "Fresh-Water": "Fresh Water",
+  "KCl-Water": "KCl Water",
+  "NaCl-Water": "NaCl Water",
+  "Produced-Water": "Produced Water",
+  "ZnBr": "ZnBr"
+ }
+}

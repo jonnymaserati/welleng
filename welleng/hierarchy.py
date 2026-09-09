@@ -104,8 +104,11 @@ class Datum:
         Datum elevation, in metres, above mean sea level (or the field
         reference given by ``reference``).
     reference : str, default "MSL"
-        The elevation reference frame — one of ``"MSL"``, ``"RKB"``, ``"RT"``,
-        ``"wellhead"``, etc.
+        The elevation reference frame — ``"MSL"``, ``"RKB"``, ``"RT"``,
+        ``"seabed"``, and so on. Free-form by design (field data uses whatever
+        the operator wrote), but :meth:`osdu_reference` maps it onto the OSDU
+        ``VerticalMeasurementType`` vocabulary so the frame is expressible as a
+        code rather than a habit.
     realisations : list of DatumRealisation, optional
         The datum's position-survey history, oldest first — an APPEND-ONLY
         document chain (see :class:`DatumRealisation`). Manage it through
@@ -128,8 +131,26 @@ class Datum:
     """
     name: str
     elevation: float = 0.0                 # above MSL (or the field reference)
-    reference: str = "MSL"                 # MSL | RKB | RT | wellhead | ...
+    reference: str = "MSL"                 # see osdu_reference()
     realisations: list[DatumRealisation] = field(default_factory=list)
+
+    # -- the reference frame, as a code ------------------------------------- #
+    def osdu_reference(self) -> Optional[str]:
+        """``reference`` as an OSDU ``VerticalMeasurementType`` code, or None.
+
+        A depth datum is the one field that moves EVERY depth in the well if it
+        is wrong, and it was carried here as a free string whose vocabulary
+        lived in a trailing comment. This maps it onto the published list
+        (``RotaryTable``, ``KellyBushing``, ``MeanSeaLevel``, ``DrillFloor``,
+        ``Seafloor``, …).
+
+        ``None`` means the string did not resolve confidently -- which is the
+        honest answer for a bare ``"wellhead"``, since OSDU distinguishes the
+        casing-head, tubing-head and top/bottom flanges and the input does not.
+        The stored ``reference`` is never rewritten.
+        """
+        from .osdu_ref import resolve       # lazy: keeps import light
+        return resolve("VerticalMeasurementType", self.reference)
 
     # -- the document chain ------------------------------------------------- #
     def add_realisation(self, realisation: DatumRealisation) -> DatumRealisation:
