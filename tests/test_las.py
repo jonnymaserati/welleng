@@ -170,3 +170,51 @@ def test_curves_by_unit_finds_density_whatever_it_is_called(tmp_path):
 
 
 _POROSITY_NAMES = ("NPHI", "PHIN", "TNPH", "RHOB", "DEN", "DPHI", "PEF")
+
+
+# --- the index is not a promise --------------------------------------------- #
+_TIME_LAS = """~VERSION
+VERS. 2.0 :
+WRAP. NO :
+~WELL
+WELL. T :
+~CURVE
+DEPT.S   : index, seconds
+GR  .GAPI: gamma
+~ASCII
+0.0 12.0
+1.0 14.0
+2.0 16.0
+"""
+
+_FT_LAS = _TIME_LAS.replace("DEPT.S   :", "DEPT.FT  :")
+
+
+def test_a_time_indexed_log_warns_at_read():
+    """DEPT is a mnemonic, not a unit. Read as metres, a seconds index lands
+    beyond any well and is dropped as out-of-range -- which is
+    indistinguishable from a well that has no log."""
+    import pytest
+    from welleng.exchange.las import open_las
+    with pytest.warns(UserWarning, match="not a length"):
+        las = open_las(_TIME_LAS)
+    assert not las.index_is_depth
+    assert las.index_unit == "S"
+
+
+def test_depth_m_refuses_a_non_length_index():
+    import pytest
+    from welleng.exchange.las import LasError, open_las
+    with pytest.warns(UserWarning):
+        las = open_las(_TIME_LAS)
+    with pytest.raises(LasError, match="not a length"):
+        las.depth_m()
+
+
+def test_a_feet_indexed_log_converts_and_does_not_warn(recwarn):
+    import numpy as np
+    from welleng.exchange.las import open_las
+    las = open_las(_FT_LAS)
+    assert las.index_is_depth
+    assert np.allclose(las.depth_m(), np.array([0.0, 1.0, 2.0]) * 0.3048)
+    assert not [w for w in recwarn.list if "not a length" in str(w.message)]

@@ -53,7 +53,7 @@ import re
 import warnings
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, NamedTuple, Optional
 
 _DATA = Path(__file__).resolve().parent / "data" / "osdu"
 
@@ -156,6 +156,51 @@ _ALIASES: Dict[str, Dict[str, str]] = {
 }
 
 
+class Match(NamedTuple):
+    """A resolution result, and HOW it was reached.
+
+    An export layer has to be able to refuse a weak match, and a bare
+    ``code | None`` cannot express "matched, but only on similarity". ``how``
+    is one of:
+
+    ``"exact"``
+        the value IS the published code.
+    ``"name"``
+        it matched the code's display name (case and separators folded).
+    ``"alias"``
+        it matched a hand-kept field synonym -- a judgement that two
+        vocabularies mean the same thing, defensible but ours, not OSDU's.
+    ``"none"``
+        no match; ``code`` is ``None``.
+
+    Truthy exactly when a code was found, so ``if resolve_match(...)`` reads
+    naturally.
+    """
+
+    code: Optional[str]
+    how: str
+
+    def __bool__(self) -> bool:
+        return self.code is not None
+
+
+def resolve_match(list_name: str, value: Optional[str]) -> Match:
+    """:func:`resolve`, but reporting how the match was reached."""
+    if value is None:
+        return Match(None, "none")
+    key = _norm(value)
+    if not key:
+        return Match(None, "none")
+    lists = _load(list_name)["codes"]
+    if value in lists:
+        return Match(value, "exact")
+    hit = _index(list_name).get(key)
+    if hit is not None:
+        return Match(hit, "exact" if _norm(hit) == key else "name")
+    alias = _ALIASES.get(list_name, {}).get(key)
+    return Match(alias, "alias") if alias else Match(None, "none")
+
+
 def resolve(list_name: str, value: Optional[str]) -> Optional[str]:
     """Best OSDU code for a local ``value``, or ``None`` if there is no match.
 
@@ -164,17 +209,10 @@ def resolve(list_name: str, value: Optional[str]) -> Optional[str]:
     identifier. It is a LOOKUP, not a rewrite: the caller keeps its own value
     and records this alongside it.
 
-    ``None`` means "no confident match", never "invalid".
+    ``None`` means "no confident match", never "invalid". Use
+    :func:`resolve_match` when the caller needs to act on HOW it matched.
     """
-    if value is None:
-        return None
-    key = _norm(value)
-    if not key:
-        return None
-    hit = _index(list_name).get(key)
-    if hit is not None:
-        return hit
-    return _ALIASES.get(list_name, {}).get(key)
+    return resolve_match(list_name, value).code
 
 
 def validate(list_name: str, code: Optional[str], *,

@@ -159,3 +159,25 @@ def test_an_unresolvable_frame_is_omitted_not_guessed():
     vm = to_osdu(w)["data"]["VerticalMeasurements"][0]
     assert "VerticalMeasurementTypeID" not in vm
     assert vm["VerticalMeasurement"] is not None      # the depth still exports
+
+
+# --- how the match was reached ----------------------------------------------- #
+@pytest.mark.parametrize("value,how", [
+    ("RotaryTable", "exact"),
+    ("Rotary Table", "exact"),   # folds to the code itself
+    ("Mudline", "name"),         # display name of code MLS
+    ("RKB", "alias"),
+    ("no such thing", "none"),
+])
+def test_resolve_reports_how_it_matched(value, how):
+    """An export layer must be able to refuse a weak match, and a bare
+    code-or-None cannot express 'matched, but only on similarity'."""
+    m = osdu_ref.resolve_match("VerticalMeasurementType", value)
+    assert m.how == how
+    assert bool(m) is (how != "none")
+
+
+def test_resolve_and_resolve_match_agree():
+    for v in ("RotaryTable", "Rotary Table", "RKB", "wellhead", None, ""):
+        assert osdu_ref.resolve("VerticalMeasurementType", v) == \
+            osdu_ref.resolve_match("VerticalMeasurementType", v).code

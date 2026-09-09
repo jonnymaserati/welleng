@@ -1,0 +1,31 @@
+{
+ "list": "WellPressureTestGaugeType",
+ "kind": "osdu:wks:Manifest:1.0.0",
+ "governance": "OPEN",
+ "source": "https://community.opengroup.org/osdu/data/data-definitions/-/raw/master/ReferenceValues/Manifests/reference-data/OPEN/WellPressureTestGaugeType.1.json",
+ "retrieved": "2026-09-09",
+ "licence": "Apache-2.0",
+ "attribution": [],
+ "codes": {
+  "StandardQuartz": "Standard Quartz",
+  "ImprovedQuartz": "Improved Quartz",
+  "SapphireStrain": "Sapphire Strain",
+  "ImprovedStrain": "Improved Strain",
+  "Capacitance": "Capacitance",
+  "Strain": "Strain",
+  "Mechanical": "Mechanical",
+  "Unknown": "Unknown",
+  "Time": "Time",
+  "Pumpout": "Pumpout",
+  "Depth": "Depth",
+  "PAQP": "PAQP",
+  "PQQP": "PQQP",
+  "BourdonTube": "Bourdon Tube",
+  "DeadWeight": "Dead Weight",
+  "Piezoresistive": "Piezoresistive",
+  "Temperature": "Temperature",
+  "Resistivity": "Resistivity",
+  "DDPressure": "DD Pressure",
+  "DDVolume": "DD Volume"
+ }
+}

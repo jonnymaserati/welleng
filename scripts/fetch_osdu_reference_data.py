@@ -42,6 +42,22 @@ LISTS: dict[str, str] = {
     "LinerType": "LOCAL",
     # tubulars
     "TubularComponentGrade": "LOCAL",
+    "TubularComponentType": "LOCAL",
+    "TubularMaterialType": "OPEN",
+    # pressure / integrity testing
+    "FormationIntegrityTestType": "OPEN",
+    "FormationIntegrityTestResult": "OPEN",
+    "FormationIntegrityPressureDataSource": "OPEN",
+    "WellPressureTestGaugeType": "OPEN",
+    # fluids
+    # NB not "FluidType" -- every one of its 27 records is DEPRECATED in
+    # favour of WellFluidType. The deprecation filter below is what
+    # surfaced that, by returning an empty list.
+    "WellFluidType": "OPEN",
+    "FluidRheologicalModelType": "OPEN",
+    "FluidContactType": "FIXED",
+    # logs
+    "LogCurveMainFamily": "LOCAL",
 }
 
 OUT = Path(__file__).resolve().parent.parent / "welleng" / "data" / "osdu"
@@ -69,6 +85,15 @@ def fetch(name: str, tier: str) -> dict:
         if auth:
             authorities.add(str(auth))
 
+    if not codes:
+        # A list that resolves to nothing is almost always a list that has been
+        # superseded wholesale (every record DEPRECATED). Fail loudly: an empty
+        # vocabulary shipped quietly would validate nothing and warn on
+        # everything.
+        raise RuntimeError(
+            f"{name}: no live codes -- every record is deprecated, or the "
+            "manifest shape changed. Check for a successor list."
+        )
     return {
         "list": name,
         "kind": doc.get("kind", f"osdu:wks:reference-data--{name}:1.0.0"),

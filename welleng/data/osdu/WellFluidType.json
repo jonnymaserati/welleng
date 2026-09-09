@@ -1,0 +1,41 @@
+{
+ "list": "WellFluidType",
+ "kind": "osdu:wks:Manifest:1.0.0",
+ "governance": "OPEN",
+ "source": "https://community.opengroup.org/osdu/data/data-definitions/-/raw/master/ReferenceValues/Manifests/reference-data/OPEN/WellFluidType.1.json",
+ "retrieved": "2026-09-09",
+ "licence": "Apache-2.0",
+ "attribution": [
+  "IPTGlobal",
+  "OSDU"
+ ],
+ "codes": {
+  "WBM-PADMud": "WBM - PAD Mud",
+  "WBM-Flocculated": "WBM - Flocculated",
+  "WBM-Gel": "WBM - Gel",
+  "WBM-SaltSaturated": "WBM - Salt Saturated",
+  "WBM-KCl_Polymer": "WBM - KCl/Polymer",
+  "WBM-Silicate": "WBM - Silicate",
+  "WBM-HighPerformance": "WBM - High Performance",
+  "WBM-RDF": "WBM - RDF",
+  "InvertEmulsion-Synthetic": "Invert Emulsion - Synthetic",
+  "InvertEmulsion-MineralOil": "Invert Emulsion - Mineral Oil",
+  "InvertEmulsion-RDF": "Invert Emulsion - RDF",
+  "InvertEmulsion-Diesel": "Invert Emulsion - Diesel",
+  "DirectEmulsionFluid": "Direct Emulsion Fluid",
+  "Foam": "Foam",
+  "Seawater": "Seawater",
+  "FreshWater": "Fresh Water",
+  "CompletionBrineNaCl_KCl": "Completion Brine NaCl, KCl",
+  "CompletionBrineCaCl2": "Completion Brine CaCl2",
+  "CompletionBrineCaBr2": "Completion Brine CaBr2",
+  "CompletionBrineNaBr": "Completion Brine NaBr",
+  "CompletionBrineZnBr2": "Completion Brine ZnBr2",
+  "CompletionBrineNaFormate": "Completion Brine Na Formate",
+  "CompletionBrineKFormate": "Completion Brine K Formate",
+  "CompletionBrineCsFormate": "Completion Brine Cs Formate",
+  "MonoethyleneGlycol": "MonoethyleneGlycol",
+  "BopFluid": "BopFluid",
+  "HydraulicFluid": "HydraulicFluid"
+ }
+}

@@ -1,0 +1,22 @@
+{
+ "list": "FormationIntegrityTestType",
+ "kind": "osdu:wks:Manifest:1.0.0",
+ "governance": "OPEN",
+ "source": "https://community.opengroup.org/osdu/data/data-definitions/-/raw/master/ReferenceValues/Manifests/reference-data/OPEN/FormationIntegrityTestType.1.json",
+ "retrieved": "2026-09-09",
+ "licence": "Apache-2.0",
+ "attribution": [
+  "Shell",
+  "XOM"
+ ],
+ "codes": {
+  "StandardFormationIntegrityTest": "Standard Formation Integrity Test",
+  "StandardLeakOffTest": "Standard Leak Off Test",
+  "LeakyFormationIntegrityTest": "Leaky Formation Integrity Test",
+  "Multi-slopeFormationIntegrityTest": "Multi-slope Formation Integrity Test",
+  "BreakdownLeakOffTest": "Breakdown Leak Off Test",
+  "ExtendedLeakOffTest": "Extended Leak Off Test",
+  "Other": "Other",
+  "NotPerformed": "Not Performed"
+ }
+}

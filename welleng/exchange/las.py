@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import io
 import os
+import warnings
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
@@ -43,6 +44,17 @@ _RESISTIVITY = ("RES", "RT", "ILD", "ILM", "LLD", "LLS", "SFL", "MSFL", "RXO",
                 "RACE", "RPCE", "AT10", "AT30", "AT90", "RD", "RS")
 _POROSITY = ("NPHI", "PHIN", "TNPH", "RHOB", "DEN", "DPHI", "PEF", "DPEF")
 _GAMMA = ("GR", "GRD", "SGR", "CGR", "GRAFM", "GR1AX", "CAL", "CALI", "CALCX")
+
+
+#: Index units that are a LENGTH, and their metres-per-unit factor. Anything
+#: else (seconds, an empty unit) is not a depth and must not be read as one.
+_LENGTH_UNITS = {
+    "M": 1.0, "METER": 1.0, "METERS": 1.0, "METRE": 1.0, "METRES": 1.0,
+    "F": 0.3048, "FT": 0.3048, "FEET": 0.3048, "FOOT": 0.3048,
+    "FTUS": 1200.0 / 3937.0,          # US survey foot
+    "IN": 0.0254, "INCH": 0.0254, "INCHES": 0.0254,
+    "CM": 0.01, "MM": 0.001, "KM": 1000.0,
+}
 
 
 class LasError(Exception):
@@ -68,6 +80,39 @@ class LasFile:
     @property
     def depth(self) -> np.ndarray:
         return self.curves[self.index_mnemonic]
+
+    @property
+    def index_unit(self) -> str:
+        """The index curve's declared unit, upper-cased (``""`` if absent)."""
+        return (self.units.get(self.index_mnemonic) or "").strip().upper()
+
+    @property
+    def index_is_depth(self) -> bool:
+        """False when the index is not a length -- most often TIME.
+
+        ``DEPT`` is not a promise. In one 65-run field set, 10 runs were
+        FEET-indexed and 11 more carried **seconds** under the ``DEPT``
+        mnemonic. Read as metres those samples land beyond any well and get
+        dropped as out-of-range, which is indistinguishable from a well that
+        has no log at all -- so the failure reports as missing data rather than
+        as a unit error.
+        """
+        return self.index_unit in _LENGTH_UNITS
+
+    def depth_m(self) -> np.ndarray:
+        """The index in METRES, or ``LasError`` if it is not a length.
+
+        Refuses rather than assumes: an unrecognised or time index cannot be
+        silently treated as metres.
+        """
+        u = self.index_unit
+        if u not in _LENGTH_UNITS:
+            raise LasError(
+                f"index {self.index_mnemonic!r} is in {u or 'no declared unit'}"
+                f", not a length -- refusing to read it as depth. Length units "
+                f"recognised: {', '.join(sorted(_LENGTH_UNITS))}."
+            )
+        return self.depth * _LENGTH_UNITS[u]
 
     def curve(self, mnemonic: str) -> np.ndarray:
         """One curve, case-insensitively."""
@@ -185,8 +230,19 @@ def open_las(source: str | bytes | os.PathLike, **kwargs: Any) -> LasFile:
         well[item.mnemonic] = item.value
 
     index = raw.curves[0].mnemonic if len(raw.curves) else "DEPT"
-    return LasFile(well=well, curves=curves, units=units, descriptions=descs,
-                   index_mnemonic=index, source=name)
+    las = LasFile(well=well, curves=curves, units=units, descriptions=descs,
+                  index_mnemonic=index, source=name)
+    # Say it at READ time. A time-indexed or feet-indexed log read as metres
+    # produces samples outside any well, which downstream reads as "no data" --
+    # a unit error that reports itself as an absence.
+    if not las.index_is_depth:
+        warnings.warn(
+            f"LAS index {index!r} has unit {las.index_unit or '(none)'}, which "
+            "is not a length -- this log is not depth-indexed as read. Use "
+            "LasFile.depth_m() to convert, or handle the index explicitly.",
+            stacklevel=2,
+        )
+    return las
 
 
 # --------------------------------------------------------------------------- #

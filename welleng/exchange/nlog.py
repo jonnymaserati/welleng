@@ -104,6 +104,35 @@ class DirSurvey:
     def n_stations(self) -> int:
         return len(self.md)
 
+    def surface_units(self) -> str:
+        """``"metre"`` or ``"degree"`` for this survey's surface coordinates.
+
+        🔴 ``coord_system`` is **per well, not per field**, and projected and
+        geographic codes put values of wildly different magnitude in the same
+        columns: a De Ruyter well is ``ED50-UTM31`` with an easting near
+        523292 m, while P11-04 is ``ED50-GEOGR`` with x = 3.34 -- DEGREES. A
+        consumer that hard-codes the national grid places that well half a
+        million metres away and nothing complains, because both are valid
+        floats.
+
+        Raises rather than defaulting on an unrecognised code: a wrong datum
+        assumption is silent, and silence is the failure mode here.
+        """
+        code = (self.coord_system or "").strip().upper()
+        if not code:
+            raise NLOGError(
+                "this survey declares no coordSystemCode -- refusing to assume "
+                "a projection. Establish it before using dx/dy."
+            )
+        if code.endswith("GEOGR") or "GEOG" in code:
+            return "degree"
+        if "UTM" in code or "RD" in code:
+            return "metre"
+        raise NLOGError(
+            f"unrecognised coordSystemCode {self.coord_system!r} -- refusing to "
+            "guess whether these coordinates are metres or degrees."
+        )
+
     @property
     def max_inclination(self) -> float:
         return max(self.inc) if self.inc else 0.0

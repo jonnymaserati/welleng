@@ -1,0 +1,17 @@
+{
+ "list": "FluidRheologicalModelType",
+ "kind": "osdu:wks:Manifest:1.0.0",
+ "governance": "OPEN",
+ "source": "https://community.opengroup.org/osdu/data/data-definitions/-/raw/master/ReferenceValues/Manifests/reference-data/OPEN/FluidRheologicalModelType.1.json",
+ "retrieved": "2026-09-09",
+ "licence": "Apache-2.0",
+ "attribution": [
+  "OSDU"
+ ],
+ "codes": {
+  "Newtonian": "Newtonian",
+  "Bingham": "Bingham",
+  "Power Law": "Power Law",
+  "Herschel Buckley": "Herschel Buckley"
+ }
+}

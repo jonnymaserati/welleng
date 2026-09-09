@@ -1,0 +1,16 @@
+{
+ "list": "FluidContactType",
+ "kind": "osdu:wks:Manifest:1.0.0",
+ "governance": "FIXED",
+ "source": "https://community.opengroup.org/osdu/data/data-definitions/-/raw/master/ReferenceValues/Manifests/reference-data/FIXED/FluidContactType.1.json",
+ "retrieved": "2026-09-09",
+ "licence": "Apache-2.0",
+ "attribution": [],
+ "codes": {
+  "FreeWaterContact": "Free Water Contact",
+  "GasOilContact": "Gas Oil Contact",
+  "OilWaterContact": "Oil Water Contact",
+  "GasWaterContact": "Gas Water Contact",
+  "Seal": "Seal"
+ }
+}

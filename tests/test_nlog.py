@@ -274,3 +274,33 @@ def test_id_for_name_returns_none_when_alias_match_is_ambiguous(monkeypatch):
 def test_id_for_name_none_when_unknown(monkeypatch):
     _patch_suggest(monkeypatch, [{"objectId": "9", "title": "F06-07"}])
     assert _nlog.NLOGClient().id_for_name("P11-B-01") is None
+
+
+# --- coordSystemCode is per WELL, and degrees live in the same columns ------ #
+def _survey(code):
+    from welleng.exchange.nlog import DirSurvey
+    return DirSurvey(
+        borehole_name="X", md=[0.0, 100.0], inc=[0.0, 0.0], azi=[0.0, 0.0],
+        tvd=[0.0, 100.0], dx=[0.0, 0.0], dy=[0.0, 0.0], north_ref="G",
+        coord_system=code, proc_method="MC", convergence=None,
+        declination=None, proc_date_ms=None, remark=None,
+    )
+
+
+@pytest.mark.parametrize("code,unit", [
+    ("ED50-UTM31", "metre"),
+    ("WGS84-UTM31", "metre"),
+    ("RD", "metre"),
+    ("ED50-GEOGR", "degree"),
+])
+def test_surface_units_are_read_not_assumed(code, unit):
+    assert _survey(code).surface_units() == unit
+
+
+@pytest.mark.parametrize("code", [None, "", "SOMETHING-ELSE"])
+def test_an_unmapped_coord_system_is_refused_not_defaulted(code):
+    """A geographic well read as the national grid lands half a million metres
+    away, and both values are valid floats -- nothing complains."""
+    from welleng.exchange.nlog import NLOGError
+    with pytest.raises(NLOGError):
+        _survey(code).surface_units()
