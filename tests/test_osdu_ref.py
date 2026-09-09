@@ -181,3 +181,48 @@ def test_resolve_and_resolve_match_agree():
     for v in ("RotaryTable", "Rotary Table", "RKB", "wellhead", None, ""):
         assert osdu_ref.resolve("VerticalMeasurementType", v) == \
             osdu_ref.resolve_match("VerticalMeasurementType", v).code
+
+
+# --- log-curve mnemonics ------------------------------------------------------ #
+def test_the_three_density_mnemonics_share_one_quantity():
+    """The case that motivated curves_by_unit: a name list reported "no density
+    curve" on 12 of 14 wells that had one."""
+    for m in ("RHOB", "RHOZ", "BDCX"):
+        assert osdu_ref.curve_quantity(m) == "mass per volume", m
+
+
+def test_an_ambiguous_mnemonic_returns_none_rather_than_picking():
+    """DT is compressional slowness to two vendors and a plain transit time to
+    a third. Those are not the same curve."""
+    assert osdu_ref.curve_quantity("DT") is None
+    vendors = dict((v, q) for v, _p, q in osdu_ref.curve_vendors("DT"))
+    assert len(set(vendors.values())) > 1
+
+
+def test_naming_the_vendor_disambiguates():
+    assert osdu_ref.curve_quantity("DT", vendor="Schlumberger") \
+        == "time per length"
+
+
+def test_property_is_stricter_than_quantity():
+    """RHOB is 'density' to one vendor and 'bulk density' to another -- the
+    same measurement under two names, so the quantity resolves and the
+    property does not."""
+    assert osdu_ref.curve_property("RHOB") is None
+    assert osdu_ref.curve_quantity("RHOB") == "mass per volume"
+
+
+def test_an_unknown_mnemonic_is_empty_not_an_error():
+    assert osdu_ref.curve_property("NOTACURVE") is None
+    assert osdu_ref.curve_vendors("NOTACURVE") == []
+
+
+def test_las_groups_curves_by_curated_quantity():
+    from welleng.exchange.las import open_las
+    las = open_las(
+        "~VERSION\nVERS. 2.0 :\nWRAP. NO :\n~WELL\nWELL. T :\n~CURVE\n"
+        "DEPT.M    :\nRHOZ.G/C3 :\nGR  .GAPI :\n~ASCII\n0.0 2.4 12.0\n"
+        "1.0 2.5 14.0\n"
+    )
+    assert las.curves_by_quantity("mass per volume") == ["RHOZ"]
+    assert "GR" in las.curves_by_quantity("API gamma ray")

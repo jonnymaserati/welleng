@@ -254,3 +254,87 @@ def osdu_id(list_name: str, code: str, namespace: str = "") -> str:
     """
     stem = f"reference-data--{list_name}:{code}"
     return f"{namespace}:{stem}" if namespace else stem
+
+
+# --------------------------------------------------------------------------- #
+# log curve mnemonics
+# --------------------------------------------------------------------------- #
+@lru_cache(maxsize=1)
+def _curves() -> Dict[str, list]:
+    """``{"Vendor:MNEMONIC": [property, unit quantity]}`` -- 42,919 entries.
+
+    Stored gzipped (~200 KB) because a curve mnemonic is genuinely not
+    guessable and the alternative is a hand-written family list that gets it
+    wrong.
+    """
+    import gzip
+    path = _DATA / "LogCurveType.json.gz"
+    if not path.is_file():                                   # pragma: no cover
+        raise OsduRefError(
+            "the LogCurveType map is not installed; run "
+            "scripts/fetch_osdu_reference_data.py"
+        )
+    with gzip.open(path, "rt", encoding="utf-8") as fh:
+        return json.load(fh)["curves"]
+
+
+@lru_cache(maxsize=1)
+def _by_mnemonic() -> Dict[str, List[tuple]]:
+    idx: Dict[str, List[tuple]] = {}
+    for key, (prop, unit) in _curves().items():
+        vendor, _, mnemonic = key.partition(":")
+        idx.setdefault(mnemonic.upper(), []).append((vendor, prop, unit))
+    return idx
+
+
+def curve_property(mnemonic: str, vendor: Optional[str] = None) -> Optional[str]:
+    """The measured property behind a log-curve ``mnemonic``, or ``None``.
+
+    Mnemonics are contractor- and vintage-specific: bulk density ships as
+    ``RHOB`` (Schlumberger, Halliburton), ``RHOZ`` (Schlumberger) and ``BDCX``
+    (Baker Hughes). This resolves them through the published vendor map rather
+    than through a hand-written name list, which is what reported "no density
+    curve" on 12 of 14 wells that had one.
+
+    ``vendor`` narrows the lookup when the log says who ran it. Without it, a
+    mnemonic that means **different things to different vendors** returns
+    ``None`` rather than picking one -- an ambiguous answer is worse than none
+    for a measurement that feeds a calculation.
+    """
+    hits = _by_mnemonic().get(str(mnemonic).strip().upper(), [])
+    if vendor is not None:
+        key = _norm(vendor)
+        hits = [h for h in hits if _norm(h[0]) == key]
+    props = {h[1] for h in hits if h[1]}
+    if len(props) == 1:
+        return props.pop()
+    return None
+
+
+def curve_quantity(mnemonic: str, vendor: Optional[str] = None) -> Optional[str]:
+    """The UNIT QUANTITY behind a mnemonic (``"mass per volume"``, …), or None.
+
+    More robust than :func:`curve_property` and usually the one to reach for.
+    Vendors name the same measurement differently -- ``RHOB`` is *density* to
+    one and *bulk density* to another -- so the property can disagree while the
+    quantity does not, and the quantity is what makes two curves comparable.
+
+    Still ``None`` when the quantity itself is ambiguous, which is the case
+    that matters: ``DT`` is *time per length* to two vendors and plain *time*
+    to a third, and those are not the same curve.
+    """
+    hits = _by_mnemonic().get(str(mnemonic).strip().upper(), [])
+    if vendor is not None:
+        key = _norm(vendor)
+        hits = [h for h in hits if _norm(h[0]) == key]
+    q = {h[2] for h in hits if h[2]}
+    return q.pop() if len(q) == 1 else None
+
+
+def curve_vendors(mnemonic: str) -> List[tuple]:
+    """Every ``(vendor, property, unit quantity)`` published for a mnemonic.
+
+    Use this when :func:`curve_property` returns ``None`` to see whether the
+    mnemonic is unknown or merely ambiguous -- the two need different handling.
+    """
+    return sorted(_by_mnemonic().get(str(mnemonic).strip().upper(), []))

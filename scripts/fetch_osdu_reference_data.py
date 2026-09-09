@@ -17,11 +17,13 @@ the data.
 """
 from __future__ import annotations
 
+import gzip
 import json
 import sys
 import urllib.request
 from datetime import date
 from pathlib import Path
+from urllib.parse import unquote
 
 RAW = ("https://community.opengroup.org/osdu/data/data-definitions/-/raw/"
        "master/ReferenceValues/Manifests/reference-data")
@@ -59,6 +61,12 @@ LISTS: dict[str, str] = {
     # logs
     "LogCurveMainFamily": "LOCAL",
 }
+
+#: Handled separately: 42,919 vendor mnemonics at 73 MB raw. Slimmed to
+#: ``{Vendor:Mnemonic -> [property, unit quantity]}`` it is ~200 KB gzipped,
+#: which is worth carrying because a curve mnemonic is not guessable --
+#: bulk density alone ships as RHOB, RHOZ and BDCX depending on vendor.
+CURVE_TYPES = ("LogCurveType", "LOCAL")
 
 OUT = Path(__file__).resolve().parent.parent / "welleng" / "data" / "osdu"
 
@@ -106,6 +114,42 @@ def fetch(name: str, tier: str) -> dict:
     }
 
 
+def fetch_curve_types() -> dict:
+    """The vendor-mnemonic map, slimmed hard and stored gzipped.
+
+    Only the property name and the unit quantity are kept -- those are what let
+    a caller ask for "bulk density" instead of guessing at RHOB / RHOZ / BDCX.
+    """
+    name, tier = CURVE_TYPES
+    url = f"{RAW}/{tier}/{name}.1.json"
+    with urllib.request.urlopen(url, timeout=600) as fh:     # noqa: S310
+        doc = json.load(fh)
+
+    out: dict[str, list] = {}
+    for rec in doc.get("ReferenceData", []):
+        data = rec.get("data", {})
+        code = data.get("Code")
+        if not code or str(data.get("Description", "")).startswith("DEPRECATED"):
+            continue
+        prop = (data.get("PropertyType") or {}).get("Name")
+        uq = str(data.get("UnitQuantityID") or "")
+        # ".../UnitQuantity:mass%20per%20volume:" -> "mass per volume"
+        uq = unquote(uq.split(":")[-2]) if uq.count(":") >= 2 else ""
+        out[str(code)] = [prop, uq or None]
+    if not out:
+        raise RuntimeError(f"{name}: no live codes")
+    return {
+        "list": name,
+        "kind": doc.get("kind", f"osdu:wks:reference-data--{name}:1.0.0"),
+        "governance": tier,
+        "source": url,
+        "retrieved": date.today().isoformat(),
+        "licence": "Apache-2.0",
+        "attribution": [],
+        "curves": out,
+    }
+
+
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     for name, tier in sorted(LISTS.items()):
@@ -118,6 +162,15 @@ def main() -> int:
         path.write_text(json.dumps(doc, indent=1, sort_keys=False) + "\n")
         print(f"{name:<28} {tier:<6} {len(doc['codes']):>4} codes  "
               f"{', '.join(doc['attribution']) or '-'}")
+
+    curves = fetch_curve_types()
+    blob = json.dumps(curves, separators=(",", ":")).encode()
+    path = OUT / "LogCurveType.json.gz"
+    with gzip.open(path, "wb", compresslevel=9) as fh:
+        fh.write(blob)
+    print(f"{'LogCurveType':<28} {CURVE_TYPES[1]:<6} "
+          f"{len(curves['curves']):>4} mnemonics  "
+          f"({path.stat().st_size / 1024:.0f} KB gzipped)")
     return 0
 
 

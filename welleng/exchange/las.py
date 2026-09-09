@@ -23,10 +23,19 @@ Finding a measurement
 Do NOT match curve mnemonics against a name list. They vary by vintage and
 contractor -- density alone appears as ``RHOB``, ``RHOZ`` and ``BDCX`` -- and a
 name-based search silently reports "not present" for a curve that is there.
-Match on the UNIT instead, via :meth:`LasFile.curves_by_unit`:
+Match on the measurement instead. Best is
+:meth:`LasFile.curves_by_quantity`, which resolves each mnemonic through the
+published OSDU vendor map (42,919 entries) rather than trusting the unit string
+the file happens to declare:
 
->>> las.curves_by_unit("G/C3")        # density, whatever it is called
->>> las.curves_by_unit()              # everything, grouped by unit
+>>> las.curves_by_quantity("mass per volume")   # density, whatever it is called
+>>> las.curves_by_quantity()                    # everything, grouped
+
+:meth:`LasFile.curves_by_unit` is the header-only fallback for a curve the map
+does not know.
+
+The INDEX is not a promise either -- ``DEPT`` is a mnemonic, not a unit. See
+:attr:`LasFile.index_is_depth` and :meth:`LasFile.depth_m`.
 """
 from __future__ import annotations
 
@@ -34,7 +43,7 @@ import io
 import os
 import warnings
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any, Optional, Sequence
 
 import numpy as np
 
@@ -144,6 +153,34 @@ class LasFile:
         if unit is None:
             return groups
         return groups.get(str(unit).strip().upper(), [])
+
+    def curves_by_quantity(self, quantity: Optional[str] = None):
+        """Curves grouped by the OSDU UNIT QUANTITY their mnemonic resolves to.
+
+        The curated form of :meth:`curves_by_unit`. Instead of matching the
+        unit string the file happens to declare, each mnemonic is looked up in
+        the published vendor map (42,919 entries), so ``RHOB``, ``RHOZ`` and
+        ``BDCX`` all land under ``"mass per volume"`` whatever the header says.
+
+        A mnemonic that is unknown, or that means different things to different
+        vendors (``DT`` is *time per length* to two and plain *time* to a
+        third), is grouped under ``None`` rather than guessed at.
+
+        With no argument: ``{quantity: [mnemonic, ...]}``. With one: that
+        quantity's mnemonics, or ``[]``.
+        """
+        from ..osdu_ref import curve_quantity     # lazy: reads a gzipped map
+
+        groups: dict = {}
+        for m in self.curves:
+            groups.setdefault(curve_quantity(m), []).append(m)
+        if quantity is None:
+            return groups
+        key = str(quantity).strip().lower()
+        for q, mn in groups.items():
+            if q is not None and q.lower() == key:
+                return mn
+        return []
 
     def describe(self) -> str:
         """One line per curve: mnemonic, unit, description, % non-null."""

@@ -147,6 +147,7 @@ packages = ["welleng"]
 include = [
     "welleng/**/*.py",
     "welleng/**/*.json",
+    "welleng/**/*.json.gz",
     "welleng/**/*.yaml",
     "welleng/**/*.md",
     "welleng/py.typed",
