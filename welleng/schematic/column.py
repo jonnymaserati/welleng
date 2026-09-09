@@ -161,10 +161,11 @@ def _annulus_outer_r(md: float, inner, casings, hole) -> float:
     below a 30in conductor shoe is bounded by the 26in HOLE, not the 30in ID,
     and drawing to the ID puts cement and fluid an inch into rock.
     """
-    cands = [c.id_in / 2.0 for c in casings
-             if c.od_in > inner.od_in and c.top_md <= md <= c.shoe_md]
+    r_inner = inner.od_at(md) / 2.0
+    cands = [c.id_at(md) / 2.0 for c in casings
+             if c.od_at(md) > inner.od_at(md) and c.top_md <= md <= c.shoe_md]
     cands += [h.bit_in / 2.0 for h in hole if h.top_md <= md <= h.base_md]
-    return min(cands) if cands else inner.od_in / 2.0 + 1.0
+    return min(cands) if cands else r_inner + 1.0
 
 
 def _free_slot(y: float, taken, min_gap: float, ymax: float) -> float:
@@ -225,7 +226,9 @@ def _annulus_segments(md_top: float, md_base: float, casings, hole):
     """MD sub-intervals over which the annulus outer boundary is constant."""
     edges = {md_top, md_base}
     for c in casings:
-        for m in (c.top_md, c.shoe_md):
+        # crossovers included: a combination string's own diameter step moves
+        # the annulus wall as surely as another string's shoe does.
+        for m in (c.top_md, c.shoe_md, *c.crossovers()):
             if md_top < m < md_base:
                 edges.add(m)
     for h in hole:
@@ -242,7 +245,7 @@ def _rock_inner_r(md: float, casings, hole) -> float:
     holes = [h.bit_in / 2.0 for h in hole if h.top_md <= md <= h.base_md]
     if holes:
         return max(holes)
-    ods = [c.od_in / 2.0 for c in casings if c.top_md <= md <= c.shoe_md]
+    ods = [c.od_at(md) / 2.0 for c in casings if c.top_md <= md <= c.shoe_md]
     return max(ods) if ods else 0.0
 
 
@@ -292,13 +295,14 @@ def _draw_liner_hangers(dwg, casings, radial, d, x_scale_ref) -> None:
     for c in casings:
         if c.top_md <= 1e-6:
             continue                        # run from surface: not hung
-        hosts = [h.id_in / 2.0 for h in casings
-                 if h.od_in > c.od_in and h.top_md <= c.top_md <= h.shoe_md]
+        hosts = [h.id_at(c.top_md) / 2.0 for h in casings
+                 if h.od_at(c.top_md) > c.od_at(c.top_md)
+                 and h.top_md <= c.top_md <= h.shoe_md]
         if not hosts:
             continue                        # nothing to hang from
         y = d(c.top_md)
         s = radial.at(y)
-        r_out, r_host = c.od_in / 2.0, min(hosts)
+        r_out, r_host = c.od_at(c.top_md) / 2.0, min(hosts)
         lo, hi = sorted((r_out, r_host))
         # square-ish on paper: height in metres ~ the annulus width in x-units
         h = max(abs(hi - lo) * s * HANGER_ASPECT, 1e-6)
@@ -324,19 +328,18 @@ def _draw_perforations(dwg, bore, casings, hole, radial, d) -> None:
         mid = (pf.top_md + pf.base_md) / 2.0
         present = [c for c in casings if c.top_md <= mid <= c.shoe_md]
         if pf.casing_od_in is not None:
-            shot = next((c for c in present
-                         if abs(c.od_in - pf.casing_od_in) < 1e-6), None)
+            shot = next((c for c in present if c.has_od(pf.casing_od_in)), None)
         else:
-            shot = min(present, key=lambda c: c.od_in) if present else None
+            shot = min(present, key=lambda c: c.od_at(mid)) if present else None
         if shot is None:
             continue                        # names a string that is not there
-        r_in = shot.id_in / 2.0
         # tick spacing from the interval, capped so a long zone stays legible
         n = max(2, min(int((pf.base_md - pf.top_md) / 8.0), 40))
         for k in range(n + 1):
             md = pf.top_md + (pf.base_md - pf.top_md) * k / n
             y = d(md)
             s = radial.at(y)
+            r_in = shot.id_at(md) / 2.0
             r_far = _annulus_outer_r(md, shot, casings, hole)
             for sign in (-1, 1):
                 dwg.add(Line((sign * r_in * s, y), (sign * r_far * s, y),
@@ -371,7 +374,11 @@ def build_column(
     labels: List = []            # (depth, anchor_x, text, style) -> gutter
     casings = bore.casings
     hole = bore.hole_sections
-    max_bit = max((h.bit_in for h in hole), default=30.0)
+    # Reference width for the drawing edge, ruler and gutter. Casing ODs count,
+    # not just bit sizes: a DRIVEN conductor is never drilled, so its OD IS the
+    # widest geometry in the well and a bit-only extent clips it.
+    max_bit = max([h.bit_in for h in hole] + [c.od_in for c in casings]
+                  + [30.0])
 
     # --- formation (rock) OUTSIDE the hole wall, drawn first ---------------
     _draw_rock(dwg, schematic, casings, hole, radial, d, ymax, max_bit)
@@ -387,23 +394,25 @@ def build_column(
     # --- annulus fluids (drawn BEFORE cement so cement paints over them) ---
     ordered = sorted(casings, key=lambda c: -c.od_in)
     for f in getattr(bore, "annulus_fluids", []) or []:
-        idx = next((i for i, c in enumerate(ordered)
-                    if abs(c.od_in - f.inside_od_in) < 1e-6), None)
-        if idx is None or f.base_md <= f.top_md:
+        # matched on ANY of the string's diameters: a combination string
+        # presents more than one wall, and the caller names a wall.
+        inner = next((c for c in ordered if c.has_od(f.inside_od_in)), None)
+        if inner is None or f.base_md <= f.top_md:
             continue                      # names an annulus that is not there
-        inner = ordered[idx]
-        r_in = inner.od_in / 2.0
         fill = Style(color=_fluid_fill(f), lineweight=0.0, fill=_fluid_fill(f))
         for a, b in _annulus_segments(f.top_md, f.base_md, casings, hole):
-            r_out = _annulus_outer_r((a + b) / 2.0, inner, casings, hole)
+            mid_seg = (a + b) / 2.0
+            r_in = inner.od_at(mid_seg) / 2.0
+            r_out = _annulus_outer_r(mid_seg, inner, casings, hole)
             lo, hi = sorted((r_in, r_out))
             if hi - lo <= 1e-9:
                 continue
             for sign in (-1, 1):
                 dwg.add(Polygon(_band(hi, lo, d(a), d(b), radial, sign),
                                 layer=L_FLUID, style=fill))
-        lo, hi = sorted((r_in, _annulus_outer_r(
-            (f.top_md + f.base_md) / 2.0, inner, casings, hole)))
+        f_mid = (f.top_md + f.base_md) / 2.0
+        lo, hi = sorted((inner.od_at(f_mid) / 2.0,
+                         _annulus_outer_r(f_mid, inner, casings, hole)))
         # Label INSIDE its own annulus, rotated. Nested annuli commonly share a
         # top (all open to surface), so labelling at mid-depth outside the
         # string stacks every label at the same place; each annulus has a
@@ -415,9 +424,12 @@ def build_column(
 
     # --- cement in annuli (toc -> shoe) ------------------------------------
     for c in ordered:
-        r_in = c.od_in / 2.0
+        if c.toc_md is None:
+            continue          # no cement RECORDED: draw nothing, claim nothing
         for a, b in _annulus_segments(c.toc_md, c.shoe_md, casings, hole):
-            r_out = _annulus_outer_r((a + b) / 2.0, c, casings, hole)
+            mid_seg = (a + b) / 2.0
+            r_in = c.od_at(mid_seg) / 2.0
+            r_out = _annulus_outer_r(mid_seg, c, casings, hole)
             lo, hi = sorted((r_in, r_out))
             if hi - lo <= 1e-9:
                 continue
@@ -435,10 +447,19 @@ def build_column(
     x_extent = max_bit / 2.0 * radial.at(0.0)
     _norm = (ymax / x_extent) if x_extent else 1.0
     for c in casings:
-        r_out, r_in = c.od_in / 2.0, c.id_in / 2.0
+        # Steel per DIAMETER, one shoe per STRING. A combination string is one
+        # string on one hanger; drawing a shoe at each diameter change asserts
+        # the string ends there and the annulus opens below it, both false.
+        prof = c.profile()
+        for seg_top, seg_base, seg_od, seg_id in prof:
+            for sign in (-1, 1):
+                dwg.add(Polygon(
+                    _band(seg_od / 2.0, seg_id / 2.0,
+                          d(seg_top), d(seg_base), radial, sign),
+                    layer=L_CASING, style=_STEEL))
+        shoe_top, _shoe_base, shoe_od, shoe_id = prof[-1]
+        r_out, r_in = shoe_od / 2.0, shoe_id / 2.0
         for sign in (-1, 1):
-            dwg.add(Polygon(_band(r_out, r_in, d(c.top_md), d(c.shoe_md), radial, sign),
-                            layer=L_CASING, style=_STEEL))
             # shoe wedge at the setting depth: anchored ON the casing OD and
             # flared OUTWARD (negative sx mirrors it for the left side), so it
             # reads as part of the string rather than straddling the wall.
@@ -448,13 +469,20 @@ def build_column(
             # sits exactly ON a section boundary and resolves to the next
             # section's factor -- two sources for one position, which opened a
             # visible gap between the shoe and the casing it belongs to.
-            x_out = _wall(r_out, d(c.top_md), d(c.shoe_md), radial, sign)[-1][0]
-            x_in = _wall(r_in, d(c.top_md), d(c.shoe_md), radial, sign)[-1][0]
+            x_out = _wall(r_out, d(shoe_top), d(c.shoe_md), radial, sign)[-1][0]
+            x_in = _wall(r_in, d(shoe_top), d(c.shoe_md), radial, sign)[-1][0]
             # Width from the DRAWN WALL THICKNESS, not the OD: the OD is
             # multiplied by the radial exaggeration, so an OD-proportional shoe
             # makes a 30in conductor's wedge grotesque while a 7in liner's
             # vanishes. A few wall thicknesses reads consistently at any size.
             shoe_w = max(abs(x_out - x_in) * 2.2, abs(x_out) * 0.04)
+            # Clamped to the room between the string and the label gutter. The
+            # WIDEST string sits ON the drawing edge (a driven conductor is at
+            # the edge by definition), so an unclamped wedge grew straight past
+            # the rock and printed over the string's own name.
+            room = x_extent * 1.06 - abs(x_out)
+            if room > 0.0:
+                shoe_w = min(shoe_w, room)
             shoe_h = shoe_w * SHOE_ASPECT
             dwg.place_symbol(CASING_SHOE, (x_out, d(c.shoe_md)),
                              sx=sign * shoe_w, sy=shoe_h, layer=L_SHOE)
@@ -466,7 +494,8 @@ def build_column(
     # --- cement plugs (bore fill) ------------------------------------------
     for p in bore.cement_plugs:
         mid = (p.top_md + p.base_md) / 2.0
-        candidates = [c.id_in / 2.0 for c in casings if c.top_md <= mid <= c.shoe_md]
+        candidates = [c.id_at(mid) / 2.0 for c in casings
+                      if c.top_md <= mid <= c.shoe_md]
         r_in = min(candidates) if candidates else 3.0
         band = _wall(r_in, d(p.top_md), d(p.base_md), radial, 1) \
             + _wall(r_in, d(p.top_md), d(p.base_md), radial, -1)[::-1]
@@ -475,14 +504,35 @@ def build_column(
         labels.append((d(mid), -r_in * s, p.name, _CEMENT_LABEL))
 
     # --- completion --------------------------------------------------------
+    # Tubing runs whose depths meet are ONE string. Drawn as independent
+    # polylines at their own radius, a tapered string (5-1/2in, then 4-1/2in,
+    # then an ESP section) rendered as pairs of floating lines with visible
+    # gaps, which reads as a discontinuity in the completion. The runs already
+    # share depths, so the step between the two radii is drawn explicitly.
+    tubing = sorted((t for t in bore.completion if t.type == "tubing"),
+                    key=lambda t: (t.top_md or 0.0))
+    for i, item in enumerate(tubing):
+        r = item.od_in / 2.0
+        for sign in (-1, 1):
+            dwg.add(Polyline(_wall(r, d(item.top_md), d(item.base_md),
+                                   radial, sign),
+                             layer=L_COMPLETION, style=_TUBING))
+        nxt = tubing[i + 1] if i + 1 < len(tubing) else None
+        if nxt is None or item.base_md is None:
+            continue
+        if abs((nxt.top_md or 0.0) - item.base_md) > 1e-6:
+            continue                        # a real gap: do not close it
+        y = d(item.base_md)
+        s = radial.at(y)
+        r_next = nxt.od_in / 2.0
+        if abs(r_next - r) <= 1e-9:
+            continue                        # same size: nothing to step
+        for sign in (-1, 1):
+            dwg.add(Polyline([(sign * r * s, y), (sign * r_next * s, y)],
+                             layer=L_COMPLETION, style=_TUBING))
+
     for item in bore.completion:
-        if item.type == "tubing":
-            r = item.od_in / 2.0
-            for sign in (-1, 1):
-                dwg.add(Polyline(_wall(r, d(item.top_md), d(item.base_md),
-                                       radial, sign),
-                                 layer=L_COMPLETION, style=_TUBING))
-        else:
+        if item.type != "tubing":
             y = d(item.md)
             s = radial.at(y)
             width = item.od_in * s
@@ -501,7 +551,7 @@ def build_column(
                 # a packer whose od_in was the 9-5/8in casing ID out past a 7in
                 # liner's wall and into the cement, because the liner -- not
                 # the casing -- is what it actually sets in down there.
-                r_ids = [c.id_in / 2.0 for c in casings
+                r_ids = [c.id_at(item.md) / 2.0 for c in casings
                          if c.top_md <= item.md <= c.shoe_md]
                 r_host = min(r_ids) if r_ids else item.od_in / 2.0
                 r_seal = min(item.od_in / 2.0, r_host)

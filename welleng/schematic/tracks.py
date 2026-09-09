@@ -115,6 +115,8 @@ class SchematicTrack(Track):
         # cement annuli
         ordered = sorted(bore.casings, key=lambda c: -c.od_in)
         for i, c in enumerate(ordered):
+            if c.toc_md is None:
+                continue      # no cement RECORDED: draw nothing, claim nothing
             r_out = c.od_in / 2.0
             r_in = ordered[i - 1].id_in / 2.0 if i > 0 else max_r
             lo, hi = sorted((r_out, r_in))

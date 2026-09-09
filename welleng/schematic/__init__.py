@@ -53,6 +53,7 @@ from .models import (
     PressureProfile,
     SurveyRef,
     Tubular,
+    TubularSection,
     Well,
     WellSchematic,
     Wellbore,
@@ -72,8 +73,8 @@ from .tracks import (
 __all__ = [
     # models
     "Well", "Wellbore", "WellSchematic", "SurveyRef", "HoleSection",
-    "Tubular", "Casing", "CementPlug", "AnnulusFluid", "Perforation",
-    "CompletionItem", "Formation", "PressureProfile",
+    "Tubular", "TubularSection", "Casing", "CementPlug", "AnnulusFluid",
+    "Perforation", "CompletionItem", "Formation", "PressureProfile",
     # drawing model
     "Drawing", "Layer", "ViewTransform", "RadialScale", "Style", "Symbol",
     "SymbolRef", "Line", "Polyline", "Rect", "Polygon", "Hatch", "Text",

@@ -254,7 +254,8 @@ def _draw_casing(ax, cl: Centreline, c: Casing, cas: Sequence[Casing], bore: Wel
     ro, ri = cl.rdraw(c.od_in / 2), cl.rdraw(c.id_in / 2)
     md = np.linspace(c.top_md, c.shoe_md, 240)
     # annular cement toc -> shoe, casing OD -> outer edge (hole wall in open hole)
-    mdc = md[md >= c.toc_md]
+    # toc_md None = no cement RECORDED: draw nothing, claim nothing
+    mdc = md[md >= c.toc_md] if c.toc_md is not None else md[:0]
     if mdc.size:
         oR = np.empty(mdc.size)
         for i, m in enumerate(mdc):

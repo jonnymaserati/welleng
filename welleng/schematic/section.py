@@ -89,6 +89,8 @@ def build_section(
 
     # cement annuli then casing steel outlines
     for c in sorted(bore.casings, key=lambda c: -c.od_in):
+        if c.toc_md is None:
+            continue          # no cement RECORDED: draw nothing, claim nothing
         dwg.add(Hatch(ribbon(c.toc_md, c.shoe_md, c.od_in),
                       pattern="cement", layer=L_CEMENT, style=_CEMENT))
     for c in bore.casings:

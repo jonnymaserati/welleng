@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import List, Literal, Optional, Union
+from typing import List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -90,6 +90,30 @@ class HoleSection(_Base):
     )
 
 
+class TubularSection(_Base):
+    """One diameter of a TAPERED / COMBINATION string.
+
+    A combination string is ONE string on ONE hanger with ONE shoe -- e.g.
+    10-3/4in to 191.6 m then 9-5/8in to the shoe at 1997.6 m. Modelling that as
+    two :class:`Casing` objects makes the renderer draw a shoe at the
+    crossover, which asserts the string ends there and the annulus opens below
+    it. Both are false, and a fabricated shoe is a false statement about well
+    architecture, where a missing diameter step is only a cosmetic loss.
+
+    ``id_in`` is auto-filled from the API 5CT catalogue on the same terms as
+    :class:`Tubular` when ``nominal_weight_ppf`` is given.
+    """
+
+    od_in: float = Field(..., description="outer diameter, inches")
+    id_in: Optional[float] = Field(
+        None, description="inner diameter, inches (auto-filled from catalogue)"
+    )
+    top_md: float
+    base_md: float
+    nominal_weight_ppf: Optional[float] = None
+    grade: Optional[str] = None
+
+
 class Tubular(_Base):
     """Base for run steel tubulars. OSDU ``Tubular`` / WITSML ``tubular``.
 
@@ -107,7 +131,22 @@ class Tubular(_Base):
     )
     top_md: float = 0.0
     shoe_md: float = Field(..., description="setting/shoe depth, MD")
-    toc_md: float = Field(0.0, description="top of cement, MD (annulus)")
+    # NOT 0.0-by-default, and not required: 0.0 means "cemented to surface",
+    # which is a claim about a BARRIER. Defaulting to it made an unstated TOC
+    # render as the MAXIMUM POSSIBLE cement -- silently, on exactly the strings
+    # least likely to have any (a driven conductor, a screen, a tie-back on a
+    # packer, junk left in hole). A schematic is read as a barrier drawing, so
+    # the default has to fail toward "nothing recorded", never toward "sealed".
+    toc_md: Optional[float] = Field(
+        None,
+        description="top of cement, MD (annulus). None = no cement recorded "
+                    "(nothing is drawn); 0.0 = cemented to surface",
+    )
+    sections: List[TubularSection] = Field(
+        default_factory=list,
+        description="diameters of a tapered/combination string, top to shoe; "
+                    "empty = a single-diameter string",
+    )
     # --- catalogue key + auto-filled dimensions (OSDU TubularComponent) ---
     nominal_weight_ppf: Optional[float] = Field(
         None, description="nominal weight, lb/ft (OSDU TubularComponentNominalWeight)"
@@ -177,6 +216,101 @@ class Tubular(_Base):
                         self, "coupling_length_in", cpl.coupling_length_in
                     )
         return self
+
+    @model_validator(mode="after")
+    def _check_sections(self) -> "Tubular":
+        """A combination string's sections must tile ``top_md``..``shoe_md``.
+
+        Contiguity is checked, not assumed: a gap would draw the string as two
+        pieces with open annulus between them, and an overlap would draw two
+        walls at the same depth. Both are the fabricated-geometry class of
+        defect this field exists to remove.
+        """
+        if not self.sections:
+            return self
+        secs = sorted(self.sections, key=lambda s: s.top_md)
+        object.__setattr__(self, "sections", secs)
+        for s in secs:
+            if s.base_md <= s.top_md:
+                raise ValueError(
+                    f"{self.name}: section {s.od_in}in has base_md "
+                    f"{s.base_md} at or above top_md {s.top_md}"
+                )
+            if s.id_in is None and s.nominal_weight_ppf is not None:
+                from welleng.catalog import resolve
+
+                spec = resolve(s.od_in, s.nominal_weight_ppf, grade=s.grade,
+                               kind=self._catalog_kind())
+                object.__setattr__(s, "id_in", spec.id_in)
+            if s.id_in is None:
+                raise ValueError(
+                    f"{self.name}: section {s.od_in}in needs id_in unless "
+                    "(od_in, nominal_weight_ppf) resolve from the catalogue"
+                )
+        for a, b in zip(secs, secs[1:]):
+            if abs(a.base_md - b.top_md) > 1e-6:
+                raise ValueError(
+                    f"{self.name}: sections are not contiguous -- "
+                    f"{a.od_in}in ends at {a.base_md} but {b.od_in}in starts "
+                    f"at {b.top_md}. A combination string is one continuous "
+                    "string; a gap or overlap draws geometry that is not there."
+                )
+        if abs(secs[0].top_md - self.top_md) > 1e-6:
+            raise ValueError(
+                f"{self.name}: sections start at {secs[0].top_md} but the "
+                f"string top_md is {self.top_md}"
+            )
+        if abs(secs[-1].base_md - self.shoe_md) > 1e-6:
+            raise ValueError(
+                f"{self.name}: sections end at {secs[-1].base_md} but the "
+                f"shoe_md is {self.shoe_md}"
+            )
+        # The deepest section is the one the shoe, any perforation naming this
+        # string, and the annulus keying all resolve against, so od_in/id_in
+        # must BE that section rather than quietly disagreeing with it.
+        deep = secs[-1]
+        if abs(deep.od_in - self.od_in) > 1e-6:
+            raise ValueError(
+                f"{self.name}: od_in is {self.od_in}in but the section at the "
+                f"shoe is {deep.od_in}in. Set od_in/id_in to the shoe "
+                "section -- that is the diameter the shoe and any perforation "
+                "naming this string resolve against."
+            )
+        return self
+
+    # -- depth-aware geometry --------------------------------------------- #
+    def profile(self) -> List[Tuple[float, float, float, float]]:
+        """``(top_md, base_md, od_in, id_in)`` per diameter, top to shoe."""
+        if not self.sections:
+            return [(self.top_md, self.shoe_md, self.od_in, float(self.id_in))]
+        return [(s.top_md, s.base_md, s.od_in, float(s.id_in))
+                for s in self.sections]
+
+    def crossovers(self) -> List[float]:
+        """Depths where the diameter changes (empty for a single diameter)."""
+        return [s.base_md for s in self.sections[:-1]]
+
+    def od_at(self, md: float) -> float:
+        """OD (in) at ``md`` -- the shoe section's OD outside the string."""
+        for top, base, od, _id in self.profile():
+            if top <= md <= base:
+                return od
+        return self.od_in
+
+    def id_at(self, md: float) -> float:
+        """ID (in) at ``md`` -- the shoe section's ID outside the string."""
+        for top, base, _od, id_ in self.profile():
+            if top <= md <= base:
+                return id_
+        return float(self.id_in)
+
+    def has_od(self, od_in: float, tol: float = 1e-6) -> bool:
+        """True when ANY of the string's diameters is ``od_in``.
+
+        A caller naming an annulus or a perforated string by OD is naming a
+        wall, and a combination string presents more than one.
+        """
+        return any(abs(od - od_in) <= tol for _t, _b, od, _i in self.profile())
 
 
 class Casing(Tubular):

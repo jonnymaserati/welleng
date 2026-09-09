@@ -720,3 +720,236 @@ def test_a_free_slot_search_moves_up_when_that_is_nearer():
     y = _free_slot(2475.0, [2500.0], 57.0, 2600.0)
     assert y < 2475.0, f"pushed away from its own depth: {y}"
     assert abs(y - 2500.0) >= 57.0
+
+
+# --- toc_md: an unstated TOC is not "cemented to surface" ------------------- #
+def _no_toc_data():
+    """BASE with the toc_md field simply omitted on both strings."""
+    return {**BASE, "casings": [
+        {"name": '13-3/8"', "od_in": 13.375, "id_in": 12.4,
+         "top_md": 0, "shoe_md": 800},
+        {"name": '9-5/8"', "od_in": 9.625, "id_in": 8.68,
+         "top_md": 0, "shoe_md": 2000},
+    ]}
+
+
+def test_unstated_toc_draws_no_cement():
+    """A schematic is read as a BARRIER drawing. Defaulting toc_md to 0.0 made
+    an omitted TOC render as the maximum possible cement -- a false statement
+    about a barrier, on exactly the strings least likely to have one."""
+    dwg = build_column(WellSchematic.model_validate(_no_toc_data()), mode="MD")
+    assert not [e for e in dwg.entities
+                if getattr(e, "layer", None) == L_CEMENT], (
+        "an unstated TOC was drawn as cement"
+    )
+
+
+def test_unstated_toc_is_none_not_zero():
+    s = WellSchematic.model_validate(_no_toc_data())
+    assert s.wellbores[0].casings[0].toc_md is None
+
+
+def test_explicit_zero_toc_still_means_cemented_to_surface():
+    """The caller that means it must still be believed."""
+    d = {**BASE, "casings": [
+        {"name": '13-3/8"', "od_in": 13.375, "id_in": 12.4,
+         "top_md": 0, "shoe_md": 800, "toc_md": 0.0},
+    ]}
+    dwg = build_column(WellSchematic.model_validate(d), mode="MD")
+    cement = [e for e in dwg.entities
+              if getattr(e, "layer", None) == L_CEMENT]
+    assert cement
+    tops = [min(y for _x, y in e.boundary) for e in cement]
+    assert min(tops) == pytest.approx(0.0)
+
+
+def test_toc_is_per_string_not_all_or_nothing():
+    d = {**BASE, "casings": [
+        {"name": "driven conductor", "od_in": 13.375, "id_in": 12.4,
+         "top_md": 0, "shoe_md": 800},                      # no cement, ever
+        {"name": '9-5/8"', "od_in": 9.625, "id_in": 8.68,
+         "top_md": 0, "shoe_md": 2000, "toc_md": 1200},
+    ]}
+    dwg = build_column(WellSchematic.model_validate(d), mode="MD")
+    cement = [e for e in dwg.entities
+              if getattr(e, "layer", None) == L_CEMENT]
+    assert cement
+    assert min(min(y for _x, y in e.boundary) for e in cement) \
+        == pytest.approx(1200.0)
+
+
+# --- tapered / combination string ------------------------------------------- #
+COMBO = {
+    **BASE,
+    "survey": {"md": [0, 2100], "inc": [0, 0], "azi": [0, 0]},
+    "hole_sections": [
+        {"bit_in": 17.5, "top_md": 0, "base_md": 800, "radial_scale": 40},
+        {"bit_in": 12.25, "top_md": 800, "base_md": 2100, "radial_scale": 32},
+    ],
+    "casings": [
+        {"name": '13-3/8"', "od_in": 13.375, "id_in": 12.4,
+         "top_md": 0, "shoe_md": 800, "toc_md": 500},
+        # ONE string on ONE hanger: 10-3/4in to 191.6 m, then 9-5/8in to shoe
+        {"name": "production", "od_in": 9.625, "id_in": 8.68,
+         "top_md": 0, "shoe_md": 1997.6, "toc_md": 1400,
+         "sections": [
+             {"od_in": 10.75, "id_in": 9.76, "top_md": 0, "base_md": 191.6},
+             {"od_in": 9.625, "id_in": 8.68, "top_md": 191.6,
+              "base_md": 1997.6},
+         ]},
+    ],
+}
+
+
+def test_combination_string_has_one_shoe_not_one_per_diameter():
+    """A shoe at the crossover asserts the string ENDS there and the annulus
+    opens below it. Both false -- and a fabricated shoe is a false statement
+    about well architecture, where a missing diameter step is cosmetic."""
+    from welleng.schematic.column import L_SHOE
+    from welleng.schematic.drawing import SymbolRef
+    dwg = build_column(WellSchematic.model_validate(COMBO), mode="MD")
+    shoes = [e for e in dwg.entities
+             if getattr(e, "layer", None) == L_SHOE
+             and isinstance(e, SymbolRef)]
+    depths = sorted({round(e.position[1], 3) for e in shoes})
+    assert depths == [800.0, 1997.6], f"shoe depths {depths}"
+
+
+def test_combination_string_draws_steel_at_both_diameters():
+    from welleng.schematic.column import L_CASING
+    from welleng.schematic.drawing import Polygon as DwgPolygon
+    dwg = build_column(WellSchematic.model_validate(COMBO), mode="MD")
+    widths = set()
+    for e in dwg.entities:
+        if getattr(e, "layer", None) == L_CASING and isinstance(e, DwgPolygon):
+            xs = [abs(x) for x, _y in e.points]
+            widths.add(round(max(xs) / 40.0 * 2.0, 3))   # -> OD in inches
+    assert 10.75 in widths and 9.625 in widths, sorted(widths)
+
+
+def test_od_at_and_id_at_follow_the_profile():
+    s = WellSchematic.model_validate(COMBO)
+    c = next(c for c in s.wellbores[0].casings if c.name == "production")
+    assert c.od_at(100.0) == 10.75
+    assert c.id_at(100.0) == 9.76
+    assert c.od_at(1000.0) == 9.625
+    assert c.crossovers() == [191.6]
+    assert c.has_od(10.75) and c.has_od(9.625)
+    assert not c.has_od(7.0)
+
+
+def test_annulus_wall_steps_at_the_crossover():
+    """The annulus is keyed on the OD of the string forming the inner wall,
+    and that OD CHANGES at the crossover."""
+    from welleng.schematic.column import L_FLUID
+    from welleng.schematic.drawing import Polygon as DwgPolygon
+    d = {**COMBO, "annulus_fluids": [
+        {"name": "WBM", "inside_od_in": 10.75, "top_md": 0, "base_md": 400,
+         "density_sg": 1.35},
+    ]}
+    dwg = build_column(WellSchematic.model_validate(d), mode="MD")
+    inner = set()
+    for e in dwg.entities:
+        if getattr(e, "layer", None) == L_FLUID and isinstance(e, DwgPolygon):
+            xs = [abs(x) for x, _y in e.points]
+            inner.add(round(min(xs) / 40.0 * 2.0, 3))      # -> OD in inches
+    assert inner == {10.75, 9.625}, sorted(inner)
+
+
+def test_a_fluid_naming_either_diameter_finds_the_string():
+    from welleng.schematic.column import L_FLUID
+    for od in (10.75, 9.625):
+        d = {**COMBO, "annulus_fluids": [
+            {"name": "WBM", "inside_od_in": od, "top_md": 0, "base_md": 400},
+        ]}
+        dwg = build_column(WellSchematic.model_validate(d), mode="MD")
+        assert [e for e in dwg.entities
+                if getattr(e, "layer", None) == L_FLUID], f"od {od} not found"
+
+
+@pytest.mark.parametrize("secs,msg", [
+    ([{"od_in": 10.75, "id_in": 9.76, "top_md": 0, "base_md": 190.0},
+      {"od_in": 9.625, "id_in": 8.68, "top_md": 191.6, "base_md": 1997.6}],
+     "not contiguous"),
+    ([{"od_in": 10.75, "id_in": 9.76, "top_md": 0, "base_md": 300.0},
+      {"od_in": 9.625, "id_in": 8.68, "top_md": 191.6, "base_md": 1997.6}],
+     "not contiguous"),
+    ([{"od_in": 10.75, "id_in": 9.76, "top_md": 0, "base_md": 191.6},
+      {"od_in": 9.625, "id_in": 8.68, "top_md": 191.6, "base_md": 1900.0}],
+     "shoe_md"),
+    ([{"od_in": 10.75, "id_in": 9.76, "top_md": 50.0, "base_md": 191.6},
+      {"od_in": 9.625, "id_in": 8.68, "top_md": 191.6, "base_md": 1997.6}],
+     "top_md"),
+    ([{"od_in": 10.75, "id_in": 9.76, "top_md": 0, "base_md": 191.6},
+      {"od_in": 7.0, "id_in": 6.18, "top_md": 191.6, "base_md": 1997.6}],
+     "section at the shoe"),
+])
+def test_bad_combination_sections_are_refused(secs, msg):
+    """A gap draws the string as two pieces with open annulus between them; an
+    overlap draws two walls at one depth. Same fabricated-geometry class the
+    field exists to remove, so it is refused rather than rendered."""
+    d = {**COMBO, "casings": [
+        {"name": "production", "od_in": 9.625, "id_in": 8.68,
+         "top_md": 0, "shoe_md": 1997.6, "sections": secs},
+    ]}
+    with pytest.raises(Exception, match=msg):
+        WellSchematic.model_validate(d)
+
+
+# --- consecutive tubing runs are one string --------------------------------- #
+TAPERED_TUBING = {
+    **BASE,
+    "completion": [
+        {"type": "tubing", "od_in": 5.5, "top_md": 0, "base_md": 1683.81},
+        {"type": "tubing", "od_in": 4.5, "top_md": 1683.81, "base_md": 1764.19},
+        {"type": "tubing", "od_in": 3.5, "top_md": 1764.19, "base_md": 1878.45},
+    ],
+}
+
+
+def test_consecutive_tubing_runs_are_joined():
+    """Drawn as independent polylines the runs render as floating pairs of
+    lines with visible gaps, read as a discontinuity. The string is continuous."""
+    from welleng.schematic.column import L_COMPLETION
+    from welleng.schematic.drawing import Polyline as DwgPolyline
+    dwg = build_column(WellSchematic.model_validate(TAPERED_TUBING), mode="MD")
+    steps = [e for e in dwg.entities
+             if getattr(e, "layer", None) == L_COMPLETION
+             and isinstance(e, DwgPolyline)
+             and len(e.points) == 2
+             and abs(e.points[0][1] - e.points[1][1]) < 1e-9]
+    depths = sorted({round(e.points[0][1], 2) for e in steps})
+    assert depths == [1683.81, 1764.19], f"joins at {depths}"
+
+
+def test_the_join_spans_the_two_radii():
+    from welleng.schematic.column import L_COMPLETION
+    from welleng.schematic.drawing import Polyline as DwgPolyline
+    dwg = build_column(WellSchematic.model_validate(TAPERED_TUBING), mode="MD")
+    s = 32.0                                     # radial scale below 800 m
+    for e in dwg.entities:
+        if (getattr(e, "layer", None) == L_COMPLETION
+                and isinstance(e, DwgPolyline) and len(e.points) == 2
+                and abs(e.points[0][1] - e.points[1][1]) < 1e-9
+                and round(e.points[0][1], 2) == 1683.81):
+            xs = sorted(abs(x) for x, _y in e.points)
+            assert xs == pytest.approx([4.5 / 2 * s, 5.5 / 2 * s])
+            return
+    pytest.fail("no join at the 5-1/2in -> 4-1/2in crossover")
+
+
+def test_a_real_gap_between_tubing_runs_is_not_closed():
+    """Only runs whose depths MEET are one string. Closing a genuine gap would
+    draw a connection that is not there -- the same defect, inverted."""
+    from welleng.schematic.column import L_COMPLETION
+    from welleng.schematic.drawing import Polyline as DwgPolyline
+    d = {**BASE, "completion": [
+        {"type": "tubing", "od_in": 5.5, "top_md": 0, "base_md": 1000.0},
+        {"type": "tubing", "od_in": 4.5, "top_md": 1200.0, "base_md": 1500.0},
+    ]}
+    dwg = build_column(WellSchematic.model_validate(d), mode="MD")
+    steps = [e for e in dwg.entities
+             if getattr(e, "layer", None) == L_COMPLETION
+             and isinstance(e, DwgPolyline) and len(e.points) == 2
+             and abs(e.points[0][1] - e.points[1][1]) < 1e-9]
+    assert not steps, "a real gap in the completion was closed"
