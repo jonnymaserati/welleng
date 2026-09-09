@@ -1010,3 +1010,45 @@ def test_a_shoeless_string_still_draws_its_steel():
 def test_kind_defaults_to_casing_so_existing_data_is_unchanged():
     s = WellSchematic.model_validate(BASE)
     assert all(c.kind == "casing" and c.has_shoe for c in s.wellbores[0].casings)
+
+
+# --- OSDU vocabulary on the fields that were untyped ------------------------ #
+def test_plug_type_accepts_the_published_pa_vocabulary(recwarn):
+    d = {**BASE, "cement_plugs": [
+        {"name": "P", "top_md": 0, "base_md": 200, "plug_type": "Abandonment"},
+    ]}
+    s = WellSchematic.model_validate(d)
+    assert s.primary.cement_plugs[0].plug_type == "Abandonment"
+    assert not recwarn.list
+
+
+def test_an_unpublished_code_on_an_open_list_warns_but_is_kept():
+    """CementPlugType is OPEN, so an operator extension is legitimate -- but
+    a consumer using the standard list will not recognise it."""
+    d = {**BASE, "cement_plugs": [
+        {"name": "P", "top_md": 0, "base_md": 200, "plug_type": "Bogus"},
+    ]}
+    with pytest.warns(UserWarning, match="CementPlugType"):
+        s = WellSchematic.model_validate(d)
+    assert s.primary.cement_plugs[0].plug_type == "Bogus"
+
+
+def test_the_vocabulary_fields_are_optional_and_default_to_none(recwarn):
+    """They ANNOTATE. Existing data must validate unchanged."""
+    s = WellSchematic.model_validate({**BASE, "cement_plugs": [
+        {"name": "P", "top_md": 0, "base_md": 200}]})
+    assert s.primary.cement_plugs[0].plug_type is None
+    assert not recwarn.list
+
+
+@pytest.mark.parametrize("key,field,code", [
+    ("perforations", "method", "JetPerforate"),
+    ("annulus_fluids", "fluid_type", "CaCl2-Water"),
+])
+def test_perforation_and_fluid_carry_their_osdu_code(key, field, code, recwarn):
+    payload = {"top_md": 100, "base_md": 200, field: code}
+    if key == "annulus_fluids":
+        payload["inside_od_in"] = 9.625
+    s = WellSchematic.model_validate({**BASE, key: [payload]})
+    assert getattr(getattr(s.primary, key)[0], field) == code
+    assert not recwarn.list

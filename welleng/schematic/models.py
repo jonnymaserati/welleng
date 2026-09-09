@@ -27,6 +27,20 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 _G = 9.81
 
 
+def _osdu_check(list_name: str, code: Optional[str], field_name: str) -> None:
+    """Validate an optional OSDU reference-data code on a schematic field.
+
+    Strictness comes from the list's own governance model, so nothing is
+    re-decided here: a FIXED list refuses an unknown code, an OPEN one warns
+    and lets it through (operators may extend it), a LOCAL one is silent.
+    ``None`` is always fine -- these fields annotate, they are not required.
+    """
+    if code is None:
+        return
+    from ..osdu_ref import validate           # lazy: keeps models import light
+    validate(list_name, code, field=field_name)
+
+
 class _Base(BaseModel):
     """Shared config: allow population by field name or OSDU alias."""
 
@@ -345,6 +359,16 @@ class CementPlug(_Base):
     name: str = "Cement plug"
     top_md: float
     base_md: float
+    plug_type: Optional[str] = Field(
+        None,
+        description="OSDU CementPlugType: Abandonment | KickOff | "
+                    "LostCirculation | PlugBack | Suspension",
+    )
+
+    @model_validator(mode="after")
+    def _check_plug_type(self) -> "CementPlug":
+        _osdu_check("CementPlugType", self.plug_type, "plug_type")
+        return self
 
 
 class Perforation(_Base):
@@ -364,6 +388,16 @@ class Perforation(_Base):
     shots_per_m: Optional[float] = Field(
         None, description="shot density, per metre; presentation only"
     )
+    method: Optional[str] = Field(
+        None,
+        description="OSDU PerforationIntervalType: JetPerforate | BulletPerf | "
+                    "HPFluidJet | Abrasive-HP-FluidJet | T-C-Punch | Undefined",
+    )
+
+    @model_validator(mode="after")
+    def _check_method(self) -> "Perforation":
+        _osdu_check("PerforationIntervalType", self.method, "method")
+        return self
 
 
 class AnnulusFluid(_Base):
@@ -394,6 +428,16 @@ class AnnulusFluid(_Base):
     colour: Optional[str] = Field(
         None, description="hex fill; None = picked from the fluid name"
     )
+    fluid_type: Optional[str] = Field(
+        None,
+        description="OSDU AnnularFluidType: CaCl2-Water | Diesel | Fresh-Water "
+                    "| DrillingMud-Water | DrillingMud-Oil | CrudeOil | ...",
+    )
+
+    @model_validator(mode="after")
+    def _check_fluid_type(self) -> "AnnulusFluid":
+        _osdu_check("AnnularFluidType", self.fluid_type, "fluid_type")
+        return self
 
 
 class CompletionItem(_Base):
