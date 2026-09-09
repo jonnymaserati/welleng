@@ -3,6 +3,8 @@
  "kind": "osdu:wks:Manifest:1.0.0",
  "governance": "OPEN",
  "source": "https://community.opengroup.org/osdu/data/data-definitions/-/raw/master/ReferenceValues/Manifests/reference-data/OPEN/WellPressureTestGaugeType.1.json",
+ "commit": "cf70bf3c17ec19913b251c475554e4a3b4ac8e34",
+ "committed": "2025-04-11",
  "retrieved": "2026-09-09",
  "licence": "Apache-2.0",
  "attribution": [],

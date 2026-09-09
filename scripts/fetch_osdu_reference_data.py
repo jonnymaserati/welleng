@@ -20,13 +20,33 @@ from __future__ import annotations
 import gzip
 import json
 import sys
+import urllib.parse
 import urllib.request
 from datetime import date
 from pathlib import Path
 from urllib.parse import unquote
 
+PROJECT = "osdu%2Fdata%2Fdata-definitions"
+API = f"https://community.opengroup.org/api/v4/projects/{PROJECT}"
+MANIFESTS = "ReferenceValues/Manifests/reference-data"
 RAW = ("https://community.opengroup.org/osdu/data/data-definitions/-/raw/"
-       "master/ReferenceValues/Manifests/reference-data")
+       f"master/{MANIFESTS}")
+
+
+def last_commit(path: str) -> tuple[str, str]:
+    """``(sha, date)`` of the last commit to touch ``path`` on ``master``.
+
+    Pinning the SHA is what makes drift DETECTABLE. A retrieval date says when
+    we looked; only the commit says what we looked at, and a vocabulary that
+    changes underneath a stored code is worse than no vocabulary at all.
+    """
+    url = (f"{API}/repository/commits?path={urllib.parse.quote(path, safe='')}"
+           "&ref_name=master&per_page=1")
+    with urllib.request.urlopen(url, timeout=60) as fh:      # noqa: S310
+        commits = json.load(fh)
+    if not commits:
+        raise RuntimeError(f"no commit found for {path}")
+    return commits[0]["id"], commits[0]["committed_date"][:10]
 
 #: ``list name -> governance tier``. The tier is the OSDU folder and it decides
 #: how strictly welleng validates a value (see ``welleng.osdu_ref``).
@@ -60,6 +80,12 @@ LISTS: dict[str, str] = {
     "FluidContactType": "FIXED",
     # logs
     "LogCurveMainFamily": "LOCAL",
+    # survey
+    "SurveyToolType": "OPEN",
+    "CalculationMethodType": "OPEN",
+    # well identity
+    "WellRole": "OPEN",
+    "FacilityStateType": "OPEN",
 }
 
 #: Handled separately: 42,919 vendor mnemonics at 73 MB raw. Slimmed to
@@ -102,11 +128,14 @@ def fetch(name: str, tier: str) -> dict:
             f"{name}: no live codes -- every record is deprecated, or the "
             "manifest shape changed. Check for a successor list."
         )
+    sha, committed = last_commit(f"{MANIFESTS}/{tier}/{name}.1.json")
     return {
         "list": name,
         "kind": doc.get("kind", f"osdu:wks:reference-data--{name}:1.0.0"),
         "governance": tier,
         "source": f"{RAW}/{tier}/{name}.1.json",
+        "commit": sha,
+        "committed": committed,
         "retrieved": date.today().isoformat(),
         "licence": "Apache-2.0",
         "attribution": sorted(authorities),
@@ -122,6 +151,7 @@ def fetch_curve_types() -> dict:
     """
     name, tier = CURVE_TYPES
     url = f"{RAW}/{tier}/{name}.1.json"
+    sha, committed = last_commit(f"{MANIFESTS}/{tier}/{name}.1.json")
     with urllib.request.urlopen(url, timeout=600) as fh:     # noqa: S310
         doc = json.load(fh)
 
@@ -143,6 +173,8 @@ def fetch_curve_types() -> dict:
         "kind": doc.get("kind", f"osdu:wks:reference-data--{name}:1.0.0"),
         "governance": tier,
         "source": url,
+        "commit": sha,
+        "committed": committed,
         "retrieved": date.today().isoformat(),
         "licence": "Apache-2.0",
         "attribution": [],
@@ -150,7 +182,52 @@ def fetch_curve_types() -> dict:
     }
 
 
+def check_drift() -> int:
+    """Compare each vendored list's pinned commit against upstream ``master``.
+
+    Exit 0 = in step, 1 = at least one list has moved, 2 = could not determine
+    (which must never read as a pass).
+    """
+    stale, unknown = [], []
+    for path in sorted(OUT.glob("*.json")) + sorted(OUT.glob("*.json.gz")):
+        try:
+            if path.suffix == ".gz":
+                with gzip.open(path, "rt", encoding="utf-8") as fh:
+                    doc = json.load(fh)
+            else:
+                doc = json.loads(path.read_text())
+            tier, name = doc["governance"], doc["list"]
+            pinned = doc.get("commit")
+            sha, when = last_commit(f"{MANIFESTS}/{tier}/{name}.1.json")
+        except Exception as exc:
+            unknown.append(f"{path.name}: {exc}")
+            continue
+        if not pinned:
+            unknown.append(f"{name}: no pinned commit")
+        elif pinned != sha:
+            stale.append(f"{name}: pinned {pinned[:12]} -> upstream "
+                         f"{sha[:12]} ({when})")
+
+    for row in stale:
+        print(f"STALE  {row}")
+    for row in unknown:
+        print(f"UNKNOWN {row}", file=sys.stderr)
+    if unknown:
+        print(f"\n?? could not check {len(unknown)} list(s) -- NOT a pass",
+              file=sys.stderr)
+        return 2
+    if stale:
+        print(f"\n{len(stale)} list(s) have moved upstream. Re-run this script "
+              "without --check, then review the diff: a code you have STORED "
+              "may have been deprecated or renamed.")
+        return 1
+    print(f"all {len(list(OUT.glob('*.json'))) + 1} lists in step with master")
+    return 0
+
+
 def main() -> int:
+    if "--check" in sys.argv:
+        return check_drift()
     OUT.mkdir(parents=True, exist_ok=True)
     for name, tier in sorted(LISTS.items()):
         try:

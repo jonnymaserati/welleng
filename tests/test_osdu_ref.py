@@ -257,3 +257,52 @@ def test_the_current_model_has_no_published_code_yet():
 def test_no_magnetic_model_is_none_not_an_error():
     from welleng.survey import SurveyHeader
     assert SurveyHeader().osdu_magnetic_model() is None
+
+
+# --- version pinning ---------------------------------------------------------- #
+def test_every_list_pins_the_upstream_commit_it_came_from():
+    """A retrieval date says when we looked; only the commit says WHAT we
+    looked at. Without it, drift is undetectable — and a code already stored in
+    someone's data can be deprecated or renamed upstream with nothing in the
+    stored record to show it."""
+    for name in osdu_ref.available():
+        sha = osdu_ref.pinned_commit(name)
+        assert sha and len(sha) == 40, f"{name} has no pinned commit"
+        assert osdu_ref.provenance(name)["committed"]
+
+
+# --- error models ARE survey tool types --------------------------------------- #
+def test_welleng_error_models_resolve_to_survey_tool_types():
+    """Not an adoption: the OSDU codes are "<short name>_<OWSG model id>", the
+    exact pair our model metadata already carries."""
+    import glob
+    import json as _json
+    import os
+    import welleng as we
+    root = os.path.join(os.path.dirname(we.__file__), "errors", "iscwsa_json")
+    models = [_json.load(open(f)).get("metadata", {})
+              for f in glob.glob(root + "/**/*.json", recursive=True)]
+    assert len(models) > 90
+    hits = [m for m in models
+            if osdu_ref.survey_tool_type(m.get("short_name"),
+                                         m.get("model_id"))]
+    assert len(hits) >= len(models) - 1, \
+        f"only {len(hits)}/{len(models)} models resolve"
+
+
+def test_the_six_axis_model_is_absent_upstream_and_says_so():
+    """D007Ma is in no published code — verified, not a spelling difference.
+    Locked so the gap stays visible."""
+    assert osdu_ref.survey_tool_type("ISCWSA Rot 6Axis MWD+SRGM", "D007Ma") \
+        is None
+    assert not [c for c in osdu_ref.codes("SurveyToolType") if "D007Ma" in c]
+
+
+def test_min_curve_and_balanced_tangential_are_both_published():
+    """Our dp_basis distinction is OSDU's CalculationMethodType — and it is the
+    distinction that has faked residuals in analytical-vs-MC comparison."""
+    codes = osdu_ref.codes("CalculationMethodType")
+    assert "MinimumCurvature" in codes and "BalancedTangential" in codes
+    assert osdu_ref.resolve("CalculationMethodType", "min curve") is None
+    assert osdu_ref.resolve("CalculationMethodType", "MinimumCurvature") \
+        == "MinimumCurvature"

@@ -3,6 +3,8 @@
  "kind": "osdu:wks:Manifest:1.0.0",
  "governance": "OPEN",
  "source": "https://community.opengroup.org/osdu/data/data-definitions/-/raw/master/ReferenceValues/Manifests/reference-data/OPEN/WellFluidType.1.json",
+ "commit": "f20eba7a14b37beac92470a1918597702c05bfc0",
+ "committed": "2024-11-15",
  "retrieved": "2026-09-09",
  "licence": "Apache-2.0",
  "attribution": [

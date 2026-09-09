@@ -3,6 +3,8 @@
  "kind": "osdu:wks:Manifest:1.0.0",
  "governance": "OPEN",
  "source": "https://community.opengroup.org/osdu/data/data-definitions/-/raw/master/ReferenceValues/Manifests/reference-data/OPEN/VerticalMeasurementType.1.json",
+ "commit": "4b90c921558741bd6c33b825dd4214918d4d45b4",
+ "committed": "2026-07-15",
  "retrieved": "2026-09-09",
  "licence": "Apache-2.0",
  "attribution": [

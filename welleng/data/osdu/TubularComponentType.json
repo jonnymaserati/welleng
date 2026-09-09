@@ -3,6 +3,8 @@
  "kind": "osdu:wks:Manifest:1.0.0",
  "governance": "LOCAL",
  "source": "https://community.opengroup.org/osdu/data/data-definitions/-/raw/master/ReferenceValues/Manifests/reference-data/LOCAL/TubularComponentType.1.json",
+ "commit": "bfbd6907a22ba4965e8dc8d6144fa3024cbae3b7",
+ "committed": "2025-01-17",
  "retrieved": "2026-09-09",
  "licence": "Apache-2.0",
  "attribution": [

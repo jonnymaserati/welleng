@@ -98,9 +98,22 @@ def governance(list_name: str) -> str:
 def provenance(list_name: str) -> dict:
     """Source URL, retrieval date, licence and attribution authorities."""
     doc = _load(list_name)
-    return {k: doc[k] for k in
-            ("list", "kind", "governance", "source", "retrieved", "licence",
-             "attribution")}
+    return {k: doc.get(k) for k in
+            ("list", "kind", "governance", "source", "commit", "committed",
+             "retrieved", "licence", "attribution")}
+
+
+def pinned_commit(list_name: str) -> Optional[str]:
+    """The upstream commit this list's values were taken at.
+
+    The pin is what makes drift DETECTABLE: a retrieval date says when we
+    looked, only the commit says what we looked at. ``scripts/
+    fetch_osdu_reference_data.py --check`` compares every pin against
+    ``master`` and exits non-zero when one has moved -- which matters because a
+    code already STORED in someone's data may have been deprecated or renamed
+    upstream, and nothing in the stored record would show it.
+    """
+    return _load(list_name).get("commit")
 
 
 # --------------------------------------------------------------------------- #
@@ -338,3 +351,25 @@ def curve_vendors(mnemonic: str) -> List[tuple]:
     mnemonic is unknown or merely ambiguous -- the two need different handling.
     """
     return sorted(_by_mnemonic().get(str(mnemonic).strip().upper(), []))
+
+
+# --------------------------------------------------------------------------- #
+# survey tool types
+# --------------------------------------------------------------------------- #
+def survey_tool_type(short_name: str, model_id: str) -> Optional[str]:
+    """OSDU ``SurveyToolType`` code for an error model, or ``None``.
+
+    The published codes are ``"<short name>_<OWSG model id>"`` -- e.g.
+    ``MWD+SRGM_A001Mc``, ``GYRO-NS_A020Gb`` -- which is exactly the pair every
+    welleng error model already carries in its metadata. **100 of welleng's 101
+    models resolve.** So this is less an adoption than a label: the models ARE
+    these tools, they simply never said so.
+
+    The one exception is the ISCWSA 6-axis rotating model (``D007Ma``), which
+    is **not in the published list at all** -- not a spelling difference; no
+    code in the 101 carries that id. It returns ``None``, and that gap is a
+    contribution candidate rather than something to paper over.
+    """
+    if not short_name or not model_id:
+        return None
+    return _index("SurveyToolType").get(_norm(f"{short_name}_{model_id}"))
