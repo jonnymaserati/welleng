@@ -261,12 +261,35 @@ def validate(list_name: str, code: Optional[str], *,
 def osdu_id(list_name: str, code: str, namespace: str = "") -> str:
     """The reference-data id a record's ``...ID`` field carries.
 
-    ``namespace`` prefixes the id for a specific data partition; left empty the
-    partition-relative form is returned, which is what a caller composing a
-    record against its own namespace wants.
+    The schemas constrain these to
+    ``<namespace>:reference-data--<List>:<code>:<version>``, with the version
+    segment optionally empty -- so the **trailing colon is part of the form**,
+    not a typo, and a namespace is required for the id to validate.
+
+    ``namespace`` left empty returns the partition-relative stem, which is what
+    a caller composing a record against its own partition wants; it will not
+    match the schema pattern until the partition is prefixed.
     """
-    stem = f"reference-data--{list_name}:{code}"
+    stem = f"reference-data--{list_name}:{code}:"
     return f"{namespace}:{stem}" if namespace else stem
+
+
+def survey_tool_type_for(error_model: str) -> Optional[str]:
+    """OSDU ``SurveyToolType`` code for a welleng error-model NAME.
+
+    welleng names a model by its OWSG short name (``"MWD+SRGM"``,
+    ``"GYRO-NS_Fl"``); the OSDU code appends the model id
+    (``MWD+SRGM_A001Mc``). Matches on the short-name prefix and returns
+    ``None`` unless exactly one code matches -- an ambiguous tool is not a
+    tool.
+    """
+    if not error_model:
+        return None
+    # the short name must be followed by the id segment, not by more name
+    key = _norm(error_model)
+    exact = [c for c in _load("SurveyToolType")["codes"]
+             if _norm(c.rsplit("_", 1)[0]) == key]
+    return exact[0] if len(exact) == 1 else None
 
 
 # --------------------------------------------------------------------------- #

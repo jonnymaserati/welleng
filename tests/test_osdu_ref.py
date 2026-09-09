@@ -124,10 +124,11 @@ def test_the_pa_plug_vocabulary_is_there():
 
 # --- ids ---------------------------------------------------------------------- #
 def test_osdu_id_shape():
+    # the trailing colon is the (empty) version segment the schemas require
     assert osdu_ref.osdu_id("CementPlugType", "Abandonment") \
-        == "reference-data--CementPlugType:Abandonment"
+        == "reference-data--CementPlugType:Abandonment:"
     assert osdu_ref.osdu_id("CementPlugType", "Abandonment", "ns") \
-        == "ns:reference-data--CementPlugType:Abandonment"
+        == "ns:reference-data--CementPlugType:Abandonment:"
 
 
 # --- the datum, end to end ---------------------------------------------------- #
@@ -150,7 +151,7 @@ def test_exported_well_carries_the_reference_frame():
     rec = to_osdu(w)
     vm = rec["data"]["VerticalMeasurements"][0]
     assert vm["VerticalMeasurementTypeID"] == \
-        "reference-data--VerticalMeasurementType:RotaryTable"
+        "reference-data--VerticalMeasurementType:RotaryTable:"
 
 
 def test_an_unresolvable_frame_is_omitted_not_guessed():
@@ -306,3 +307,68 @@ def test_min_curve_and_balanced_tangential_are_both_published():
     assert osdu_ref.resolve("CalculationMethodType", "min curve") is None
     assert osdu_ref.resolve("CalculationMethodType", "MinimumCurvature") \
         == "MinimumCurvature"
+
+
+# --- the trajectory record ---------------------------------------------------- #
+def _survey(**kw):
+    import welleng as we
+    h = we.survey.SurveyHeader(
+        name="S1", b_total=50000.0, dip=70.0, declination=0.0,
+        azi_reference=kw.pop("azi_reference", "grid"),
+        dp_basis=kw.pop("dp_basis", "min_curve"),
+        survey_date=kw.pop("survey_date", "2020-01-01"),
+    )
+    return we.survey.Survey(md=[0, 100, 200.0], inc=[0, 5, 10.0],
+                            azi=[0, 10, 20.0], header=h, **kw)
+
+
+def test_trajectory_record_states_how_the_survey_was_referenced():
+    from welleng.osdu import survey_to_osdu
+    d = survey_to_osdu(_survey(error_model="MWD+SRGM"), "WB1",
+                       namespace="ns")["data"]
+    assert d["WellboreID"] == "WB1"
+    assert d["AzimuthReferenceType"] == \
+        "ns:reference-data--AzimuthReferenceType:GridNorth:"
+    assert d["CalculationMethodType"] == \
+        "ns:reference-data--CalculationMethodType:MinimumCurvature:"
+    assert d["SurveyToolTypeID"] == \
+        "ns:reference-data--SurveyToolType:MWD+SRGM_A001Mc:"
+    assert (d["TopDepthMeasuredDepth"], d["BaseDepthMeasuredDepth"]) == (0.0, 200.0)
+
+
+def test_dp_basis_is_the_calculation_method():
+    """balanced_tangent is not minimum curvature, and conflating them has
+    faked 1-15% residuals in analytical-vs-MC comparison."""
+    from welleng.osdu import survey_to_osdu
+    d = survey_to_osdu(_survey(dp_basis="balanced_tangent"), "WB1",
+                       namespace="ns")["data"]
+    assert d["CalculationMethodType"].endswith("BalancedTangential:")
+
+
+def test_a_field_that_does_not_resolve_is_omitted_not_guessed():
+    """welleng's legacy alias 'ISCWSA MWD Rev5.11' is not an OWSG short name,
+    so no tool type is claimed for it."""
+    from welleng.osdu import survey_to_osdu
+    d = survey_to_osdu(_survey(error_model="ISCWSA MWD Rev5.11"), "WB1")["data"]
+    assert "SurveyToolTypeID" not in d
+    assert "AzimuthReferenceType" in d          # the rest still exports
+
+
+def test_reference_ids_carry_the_trailing_version_segment():
+    """The schemas constrain these to
+    <namespace>:reference-data--<List>:<code>:<version>, version optionally
+    empty -- so the trailing colon is part of the form."""
+    import re
+    from welleng.osdu import survey_to_osdu
+    d = survey_to_osdu(_survey(error_model="MWD+SRGM"), "WB1",
+                       namespace="ns")["data"]
+    pat = re.compile(r"^[\w\-\.]+:reference-data\-\-\w+:[\w\-\.\:\%\+]+:[0-9]*$")
+    for k in ("AzimuthReferenceType", "CalculationMethodType",
+              "SurveyToolTypeID"):
+        assert pat.match(d[k]), f"{k}={d[k]!r} does not match the schema pattern"
+
+
+def test_error_model_names_resolve_to_tool_types():
+    from welleng.error import ERROR_MODELS
+    hits = [m for m in ERROR_MODELS if osdu_ref.survey_tool_type_for(m)]
+    assert len(hits) >= len(ERROR_MODELS) - 3

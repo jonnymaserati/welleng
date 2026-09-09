@@ -351,6 +351,67 @@ def from_osdu(record: dict[str, Any]) -> Any:
     raise ValueError(f"no from_osdu mapper for entity {entity!r}")
 
 
+def survey_to_osdu(survey: Any, wellbore_id: str, *,
+                   version: Optional[str] = None, uom: str = "m",
+                   namespace: str = "") -> dict[str, Any]:
+    """Map a :class:`welleng.survey.Survey` to an OSDU ``WellboreTrajectory``.
+
+    Emits the trajectory's HEADER -- the record that says how the survey was
+    referenced, computed and acquired. The station array itself is a separate
+    dataset in OSDU and is not produced here.
+
+    Every reference-data field is populated only when it RESOLVES; a field we
+    cannot state is omitted rather than guessed at, because a wrong azimuth
+    reference or calculation method is silently wrong in the direction that
+    still looks plausible.
+
+    ``namespace`` is the data partition. Without it the reference ids are
+    partition-relative and will not match the schema pattern -- fine for
+    composing, not for ingesting.
+
+    Parameters
+    ----------
+    survey : welleng.survey.Survey
+    wellbore_id : str
+        The parent wellbore's OSDU id.
+    """
+    from .osdu_ref import osdu_id, survey_tool_type_for
+
+    h = survey.header
+    data: dict[str, Any] = {"WellboreID": wellbore_id}
+    md = getattr(survey, "md", None)
+    if md is not None and len(md):
+        data["TopDepthMeasuredDepth"] = _from_m(float(md[0]), uom)
+        data["BaseDepthMeasuredDepth"] = _from_m(float(md[-1]), uom)
+
+    azi = h.osdu_azi_reference()
+    if azi is not None:
+        data["AzimuthReferenceType"] = osdu_id(
+            "AzimuthReferenceType", azi, namespace)
+
+    # dp_basis is welleng's term for OSDU's CalculationMethodType, and it is
+    # the distinction that has faked residuals in analytical-vs-MC comparison
+    # -- worth stating explicitly on anything we export.
+    calc = {"min_curve": "MinimumCurvature",
+            "balanced_tangent": "BalancedTangential"}.get(
+                getattr(h, "dp_basis", None))
+    if calc is not None:
+        data["CalculationMethodType"] = osdu_id(
+            "CalculationMethodType", calc, namespace)
+
+    tool = survey_tool_type_for(getattr(survey, "error_model", None) or "")
+    if tool is not None:
+        data["SurveyToolTypeID"] = osdu_id("SurveyToolType", tool, namespace)
+
+    if getattr(h, "survey_date", None):
+        data["AcquisitionDate"] = str(h.survey_date)
+    if getattr(h, "name", None):
+        data["SurveyReferenceIdentifier"] = str(h.name)
+
+    return {"kind": build_kind("WellboreTrajectory", version),
+            "id": f"{wellbore_id}:trajectory", "data": data}
+
+
 def to_osdu(entity: Any, *, version: Optional[str] = None,
             uom: str = "m") -> dict[str, Any]:
     """Map a ``welleng.hierarchy`` entity to an OSDU record.
