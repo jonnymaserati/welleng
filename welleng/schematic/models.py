@@ -640,6 +640,41 @@ class WellSchematic(_Base):
         return self.wellbores[0]
 
     # --- loaders -----------------------------------------------------------
+    def formation_bands(self) -> List[Tuple["Formation", float, float]]:
+        """``(formation, top_md, base_md)`` for EVERY formation, deepest included.
+
+        Taking each band's base from the NEXT formation's top leaves the
+        deepest formation with no successor, so it is silently omitted -- and
+        the deepest unit is the reservoir on almost every well. On one P&A
+        sheet the oil zone was missing from the lithology track, the seal/flow
+        track AND the formation background, nothing errored, and the sheet
+        looked complete.
+
+        The deepest band's base comes from TD (the deepest hole section, else
+        the deepest survey station) unless the formation carries an explicit
+        ``base_md``. A zero- or negative-thickness band is dropped: that is a
+        data error, not a band.
+
+        This lives on the model because three renderers each derived it
+        independently and each got it wrong the same way.
+        """
+        forms = sorted(self.formations, key=lambda f: f.top_md)
+        if not forms:
+            return []
+        bore = self.primary
+        td = max(
+            [h.base_md for h in (bore.hole_sections or [])]
+            + [max(bore.survey.md) if bore.survey and bore.survey.md else 0.0]
+        )
+        out: List[Tuple["Formation", float, float]] = []
+        for i, f in enumerate(forms):
+            base = f.base_md
+            if base is None:
+                base = forms[i + 1].top_md if i + 1 < len(forms) else td
+            if base > f.top_md:
+                out.append((f, f.top_md, base))
+        return out
+
     @classmethod
     def from_dict(cls, data: dict) -> "WellSchematic":
         return cls.model_validate(data)

@@ -1069,8 +1069,7 @@ def test_the_deepest_formation_is_not_dropped():
     """Each band took its base from the NEXT formation's top, so the deepest
     had no successor and was silently omitted — and the deepest unit is the
     reservoir on almost every well. Nothing errored; the sheet looked complete."""
-    from welleng.schematic.tracks import _formation_bands
-    bands = _formation_bands(WellSchematic.model_validate(_FORMS))
+    bands = WellSchematic.model_validate(_FORMS).formation_bands()
     assert [b[0].name for b in bands] == ["Overburden", "Seal", "Reservoir"]
     assert bands[-1][1:] == (1600.0, 2000.0)        # base from TD
 
@@ -1093,20 +1092,85 @@ def test_the_flow_zone_reaches_the_seal_flow_track():
 
 
 def test_an_explicit_base_md_wins_over_the_next_top():
-    from welleng.schematic.tracks import _formation_bands
     d = {**BASE, "formations": [
         {"name": "A", "top_md": 0, "base_md": 500, "color": "#111111"},
         {"name": "B", "top_md": 1200, "color": "#222222"},
     ]}
-    bands = _formation_bands(WellSchematic.model_validate(d))
+    bands = WellSchematic.model_validate(d).formation_bands()
     assert bands[0][1:] == (0.0, 500.0)          # not 1200
 
 
 def test_a_zero_thickness_band_is_dropped_not_drawn():
-    from welleng.schematic.tracks import _formation_bands
     d = {**BASE, "formations": [
         {"name": "A", "top_md": 0, "color": "#111111"},
         {"name": "sentinel", "top_md": 2000, "color": "#ffffff"},
     ]}
-    assert [b[0].name for b in _formation_bands(
-        WellSchematic.model_validate(d))] == ["A"]
+    assert [b[0].name for b in
+            WellSchematic.model_validate(d).formation_bands()] == ["A"]
+
+
+# --- ONE renderer: the composite figure must not diverge from the column ---- #
+def test_the_figure_track_renders_through_build_column():
+    """It used to draw the well itself, and the copy DIVERGED: while column.py
+    gained flat-grey cement, at-gauge hole, wall-anchored shoes, rock, annulus
+    fluids, perforations and hangers, the track still drew hatched cement and a
+    shoe sized from WELL DEPTH. Nothing failed — the composite sheet simply
+    disagreed with the column view of the same well, and a state doc recorded
+    the split as closed because only two of the three renderers were checked."""
+    from welleng.schematic import WellFigure
+    from welleng.schematic.column import (
+        L_CEMENT, L_FLUID, L_HANGER, L_PERF, L_ROCK, L_SHOE,
+    )
+    d = {**LINER_DATA,
+         "annulus_fluids": [{"name": "WBM", "inside_od_in": 13.375,
+                             "top_md": 0, "base_md": 500}],
+         "perforations": [{"top_md": 2300, "base_md": 2400}],
+         "formations": [{"name": "F", "top_md": 0, "color": "#c9e6a8"}]}
+    s = WellSchematic.model_validate(d)
+    layers = {getattr(e, "layer", None)
+              for e in WellFigure(s, mode="MD").build().entities}
+    for want in (L_ROCK, L_FLUID, L_PERF, L_HANGER, L_SHOE, L_CEMENT):
+        assert want in layers, f"{want} missing from the composite figure"
+
+
+def test_the_figure_cement_is_flat_grey_not_hatched():
+    """'I'd rather you just use grey for cement. No pattern.'"""
+    from welleng.schematic import WellFigure
+    from welleng.schematic.column import L_CEMENT
+    from welleng.schematic.drawing import Hatch as DwgHatch
+    fig = WellFigure(WellSchematic.model_validate(BASE), mode="MD").build()
+    cement = [e for e in fig.entities
+              if getattr(e, "layer", None) == L_CEMENT
+              and isinstance(e, DwgHatch)]
+    assert cement
+    assert all(e.pattern == "solid" for e in cement), \
+        "hatched cement reappeared in the composite figure"
+
+
+def test_the_figure_shoes_are_the_column_shoes_to_scale():
+    """The defect this delegation removes was a shoe height of
+    `layout.bottom * 0.012` — a fraction of WELL DEPTH, computed independently
+    of the column view, which is how the two drifted apart.
+
+    Both views map a to-scale depth axis onto a fixed sheet, so paper size does
+    change with depth in both; what must hold is that the figure's shoes are
+    the COLUMN's shoes under one linear map, which is what "one renderer"
+    means. Asserting a constant paper size would assert something neither view
+    does — the first version of this test did exactly that.
+    """
+    from welleng.schematic import WellFigure, build_column
+    from welleng.schematic.column import L_SHOE
+    from welleng.schematic.drawing import SymbolRef
+
+    def shoes(dwg):
+        return sorted(abs(e.sy) for e in dwg.entities
+                      if getattr(e, "layer", None) == L_SHOE
+                      and isinstance(e, SymbolRef))
+
+    s = WellSchematic.model_validate(BASE)
+    col = shoes(build_column(s, mode="MD", bare=True))
+    fig = shoes(WellFigure(s, mode="MD").build())
+    assert col and len(col) == len(fig)
+    ratios = [f / c for f, c in zip(fig, col)]
+    assert max(ratios) - min(ratios) < 1e-9, \
+        "figure shoes are not the column shoes under one scale"

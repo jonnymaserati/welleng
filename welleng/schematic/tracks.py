@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from .depth import DepthResolver
 from .drawing import (
     Drawing,
+    SymbolRef,
     Hatch,
     Line,
     Polygon,
@@ -91,7 +92,61 @@ class DepthTrack(Track):
             depth += step
 
 
+def _remap(entities, kx: float, ky: float, x0: float):
+    """Re-express world-coordinate entities in a track's paper band.
+
+    ``x`` (exaggerated inch-radius, centred on 0) scales by ``kx`` about the
+    band centre; ``y`` (depth in the layout's domain) scales by ``ky``. Text
+    heights and line weights are already paper-mm and are NOT touched.
+    """
+    def pt(p):
+        return (x0 + p[0] * kx, p[1] * ky)
+
+    out = []
+    for e in entities:
+        if isinstance(e, Line):
+            out.append(Line(pt(e.start), pt(e.end), layer=e.layer, style=e.style))
+        elif isinstance(e, Polyline):
+            out.append(Polyline([pt(q) for q in e.points], closed=e.closed,
+                                layer=e.layer, style=e.style))
+        elif isinstance(e, Polygon):
+            out.append(Polygon([pt(q) for q in e.points], layer=e.layer,
+                               style=e.style))
+        elif isinstance(e, Hatch):
+            out.append(Hatch([pt(q) for q in e.boundary], pattern=e.pattern,
+                             layer=e.layer, style=e.style))
+        elif isinstance(e, Rect):
+            c = pt(e.corner)
+            out.append(Rect(c, e.width * kx, e.height * ky, layer=e.layer,
+                            style=e.style))
+        elif isinstance(e, SymbolRef):
+            # sx/sy are in world units, so they scale with their axis.
+            out.append(SymbolRef(e.name, pt(e.position), e.sx * kx, e.sy * ky,
+                                 e.rotation, e.layer))
+        elif isinstance(e, Text):
+            out.append(Text(pt(e.position), e.text, height=e.height,
+                            rotation=e.rotation, ha=e.ha, va=e.va,
+                            layer=e.layer, style=e.style))
+    return out
+
+
 class SchematicTrack(Track):
+    """The column schematic, rendered into a track band.
+
+    ⚠️ **This delegates to :func:`welleng.schematic.column.build_column`; it
+    does NOT draw the well itself.** It used to, and the copy diverged: while
+    ``column.py`` gained flat-grey cement, at-gauge open hole, wall-anchored
+    shoes, formation bands, annulus fluids, perforations, liner hangers and
+    combination strings, this track still drew hatched cement and a shoe whose
+    height was a fraction of WELL DEPTH -- the exact defect corrected in
+    ``column.py`` months earlier. Nothing failed; the composite sheet simply
+    disagreed with the column view of the same well, and a state doc recorded
+    the split as closed because only two of the three renderers were checked.
+
+    One renderer means every future correction reaches this track for free,
+    which is the only version of this that stays true.
+    """
+
     title = "schematic\n(radius exagg.)"
     width = 66.0
 
@@ -100,113 +155,35 @@ class SchematicTrack(Track):
         self.width = width
 
     def build(self, dwg, layout, x0):
-        for layer in ("CEMENT", "CASING", "PLUG", "COMPLETION", "SHOE", "ANNOTATION"):
+        from .column import build_column
+
+        col = build_column(self.schematic, mode=layout.mode, bare=True)
+        for layer in col.layers:
             dwg.add_layer(layer)
+        for name, sym in col.symbols.items():
+            dwg.define_symbol(sym)
         self._header(dwg, x0)
+
+        xmin, _ymin, xmax, _ymax = col.bounds()
+        half = max(abs(xmin), abs(xmax), 1e-9)
+        kx = (self.width / 2.0 * 0.98) / half
+        ky = layout.v_scale
+        dwg.extend(_remap(col.entities, kx, ky, x0 + self.width / 2.0))
+
+        # Names at the SHOE, flush to the band edges. Every string starts at
+        # surface, so top-anchored names print on one line at depth 0; and the
+        # well fills the band, so a name beside the wall prints across the
+        # casing. Casings right, plugs left, so the two cannot collide.
         bore = self.schematic.primary
-        cx = x0 + self.width / 2.0
-        max_r = max([c.od_in / 2.0 for c in bore.casings]
-                    + [h.bit_in / 2.0 for h in bore.hole_sections] + [1.0])
-        sx = (self.width / 2.0 * 0.9) / max_r    # mm per inch-radius (band fit)
-
-        def rx(r_in, sign):
-            return cx + sign * r_in * sx
-
-        # cement annuli
-        ordered = sorted(bore.casings, key=lambda c: -c.od_in)
-        for i, c in enumerate(ordered):
-            if c.toc_md is None:
-                continue      # no cement RECORDED: draw nothing, claim nothing
-            r_out = c.od_in / 2.0
-            r_in = ordered[i - 1].id_in / 2.0 if i > 0 else max_r
-            lo, hi = sorted((r_out, r_in))
-            yt, yb = layout.y(c.toc_md), layout.y(c.shoe_md)
-            for sign in (-1, 1):
-                a, b = rx(lo, sign), rx(hi, sign)
-                dwg.add(Hatch([(a, yt), (b, yt), (b, yb), (a, yb)],
-                              pattern="cement", layer="CEMENT", style=_CEMENT))
-        # casing steel + shoes
-        shoe_h = layout.bottom * 0.012
         for c in bore.casings:
-            r_out, r_in = c.od_in / 2.0, c.id_in / 2.0
-            yt, yb = layout.y(c.top_md), layout.y(c.shoe_md)
-            for sign in (-1, 1):
-                a, b = rx(r_in, sign), rx(r_out, sign)
-                dwg.add(Rect((min(a, b), yt), abs(b - a), yb - yt,
-                             layer="CASING", style=_STEEL))
-                sxo = rx(r_out, sign)
-                dwg.add(Polygon([(sxo - shoe_h, yb), (sxo + shoe_h, yb),
-                                 (sxo + sign * shoe_h, yb + shoe_h)],
-                                layer="SHOE", style=_BLACK))
-            # Anchor on the SHOE, not the top. Every string starts at surface,
-            # so top-anchored names all print on one line at depth 0 and are
-            # unreadable -- column.py fixed exactly this and this track did not
-            # inherit it. Clamped inside the band so a name cannot print across
-            # the neighbouring track.
-            # Flush to the track's RIGHT edge at the shoe depth. The well
-            # fills ~90% of a 66 mm band, so there is no clear space beside the
-            # string: anchoring on the wall printed the name straight across
-            # the casing. The edge is the only place a name can sit and still
-            # belong to this track rather than the next one.
-            dwg.add(Text((x0 + self.width - 0.5, yb), c.name, height=1.7,
-                         ha="right", va="bottom", layer="ANNOTATION",
-                         style=_LABEL))
-        # plugs
+            dwg.add(Text((x0 + self.width - 0.5, layout.y(c.shoe_md)), c.name,
+                         height=1.7, ha="right", va="bottom",
+                         layer="ANNOTATION", style=_LABEL))
         for p in bore.cement_plugs:
-            mid = (p.top_md + p.base_md) / 2.0
-            cand = [c.id_in / 2.0 for c in bore.casings if c.top_md <= mid <= c.shoe_md]
-            r_in = min(cand) if cand else 3.0
-            yt, yb = layout.y(p.top_md), layout.y(p.base_md)
-            dwg.add(Hatch([(rx(r_in, -1), yt), (rx(r_in, 1), yt),
-                           (rx(r_in, 1), yb), (rx(r_in, -1), yb)],
-                          pattern="plug", layer="PLUG", style=_PLUG))
-            # Plug names to the LEFT edge, so they cannot collide with the
-            # casing names on the right.
-            dwg.add(Text((x0 + 0.5, (yt + yb) / 2.0), p.name, height=1.7,
-                         ha="left", va="center", layer="ANNOTATION",
-                         style=Style(color="#6b5d2f")))
-        # completion tubing
-        for item in bore.completion:
-            if item.type != "tubing":
-                continue
-            r = item.od_in / 2.0
-            yt, yb = layout.y(item.top_md), layout.y(item.base_md)
-            for sign in (-1, 1):
-                dwg.add(Line((rx(r, sign), yt), (rx(r, sign), yb),
-                             layer="COMPLETION", style=_TUBING))
-
-
-def _formation_bands(schematic):
-    """``(formation, top_md, base_md)`` for EVERY formation, deepest included.
-
-    Zipping ``forms[:-1]`` with ``forms[1:]`` takes each band's base from the
-    next formation's top, which leaves the DEEPEST formation with no successor
-    and silently omits it. On almost every well that is the reservoir: on one
-    P&A sheet the oil zone (``flow=True``) was missing from both the lithology
-    and the seal/flow track, nothing errored, and the sheet looked complete.
-
-    The last band's base comes from the wellbore's TD -- the deepest hole
-    section, else the deepest survey station -- unless the caller supplied a
-    ``base_md`` on the formation itself. A formation deeper than TD is dropped,
-    because that is a data error rather than a band.
-    """
-    forms = list(getattr(schematic, "formations", None) or [])
-    if not forms:
-        return []
-    forms.sort(key=lambda f: f.top_md)
-    bore = schematic.primary
-    td = max(
-        [h.base_md for h in (bore.hole_sections or [])]
-        + [max(bore.survey.md) if bore.survey and bore.survey.md else 0.0]
-    )
-    out = []
-    for i, f in enumerate(forms):
-        base = getattr(f, "base_md", None)
-        if base is None:
-            base = forms[i + 1].top_md if i + 1 < len(forms) else td
-        if base > f.top_md:
-            out.append((f, f.top_md, base))
-    return out
+            y = layout.y((p.top_md + p.base_md) / 2.0)
+            dwg.add(Text((x0 + 0.5, y), p.name, height=1.7, ha="left",
+                         va="center", layer="ANNOTATION",
+                         style=Style(color="#5c5c5c")))
 
 
 class LithologyTrack(Track):
@@ -221,7 +198,7 @@ class LithologyTrack(Track):
         dwg.add_layer("LITHO")
         dwg.add_layer("ANNOTATION")
         self._header(dwg, x0)
-        for a, top, base in _formation_bands(self.schematic):
+        for a, top, base in self.schematic.formation_bands():
             yt, yb = layout.y(top), layout.y(base)
             dwg.add(Rect((x0, yt), self.width, yb - yt, layer="LITHO",
                          style=Style(color="#808080", lineweight=0.15, fill=a.color)))
@@ -243,7 +220,7 @@ class IntervalsTrack(Track):
         dwg.add_layer("INTERVALS")
         dwg.add_layer("ANNOTATION")
         self._header(dwg, x0)
-        for a, top, base in _formation_bands(self.schematic):
+        for a, top, base in self.schematic.formation_bands():
             if not (a.seal or a.flow):
                 continue
             yt, yb = layout.y(top), layout.y(base)

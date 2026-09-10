@@ -261,21 +261,18 @@ def _draw_rock(dwg, schematic, casings, hole, radial, d, ymax, max_bit) -> None:
     unidentified interval should look unidentified (same rule as the lithology
     column).
     """
-    forms = sorted(getattr(schematic, "formations", None) or [],
-                   key=lambda f: f.top_md)
-    if len(forms) < 2:
-        return                      # need a base for the deepest band
+    bands = schematic.formation_bands()
+    if not bands:
+        return
     # stop short of the label gutter (placed at *1.06) so annotation never
     # sits on top of the rock
     x_edge = max_bit / 2.0 * radial.at(0.0) * 1.0
-    for f, nxt in zip(forms, forms[1:]):
-        if nxt.top_md <= f.top_md:
-            continue
+    for f, top, base in bands:
         colour = (f.color or "").strip()
         if not colour or colour.lower() in ("#ffffff", "white"):
             continue                # unidentified: leave it blank
         style = Style(color=_ROCK_EDGE, lineweight=0.1, fill=_mute(colour))
-        for a, b in _annulus_segments(f.top_md, nxt.top_md, casings, hole):
+        for a, b in _annulus_segments(top, base, casings, hole):
             r_in = _rock_inner_r((a + b) / 2.0, casings, hole)
             da, db = d(a), d(b)
             for sign in (-1, 1):
@@ -352,8 +349,18 @@ def build_column(
     step: float = 10.0,
     default_radial_scale: float = 40.0,
     resolver: Optional[DepthResolver] = None,
+    bare: bool = False,
 ) -> Drawing:
-    """Build a column-schematic :class:`Drawing` for the primary bore."""
+    """Build a column-schematic :class:`Drawing` for the primary bore.
+
+    ``bare=True`` omits the sheet furniture -- gutter callouts, depth ruler,
+    title block and the fit-to-sheet transform -- and leaves the geometry in
+    world coordinates (exaggerated inch-radius by depth). That is what lets
+    :class:`~welleng.schematic.tracks.SchematicTrack` render THROUGH this
+    function instead of reimplementing it: one renderer, one set of
+    conventions, and the composite figure inherits every correction made here
+    without anyone having to remember to port it.
+    """
     bore = schematic.primary
     if resolver is None:
         resolver = DepthResolver(bore.survey, step=step, name=schematic.well.name)
@@ -616,6 +623,9 @@ def build_column(
     _draw_perforations(dwg, bore, casings, hole, radial, d)
 
     # --- annotations in side gutters, de-collided --------------------------
+    if bare:
+        return dwg
+
     # One source for the ruler depths: the callout de-collider has to know
     # where the depth numbers are, and the ruler has to draw them there.
     ruler_depths = _ruler_depths(ymax)
