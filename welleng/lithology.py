@@ -30,6 +30,7 @@ Example
 from __future__ import annotations
 
 import os
+import re
 import textwrap
 from dataclasses import dataclass
 from functools import lru_cache
@@ -187,18 +188,93 @@ def pattern(unit_id: str) -> int | None:
     return hit.pattern if hit else None
 
 
-def intervals_from_nlog(column, label: str = "group") -> list[Interval]:
-    """Colour an NLOG :class:`~welleng.exchange.nlog.StratColumn` by RGD group.
+#: Lithology words that map unambiguously onto a shipped FGDC pattern. Matched
+#: on WORD BOUNDARIES only, because some Dutch unit names are proper nouns that
+#: contain a lithology word: *Buntsandstein* contains "sandstein" but the unit
+#: is claystone-dominated, and a substring match draws it as clean sand.
+_NAME_LITHOLOGY: dict[str, int] = {
+    "conglomerate": 601, "gravel": 601,
+    "sandstone": 607, "sand": 607,
+    "silt": 616, "siltstone": 616,
+    "claystone": 620, "clay": 620, "shale": 620, "mudstone": 620,
+    "marl": 623, "marlstone": 623,          # FGDC 623 IS "calcareous shale or marl"
+    "chalk": 626,
+    "limestone": 627,
+    "dolostone": 642, "dolomite": 642,
+    "coal": 658, "lignite": 658,
+    "gypsum": 667,
+    "salt": 668, "halite": 668,
+}
 
-    Each interval's ``unit_id`` is rolled up to group rank and matched to the
-    shipped NL table. ``label`` selects the interval text: ``"group"`` (the
-    group name) or ``"unit"`` (the RGD unit code as logged).
+#: Words that name a rock the FGDC chart has no pattern for. Listed so such a
+#: name is REFUSED rather than taking the nearest pattern: **anhydrite is not
+#: gypsum**, and 667 is gypsum only.
+_NAME_UNPATTERNED = ("anhydrite", "tuffite", "tuff", "bentonite")
+
+
+def pattern_from_name(name: str | None) -> int | None:
+    """FGDC pattern implied by a unit NAME, or ``None`` when it does not say.
+
+    Word-boundary matched, and deliberately unwilling:
+
+    * a name with **no** lithology word returns ``None`` -- "Ommelanden
+      Formation" says nothing about the rock, so the caller keeps whatever it
+      had.
+    * a name with **two different** lithologies returns ``None``. Picking the
+      first would be a coin toss on a barrier drawing.
+    * a name whose rock the FGDC chart has no pattern for returns ``None``
+      rather than the nearest one: **anhydrite is not gypsum**, and 667 is
+      gypsum only.
+    * ⚠️ **Substring matching is wrong here.** *Buntsandstein* contains
+      "sandstein" and the Dutch unit logs 127 gAPI -- claystone-dominated. Word
+      boundaries are what stop a proper noun being read as a description.
+
+    This is a NAME heuristic, not a lithology record. It exists because the
+    shipped table carries one pattern per GROUP, and a group spans more than
+    one rock: it is how the Z4 Fringe SANDSTONE Member stops inheriting the
+    Zechstein evaporite pattern and being drawn as salt on a barrier drawing.
+    """
+    if not name:
+        return None
+    words = set(re.findall(r"[a-z]+", str(name).lower()))
+    if words & set(_NAME_UNPATTERNED):
+        return None
+    hits = {code for w, code in _NAME_LITHOLOGY.items() if w in words}
+    return hits.pop() if len(hits) == 1 else None
+
+
+def intervals_from_nlog(column, label: str = "formation") -> list[Interval]:
+    """Colour an NLOG :class:`~welleng.exchange.nlog.StratColumn`.
+
+    ``label``:
+
+    ``"formation"`` (default)
+        The unit's own name at formation/member rank, and its own lithology
+        where the name says it -- so the Z4 Fringe **Sandstone** Member is
+        drawn as sand rather than inheriting the Zechstein evaporite pattern.
+        Colour stays the GROUP's, which is what makes a column read as
+        stratigraphy rather than as a rock-type mosaic.
+    ``"group"``
+        Group name and group pattern throughout -- the coarse view.
+    ``"code"``
+        The raw RGD code as logged, for debugging. (``"unit"`` is accepted as
+        the old spelling of this.)
+
+    ⭐ **One pattern per GROUP is a simplification and it bites at the worst
+    place.** The Rijnland Group is marl AND clay AND sandstone, and a well's
+    cap rock is a claystone member inside it; the Zechstein is an evaporite
+    group containing a sandstone reservoir. A consumer hit both, and had to
+    hand-write an override table to stop a flow zone being shaded as salt on a
+    barrier drawing. That override now happens here, from the name, and only
+    where the name is unambiguous -- see :func:`pattern_from_name`.
 
     An unrecognised or unmatched unit renders flat white with no pattern -- an
     unknown unit should look unknown rather than be given a colour it has not
     earned. Intervals with no ``bottom_md`` are dropped, since a band needs a
     base; that is a data gap, not something to interpolate over.
     """
+    from .exchange import rgd_nomenclature as rgd
+
     by_code = nl_groups_by_code()
     out: list[Interval] = []
     for s in getattr(column, "intervals", []):
@@ -208,11 +284,26 @@ def intervals_from_nlog(column, label: str = "group") -> list[Interval]:
         unit = getattr(s, "unit_id", None)
         gcode = group_of(unit) if unit else None
         tmpl = by_code.get(gcode) if gcode else None
+        pattern = tmpl.pattern if tmpl else None
+
+        if label == "group":
+            name = tmpl.name if tmpl else str(unit or "?")
+        elif label in ("code", "unit"):
+            name = str(unit or "?")
+        else:
+            info = rgd.resolve(str(unit)) if unit else None
+            name = (info or {}).get("inherited_name") or (
+                tmpl.name if tmpl else str(unit or "?"))
+            # An inherited name belongs to the PARENT: say so, rather than
+            # labelling a member with its formation's name as if it were one.
+            if info and not info.get("name") and info.get("name_from"):
+                name = f"{name} ({info.get('rank') or 'member'})"
+            pattern = pattern_from_name(name) or pattern
+
         out.append(Interval(
-            name=(tmpl.name if (tmpl and label == "group") else str(unit or "?")),
-            top=float(top), base=float(base),
+            name=name, top=float(top), base=float(base),
             colour=tmpl.colour if tmpl else "#ffffff",
-            pattern=tmpl.pattern if tmpl else None,
+            pattern=pattern,
             note=f"{unit} -> {gcode}" if gcode else str(unit or ""),
         ))
     return out
@@ -334,8 +425,16 @@ def plot_lithology(
                                zorder=2, interpolation="nearest")
                 im.set_clip_on(True)
         if label:
+            # break_long_words=False: a unit name is a proper noun and
+            # "Lower Buntsa / ndstein Formation" is not a wrap, it is a
+            # different word. A name too long for the column overruns it
+            # instead, which is visible and fixable by widening the track;
+            # a silently mangled name is neither.
             ax.text(0.5, (t + b) / 2.0,
-                    textwrap.fill(iv.name, label_width), fontsize=5.6,
+                    textwrap.fill(iv.name, label_width,
+                                  break_long_words=False,
+                                  break_on_hyphens=False),
+                    fontsize=5.6,
                     va="center", ha="center", zorder=3, clip_on=True,
                     bbox=dict(boxstyle="round,pad=0.2", facecolor=iv.colour,
                               edgecolor="none", alpha=0.85))

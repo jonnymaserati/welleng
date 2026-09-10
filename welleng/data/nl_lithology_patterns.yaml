@@ -54,8 +54,11 @@ fgdc_pattern_source:
 
 # FGDC codes referenced here, with the chart's own wording:
 patterns:
+  601: Gravel or conglomerate (1st option)
   607: Massive sand or sandstone
+  616: Silt, siltstone, or shaly silt
   620: Clay or clay shale
+  623: Calcareous shale or marl
   626: Chalk
   627: Limestone
   642: Dolostone or dolomite

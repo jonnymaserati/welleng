@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from welleng.lithology import (
+    pattern_from_name,
     FgdcPatterns,
     LithologyError,
     TILES_PER_AXIS,
@@ -89,16 +90,91 @@ def _column(rows):
     ])
 
 
+_ROWS = [(0, 358.3, "NU"), (358.3, 843.4, "NLLF"), (843.4, 1466.8, "CKTXM"),
+         (1466.8, 1815.2, "KNGLU"), (1815.2, 2032.5, "ZEZ1S")]
+
+
 def test_intervals_from_nlog_binds_by_code():
-    ivs = intervals_from_nlog(_column([
-        (0, 358.3, "NU"), (358.3, 843.4, "NLLF"), (843.4, 1466.8, "CKTXM"),
-        (1466.8, 1815.2, "KNGLU"), (1815.2, 2032.5, "ZEZ1S"),
-    ]))
+    ivs = intervals_from_nlog(_column(_ROWS), label="group")
     assert [i.name for i in ivs] == [
         "Upper North Sea Group", "Lower North Sea Group", "Chalk Group",
         "Rijnland Group", "Zechstein Group",
     ]
     assert ivs[2].pattern == 626 and ivs[4].pattern == 668
+
+
+def test_the_default_resolves_at_formation_rank():
+    """Group rank labels a cap-rock claystone member with its group's name and
+    its group's pattern. The unit's own name is what a reader needs."""
+    ivs = intervals_from_nlog(_column(_ROWS))
+    assert ivs[0].name != "Upper North Sea Group"
+    assert all(i.colour for i in ivs)          # colour still comes from the GROUP
+    groups = intervals_from_nlog(_column(_ROWS), label="group")
+    assert [i.colour for i in ivs] == [i.colour for i in groups]
+
+
+def test_a_sandstone_member_does_not_inherit_the_evaporite_pattern():
+    """The Z-series sandstones sit inside the Zechstein, which is an EVAPORITE
+    group. A flow zone shaded as salt on a barrier drawing is the worst place
+    for the group-rank simplification to land, and a consumer hit exactly this."""
+    ivs = intervals_from_nlog(_column([(0, 100, "ZEZ1S")]))
+    assert intervals_from_nlog(_column([(0, 100, "ZEZ1S")]),
+                               label="group")[0].pattern == 668     # salt
+    assert ivs[0].pattern == 607                                    # sand
+
+
+def test_the_raw_code_is_still_reachable():
+    for lbl in ("code", "unit"):
+        assert intervals_from_nlog(_column([(0, 100, "NU")]),
+                                   label=lbl)[0].name == "NU"
+
+
+# --- lithology from the NAME, on word boundaries ---------------------------- #
+@pytest.mark.parametrize("name,code", [
+    ("Vlieland Claystone Formation", 620),
+    ("Z4 Fringe Sandstone Member", 607),
+    ("Chalk Group", 626),
+    ("Holland Marl Member, Upper", 623),      # FGDC 623 IS calcareous shale/marl
+    ("Coal Measures", 658),
+])
+def test_pattern_from_name_reads_the_rock(name, code):
+    assert pattern_from_name(name) == code
+
+
+@pytest.mark.parametrize("name,why", [
+    ("Lower Buntsandstein Formation", "proper noun containing a lithology word"),
+    ("Ommelanden Formation", "name says nothing about the rock"),
+    ("Sandstone and Claystone Member", "two lithologies; picking one is a coin toss"),
+    ("Anhydrite Member", "anhydrite is not gypsum and 667 is gypsum only"),
+    ("", "no name"),
+    (None, "no name"),
+])
+def test_pattern_from_name_refuses_rather_than_guesses(name, why):
+    assert pattern_from_name(name) is None, why
+
+
+def test_buntsandstein_is_the_case_word_boundaries_exist_for():
+    """It contains 'sandstein' and logs 127 gAPI -- claystone-dominated. A
+    substring match draws the Dutch unit as clean sand."""
+    assert pattern_from_name("Lower Buntsandstein Formation") is None
+    assert pattern_from_name("Bunter Sandstone Formation") == 607
+
+
+def test_every_referenced_pattern_code_has_the_standard_wording():
+    """A pattern code with no name cannot be explained to a reader, and 623 was
+    referenced by the NL table while missing from the map."""
+    from welleng.lithology import nl_groups, pattern_names
+    named = set(pattern_names())
+    assert {g.pattern for g in nl_groups()} <= named
+
+
+def test_a_long_unit_name_is_not_broken_mid_word():
+    """'Lower Buntsa / ndstein Formation' is not a wrap, it is a different
+    word -- and the name is a proper noun."""
+    import textwrap
+    wrapped = textwrap.fill("Lower Buntsandstein Formation", 11,
+                            break_long_words=False, break_on_hyphens=False)
+    assert "Buntsandstein" in wrapped
 
 
 def test_unknown_unit_is_white_not_guessed():
