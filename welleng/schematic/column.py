@@ -350,6 +350,7 @@ def build_column(
     default_radial_scale: float = 40.0,
     resolver: Optional[DepthResolver] = None,
     bare: bool = False,
+    rock: bool = True,
 ) -> Drawing:
     """Build a column-schematic :class:`Drawing` for the primary bore.
 
@@ -360,6 +361,11 @@ def build_column(
     function instead of reimplementing it: one renderer, one set of
     conventions, and the composite figure inherits every correction made here
     without anyone having to remember to port it.
+
+    ``rock=False`` omits the formation background. It is context for a view
+    that stands alone; in a composite that already carries a lithology track it
+    is a SECOND lithology column beside the first, and two columns of rock
+    colour side by side invite the reader to reconcile them.
     """
     bore = schematic.primary
     if resolver is None:
@@ -388,7 +394,8 @@ def build_column(
                   + [30.0])
 
     # --- formation (rock) OUTSIDE the hole wall, drawn first ---------------
-    _draw_rock(dwg, schematic, casings, hole, radial, d, ymax, max_bit)
+    if rock:
+        _draw_rock(dwg, schematic, casings, hole, radial, d, ymax, max_bit)
 
     # --- open hole walls (per section, naturally stepped) ------------------
     for h in hole:

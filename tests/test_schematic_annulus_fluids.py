@@ -1119,7 +1119,7 @@ def test_the_figure_track_renders_through_build_column():
     the split as closed because only two of the three renderers were checked."""
     from welleng.schematic import WellFigure
     from welleng.schematic.column import (
-        L_CEMENT, L_FLUID, L_HANGER, L_PERF, L_ROCK, L_SHOE,
+        L_CEMENT, L_FLUID, L_HANGER, L_PERF, L_SHOE,
     )
     d = {**LINER_DATA,
          "annulus_fluids": [{"name": "WBM", "inside_od_in": 13.375,
@@ -1129,8 +1129,69 @@ def test_the_figure_track_renders_through_build_column():
     s = WellSchematic.model_validate(d)
     layers = {getattr(e, "layer", None)
               for e in WellFigure(s, mode="MD").build().entities}
-    for want in (L_ROCK, L_FLUID, L_PERF, L_HANGER, L_SHOE, L_CEMENT):
+    for want in (L_FLUID, L_PERF, L_HANGER, L_SHOE, L_CEMENT):
         assert want in layers, f"{want} missing from the composite figure"
+
+
+def test_the_composite_does_not_draw_a_second_lithology_column():
+    """The figure already carries a LithologyTrack. Formation colour behind the
+    well as well makes two rock columns side by side, and invites the reader to
+    reconcile them — they are the same data at different widths."""
+    from welleng.schematic import WellFigure
+    from welleng.schematic.column import L_ROCK
+    from welleng.schematic.tracks import DepthLayout, SchematicTrack
+    from welleng.schematic.depth import DepthResolver
+    from welleng.schematic.drawing import Drawing
+    d = {**BASE, "formations": [{"name": "F", "top_md": 0, "color": "#c9e6a8"}]}
+    s = WellSchematic.model_validate(d)
+    layers = {getattr(e, "layer", None)
+              for e in WellFigure(s, mode="MD").build().entities}
+    assert L_ROCK not in layers
+
+    # ...but the track can still carry it for a caller composing without one
+    layout = DepthLayout(mode="MD", resolver=DepthResolver(s.primary.survey),
+                         v_scale=0.1, ymax=2000.0)
+    dwg = Drawing()
+    SchematicTrack(s, rock=True).build(dwg, layout, 0.0)
+    assert L_ROCK in {getattr(e, "layer", None) for e in dwg.entities}
+
+
+def test_the_standalone_column_still_draws_rock():
+    """Rock is context for a view that stands alone. Suppressing it in the
+    composite must not suppress it here."""
+    from welleng.schematic.column import L_ROCK
+    d = {**BASE, "formations": [
+        {"name": "F", "top_md": 0, "color": "#c9e6a8"},
+        {"name": "G", "top_md": 1200, "color": "#5e35b1"},
+    ]}
+    dwg = build_column(WellSchematic.model_validate(d), mode="MD")
+    assert L_ROCK in {getattr(e, "layer", None) for e in dwg.entities}
+
+
+def test_track_names_are_de_collided_into_the_gutters():
+    """Two shoes a few metres apart print on top of each other unless
+    something moves them, and the well fills the band so there is nowhere to
+    put a name except a reserved gutter."""
+    from welleng.schematic.tracks import DepthLayout, SchematicTrack
+    from welleng.schematic.depth import DepthResolver
+    from welleng.schematic.drawing import Drawing
+    from welleng.schematic.drawing import Text as DwgText
+    d = {**BASE, "casings": [
+        {"name": "A", "od_in": 13.375, "id_in": 12.4, "top_md": 0,
+         "shoe_md": 800, "toc_md": 500},
+        {"name": "B", "od_in": 9.625, "id_in": 8.68, "top_md": 0,
+         "shoe_md": 805, "toc_md": 500},      # 5 m apart
+    ]}
+    s = WellSchematic.model_validate(d)
+    layout = DepthLayout(mode="MD", resolver=DepthResolver(s.primary.survey),
+                         v_scale=0.1, ymax=2000.0)
+    dwg = Drawing()
+    track = SchematicTrack(s, width=66.0)
+    track.build(dwg, layout, 0.0)
+    ys = sorted(e.position[1] for e in dwg.entities
+                if isinstance(e, DwgText) and e.text in ("A", "B"))
+    assert len(ys) == 2
+    assert ys[1] - ys[0] >= layout.bottom * 0.024 - 1e-9, "names still collide"
 
 
 def test_the_figure_cement_is_flat_grey_not_hatched():

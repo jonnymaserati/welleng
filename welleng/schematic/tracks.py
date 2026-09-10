@@ -29,6 +29,7 @@ from .drawing import (
 from .models import WellSchematic
 
 _GRID = Style(color="#dddddd", lineweight=0.15)
+_LEADER = Style(color="#9a9a9a", lineweight=0.12)
 _LABEL = Style(color="#111111", lineweight=0.2)
 _STEEL = Style(color="#222222", lineweight=0.3, fill="#3f3f3f")
 _CEMENT = Style(color="#7a6f4a", lineweight=0.2, fill="#d8cfae")
@@ -150,14 +151,23 @@ class SchematicTrack(Track):
     title = "schematic\n(radius exagg.)"
     width = 66.0
 
-    def __init__(self, schematic: WellSchematic, width: float = 66.0):
+    #: Fraction of the band reserved each side for names. The well is drawn
+    #: into what is left. Without it a name has nowhere to go: the geometry
+    #: fills the band, so anchoring on the wall prints across the casing and
+    #: anchoring at the edge prints across whatever reaches the edge.
+    GUTTER = 0.17
+
+    def __init__(self, schematic: WellSchematic, width: float = 66.0,
+                 rock: bool = False):
         self.schematic = schematic
         self.width = width
+        self.rock = rock
 
     def build(self, dwg, layout, x0):
-        from .column import build_column
+        from .column import _free_slot, build_column
 
-        col = build_column(self.schematic, mode=layout.mode, bare=True)
+        col = build_column(self.schematic, mode=layout.mode, bare=True,
+                           rock=self.rock)
         for layer in col.layers:
             dwg.add_layer(layer)
         for name, sym in col.symbols.items():
@@ -166,24 +176,35 @@ class SchematicTrack(Track):
 
         xmin, _ymin, xmax, _ymax = col.bounds()
         half = max(abs(xmin), abs(xmax), 1e-9)
-        kx = (self.width / 2.0 * 0.98) / half
+        draw_w = self.width * (1.0 - 2.0 * self.GUTTER)
+        kx = (draw_w / 2.0) / half
         ky = layout.v_scale
         dwg.extend(_remap(col.entities, kx, ky, x0 + self.width / 2.0))
 
-        # Names at the SHOE, flush to the band edges. Every string starts at
-        # surface, so top-anchored names print on one line at depth 0; and the
-        # well fills the band, so a name beside the wall prints across the
-        # casing. Casings right, plugs left, so the two cannot collide.
+        # Names in the reserved gutters, at the SHOE depth, de-collided with
+        # the same outward search column.py uses. Every string starts at
+        # surface, so top-anchored names print on one line at depth 0; and two
+        # shoes a few metres apart print on top of each other unless something
+        # moves them.
         bore = self.schematic.primary
-        for c in bore.casings:
-            dwg.add(Text((x0 + self.width - 0.5, layout.y(c.shoe_md)), c.name,
-                         height=1.7, ha="right", va="bottom",
-                         layer="ANNOTATION", style=_LABEL))
-        for p in bore.cement_plugs:
-            y = layout.y((p.top_md + p.base_md) / 2.0)
-            dwg.add(Text((x0 + 0.5, y), p.name, height=1.7, ha="left",
-                         va="center", layer="ANNOTATION",
-                         style=Style(color="#5c5c5c")))
+        min_gap = layout.bottom * 0.024
+        for side, rows in (
+            (1, [(c.shoe_md, c.name, _LABEL) for c in bore.casings]),
+            (-1, [((p.top_md + p.base_md) / 2.0, p.name,
+                   Style(color="#5c5c5c")) for p in bore.cement_plugs]),
+        ):
+            taken: list = []
+            gx = (x0 + self.width - 0.5) if side > 0 else (x0 + 0.5)
+            for depth, text, style in sorted(rows):
+                y0 = layout.y(depth)
+                y = _free_slot(y0, taken, min_gap, layout.bottom)
+                taken.append(y)
+                if abs(y - y0) > 1e-9:
+                    dwg.add(Line((gx, y), (gx - side * 1.5, y0),
+                                 layer="ANNOTATION", style=_LEADER))
+                dwg.add(Text((gx, y), text, height=1.7,
+                             ha="right" if side > 0 else "left", va="center",
+                             layer="ANNOTATION", style=style))
 
 
 class LithologyTrack(Track):
