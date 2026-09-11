@@ -550,18 +550,66 @@ def test_hanger_top_is_at_the_liner_top():
 
 
 def test_hanger_height_scales_with_the_annulus_not_with_depth():
-    """Sized off the gap it fills, so it reads square at any depth scale --
-    the failure mode every other symbol here had was a fixed metre height."""
+    """Sized off the gap it fills, crossed into depth through the SAME
+    normalisation the shoe and packer use.
+
+    The first version multiplied the annulus width in exaggerated INCHES and
+    used the result as METRES. That holds only while the depth range dwarfs the
+    radii; in a horizontal well it does not, and the glyph drew steel below TD.
+    """
     from welleng.schematic.column import HANGER_ASPECT, L_HANGER
     from welleng.schematic.drawing import Polygon as DwgPolygon
     dwg = _liner_column()
     width_x = (8.68 - 7.0) / 2.0 * 32.0
+    # ymax / x_extent, as build_column computes it -- the extent takes the
+    # widest of the bit sizes, the casing ODs and a 30in floor.
+    norm = 2600.0 / (30.0 / 2.0 * 40.0)
     for e in dwg.entities:
         if getattr(e, "layer", None) == L_HANGER and isinstance(e, DwgPolygon):
             ys = [y for _x, y in e.points]
             assert max(ys) - min(ys) == pytest.approx(
-                width_x * HANGER_ASPECT, rel=1e-6
+                width_x * norm * HANGER_ASPECT, rel=1e-6
             )
+
+
+def test_a_hanger_never_draws_below_the_bottom_of_the_hole():
+    """A horizontal well's reservoir section is a few metres of TVD over
+    hundreds of metres of hole. A reader cannot correct for steel below TD."""
+    from welleng.schematic.column import L_HANGER
+    d = {**BASE,
+         "survey": {"md": [0, 800, 2000], "inc": [0, 0, 89.7],
+                    "azi": [0, 0, 0]},
+         "casings": [
+             {"name": '9-5/8"', "od_in": 9.625, "id_in": 8.68, "top_md": 0,
+              "shoe_md": 1200, "toc_md": 900},
+             {"name": "screens", "od_in": 5.5, "id_in": 4.89,
+              "top_md": 1150, "shoe_md": 2000, "kind": "screen"},
+         ]}
+    for mode in ("MD", "TVD"):
+        dwg = build_column(WellSchematic.model_validate(d), mode=mode)
+        ymax = max(max(y for _x, y in e.points)
+                   for e in dwg.entities if hasattr(e, "points"))
+        deep = [y for e in dwg.entities
+                if getattr(e, "layer", None) == L_HANGER
+                and hasattr(e, "points") for _x, y in e.points]
+        assert deep, f"no hanger drawn in {mode}"
+        assert max(deep) <= ymax + 1e-6, f"{mode}: hanger below the hole"
+
+
+def test_a_wellhead_hung_tubular_gets_no_liner_hanger():
+    """A kind="tubular" string hangs from the WELLHEAD. The load path a liner
+    hanger represents does not exist, and a consumer carrying its tubing in the
+    casing list — the only way to give that annulus an inner wall — got one
+    drawn at the top of the well."""
+    from welleng.schematic.column import L_HANGER
+    d = {**BASE, "casings": [
+        *BASE["casings"],
+        {"name": "tubing", "od_in": 5.5, "id_in": 4.89, "top_md": 14.68,
+         "shoe_md": 1800, "kind": "tubular"},
+    ]}
+    dwg = build_column(WellSchematic.model_validate(d), mode="MD")
+    assert not [e for e in dwg.entities
+                if getattr(e, "layer", None) == L_HANGER]
 
 
 def test_liner_with_no_host_string_is_skipped_not_fatal():
@@ -1235,3 +1283,58 @@ def test_the_figure_shoes_are_the_column_shoes_to_scale():
     ratios = [f / c for f, c in zip(fig, col)]
     assert max(ratios) - min(ratios) < 1e-9, \
         "figure shoes are not the column shoes under one scale"
+
+
+# --- the A annulus is bounded by the TUBING, which is not a casing ---------- #
+_A_ANNULUS = {
+    **BASE,
+    "completion": [{"type": "tubing", "od_in": 5.5, "top_md": 0,
+                    "base_md": 1800}],
+    "annulus_fluids": [{"name": "Packer fluid", "inside_od_in": 5.5,
+                        "top_md": 0, "base_md": 1800, "density_sg": 1.1}],
+}
+
+
+def test_a_fluid_can_name_the_tubing_as_its_inner_wall():
+    """The A annulus runs from the tubing OD to the production casing ID. The
+    lookup searched casings only, so naming it found nothing and the band was
+    SILENTLY not drawn — and a consumer's only route to an A annulus was to
+    carry its tubing in the casing list, which then drew a liner hanger on it."""
+    from welleng.schematic.column import L_FLUID
+    dwg = build_column(WellSchematic.model_validate(_A_ANNULUS), mode="MD")
+    bands = set()
+    for e in dwg.entities:
+        if getattr(e, "layer", None) != L_FLUID:
+            continue
+        xs = [abs(x) for x, _y in e.points]
+        scale = 40.0 if max(y for _x, y in e.points) <= 800.0 else 32.0
+        bands.add((round(min(xs) / scale * 2, 3),
+                   round(max(xs) / scale * 2, 3)))
+    assert bands, "the A annulus was not drawn"
+    # Inner wall is the TUBING, outer is the 9-5/8in production casing for the
+    # whole run. Not the 13-3/8in: that sits OUTSIDE the 9-5/8in, so it cannot
+    # bound the A annulus at any depth.
+    assert bands == {(5.5, 8.68)}, bands
+
+
+def test_naming_the_tubing_does_not_give_it_annular_cement():
+    """A tubing run has no annular cement. It joins the wall list only so a
+    fluid can name it."""
+    from welleng.schematic.column import L_CEMENT
+    dwg = build_column(WellSchematic.model_validate(_A_ANNULUS), mode="MD")
+    r_in = [min(abs(x) for x, _y in e.boundary) for e in dwg.entities
+            if getattr(e, "layer", None) == L_CEMENT]
+    assert r_in
+    assert min(r_in) >= 9.625 / 2 * 32.0 - 1e-6, "cement drawn against tubing"
+
+
+def test_naming_the_tubing_does_not_give_it_a_shoe_or_a_hanger():
+    from welleng.schematic.column import L_HANGER, L_SHOE
+    from welleng.schematic.drawing import SymbolRef
+    dwg = build_column(WellSchematic.model_validate(_A_ANNULUS), mode="MD")
+    assert not [e for e in dwg.entities
+                if getattr(e, "layer", None) == L_HANGER]
+    shoes = {round(e.position[1], 1) for e in dwg.entities
+             if getattr(e, "layer", None) == L_SHOE
+             and isinstance(e, SymbolRef)}
+    assert 1800.0 not in shoes, "the tubing was given a casing shoe"

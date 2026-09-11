@@ -152,6 +152,52 @@ def _band(r_out: float, r_in: float, d_top: float, d_base: float,
     return outer + inner[::-1]
 
 
+class _TubingWall:
+    """A tubing run presented as a wall an annulus can be named against.
+
+    The A annulus is bounded by the TUBING on the inside and the production
+    casing on the outside, but a tubing is a ``CompletionItem`` and the fluid
+    lookup only searched casings -- so naming that annulus found nothing and it
+    was silently not drawn. A consumer's only route to an A annulus was to
+    carry the tubing in the casing list, which then drew a liner hanger on it.
+
+    Only the wall-forming attributes are exposed; this is not a tubular.
+    """
+
+    __slots__ = ("_t", "top_md", "shoe_md", "od_in", "id_in", "kind", "name")
+
+    def __init__(self, item):
+        self._t = item
+        self.top_md = item.top_md or 0.0
+        self.shoe_md = item.base_md
+        self.od_in = item.od_in
+        self.id_in = getattr(item, "id_in", None) or item.od_in
+        self.kind = "tubular"
+        self.name = item.name or "tubing"
+
+    def od_at(self, md: float) -> float:
+        return self.od_in
+
+    def id_at(self, md: float) -> float:
+        return self.id_in
+
+    def has_od(self, od_in: float, tol: float = 1e-6) -> bool:
+        return abs(self.od_in - od_in) <= tol
+
+    def profile(self):
+        return [(self.top_md, self.shoe_md, self.od_in, self.id_in)]
+
+    def crossovers(self):
+        return []
+
+
+def _wall_strings(bore, casings):
+    """Casings plus the tubing runs, as things an annulus can be named against."""
+    tubing = [_TubingWall(t) for t in getattr(bore, "completion", []) or []
+              if t.type == "tubing" and t.base_md is not None]
+    return list(casings) + tubing
+
+
 def _annulus_outer_r(md: float, inner, casings, hole) -> float:
     """Outer boundary of ``inner``'s annulus AT ``md``, as a radius in inches.
 
@@ -281,17 +327,35 @@ def _draw_rock(dwg, schematic, casings, hole, radial, d, ymax, max_bit) -> None:
                 dwg.add(Polygon(pts, layer=L_ROCK, style=style))
 
 
-def _draw_liner_hangers(dwg, casings, radial, d, x_scale_ref) -> None:
+def _draw_liner_hangers(dwg, casings, radial, d, norm, ymax) -> None:
     """Hanger block in the annulus at a HUNG string's top (``top_md`` > 0).
 
     A liner is not a casing that happens to start deep: it hangs off the string
     above, and the hanger is where the load transfers. Without it a liner reads
     as a string that simply begins in mid-air. Box-with-X, matching the
     plumbing view so the two do not disagree.
+
+    Only a string that is actually hung off the one above gets one. A
+    ``kind="tubular"`` string hangs from the WELLHEAD, so the load path the
+    glyph represents does not exist -- a consumer's tubing, carried in the
+    casing list to give its annulus an inner wall, was drawn with a liner
+    hanger at the top of the well.
+
+    ⚠️ **The height is in DEPTH units and the width is in exaggerated inches,
+    and they are not interchangeable.** This previously read
+    ``abs(hi - lo) * s * HANGER_ASPECT`` with the comment "height in metres ~
+    the annulus width in x-units", which holds only while the depth range
+    dwarfs the exaggerated radii. In a horizontal well it does not: a reservoir
+    section of 9 m TVD over 702 m of hole got a **17 m** hanger, and the glyph
+    put steel **28 m below TD**. The width now crosses into depth through the
+    same ``_norm`` the shoe and packer use, and is clamped so the glyph can
+    never reach past the string it hangs, nor past the bottom of the hole.
     """
     for c in casings:
         if c.top_md <= 1e-6:
             continue                        # run from surface: not hung
+        if getattr(c, "kind", "casing") == "tubular":
+            continue                        # hung from the wellhead, not above
         hosts = [h.id_at(c.top_md) / 2.0 for h in casings
                  if h.od_at(c.top_md) > c.od_at(c.top_md)
                  and h.top_md <= c.top_md <= h.shoe_md]
@@ -301,8 +365,11 @@ def _draw_liner_hangers(dwg, casings, radial, d, x_scale_ref) -> None:
         s = radial.at(y)
         r_out, r_host = c.od_at(c.top_md) / 2.0, min(hosts)
         lo, hi = sorted((r_out, r_host))
-        # square-ish on paper: height in metres ~ the annulus width in x-units
-        h = max(abs(hi - lo) * s * HANGER_ASPECT, 1e-6)
+        h = abs(hi - lo) * s * norm * HANGER_ASPECT
+        # Never taller than the string it hangs, and never below the hole.
+        h = min(h, max(d(c.shoe_md) - y, 0.0) * 0.5, max(ymax - y, 0.0))
+        if h <= 1e-9:
+            continue
         for sign in (-1, 1):
             x0, x1 = sign * lo * s, sign * hi * s
             y0, y1 = y, y + h
@@ -406,7 +473,7 @@ def build_column(
                          layer=L_HOLE, style=_HOLEWALL))
 
     # --- annulus fluids (drawn BEFORE cement so cement paints over them) ---
-    ordered = sorted(casings, key=lambda c: -c.od_in)
+    ordered = sorted(_wall_strings(bore, casings), key=lambda c: -c.od_in)
     for f in getattr(bore, "annulus_fluids", []) or []:
         # matched on ANY of the string's diameters: a combination string
         # presents more than one wall, and the caller names a wall.
@@ -437,7 +504,9 @@ def build_column(
         labels.append((y_lbl, (lo + hi) / 2.0 * s_lbl, label, _FLUID_LABEL))
 
     # --- cement in annuli (toc -> shoe) ------------------------------------
-    for c in ordered:
+    # Casings only: a tubing run has no annular cement, and _wall_strings adds
+    # tubing to `ordered` purely so a fluid can name the A annulus.
+    for c in sorted(casings, key=lambda c: -c.od_in):
         if c.toc_md is None:
             continue          # no cement RECORDED: draw nothing, claim nothing
         for a, b in _annulus_segments(c.toc_md, c.shoe_md, casings, hole):
@@ -626,7 +695,7 @@ def build_column(
     # so anything filling that space (annulus cement, a plug, a packer) must
     # already be down or it paints them out. Insertion order is the z-order
     # in every backend, so it has to agree with the layer list above.
-    _draw_liner_hangers(dwg, casings, radial, d, max_bit)
+    _draw_liner_hangers(dwg, casings, radial, d, _norm, ymax)
     _draw_perforations(dwg, bore, casings, hole, radial, d)
 
     # --- annotations in side gutters, de-collided --------------------------
