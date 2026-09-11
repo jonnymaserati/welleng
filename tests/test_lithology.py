@@ -263,3 +263,81 @@ def test_composed_plot_orientation_and_size(assets, tmp_path):
     w, h = fig.get_size_inches()
     assert h < 20, "figure grew to fit out-of-window artists"
     assert out.exists()
+
+
+# --- measured label fit, and the leader that catches what does not fit ------ #
+def _band_column():
+    from welleng.lithology import Interval
+    return [
+        Interval(name="North Sea Group, Upper", top=0.0, base=350.0,
+                 colour="#dcefb8", pattern=607, note=""),
+        Interval(name="Holland Marl Member, Upper", top=350.0, base=391.0,
+                 colour="#9ec27a", pattern=623, note=""),      # 41 m — thin
+        Interval(name="Z4 Fringe Sandstone Member", top=391.0, base=1100.0,
+                 colour="#d9c7f0", pattern=607, note=""),
+    ]
+
+
+def test_the_measurement_actually_measures():
+    """The regression for a measurement that silently returned None for every
+    label: everything then 'did not fit' and every name went to the gutter,
+    while the code reported itself as measuring. A proxy that always says the
+    same thing is not a measurement."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from welleng.lithology import _text_depth_extent
+
+    fig, ax = plt.subplots(figsize=(2.0, 9.0))
+    ax.set_ylim(1100, 0)
+    ax.set_xlim(0, 1)
+    fig.canvas.draw()
+    art = ax.text(0.5, 500.0, "North Sea\nGroup, Upper", fontsize=5.6,
+                  va="center", ha="center")
+    need = _text_depth_extent(art, ax)
+    assert need is not None, "measurement unavailable — must not be silent"
+    assert 5.0 < need < 500.0, need
+    plt.close(fig)
+
+
+def test_a_thin_band_leads_out_and_a_thick_one_does_not():
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.text import Annotation
+
+    ax = plot_lithology(_band_column(), label_gutter=0.5, title=None)
+    leaders = [c for c in ax.get_children() if isinstance(c, Annotation)]
+    led = {a.get_text() for a in leaders}
+    assert "Holland Marl Member, Upper" in led, "a 41 m band kept its label"
+    assert "Z4 Fringe Sandstone Member" not in led, "a 709 m band was moved"
+    plt.close(ax.get_figure())
+
+
+def test_nothing_is_dropped_when_it_does_not_fit():
+    """An unlabelled band reads as an UNNAMED one. Suppression is the one
+    outcome that must never happen."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.text import Annotation, Text
+
+    ivs = _band_column()
+    ax = plot_lithology(ivs, label_gutter=0.5, title=None)
+    shown = {t.get_text().replace("\n", " ") for t in ax.get_children()
+             if isinstance(t, (Text, Annotation)) and t.get_text()}
+    for iv in ivs:
+        assert any(iv.name.split(",")[0].split()[0] in s for s in shown), iv.name
+    plt.close(ax.get_figure())
+
+
+def test_no_gutter_keeps_every_label_in_the_band():
+    """The previous behaviour stays reachable: a long name overruns."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.text import Annotation
+
+    ax = plot_lithology(_band_column(), title=None)
+    assert not [c for c in ax.get_children() if isinstance(c, Annotation)]
+    plt.close(ax.get_figure())

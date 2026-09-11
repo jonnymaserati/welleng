@@ -359,6 +359,55 @@ class FgdcPatterns:
         return np.tile(img, (reps, 1, 1))
 
 
+def _text_depth_extent(art, ax) -> float | None:
+    """Height of a drawn label in DEPTH units, or ``None`` if unmeasurable.
+
+    ``None`` is a real answer and must route to a leader -- never to an
+    estimate. A backend that quietly estimates puts the caller back where a
+    glyph-metrics table would.
+    """
+    try:
+        fig = ax.get_figure()
+        bb = art.get_window_extent(renderer=fig.canvas.get_renderer())
+        pts = ax.transData.inverted().transform([(0.0, bb.y0), (0.0, bb.y1)])
+        return abs(float(pts[1][1]) - float(pts[0][1]))
+    except Exception:
+        return None
+
+
+def _lead_out_the_ones_that_do_not_fit(ax, placed, gutter, lo, hi) -> None:
+    """Move any label taller than its band into the gutter, on a leader.
+
+    For a thin member the binding constraint is band THICKNESS, not track
+    width: the text is rotated, so its length runs along DEPTH and widening the
+    column does nothing. Three members inside 240 m at column scale is under
+    4 mm of page.
+    """
+    # A text artist has no extent until something has drawn it.
+    try:
+        ax.get_figure().canvas.draw()
+    except Exception:
+        pass
+    moved: list[float] = []
+    span = hi - lo
+    for art, iv, t, b in placed:
+        need = _text_depth_extent(art, ax)
+        if need is not None and need <= (b - t):
+            continue                       # fits where it is
+        y = (t + b) / 2.0
+        for cand in [y + k * span * 0.028 for k in range(0, 40)]:
+            if all(abs(cand - m) >= span * 0.026 for m in moved) and cand <= hi:
+                y = cand
+                break
+        moved.append(y)
+        art.remove()
+        ax.annotate(
+            iv.name, xy=(1.0, (t + b) / 2.0), xytext=(1.0 + gutter, y),
+            fontsize=5.6, va="center", ha="left", annotation_clip=False,
+            arrowprops=dict(arrowstyle="-", lw=0.3, color="0.55",
+                            shrinkA=0, shrinkB=0))
+
+
 def plot_lithology(
     intervals: Sequence[Interval],
     ax=None,
@@ -366,6 +415,7 @@ def plot_lithology(
     depth_range: tuple[float, float] | None = None,
     label: bool = True,
     label_width: int = 12,
+    label_gutter: float = 0.0,
     out: str | None = None,
     title: str | None = "lithology",
 ):
@@ -373,6 +423,24 @@ def plot_lithology(
 
     ``patterns`` may be an :class:`FgdcPatterns`, a directory, or None (flat
     colour). Returns the Axes.
+
+    Labels are MEASURED, not estimated. A name is drawn inside its band only
+    when the rendered text actually fits the band's THICKNESS -- for a thin
+    member that is the binding constraint, and widening the track does nothing
+    about it. Anything that does not fit goes to a **leader out of the
+    column**, never to suppression: an unlabelled band reads as an unnamed one,
+    which is the same silence as an interval that is not drawn at all.
+
+    ⭐ **Measured rather than estimated because of how estimating fails.** A
+    ``width / (0.6 * fontsize)`` rule overflows on a wide name and wastes the
+    column on a narrow one, and a glyph-metrics table asserts a font the
+    renderer may not have used -- it is right on one machine and silently wrong
+    on another, including in the direction of dropping a label that WOULD have
+    fitted. A claim about the renderer has to be made by the renderer.
+
+    ``label_gutter`` is the width (in axis units, the column being 1.0) kept
+    clear to the right for those leaders. ``0.0`` keeps every label inside the
+    band and lets a long one overrun, which is the previous behaviour.
     """
     try:
         import matplotlib
@@ -409,6 +477,7 @@ def plot_lithology(
         drawn = list(intervals)
 
     top, base = lo, hi
+    placed: list = []
     # One tile occupies this much depth, derived from the VISIBLE window so the
     # pattern reads the same size whether the axis spans a whole well or 200 m.
     tile_depth = (hi - lo) / TILES_PER_AXIS if hi > lo else None
@@ -430,22 +499,39 @@ def plot_lithology(
             # different word. A name too long for the column overruns it
             # instead, which is visible and fixable by widening the track;
             # a silently mangled name is neither.
-            ax.text(0.5, (t + b) / 2.0,
-                    textwrap.fill(iv.name, label_width,
-                                  break_long_words=False,
-                                  break_on_hyphens=False),
-                    fontsize=5.6,
-                    va="center", ha="center", zorder=3, clip_on=True,
-                    bbox=dict(boxstyle="round,pad=0.2", facecolor=iv.colour,
-                              edgecolor="none", alpha=0.85))
-    ax.set_xlim(0, 1)
+            txt = textwrap.fill(iv.name, label_width,
+                                break_long_words=False,
+                                break_on_hyphens=False)
+            art = ax.text(0.5, (t + b) / 2.0, txt, fontsize=5.6,
+                          va="center", ha="center", zorder=3, clip_on=True,
+                          bbox=dict(boxstyle="round,pad=0.2",
+                                    facecolor=iv.colour, edgecolor="none",
+                                    alpha=0.85))
+            if label_gutter > 0.0:
+                placed.append((art, iv, t, b))
+
+    # Limits FIRST: a measurement is taken in data units, so the axis has to
+    # be the axis it will be drawn on. Measuring before this read against an
+    # autoscaled, un-inverted y and every label "fitted".
+    ax.set_xlim(0, 1.0 + max(label_gutter, 0.0))
     ax.set_ylim(base, top)
+    if label and label_gutter > 0.0:
+        _lead_out_the_ones_that_do_not_fit(ax, placed, label_gutter, lo, hi)
     ax.set_xticks([])
     if title:
         ax.set_title(title, fontsize=8)
     if fig is not None:
         ax.set_ylabel("MD (m)")
-        fig.tight_layout()
+        # A gutter's leader labels sit OUTSIDE the axes, and tight_layout
+        # cannot make room for annotations it does not own -- it warns and
+        # gives up. Widen the figure for the gutter instead, and let
+        # bbox_inches="tight" at save time take in the labels.
+        if label_gutter > 0.0:
+            w, h = fig.get_size_inches()
+            fig.set_size_inches(w * (1.0 + label_gutter), h)
+            fig.subplots_adjust(left=0.22, right=1.0 / (1.0 + label_gutter))
+        else:
+            fig.tight_layout()
         if out is not None:
             fig.savefig(out, dpi=150, bbox_inches="tight")
     return ax
