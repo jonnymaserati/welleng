@@ -239,9 +239,18 @@ class KillSheetInputs:
     annulus_volume_bbl: Optional[float] = None
     #: Shut-in casing pressure [psi], recorded but not used in the schedule.
     sicp_psi: Optional[float] = None
-    #: Maximum allowable annular surface pressure [psi]. When given, a sheet
-    #: whose shut-in casing pressure already exceeds it is REFUSED.
+    #: Maximum allowable annular surface pressure [psi]. When given and
+    #: exceeded by ``sicp_psi``, the sheet carries a LOUD note -- and raises
+    #: only under ``strict``.
     maasp_psi: Optional[float] = None
+    #: Refuse rather than warn when the shut-in casing pressure is already
+    #: above MAASP. Default False, because a real well-control worksheet is
+    #: filled in for exactly that case and the driller needs the numbers.
+    strict: bool = False
+    #: Kill mud weight [ppg] to USE, overriding the computed one. A rig mixes
+    #: to what it can actually weigh up, and a worked sheet is filled in with
+    #: the rounded figure -- so reproducing one needs this.
+    kill_mud_weight_ppg: Optional[float] = None
     #: Pump rate [strokes/min] the SCR pressure was measured at; used only to
     #: report times.
     scr_rate_spm: Optional[float] = None
@@ -328,7 +337,8 @@ def _analytical_schedule(inp, kmw, icp, fcp, strokes_to_bit, steps, notes):
 
     rows = []
     for k in range(steps + 1):
-        f = k / steps
+        n = int(round(strokes_to_bit * k / steps))
+        f = n / strokes_to_bit if strokes_to_bit else 1.0
         z_f = (inp.front_tvd(f) if inp.front_tvd is not None
                else inp.tvd_ft * f)
         z_f = min(max(float(z_f), 0.0), inp.tvd_ft)
@@ -336,8 +346,8 @@ def _analytical_schedule(inp, kmw, icp, fcp, strokes_to_bit, steps, notes):
         p_shoe = column_pressure(old, z_f, inp.tvd_ft, p_front, ts, gg)
         friction = inp.scr_pressure_psi + (fcp - inp.scr_pressure_psi) * f
         rows.append(PumpSchedule(
-            strokes=int(round(strokes_to_bit * f)),
-            volume_bbl=inp.string_volume_bbl * f,
+            strokes=n,
+            volume_bbl=inp.pump_output_bbl_per_stroke * n,
             drillpipe_psi=bhp - p_shoe + friction,
             fraction=f,
         ))
@@ -410,20 +420,33 @@ def kill_sheet(inp: KillSheetInputs, method: str = "classic") -> KillSheetResult
     if inp.string_volume_bbl <= 0.0:
         raise ValueError("string volume must be positive")
 
-    if inp.maasp_psi is not None and inp.sicp_psi is not None:
-        if inp.sicp_psi > inp.maasp_psi:
-            raise ValueError(
-                f"shut-in casing pressure {inp.sicp_psi:.0f} psi already "
-                f"exceeds MAASP {inp.maasp_psi:.0f} psi -- this well cannot be "
-                "circulated on this schedule, and a kill sheet that reports a "
-                "schedule anyway is worse than no sheet. Re-solve the kick "
-                "tolerance before filling one in."
-            )
-
     notes: List[str] = []
 
+    over_maasp = (inp.maasp_psi is not None and inp.sicp_psi is not None
+                  and inp.sicp_psi > inp.maasp_psi)
+    if over_maasp:
+        msg = (
+            f"shut-in casing pressure {inp.sicp_psi:.0f} psi is ABOVE MAASP "
+            f"{inp.maasp_psi:.0f} psi: the shoe is already at risk before "
+            "circulation starts. The schedule below is still the arithmetic, "
+            "but the well-control decision is not this sheet's to make."
+        )
+        if inp.strict:
+            raise ValueError(msg)
+        notes.append(msg)
+
     # Kill mud weight: the density whose static column balances pore pressure.
-    kmw = inp.mud_weight_ppg + inp.sidp_psi / (G_PSI_PER_PPG_FT * inp.tvd_ft)
+    # An explicit value wins -- a rig mixes to what it can weigh up, and the
+    # worked sheets are filled in with the rounded figure.
+    kmw = inp.kill_mud_weight_ppg
+    if kmw is None:
+        kmw = inp.mud_weight_ppg + inp.sidp_psi / (
+            G_PSI_PER_PPG_FT * inp.tvd_ft)
+    elif kmw < inp.mud_weight_ppg:
+        raise ValueError(
+            f"kill mud weight {kmw} is below the current mud weight "
+            f"{inp.mud_weight_ppg}"
+        )
 
     # ICP is exact: the friction the pump must overcome plus the underbalance
     # the mud column is short by.
@@ -460,15 +483,20 @@ def kill_sheet(inp: KillSheetInputs, method: str = "classic") -> KillSheetResult
 
     steps = max(int(inp.schedule_steps), 1)
     if method == "classic":
-        schedule = [
-            PumpSchedule(
-                strokes=int(round(strokes_to_bit * k / steps)),
-                volume_bbl=inp.string_volume_bbl * k / steps,
-                drillpipe_psi=icp + (fcp - icp) * (k / steps),
-                fraction=k / steps,
-            )
-            for k in range(steps + 1)
-        ]
+        # The row's pressure is derived from the row's OWN stroke count, not
+        # from the un-rounded fraction that produced it: a driller reads the
+        # printed table, so the two columns of a row have to be the same point
+        # on the line. They differed by ~0.7% of a step before.
+        schedule = []
+        for k in range(steps + 1):
+            n = int(round(strokes_to_bit * k / steps))
+            f = n / strokes_to_bit if strokes_to_bit else 1.0
+            schedule.append(PumpSchedule(
+                strokes=n,
+                volume_bbl=inp.pump_output_bbl_per_stroke * n,
+                drillpipe_psi=icp + (fcp - icp) * f,
+                fraction=f,
+            ))
     else:
         schedule = _analytical_schedule(inp, kmw, icp, fcp, strokes_to_bit,
                                         steps, notes)

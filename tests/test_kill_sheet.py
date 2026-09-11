@@ -54,11 +54,22 @@ def test_string_capacity_is_the_companion_of_annular_capacity():
 
 
 # --- it must refuse rather than report an unkillable schedule --------------- #
-def test_a_sheet_above_maasp_is_refused():
-    """A sheet that reports a schedule for a well that cannot be circulated is
-    worse than no sheet."""
-    with pytest.raises(ValueError, match="exceeds MAASP"):
-        kill_sheet(KillSheetInputs(**BASE, sicp_psi=1500.0, maasp_psi=1200.0))
+def test_a_sheet_above_maasp_notes_it_loudly():
+    s = kill_sheet(KillSheetInputs(**BASE, sicp_psi=1500.0, maasp_psi=1200.0))
+    assert any("ABOVE MAASP" in n for n in s.notes)
+    assert s.schedule, "the arithmetic is still reported"
+
+
+def test_every_row_is_self_consistent_with_pressure_at():
+    """A driller reads the printed TABLE. Its two columns must be the same
+    point on the line -- they were computed from different quantities (a
+    rounded stroke count and an un-rounded fraction) and differed by ~0.7% of
+    a step."""
+    for method in ("classic", "analytical"):
+        s = kill_sheet(KillSheetInputs(**BASE), method=method)
+        for row in s.schedule:
+            assert row.drillpipe_psi == pytest.approx(
+                s.pressure_at(row.strokes), rel=1e-9), (method, row.strokes)
 
 
 def test_a_sheet_below_maasp_is_fine():
@@ -210,3 +221,98 @@ def test_a_supplied_front_map_is_used():
 def test_an_unknown_method_is_refused():
     with pytest.raises(ValueError, match="classic"):
         kill_sheet(KillSheetInputs(**BASE), method="exact")
+
+
+# --- validation against a WORKED IWCF sheet --------------------------------- #
+# Surface-BOP kill sheet, vertical well, metric — an IWCF worksheet filled in
+# with its arithmetic cached, held in the reference library. Cited as the form,
+# not reproduced: only the case's numbers appear here.
+#
+# ⭐ This is the scarce kind of check. The method is in any well-control text;
+# what cannot be manufactured is someone else's completed arithmetic.
+_BAR = 14.503773773        # psi per bar
+_FT = 3.280839895          # ft per m
+_BBL = 158.987294928       # litres per bbl
+_PPG = 8.345404452         # ppg per kg/l
+
+_IWCF = dict(
+    mud_weight_ppg=1.52 * _PPG,          # 1.52 kg/l
+    tvd_ft=3000.0 * _FT,                 # 3000 m
+    sidp_psi=22.0 * _BAR,
+    scr_pressure_psi=42.0 * _BAR,        # dynamic pressure loss at 50 spm
+    pump_output_bbl_per_stroke=35.0 / _BBL,
+    string_volume_bbl=24328.0 / _BBL,
+    annulus_volume_bbl=68078.52 / _BBL,
+    sicp_psi=37.0 * _BAR,
+    maasp_psi=35.0 * _BAR,
+    scr_rate_spm=50.0,
+    schedule_steps=1,
+)
+
+
+def test_iwcf_worked_sheet_icp_and_strokes_are_exact():
+    s = kill_sheet(KillSheetInputs(**_IWCF))
+    assert s.icp_psi / _BAR == pytest.approx(64.0, abs=1e-6)
+    assert s.strokes_to_bit == 695              # sheet: 695.086
+    assert s.strokes_bit_to_surface == 1945     # sheet: 1945.10
+    assert s.minutes_to_bit == pytest.approx(13.9017, abs=2e-3)
+
+
+def test_iwcf_worked_sheet_fcp_is_exact_on_the_sheets_own_kill_weight():
+    """A rig mixes to a weight it can actually weigh up, and this sheet rounds
+    1.5948 kg/l to 1.60 before computing FCP. Given that same figure, welleng
+    reproduces the sheet to five decimal places."""
+    s = kill_sheet(KillSheetInputs(**_IWCF, kill_mud_weight_ppg=1.60 * _PPG))
+    assert s.fcp_psi / _BAR == pytest.approx(44.21053, abs=1e-5)
+
+
+def test_iwcf_worked_sheet_kill_weight_differs_only_by_the_gradient_constant():
+    """The ONE quantity that does not match, and it matches its explanation.
+
+    The sheet weights columns with the metric 10.2 (= 0.0519481 psi/ft/ppg,
+    exact standard gravity); this engine uses 0.0521 throughout so that a
+    pressure here reproduces the column weight the rest of the module applies.
+    The SIDP term therefore differs by 0.29%, and nothing else does — ICP, FCP,
+    strokes and times are all independent of the constant.
+    """
+    s = kill_sheet(KillSheetInputs(**_IWCF))
+    got = s.kill_mud_weight_ppg / _PPG
+    assert got == pytest.approx(1.5948, abs=5e-4)        # the sheet's own value
+    sidp_term = got - 1.52
+    sheet_term = 1.5948 - 1.52
+    assert sidp_term / sheet_term == pytest.approx(
+        0.0519481 / G_PSI_PER_PPG_FT, rel=2e-3)
+
+
+def test_the_schedule_is_linear_in_strokes_like_the_sheet():
+    """The sheet steps 64.000 -> 61.153 -> 58.306 ... per 100 strokes, a
+    constant 2.847 bar. Same line, same slope."""
+    s = kill_sheet(KillSheetInputs(**{**_IWCF, "schedule_steps": 10},
+                                   kill_mud_weight_ppg=1.60 * _PPG))
+    per_100 = (s.icp_psi - s.fcp_psi) / _BAR / (s.strokes_to_bit / 100.0)
+    assert per_100 == pytest.approx(2.847, abs=2e-3)
+    for a, b in zip(s.schedule, s.schedule[1:]):
+        step = (a.drillpipe_psi - b.drillpipe_psi) / _BAR
+        assert step == pytest.approx(per_100 * (b.strokes - a.strokes) / 100.0,
+                                     rel=1e-6)
+
+
+def test_a_sheet_above_maasp_still_reports_its_arithmetic():
+    """⚠️ REGRESSION. This guard was fatal, and it refused the worked IWCF
+    sheet above — whose SICP (37 bar) is over its initial MAASP (35 bar), and
+    which is filled in anyway. A worksheet that will not print the numbers for
+    the case the driller is actually in is not a safety feature.
+    """
+    s = kill_sheet(KillSheetInputs(**_IWCF))
+    assert s.icp_psi > 0 and s.schedule
+    assert any("ABOVE MAASP" in n for n in s.notes)
+
+
+def test_strict_still_refuses_for_a_caller_that_wants_it():
+    with pytest.raises(ValueError, match="ABOVE MAASP"):
+        kill_sheet(KillSheetInputs(**{**_IWCF, "strict": True}))
+
+
+def test_a_kill_weight_below_the_current_mud_is_refused():
+    with pytest.raises(ValueError, match="below the current mud weight"):
+        kill_sheet(KillSheetInputs(**_IWCF, kill_mud_weight_ppg=1.0 * _PPG))
