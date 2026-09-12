@@ -304,3 +304,34 @@ def test_an_unmapped_coord_system_is_refused_not_defaulted(code):
     from welleng.exchange.nlog import NLOGError
     with pytest.raises(NLOGError):
         _survey(code).surface_units()
+
+
+# --- coordinates travel WITH the code that says what they are --------------- #
+def _coord_survey(code):
+    from welleng.exchange.nlog import DirSurvey
+    return DirSurvey(
+        borehole_name="X", md=[0.0, 100.0], inc=[0.0, 0.0], azi=[0.0, 0.0],
+        tvd=[0.0, 100.0], dx=[0.0, 12.0], dy=[0.0, 3.0], north_ref="G",
+        coord_system=code, proc_method="MC", convergence=None,
+        declination=None, proc_date_ms=None, remark=None,
+    )
+
+
+def test_surface_coordinates_carry_their_own_units():
+    """A description warns whoever reads it; carrying the code WITH the
+    coordinates means the pair cannot be separated by passing them to a
+    function. One well in a set is routinely geographic while its neighbours
+    are projected, and both are valid floats."""
+    c = _coord_survey("ED50-UTM31").surface_coordinates()
+    assert c.units == "metre" and c.is_projected
+    assert c.dx == [0.0, 12.0] and c.coord_system == "ED50-UTM31"
+
+    g = _coord_survey("ED50-GEOGR").surface_coordinates()
+    assert g.units == "degree" and not g.is_projected
+
+
+@pytest.mark.parametrize("code", [None, "", "SOMETHING-ELSE"])
+def test_pairing_refuses_an_unmapped_code(code):
+    from welleng.exchange.nlog import NLOGError
+    with pytest.raises(NLOGError):
+        _coord_survey(code).surface_coordinates()

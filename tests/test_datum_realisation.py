@@ -130,3 +130,41 @@ def test_json_round_trip_carries_chain_and_pins():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# --- an unrecorded uncertainty is not a zero one ---------------------------- #
+def test_unrecorded_position_uncertainty_is_none_not_zero():
+    """`None` = NOT ESTABLISHED, `0.0` = established as negligible. Different
+    claims, and only one of them is usually true: a datum whose uncertainty
+    nobody recorded is not a perfectly known datum."""
+    from welleng.hierarchy import DatumRealisation, Well
+
+    assert DatumRealisation(id="D1").radial_error is None
+    assert DatumRealisation(id="D1", radial_error=0.0).radial_error == 0.0
+    assert Well(id="w", name="W").slot_radial_error is None
+
+
+def test_an_absent_edm_slot_uncertainty_stays_absent():
+    """Converting it to 0.0 on import was the silent step: the export simply
+    did not carry the value, and a zero says the slot is exactly known.
+
+    Nothing in core consumes this yet, which is why it is worth fixing NOW --
+    it becomes load-bearing the moment a relative-covariance path adds slot
+    uncertainty, and by then every stored realisation would read as exact.
+    """
+    import inspect
+
+    from welleng import hierarchy
+    src = inspect.getsource(hierarchy)
+    assert "slot_radial_error=None if radial is None else radial * length" in src
+    assert "slot_radial_error=0.0 if radial is None" not in src
+
+
+def test_a_stored_none_round_trips_as_none():
+    from welleng.hierarchy import DatumRealisation, _datum_from_dict
+    d = {"name": "D", "elevation": 25.0, "reference": "RKB",
+         "realisations": [{"id": "D1", "shift": [0.0, 0.0, 0.0],
+                           "radial_error": None}]}
+    got = _datum_from_dict(d)
+    assert got.realisations[0].radial_error is None
+    assert isinstance(got.realisations[0], DatumRealisation)

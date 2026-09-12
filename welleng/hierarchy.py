@@ -71,10 +71,18 @@ class DatumRealisation:
     shift : tuple of float, default (0, 0, 0)
         Position shift ``(dN, dE, dV)`` in metres FROM the superseded
         realisation to this one (the original realisation carries zeros).
-    radial_error : float, default 0.0
+    radial_error : float or None, default None
         1-sigma horizontal position uncertainty of THIS realisation, metres.
         A re-survey usually *reduces* this — the new realisation's value
         replaces (not adds to) the old one for absolute-positioning use.
+
+        ``None`` means **NOT ESTABLISHED**, and ``0.0`` means *established as
+        negligible*. They are different claims and only one of them is usually
+        true: a datum whose uncertainty nobody recorded is not a perfectly
+        known datum. Nothing in core consumes this yet, which is exactly why
+        it is worth fixing now — the value becomes load-bearing the moment a
+        relative-covariance path starts adding slot uncertainty, and by then
+        every stored realisation would read as exact.
     supersedes : str or None, default None
         The ``id`` of the realisation this one supersedes; ``None`` for the
         original. Enforced append-only by :meth:`Datum.add_realisation`.
@@ -83,7 +91,7 @@ class DatumRealisation:
     date: Optional[str] = None
     document: Optional[str] = None
     shift: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    radial_error: float = 0.0
+    radial_error: Optional[float] = None
     supersedes: Optional[str] = None
 
 
@@ -323,7 +331,7 @@ class Well(_Node):
         The owning :class:`Site` (inherited from :class:`_Node`).
     slot : tuple of float or None, default None
         Slot offset ``(ns, ew)`` from the site origin, in metres.
-    slot_radial_error : float, default 0.0
+    slot_radial_error : float or None, default None
         Radial (1-sigma) slot-position uncertainty, in metres.
     wellhead_depth : float or None, default None
         Wellhead depth, in metres.
@@ -338,7 +346,9 @@ class Well(_Node):
     convergence cancels (see :class:`Site`).
     """
     slot: Optional[tuple[float, float]] = None   # (ns, ew) offset from site origin
-    slot_radial_error: float = 0.0               # slot-position uncertainty
+    #: 1-sigma slot-position uncertainty, metres. ``None`` = NOT ESTABLISHED;
+    #: ``0.0`` = established as negligible. See DatumRealisation.radial_error.
+    slot_radial_error: Optional[float] = None
     wellhead_depth: Optional[float] = None
     datum: Optional[Datum] = None                # per-well RKB/rotary datum
 
@@ -1090,7 +1100,7 @@ class WellNetwork:
                 dm = d.get("datum")
                 n = Well(id=d["id"], name=d["name"], parent=parent,
                          slot=tuple(d["slot"]) if d.get("slot") else None,
-                         slot_radial_error=d.get("slot_radial_error", 0.0),
+                         slot_radial_error=d.get("slot_radial_error"),
                          wellhead_depth=d.get("wellhead_depth"),
                          datum=_datum_from_dict(dm))
             elif kind == "Wellbore":
@@ -1312,7 +1322,10 @@ def network_from_edm(reader, *, surveys: bool = False) -> WellNetwork:
             name=row.get("well_common_name", wid),
             parent=sites.get(row.get("site_id")),
             slot=slot,
-            slot_radial_error=0.0 if radial is None else radial * length,
+            # An absent EDM slot uncertainty stays ABSENT. Converting it to
+            # 0.0 here was the silent step: the export simply did not carry the
+            # value, and a zero says the slot is exactly known.
+            slot_radial_error=None if radial is None else radial * length,
             wellhead_depth=None if wellhead is None else wellhead * length,
             datum=datum,
         )
@@ -1413,7 +1426,7 @@ def _datum_from_dict(dm: Optional[dict]) -> Optional[Datum]:
         datum.add_realisation(DatumRealisation(
             id=r["id"], date=r.get("date"), document=r.get("document"),
             shift=tuple(r.get("shift", (0.0, 0.0, 0.0))),
-            radial_error=r.get("radial_error", 0.0),
+            radial_error=r.get("radial_error"),
             supersedes=r.get("supersedes"),
         ))
     return datum

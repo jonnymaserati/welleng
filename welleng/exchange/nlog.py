@@ -82,6 +82,33 @@ class NLOGError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class SurfaceCoordinates:
+    """Horizontal coordinates WITH the code that says what they are.
+
+    ⭐ **This exists because a description is not enough where the defect is
+    the value's SCOPE.** ``coordSystemCode`` is per WELL, not per dataset, so
+    one well's ``dx`` is 523292 m and its neighbour's is 3.34 DEGREES -- in the
+    same column, both valid floats. A caveat on the field warns whoever reads
+    it; carrying the code WITH the coordinates means the pair cannot be
+    separated in the first place, which is the only version that survives being
+    passed to a function.
+
+    ``units`` is resolved, not copied: ``"metre"`` or ``"degree"``. Building
+    this RAISES on an unrecognised or absent code rather than defaulting,
+    because a wrong projection assumption is silent.
+    """
+
+    dx: list[float]
+    dy: list[float]
+    coord_system: str
+    units: str
+
+    @property
+    def is_projected(self) -> bool:
+        return self.units == "metre"
+
+
+@dataclass(frozen=True)
 class DirSurvey:
     """One directional survey for a borehole, in SI units (m, degrees)."""
 
@@ -131,6 +158,21 @@ class DirSurvey:
         raise NLOGError(
             f"unrecognised coordSystemCode {self.coord_system!r} -- refusing to "
             "guess whether these coordinates are metres or degrees."
+        )
+
+    def surface_coordinates(self) -> "SurfaceCoordinates":
+        """``dx``/``dy`` bound to the code that says what they mean.
+
+        Prefer this to reading ``.dx`` and ``.dy`` directly: those are bare
+        floats that a caller can carry off without ``coord_system``, and one
+        well in a set is routinely geographic while its neighbours are
+        projected. Raises on an unrecognised or absent code -- see
+        :meth:`surface_units`.
+        """
+        return SurfaceCoordinates(
+            dx=list(self.dx), dy=list(self.dy),
+            coord_system=str(self.coord_system),
+            units=self.surface_units(),
         )
 
     @property
