@@ -244,6 +244,70 @@ TOOL_INDEX = os.path.join(
 ACCURACY = 1e-6
 
 
+#: Refuse, rather than warn, when a latitude-dependent error model is asked to
+#: compute at the package fallback location.
+#:
+#: Default False ONLY as a migration courtesy: turning it on today raises in
+#: 115 places in this repo's own suite and in every downstream consumer that
+#: builds a gyro survey without a location. That count IS the finding -- it
+#: measures how invisible the substitution has been -- and the refusal is the
+#: correct end state. Set it True in any pipeline whose numbers are acted on.
+STRICT_LOCATION = False
+
+
+def _model_uses_latitude(em) -> bool:
+    """True when any of this tool's weight functions references ``Latitude``."""
+    try:
+        blob = json.dumps(em)
+    except (TypeError, ValueError):
+        blob = str(em)
+    return "Latitude" in blob
+
+
+def _latitude_rad(survey, em) -> float:
+    """Header latitude in radians -- or a refusal, where it changes the answer.
+
+    ⚠️ **The existing magnetic guard is inverted for exactly this case.**
+    ``ErrorModel._validate_mag_reference`` refuses a MAGNETIC model whose
+    field values came from package defaults, and returns early for a gyro --
+    correct, a gyro needs no magnetic reference. But **a gyro is the model that
+    needs LATITUDE**: the OWSG gyro azimuth terms carry ``1 / Cos(Latitude)``.
+    So the one model family that depends on location was the one family let
+    through, and it computed at the fallback ~51.5 deg N without a word.
+
+    The error is anti-conservative and not small: against the fallback, the
+    term is understated by ~20% at 60 deg N and ~45% at 70 deg N -- ordinary
+    North Sea latitudes, in a model that feeds anti-collision. (Understated-by
+    is ``1 - 1/ratio``, not the ratio: the first draft of this docstring said
+    25% at 60 deg N, which is the RATIO 1.245 misread as a percentage.)
+
+    Refused only for a model that actually references ``Latitude``: the MWD
+    models do not, and raising for them would break every survey that never
+    needed the value. Same rule as the grid-convergence warning -- speak where
+    the absence changes an answer, stay quiet where it cannot.
+    """
+    hdr = survey.header
+    # NOT `latitude is None`: the header SUBSTITUTES a fallback location, so by
+    # the time we see it the value is always a number. `_location_defaulted` is
+    # the only thing that still knows it was invented.
+    if not getattr(hdr, "_location_defaulted", False):
+        return np.radians(float(hdr.latitude))
+    if _model_uses_latitude(em):
+        msg = (
+            "this error model's weight functions depend on Latitude (the gyro "
+            "azimuth terms carry 1/cos(latitude)) and the survey header's "
+            "location came from the package FALLBACK, not from the well. The "
+            "fallback sits at ~51.5 deg N, so a North Sea well at 60 deg N has "
+            "its gyro azimuth term understated by ~20%, and one at 70 deg N by "
+            "~45% -- ANTI-CONSERVATIVE, in a model that feeds anti-collision. "
+            "Set SurveyHeader(latitude=..., longitude=...)."
+        )
+        if STRICT_LOCATION:
+            raise ValueError(msg)
+        warnings.warn(msg, stacklevel=2)
+    return np.radians(float(hdr.latitude))      # unused by this model
+
+
 class ToolError:
     def __init__(
         self,
@@ -507,7 +571,7 @@ class ToolError:
             "BField": float(survey.header.b_total or 50000.0),
             "Bfield": float(survey.header.b_total or 50000.0),   # casing alias: MFI formulas use Bfield
             "EarthRate": earth_rate,
-            "Latitude": np.radians(float(survey.header.latitude or 0.0)),
+            "Latitude": _latitude_rad(survey, self.em),
             "NoiseReductionFactor": nrf,
             "RAD": np.pi / 180.0,
             # Canted-accelerometer 180deg tool-rotation switching operator
