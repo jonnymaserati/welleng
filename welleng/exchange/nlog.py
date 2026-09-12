@@ -374,6 +374,106 @@ class NLOGClient:
             raise NLOGError(f"boreholes failed: {exc}") from exc
         return out if isinstance(out, list) else out.get("boreholes", [])
 
+    def documents_typed(self, borehole_id: int) -> list:
+        """:meth:`documents`, as :class:`~welleng.exchange.nlog_models.DocumentRecord`.
+
+        Each record carries ``.hint()`` -- what the document probably is and
+        what that kind of document usually holds -- so a caller can choose
+        which of seventeen files to open instead of fetching all of them.
+        """
+        from .nlog_models import DocumentRecord, as_models
+        return as_models(self.documents(borehole_id), DocumentRecord)
+
+    def log_documents_typed(self, borehole_id: int) -> list:
+        """:meth:`log_documents`, as
+        :class:`~welleng.exchange.nlog_models.LogFileRecord`."""
+        from .nlog_models import LogFileRecord, as_models
+        return as_models(self.log_documents(borehole_id), LogFileRecord)
+
+    def boreholes_typed(self, filters: dict | None = None) -> list:
+        """:meth:`boreholes`, as
+        :class:`~welleng.exchange.nlog_models.BoreholeSummary`."""
+        from .nlog_models import BoreholeSummary, as_models
+        return as_models(self.boreholes(filters), BoreholeSummary)
+
+    def suggest_typed(self, query: str) -> list:
+        """:meth:`suggest`, as
+        :class:`~welleng.exchange.nlog_models.SuggestHit`.
+
+        ⚠️ NLOG's names are hyphenated exactly: ``"P11-A-02A"`` resolves and
+        ``"P11-A02A"`` returns nothing. ``.borehole_id`` is the int every other
+        call wants.
+        """
+        from .nlog_models import SuggestHit, as_models
+        return as_models(self.suggest(query), SuggestHit)
+
+    def find_documents(self, borehole_id: int, kind: str | None = None,
+                       *, retrievable_only: bool = True) -> list:
+        """Documents of a given ``kind`` (a key of ``DOCUMENT_KINDS``).
+
+        ``kind=None`` returns everything, classified. ``retrievable_only``
+        drops the ones NLOG itself marks lost -- a catalogued document is not
+        a retrievable one.
+        """
+        out = []
+        for d in self.documents_typed(borehole_id):
+            if retrievable_only and (d.lost or d.has_file is False):
+                continue
+            if kind is None or d.hint().kind == kind:
+                out.append(d)
+        return out
+
+    def find_log_curves(
+        self,
+        borehole_id: int,
+        *,
+        quantity: str | None = None,
+        depth: float | None = None,
+        max_files: int = 12,
+    ) -> list:
+        """Which of this well's LAS files actually carry a given measurement.
+
+        The inventory states DEPTHS, never CURVES, so this fetches the
+        candidates and reads them: each file is opened with
+        :func:`~welleng.exchange.las.open_las` and its mnemonics resolved
+        through the published vendor map
+        (:func:`welleng.osdu_ref.curve_quantity`), which is how ``RHOB``,
+        ``RHOZ`` and ``BDCX`` all answer to ``"mass per volume"``.
+
+        ``depth`` pre-filters on the inventory's stated interval, so asking for
+        a density curve over the reservoir opens two files instead of eleven.
+
+        Returns ``(LogFileRecord, {quantity: [mnemonic, ...]})`` pairs. A file
+        that cannot be read, or whose index is not a length, is reported with
+        ``{"error": ...}`` rather than skipped -- a log that failed to open is
+        not a log without curves, and the two are indistinguishable once one
+        of them is silently dropped.
+        """
+        from .las import LasError, open_las
+
+        cands = [r for r in self.log_documents_typed(borehole_id)
+                 if (r.file_type or "").upper() == "LAS"
+                 and r.bfile_dbk is not None]
+        if depth is not None:
+            cands = [r for r in cands if r.covers(depth)]
+        cands = cands[:max_files]
+
+        out = []
+        for rec in cands:
+            try:
+                las = open_las(self.fetch_document(rec.bfile_dbk, log=True))
+                groups = las.curves_by_quantity()
+            except (LasError, Exception) as exc:       # noqa: BLE001
+                out.append((rec, {"error": f"{type(exc).__name__}: {exc}"}))
+                continue
+            if quantity is not None:
+                hit = las.curves_by_quantity(quantity)
+                if not hit:
+                    continue
+                groups = {quantity: hit}
+            out.append((rec, {k: v for k, v in groups.items() if k}))
+        return out
+
     def documents(self, borehole_id: int) -> list[dict]:
         d = self._post("documents", borehole_id)
         return d if isinstance(d, list) else d.get("documents", [])
