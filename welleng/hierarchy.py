@@ -1068,7 +1068,7 @@ class WellNetwork:
         WellNetwork
             The reconstructed network.
         """
-        from .survey import Survey, SurveyHeader
+        from .survey import Survey
         net = cls()
         raw = {d["id"]: d for d in data["nodes"]}
         built: dict[str, _Node] = {}
@@ -1100,7 +1100,7 @@ class WellNetwork:
                     survey = Survey(
                         md=sv["md"], inc=sv["inc"], azi=sv["azi"],
                         deg=sv.get("deg", False),
-                        header=(SurveyHeader(**sv["header"])
+                        header=(_survey_header_from_dict(sv["header"])
                                 if sv.get("header") else None),
                                     start_nev=sv.get("start_nev", [0., 0., 0.]),
                                     error_model=sv.get("error_model"))
@@ -1383,6 +1383,24 @@ def _datum_dict(datum: Optional[Datum]) -> Optional[dict]:
             for r in datum.realisations
         ],
     }
+
+
+def _survey_header_from_dict(d: dict):
+    """Rebuild a ``SurveyHeader`` from a serialised one, tolerating extras.
+
+    A header serialises its whole ``__dict__``, so splatting that back into the
+    constructor makes the SERIALISED FORM the constructor signature: any
+    attribute added later -- derived, cached, or a provenance flag -- breaks
+    every round trip of every previously written file. Filtering to the
+    declared parameters is the same rule the NLOG models follow for a payload
+    we do not control: keep what you understand, do not choke on the rest.
+    """
+    import inspect
+
+    from .survey import SurveyHeader
+
+    allowed = set(inspect.signature(SurveyHeader.__init__).parameters) - {"self"}
+    return SurveyHeader(**{k: v for k, v in d.items() if k in allowed})
 
 
 def _datum_from_dict(dm: Optional[dict]) -> Optional[Datum]:

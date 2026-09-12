@@ -356,7 +356,7 @@ class SurveyHeader:
         earth_rate: float = 0.26251614,
         dip: Optional[float] = None,
         declination: Optional[float] = None,
-        convergence: float = 0,
+        convergence: Optional[float] = None,
         azi_reference: str = "true",
         vertical_inc_limit: float = 0.0001,
         xcl_representation: str = "nev_direct",
@@ -500,7 +500,15 @@ class SurveyHeader:
         self.b_total = b_total
         self.earth_rate = earth_rate
         self.dip = dip
-        self.convergence = convergence
+        # NOT 0.0-by-default. Grid convergence ROTATES EVERY AZIMUTH in the
+        # survey, and zero is a real and common assumption -- which is exactly
+        # why it must not be the silent one. `None` means NOT ESTABLISHED;
+        # `convergence_assumed` records which it was, so a consumer can tell a
+        # well surveyed on the central meridian from one where nobody looked.
+        # SurveyParameters.get_factors_from_x_y already returns the true value
+        # for a projection and coordinates.
+        self.convergence_assumed = convergence is None
+        self.convergence = 0.0 if convergence is None else convergence
         self.declination = declination
         self.vertical_inc_limit = vertical_inc_limit
         self.xcl_representation = xcl_representation
@@ -1083,6 +1091,21 @@ class Survey(MinCurve):
         self, inc: ArrayLike, azi: ArrayLike, deg: bool
     ) -> None:
         if self.header.azi_reference == 'grid':
+            # Say it HERE, not at header construction: this is the only path
+            # where an unestablished convergence changes an answer, and a
+            # warning on every header would be noise a reader learns to ignore.
+            if getattr(self.header, "convergence_assumed", False):
+                warnings.warn(
+                    "azimuths are GRID-referenced and grid convergence was "
+                    "never established, so zero is being assumed -- i.e. grid "
+                    "north is being treated as true north. That is a real "
+                    "assumption, not a neutral one: convergence reaches a "
+                    "degree or more away from a projection's central meridian, "
+                    "and one degree is ~52 m of lateral position at 3 km of "
+                    "departure. SurveyParameters.get_factors_from_x_y returns "
+                    "the true value for a projection and coordinates.",
+                    stacklevel=2,
+                )
             self._make_angles(inc, azi, deg)
             self.azi_true_deg = (
                 self.azi_grid_deg + math.degrees(self.header.convergence)
