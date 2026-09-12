@@ -330,8 +330,10 @@ def from_osdu(record: dict[str, Any]) -> Any:
             wellhead_depth=_to_m(
                 vm.get("VerticalMeasurement"),
                 vm.get("VerticalMeasurementUnitOfMeasureID") or uom),
+            # No elevation in the record means NOT RECORDED, not zero: a
+            # zero here is a claim that the datum sits at the reference.
             datum=Datum(name=vm.get("VerticalMeasurementPathID", "datum"),
-                        elevation=_to_m(vm.get("VerticalMeasurement"), uom) or 0.0),
+                        elevation=_to_m(vm.get("VerticalMeasurement"), uom)),
         )
     if entity == "WellboreTrajectory":
         # returns the tie metadata; station bulk is a referenced dataset, loaded
@@ -464,11 +466,17 @@ def to_osdu(entity: Any, *, version: Optional[str] = None,
         return {"kind": build_kind("Wellbore", version), "id": entity.id, "data": data}
     if isinstance(entity, Well):
         vm = []
-        if entity.wellhead_depth is not None or entity.datum is not None:
+        # The datum elevation if we hold one, else the wellhead depth. An
+        # entity carrying a datum whose elevation was never recorded emits NO
+        # VerticalMeasurement rather than a zero -- publishing 0.0 into OSDU
+        # asserts the datum is at the reference (offshore: the rotary table at
+        # sea level), and a consumer cannot tell that apart from a survey.
+        _elev = entity.datum.elevation if entity.datum is not None else None
+        if _elev is None:
+            _elev = entity.wellhead_depth
+        if _elev is not None:
             vm = [{
-                "VerticalMeasurement": _from_m(
-                    (entity.datum.elevation if entity.datum
-                     else entity.wellhead_depth), uom),
+                "VerticalMeasurement": _from_m(_elev, uom),
                 "VerticalMeasurementUnitOfMeasureID": uom,
             }]
             # The reference FRAME, as a code. A measurement without one says

@@ -108,15 +108,25 @@ class Datum:
     ----------
     name : str
         Human-readable datum name / identifier.
-    elevation : float, default 0.0
+    elevation : float, optional
         Datum elevation, in metres, above mean sea level (or the field
-        reference given by ``reference``).
-    reference : str, default "MSL"
+        reference given by ``reference``). ``None`` -- the default -- means
+        NOT RECORDED, and is not the same as zero. Zero is a claim that the
+        datum sits at the reference: offshore that says the rotary table is at
+        sea level, understating every TVDSS by the air gap plus the RT height
+        (commonly 20-45 m). An unrecorded elevation therefore stays ``None``
+        so a consumer has to handle it, rather than reading a fabricated
+        sea-level datum as a measured one.
+    reference : str, optional
         The elevation reference frame — ``"MSL"``, ``"RKB"``, ``"RT"``,
         ``"seabed"``, and so on. Free-form by design (field data uses whatever
         the operator wrote), but :meth:`osdu_reference` maps it onto the OSDU
         ``VerticalMeasurementType`` vocabulary so the frame is expressible as a
-        code rather than a habit.
+        code rather than a habit. ``None`` -- the default -- means the frame
+        was not recorded. It is NOT defaulted to ``"MSL"``: that would make an
+        unrecorded frame indistinguishable from a stated one, and would let
+        :meth:`osdu_reference` emit a confident ``MeanSeaLevel`` code derived
+        from nothing.
     realisations : list of DatumRealisation, optional
         The datum's position-survey history, oldest first — an APPEND-ONLY
         document chain (see :class:`DatumRealisation`). Manage it through
@@ -138,8 +148,8 @@ class Datum:
     and mixed-realisation comparisons become detectable instead of silent.
     """
     name: str
-    elevation: float = 0.0                 # above MSL (or the field reference)
-    reference: str = "MSL"                 # see osdu_reference()
+    elevation: Optional[float] = None      # above MSL; None == NOT RECORDED
+    reference: Optional[str] = None        # see osdu_reference(); None == unrecorded
     realisations: list[DatumRealisation] = field(default_factory=list)
 
     # -- the reference frame, as a code ------------------------------------- #
@@ -155,8 +165,11 @@ class Datum:
         ``None`` means the string did not resolve confidently -- which is the
         honest answer for a bare ``"wellhead"``, since OSDU distinguishes the
         casing-head, tubing-head and top/bottom flanges and the input does not.
+        It is also the answer when no frame was recorded at all.
         The stored ``reference`` is never rewritten.
         """
+        if self.reference is None:
+            return None
         from .osdu_ref import resolve       # lazy: keeps import light
         return resolve("VerticalMeasurementType", self.reference)
 
@@ -1314,7 +1327,11 @@ def network_from_edm(reader, *, surveys: bool = False) -> WellNetwork:
             elevation = _f(row_d, "datum_elevation")
             datum = Datum(
                 name=row_d.get("datum_name", row_d.get("datum_id", "datum")),
-                elevation=0.0 if elevation is None else elevation * length,
+                # An absent EDM datum elevation stays ABSENT. CD_DATUM quotes
+                # elevation above MSL, so the frame is a schema fact here and
+                # is stated; the NUMBER is not, and 0.0 would read as a
+                # measured sea-level datum.
+                elevation=None if elevation is None else elevation * length,
                 reference="MSL",
             )
         wells[wid] = Well(
@@ -1420,8 +1437,10 @@ def _datum_from_dict(dm: Optional[dict]) -> Optional[Datum]:
     """Rebuild a :class:`Datum` (+ its realisation chain) from a dict."""
     if not dm:
         return None
-    datum = Datum(name=dm["name"], elevation=dm.get("elevation", 0.0),
-                  reference=dm.get("reference", "MSL"))
+    # No defaults: a round trip through a dict that omits these must not
+    # invent a sea-level datum (see Datum.elevation).
+    datum = Datum(name=dm["name"], elevation=dm.get("elevation"),
+                  reference=dm.get("reference"))
     for r in dm.get("realisations", []):
         datum.add_realisation(DatumRealisation(
             id=r["id"], date=r.get("date"), document=r.get("document"),

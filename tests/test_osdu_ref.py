@@ -134,7 +134,24 @@ def test_osdu_id_shape():
 # --- the datum, end to end ---------------------------------------------------- #
 def test_datum_exposes_its_reference_as_a_code():
     assert Datum(name="D", reference="RKB").osdu_reference() == "RotaryTable"
-    assert Datum(name="D").osdu_reference() == "MeanSeaLevel"     # "MSL" default
+    assert Datum(name="D", reference="MSL").osdu_reference() == "MeanSeaLevel"
+
+
+def test_an_unrecorded_datum_frame_does_not_resolve_to_a_code():
+    """`reference` used to default to "MSL", so a Datum that stated no frame
+    at all emitted a confident MeanSeaLevel code -- indistinguishable, to a
+    consumer, from one a surveyor had written down."""
+    assert Datum(name="D").reference is None
+    assert Datum(name="D").osdu_reference() is None
+
+
+def test_an_unrecorded_datum_elevation_is_not_exported_as_zero():
+    """Zero is a claim that the datum sits at the reference. Offshore that
+    says the rotary table is at sea level, and every TVDSS quoted against it
+    is short by the air gap plus the RT height."""
+    w = Well(id="w1", name="W", datum=Datum(name="D", reference="RKB"))
+    assert Datum(name="D").elevation is None
+    assert to_osdu(w)["data"]["VerticalMeasurements"] == []
 
 
 def test_datum_reference_string_is_never_rewritten():
