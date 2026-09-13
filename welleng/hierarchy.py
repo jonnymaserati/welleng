@@ -846,9 +846,12 @@ class WellNetwork:
             # cancellation), which is conservative (over-states relative).
             import warnings
             warnings.warn(
-                "relative_covariance: divergence (kick-off) MD unavailable; "
-                "returning the naive independent sum (no shared-trunk "
-                "cancellation)", stacklevel=2,
+                f"relative_covariance({a!r}, {b!r}): the divergence "
+                "(kick-off) MD is unavailable, so the shared trunk cannot be "
+                "located and the naive independent sum is returned -- no "
+                "cancellation, which OVER-states the relative uncertainty. "
+                "Set Wellbore.kickoff_md on the divergent wellbore(s) to get "
+                "the cancelling form.", stacklevel=2,
             )
             return C_a + C_b
         # Covariance at the side-track (divergence) point on the shared trunk.

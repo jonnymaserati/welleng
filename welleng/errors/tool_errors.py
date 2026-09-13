@@ -7,7 +7,9 @@ import re
 import yaml
 import os
 from collections import OrderedDict
+from dataclasses import dataclass
 from functools import lru_cache
+from typing import List, Optional
 # import imp
 
 # import welleng.error
@@ -254,6 +256,69 @@ ACCURACY = 1e-6
 #: correct end state. Set it True in any pipeline whose numbers are acted on.
 STRICT_LOCATION = False
 
+#: Refuse, rather than warn, when a tool-model term cannot be evaluated and
+#: would otherwise contribute ZERO covariance.
+#:
+#: Default False for the same migration reason as ``STRICT_LOCATION``: the
+#: dropped terms are documented ISCWSA-JSON schema gaps, and refusing would
+#: make those models unusable rather than partly-usable. But the fallback is
+#: ANTI-CONSERVATIVE -- see :class:`DroppedTerm`.
+STRICT_TERMS = False
+
+
+@dataclass(frozen=True)
+class DroppedTerm:
+    """A tool-model term that could not be evaluated, and so contributed zero.
+
+    ⚠️ **Zero is the anti-conservative direction for an uncertainty.** A term
+    that contributes nothing is indistinguishable, in the resulting covariance,
+    from a tool that is perfect in that respect -- so the survey's EOU comes
+    out SMALLER than the model specifies, in a quantity that feeds
+    anti-collision.
+
+    This is recorded on the object rather than only warned about because a
+    warning is fired once, at computation time, into whatever filter happened
+    to be installed -- and is gone by the time anyone is handed the result.
+    A consumer that did not see the warning can still ask::
+
+        em = ErrorModel(survey, error_model=...)
+        if em.errors.dropped_terms:
+            ...                     # the EOU is understated; by these terms
+
+    The cause is a documented gap in the ISCWSA JSON schema (cross-station
+    references, per-tool calibration constants), catalogued by
+    ``welleng/errors/conformance.py`` -- not a defect in the survey.
+    """
+
+    code: str
+    """The term's ISCWSA code, e.g. ``'XYM3E'``."""
+
+    missing: Optional[str]
+    """The variable the formula referenced and the interpreter could not bind,
+    where that is recoverable from the error. ``None`` means the evaluation
+    failed for some other reason -- see :attr:`reason`, and do not read None
+    as "nothing was missing"."""
+
+    reason: str
+    """The underlying exception, as text."""
+
+    def __str__(self) -> str:
+        what = f"missing variable {self.missing!r}" if self.missing else self.reason
+        return f"{self.code} (contributed zero covariance: {what})"
+
+
+def _missing_variable(exc: Exception) -> Optional[str]:
+    """The unbound name from a NameError, or None if it is not one.
+
+    None means NOT RECOVERABLE, never "nothing was missing" -- the caller
+    records the raw reason alongside it.
+    """
+    if isinstance(exc, NameError):
+        m = re.search(r"name '([^']+)' is not defined", str(exc))
+        if m:
+            return m.group(1)
+    return None
+
 
 def _model_uses_latitude(em) -> bool:
     """True when any of this tool's weight functions references ``Latitude``."""
@@ -332,6 +397,11 @@ class ToolError:
 
         self.e = error
         self.errors = {}
+        #: Terms that could not be evaluated and contributed ZERO covariance,
+        #: understating this survey's EOU. Empty is the normal case. See
+        #: :class:`DroppedTerm` -- recorded here because a warning is gone by
+        #: the time anyone is handed the result.
+        self.dropped_terms: List[DroppedTerm] = []
 
         # Resolve the tool model file. Try the legacy YAML location
         # first (welleng/errors/tool_codes/<model>.yaml); if it doesn't
@@ -646,17 +716,35 @@ class ToolError:
             # documented schema gaps in the ISCWSA JSON spec; see
             # welleng/errors/conformance.py output for the catalogue.
             #
-            # User-facing behaviour: emit a warning identifying the
-            # missing variable, then contribute zero from this term so
-            # the model as a whole still produces a usable Survey.
+            # User-facing behaviour: RECORD the drop on this object, warn
+            # naming the missing variable, then contribute zero from this term
+            # so the model as a whole still produces a usable Survey.
+            #
+            # ⚠️ Zero is the ANTI-CONSERVATIVE direction: the term contributes
+            # nothing, so the EOU comes out smaller than the model specifies.
+            # The warning alone was not enough -- it fires once, into whatever
+            # filter is installed, and a consumer handed the resulting Survey
+            # later has no way to ask. Hence `self.dropped_terms`.
             import warnings
-            warnings.warn(
-                f"JSON tool model term {code!r} could not be evaluated "
-                f"({exc}). Term contributes zero covariance to this Survey. "
-                f"This is a known ISCWSA-JSON schema gap; see "
-                f"welleng/errors/conformance.py.",
-                RuntimeWarning,
+            missing = _missing_variable(exc)
+            self.dropped_terms.append(
+                DroppedTerm(code=str(code), missing=missing, reason=str(exc))
             )
+            named = (f"it references {missing!r}, which the interpreter cannot "
+                     f"bind" if missing else f"{exc}")
+            msg = (
+                f"JSON tool model term {code!r} could not be evaluated: "
+                f"{named}. The term contributes ZERO covariance, so this "
+                f"survey's uncertainty is UNDERSTATED by whatever that term "
+                f"models -- the anti-conservative direction. Known "
+                f"ISCWSA-JSON schema gap (see welleng/errors/conformance.py); "
+                f"read ErrorModel.errors.dropped_terms to see it after the "
+                f"fact, or set welleng.errors.tool_errors.STRICT_TERMS = True "
+                f"to refuse instead."
+            )
+            if STRICT_TERMS:
+                raise ValueError(msg) from exc
+            warnings.warn(msg, RuntimeWarning)
             d = np.zeros(n)
             i = np.zeros(n)
             a = np.zeros(n)
