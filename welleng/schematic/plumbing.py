@@ -68,7 +68,12 @@ class Centreline:
         self.mode = mode
         self.exag = float(exag)
         md0, md1 = float(resolver.md[0]), float(resolver.md[-1])
+        # Clipped to md1: an arange that overshoots asks the resolver for
+        # depths past the last station, which it can only answer by clamping.
         self.grid = np.arange(md0, md1 + step, step)
+        self.grid = self.grid[self.grid <= md1]
+        if self.grid[-1] < md1:
+            self.grid = np.append(self.grid, md1)
         self._x = resolver.vs(self.grid, vs_azi)
         self._y = resolver.depth(self.grid, mode)
 
@@ -127,7 +132,7 @@ def _hole_r_in(md: float, bore: Wellbore) -> Optional[float]:
 def _casings(bore: Wellbore, ancestors: Sequence[Wellbore]) -> List[Casing]:
     out: List[Casing] = []
     for b in list(ancestors) + [bore]:
-        out.extend(b.casings)
+        out.extend(b.drawable_casings)
     return out
 
 
@@ -193,7 +198,7 @@ def _draw_annulus_fluids(ax, cl: Centreline, bore: Wellbore):
     the drilled hole where nothing confines it), so a fluid column and the
     cement below it line up exactly rather than being drawn to different walls.
     """
-    cas = list(bore.casings)
+    cas = list(bore.drawable_casings)
     for f in getattr(bore, "annulus_fluids", []) or []:
         inner = next((c for c in cas if abs(c.od_in - f.inside_od_in) < 1e-6), None)
         if inner is None:                    # names an annulus that is not there
@@ -383,7 +388,7 @@ def render_plumbing(
         # so a cemented interval always reads as cement even where a fluid
         # column is declared over the same depths.
         _draw_annulus_fluids(ax, cl, b)
-        for c in b.casings:
+        for c in b.drawable_casings:
             _draw_casing(ax, cl, c, cas, b)
             _draw_liner_hanger(ax, cl, c, cas, start)
         for plug in b.cement_plugs:

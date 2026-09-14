@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import warnings
 from typing import List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -76,6 +77,18 @@ class SurveyRef(_Base):
     md: List[float]
     inc: List[float]
     azi: List[float]
+    tie_in_tvd: Optional[float] = Field(
+        None,
+        description=(
+            "TVD of the FIRST station, below the same datum the MDs are "
+            "quoted from. Needed only when the survey does not start at "
+            "surface -- a sidetrack's definitive survey begins at its tie-in, "
+            "and without this every TVD it yields is measured from that tie-in "
+            "rather than from the datum. None is NOT zero: it means the tie-in "
+            "was not recorded, and md[0] > 0 with no tie_in_tvd is reported "
+            "rather than assumed to be zero."
+        ),
+    )
 
     @model_validator(mode="after")
     def _equal_length(self) -> "SurveyRef":
@@ -144,7 +157,17 @@ class Tubular(_Base):
         None, description="inner diameter, inches (auto-filled from catalogue)"
     )
     top_md: float = 0.0
-    shoe_md: float = Field(..., description="setting/shoe depth, MD")
+    shoe_md: Optional[float] = Field(
+        None,
+        description=(
+            "Setting/shoe depth, MD. None means NOT RECORDED -- a string can "
+            "be itemised joint by joint in a well report with no depth stated "
+            "anywhere, and that string was still RUN. It cannot be drawn, so "
+            "the renderers OMIT it and say which (see "
+            "Wellbore.drawable_casings); requiring it instead lost the entire "
+            "schematic to one unplaceable string. Same reasoning as toc_md."
+        ),
+    )
     # NOT 0.0-by-default, and not required: 0.0 means "cemented to surface",
     # which is a claim about a BARRIER. Defaulting to it made an unstated TOC
     # render as the MAXIMUM POSSIBLE cement -- silently, on exactly the strings
@@ -274,7 +297,7 @@ class Tubular(_Base):
                 f"{self.name}: sections start at {secs[0].top_md} but the "
                 f"string top_md is {self.top_md}"
             )
-        if abs(secs[-1].base_md - self.shoe_md) > 1e-6:
+        if self.shoe_md is not None and abs(secs[-1].base_md - self.shoe_md) > 1e-6:
             raise ValueError(
                 f"{self.name}: sections end at {secs[-1].base_md} but the "
                 f"shoe_md is {self.shoe_md}"
@@ -296,6 +319,8 @@ class Tubular(_Base):
     def profile(self) -> List[Tuple[float, float, float, float]]:
         """``(top_md, base_md, od_in, id_in)`` per diameter, top to shoe."""
         if not self.sections:
+            if self.shoe_md is None:
+                return []          # unplaceable: no interval to report
             return [(self.top_md, self.shoe_md, self.od_in, float(self.id_in))]
         return [(s.top_md, s.base_md, s.od_in, float(s.id_in))
                 for s in self.sections]
@@ -550,6 +575,51 @@ class Wellbore(_Base):
     annulus_fluids: List[AnnulusFluid] = Field(default_factory=list)
     perforations: List[Perforation] = Field(default_factory=list)
     completion: List[CompletionItem] = Field(default_factory=list)
+
+    # --- what can actually be drawn ---------------------------------------
+    @property
+    def unplaceable_casings(self) -> List[Casing]:
+        """Strings with no recorded ``shoe_md``. Run, but not placeable.
+
+        These are REAL strings -- the well report itemises them joint by joint
+        and states no depth -- so they are carried on the model rather than
+        rejected at construction. A drawing cannot place them, which is a fact
+        about the drawing and not about the well.
+        """
+        return [c for c in self.casings if c.shoe_md is None]
+
+    @property
+    def drawable_casings(self) -> List[Casing]:
+        """Casings a renderer can place. See :attr:`unplaceable_casings`.
+
+        Filtered in ONE place rather than guarded at each of the ~25 sites
+        that read ``shoe_md``: a guard that has to be remembered at every
+        draw site is a guard that will be missed at one of them, and the
+        symptom would be a string drawn at depth zero.
+        """
+        return [c for c in self.casings if c.shoe_md is not None]
+
+    @model_validator(mode="after")
+    def _report_unplaceable(self) -> "Wellbore":
+        """Say which strings will be missing from the drawing.
+
+        An omitted string is a SILENT omission -- the schematic still looks
+        complete, and a barrier drawing that is quietly one string short is
+        the failure this whole model tries not to have. Omitting is still
+        right (the alternative loses the drawing entirely, and drawing it at
+        depth zero would be a fabrication); saying nothing is not.
+        """
+        missing = self.unplaceable_casings
+        if missing:
+            warnings.warn(
+                f"wellbore {self.id!r}: "
+                f"{', '.join(repr(c.name) for c in missing)} "
+                f"{'has' if len(missing) == 1 else 'have'} no shoe_md and "
+                "will be OMITTED from any drawing -- the schematic will not "
+                "show them. Set shoe_md to place them.",
+                stacklevel=2,
+            )
+        return self
 
     @model_validator(mode="after")
     def _radial_scale_monotonic(self) -> "Wellbore":

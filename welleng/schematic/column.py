@@ -452,7 +452,7 @@ def build_column(
 
     ymax = resolver.max_depth(mode)
     labels: List = []            # (depth, anchor_x, text, style) -> gutter
-    casings = bore.casings
+    casings = bore.drawable_casings
     hole = bore.hole_sections
     # Reference width for the drawing edge, ruler and gutter. Casing ODs count,
     # not just bit sizes: a DRIVEN conductor is never drilled, so its OD IS the

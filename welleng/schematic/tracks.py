@@ -189,7 +189,7 @@ class SchematicTrack(Track):
         bore = self.schematic.primary
         min_gap = layout.bottom * 0.024
         for side, rows in (
-            (1, [(c.shoe_md, c.name, _LABEL) for c in bore.casings]),
+            (1, [(c.shoe_md, c.name, _LABEL) for c in bore.drawable_casings]),
             (-1, [((p.top_md + p.base_md) / 2.0, p.name,
                    Style(color="#5c5c5c")) for p in bore.cement_plugs]),
         ):

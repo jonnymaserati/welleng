@@ -88,12 +88,12 @@ def build_section(
     dwg.add(Polyline([tuple(P(m)) for m in md_grid], layer=L_PATH, style=_PATH))
 
     # cement annuli then casing steel outlines
-    for c in sorted(bore.casings, key=lambda c: -c.od_in):
+    for c in sorted(bore.drawable_casings, key=lambda c: -c.od_in):
         if c.toc_md is None:
             continue          # no cement RECORDED: draw nothing, claim nothing
         dwg.add(Hatch(ribbon(c.toc_md, c.shoe_md, c.od_in),
                       pattern="cement", layer=L_CEMENT, style=_CEMENT))
-    for c in bore.casings:
+    for c in bore.drawable_casings:
         dwg.add(Polygon(ribbon(c.top_md, c.shoe_md, c.od_in),
                         layer=L_CASING,
                         style=Style(color="#222222", lineweight=0.5, fill=None)))
@@ -107,7 +107,8 @@ def build_section(
     # plugs (bore-width ribbon)
     for pl in bore.cement_plugs:
         mid = (pl.top_md + pl.base_md) / 2.0
-        cand = [c.id_in for c in bore.casings if c.top_md <= mid <= c.shoe_md]
+        cand = [c.id_in for c in bore.drawable_casings
+                if c.top_md <= mid <= c.shoe_md]
         bore_id = min(cand) if cand else 6.0
         dwg.add(Hatch(ribbon(pl.top_md, pl.base_md, bore_id),
                       pattern="plug", layer=L_PLUG, style=_PLUG))
