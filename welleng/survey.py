@@ -40,7 +40,6 @@ from .error import ErrorModel, ERROR_MODELS
 from .geomag import GeomagLookupError, lookup_field
 from .node import Node
 from .connector import Connector, interpolate_well
-from .visual import figure
 from .units import ureg
 
 from typing import Any, Optional, Union
@@ -1626,6 +1625,13 @@ class Survey(MinCurve):
         object
             A plotly figure object.
         """
+        # Imported HERE, not at module scope. This module is arithmetic; the
+        # visualisation stack is not, and a top-level import made `from
+        # welleng.survey import MinCurve` cost 1.7 s and drag in VTK, trimesh
+        # and plotly. A consumer that wants minimum curvature should not pay
+        # for a renderer -- that cost is a standing invitation to fork the
+        # kernel instead of importing it.
+        from .visual import figure
         fig = figure(self, type, **kwargs)
         return fig
 
