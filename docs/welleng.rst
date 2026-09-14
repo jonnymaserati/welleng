@@ -192,6 +192,14 @@ welleng.torque\_drag module
    :undoc-members:
    :show-inheritance:
 
+welleng.lint module
+-------------------
+
+.. automodule:: welleng.lint
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 welleng.units module
 --------------------
 

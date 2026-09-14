@@ -87,12 +87,18 @@ def test_every_interpolator_checks_not_just_tvd():
 
 def test_in_range_asks_stay_quiet():
     """A warning that fires on ordinary use gets filtered, and then it is not
-    a warning any more."""
+    a warning any more.
+
+    Scoped to THIS module's warnings: the survey machinery underneath raises
+    its own (grid convergence never established), which is true and not this
+    class's to silence.
+    """
     r = _resolver()
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         r.depth(2296.0, "TVD")
         r.pos(2000.0)
+    assert not [w for w in caught if "falls outside" in str(w.message)]
 
 
 def test_strict_range_refuses():
@@ -128,11 +134,12 @@ def test_the_tie_in_references_the_survey_to_the_datum():
 def test_a_surface_survey_needs_no_tie_in():
     """The common case must not acquire a warning -- md[0] == 0 is not a
     missing tie-in, it is a survey that starts at surface."""
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         r = DepthResolver(SurveyRef(md=[0.0, 1000.0, 2000.0],
                                     inc=[0.0, 0.0, 0.0],
                                     azi=[0.0, 0.0, 0.0]))
+    assert not [w for w in caught if "not at surface" in str(w.message)]
     assert r.tvd[0] == pytest.approx(0.0)
 
 

@@ -69,8 +69,15 @@ class DepthResolver:
         grid = grid[grid <= md.max()]
         if grid[-1] < md.max():
             grid = np.append(grid, md.max())
-        inc = np.interp(grid, md, survey_ref.inc)
-        azi = np.interp(grid, md, survey_ref.azi)
+        grid = np.unique(grid)
+        # ⛔ NOT np.interp on inc/azi. They are ANGLES on a circular arc, and
+        # azimuth wraps at 0/360, so a linear blend across the wrap swings the
+        # tangent through the opposite heading. This module densified the
+        # survey linearly and then handed the result to minimum curvature,
+        # which made the whole trajectory a min-curve path through blended
+        # angles rather than the min-curve interpolation of the real stations.
+        # welleng.survey.interpolate_mds IS that interpolation -- core's own
+        # primitive, ignored here.
         # The tie-in. A survey starting below MD 0 whose first station's TVD is
         # unrecorded cannot be referenced to the datum -- and the failure is
         # silent, because a run-relative TVD is a well-formed number.
@@ -89,12 +96,18 @@ class DepthResolver:
         # same as omitting it -- the header stores the None and the position
         # maths then indexes a 0-d array.
         kwargs = {} if tie_in is None else {"start_nev": [0.0, 0.0, float(tie_in)]}
-        self.survey = we.survey.Survey(
-            md=grid, inc=inc, azi=azi,
+        stations = we.survey.Survey(
+            md=md,
+            inc=np.asarray(survey_ref.inc, dtype=float),
+            azi=np.asarray(survey_ref.azi, dtype=float),
             header=we.survey.SurveyHeader(name=name),
             **kwargs,
         )
-        self.md = grid
+        self._stations = stations           # the REAL survey; lookups use this
+        self.survey = we.survey.interpolate_mds(stations, grid)
+        # interpolate_mds merges the true stations into the grid, so take the
+        # md array it actually produced rather than assuming it is `grid`.
+        self.md = np.asarray(self.survey.md, dtype=float)
         self.tvd = np.asarray(self.survey.tvd, dtype=float)
         self.n = np.asarray(self.survey.n, dtype=float)
         self.e = np.asarray(self.survey.e, dtype=float)
@@ -147,33 +160,67 @@ class DepthResolver:
         warnings.warn(msg, stacklevel=3)
 
     # --- scalar/array interpolators ---------------------------------------
+    # These delegate to minimum curvature on the REAL stations -- they are
+    # EXACT, not interpolated off the dense grid.
+    #
+    # The dense grid was tempting: at a 10 m step its off-grid residual
+    # measured 8.2 mm on a 480 m-station build-and-hold, which is far inside
+    # any line width this module draws. That argument is the SAME one that let
+    # the 14.4 m defect ship -- the residual scales with the CALLER's dogleg
+    # and with `step`, neither of which this class controls, so "small on the
+    # survey I happened to measure" says nothing about the next survey. The
+    # grid stays for drawing a polyline; it is not what answers a question.
+    def _at(self, md):
+        """Exact minimum-curvature (N, E, TVD) at ``md``, scalar or array.
+
+        NB ``interpolate_mds`` MERGES the real stations into whatever it is
+        asked for, so the result is longer than the query and the requested
+        rows have to be selected back out by MD -- it is not 1:1.
+        """
+        a = np.atleast_1d(np.asarray(md, dtype=float))
+        a = np.clip(a, self.md_min, self.md_max)   # range already reported
+        out = we.survey.interpolate_mds(self._stations, a)
+        om = np.asarray(out.md, dtype=float)
+        pos = np.asarray(out.pos_nev, dtype=float)
+        idx = np.searchsorted(om, a)
+        idx = np.clip(idx, 0, om.size - 1)
+        # guard the float-equality assumption rather than trusting it
+        off = np.abs(om[idx] - a)
+        bad = off > 1e-6
+        if np.any(bad):
+            alt = np.clip(idx - 1, 0, om.size - 1)
+            use_alt = np.abs(om[alt] - a) < off
+            idx = np.where(use_alt, alt, idx)
+        return pos[idx]
+
     def tvd_at(self, md):
         self._check_range(md, "tvd_at")
-        return np.interp(md, self.md, self.tvd)
+        out = self._at(md)[:, 2]
+        return out if np.ndim(md) else float(out[0])
 
     def depth(self, md, mode: str = "MD"):
         """Return the plotting depth for ``md`` in ``'MD'`` or ``'TVD'`` mode."""
         if mode.upper() == "TVD":
             return self.tvd_at(md)
         self._check_range(md, "depth")
-        return np.interp(md, self.md, self.md)  # identity, but clamps to range
+        out = np.clip(np.asarray(md, dtype=float), self.md_min, self.md_max)
+        return out if np.ndim(md) else float(out)
 
     def pos(self, md):
         """(N, E, TVD) at ``md``."""
         self._check_range(md, "pos")
-        return (
-            np.interp(md, self.md, self.n),
-            np.interp(md, self.md, self.e),
-            np.interp(md, self.md, self.tvd),
-        )
+        p = self._at(md)
+        if np.ndim(md):
+            return (p[:, 0], p[:, 1], p[:, 2])
+        return (float(p[0, 0]), float(p[0, 1]), float(p[0, 2]))
 
     def vs(self, md, azimuth_deg: float):
         """Vertical-section departure at ``md`` projected onto ``azimuth_deg``."""
         self._check_range(md, "vs")
         a = np.radians(azimuth_deg)
-        n = np.interp(md, self.md, self.n)
-        e = np.interp(md, self.md, self.e)
-        return n * np.cos(a) + e * np.sin(a)
+        p = self._at(md)
+        out = p[:, 0] * np.cos(a) + p[:, 1] * np.sin(a)
+        return out if np.ndim(md) else float(out[0])
 
     @property
     def total_depth(self):

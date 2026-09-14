@@ -53,11 +53,16 @@ def build_section(
     radial = radial_scale_for(bore, resolver, mode="MD", default=default_radial_scale)
 
     md_grid = resolver.md
-    vs = resolver.vs(md_grid, azimuth)
-    tvd = resolver.tvd
 
     def P(m):
-        return np.array([np.interp(m, md_grid, vs), np.interp(m, md_grid, tvd)])
+        """(vertical section, TVD) at ``m`` -- EXACT minimum curvature.
+
+        Was a linear interpolation off the dense grid. The resolver answers
+        this exactly and vectorised, so there is no reason to approximate it,
+        and "the grid is dense enough" is an argument about the survey in
+        front of you rather than the next one.
+        """
+        return np.array([resolver.vs(m, azimuth), resolver.tvd_at(m)])
 
     def normal(m):
         d = P(min(md_grid[-1], m + 2.5)) - P(max(md_grid[0], m - 2.5))
