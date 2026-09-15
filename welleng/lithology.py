@@ -284,8 +284,16 @@ class PatternMatch:
     def may_fall_back_to_group(self) -> bool:
         """Whether a caller may substitute the unit's GROUP pattern.
 
-        True ONLY for ``no_lithology``. This is the whole reason the class
-        exists -- see the note above.
+        ⚠️ **NECESSARY, NOT SUFFICIENT -- do not branch on this alone.** It
+        answers only "did the NAME say something that contradicts the group?".
+        The group pattern also describes a RANK, and giving it to a formation
+        or member inside that group is a separate error this flag knows nothing
+        about.
+
+        A consumer branched on this flag and applied the group pattern itself.
+        When the rank rule landed, its drawing **did not change** -- the
+        corrected code was never on its path. Call :func:`pattern_for_unit`,
+        which makes the whole decision.
         """
         return self.reason == "no_lithology"
 
@@ -306,6 +314,51 @@ def pattern_match_from_name(name: str | None) -> PatternMatch:
     if len(hits) > 1 or broad:
         return PatternMatch(None, "ambiguous", tuple(sorted(seen + broad)))
     return PatternMatch(None, "no_lithology")
+
+
+def pattern_for_unit(
+    name: str | None,
+    rank: str | None = None,
+    group_pattern: int | None = None,
+) -> int | None:
+    """THE pattern decision for one stratigraphic unit. Call this; don't rebuild it.
+
+    Combines BOTH gates, which is the whole point. The NAME gate
+    (:func:`pattern_match_from_name`) and the RANK gate each give a confident
+    wrong answer alone, and they used to live in different places -- the name
+    half public, the rank half buried in :func:`intervals_from_nlog`. A
+    consumer holding only the public half reassembled the decision from
+    :attr:`PatternMatch.may_fall_back_to_group` and applied the group pattern
+    itself, so when the rank rule shipped **its sheet did not change**: three
+    units went on wearing a hatch they had not earned. The fix was a check, in
+    the right place, and it still did not travel, because the caller had
+    duplicated the decision instead of calling it.
+
+    Parameters
+    ----------
+    name : str or None
+        The unit's own name, at its own rank.
+    rank : str or None
+        ``"group"``/``"subgroup"``/``"formation"``/``"member"``/None.
+        ⚠️ ``None`` means NOT RECORDED and REFUSES the group fallback: not
+        knowing what a unit IS is not a reason to assert what it is MADE OF.
+    group_pattern : int or None
+        The parent group's pattern. Used only where both gates allow it.
+
+    Returns
+    -------
+    int or None
+        FGDC pattern number, or ``None`` for "we cannot say" -- which a
+        renderer draws UNPATTERNED, never as the group's rock.
+    """
+    m = pattern_match_from_name(name)
+    if m.code is not None:
+        return m.code
+    if not m.may_fall_back_to_group:
+        return None                     # the name contradicts the group
+    if rank not in _GROUP_RANKS:
+        return None                     # the group pattern describes a GROUP
+    return group_pattern
 
 
 def intervals_from_nlog(column, label: str = "formation") -> list[Interval]:
@@ -368,30 +421,9 @@ def intervals_from_nlog(column, label: str = "formation") -> list[Interval]:
             # name override exists to escape: "Grey Salt Clay Member" was drawn
             # as Zechstein HALITE. The group is the best available statement
             # only when the name mentions no rock at all.
-            m = pattern_match_from_name(name)
-            if m.code is not None:
-                pattern = m.code
-            elif not m.may_fall_back_to_group:
-                pattern = None          # unknown looks unknown, never salt
-            elif (info or {}).get("rank") not in _GROUP_RANKS:
-                # ⭐ The group pattern is a statement about the GROUP. Handing it
-                # to a FORMATION or MEMBER inside that group claims the sub-unit
-                # shares its parent's dominant rock, which is the simplification
-                # this function's docstring calls out -- and it is wrong in the
-                # direction that matters: the Lower Buntsandstein Formation
-                # inherited SANDSTONE while its main member is claystone, and
-                # that member is a caprock.
-                #
-                # Of the 279 units in the RGD table that reached this fallback,
-                # only 17 were actually at group rank. The other 262 were
-                # sub-units being given a lithology they had not earned.
-                #
-                # An unknown rank refuses too: not knowing what a unit is, is
-                # not a reason to assert what it is made of. The band keeps its
-                # group COLOUR, so the column still reads as stratigraphy --
-                # only the lithology hatch, which is the part we cannot support,
-                # goes away.
-                pattern = None
+            pattern = pattern_for_unit(
+                name, (info or {}).get("rank"), pattern
+            )
 
         out.append(Interval(
             name=name, top=float(top), base=float(base),

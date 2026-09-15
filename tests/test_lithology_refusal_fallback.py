@@ -152,3 +152,45 @@ def test_most_units_reaching_the_fallback_were_never_entitled_to_it():
     assert reaching > 200
     assert at_group_rank < reaching * 0.15, (
         f"{at_group_rank}/{reaching} at group rank")
+
+
+# --- the decision must be CALLABLE, not reassemblable ---------------------- #
+from welleng.lithology import pattern_for_unit                   # noqa: E402
+
+
+def test_pattern_for_unit_is_the_whole_decision():
+    """Both gates in one call. A consumer holding only the NAME half
+    reassembled the decision from `may_fall_back_to_group` and applied the
+    group pattern itself -- so when the rank rule shipped, its sheet did not
+    change and three units kept a hatch they had not earned."""
+    # name contradicts the group
+    assert pattern_for_unit("Grey Salt Clay Member", "member", 668) is None
+    # name is silent but the RANK forbids it
+    assert pattern_for_unit("Ommelanden Formation", "formation", 626) is None
+    # both gates open
+    assert pattern_for_unit("Altena Group", "group", 623) == 623
+    # the name wins outright
+    assert pattern_for_unit("Claystone Member, Main", "member", 607) == 620
+
+
+def test_an_unrecorded_rank_refuses_the_group():
+    assert pattern_for_unit("Ommelanden Formation", None, 626) is None
+
+
+def test_the_advisory_flag_alone_is_not_the_decision():
+    """The regression that let the fix fail to travel: the flag says the NAME
+    permits a fallback, and a caller acting on it alone still gets it wrong."""
+    m = pattern_match_from_name("Ommelanden Formation")
+    assert m.may_fall_back_to_group is True          # name gate: open
+    assert pattern_for_unit("Ommelanden Formation", "formation", 626) is None
+    assert "NOT SUFFICIENT" in type(m).may_fall_back_to_group.__doc__
+
+
+def test_the_renderer_uses_the_same_callable():
+    """One implementation. If intervals_from_nlog ever reassembles the decision
+    again, these two can disagree."""
+    import inspect
+    from welleng.lithology import intervals_from_nlog
+    src = inspect.getsource(intervals_from_nlog)
+    assert "pattern_for_unit(" in src
+    assert "may_fall_back_to_group" not in src
