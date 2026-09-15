@@ -217,6 +217,10 @@ _NAME_LITHOLOGY: dict[str, int] = {
 #: whether the group fallback may run.
 _NAME_AMBIGUOUS_CLASS = ("carbonate", "evaporite", "clastic", "volcanic")
 
+#: Ranks at which a unit IS the thing the group pattern describes, so inheriting
+#: that pattern is a correct statement rather than a claim about a narrower unit.
+_GROUP_RANKS = ("group", "subgroup")
+
 #: Words that name a rock the FGDC chart has no pattern for. Listed so such a
 #: name is REFUSED rather than taking the nearest pattern: **anhydrite is not
 #: gypsum**, and 667 is gypsum only.
@@ -369,6 +373,25 @@ def intervals_from_nlog(column, label: str = "formation") -> list[Interval]:
                 pattern = m.code
             elif not m.may_fall_back_to_group:
                 pattern = None          # unknown looks unknown, never salt
+            elif (info or {}).get("rank") not in _GROUP_RANKS:
+                # ⭐ The group pattern is a statement about the GROUP. Handing it
+                # to a FORMATION or MEMBER inside that group claims the sub-unit
+                # shares its parent's dominant rock, which is the simplification
+                # this function's docstring calls out -- and it is wrong in the
+                # direction that matters: the Lower Buntsandstein Formation
+                # inherited SANDSTONE while its main member is claystone, and
+                # that member is a caprock.
+                #
+                # Of the 279 units in the RGD table that reached this fallback,
+                # only 17 were actually at group rank. The other 262 were
+                # sub-units being given a lithology they had not earned.
+                #
+                # An unknown rank refuses too: not knowing what a unit is, is
+                # not a reason to assert what it is made of. The band keeps its
+                # group COLOUR, so the column still reads as stratigraphy --
+                # only the lithology hatch, which is the part we cannot support,
+                # goes away.
+                pattern = None
 
         out.append(Interval(
             name=name, top=float(top), base=float(base),

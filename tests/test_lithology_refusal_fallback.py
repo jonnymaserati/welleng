@@ -93,3 +93,62 @@ def test_the_old_signature_is_unchanged():
     assert pattern_from_name("Z4 Fringe Sandstone Member") == SAND
     assert pattern_from_name("Grey Salt Clay Member") is None
     assert isinstance(pattern_match_from_name("x"), PatternMatch)
+
+
+# --- rank: the group pattern describes the GROUP -------------------------- #
+from welleng.exchange import rgd_nomenclature as rgd            # noqa: E402
+from welleng.lithology import _GROUP_RANKS                      # noqa: E402
+
+
+def _inherits_group(code):
+    """Whether this unit would take its group's pattern under the current rule."""
+    info = rgd.resolve(code) or {}
+    name = info.get("name") or info.get("inherited_name") or ""
+    m = pattern_match_from_name(name)
+    return (m.code is None and m.may_fall_back_to_group
+            and info.get("rank") in _GROUP_RANKS)
+
+
+def test_a_formation_does_not_inherit_its_groups_lithology():
+    """Reported by a consumer: the Lower Buntsandstein FORMATION inherited
+    SANDSTONE from its group while its main member is claystone -- and that
+    member is a caprock. A formation is narrower than the thing the group
+    pattern describes."""
+    assert (rgd.resolve("RBSH") or {}).get("rank") == "formation"
+    assert not _inherits_group("RBSH")
+
+
+def test_the_member_that_names_its_rock_still_resolves():
+    """RBSHM is 'Claystone Member, Main' -- the name says it, so rank never
+    enters into it."""
+    assert pattern_from_name("Claystone Member, Main") == 620
+
+
+def test_a_group_does_inherit_the_group_pattern():
+    """The fallback is not removed, it is confined to the rank it describes."""
+    assert (rgd.resolve("AT") or {}).get("rank") == "group"
+    assert _inherits_group("AT")
+
+
+def test_an_unknown_rank_refuses():
+    """Not knowing what a unit IS is not a reason to assert what it is MADE OF.
+    104 units in the RGD table carry no rank."""
+    assert None not in _GROUP_RANKS
+    assert "formation" not in _GROUP_RANKS and "member" not in _GROUP_RANKS
+
+
+def test_most_units_reaching_the_fallback_were_never_entitled_to_it():
+    """The measurement that justified the change: of the units that reached
+    the group fallback, only a small minority are at group rank."""
+    reaching, at_group_rank = 0, 0
+    for code in rgd._units():
+        info = rgd.resolve(code) or {}
+        name = info.get("name") or info.get("inherited_name") or ""
+        m = pattern_match_from_name(name)
+        if m.code is None and m.may_fall_back_to_group:
+            reaching += 1
+            if info.get("rank") in _GROUP_RANKS:
+                at_group_rank += 1
+    assert reaching > 200
+    assert at_group_rank < reaching * 0.15, (
+        f"{at_group_rank}/{reaching} at group rank")
