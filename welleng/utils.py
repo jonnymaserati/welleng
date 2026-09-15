@@ -254,6 +254,16 @@ class MinCurve:
         geometry is all ratios/angles. Dogleg severity (which needs a per-unit
         coefficient) is the :meth:`dls` method, into which the caller injects the
         coefficient for its units.
+
+        ⚠️ **``poss`` is ``[easting, northing, tvd]`` -- x/y, NOT N/E.** It is
+        the local XYZ frame, and the owning :class:`~welleng.survey.Survey`
+        swaps the first two axes to produce ``pos_nev``. A consumer adopting
+        this kernel transposed N and E against its own ``[northing, easting,
+        tvd]`` convention, and a transpose is SILENT on any well roughly
+        symmetric in the two axes -- it surfaces as a mislocated surface datum,
+        not as an error. Establish the order with a due-north and a due-east
+        probe rather than by reading ``delta_x``/``delta_y``, which invite the
+        wrong guess.
         """
 
         self.md = md

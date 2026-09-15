@@ -204,7 +204,18 @@ _NAME_LITHOLOGY: dict[str, int] = {
     "coal": 658, "lignite": 658,
     "gypsum": 667,
     "salt": 668, "halite": 668,
+    # Glauconitic sandstone. Absent, it read as NO lithology word at all, so a
+    # greensand member inherited its group -- chalk inside the Chalk Group,
+    # marl inside Rijnland. A consumer found both.
+    "greensand": 607,
 }
+
+#: Words naming a lithology CLASS too broad to pick a pattern from. These are
+#: refused as AMBIGUOUS rather than read as "no lithology mentioned": a unit
+#: called "Carbonate Member" is not limestone rather than dolostone, but it is
+#: definitely not its group's halite either, and that distinction decides
+#: whether the group fallback may run.
+_NAME_AMBIGUOUS_CLASS = ("carbonate", "evaporite", "clastic", "volcanic")
 
 #: Words that name a rock the FGDC chart has no pattern for. Listed so such a
 #: name is REFUSED rather than taking the nearest pattern: **anhydrite is not
@@ -234,13 +245,63 @@ def pattern_from_name(name: str | None) -> int | None:
     one rock: it is how the Z4 Fringe SANDSTONE Member stops inheriting the
     Zechstein evaporite pattern and being drawn as salt on a barrier drawing.
     """
+    return pattern_match_from_name(name).code
+
+
+@dataclass(frozen=True)
+class PatternMatch:
+    """What a unit name said, and -- when it said nothing usable -- WHY.
+
+    ⭐ **The reason is the point, because a refusal is not self-describing.**
+    ``pattern_from_name`` returning ``None`` was read by its caller as "no
+    information, keep what you had", and what the caller had was the RGD GROUP
+    pattern. In the Zechstein that is HALITE, so declining to read the word
+    "clay" in "Grey Salt Clay Member" did not leave the unit unlabelled -- it
+    labelled it salt, on a barrier drawing, inside the seal.
+
+    Only ``no_lithology`` means the group is still the best available
+    statement. Every other reason means we know the unit is NOT simply its
+    group's rock, and falling back to the group is then a claim the name has
+    actively contradicted.
+    """
+
+    code: int | None
+    """FGDC pattern number, or ``None``."""
+
+    reason: str
+    """``matched`` · ``ambiguous`` (two lithologies, or a class word too broad)
+    · ``unmapped`` (a rock the FGDC chart has no pattern for) ·
+    ``no_lithology`` (the name does not mention rock at all) · ``no_name``."""
+
+    words: tuple[str, ...] = ()
+    """The lithology words seen, so a caller can say what it could not resolve."""
+
+    @property
+    def may_fall_back_to_group(self) -> bool:
+        """Whether a caller may substitute the unit's GROUP pattern.
+
+        True ONLY for ``no_lithology``. This is the whole reason the class
+        exists -- see the note above.
+        """
+        return self.reason == "no_lithology"
+
+
+def pattern_match_from_name(name: str | None) -> PatternMatch:
+    """:func:`pattern_from_name`, plus why it refused. See :class:`PatternMatch`."""
     if not name:
-        return None
+        return PatternMatch(None, "no_name")
     words = set(re.findall(r"[a-z]+", str(name).lower()))
-    if words & set(_NAME_UNPATTERNED):
-        return None
+    unpatterned = tuple(sorted(words & set(_NAME_UNPATTERNED)))
+    if unpatterned:
+        return PatternMatch(None, "unmapped", unpatterned)
+    broad = tuple(sorted(words & set(_NAME_AMBIGUOUS_CLASS)))
     hits = {code for w, code in _NAME_LITHOLOGY.items() if w in words}
-    return hits.pop() if len(hits) == 1 else None
+    seen = tuple(sorted(w for w in _NAME_LITHOLOGY if w in words))
+    if len(hits) == 1 and not broad:
+        return PatternMatch(hits.pop(), "matched", seen)
+    if len(hits) > 1 or broad:
+        return PatternMatch(None, "ambiguous", tuple(sorted(seen + broad)))
+    return PatternMatch(None, "no_lithology")
 
 
 def intervals_from_nlog(column, label: str = "formation") -> list[Interval]:
@@ -298,7 +359,16 @@ def intervals_from_nlog(column, label: str = "formation") -> list[Interval]:
             # labelling a member with its formation's name as if it were one.
             if info and not info.get("name") and info.get("name_from"):
                 name = f"{name} ({info.get('rank') or 'member'})"
-            pattern = pattern_from_name(name) or pattern
+            # NOT `pattern_from_name(name) or pattern`. That `or` sent every
+            # refusal back to the GROUP pattern, which is the very thing the
+            # name override exists to escape: "Grey Salt Clay Member" was drawn
+            # as Zechstein HALITE. The group is the best available statement
+            # only when the name mentions no rock at all.
+            m = pattern_match_from_name(name)
+            if m.code is not None:
+                pattern = m.code
+            elif not m.may_fall_back_to_group:
+                pattern = None          # unknown looks unknown, never salt
 
         out.append(Interval(
             name=name, top=float(top), base=float(base),

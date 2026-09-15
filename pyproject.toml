@@ -56,6 +56,11 @@ dependencies = [
     "openpyxl>=3.1",
     "pandas>=2.0",
     "pint>=0.20",
+    # welleng.schematic and welleng.exchange.nlog_models are shipped features
+    # built on it. It was undeclared: `import welleng.schematic` raised
+    # ModuleNotFoundError in a clean install, found by a consumer installing
+    # from a pin rather than from a dev tree that happened to have it.
+    "pydantic>=2.0",
     "pyproj>=3.4",
     "PyYAML>=6.0",
 ]
