@@ -111,6 +111,12 @@ def arc_step(v1, v2, theta, dmd, x):
     # masking / reshape) so N-D batched callers -- e.g. cov/dense-sweep surfaces
     # feeding (n_leg, n_query, 3) -- work exactly like the 1-D case (welleng
     # #308 regression, api-caught: the old inline forms were broadcast-clean).
+    g = _arc_geometry(v1, v2, theta, dmd, x)
+    return _arc_disp(v1, v2, *g), _arc_tangent(v1, v2, *g)
+
+
+def _arc_geometry(v1, v2, theta, dmd, x):
+    """Shared set-up for the arc forms: guarded angles and the curved mask."""
     s = np.sin(theta)
     curved = (theta >= 1e-14) & (np.abs(s) >= 1e-12)   # (...) plane well-defined
     th = np.where(curved, theta, 1.0)                  # guarded denominators
@@ -118,19 +124,38 @@ def arc_step(v1, v2, theta, dmd, x):
     dmd_safe = np.where(dmd == 0.0, 1.0, dmd)
     phi = x * theta / dmd_safe                         # partial dogleg
     R = dmd / th
+    return th, sin_th, phi, R, curved, x
+
+
+def _arc_disp(v1, v2, th, sin_th, phi, R, curved, x):
+    """Position: half-angle where curved, else the straight chord ``x*v1``.
+
+    Split from the tangent so a caller wanting only an ATTITUDE does not pay
+    for a position it discards. A consumer resolving inc/azi at 1000 mesh
+    boundaries per survey was spending ~70% of the call on the displacement and
+    throwing it away.
+    """
     cw = curved[..., None]
-    # Position: half-angle where curved, else the straight chord x*v1.
     hc = np.cos((th - phi) / 2) / np.cos(th / 2)
     hs = np.sin((th - phi) / 2) / np.sin(th / 2)
     disp_curved = (R * np.sin(phi / 2))[..., None] * (
         (v1 + v2) * hc[..., None] + (v1 - v2) * hs[..., None]
     )
-    disp = np.where(cw, disp_curved, x[..., None] * v1)
-    # Tangent: Rodrigues u-form where curved, else the start tangent v1.
+    return np.where(cw, disp_curved, x[..., None] * v1)
+
+
+def _arc_tangent(v1, v2, th, sin_th, phi, R, curved, x):
+    """Tangent: Rodrigues ``u``-form where curved, else the start tangent.
+
+    The ``1/sin(theta)`` is a one-time set-up on the in-plane basis vector
+    ``u``, so there is no per-query amplifier and no small-angle branch -- the
+    reason this is the Rodrigues form rather than the SLERP blend, which the
+    two agree with to ~1 ulp but which divides by ``sin(theta)`` per query.
+    """
+    cw = curved[..., None]
     u = (v2 - np.cos(th)[..., None] * v1) / sin_th[..., None]
     tang_curved = np.cos(phi)[..., None] * v1 + np.sin(phi)[..., None] * u
-    tangent = np.where(cw, tang_curved, v1)
-    return disp, tangent
+    return np.where(cw, tang_curved, v1)
 
 
 def min_curve_step(delta_md, inc1, azi1, inc2, azi2, rf=None):
@@ -287,7 +312,6 @@ class MinCurve:
                 "consumes); 'nev' is [northing, easting, tvd]."
             )
         self.frame = frame
-        _nev = frame == "nev"
 
         self.md = md
         survey_length = len(self.md)
@@ -300,7 +324,7 @@ class MinCurve:
         azi = np.array(azi)
         # Per-station unit tangents are constants; cache them once so
         # interpolate() doesn't recompute get_vec on every query (welleng #307).
-        self._tangents = get_vec(inc, azi, nev=_nev, deg=False)
+        self._tangents = get_vec(inc, azi, deg=False)
         inc_1, inc_2 = inc[:-1], inc[1:]
         azi_1, azi_2 = azi[:-1], azi[1:]
 
@@ -343,13 +367,28 @@ class MinCurve:
         # column_stack + cumsum directly; the previous np.vstack(...) wrapper was
         # pure overhead (atleast_2d + a per-row stack dispatcher) on the hot path.
         #
-        # Column ORDER follows `frame`. "nev" takes `deltas` as computed and
-        # skips the swap the default performs.
-        _cols = ((self.delta_y, self.delta_x) if _nev
-                 else (self.delta_x, self.delta_y))
-        self.poss = np.cumsum(
-            np.column_stack((*_cols, self.delta_z)), axis=0
-        )
+        self.poss = self._to_frame(np.cumsum(
+            np.column_stack((self.delta_x, self.delta_y, self.delta_z)), axis=0
+        ))
+
+    def _to_frame(self, pos):
+        """Canonical ``[E, N, V]`` positions into the caller's ``frame``.
+
+        ⭐ **The ONLY place in this class that knows about ``frame``.** The
+        first version of this option carried the frame in the tangent basis
+        instead, which put a "which basis is this?" question into every site
+        reading a column -- and immediately produced the exact bug the option
+        exists to prevent, twice, in the two calls to ``get_angles``: a
+        confident WRONG attitude, which nothing downstream can catch because
+        inclination and azimuth are frame-independent quantities.
+
+        So the arithmetic is canonical throughout and the frame is a
+        presentation step on POSITIONS only. Attitudes cannot be affected by
+        it, because the code that computes them never sees it. The conversion
+        measured 2% of an interpolate call, which is the whole price of making
+        the error class impossible rather than tested-for.
+        """
+        return pos if self.frame == "env" else pos[..., [1, 0, 2]]
 
     def interpolate(self, md, angles=False):
         """Minimum-curvature position at arbitrary measured depth(s).
@@ -389,22 +428,61 @@ class MinCurve:
         DL = self.dogleg[idx + 1]
         dmd = self.delta_md[idx + 1]
         # Single arc kernel (welleng #308): local displacement + query tangent
-        # from the bracketing station, in the tangents' [E, N, V] basis.
-        disp, t_query = arc_step(
-            self._tangents[idx], self._tangents[idx + 1], DL, dmd, x
-        )
-        pos = self.poss[idx].astype(float) + disp
+        # from the bracketing station, in the tangents' own basis. The two
+        # halves are requested SEPARATELY so nothing is computed and discarded
+        # -- the tangent is skipped entirely when no angles were asked for.
+        v1, v2 = self._tangents[idx], self._tangents[idx + 1]
+        g = _arc_geometry(v1, v2, DL, dmd, x)
+        # `poss` is already in the caller's frame; the kernel's displacement
+        # is canonical, so it is converted before they are added.
+        pos = self.poss[idx].astype(float) + self._to_frame(
+            _arc_disp(v1, v2, *g))
         pos[~in_range] = np.nan
         if angles:
             # inc/azi only for the angles=True return -- one get_angles on the
             # query tangent, not a per-position round-trip.
-            ang = get_angles(t_query)
+            ang = get_angles(_arc_tangent(v1, v2, *g))
             inc_i = np.where(in_range, ang[:, 0], np.nan)
             azi_i = np.where(in_range, ang[:, 1], np.nan)
             if scalar:
                 return pos[0], float(inc_i[0]), float(azi_i[0])
             return pos, inc_i, azi_i
         return pos[0] if scalar else pos
+
+    def inc_azi_at(self, md):
+        """Inclination / azimuth (radians) at measured depth(s) -- ATTITUDE ONLY.
+
+        ``interpolate(md, angles=True)`` also builds the position, and a caller
+        that wants only an attitude pays for a displacement it discards: the
+        half-angle position is roughly 70% of that call. A consumer resolving
+        inc/azi at every mesh boundary of a torque-and-drag solve was doing
+        exactly that, so this skips it.
+
+        Same arc, same Rodrigues tangent, same answers as
+        ``interpolate(md, angles=True)[1:]`` -- asserted bitwise in the tests,
+        because the moment these two could differ there would be two
+        implementations of an attitude.
+
+        Returns
+        -------
+        (inc, azi) : arrays of radians, or floats for scalar ``md``.
+            Azimuth is in ``[0, 2*pi)``. ``md`` outside the survey range
+            yields ``nan`` rather than the nearest station's attitude.
+        """
+        scalar = np.ndim(md) == 0
+        q = np.atleast_1d(np.asarray(md, dtype=float))
+        mds = np.asarray(self.md, dtype=float)
+        in_range = (q >= mds[0]) & (q <= mds[-1])
+        idx = np.clip(np.searchsorted(mds, q, side="left") - 1, 0, len(mds) - 2)
+        x = q - mds[idx]
+        v1, v2 = self._tangents[idx], self._tangents[idx + 1]
+        g = _arc_geometry(v1, v2, self.dogleg[idx + 1], self.delta_md[idx + 1], x)
+        ang = get_angles(_arc_tangent(v1, v2, *g))
+        inc = np.where(in_range, ang[:, 0], np.nan)
+        azi = np.where(in_range, np.mod(ang[:, 1], 2.0 * np.pi), np.nan)
+        if scalar:
+            return float(inc[0]), float(azi[0])
+        return inc, azi
 
     def tvd_turning_points(self):
         """Measured depths where the path's TVD turns (passes horizontal).

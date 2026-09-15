@@ -109,3 +109,74 @@ def test_rodrigues_has_no_per_query_one_over_sin():
                           np.array([100.0]), np.array([50.0]))
     assert np.all(np.isfinite(disp)) and np.all(np.isfinite(tang))
     assert np.allclose(disp[0], 50.0 * v1, rtol=0, atol=1e-6)
+
+
+# --- attitude without paying for a position ------------------------------- #
+def test_inc_azi_at_matches_interpolate_bitwise():
+    """Two ways to get an attitude must never be two ANSWERS. Asserted
+    bitwise: the moment these can differ there are two implementations of the
+    same quantity, which is the defect this whole arc kernel exists to avoid."""
+    mc = MinCurve(MD, INC, AZI)
+    q = np.linspace(MD[0], MD[-1], 257)
+    _, inc_i, azi_i = mc.interpolate(q, angles=True)
+    inc_o, azi_o = mc.inc_azi_at(q)
+    assert np.array_equal(inc_i, inc_o)
+    assert np.array_equal(np.mod(azi_i, 2 * np.pi), azi_o)
+
+
+def test_inc_azi_at_is_nan_outside_the_survey():
+    """Not the nearest station's attitude -- that is a fabricated pose, and an
+    attitude is what orients everything downstream of it."""
+    mc = MinCurve(MD, INC, AZI)
+    inc, azi = mc.inc_azi_at(np.array([-10.0, 5000.0]))
+    assert np.all(np.isnan(inc)) and np.all(np.isnan(azi))
+
+
+def test_inc_azi_at_scalar_returns_floats():
+    mc = MinCurve(MD, INC, AZI)
+    inc, azi = mc.inc_azi_at(450.0)
+    assert isinstance(inc, float) and isinstance(azi, float)
+    assert 0.0 <= azi < 2 * np.pi
+
+
+def test_inc_azi_at_honours_the_frame():
+    """Attitude is frame-independent -- inc/azi are angles, not columns."""
+    a = MinCurve(MD, INC, AZI).inc_azi_at(np.array([137.0, 450.0]))
+    b = MinCurve(MD, INC, AZI, frame="nev").inc_azi_at(np.array([137.0, 450.0]))
+    assert np.array_equal(a[0], b[0]) and np.array_equal(a[1], b[1])
+
+
+def test_arc_step_still_returns_both_halves():
+    """The split is internal. arc_step is public and consumers call it."""
+    v1 = get_vec(30.0, 20.0, deg=True)
+    v2 = get_vec(75.0, 65.0, deg=True)
+    th = np.array([float(np.arccos(np.clip(v1[0] @ v2[0], -1, 1)))])
+    disp, tang = arc_step(v1, v2, th, np.array([300.0]), np.array([137.0]))
+    assert disp.shape == (1, 3) and tang.shape == (1, 3)
+    assert np.linalg.norm(tang[0]) == pytest.approx(1.0)
+
+
+def test_interpolate_angles_also_honours_the_frame():
+    """The frame option created a SECOND place where column order matters, and
+    the first fix missed this one. An attitude is frame-independent, so a
+    wrong basis here returns a confident wrong pose that nothing downstream
+    can catch."""
+    q = np.array([137.0, 450.0, 880.0])
+    _, i_env, a_env = MinCurve(MD, INC, AZI).interpolate(q, angles=True)
+    _, i_nev, a_nev = MinCurve(MD, INC, AZI,
+                               frame="nev").interpolate(q, angles=True)
+    assert np.allclose(i_env, i_nev, rtol=0, atol=1e-15)
+    assert np.allclose(np.mod(a_env, 2 * np.pi), np.mod(a_nev, 2 * np.pi),
+                       rtol=0, atol=1e-15)
+
+
+def test_the_nev_attitude_is_the_true_one_not_a_transposed_one():
+    """Anchored against the input: a leg built due north at 90 deg inclination
+    must read back azi 0, in EITHER frame. A transpose would read 90."""
+    md = np.array([0.0, 100.0])
+    inc = np.radians([90.0, 90.0])
+    azi = np.radians([0.0, 0.0])
+    for frame in ("env", "nev"):
+        i, a = MinCurve(md, inc, azi, frame=frame).inc_azi_at(50.0)
+        assert np.degrees(i) == pytest.approx(90.0, abs=1e-9)
+        assert np.degrees(a) % 360 == pytest.approx(0.0, abs=1e-9)
