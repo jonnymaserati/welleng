@@ -227,6 +227,7 @@ class MinCurve:
         md,
         inc,
         azi,
+        frame: str = "env",
     ):
         """
         Generate LOCAL geometric data from a well bore survey.
@@ -255,16 +256,38 @@ class MinCurve:
         coefficient) is the :meth:`dls` method, into which the caller injects the
         coefficient for its units.
 
-        ⚠️ **``poss`` is ``[easting, northing, tvd]`` -- x/y, NOT N/E.** It is
-        the local XYZ frame, and the owning :class:`~welleng.survey.Survey`
-        swaps the first two axes to produce ``pos_nev``. A consumer adopting
+        ⚠️ **``poss`` column order follows ``frame``, and the DEFAULT is
+        ``[easting, northing, tvd]``** -- x/y, NOT N/E. A consumer adopting
         this kernel transposed N and E against its own ``[northing, easting,
         tvd]`` convention, and a transpose is SILENT on any well roughly
-        symmetric in the two axes -- it surfaces as a mislocated surface datum,
+        symmetric in the two axes: it surfaces as a mislocated surface datum,
         not as an error. Establish the order with a due-north and a due-east
         probe rather than by reading ``delta_x``/``delta_y``, which invite the
-        wrong guess.
+        wrong guess -- or just pass ``frame="nev"`` and stop converting.
+
+        ``frame``
+            ``"env"`` (default) -- ``[easting, northing, tvd]``, the historical
+            order, which :class:`~welleng.survey.Survey` consumes.
+            ``"nev"`` -- ``[northing, easting, tvd]``, for a caller whose own
+            convention is N/E and which would otherwise swap every result back.
+
+        This is a BASIS, not a second algorithm. The arc kernel
+        (:func:`arc_step`) is coordinate-agnostic and returns whatever basis it
+        is given, so both frames run the same code over differently-ordered
+        tangents -- there is no second path to drift, and no golden anchoring a
+        dead one. ``"nev"`` is in fact marginally the cheaper of the two:
+        ``min_curve_step`` already computes in ``[N, E, V]`` and the default
+        spends a column swap converting it.
         """
+        frame = str(frame).lower()
+        if frame not in ("env", "nev"):
+            raise ValueError(
+                f"frame must be 'env' or 'nev', got {frame!r}. 'env' is "
+                "[easting, northing, tvd] (the default, and what Survey "
+                "consumes); 'nev' is [northing, easting, tvd]."
+            )
+        self.frame = frame
+        _nev = frame == "nev"
 
         self.md = md
         survey_length = len(self.md)
@@ -277,7 +300,7 @@ class MinCurve:
         azi = np.array(azi)
         # Per-station unit tangents are constants; cache them once so
         # interpolate() doesn't recompute get_vec on every query (welleng #307).
-        self._tangents = get_vec(inc, azi, deg=False)
+        self._tangents = get_vec(inc, azi, nev=_nev, deg=False)
         inc_1, inc_2 = inc[:-1], inc[1:]
         azi_1, azi_2 = azi[:-1], azi[1:]
 
@@ -307,6 +330,10 @@ class MinCurve:
         deltas = min_curve_step(
             self.delta_md[1:], inc_1, azi_1, inc_2, azi_2, self.rf[1:]
         )
+        # `min_curve_step` returns [N, E, V]. delta_x/delta_y keep their
+        # historical meaning (x = easting, y = northing) in BOTH frames -- they
+        # are named for the axis, not for a column index, so a consumer reading
+        # them is unaffected by `frame`.
         self.delta_y = np.zeros(survey_length); self.delta_y[1:] = deltas[:, 0]
         self.delta_x = np.zeros(survey_length); self.delta_x[1:] = deltas[:, 1]
         self.delta_z = np.zeros(survey_length); self.delta_z[1:] = deltas[:, 2]
@@ -315,8 +342,13 @@ class MinCurve:
         # caller applies any start/surface offset; MinCurve holds no datum state.
         # column_stack + cumsum directly; the previous np.vstack(...) wrapper was
         # pure overhead (atleast_2d + a per-row stack dispatcher) on the hot path.
+        #
+        # Column ORDER follows `frame`. "nev" takes `deltas` as computed and
+        # skips the swap the default performs.
+        _cols = ((self.delta_y, self.delta_x) if _nev
+                 else (self.delta_x, self.delta_y))
         self.poss = np.cumsum(
-            np.column_stack((self.delta_x, self.delta_y, self.delta_z)), axis=0
+            np.column_stack((*_cols, self.delta_z)), axis=0
         )
 
     def interpolate(self, md, angles=False):
