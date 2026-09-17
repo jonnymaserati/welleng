@@ -60,8 +60,27 @@ table and 500s on this endpoint. The CSV export name and the internal table name
 are not always the same, so this endpoint cannot be used to enumerate what
 FactPages holds.
 
-⚠️ FactPages publishes no directional survey. Deviation data for the Norwegian
-shelf is in DISKOS, not here.
+⚠️ FactPages publishes no directional survey, and neither does the FactMaps REST
+API -- every wellbore layer there is point geometry. Deviation data for the
+Norwegian shelf is in DISKOS, not in either public service.
+
+🔴 The registry does not list every physical hole
+-------------------------------------------------
+Wellbore names follow the Directorate's designation guidelines (Resource
+regulations §13). Items I-VIII of a name are **determined by the Directorate**;
+**item IX is maintained by the OPERATOR** and does not appear here:
+
+* item V ``A``, ``B`` ... -- a planned sidetrack. Gets its OWN registry row.
+* item IX ``T2``, ``T3`` ... -- a **technical** sidetrack, i.e. one drilled to
+  get past a problem. Stays under the PARENT wellbore's row. ``T2`` is the
+  first such sidetrack, not ``T1``.
+
+⇒ ``35/2-U-7 T2`` is a real hole in the ground with no row of its own, and no
+query of this API can return it. **One registry row can be several wellbores**,
+so a clearance or anti-collision scene built from these tables is a lower bound
+on what is actually down there. Item III also reserves ``U`` for other wellbores
+(soil drilling, shallow gas, pilot, scientific, stratigraphic) and ``T`` for a
+test production wellbore, so ``A-Z`` as an installation letter excludes both.
 """
 from __future__ import annotations
 
@@ -77,6 +96,19 @@ from typing import Iterator
 __all__ = ["SodirClient", "SodirError", "parse_date", "TABLES"]
 
 BASE = "https://factpages.sodir.no/public"
+
+#: The authoritative definition of every ``wlb*`` column. Read it before
+#: inferring what a field means from its name -- several of the caveats in this
+#: module's docstring were learned the expensive way instead.
+ATTRIBUTE_REFERENCE = "https://factpages.sodir.no/en/wellbore/Attributes"
+
+#: The other public service: an ArcGIS REST endpoint with ``where=`` queries,
+#: relationship traversal and geometry. Carries attributes these CSV tables do
+#: not -- notably ``wlbStatus`` on shallow wellbores, which distinguishes
+#: ``JUNKED`` from ``P&A``. Capped at 1000 features per query; page on OBJECTID.
+#: Every wellbore layer is POINT geometry, so it holds no well paths either.
+FACTMAPS = ("https://factmaps.sodir.no/api/rest/services/Factmaps/"
+            "FactMapsED50UTM32/MapServer")
 
 #: The FactPages tables this module has been used against. Any other FactPages
 #: table name works too -- :meth:`SodirClient.table` takes an arbitrary name.
