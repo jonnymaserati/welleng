@@ -40,6 +40,28 @@ A wellbore can carry one and not the other.
 and IS ROUTINELY IN THE FUTURE -- 294 rows carried a release date beyond today
 when this module was written. A filter written as ``date <= today`` silently
 drops them.
+
+``wlbDrillingOperator`` also records the company name AS IT WAS AT DRILLING, so
+one company appears under every name it has ever had. Equinor's lineage spans
+nine strings -- Equinor Energy AS, Statoil Petroleum AS, Statoil ASA (old),
+StatoilHydro Petroleum AS, StatoilHydro ASA, Norsk Hydro Produksjon AS, Norsk
+Hydro Petroleum AS, Den norske stats oljeselskap a.s, Equinor Low Carbon
+Solution AS -- covering 5138 wellbores, of which searching "equinor" alone finds
+1092. **A name search misses 79% of them.**
+
+``wlbField`` is EMPTY for a discovery that was never developed; the name is in
+``wlbDiscovery`` instead. Every wellbore in block 35/2 has a blank
+``wlbField`` while ``wlbDiscovery`` reads ``35/2-1 (Peon)``, so a search of
+``wlbField`` for that name returns nothing.
+
+⚠️ An unrecognised table name returns HTTP 500 here, but **500 is not evidence
+that a table does not exist**: ``wellbore_formation_top`` is a documented live
+table and 500s on this endpoint. The CSV export name and the internal table name
+are not always the same, so this endpoint cannot be used to enumerate what
+FactPages holds.
+
+⚠️ FactPages publishes no directional survey. Deviation data for the Norwegian
+shelf is in DISKOS, not here.
 """
 from __future__ import annotations
 
@@ -63,9 +85,34 @@ TABLES = {
     "wellbore_development": "wellbore_development_all",
     "wellbore_exploration": "wellbore_exploration_all",
     "wellbore_shallow": "wellbore_other_all",
+    "history": "wellbore_history",
+    "mud": "wellbore_mud",
+    "core": "wellbore_core",
+    "dst": "wellbore_dst",
     "field": "field_description",
     "licence": "licence_licensee_hst",
 }
+
+#: The wellbore name is not in the same column in every table: the wellbore
+#: tables use ``wlbWellboreName``, while ``wellbore_history``, ``wellbore_mud``,
+#: ``wellbore_core`` and ``wellbore_dst`` use ``wlbName``. Joining on the wrong
+#: one returns ZERO ROWS, which reads exactly like "this wellbore has no
+#: history" -- use :func:`wellbore_name`.
+NAME_COLUMNS = ("wlbWellboreName", "wlbName", "wlbWell")
+
+
+def wellbore_name(row: dict) -> str | None:
+    """The wellbore name from a row of ANY FactPages table.
+
+    Returns ``None`` when the row carries no recognised name column, rather
+    than guessing -- a silently wrong join is how a populated table reads as
+    empty.
+    """
+    for key in NAME_COLUMNS:
+        value = (row.get(key) or "").strip()
+        if value:
+            return value
+    return None
 
 
 class SodirError(RuntimeError):
@@ -194,6 +241,39 @@ class SodirClient:
         looking in the wrong category.
         """
         return self.table(TABLES["wellbore_all"])
+
+    def history(self) -> Iterator[dict]:
+        """Stream the wellbore history table (``wlbHistory``, free HTML prose).
+
+        Populated for exploration and development wellbores; a shallow wellbore
+        typically has no row at all. Keyed on ``wlbName``, not
+        ``wlbWellboreName`` -- see :data:`NAME_COLUMNS`.
+        """
+        return self.table(TABLES["history"])
+
+    def mud(self) -> Iterator[dict]:
+        """Stream the mud table -- weight, viscosity and yield point by depth."""
+        return self.table(TABLES["mud"])
+
+    def cores(self) -> Iterator[dict]:
+        """Stream the core table."""
+        return self.table(TABLES["core"])
+
+    def dst(self) -> Iterator[dict]:
+        """Stream the drill stem test table."""
+        return self.table(TABLES["dst"])
+
+    def for_wellbores(self, table: str, names) -> Iterator[dict]:
+        """Stream the rows of ``table`` belonging to any of ``names``.
+
+        Resolves the name column per table, so this works across the wellbore
+        tables and the history/mud/core/dst tables without the caller tracking
+        which one uses ``wlbName``.
+        """
+        wanted = {str(n).strip() for n in names}
+        for row in self.table(table):
+            if wellbore_name(row) in wanted:
+                yield row
 
     def columns(self, table: str) -> list[str]:
         """The column names of a table, reading only its first row."""

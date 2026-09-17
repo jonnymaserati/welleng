@@ -10,7 +10,8 @@ import io
 
 import pytest
 
-from welleng.exchange.sodir import SodirClient, SodirError, parse_date
+from welleng.exchange.sodir import (SodirClient, SodirError, parse_date,
+                                    wellbore_name)
 
 
 class TestParseDate:
@@ -114,3 +115,39 @@ class TestContentTypeGuard:
         # A truncated or empty table is indistinguishable from a short one, so
         # the failure must surface rather than yield zero rows.
         assert len(calls) == 3
+
+
+class TestNameColumn:
+    """The wellbore name is in a different column depending on the table.
+
+    Joining the wellbore tables to history/mud/core/dst on wlbWellboreName
+    returns zero rows, which is indistinguishable from "this wellbore has no
+    history". That happened; hence these.
+    """
+
+    def test_wellbore_tables_use_wlbWellboreName(self):
+        assert wellbore_name({"wlbWellboreName": "35/2-U-8"}) == "35/2-U-8"
+
+    def test_history_and_mud_use_wlbName(self):
+        assert wellbore_name({"wlbName": "35/2-1"}) == "35/2-1"
+
+    def test_falls_back_to_wlbWell(self):
+        assert wellbore_name({"wlbWell": "35/2-1"}) == "35/2-1"
+
+    def test_unrecognised_row_returns_none_rather_than_guessing(self):
+        assert wellbore_name({"someOtherColumn": "35/2-1"}) is None
+
+    def test_blank_name_is_not_a_name(self):
+        row = {"wlbWellboreName": "   ", "wlbName": "35/2-1"}
+        assert wellbore_name(row) == "35/2-1"
+
+    def test_for_wellbores_matches_across_name_columns(self, monkeypatch):
+        payload = (
+            "﻿wlbName,wlbHistory\r\n"
+            "35/2-1,spudded 2005\r\n"
+            "35/2-9,unrelated\r\n"
+        ).encode()
+        monkeypatch.setattr(
+            SodirClient, "_open", lambda self, t: _FakeResponse(payload))
+        got = list(SodirClient().for_wellbores("wellbore_history", ["35/2-1"]))
+        assert [r["wlbHistory"] for r in got] == ["spudded 2005"]
