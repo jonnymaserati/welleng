@@ -35,8 +35,36 @@ correct thing right next to it:
     np.interp(mid[2], target.tvd, target.md)   # BAD -- the inverse, same error
 
 Interpolating a property (pore pressure, temperature, a log curve) against a
-depth axis is correct and must not be flagged: a lint that cries wolf gets
-switched off, and then it protects nothing.
+depth axis is not flagged: a lint that cries wolf gets switched off, and then it
+protects nothing.
+
+Why that exemption is safe -- and what it does NOT say
+-----------------------------------------------------
+It is NOT that a property is exempt from the geometry. A log sample is a point in
+space like any other, so the chord is wrong there too. The deviation of a chord
+from the arc is the sagitta, ``R(1 - cos(kappa*h/2))``, which goes as
+**(kappa*h)^2** -- so the STEP decides the magnitude, not the kind of data:
+
+    at 4.16 deg/30 m (R = 413 m), chord-vs-arc at the midpoint of a step
+
+        h = 1 m    3.0e-04 m          h = 20 m   1.2e-01 m
+        h = 5 m    7.6e-03 m          h = 30 m   2.7e-01 m
+
+The exemption is safe because of WHO OWNS THE ERROR, not because of the data
+type. Interpolating the TRAJECTORY hands the caller a position this library is
+responsible for, wrong by an amount set by *their* station spacing -- which this
+repo does not control and no test here can fail on. Interpolating a property is
+a modelling choice the caller makes about data the caller sampled, at a spacing
+the caller can see.
+
+⚠️ So the exemption transfers badly, and knowingly: a COARSELY sampled property
+-- a 20-30 m formation-tops list, a sparse pressure survey, an MDT point set --
+passes this lint while carrying 10-30 cm of position error. That cannot be
+detected statically, because the step is a property of the caller's data and not
+of the source text. If you are placing something in space from a sparse depth
+axis, this lint is silent and it is not evidence that you are right.
+
+(Magnitudes verified against the closed-form sagitta.)
 
 Usage::
 
