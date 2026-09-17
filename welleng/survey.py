@@ -1652,9 +1652,10 @@ class Survey(MinCurve):
             tool and the bit. Default is to project the DLS of the last
             survey section.
         toolface: float
-            The desired toolface to project from at the last survey point.
-            The default is to project the current toolface from the last
-            survey station.
+            The desired toolface to project from at the last survey point, in
+            RADIANS, relative to the high side -- not the same unit as ``dls``
+            above, which is in degrees per 30 meters. The default is to
+            project the current toolface from the last survey station.
 
         Returns
         -------
@@ -3934,14 +3935,21 @@ def project_ahead(
     vec: (3) array of floats
         Current vector in n, e, tvd coordinates.
     delta_md: float
-        The desired along hole projection length.
+        The desired along hole projection length, in meters.
     dls: float
-        The desired dogleg severity of the projection. Entering 0.0 will
-        result in a hold section.
+        The desired dogleg severity of the projection, in DEGREES per 30
+        meters. Entering 0.0 will result in a hold section.
     toolface: float
-        The desired toolface for the projection.
+        The desired toolface for the projection, in RADIANS, relative to the
+        high side. Note that this is NOT the same unit as ``dls`` above --
+        the two angles in this signature are in different units. Degrees
+        passed here do not fail loudly, they wrap modulo 2*pi and return a
+        plausible different well: from inc 30 deg / azi 45 deg at
+        dls 3 deg/30m, ``toolface=pi/2`` turns right as intended
+        (inc 30.1, azi 51.0), while ``toolface=90`` -- the same angle in
+        degrees -- drops the well instead (inc 28.8, azi 50.6).
     md: float (optional)
-        The current md if applicable.
+        The current md if applicable, in meters.
 
     Returns
     -------
@@ -4011,15 +4019,18 @@ def project_to_target(
     dls_design: float
         The dls from which to construct the projected wellpath.
     delta_md: float
-        The along hole length from the surveying sensor to the bit.
+        The along hole length from the surveying sensor to the bit, in meters.
     dls: float
         The desired dogleg severity for the projection from the survey tool
-        to the bit. Entering 0.0 will result in a hold section.
+        to the bit, in DEGREES per 30 meters. Entering 0.0 will result in a
+        hold section.
     toolface: float
         The desired toolface for the projection from the survey tool to the
-        bit.
+        bit, in RADIANS, relative to the high side -- not the same unit as
+        ``dls`` above.
     step: float
-        The desired survey interval for the projected wellpath to the target.
+        The desired survey interval for the projected wellpath to the target,
+        in meters.
 
     Returns
     -------
