@@ -17,7 +17,6 @@ import copy
 import numpy as np
 import math
 import warnings
-import pandas as pd
 from datetime import datetime
 from pyproj import CRS, Proj, Transformer
 from pyproj.enums import TransformDirection
@@ -42,7 +41,15 @@ from .node import Node
 from .connector import Connector, interpolate_well
 from .units import ureg
 
-from typing import Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    # pandas is a CONVENIENCE here: two DataFrame exporters at the end of this
+    # module, and nothing in the trajectory maths. Importing it at module level
+    # made it a hard dependency of `import welleng.survey` -- and made
+    # export_csv's own `except ImportError: "Missing pandas dependency"`
+    # unreachable, because the import it guards had already happened above.
+    import pandas as pd
 from numpy.typing import ArrayLike
 
 
@@ -3402,7 +3409,7 @@ def make_survey_header(data: dict) -> SurveyHeader:
 #     export_csv(survey, filename)
 
 
-def survey_to_df(survey: Survey) -> pd.DataFrame:
+def survey_to_df(survey: Survey) -> "pd.DataFrame":
     """Convert a Survey object to a pandas DataFrame.
 
     Parameters
@@ -3433,6 +3440,8 @@ def survey_to_df(survey: Survey) -> pd.DataFrame:
         'TURN RATE (deg)': np.nan_to_num(survey.turn_rate, nan=0.0)
     }
 
+    import pandas as pd  # optional dependency -- see the TYPE_CHECKING note above
+
     df = pd.DataFrame(data)
 
     return df
@@ -3441,7 +3450,7 @@ def survey_to_df(survey: Survey) -> pd.DataFrame:
 def export_csv(  # type: ignore[return]  # untyped pandas -> Optional[Any] false-positives the missing-return check
     survey: "Survey", filename: Optional[str], tolerance: float = 0.1,
     dls_cont: bool = False, decimals: int = 3, **kwargs: Any
-) -> Optional[pd.DataFrame]:
+) -> Optional["pd.DataFrame"]:
     """
     Function to export a minimalist (only the control points - i.e. the
     begining and end points of hold and/or turn sections) survey to input into
@@ -3490,14 +3499,19 @@ def export_csv(  # type: ignore[return]  # untyped pandas -> Optional[Any] false
     if filename is None:
         try:
             import pandas as pd
+        except ImportError as exc:
+            # Refuse, rather than fall through. `filename is None` means the
+            # caller asked for a DataFrame; without pandas there is no answer
+            # to give. Falling through left `filename` None and reached
+            # np.savetxt, which failed with "fname must be a string or file
+            # handle" -- an error about the wrong thing entirely.
+            raise ImportError(
+                "export_csv(filename=None) returns a pandas DataFrame, and "
+                "pandas is not installed. Install it, or pass a filename to "
+                "write a CSV instead."
+            ) from exc
 
-            df = pd.DataFrame(
-                data,
-                columns=headers.split(',')
-            )
-            return df
-        except ImportError:
-            print("Missing pandas dependency")
+        return pd.DataFrame(data, columns=headers.split(','))
 
     author = kwargs.get('author', 'Jonny Corcutt')
     comments = [
