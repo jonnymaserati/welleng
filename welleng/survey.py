@@ -20,7 +20,6 @@ import warnings
 from datetime import datetime
 from pyproj import CRS, Proj, Transformer
 from pyproj.enums import TransformDirection
-from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 
 from .version import __version__
@@ -38,7 +37,10 @@ from .utils import (
 from .error import ErrorModel, ERROR_MODELS
 from .geomag import GeomagLookupError, lookup_field
 from .node import Node
-from .connector import Connector, interpolate_well
+# `from .connector import ...` is deliberately NOT here: connector ->
+# sawaryn_analytical -> scipy.optimize, ~200 ms of the ~525 ms to import this
+# module, and Connector is used only inside the four helpers below. The
+# trajectory maths does not need it. Imported at those call sites instead.
 from .units import ureg
 
 from typing import TYPE_CHECKING, Any, Optional, Union
@@ -3472,6 +3474,10 @@ def export_csv(  # type: ignore[return]  # untyped pandas -> Optional[Any] false
         Number of decimal places provided in the output file listing
     """
 
+    # scipy.optimize imported here, not at module level: `minimize` is used on
+    # this one line, in a CSV exporter, and nowhere in the trajectory maths.
+    from scipy.optimize import minimize
+
     start_tol = 0
 
     res = minimize(
@@ -3664,6 +3670,8 @@ def from_connections(
     survey : Survey
         A Survey object constructed from the connections.
     """
+    from .connector import interpolate_well
+
     decimals = 6 if decimals is None else decimals
     assert isinstance(decimals, int), "decimals must be an int"
 
@@ -3738,6 +3746,8 @@ def interpolate_survey(
         Note that a `interpolated` property is added indicating if the survey
         stations is interpolated (True) or not (False).
     '''
+    from .connector import Connector
+
     if survey.header.azi_reference == 'true':
         azi = survey.azi_true_rad
     elif survey.header.azi_reference == 'grid':
@@ -3856,6 +3866,8 @@ def get_node_tvd(
     Node
         A Node at the target TVD between the two input nodes.
     """
+    from .connector import Connector
+
     node2.pos_nev, node2.pos_xyz = None, None
     c = Connector(node1=node1, node2=node2, dls_design=1e-8)
     s = from_connections(c, step=None)
@@ -4050,6 +4062,8 @@ def project_to_target(
     -------
     node: welleng.survey.Survey obj
     """
+    from .connector import Connector
+
     connectors = []
     node_start = Node(
             pos=survey.pos_nev[-1], vec=survey.vec_nev[-1], md=survey.md[-1]

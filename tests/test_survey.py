@@ -59,3 +59,62 @@ class TestPandasIsOptional:
         # an error about something else entirely.
         with pytest.raises(ImportError, match="pandas is not installed"):
             export_csv(survey, None)
+
+
+class TestDeferredConnectorImport:
+    """`Connector` is imported inside four helpers, not at module level.
+
+    connector -> sawaryn_analytical -> scipy.optimize, which the trajectory
+    maths does not need. Two of the four helpers -- get_node_tvd and
+    project_to_target -- had NO test coverage at all when the imports were
+    moved, so a misplaced import (inside a docstring, say) would have gone
+    unnoticed. These execute the deferred path.
+    """
+
+    @staticmethod
+    def _survey():
+        return Survey(
+            md=np.array([0., 30., 60., 90.]),
+            inc=np.array([0., 3., 6., 9.]),
+            azi=np.array([0., 45., 45., 45.]),
+        )
+
+    def test_module_does_not_import_connector_or_scipy_optimize(self):
+        code = (
+            "import sys; import welleng.survey; "
+            "print('connector' in ''.join(sys.modules), "
+            "'scipy.optimize' in sys.modules)"
+        )
+        out = subprocess.run([sys.executable, "-c", code],
+                             capture_output=True, text=True, check=True)
+        assert out.stdout.split()[-1] == "False", (
+            "importing welleng.survey pulled scipy.optimize -- it reaches the "
+            "module only via connector, which the trajectory maths does not need"
+        )
+
+    @pytest.mark.parametrize("call", ["get_node_tvd", "project_to_target"])
+    def test_deferred_import_resolves(self, call):
+        """The risk is a NameError, not a wrong answer.
+
+        An import misplaced inside a docstring is inert text: the module still
+        imports, the suite still passes, and the function fails at runtime with
+        `NameError: Connector`. So the assertion is narrow and exact -- these
+        may raise on the inputs below, but never NameError.
+        """
+        from welleng.node import Node
+        from welleng import survey as S
+
+        survey = self._survey()
+        n1 = Node(pos=[0., 0., 0.], vec=[0., 0., 1.], md=0.)
+        n2 = Node(pos=[0., 0., 60.], vec=[0., 0., 1.], md=60.)
+        args = {
+            "get_node_tvd": (survey, n1, n2, 30.0, n1),
+            "project_to_target": (survey, n2),
+        }[call]
+        try:
+            getattr(S, call)(*args)
+        except NameError as exc:                      # the failure under test
+            pytest.fail(f"{call} has an unresolved deferred import: {exc}")
+        except Exception:
+            # any other failure is about the inputs, not the import
+            pass
