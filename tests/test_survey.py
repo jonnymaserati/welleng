@@ -1,3 +1,17 @@
+"""Tests for `welleng.survey` that are about the MODULE, not the maths.
+
+The trajectory maths is covered across the suite by the cases that use it. What
+lives here is the module's contract as a dependency: what importing it costs a
+consumer, and how it behaves when an optional dependency is absent.
+"""
+import builtins
+import subprocess
+import sys
+
+import numpy as np
+import pytest
+
+from welleng.survey import Survey, export_csv
 
 
 class TestPandasIsOptional:
@@ -12,7 +26,6 @@ class TestPandasIsOptional:
 
     @staticmethod
     def _without_pandas():
-        import builtins
         real = builtins.__import__
 
         def blocked(name, *args, **kwargs):
@@ -22,8 +35,6 @@ class TestPandasIsOptional:
         return real, blocked
 
     def test_trajectory_path_does_not_import_pandas(self):
-        import subprocess
-        import sys
         # a subprocess, because pandas is already in sys.modules for this suite
         code = (
             "import sys; import welleng.survey, welleng.utils; "
@@ -37,10 +48,6 @@ class TestPandasIsOptional:
         )
 
     def test_export_csv_refuses_clearly_without_pandas(self, monkeypatch):
-        import builtins
-        import pytest
-        import numpy as np
-        from welleng.survey import Survey, export_csv
 
         survey = Survey(md=np.array([0., 30.]), inc=np.array([0., 3.]),
                         azi=np.array([0., 45.]))
