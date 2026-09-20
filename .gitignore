@@ -104,3 +104,9 @@ papers/figures/pedal-false-negative-closeup.png
 papers/figures/recovery-error.png
 papers/figures/ti-recovery-3d.png
 .githooks/
+
+# coverage artefacts (parallel runs scatter .coverage.<host>.<pid>.* files)
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
