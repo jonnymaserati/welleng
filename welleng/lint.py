@@ -77,6 +77,24 @@ In a consumer's suite::
 
     def test_no_linear_survey_interpolation():
         assert find_linear_survey_interpolation("src") == []
+
+⛔ **Do NOT write that test as ``skipif`` on ImportError.** A repo that cannot
+import this check and skips has a gate that cannot run reading as a pass --
+the failure mode behind the 2026-07-27 red line, where a ship gate silently
+skipped because a tool was off the non-interactive PATH. Declare the
+dependency, or let the test error loudly. **A green suite must mean "clean",
+never "not checked".**
+
+⚠️ **What a clean run does and does not mean.** This walks PACKAGE SOURCE. It
+does not see notebooks, loose scripts, or spec files, so **a pass says the
+PACKAGE is clean, not the REPO.** Worth knowing before quoting a zero.
+
+⭐ Why a check rather than a convention: this defect was fixed **nine times as
+CHANGES**, and a convention and a fleet-wide mail were both tried. The check
+found **twelve more instances in core the day it existed**, and later three in
+a consumer that had never called a guarded function -- it reimplemented the
+decision, which is invisible to any guard on the function. A corrected line is
+invisible to the next author; a red suite is not.
 """
 from __future__ import annotations
 
