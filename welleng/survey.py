@@ -703,6 +703,44 @@ class Survey(MinCurve):
     reference systems (true/magnetic/grid), calculates dogleg severity, toolface,
     build/turn rates, and optionally propagates ISCWSA error model covariances.
 
+    ⚠️ IF ALL YOU WANT IS THE WELLPATH, USE ``welleng.MinCurve`` INSTEAD
+    -------------------------------------------------------------------
+    ``Survey`` SUBCLASSES :class:`~welleng.utils.MinCurve`: the geometry is the
+    base class, and what ``Survey`` adds is a 26-field header. Positions,
+    dogleg, TVD, attitude at a depth and arc interpolation are all available
+    from ``MinCurve`` alone, with 16 attributes instead of 77.
+
+    ⛔ **The header is not free, and the cost is not speed** (construction is
+    only ~1.4x). **Every header field left unset takes a DEFAULT, and several
+    of those defaults are ASSERTIONS about the well, not neutral values:**
+
+    ======================  ==========  ====================================
+    field                   default     what it asserts
+    ======================  ==========  ====================================
+    ``latitude``            51.4934     the well is at Greenwich
+    ``longitude``           0.0098      "
+    ``altitude``            0.0         at sea level
+    ``b_total`` / ``dip``   50000 / 70  a geomagnetic field
+    ``declination``         0.0         true north == magnetic north
+    ``convergence``         0.0         grid north == true north
+    ``survey_date``         today       surveyed today
+    ======================  ==========  ====================================
+
+    🔴 These are load-bearing, not cosmetic: ``header.latitude`` feeds the gyro
+    earth-rate terms (``welleng.errors.tool_errors``) and the ISCWSA
+    conformance inputs. A ``Survey`` built for geometry and later handed an
+    error model computes its gyro terms at Greenwich, silently, for any well
+    that is not in south-east London. ``mag_source`` records provenance for the
+    magnetic values; ``latitude``, ``longitude``, ``altitude`` and
+    ``survey_date`` carry no such marker.
+
+    ⇒ Reach for ``Survey`` when the header data EXISTS and something needs it:
+    error models and uncertainty, azimuth referencing, units, survey
+    composition, export. Reach for ``MinCurve`` for a wellpath. Promote with
+    :meth:`Survey.from_min_curve` when the extra data turns up -- it handles
+    the radians/degrees difference between the two, which silently flattens a
+    well if done by hand.
+
     Attributes
     ----------
     header : SurveyHeader
@@ -1094,6 +1132,58 @@ class Survey(MinCurve):
             self._get_toolface_and_rates()
             return self.__dict__[name]
         raise AttributeError(name)
+
+    @classmethod
+    def from_min_curve(cls, min_curve, **kwargs) -> "Survey":
+        """Promote a :class:`~welleng.utils.MinCurve` to a full ``Survey``.
+
+        ``Survey`` IS a ``MinCurve`` -- the geometry is the base class and the
+        header is what a ``Survey`` adds. Reach for ``MinCurve`` when all that
+        is wanted is a wellpath; promote here when the extra data actually
+        exists and something needs it (error models, azimuth referencing,
+        units, export).
+
+        ⚠️ ``MinCurve`` holds inc and azi in RADIANS; ``Survey`` takes DEGREES
+        unless told otherwise. This passes ``deg=False`` for you. Doing the
+        promotion by hand and forgetting it reads each radian value as a
+        degree, which FLATTENS the well rather than raising an error: a 60
+        degree hold becomes 1.05 degrees, i.e. near-vertical. Measured on a
+        900 m build-hold. Every value stays in range, the survey is still
+        monotonic and well formed, and nothing downstream objects.
+
+        ⚠️ Every header field left unset takes a DEFAULT, and several of those
+        are assertions rather than neutral values -- ``latitude`` defaults to
+        51.4934 (Greenwich) and feeds the gyro earth-rate terms. Supply what
+        is known; do not promote to get a Survey-shaped object you do not need.
+
+        Parameters
+        ----------
+        min_curve: welleng.utils.MinCurve
+            The geometry to promote.
+        **kwargs
+            Passed to ``Survey``: ``header``, ``error_model``, ``start_nev``
+            and the rest. ``deg`` is set to ``False`` unless given.
+
+        Returns
+        -------
+        Survey
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from welleng.utils import MinCurve
+        >>> from welleng.survey import Survey
+        >>> mc = MinCurve(
+        ...     np.array([0., 30.]), np.radians([0., 3.]), np.radians([0., 45.])
+        ... )
+        >>> survey = Survey.from_min_curve(mc)
+        >>> bool(np.allclose(survey.inc_rad, mc.inc))
+        True
+        """
+        kwargs.setdefault("deg", False)
+        return cls(
+            md=min_curve.md, inc=min_curve.inc, azi=min_curve.azi, **kwargs
+        )
 
     def _process_azi_ref(
         self, inc: ArrayLike, azi: ArrayLike, deg: bool

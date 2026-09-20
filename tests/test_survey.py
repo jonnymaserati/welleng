@@ -118,3 +118,69 @@ class TestDeferredConnectorImport:
         except Exception:
             # any other failure is about the inputs, not the import
             pass
+
+
+class TestFromMinCurve:
+    """MinCurve is the geometry; Survey is that plus a header.
+
+    Survey subclasses MinCurve, so promotion is adding the missing data -- but
+    the two disagree on units, and getting that wrong flattens a well instead
+    of raising.
+    """
+
+    @staticmethod
+    def _profile():
+        md = np.arange(0., 901., 30.)
+        inc = np.clip((md - 300.) * 3.0 / 30.0, 0., 90.)
+        azi = np.full_like(md, 45.)
+        return md, inc, azi
+
+    def test_promotion_is_identical_to_building_directly(self):
+        from welleng.utils import MinCurve
+        md, inc, azi = self._profile()
+        mc = MinCurve(md, np.radians(inc), np.radians(azi))
+
+        promoted = Survey.from_min_curve(mc)
+        direct = Survey(md=md, inc=inc, azi=azi)
+
+        for attr in ("md", "inc_rad", "azi_grid_rad", "n", "e", "tvd"):
+            np.testing.assert_array_equal(
+                np.asarray(getattr(promoted, attr)),
+                np.asarray(getattr(direct, attr)),
+                err_msg=f"{attr} differs between promotion and direct build",
+            )
+
+    def test_geometry_survives_the_promotion(self):
+        from welleng.utils import MinCurve
+        md, inc, azi = self._profile()
+        mc = MinCurve(md, np.radians(inc), np.radians(azi))
+        promoted = Survey.from_min_curve(mc)
+        np.testing.assert_array_equal(promoted.inc_rad, mc.inc)
+        # MinCurve.poss is env; Survey.pos_nev is nev -- same numbers, swapped
+        np.testing.assert_allclose(
+            np.asarray(promoted.pos_nev)[:, [1, 0, 2]], mc.poss, atol=1e-12)
+
+    def test_radians_are_not_silently_read_as_degrees(self):
+        """The failure this guards is a QUIET one.
+
+        MinCurve is radians, Survey defaults to degrees. Hand the radians over
+        without deg=False and a 60 degree hold becomes 1.05 degrees -- the well
+        flattens, every value stays in range, and nothing raises.
+        """
+        from welleng.utils import MinCurve
+        md, inc, azi = self._profile()
+        mc = MinCurve(md, np.radians(inc), np.radians(azi))
+
+        correct = Survey.from_min_curve(mc)
+        assert np.degrees(correct.inc_rad[-1]) == pytest.approx(60.0, abs=1e-9)
+
+        naive = Survey(md=mc.md, inc=mc.inc, azi=mc.azi)      # deg defaults True
+        assert np.degrees(naive.inc_rad[-1]) == pytest.approx(1.047, abs=1e-3)
+
+    def test_header_kwargs_reach_the_survey(self):
+        from welleng.utils import MinCurve
+        md, inc, azi = self._profile()
+        mc = MinCurve(md, np.radians(inc), np.radians(azi))
+        promoted = Survey.from_min_curve(mc, start_nev=[100., 200., 50.])
+        assert promoted.n[0] == pytest.approx(100.)
+        assert promoted.tvd[0] == pytest.approx(50.)
