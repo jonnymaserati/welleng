@@ -276,6 +276,20 @@ class MinCurve:
 
         Notes
         -----
+        ⛔ **``np.interp`` on ``poss``, ``tvd`` or an angle between stations is
+        the ANTI-PATTERN this class exists to replace.** A survey between
+        stations is a circular ARC, not a chord; the chord returns a monotonic,
+        in-range, WRONG answer whose size is set by the CALLER's station
+        spacing, so no test of the caller's will fail. Measured on real
+        surveys: 0.33 m of TVD and **3.63 m laterally** on a 55-station
+        sidetrack at 3.4 deg/30 m, and 7.22 m of TVD at 150 m spacing. Use
+        :meth:`interpolate`, :meth:`interpolate_tvd` or :meth:`inc_azi_at`.
+        ``python -m welleng.lint <path>`` detects it, and
+        :func:`welleng.lint.find_linear_survey_interpolation` is importable so
+        a CONSUMER can assert its own repo clean -- the defect has been fixed
+        nine times as changes and twice more in consumers who never called a
+        guarded function, so the check is the only thing that travels.
+
         MinCurve is units-agnostic: ``md`` may be in any length unit and the
         geometry is all ratios/angles. Dogleg severity (which needs a per-unit
         coefficient) is the :meth:`dls` method, into which the caller injects the
@@ -295,6 +309,17 @@ class MinCurve:
             order, which :class:`~welleng.survey.Survey` consumes.
             ``"nev"`` -- ``[northing, easting, tvd]``, for a caller whose own
             convention is N/E and which would otherwise swap every result back.
+
+        🔴 **``delta_x``, ``delta_y`` and ``delta_z`` do NOT follow ``frame``.**
+        They are per-station increments in AXIS terms -- **x EAST, y NORTH,
+        z TVD -- in BOTH frames**. Only ``poss`` and :meth:`interpolate` follow
+        ``frame``. Under ``frame="nev"`` ``poss[:, 0]`` is NORTHING while
+        ``delta_x`` is still EASTING, so the two surfaces disagree by
+        construction and **mixing them transposes the well**. Defensible -- x/y
+        are axis names, not compass names -- but stated here because the
+        warning above only says not to INFER the order from them, which leaves
+        a reader who takes that warning correctly with no way to learn what
+        they positively are. (Reported by a consumer, 2026-09-20.)
 
         This is a BASIS, not a second algorithm. The arc kernel
         (:func:`arc_step`) is coordinate-agnostic and returns whatever basis it
