@@ -83,3 +83,75 @@ def test_cli_exit_codes(tmp_path, capsys):
         "import numpy as np\nx = np.interp(a, s.md, s.tvd)\n")
     assert main([str(tmp_path), "--quiet"]) == 1
     assert main([]) == 2
+
+
+class TestCoverageMatrix:
+    """The shapes the rule does and does not reach, pinned.
+
+    Origin: a consumer wired this check against a file with three CONFIRMED
+    instances and got ZERO. The same file, with a `_s` suffix dropped from
+    three variable names, scored five. Matching the argument's NAME cannot be
+    the whole rule, and a green run that is green only because of a naming
+    accident is worse than no run -- it is believed, because this check is the
+    remedy for a famous defect.
+
+    ⭐ Every CAUGHT case below is a known positive. Without them a zero from
+    this module is indistinguishable from the module doing nothing, which is
+    exactly what it was doing.
+    """
+
+    @staticmethod
+    def _findings(src: str) -> int:
+        import tempfile
+        from welleng.lint import find_linear_survey_interpolation
+        with tempfile.TemporaryDirectory() as d:
+            pathlib.Path(d, "m.py").write_text(src)
+            return len(find_linear_survey_interpolation(d))
+
+    @pytest.mark.parametrize("src", [
+        "import numpy as np\nnp.interp(q, md, survey.tvd)\n",
+        "import numpy as np\nnp.interp(q, md, np.asarray(survey.tvd, float))\n",
+        "import numpy as np\nnp.interp(q, md, tvd[ok])\n",
+        "import numpy as np\nnp.interp(q, md, pos_nev[:, 2])\n",
+        # structural: fp as a KEYWORD bypassed args[2] entirely
+        "import numpy as np\nnp.interp(q, md, fp=survey.tvd)\n",
+        # what MinCurve actually returns -- the shape a consumer is likeliest
+        # to write was the one slipping through
+        "import numpy as np\nnp.interp(q, md, poss[:, 2])\n",
+        'import numpy as np\nnp.interp(q, md, d["tvd"])\n',
+        # local rebinding -- the case that scored zero on real defective code
+        "import numpy as np\ntvd_s = np.asarray(survey.tvd, float)\n"
+        "np.interp(q, md, tvd_s)\n",
+        "import numpy as np\nn_s = np.asarray(survey.n, float)\n"
+        "np.interp(q, md, n_s)\n",
+        "import numpy as np\nz = survey.tvd\nnp.interp(q, md, fp=z)\n",
+    ])
+    def test_caught(self, src):
+        assert self._findings(src) >= 1, f"MISSED:\n{src}"
+
+    @pytest.mark.parametrize("src", [
+        # a PROPERTY against a depth axis is correct and must not be flagged --
+        # a lint that cries wolf gets switched off
+        "import numpy as np\nnp.interp(tvd, self.tvd, self.sigma_V)\n",
+        "import numpy as np\nsigma = np.asarray(model.sigma_V)\n"
+        "np.interp(tvd, self.tvd, sigma)\n",
+    ])
+    def test_not_flagged(self, src):
+        assert self._findings(src) == 0, f"FALSE POSITIVE:\n{src}"
+
+    def test_known_miss_is_pinned_not_forgotten(self):
+        """A name bound from something the rule cannot trace still escapes.
+
+        Pinned as an EXPECTED miss so that if the rule is later tightened this
+        test fails and says so. ⭐ A silently-tightened lint leaves every
+        earlier green run unverified -- a previous clean scan was clean only
+        against the looser rule, and nobody is told to re-scan.
+        """
+        src = ("import numpy as np\n"
+               "def f(rows):\n"
+               "    depths = [r.tvd for r in rows]\n"   # comprehension: untraced
+               "    return np.interp(q, md, depths)\n")
+        assert self._findings(src) == 0, (
+            "the rule now reaches list comprehensions -- GOOD, but every repo "
+            "scanned under the looser rule must be re-scanned; update this pin"
+        )

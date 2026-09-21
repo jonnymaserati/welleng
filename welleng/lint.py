@@ -119,7 +119,7 @@ TRAJECTORY_AXES = frozenset({
     "tvd", "tvds", "tvd_m", "true_vertical_depth",
     "inc", "incs", "inc_deg", "inc_rad", "inclination", "inclination_deg",
     "azi", "azis", "azi_deg", "azi_rad", "azimuth", "azimuth_deg",
-    "n", "e", "northing", "easting", "pos_nev", "pos_xyz",
+    "n", "e", "northing", "easting", "pos_nev", "pos_xyz", "poss",
 })
 
 #: What to reach for instead. Keyed by the axis being interpolated.
@@ -184,6 +184,11 @@ def _axis_name(node: ast.AST) -> Optional[str]:
             return _axis_name(node.args[0])
         return None
     if isinstance(node, ast.Subscript):
+        # d["tvd"] -- the axis is in the KEY, not the object
+        sl = node.slice
+        if isinstance(sl, ast.Constant) and isinstance(sl.value, str):
+            if sl.value in TRAJECTORY_AXES:
+                return sl.value
         return _axis_name(node.value)
     return None
 
@@ -193,13 +198,59 @@ class _Visitor(ast.NodeVisitor):
         self.path = path
         self.lines = lines
         self.findings: List[Finding] = []
+        #: local name -> the trajectory axis it was bound FROM.
+        #: ``tvd_s = np.asarray(survey.tvd, float)`` is the most natural line
+        #: anyone writes, and matching the argument's NAME alone missed it:
+        #: a consumer's three real instances scored ZERO until the variables
+        #: were renamed, at which point the same file scored five. Name
+        #: matching cannot be the whole rule.
+        self.bound: dict = {}
+
+    def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802 (ast API)
+        axis = _axis_name(node.value)
+        if axis is not None:
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    self.bound[target.id] = axis
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:  # noqa: N802
+        if node.value is not None:
+            axis = _axis_name(node.value)
+            if axis is not None and isinstance(node.target, ast.Name):
+                self.bound[node.target.id] = axis
+        self.generic_visit(node)
+
+    def _rebound_axis(self, node: Optional[ast.AST]) -> Optional[str]:
+        """The axis a REBOUND local carries, if any. Looks through the same
+        wrappers as :func:`_axis_name` so ``tvd_s[ok]`` resolves too."""
+        if node is None:
+            return None
+        if isinstance(node, ast.Name):
+            return self.bound.get(node.id)
+        if isinstance(node, ast.Subscript):
+            return self._rebound_axis(node.value)
+        if isinstance(node, ast.Call) and node.args:
+            return self._rebound_axis(node.args[0])
+        return None
 
     def visit_Call(self, node: ast.Call) -> None:  # noqa: N802 (ast API)
         func = node.func
         name = (func.attr if isinstance(func, ast.Attribute)
                 else func.id if isinstance(func, ast.Name) else None)
-        if name in _INTERP_FUNCS and len(node.args) >= 3:
-            axis = _axis_name(node.args[2])          # fp -- the VALUE
+        if name in _INTERP_FUNCS:
+            # `fp` may be positional (args[2]) OR a keyword. Reading args[2]
+            # alone let `np.interp(q, md, fp=survey.tvd)` through untouched --
+            # a STRUCTURAL miss, independent of what the argument is called.
+            fp = None
+            if len(node.args) >= 3:
+                fp = node.args[2]
+            for kw in node.keywords:
+                if kw.arg == "fp":
+                    fp = kw.value
+            axis = _axis_name(fp) if fp is not None else None
+            if axis is None:
+                axis = self._rebound_axis(fp)
             if axis is not None:
                 src = ""
                 if 0 < node.lineno <= len(self.lines):
