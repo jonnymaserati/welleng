@@ -75,6 +75,18 @@ def _closest_x_on_arc(P0, t0, t1, delta_md, dogleg, Q, eps=1e-9):
     return theta * R
 
 
+
+def _inserted_positions(survey, i, node) -> dict:
+    """``n``/``e``/``tvd`` for ``survey`` with ``node`` inserted at index ``i``
+    -- only when the survey's positions were supplied, so the rebuilt survey
+    keeps them rather than recomputing (the rule interpolate_md and
+    interpolate_mds follow). Empty otherwise: a computed survey recomputes to
+    the same positions."""
+    if survey.supplied_nev is None:
+        return {}
+    nev = np.insert(survey.pos_nev, i, node.pos_nev, axis=0)
+    return {"n": nev[:, 0], "e": nev[:, 1], "tvd": nev[:, 2]}
+
 class Clearance:
     """
     Initialize a `welleng.clearance.Clearance` object.
@@ -768,6 +780,7 @@ class IscwsaClearance(Clearance):
                     cov_nev=np.insert(
                         self.ref.cov_nev, i, node.cov_nev, axis=0
                     ),
+                    **_inserted_positions(self.ref, i, node),
                     start_nev=self.ref.start_nev,
                     start_xyz=self.ref.start_xyz,
                     deg=False,

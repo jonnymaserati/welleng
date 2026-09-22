@@ -1059,22 +1059,13 @@ class Survey(MinCurve):
         self.e = np.array(e) if e is not None else e  # type: ignore[assignment]
         self.tvd = np.array(tvd) if tvd is not None else tvd  # type: ignore[assignment]
 
-        # start_nev will be overwritten if n, e, tvd data provided
-        if not all((self.n is None, self.e is None, self.tvd is None)):
-            self.start_nev = np.array(
-                [self.n[0], self.e[0], self.tvd[0]]
-            )
-        else:
-            self.start_nev = np.array(start_nev)
+        self._resolve_anchor(start_xyz, start_nev, x, y, z)
 
         # Georeferencing truth lives on the header: mirror the resolved global
         # datum there (the position transform reads it from the header).
         self.header.start_nev = self.start_nev
         self.header.start_xyz = np.asarray(self.start_xyz, dtype=float)
 
-        self.x = np.array(x) if x is not None else x  # type: ignore[assignment]
-        self.y = np.array(y) if y is not None else y  # type: ignore[assignment]
-        self.z = np.array(z) if z is not None else z  # type: ignore[assignment]
         if vec is not None:
             if nev:
                 self.vec_nev = vec  # type: ignore[assignment]
@@ -1303,21 +1294,79 @@ class Survey(MinCurve):
         # move+rotate+scale transform (the header owns the georef state).
         sc = self.header.grid_scale_factor
         _A = np.array([[0.0, sc, 0.0], [sc, 0.0, 0.0], [0.0, 0.0, 1.0]])
-        _sx = np.asarray(self.header.start_xyz, dtype=float)
-        _sn = np.asarray(self.header.start_nev, dtype=float)
-        _b = np.array([_sx[1] * sc + _sn[0], _sx[0] * sc + _sn[1], _sx[2] + _sn[2]])
-        self.pos_xyz = self.poss + self.start_xyz
-        self.pos_nev = self.poss @ _A.T + _b
-
-        if self.x is None:
-            self.x, self.y, self.z = (self.poss + self.start_xyz).T
-        if self.n is None:
-            self._get_nev()
+        # ONE anchor (start_nev), ONE transform: every position field below is
+        # a view of pos_nev, so they cannot disagree.
+        _b = np.asarray(self.header.start_nev, dtype=float)
+        self._computed_nev = self.poss @ _A.T + _b
+        # Supplied positions ARE the positions: a Survey may be a set of points
+        # (e.g. the closest points on an offset well), not a path to recompute.
+        self.pos_nev = (
+            self._computed_nev if self.supplied_nev is None
+            else self.supplied_nev.copy()
+        )
+        self.pos_xyz = self.pos_nev[:, [1, 0, 2]]
+        self.n, self.e, self.tvd = self.pos_nev.T
+        self.x, self.y, self.z = self.pos_xyz.T
         if vec is None:
             self.vec_xyz = get_vec(self.inc_rad, self.azi_grid_rad, deg=False)
             self.vec_nev = get_vec(
                 self.inc_rad, self.azi_grid_rad, deg=False, nev=True
             )
+
+    def _resolve_anchor(self, start_xyz, start_nev, x=None, y=None, z=None) -> None:
+        """Resolve the survey's ONE anchor: the first station's position.
+
+        ``start_xyz`` (east, north, tvd) and ``start_nev`` (north, east, tvd)
+        are the same point written in two frames. Either may be given; if both
+        are given (non-zero) they must be that same point, or this refuses --
+        they are never added. Supplied station positions (``n``, ``e``,
+        ``tvd``) set the anchor from their first station and are kept, as
+        given, in :attr:`supplied_nev`, and they ARE the survey's positions --
+        a survey may be a set of points rather than a path, so they are never
+        recomputed. Every position field is a view of one array, so they
+        cannot disagree. :attr:`supplied_residual` reports the largest
+        difference between the supplied positions and the minimum-curvature
+        path through the same stations.
+        """
+        sx = np.asarray(start_xyz, dtype=float).reshape(3)
+        sn = np.asarray(start_nev, dtype=float).reshape(3)
+        nev_given = all(v is not None for v in (self.n, self.e, self.tvd))
+        xyz_given = all(v is not None for v in (x, y, z))
+        from_nev = (np.column_stack([self.n, self.e, self.tvd]).astype(float)
+                    if nev_given else None)
+        from_xyz = (np.column_stack([y, x, z]).astype(float)   # (E,N,V) -> (N,E,V)
+                    if xyz_given else None)
+        if from_nev is not None and from_xyz is not None and not np.allclose(
+                from_nev, from_xyz, rtol=0, atol=1e-9):
+            raise ValueError(
+                "n/e/tvd and x/y/z are the same positions in two frames but "
+                "disagree; pass one of them.")
+        self.supplied_nev = from_nev if from_nev is not None else from_xyz
+        if self.supplied_nev is not None:
+            anchor = self.supplied_nev[0]
+        elif sx.any() and sn.any():
+            if not np.allclose(sx[[1, 0, 2]], sn, rtol=0, atol=1e-9):
+                raise ValueError(
+                    "start_xyz and start_nev describe the SAME point in two frames "
+                    f"(E,N,TVD vs N,E,TVD) but disagree: start_xyz={sx.tolist()}, "
+                    f"start_nev={sn.tolist()}. Pass one of them."
+                )
+            anchor = sn
+        elif sx.any():
+            anchor = sx[[1, 0, 2]]
+        else:
+            anchor = sn
+        self.start_nev = anchor
+        self.start_xyz = anchor[[1, 0, 2]]
+
+    @property
+    def supplied_residual(self) -> Optional[float]:
+        """Largest |supplied - minimum-curvature| station position, or ``None``
+        if no positions were supplied. Meaningful only when the stations form a
+        path; for a set of points it measures nothing useful."""
+        if self.supplied_nev is None:
+            return None
+        return float(np.max(np.abs(self.supplied_nev - self._computed_nev)))
 
     def _get_nev(self) -> None:
         self.n, self.e, self.tvd = get_nev(
@@ -2986,18 +3035,28 @@ def _interpolate_surveys(survey: "Survey", md: np.ndarray) -> "Survey":
     """
     # inc/azi from the one arc kernel (MinCurve.interpolate, Rodrigues tangent);
     # azi is grid-referenced because MinCurve was built on azi_grid_rad
-    _, inc, azi = survey.interpolate(md, angles=True)
+    pos, inc, azi = survey.interpolate(md, angles=True)
+
+    # Positions: the survey's own at its stations; between them, the arc
+    # displacement from the bracketing station added to that station's position
+    # -- the same rule as interpolate_md, so the two entry points agree.
+    idx = np.clip(np.searchsorted(survey.md, md, side="left") - 1,
+                  0, len(survey.md) - 2)
+    disp = np.atleast_2d(pos) - survey.poss[idx]
+    nev_new = survey.pos_nev[idx] + disp[:, [1, 0, 2]]
 
     # merge the interpolated stations with the original stations and sort on md
     len_svy = len(survey.md)
     len_md = len(md)
-    sorted_arr = np.zeros((3, len_svy + len_md))
+    sorted_arr = np.zeros((6, len_svy + len_md))
     sorted_arr[0, 0:len_svy] = survey.md
     sorted_arr[0, len_svy:] = md
     sorted_arr[1, 0:len_svy] = survey.inc_rad
     sorted_arr[1, len_svy:] = inc
     sorted_arr[2, 0:len_svy] = survey.azi_grid_rad
     sorted_arr[2, len_svy:] = azi
+    sorted_arr[3:, 0:len_svy] = survey.pos_nev.T
+    sorted_arr[3:, len_svy:] = nev_new.T
 
     sorted_arr = sorted_arr[:, np.argsort(sorted_arr[0, :])]
 
@@ -3007,6 +3066,11 @@ def _interpolate_surveys(survey: "Survey", md: np.ndarray) -> "Survey":
         md=sorted_arr[0, :],
         inc=sorted_arr[1, :],
         azi=sorted_arr[2, :],
+        # positions are carried only if the source's were supplied; otherwise
+        # the merged survey computes them (identical, from the same stations)
+        n=sorted_arr[3] if survey.supplied_nev is not None else None,
+        e=sorted_arr[4] if survey.supplied_nev is not None else None,
+        tvd=sorted_arr[5] if survey.supplied_nev is not None else None,
         start_xyz=survey.start_xyz,
         start_nev=survey.start_nev,
         header=sh,

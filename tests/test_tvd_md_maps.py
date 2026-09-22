@@ -240,12 +240,81 @@ def test_interpolate_mds_agrees_with_interpolate_md():
     assert checked > 400
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "KNOWN, unresolved: with start_xyz given, pos_nev adds the wellhead on top "
-    "of n/e/tvd, so the two position fields of one survey disagree by the "
-    "wellhead offset."))
-def test_pos_nev_and_n_e_tvd_agree_when_start_xyz_is_given():
-    s = Survey_(md=[0, 500, 1000], inc=[0, 10, 30], azi=[0, 20, 40],
-                n=[-50.0, 0.0, 0.0], e=[-500.0, 0.0, 0.0], tvd=[0.0, 0.0, 0.0],
-                start_xyz=[-500.0, -50.0, 0.0], start_nev=[-50.0, -500.0, 0.0])
-    np.testing.assert_allclose(s.pos_nev[0], [s.n[0], s.e[0], s.tvd[0]])
+
+
+# -- one anchor, one transform: every position field is a view of pos_nev --
+
+WELLHEAD_NEV = [-50.0, -500.0, 0.0]
+WELLHEAD_XYZ = [-500.0, -50.0, 0.0]          # the same point, (E, N, TVD)
+
+
+def _plain(**kw):
+    return Survey_(md=[0, 500, 1000, 1500], inc=[0, 10, 30, 45],
+                   azi=[0, 20, 40, 60], **kw)
+
+
+def _views_agree(s):
+    np.testing.assert_array_equal(np.column_stack([s.n, s.e, s.tvd]), s.pos_nev)
+    np.testing.assert_array_equal(np.column_stack([s.x, s.y, s.z]), s.pos_xyz)
+    np.testing.assert_array_equal(s.pos_xyz, s.pos_nev[:, [1, 0, 2]])
+
+
+@pytest.mark.parametrize("kw", [
+    dict(start_nev=WELLHEAD_NEV),
+    dict(start_xyz=WELLHEAD_XYZ),
+    dict(start_nev=WELLHEAD_NEV, start_xyz=WELLHEAD_XYZ),
+], ids=["start_nev", "start_xyz", "both, consistent"])
+def test_one_anchor_whichever_way_it_is_given(kw):
+    s = _plain(**kw)
+    np.testing.assert_array_equal(s.pos_nev[0], WELLHEAD_NEV)
+    _views_agree(s)
+
+
+def test_contradictory_anchors_are_refused():
+    with pytest.raises(ValueError, match="SAME point"):
+        _plain(start_nev=WELLHEAD_NEV, start_xyz=[1.0, 2.0, 3.0])
+
+
+def test_supplied_positions_are_the_positions_and_the_residual_is_reported():
+    ref = _plain(start_nev=WELLHEAD_NEV)
+    rounded = np.round(ref.pos_nev, 2)
+    s = _plain(n=rounded[:, 0], e=rounded[:, 1], tvd=rounded[:, 2])
+    np.testing.assert_array_equal(s.pos_nev, rounded)
+    _views_agree(s)
+    assert 0 < s.supplied_residual <= 0.005 + 1e-9
+
+
+def test_a_computed_survey_reports_no_residual():
+    assert _plain(start_nev=WELLHEAD_NEV).supplied_residual is None
+
+
+def test_interpolate_mds_carries_supplied_positions():
+    """Same rule as interpolate_md: stations keep theirs; between, arc
+    displacement from the bracketing station."""
+    ref = _plain(start_nev=WELLHEAD_NEV)
+    rounded = np.round(ref.pos_nev, 2)
+    s = _plain(n=rounded[:, 0], e=rounded[:, 1], tvd=rounded[:, 2])
+    q = np.array([250.0, 750.0, 1234.5])
+    r = s.interpolate_mds(q)
+    on_station = ~np.array(r.interpolated, dtype=bool)
+    np.testing.assert_array_equal(r.pos_nev[on_station], rounded)
+    for j in np.where(~on_station)[0]:
+        np.testing.assert_allclose(r.pos_nev[j], s.interpolate_md(r.md[j]).pos_nev,
+                                   rtol=0, atol=1e-9)
+
+
+def test_grid_scale_factor_applies_to_every_view():
+    s = _plain(start_nev=WELLHEAD_NEV,
+               header=we.survey.SurveyHeader(grid_scale_factor=1.001))
+    _views_agree(s)
+    local_n = s.poss[-1, 1]
+    assert s.n[-1] - WELLHEAD_NEV[0] == pytest.approx(1.001 * local_n, rel=1e-12)
+
+
+def test_supplied_xyz_is_the_same_as_supplied_nev():
+    ref = _plain(start_nev=WELLHEAD_NEV)
+    x, y, z = ref.pos_xyz.T
+    s = _plain(x=x, y=y, z=z)
+    np.testing.assert_array_equal(s.pos_nev, ref.pos_nev)
+    with pytest.raises(ValueError, match="two frames"):
+        _plain(x=x, y=y, z=z, n=ref.n + 1.0, e=ref.e, tvd=ref.tvd)
