@@ -103,3 +103,69 @@ def test_interpolate_md_at_either_end_station_is_that_station(offset_start, md):
     node = offset_start.interpolate_md(md)
     assert node is not None
     assert node.md == pytest.approx(md)
+
+
+# -- Survey.interpolate_md: the MinCurve.interpolate route vs the two-station route --
+
+def _gate_surveys():
+    import json
+
+    from welleng.survey import make_survey_header
+
+    yield Survey_(md=[0, 500, 1000, 1500, 2000, 2500], inc=[0, 0, 30, 70, 100, 100],
+                  azi=[0] * 6, start_nev=[10.0, 20.0, 1000.0])
+    yield Survey_(md=[0, 1000, 3000, 6000], inc=[0, 20, 60, 90], azi=[0, 30, 60, 90],
+                  unit="feet", header=we.survey.SurveyHeader(depth_unit="feet"))
+    yield Survey_(md=[0, 800, 1600, 2400], inc=[0, 25, 55, 80], azi=[10, 40, 70, 100],
+                  header=we.survey.SurveyHeader(azi_reference="true", convergence=1.3))
+    with open("tests/test_data/clearance_iscwsa_well_data.json") as f:
+        data = json.load(f)
+    for d in data["wells"].values():
+        yield Survey_(md=d["MD"], inc=d["IncDeg"], azi=d["AziDeg"],
+                      n=d["N"], e=d["E"], tvd=d["TVD"],
+                      header=make_survey_header(d["header"]),
+                      start_xyz=[d["E"][0], d["N"][0], d["TVD"][0]],
+                      start_nev=[d["N"][0], d["E"][0], d["TVD"][0]])
+
+
+def Survey_(**kw):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return we.survey.Survey(**kw)
+
+
+def test_interpolate_md_matches_the_two_station_route():
+    """Directions, md, flag and unit identical; positions within 3 ulp relative.
+
+    3 ulp covers the measured maximum of 2.4 ulp over these surveys. The
+    two routes differ in summation order (MinCurve.interpolate vs a rebuilt
+    two-station Survey), so bit-identity is not the right bar.
+    """
+    from welleng.survey import _interpolate_survey, get_node
+
+    rng = np.random.default_rng(3)
+    checked = 0
+    for s in _gate_surveys():
+        for q in rng.uniform(s.md[0], s.md[-1], 200):
+            i = min(max(int(np.searchsorted(s.md, q, side="left")) - 1, 0),
+                    len(s.md) - 2)
+            old = get_node(_interpolate_survey(s, q - s.md[i], i), -1, True)
+            new = s.interpolate_md(q)
+            assert new.vec_nev == old.vec_nev
+            assert new.md == old.md
+            assert new.interpolated == old.interpolated
+            assert new.unit == old.unit
+            scale = max(1.0, float(np.max(np.abs(old.pos_nev))))
+            dpos = np.max(np.abs(np.array(new.pos_nev) - np.array(old.pos_nev)))
+            assert dpos / scale <= 3 * np.finfo(float).eps
+            checked += 1
+    assert checked == 200 * 15  # 3 synthetic + 12 ISCWSA
+
+
+def test_interpolate_md_does_not_touch_the_callers_header():
+    s = Survey_(md=[0, 500, 1000], inc=[0, 10, 30], azi=[0, 20, 40],
+                header=we.survey.SurveyHeader(azi_reference="true"))
+    s.interpolate_md(700.0)
+    from welleng.survey import _interpolate_survey
+    _interpolate_survey(s, 50.0, 1)
+    assert s.header.azi_reference == "true"

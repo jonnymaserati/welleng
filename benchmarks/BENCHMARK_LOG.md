@@ -671,3 +671,30 @@ five validation anchors re-measured — not in the same change as a bit-identica
 refactor. See [[feedback-solve-dont-search]].
 
 Machine: this dev box, .venv312.
+
+## 2026-09-22 — `Survey.interpolate_md` via `MinCurve.interpolate` (0.30.0.dev0)
+
+Each call built a two-station `Survey` (which rebuilt a `MinCurve`) and then a `Node`:
+profiling showed ~80% of the time in that construction and ~19% in the arc interpolation.
+The Node is now built from `MinCurve.interpolate` directly — arc displacement from the
+bracketing station added to that station's stored `n, e, tvd`.
+
+| `interpolate_md`, 101-station survey, one md | µs/call |
+|---|---|
+| two-station `Survey` route | 368.8 |
+| `MinCurve.interpolate` route | **123.1** |
+
+**3.0x.** Remaining cost is the arc kernel itself plus per-call numpy overhead on
+single-element arrays.
+
+Parity vs the previous route (`test_interpolate_md_matches_the_two_station_route`, 3000
+random mds over the ISCWSA 11-well set + reference, a reversing well, a feet survey and a
+true-referenced survey with convergence): directions, md, flag and unit **identical**;
+positions within **2.4 ulp** relative. Not bit-identical — the two routes sum in a
+different order. At a 177 deg dogleg (not in the gate set) both routes lose precision:
+against a 50-digit reference the new route is 2.35e-12 m and the previous 1.21e-12 m on a
+100 m leg. Machine: this dev box, .venv312, Python 3.12.3, numpy 2.5.0.
+
+Also fixed in passing: `_interpolate_survey` set `azi_reference = 'grid'` on the CALLER's
+header, so one `interpolate_md` on a true-referenced survey left it reading as grid. It now
+works on a copy (`test_interpolate_md_does_not_touch_the_callers_header`).

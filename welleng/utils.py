@@ -441,8 +441,8 @@ class MinCurve:
         -----
         NEVER linear-interpolate a trajectory. Agrees with
         :meth:`welleng.survey.Survey.interpolate_md` to sub-ulp for doglegs up
-        to ~2 rad; near ``pi`` this half-angle form is the better-conditioned of
-        the two (~0.1 ulp vs tens for the balanced-tangential node path).
+        to ~2 rad. Near ``pi`` both lose precision: measured against a 50-digit
+        reference at a 177 deg dogleg, the error is ~2.4e-12 m on a 100 m leg.
         """
         scalar = np.ndim(md) == 0
         q = np.atleast_1d(np.asarray(md, dtype=float))
