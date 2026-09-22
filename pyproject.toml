@@ -138,7 +138,7 @@ packages = ["welleng"]
 "welleng" = "welleng"
 
 # Ship the PEP 561 marker so downstream type checkers pick up welleng's
-# inline annotations (see docs/dev/TYPING.md, issue #133).
+# inline annotations (issue #133).
 [tool.hatch.build.targets.wheel.force-include]
 "welleng/py.typed" = "welleng/py.typed"
 

@@ -410,8 +410,7 @@ class ErrorModel():
         MC to close it (that would fake an allowance the physical propagation
         deliberately omits). This is DISTINCT from the non-surface tie-leak
         correction (:meth:`cov_nev_at`, the ``smd[0] != 0.0`` guard), which was a
-        genuine bug. See docs/dev/VALIDATION.md ("first-leg tie-on") and
-        tests/test_iscwsa_surface_tieon.py.
+        genuine bug. See tests/test_iscwsa_surface_tieon.py.
 
         REVISION APPLICABILITY. The star-vector summation (eq. 27) is the general
         model framework -- ALL revisions. The surface slot allowance (the

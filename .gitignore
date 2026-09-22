@@ -86,7 +86,6 @@ examples/data/*
 tests/data/
 welleng/errors/error_codes.yaml
 welleng/errors/extract_error_codes.py
-probcol_brooks_fig8.png
 
 # max-curve DRAFT figures/scripts — local until the draft gets a DOI (papers/drafts policy)
 papers/figures/design-correction.png

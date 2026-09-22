@@ -63,9 +63,7 @@ extensions = [
 
 myst_all_links_external = True
 templates_path = ['_templates']
-# ``docs/dev/`` is not part of the published documentation. It is excluded here
-# as well as being untracked, so a local build does not render it into
-# ``_build/html/dev/*.html``.
+# Only the published pages are built.
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', 'dev', 'dev/**']
 
 # The suffix(es) of source filenames.

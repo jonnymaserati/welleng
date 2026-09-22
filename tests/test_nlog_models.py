@@ -131,7 +131,7 @@ def test_document_title_falls_back_to_the_barcode():
 
 
 class TestConsumerReportedDefects:
-    """Both found by welleng-drilling using the typed API for real work, 2026-09-20.
+    """Both found by a consumer using the typed API for real work, 2026-09-20.
 
     Both are the same shape: an accessor that answers with silence instead of
     refusing, so the caller reads "no data" where the truth is "wrong type" or

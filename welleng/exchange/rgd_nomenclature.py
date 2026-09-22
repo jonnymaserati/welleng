@@ -6,7 +6,7 @@ bundled reference table is digitised from the **pre-2020 RGD nomenclature** — 
 Adrichem Boogaert & Kouwe (1993), *Stratigraphic Nomenclature of the
 Netherlands*, revision RGD/NOGEPA — which is the version NLOG's data uses; the
 2020 DINO revamp renamed/retired codes, so it must NOT be used to resolve NLOG
-codes. See ``docs/dev/NLOG_STRATIGRAPHY_NOMENCLATURE.md``.
+codes.
 
 Hierarchy is authoritative: RGD codes are prefix-nested (group -> formation ->
 member) by construction, so a unit's parent is the longest proper prefix that is
