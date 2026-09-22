@@ -677,7 +677,10 @@ class IscwsaClearance(Clearance):
                 best_dist = res_fun
                 t_mult = xo / bound if bound > 0 else 0.0
                 best_u = off_pos - ref_pos
-                best_off_cov = self._interior_cov(self.offset, oi, xo)
+                # the pedal path's own offset covariance (linear, sidetrack-
+                # corrected when present), so the value minimised here is the
+                # value reported after insertion
+                best_off_cov = self._interpolate_covs(oi + 1, t_mult)[1]
                 best_off_r = self.Ro[oi] + t_mult * (self.Ro[oi + 1] - self.Ro[oi])
 
         dist = best_dist
@@ -689,8 +692,37 @@ class IscwsaClearance(Clearance):
         off_pcr = np.sqrt(max(0.0, float(u @ best_off_cov @ u)))
         sigma_s = np.sqrt(ref_pcr ** 2 + off_pcr ** 2)
         eou = self.k * np.sqrt(sigma_s ** 2 + self.sigma_pa ** 2)
-        # Sm=0.0 matches the original (using Sm=0 for min-finding)
-        return float((dist - ref_r - best_off_r) / eou)
+        # the pedal separation factor, Sm included: the minimum found here is
+        # the minimum of the value reported
+        return float((dist - ref_r - best_off_r - self.Sm) / eou)
+
+    def _interval_minimum(self, i, delta_md, n_scan=64):
+        """The separation-factor minimum between the stations either side of
+        station ``i``, or ``None`` when station ``i`` is itself the minimum.
+
+        A coarse scan over the two legs (station included) brackets the
+        minimum; bounded Brent refines it. A point is returned only if it is
+        strictly below the station's own value -- which also keeps a
+        degenerate interval (a sidetrack's kick-off, where the wells share a
+        hole) from producing a point.
+        """
+        lo, hi = -float(delta_md[0]), float(delta_md[1])
+        xs = np.unique(np.concatenate([np.linspace(lo, hi, n_scan + 1), [0.0]]))
+
+        def f(x):
+            return self._get_sf_min(np.array([x]), i, delta_md)
+
+        vals = np.array([f(x) for x in xs])
+        k = int(np.argmin(vals))
+        a, b = xs[max(k - 1, 0)], xs[min(k + 1, len(xs) - 1)]
+        res = optimize.minimize_scalar(f, bounds=(a, b), method="bounded",
+                                       options={"xatol": 1e-6})
+        x_best, f_best = ((float(res.x), float(res.fun)) if res.fun < vals[k]
+                          else (float(xs[k]), float(vals[k])))
+        station = float(np.ravel(self.sf)[i])
+        if not f_best < station or x_best in (0.0, lo, hi):
+            return None
+        return x_best, f_best
 
     def get_sf_mins(self):
         """
@@ -708,34 +740,9 @@ class IscwsaClearance(Clearance):
 
         for minima in minimas[0].tolist():
             delta_md = self.ref.delta_md[minima: minima + 2]
-            bounds = [[-delta_md[0], delta_md[1]]]
-            # x0 = (np.diff(bounds) / 2)
-            x0 = [0]
-            args = (minima, delta_md)
-            # options = {
-            #     'eps': np.sum(delta_md) / 10
-            # }
-
-            # SLSQP and L-BFGS-B don't work when using neg to pos ranges in
-            # this example, but Powell seems to do the job.
-            result = optimize.minimize(
-                self._get_sf_min,
-                x0,
-                method='Powell',
-                bounds=bounds,
-                args=args,
-            )
-
-            if any((
-                result.x == 0,
-                result.x in delta_md
-            )):
-                continue
-
-            else:
-                sf_interpolated.append((
-                    self.ref.md[minima] + result.x[0], result.fun
-                ))
+            x_min = self._interval_minimum(minima, delta_md)
+            if x_min is not None:
+                sf_interpolated.append((self.ref.md[minima] + x_min[0], x_min[1]))
 
         if bool(sf_interpolated):
             # Insert the minima into the reference with the ONE interpolation:

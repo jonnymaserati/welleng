@@ -1,3 +1,4 @@
+import pytest
 from welleng.survey import Survey, make_survey_header, _interpolate_pos_nev
 from welleng.clearance import IscwsaClearance, MahalanobisClearance
 import numpy as np
@@ -326,5 +327,38 @@ def test_minimize_sf_inserted_points_carry_real_covariance(data=data):
             assert np.trace(result.ref.cov_nev[j]) > 0
             np.testing.assert_allclose(result.ref.cov_nev[j], expected,
                                        rtol=1e-12, atol=1e-12)
+            checked += 1
+    assert checked >= 10
+
+
+def test_minimize_sf_reports_the_value_it_minimised(data=data):
+    """The search evaluates the same pedal separation factor (Sm included)
+    that is reported after insertion -- one answer at each inserted minimum --
+    and inserts a point only where it is below its station's own value."""
+    from scipy.signal import argrelmin
+
+    surveys = generate_surveys(data)
+    reference = surveys["Reference well"]
+    checked = 0
+    for well in [k for k in surveys if k != "Reference well"]:
+        kop_depth = 900.0 if well == "10 - well" else -np.inf
+        plain = IscwsaClearance(reference, surveys[well], minimize_sf=False,
+                                kop_depth=kop_depth)
+        result = IscwsaClearance(reference, surveys[well], minimize_sf=True,
+                                 kop_depth=kop_depth)
+        found = {}
+        for i in argrelmin(plain.sf)[0].tolist():
+            dmd = plain.ref.delta_md[i:i + 2]
+            if len(dmd) < 2:
+                continue
+            got = plain._interval_minimum(i, dmd)
+            if got is not None:
+                assert got[1] < np.ravel(plain.sf)[i]
+                found[round(plain.ref.md[i] + got[0], 6)] = got[1]
+        inserted = np.where(np.asarray(result.ref.interpolated, dtype=bool))[0]
+        assert len(inserted) == len(found)
+        for j in inserted:
+            md = round(float(result.ref.md[j]), 6)
+            assert np.ravel(result.sf)[j] == pytest.approx(found[md], abs=1e-12)
             checked += 1
     assert checked >= 10

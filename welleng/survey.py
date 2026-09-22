@@ -1294,6 +1294,7 @@ class Survey(MinCurve):
         # move+rotate+scale transform (the header owns the georef state).
         sc = self.header.grid_scale_factor
         _A = np.array([[0.0, sc, 0.0], [sc, 0.0, 0.0], [0.0, 0.0, 1.0]])
+        self._local_to_nev = _A
         # ONE anchor (start_nev), ONE transform: every position field below is
         # a view of pos_nev, so they cannot disagree.
         _b = np.asarray(self.header.start_nev, dtype=float)
@@ -3004,7 +3005,7 @@ def _interpolate_node(survey: "Survey", x: float = 0, index: int = 0) -> Node:
     interpolated = not (x == 0 or x == survey.md[index + 1] - survey.md[index])
 
     return Node(
-        pos=_anchored_nev(survey, pos, index).tolist(),
+        pos=_anchored_nev(survey, pos, index, x).tolist(),
         vec=np.asarray(vec_nev).reshape(-1)[:3].tolist(),
         md=float(md),
         unit=survey.header.depth_unit,
@@ -3042,8 +3043,7 @@ def _interpolate_surveys(survey: "Survey", md: np.ndarray) -> "Survey":
     # -- the same rule as interpolate_md, so the two entry points agree.
     idx = np.clip(np.searchsorted(survey.md, md, side="left") - 1,
                   0, len(survey.md) - 2)
-    disp = np.atleast_2d(pos) - survey.poss[idx]
-    nev_new = survey.pos_nev[idx] + disp[:, [1, 0, 2]]
+    nev_new = _anchored_nev(survey, np.atleast_2d(pos), idx, md - survey.md[idx])
 
     # merge the interpolated stations with the original stations and sort on md
     len_svy = len(survey.md)
@@ -3119,7 +3119,7 @@ def _interpolate_pos_nev(
     The arc displacement comes from :meth:`MinCurve.interpolate` (the one arc
     kernel) and is added to station ``index``'s stored ``n, e, tvd``.
     """
-    return _anchored_nev(survey, survey.interpolate(survey.md[index] + x), index)
+    return _anchored_nev(survey, survey.interpolate(survey.md[index] + x), index, x)
 
 
 def _interior_cov_nev(survey: "Survey", index: int, x: float) -> np.ndarray:
@@ -3139,15 +3139,24 @@ def _interior_cov_nev(survey: "Survey", index: int, x: float) -> np.ndarray:
     return (cov[index] + mult * (cov[index + 1] - cov[index])).reshape(3, 3)
 
 
-def _anchored_nev(survey: "Survey", pos: np.ndarray, index: int) -> np.ndarray:
-    """A local (east, north, tvd) arc position re-expressed as N, E, TVD from
-    station ``index``'s stored ``n, e, tvd``."""
-    disp = pos - survey.poss[index]
-    return np.array([
-        survey.n[index] + disp[1],
-        survey.e[index] + disp[0],
-        survey.tvd[index] + disp[2],
-    ])
+def _anchored_nev(survey: "Survey", pos, index, x) -> np.ndarray:
+    """N, E, TVD of a point a distance ``x`` past station ``index``, from its
+    local (east, north, tvd) arc position ``pos``: station ``index``'s own
+    position plus the arc displacement from it, through the survey's own
+    georeferencing transform (grid scale factor included).
+
+    Each leg is anchored on its OWN station. Where positions were supplied
+    and differ from the minimum-curvature path (e.g. published values rounded
+    to the centimetre), a leg's end therefore lands up to that difference
+    away from the next station -- this is the anchoring the ISCWSA clearance
+    validation data follow, and distributing the closure along the leg
+    instead moved station separation factors three times further from the
+    published values. ``x`` is accepted for a uniform signature.
+    Scalar ``index`` with ``pos`` (3,), or arrays with ``pos`` (n, 3).
+    """
+    index = np.asarray(index)
+    disp = (np.asarray(pos, dtype=float) - survey.poss[index]) @ survey._local_to_nev.T
+    return survey.pos_nev[index] + disp
 
 
 def tvd_turning_points(survey: "Survey") -> np.ndarray:
