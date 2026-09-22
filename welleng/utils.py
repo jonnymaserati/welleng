@@ -542,6 +542,15 @@ class MinCurve:
         ``tvd`` is in the LOCAL frame (relative to station 0, like the TVD column
         of :attr:`poss`); ``Survey`` layers its datum on top. Empty if the target
         is never reached.
+
+        ⚠️ A TVD in a datum frame (e.g. an EDM or LAS TVD column) passed here
+        is offset by the first station's depth. Where that offset value still
+        lies inside the local TVD range it returns a WRONG measured depth;
+        where it does not, it returns ``[]``, indistinguishable from "never
+        reached". Both are silent: ``MinCurve`` holds no datum, so it cannot
+        detect either. Use :meth:`Survey.interpolate_tvd` (build
+        with :meth:`Survey.from_min_curve` and a ``start_nev``) when the TVD
+        carries a datum. A TVD equal to a turning point's TVD returns one MD.
         """
         z = self.poss[:, 2]
         u = np.cos(np.asarray(self.inc, dtype=float))

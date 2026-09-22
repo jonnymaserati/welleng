@@ -1608,9 +1608,10 @@ class Survey(MinCurve):
 
         Returns
         -------
-        node: we.node.Node object
+        node: we.node.Node object or None
             A node with attributes describing the point at the provided
-            measured depth.
+            measured depth, or ``None`` if ``md`` is above the first station
+            or beyond the last -- the survey is never extrapolated.
 
         Examples
         --------
@@ -1663,9 +1664,15 @@ class Survey(MinCurve):
         list of Node
             Every crossing of ``tvd``, sorted by measured depth (normally a
             single element; empty if ``tvd`` is outside the well's TVD range).
+            A ``tvd`` equal to a turning point's TVD is touched once, not
+            crossed, and returns ONE Node at the turning point.
 
         Notes
         -----
+        ``tvd`` is in this survey's own depth frame (the frame of
+        :attr:`tvd`), so the survey's start depth is accounted for here.
+        :meth:`MinCurve.interpolate_tvd` takes the LOCAL frame instead.
+
         Breaking change (welleng 0.15.0): returns a ``list`` of Nodes instead
         of a single Node. Use ``interpolate_tvd(tvd)[0]`` on a monotonic well
         for the previous behaviour.
@@ -2805,7 +2812,13 @@ def interpolate_mds(survey: "Survey", md: ArrayLike) -> "Survey":
 def interpolate_md(survey: "Survey", md: float) -> Optional["Survey"]:
     """
     Interpolates a survey at a given measured depth.
+
+    Returns ``None`` when ``md`` lies outside the survey -- above the first
+    station or beyond the last. There is no extrapolation at either end.
     """
+    if md < survey.md[0]:
+        return None  # above the first station: nothing was surveyed there
+
     # get the closest survey stations
     idx = np.searchsorted(survey.md, md, side="left") - 1
 
