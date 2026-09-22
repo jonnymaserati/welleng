@@ -11,6 +11,10 @@ tangents, so the vertical component is::
 
     u(d) = (sin(alpha - d) u1 + sin(d) u2) / sin(alpha)
 
+The implementation evaluates the tangent in the Rodrigues ``u``-form
+(``welleng.utils._arc_tangent``); the first proof shows the two are the same
+vector, so everything derived from the blend holds for the code.
+
 Each test proves one step with SymPy (residual simplifies to zero), then pins
 the implemented code against the proven form numerically.
 """
@@ -37,6 +41,18 @@ def _setup(sp):
     A = u1 * sp.sin(alpha)
     B = u1 * sp.cos(alpha) - u2
     return d, s, alpha, L, u1, u2, U, A, B
+
+
+def test_rodrigues_u_form_equals_the_slerp_blend(sp):
+    """cos(d) v1 + sin(d) (v2 - cos(alpha) v1) / sin(alpha) == SLERP blend."""
+    d, alpha = sp.symbols("d alpha", real=True)
+    v1 = sp.Matrix(sp.symbols("v1x v1y v1z", real=True))
+    v2 = sp.Matrix(sp.symbols("v2x v2y v2z", real=True))
+    u = (v2 - sp.cos(alpha) * v1) / sp.sin(alpha)
+    rodrigues = sp.cos(d) * v1 + sp.sin(d) * u
+    slerp = (sp.sin(alpha - d) * v1 + sp.sin(d) * v2) / sp.sin(alpha)
+    diff = (rodrigues - slerp).applyfunc(lambda e: sp.simplify(sp.expand_trig(e)))
+    assert diff == sp.zeros(3, 1)
 
 
 def test_vertical_travel_reduces_to_a_sin_plus_b_cos(sp):

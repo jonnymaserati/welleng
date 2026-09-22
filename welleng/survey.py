@@ -2924,8 +2924,10 @@ def _interpolate_node(survey: "Survey", x: float = 0, index: int = 0) -> Node:
     displacement from station ``index`` is added to that station's stored
     ``n, e, tvd`` -- so no intermediate two-station Survey is built. Agrees
     with the previous two-station route: directions bit-identical, positions
-    within 2.4 ulp on the ISCWSA 11-well set and synthetic builds, and ~1e-12 m
-    (about twice the previous route's error) at a 177 deg dogleg.
+    within 2.4 ulp on the ISCWSA 11-well set and synthetic builds. Near a pi
+    dogleg the half-angle position loses precision as ~``1/cos(theta/2)**2``
+    (see :meth:`MinCurve.interpolate`); at 177 deg it is ~1e-12 m, about twice
+    the previous route's error.
     """
     index = _ensure_int_or_float(index, int)  # type: ignore[assignment]
     x = _ensure_int_or_float(x, float)
