@@ -118,8 +118,23 @@ def _bbox(prims):
 # --------------------------------------------------------------------------
 # matplotlib (preview) + pdf/png via matplotlib
 # --------------------------------------------------------------------------
-def to_matplotlib(drawing: Drawing, ax=None):
-    """Render onto a matplotlib Axes (creating a Figure if needed). Returns fig."""
+def to_matplotlib(drawing: Drawing, ax=None, aspect="equal"):
+    """Render onto a matplotlib Axes (creating a Figure if needed). Returns fig.
+
+    ``aspect`` is passed to :meth:`~matplotlib.axes.Axes.set_aspect` and
+    defaults to ``"equal"``, which is right for a standalone drawing: the
+    geometry is metres in both directions, so anything else distorts it.
+
+    ⚠️ **Equal aspect resizes the AXES BOX, so a caller compositing this
+    drawing into a subplot will see its layout change** -- matplotlib shrinks
+    the box in whichever direction it must to satisfy the ratio, and which
+    direction that is depends on the figure. Two callers measured it on the
+    same panel: one lost height (0.770 -> 0.298), the other width
+    (0.168 -> 0.137). Nothing is out of range when this happens and no data
+    limit is wrong, which is why it is easy to miss -- the box is simply a
+    different size than the caller set. Pass ``aspect="auto"`` to keep the
+    box and let the drawing stretch.
+    """
     import matplotlib.pyplot as plt
 
     if ax is None:
@@ -151,7 +166,7 @@ def to_matplotlib(drawing: Drawing, ax=None):
             ax.plot(xs, ys, color=st.color, linewidth=lw,
                     linestyle=_LS_MPL.get(st.linestyle, "-"), zorder=5)
 
-    ax.set_aspect("equal")
+    ax.set_aspect(aspect)
     ax.axis("off")
     _mpl_title_block(ax, drawing)
     return fig
