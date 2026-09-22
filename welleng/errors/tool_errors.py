@@ -13,7 +13,12 @@ from typing import List, Optional
 # import imp
 
 # import welleng.error
-from ..utils import NEV_to_HLA
+from ..utils import (
+    NEV_to_HLA,
+    _arc_geometry,
+    _arc_inclination_crossings,
+    _arc_tangent,
+)
 from .interpreter import evaluate_formula
 
 
@@ -1085,20 +1090,17 @@ class ToolError:
         if omega < 1e-9:
             vg = va
         else:
-            so = np.sin(omega)
-
-            def vec(t):
-                return (np.sin((1.0 - t) * omega) * va
-                        + np.sin(t * omega) * vb) / so
-
-            lo_t, hi_t = 0.0, 1.0             # V(t) decreases monotonically
-            for _ in range(60):
-                mt = 0.5 * (lo_t + hi_t)
-                if vec(mt)[2] > target_v:
-                    lo_t = mt
-                else:
-                    hi_t = mt
-            vg = vec(0.5 * (lo_t + hi_t))
+            # closed form (Sawaryn & Thorogood 2005, Eqs. 20-22 + Eq. 1): the
+            # subtended angle where the inclination reaches the gate; the first
+            # crossing from station ``start - 1``. With none in range (the gate
+            # is touched only at an end), take the nearer end.
+            roots = _arc_inclination_crossings(va[2], vb[2], omega, target_v)
+            if roots:
+                d = min(roots)
+            else:
+                d = 0.0 if abs(va[2] - target_v) <= abs(vb[2] - target_v) else omega
+            g = _arc_geometry(va, vb, omega, omega, d)
+            vg = _arc_tangent(va, vb, *g)
         gate_azi = float(np.arctan2(vg[1], vg[0]))
         scal = {k: v for k, v in bindings.items() if np.isscalar(v)}
         scal.update({

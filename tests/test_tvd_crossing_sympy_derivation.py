@@ -136,3 +136,33 @@ def test_implemented_turning_point_is_horizontal():
         assert inc_at == pytest.approx(np.pi / 2, abs=1e-9)
         checked += 1
     assert checked > 20
+
+
+def test_inclination_crossing_reduces_to_eqs_20_to_22(sp):
+    """u(d) = cos(theta*) <=> A sin d + B cos d = C with Sawaryn Eqs. 20-22."""
+    d, _, alpha, _, u1, u2, U, _, _ = _setup(sp)
+    ct = sp.Symbol("ct", real=True)
+    lhs = (U - ct) * sp.sin(alpha)
+    rhs = (u2 - sp.cos(alpha) * u1) * sp.sin(d) + (sp.sin(alpha) * u1) * sp.cos(d) \
+        - sp.sin(alpha) * ct
+    assert sp.simplify(sp.expand_trig(lhs - rhs)) == 0
+
+
+def test_implemented_inclination_crossing_hits_the_target():
+    """The root the code returns has exactly the target inclination on the arc."""
+    from welleng.utils import _arc_geometry, _arc_inclination_crossings, _arc_tangent
+
+    rng = np.random.default_rng(4)
+    checked = 0
+    for mc in _arcs():
+        va, vb = mc._tangents[0], mc._tangents[1]
+        alpha_ = mc.dogleg[1]
+        lo, hi = sorted(mc.inc)
+        if hi - lo < 1e-6:
+            continue
+        target = rng.uniform(lo, hi)
+        for dd in _arc_inclination_crossings(va[2], vb[2], alpha_, np.cos(target)):
+            t = _arc_tangent(va, vb, *_arc_geometry(va, vb, alpha_, alpha_, dd))
+            assert np.arccos(np.clip(t[2], -1, 1)) == pytest.approx(target, abs=1e-9)
+            checked += 1
+    assert checked > 200

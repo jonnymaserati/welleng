@@ -31,7 +31,6 @@ from .utils import (
     HLA_to_NEV,
     NEV_to_HLA,
     get_xyz,
-    min_curve_step,
     radius_from_dls,
 )
 from .error import ErrorModel, ERROR_MODELS
@@ -2951,17 +2950,12 @@ def _interpolate_node(survey: "Survey", x: float = 0, index: int = 0) -> Node:
 
     md = survey.md[index] + x
     pos, inc, azi = survey.interpolate(md, angles=True)
-    disp = pos - survey.poss[index]          # local (east, north, tvd)
     vec_nev = get_vec(inc, azi, deg=False, nev=True)
 
     interpolated = not (x == 0 or x == survey.md[index + 1] - survey.md[index])
 
     return Node(
-        pos=[
-            survey.n[index] + disp[1],
-            survey.e[index] + disp[0],
-            survey.tvd[index] + disp[2],
-        ],
+        pos=_anchored_nev(survey, pos, index).tolist(),
         vec=np.asarray(vec_nev).reshape(-1)[:3].tolist(),
         md=float(md),
         unit=survey.header.depth_unit,
@@ -3073,25 +3067,22 @@ def _interpolate_pos_nev(
     position at distance ``x`` from ``survey[index]`` without constructing
     a Survey object.  Used as the inner cost function for closest-point
     optimisations in clearance calculations.
-    """
-    if survey.dogleg[index + 1] == 0:
-        inc2 = survey.inc_rad[index]
-        azi2 = survey.azi_grid_rad[index]
-    else:
-        t1 = survey.vec_xyz[index]
-        t2 = survey.vec_xyz[index + 1]
-        total_dogleg = survey.dogleg[index + 1]
-        dogleg = x * (total_dogleg / survey.delta_md[index + 1])
-        t = (
-            (math.sin(total_dogleg - dogleg) / math.sin(total_dogleg)) * t1
-            + (math.sin(dogleg) / math.sin(total_dogleg)) * t2
-        )
-        t /= np.linalg.norm(t)
-        inc2, azi2 = get_angles(t)[0]
 
-    pos = np.array([survey.n[index], survey.e[index], survey.tvd[index]])
-    step = min_curve_step(x, survey.inc_rad[index], survey.azi_grid_rad[index], inc2, azi2)
-    return pos + step
+    The arc displacement comes from :meth:`MinCurve.interpolate` (the one arc
+    kernel) and is added to station ``index``'s stored ``n, e, tvd``.
+    """
+    return _anchored_nev(survey, survey.interpolate(survey.md[index] + x), index)
+
+
+def _anchored_nev(survey: "Survey", pos: np.ndarray, index: int) -> np.ndarray:
+    """A local (east, north, tvd) arc position re-expressed as N, E, TVD from
+    station ``index``'s stored ``n, e, tvd``."""
+    disp = pos - survey.poss[index]
+    return np.array([
+        survey.n[index] + disp[1],
+        survey.e[index] + disp[0],
+        survey.tvd[index] + disp[2],
+    ])
 
 
 def tvd_turning_points(survey: "Survey") -> np.ndarray:

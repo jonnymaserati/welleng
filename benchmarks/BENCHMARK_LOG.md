@@ -714,3 +714,19 @@ Flat within run-to-run noise. Parity against the previous output over 17 surveys
 11-well set and reference, reversing, near-pi, feet, true-referenced, straight): md and
 interpolated flags identical; inc within 6.4e-15 rad, azimuth within 1.2e-15 rad x
 sin(inc); positions within 3.0 ulp. Machine: this dev box, .venv312.
+
+## 2026-09-22 — `_interpolate_pos_nev` via `MinCurve.interpolate` (0.30.0.dev0)
+
+The clearance closest-point cost function computed its interpolated tangent with its own
+SLERP blend and stepped with `min_curve_step`. It now takes the arc position from
+`MinCurve.interpolate`, anchored at the bracketing station's stored `n, e, tvd` (the same
+anchoring `interpolate_md` uses; one helper, `_anchored_nev`).
+
+| `_interpolate_pos_nev`, one point, 101-station survey | µs/call |
+|---|---|
+| own SLERP + `min_curve_step` | 72.4 |
+| `MinCurve.interpolate` | **39.5** |
+
+**1.8x.** Parity vs the previous output over 4500 points (ISCWSA 11-well set and
+reference, near-pi, straight, reversing): max |dpos| 2.7e-12 m. ISCWSA clearance tests
+(published SF) unchanged. Machine: this dev box, .venv312.

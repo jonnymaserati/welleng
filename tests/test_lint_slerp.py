@@ -13,13 +13,10 @@ from welleng.lint import find_slerp_arc_tangent
 
 PKG = welleng.__path__[0]
 
-#: The one instance still present, pinned by source so a NEW one fails and
-#: removing this one forces this list to be updated. It is the position-only
-#: inner cost function of clearance's closest-point search; switching it to
-#: MinCurve.interpolate needs a benchmark first (hot path).
-KNOWN_REMAINING = {
-    "(math.sin(total_dogleg - dogleg) / math.sin(total_dogleg)) * t1",
-}
+#: Instances allowed to remain, pinned by source so a NEW one fails and
+#: removing one forces this set to be updated. Empty: every arc tangent in the
+#: package goes through MinCurve.interpolate.
+KNOWN_REMAINING: set = set()
 
 
 def test_detects_the_slerp_blend(tmp_path):

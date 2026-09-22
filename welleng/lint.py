@@ -141,6 +141,11 @@ _INTERP_FUNCS = {"interp"}          # np.interp / numpy.interp / bare interp
 #: positions and the residual is stated.
 NOQA = "# lint: trajectory-interp ok"
 
+#: Suppresses the SLERP rule on one line. For a symbolic derivation or a test
+#: oracle that states the published form (Sawaryn & Thorogood 2005, Eq. 13) on
+#: purpose -- never for numeric code that runs.
+SLERP_NOQA = "# lint: slerp ok"
+
 
 @dataclass(frozen=True)
 class Finding:
@@ -162,6 +167,11 @@ class Finding:
         return "the survey's own minimum-curvature interpolators"
 
     def __str__(self) -> str:
+        if self.axis == "slerp":
+            return (f"{self.path}:{self.line}: hand-written SLERP arc tangent "
+                    f"-- a second implementation of the arc kernel.\n"
+                    f"    {self.source}\n"
+                    f"    use: MinCurve.interpolate(md, angles=True)")
         return (f"{self.path}:{self.line}: linear interpolation of "
                 f"{self.axis!r} -- a survey between stations is a circular "
                 f"ARC.\n    {self.source}\n    use: {self.replacement}")
@@ -308,23 +318,55 @@ def _is_sin(node: ast.AST) -> bool:
     return isinstance(node, ast.Call) and name == "sin" and len(node.args) == 1
 
 
+def _is_one(node: ast.AST) -> bool:
+    return isinstance(node, ast.Constant) and node.value in (1, 1.0)
+
+
+def _complement(arg: ast.AST) -> bool:
+    """``A - B``, or ``1 - f`` anywhere in the argument (``(1 - f) * A``,
+    ``(1 - f)[:, None] * A``) -- the ``sin(alpha - alpha*)`` weight of a SLERP
+    blend in its usual spellings."""
+    if isinstance(arg, ast.BinOp) and isinstance(arg.op, ast.Sub):
+        return True
+    return any(isinstance(n, ast.BinOp) and isinstance(n.op, ast.Sub)
+               and _is_one(n.left) for n in ast.walk(arg))
+
+
+def _has_sin(node: ast.AST) -> bool:
+    return any(_is_sin(n) for n in ast.walk(node))
+
+
 class _SlerpVisitor(ast.NodeVisitor):
-    """``... sin(A - B) ... / sin(A)``: the SLERP blend of two tangents."""
+    """A SLERP blend of two tangents: ``sin(complement) ... / sin(...)``.
+
+    The denominator may be the sine itself or a name assigned from an
+    expression containing one (``s = np.where(straight, 1.0, np.sin(dl))``).
+    """
 
     def __init__(self, path: str, lines: Sequence[str]) -> None:
         self.path, self.lines, self.findings = path, lines, []
+        self._sin_names: set = set()
+
+    def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802 (ast API)
+        if _has_sin(node.value):
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name):
+                    self._sin_names.add(tgt.id)
+        self.generic_visit(node)
+
+    def _sin_denominator(self, node: ast.AST) -> bool:
+        return _is_sin(node) or (isinstance(node, ast.Name)
+                                 and node.id in self._sin_names)
 
     def visit_BinOp(self, node: ast.BinOp) -> None:  # noqa: N802 (ast API)
-        if isinstance(node.op, ast.Div) and _is_sin(node.right):
-            denom = ast.dump(node.right.args[0])  # type: ignore[attr-defined]
+        if isinstance(node.op, ast.Div) and self._sin_denominator(node.right):
             for sub in ast.walk(node.left):
-                arg = sub.args[0] if _is_sin(sub) else None  # type: ignore[attr-defined]
-                if (isinstance(arg, ast.BinOp) and isinstance(arg.op, ast.Sub)
-                        and ast.dump(arg.left) == denom):
-                    src = self.lines[node.lineno - 1].strip()
-                    self.findings.append(Finding(
-                        path=self.path, line=node.lineno, axis="slerp",
-                        source=src))
+                if _is_sin(sub) and _complement(sub.args[0]):  # type: ignore[attr-defined]
+                    line = self.lines[node.lineno - 1]
+                    if SLERP_NOQA not in line:
+                        self.findings.append(Finding(
+                            path=self.path, line=node.lineno, axis="slerp",
+                            source=line.strip()))
                     break
         self.generic_visit(node)
 
@@ -369,14 +411,18 @@ def find_slerp_arc_tangent(
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    """CLI: ``python -m welleng.lint [--quiet] PATH...``. Exit 1 on findings."""
+    """CLI: ``python -m welleng.lint [--quiet] PATH...``. Exit 1 on findings.
+
+    Runs both rules: linear interpolation of a trajectory axis, and a
+    hand-written SLERP arc tangent.
+    """
     args = list(sys.argv[1:] if argv is None else argv)
     quiet = "--quiet" in args
     args = [a for a in args if not a.startswith("-")]
     if not args:
         print("usage: python -m welleng.lint [--quiet] PATH...", file=sys.stderr)
         return 2
-    findings = find_linear_survey_interpolation(args)
+    findings = find_linear_survey_interpolation(args) + find_slerp_arc_tangent(args)
     if not quiet:
         for f in findings:
             print(f)

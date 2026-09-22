@@ -226,6 +226,31 @@ def _arc_tvd_crossings(u1, u2, alpha, delta_md, dvert):
     a = u1 * np.sin(alpha)
     b = u1 * np.cos(alpha) - u2
     c = dvert * alpha * np.sin(alpha) / delta_md + b
+    return _sin_cos_roots(a, b, c, alpha)
+
+
+def _arc_inclination_crossings(u1, u2, alpha, cos_target):
+    """Subtended angles in ``[0, alpha]`` at which a min-curve arc's
+    inclination equals a target. Closed-form *Interpolation on Inclination* of
+    Sawaryn & Thorogood (2005, SPE-84246-PA), Eqs. 20-22 + Eq. 1: the tangent's
+    vertical component equals ``cos_target`` where
+    ``A sin d + B cos d = C`` with ``A = u2 - cos(alpha) u1``,
+    ``B = sin(alpha) u1``, ``C = sin(alpha) cos_target``. ``u1``/``u2`` are the
+    start/end unit-tangent vertical components. Returns 0, 1 or 2 roots.
+    """
+    return _sin_cos_roots(
+        u2 - np.cos(alpha) * u1,
+        np.sin(alpha) * u1,
+        np.sin(alpha) * cos_target,
+        alpha,
+    )
+
+
+def _sin_cos_roots(a, b, c, alpha):
+    """Roots in ``[0, alpha]`` of ``a sin d + b cos d = c`` (Sawaryn & Thorogood
+    2005, Eq. 1), by the half-angle substitution
+    ``d = 2 atan2(a +/- sqrt(a^2 + b^2 - c^2), b + c)``. Discriminant guarded;
+    returns 0, 1 or 2 roots."""
     disc = a * a + b * b - c * c
     if disc < -1e-12:
         return []
