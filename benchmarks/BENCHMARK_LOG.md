@@ -698,3 +698,19 @@ against a 50-digit reference the new route is 2.35e-12 m and the previous 1.21e-
 Also fixed in passing: `_interpolate_survey` set `azi_reference = 'grid'` on the CALLER's
 header, so one `interpolate_md` on a true-referenced survey left it reading as grid. It now
 works on a copy (`test_interpolate_md_does_not_touch_the_callers_header`).
+
+## 2026-09-22 — `interpolate_mds` angles via `MinCurve.interpolate` (0.30.0.dev0)
+
+`_interpolate_surveys` carried its own SLERP blend of the station tangents; it now takes
+inc/azi from `MinCurve.interpolate(md, angles=True)`, the same arc kernel `interpolate_md`
+uses.
+
+| `interpolate_mds`, 101 stations + 1000 mds | ms/call |
+|---|---|
+| own SLERP blend | 1.35 |
+| `MinCurve.interpolate` | 1.40 |
+
+Flat within run-to-run noise. Parity against the previous output over 17 surveys (ISCWSA
+11-well set and reference, reversing, near-pi, feet, true-referenced, straight): md and
+interpolated flags identical; inc within 6.4e-15 rad, azimuth within 1.2e-15 rad x
+sin(inc); positions within 3.0 ulp. Machine: this dev box, .venv312.

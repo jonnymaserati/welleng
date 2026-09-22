@@ -207,3 +207,45 @@ def test_grid_header_copies():
     g = grid_header(h)
     assert (h.azi_reference, g.azi_reference) == ("true", "grid")
     assert g is not h and g.mag_defaults is not h.mag_defaults
+
+
+# -- interpolate_mds vs interpolate_md: one arc kernel, two entry points --
+
+def _computed_position_surveys():
+    """Surveys whose station positions are welleng's own (none supplied)."""
+    yield Survey_(md=[0, 500, 1000, 1500, 2000, 2500], inc=[0, 0, 30, 70, 100, 100],
+                  azi=[0] * 6, start_nev=[10.0, 20.0, 1000.0])
+    yield Survey_(md=[0, 100, 200, 300], inc=[0, 5, 178, 178], azi=[0, 0, 180, 180])
+    yield Survey_(md=[0, 1000, 3000, 6000], inc=[0, 20, 60, 90], azi=[0, 30, 60, 90],
+                  unit="feet", header=we.survey.SurveyHeader(depth_unit="feet"))
+    yield Survey_(md=[0, 800, 1600, 2400], inc=[0, 25, 55, 80], azi=[10, 40, 70, 100],
+                  header=we.survey.SurveyHeader(azi_reference="true", convergence=1.3))
+    yield Survey_(md=[0, 300, 600, 900], inc=[0] * 4, azi=[0] * 4)
+
+
+def test_interpolate_mds_agrees_with_interpolate_md():
+    """Same arc kernel: directions to 1 ulp; positions to 1e-11 m (measured 1.7e-12)."""
+    rng = np.random.default_rng(9)
+    checked = 0
+    for s in _computed_position_surveys():
+        q = np.setdiff1d(np.sort(rng.uniform(s.md[0], s.md[-1], 100)), s.md)
+        r = s.interpolate_mds(q)
+        mask = np.array(r.interpolated, dtype=bool)
+        for j in np.where(mask)[0]:
+            node = s.interpolate_md(r.md[j])
+            np.testing.assert_allclose(node.vec_nev, r.vec_nev[j], rtol=0,
+                                       atol=2 * np.finfo(float).eps)
+            np.testing.assert_allclose(node.pos_nev, r.pos_nev[j], rtol=0, atol=1e-11)
+            checked += 1
+    assert checked > 400
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "KNOWN, unresolved: with start_xyz given, pos_nev adds the wellhead on top "
+    "of n/e/tvd, so the two position fields of one survey disagree by the "
+    "wellhead offset."))
+def test_pos_nev_and_n_e_tvd_agree_when_start_xyz_is_given():
+    s = Survey_(md=[0, 500, 1000], inc=[0, 10, 30], azi=[0, 20, 40],
+                n=[-50.0, 0.0, 0.0], e=[-500.0, 0.0, 0.0], tvd=[0.0, 0.0, 0.0],
+                start_xyz=[-500.0, -50.0, 0.0], start_nev=[-50.0, -500.0, 0.0])
+    np.testing.assert_allclose(s.pos_nev[0], [s.n[0], s.e[0], s.tvd[0]])

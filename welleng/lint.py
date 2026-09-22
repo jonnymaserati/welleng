@@ -302,6 +302,72 @@ def find_linear_survey_interpolation(
     return out
 
 
+def _is_sin(node: ast.AST) -> bool:
+    f = getattr(node, "func", None)
+    name = getattr(f, "attr", None) or getattr(f, "id", None)
+    return isinstance(node, ast.Call) and name == "sin" and len(node.args) == 1
+
+
+class _SlerpVisitor(ast.NodeVisitor):
+    """``... sin(A - B) ... / sin(A)``: the SLERP blend of two tangents."""
+
+    def __init__(self, path: str, lines: Sequence[str]) -> None:
+        self.path, self.lines, self.findings = path, lines, []
+
+    def visit_BinOp(self, node: ast.BinOp) -> None:  # noqa: N802 (ast API)
+        if isinstance(node.op, ast.Div) and _is_sin(node.right):
+            denom = ast.dump(node.right.args[0])  # type: ignore[attr-defined]
+            for sub in ast.walk(node.left):
+                arg = sub.args[0] if _is_sin(sub) else None  # type: ignore[attr-defined]
+                if (isinstance(arg, ast.BinOp) and isinstance(arg.op, ast.Sub)
+                        and ast.dump(arg.left) == denom):
+                    src = self.lines[node.lineno - 1].strip()
+                    self.findings.append(Finding(
+                        path=self.path, line=node.lineno, axis="slerp",
+                        source=src))
+                    break
+        self.generic_visit(node)
+
+
+def find_slerp_arc_tangent(
+    paths: Iterable[str] | str,
+    exclude: Sequence[str] = (".venv", "site-packages", "build", ".git"),
+) -> List[Finding]:
+    """Every hand-written SLERP blend of arc tangents under ``paths``.
+
+    ``(sin(a - d) t1 + sin(d) t2) / sin(a)`` re-implements the minimum-curvature
+    arc tangent that :meth:`welleng.utils.MinCurve.interpolate` already
+    provides (``angles=True``), there in the Rodrigues ``u``-form, which divides
+    by ``sin(a)`` once in set-up rather than per query. A second
+    implementation agrees today and drifts the first time either is changed.
+    Call ``MinCurve.interpolate`` instead.
+
+    Same contract as :func:`find_linear_survey_interpolation`: empty when
+    clean; an unparseable file is reported, not skipped.
+    """
+    if isinstance(paths, (str, pathlib.Path)):
+        paths = [paths]
+    out: List[Finding] = []
+    for p in paths:
+        root = pathlib.Path(p)
+        files = sorted(root.rglob("*.py")) if root.is_dir() else [root]
+        for f in files:
+            sp = str(f)
+            if any(x in sp for x in exclude):
+                continue
+            try:
+                text = f.read_text(encoding="utf-8")
+                tree = ast.parse(text)
+            except (OSError, SyntaxError, UnicodeDecodeError) as exc:
+                out.append(Finding(path=sp, line=0, axis="<unreadable>",
+                                   source=f"could not parse: {exc}"))
+                continue
+            v = _SlerpVisitor(sp, text.splitlines())
+            v.visit(tree)
+            out.extend(v.findings)
+    return out
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """CLI: ``python -m welleng.lint [--quiet] PATH...``. Exit 1 on findings."""
     args = list(sys.argv[1:] if argv is None else argv)

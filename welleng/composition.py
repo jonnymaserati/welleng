@@ -52,7 +52,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from .conditioning import ShareMode
-from .survey import Survey, SurveyHeader, grid_header
+from .survey import Survey, SurveyHeader, derived_header, grid_header
 
 __all__ = ["SurveySection", "SurveyComposition"]
 
@@ -578,9 +578,7 @@ class SurveyComposition:
             # depth — depth-from-surface transferred at the tie, so the new
             # realisation carries none of it. (Named ISCWSA models bind
             # ``MD`` and are unaffected.)
-            import copy
-            header = copy.copy(header)
-            header._tmd_datum = float(groups[0].md[0])
+            header = derived_header(header, _tmd_datum=float(groups[0].md[0]))
         run = Survey(
             md=md, inc=inc, azi=azi, deg=False, header=header,
             error_model=groups[0].error_model, start_nev=start_nev,

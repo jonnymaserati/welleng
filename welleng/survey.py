@@ -2735,6 +2735,19 @@ class TurnPoint:
         self.location = location
 
 
+def derived_header(header: "SurveyHeader", **fields: Any) -> "SurveyHeader":
+    """A copy of ``header`` with ``fields`` set; the original is not modified.
+
+    For building a survey from another one with some header values changed.
+    Setting them on the original header instead would change the survey it
+    belongs to.
+    """
+    h = copy.deepcopy(header)
+    for name, value in fields.items():
+        setattr(h, name, value)
+    return h
+
+
 def grid_header(header: "SurveyHeader") -> "SurveyHeader":
     """A copy of ``header`` whose azimuths are grid-referenced.
 
@@ -2742,9 +2755,7 @@ def grid_header(header: "SurveyHeader") -> "SurveyHeader":
     (``azi_grid_rad``): building it on the original header would apply the
     grid convergence a second time. The original header is not modified.
     """
-    h = copy.deepcopy(header)
-    h.azi_reference = "grid"
-    return h
+    return derived_header(header, azi_reference="grid")
 
 
 def get_node(
@@ -2815,13 +2826,7 @@ def interpolate_mds(survey: "Survey", md: ArrayLike) -> "Survey":
     assert md[0] >= survey.md[0], "The shortest md is not within the survey"
     assert md[-1] <= survey.md[-1], "The largest md is beyond the survey"
 
-    # get the closest (preceding) survey stations
-    idxs = np.searchsorted(survey.md, md, side="left") - 1
-    idxs = np.clip(idxs, 0, len(survey.md) - 2)
-
-    xs = md - survey.md[idxs]
-
-    return _interpolate_surveys(survey, md, xs, idxs)
+    return _interpolate_surveys(survey, md)
 
 
 def interpolate_md(survey: "Survey", md: float) -> Optional["Survey"]:
@@ -2965,12 +2970,10 @@ def _interpolate_node(survey: "Survey", x: float = 0, index: int = 0) -> Node:
     )
 
 
-def _interpolate_surveys(
-    survey: "Survey", md: np.ndarray, xs: np.ndarray, indexes: np.ndarray
-) -> "Survey":
+def _interpolate_surveys(survey: "Survey", md: np.ndarray) -> "Survey":
     """
-    Interpolate multiple points at distances ``xs`` between their respective
-    pairs of survey stations using minimum curvature. Vectorized equivalent
+    Interpolate the survey at several measured depths and return a new Survey
+    of the original stations plus the interpolated ones. Vectorized equivalent
     of `_interpolate_survey`.
 
     Parameters
@@ -2978,15 +2981,8 @@ def _interpolate_surveys(
         survey: welleng.Survey
             A survey object with at least two survey stations.
         md: (,n) array of floats
-            The measured depths of the points of interest. Assumes that
-            each value in md is not already in survey.md.
-        xs: (,n) array of floats
-            Lengths along the well path from each indexed survey station to
-            perform the interpolation at. Must be less than the length to the
-            next survey station.
-        indexes: (,n) array of ints
-            The indexes of the survey station from which to interpolate each
-            x in xs.
+            The measured depths of the points of interest, inside the survey.
+            Assumes that no value in md is already in survey.md.
 
     Returns
     -------
@@ -2994,38 +2990,9 @@ def _interpolate_surveys(
             Note that an `interpolated` property is added indicating if the
             survey station is interpolated (True) or not (False).
     """
-    assert indexes[-1] < len(survey.md) - 1, "Index is out of range"
-
-    total_doglegs = survey.dogleg[indexes + 1]
-    azi, inc = np.zeros(len(xs)), np.zeros(len(xs))
-
-    # regions which are effectively straight (tangent sections)
-    mask = np.where(total_doglegs < 1e-14)
-    azi[mask] = survey.azi_grid_rad[indexes][mask]
-    inc[mask] = survey.inc_rad[indexes][mask]
-
-    # regions which are not straight
-    mask = np.where(total_doglegs >= 1e-14)
-    t1 = survey.vec_xyz[indexes][mask]
-    t2 = survey.vec_xyz[indexes + 1][mask]
-
-    dogleg = (
-        xs[mask] * (total_doglegs[mask] / survey.delta_md[indexes + 1][mask])
-    )
-
-    t = (
-        t1 * (
-            np.sin(total_doglegs[mask] - dogleg)
-            / np.sin(total_doglegs[mask])
-        )[:, np.newaxis]
-        + t2 * (np.sin(dogleg) / np.sin(total_doglegs[mask]))[:, np.newaxis]
-    )
-
-    # normalise tangent vectors
-    t = t / np.linalg.norm(t, axis=-1).reshape(-1, 1)
-
-    inc_azi = get_angles(t)
-    inc[mask], azi[mask] = inc_azi[:, 0], inc_azi[:, 1]
+    # inc/azi from the one arc kernel (MinCurve.interpolate, Rodrigues tangent);
+    # azi is grid-referenced because MinCurve was built on azi_grid_rad
+    _, inc, azi = survey.interpolate(md, angles=True)
 
     # merge the interpolated stations with the original stations and sort on md
     len_svy = len(survey.md)
