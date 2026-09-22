@@ -15,7 +15,8 @@ from scipy.spatial.distance import cdist
 
 from .mesh import WellMesh, to_trimesh
 from .survey import (
-    Survey, _interpolate_survey, _interpolate_pos_nev, grid_header, slice_survey
+    Survey, _interior_cov_nev, _interpolate_survey, _interpolate_pos_nev,
+    slice_survey,
 )
 from .utils import NEV_to_HLA
 
@@ -75,17 +76,6 @@ def _closest_x_on_arc(P0, t0, t1, delta_md, dogleg, Q, eps=1e-9):
     return theta * R
 
 
-
-def _inserted_positions(survey, i, node) -> dict:
-    """``n``/``e``/``tvd`` for ``survey`` with ``node`` inserted at index ``i``
-    -- only when the survey's positions were supplied, so the rebuilt survey
-    keeps them rather than recomputing (the rule interpolate_md and
-    interpolate_mds follow). Empty otherwise: a computed survey recomputes to
-    the same positions."""
-    if survey.supplied_nev is None:
-        return {}
-    nev = np.insert(survey.pos_nev, i, node.pos_nev, axis=0)
-    return {"n": nev[:, 0], "e": nev[:, 1], "tvd": nev[:, 2]}
 
 class Clearance:
     """
@@ -634,19 +624,13 @@ class IscwsaClearance(Clearance):
             self.get_sf_mins()
 
     @staticmethod
-    def _interior_cov(survey, idx, x, mult):
+    def _interior_cov(survey, idx, x):
         """Covariance at an interior point ``x`` along the leg starting at
-        station ``idx`` of ``survey``. Uses the arc-faithful analytical
-        ``ErrorModel.cov_nev_at`` when the survey carries an error model
-        (the ~25%-near-doglegs fix); falls back to linear covariance
-        interpolation (``mult`` = arc fraction) when it does not -- e.g. a
-        KOP-sliced reference or a survey supplied with a bare ``cov_nev``.
+        station ``idx`` of ``survey`` -- the single interior-covariance rule,
+        :func:`welleng.survey._interior_cov_nev` (analytical ``cov_nev_at``
+        with an error model, linear by arc fraction without one).
         """
-        err = getattr(survey, 'err', None)
-        if err is not None:
-            return err.cov_nev_at(survey.md[idx] + x).reshape(3, 3)
-        cov = survey.cov_nev
-        return (cov[idx] + mult * (cov[idx + 1] - cov[idx])).reshape(3, 3)
+        return _interior_cov_nev(survey, idx, x)
 
     def _get_sf_min(self, x, i, delta_md):
         # scipy.optimize.minimize passes x as a 1-element array; extract scalar
@@ -661,15 +645,13 @@ class IscwsaClearance(Clearance):
         if x < 0:
             ii = i - 1
             xx = delta_md[0] + x
-            mult = xx / delta_md[0]
         else:
             ii = i
             xx = x
-            mult = xx / delta_md[1]
 
         # Interpolated reference position and covariance — no Survey needed
         ref_pos = _interpolate_pos_nev(self.ref, xx, ii)
-        ref_cov = self._interior_cov(self.ref, ii, xx, mult)
+        ref_cov = self._interior_cov(self.ref, ii, xx)
         ref_r = self.Rr[ii + 1]
 
         # Find closest point on offset in the two intervals around self.idx[i]
@@ -695,7 +677,7 @@ class IscwsaClearance(Clearance):
                 best_dist = res_fun
                 t_mult = xo / bound if bound > 0 else 0.0
                 best_u = off_pos - ref_pos
-                best_off_cov = self._interior_cov(self.offset, oi, xo, t_mult)
+                best_off_cov = self._interior_cov(self.offset, oi, xo)
                 best_off_r = self.Ro[oi] + t_mult * (self.Ro[oi + 1] - self.Ro[oi])
 
         dist = best_dist
@@ -756,46 +738,11 @@ class IscwsaClearance(Clearance):
                 ))
 
         if bool(sf_interpolated):
-            for md, sf in sf_interpolated:
-                # i = np.searchsorted(self.sf[:, 0], md, side='right')
-                i = np.searchsorted(self.ref.md, md, side='right')
-                self.sf = np.insert(
-                    self.sf, i, np.array([md, sf, 1]), axis=0
-                )
-
-                node = self.ref.interpolate_md(md)
-
-                sh = grid_header(self.ref.header)
-
-                survey = Survey(
-                    md=np.insert(
-                        self.ref.md, i, node.md
-                    ),
-                    inc=np.insert(
-                        self.ref.inc_rad, i, node.inc_rad
-                    ),
-                    azi=np.insert(
-                        self.ref.azi_grid_rad, i, node.azi_rad
-                    ),
-                    cov_nev=np.insert(
-                        self.ref.cov_nev, i, node.cov_nev, axis=0
-                    ),
-                    **_inserted_positions(self.ref, i, node),
-                    start_nev=self.ref.start_nev,
-                    start_xyz=self.ref.start_xyz,
-                    deg=False,
-                    interpolated=np.insert(
-                        self.ref.interpolated, i, True
-                    ),
-                    radius=np.insert(
-                        self.ref.radius, i, self.ref.radius[i]
-                    ),
-                    header=sh
-                )
-
-                self.ref = survey
-
-                pass
+            # Insert the minima into the reference with the ONE interpolation:
+            # positions, angles, radius, flags and -- the point of it --
+            # covariance from the interior-covariance rule, not zeros.
+            self.ref = self.ref.interpolate_mds(
+                sorted(md for md, _ in sf_interpolated))
 
             clearance_args = (deepcopy(self.ref), self.offset)
             clearance_kwargs = dict(

@@ -3079,42 +3079,26 @@ def _interpolate_surveys(survey: "Survey", md: np.ndarray) -> "Survey":
         error_model=None
     )
 
-    survey_interpolated.interpolated = ~np.isin(
-        survey_interpolated.md, survey.md
-    )
+    was = getattr(survey, "interpolated", None)
+    was = (np.zeros(len(survey.md), bool) if was is None
+           else np.asarray(was, dtype=bool))
+    survey_interpolated.interpolated = ~np.isin(survey_interpolated.md, survey.md)
+    # a station of the source that was itself interpolated stays flagged
+    survey_interpolated.interpolated[
+        np.isin(survey_interpolated.md, survey.md[was])] = True
 
-    # carry the wellbore radius from the preceding station and, if present,
-    # linearly interpolate the covariance between stations (mirrors the scalar
-    # `_interpolate_survey` covariance interpolation).
-    i = -1
-    radii = []
-    cov_nev = []
-    unit_cov_nev = 0
-    for (station_md, is_interpolated) in zip(
-        survey_interpolated.md,
-        survey_interpolated.interpolated
-    ):
-        if not is_interpolated:
-            i += 1
-            if survey.cov_nev is not None:
-                j = 1 if i < len(survey.md) - 1 else 0
-                if j == 1:
-                    delta_md = survey.md[i + j] - survey.md[i]
-                    unit_cov_nev = (
-                        survey.cov_nev[i + j] - survey.cov_nev[i]
-                    ) / delta_md
-                else:
-                    unit_cov_nev = 0
-        radii.append(survey.radius[i])
-        if survey.cov_nev is not None:
-            cov_nev.append(
-                survey.cov_nev[i]
-                + ((station_md - survey.md[i]) * unit_cov_nev)
-            )
-
-    survey_interpolated.radius = np.array(radii)
-    if bool(cov_nev):
-        survey_interpolated.cov_nev = np.array(cov_nev)
+    # carry the wellbore radius from the preceding station; covariance at an
+    # interpolated md from the single interior-covariance rule
+    k = np.clip(np.searchsorted(survey.md, survey_interpolated.md, side="right") - 1,
+                0, len(survey.md) - 1)
+    survey_interpolated.radius = np.asarray(survey.radius)[k]
+    if survey.cov_nev is not None:
+        cov_nev = np.asarray(survey.cov_nev)[k].copy()         # stations: their own
+        new = np.where(survey.md[k] != survey_interpolated.md)[0]
+        for j in new:                  # cov_nev_at is one md in, one (3, 3) out
+            cov_nev[j] = _interior_cov_nev(
+                survey, int(k[j]), survey_interpolated.md[j] - survey.md[k[j]])
+        survey_interpolated.cov_nev = cov_nev
         survey_interpolated.cov_hla = NEV_to_HLA(
             survey_interpolated.survey_rad,
             survey_interpolated.cov_nev
@@ -3136,6 +3120,23 @@ def _interpolate_pos_nev(
     kernel) and is added to station ``index``'s stored ``n, e, tvd``.
     """
     return _anchored_nev(survey, survey.interpolate(survey.md[index] + x), index)
+
+
+def _interior_cov_nev(survey: "Survey", index: int, x: float) -> np.ndarray:
+    """Covariance (3, 3) at distance ``x`` past station ``index``.
+
+    The analytical ``ErrorModel.cov_nev_at`` when the survey carries an error
+    model; otherwise linear interpolation of the station covariances by arc
+    fraction. The ONE place this is decided: interpolate_mds and clearance
+    both call it.
+    """
+    err = getattr(survey, "err", None)
+    if err is not None:
+        return err.cov_nev_at(survey.md[index] + x).reshape(3, 3)
+    cov = survey.cov_nev
+    dmd = survey.md[index + 1] - survey.md[index]
+    mult = x / dmd if dmd else 0.0
+    return (cov[index] + mult * (cov[index + 1] - cov[index])).reshape(3, 3)
 
 
 def _anchored_nev(survey: "Survey", pos: np.ndarray, index: int) -> np.ndarray:
@@ -4010,7 +4011,7 @@ def interpolate_survey(
             )
     survey_interpolated.radius = np.array(radii)
     if bool(cov_nev):
-        survey_interpolated.cov_nev = np.array(cov_nev)
+        survey_interpolated.cov_nev = cov_nev
         survey_interpolated.cov_hla = NEV_to_HLA(
             survey_interpolated.survey_rad,
             survey_interpolated.cov_nev

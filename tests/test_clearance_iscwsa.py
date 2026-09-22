@@ -309,3 +309,22 @@ def test_mahalanobis_sf_chi2_statistical_distance(data=data):
     sf_min = float(np.nanmin(np.asarray(mc.sf)))
     assert sf_min < maha / 3.5                      # continuous < hand-picked pair
     assert abs(sf_min - 1.66) < 0.03
+
+
+def test_minimize_sf_inserted_points_carry_real_covariance(data=data):
+    """The reference points minimize_sf inserts get the interior-covariance
+    rule's value (analytical cov_nev_at with an error model) -- not zeros,
+    which would overstate the separation factor at exactly the minimum."""
+    surveys = generate_surveys(data)
+    reference = surveys["Reference well"]
+    checked = 0
+    for name in [k for k in surveys if k != "Reference well"]:
+        result = IscwsaClearance(reference, surveys[name], minimize_sf=True)
+        inserted = np.where(np.asarray(result.ref.interpolated, dtype=bool))[0]
+        for j in inserted:
+            expected = reference.err.cov_nev_at(result.ref.md[j]).reshape(3, 3)
+            assert np.trace(result.ref.cov_nev[j]) > 0
+            np.testing.assert_allclose(result.ref.cov_nev[j], expected,
+                                       rtol=1e-12, atol=1e-12)
+            checked += 1
+    assert checked >= 10
