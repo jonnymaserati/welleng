@@ -710,8 +710,7 @@ class ErrorModel():
         ground truth at a fractional point), station-exact at f=0,1. Any
         remaining ring-fenced term (:meth:`_interior_prep` class ``"linear"``)
         uses linear covariance interpolation. Reproduces the
-        stored ``cov_NEV[i+1]`` at ``f -> 1`` to machine precision. See
-        derivation (welleng development notes, not shipped).
+        stored ``cov_NEV[i+1]`` at ``f -> 1`` to machine precision.
 
         INTERIOR ACCURACY IS GEOMETRY-DEPENDENT — do not read "exact at both
         ends" as "accurate throughout". Both this boundary-anchored form and
