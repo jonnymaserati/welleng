@@ -63,13 +63,9 @@ extensions = [
 
 myst_all_links_external = True
 templates_path = ['_templates']
-# ``docs/dev/`` is LOCAL-ONLY development context (gitignored, never pushed) and
-# must never reach the published site: it carries release-gate, roadmap and
-# commercial-boundary material. It is absent on CI because it is untracked, so
-# the deployed site has always been clean -- but a LOCAL build renders it into
-# ``_build/html/dev/*.html``, and that is one mis-ignore away from being
-# published. Excluded here as well so the protection is a property of the build
-# rather than of the ignore file.
+# ``docs/dev/`` is not part of the published documentation. It is excluded here
+# as well as being untracked, so a local build does not render it into
+# ``_build/html/dev/*.html``.
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', 'dev', 'dev/**']
 
 # The suffix(es) of source filenames.

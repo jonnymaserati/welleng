@@ -305,8 +305,8 @@ Cold (per-survey re-parse = old) vs warm (cached = new steady state):
 The saving is a ~fixed parse cost (~6–20 ms), so it dominates SMALL/typical
 surveys most (3.1× at 100 stn) and compounds across a batch (the same MWD model
 was re-parsed N times). `cov_nev` is **bit-identical** cold vs warm
-(`test_error_model_cache::test_cached_cov_identical_to_cold`). OPEN + non-breaking
-(fixes repeated I/O, not a commercial capability); feeds the lazy error-class
+(`test_error_model_cache::test_cached_cov_identical_to_cold`). Non-breaking
+(fixes repeated I/O); feeds the lazy error-class
 redesign (parse model defs once, reuse per section). Regression:
 `tests/test_error_model_cache.py` (4).
 
@@ -447,14 +447,11 @@ and monotonicity sweeps' existing budget. Machine: this dev box, .venv312.
 
 ## 2026-07-26 — `ErrorModel.cov_nev_at` source-stacked evaluation (0.26.0rc12)
 
-a downstream consumer profiled `MahalanobisClearance` in `mode="exact"`: one check on a real path
-(124 candidate stations x 12 Volve offsets) spent **2.98 s of 3.67 s — 81% — inside 8906 SCALAR
-`cov_nev_at` calls**, issuing 219k `np.outer` products. It is the binding constraint of every
-`plan()` call that reports an oracle SF.
+Profiling `MahalanobisClearance` in `mode="exact"`: one check on a real path (124 candidate
+stations x 12 Volve offsets) spent **2.98 s of 3.67 s — 81% — inside 8906 `cov_nev_at` calls**,
+issuing 219k `np.outer` products.
 
-They asked for a batched `cov_nev_at(md_array)`. **Refused — that is a vectorised public entry
-point, which is a batch consumer's / outside this module's scope -- the public entry point is scalar by design.** What core
-CAN do is make the SCALAR call faster, and almost all of the win was available there: a single
+Most of that was per-call overhead rather than arithmetic: a single
 interior evaluation touches all 35 sources of the default MWD model, and at 3-vector sizes numpy's
 per-call overhead dominated the arithmetic.
 
@@ -467,8 +464,7 @@ axis instead of a 35-iteration Python loop with ~37 `np.outer` products.
 | per-source loop (rc11) | 0.540 |
 | source-stacked (rc12) | **0.097** |
 
-**5.6x on the scalar path.** Public API unchanged and still strictly scalar — one measured depth in,
-one (3, 3) out.
+**5.6x per call.** Public API unchanged — one measured depth in, one (3, 3) out.
 
 Numerical parity vs the per-source loop: **max 2.7e-16 relative (~1 ulp)** across 137 queries on
 build / vertical / horizontal surveys. NOT bit-identical, and the reason is only that einsum
@@ -476,13 +472,12 @@ accumulates the sum in a different order than a sequential `+=`. Pinned by
 `test_source_stacked_form_matches_a_per_source_reference`, which re-implements the replaced loop
 verbatim inside the test and asserts < 1e-14 relative.
 
-Projected on pathfinder's profile: 2.98 s -> ~0.53 s, so the check goes 3.67 s -> ~1.2 s, **~3x**
-against the ~3.6x ceiling they estimated for a 10x — i.e. most of the win, without a batched public
-API. Machine: this dev box, .venv312.
+Projected on the profile above: 2.98 s -> ~0.53 s, so the check goes 3.67 s -> ~1.2 s, **~3x**.
+Machine: this dev box, .venv312.
 
 ## 2026-07-26 — `SurveyComposition` propagation sharing (0.26.0rc13)
 
-a downstream consumer profiled their programme setup and found `SurveyComposition` was **93% of it**
+Profiling a two-section programme setup found `SurveyComposition` was **93% of it**
 (28.71 ms of 30.95 ms), running **8 full `ErrorModel` propagations for a 2-section compose**.
 
 Cause: `_compose_component` is called once per covariance component (global / systematic / random /
@@ -503,11 +498,9 @@ so a mutated composition can never read a stale run.
 | multi-model, after | **5** | **13.4** |
 
 **BIT-IDENTICAL** on `cov_nev`, `cov_nev_global`, `cov_nev_systematic`, `cov_nev_random`,
-`cov_nev_well` — required, not merely observed: this is an MC-gated path that probcol's
-`covariances_at(programme=)` anchors on, so a change that merely agreed closely would be a parity
-failure. Pinned by `test_composition_does_not_re_propagate_per_covariance_component`.
+`cov_nev_well` — required, not merely observed: this is an MC-gated path, so a change that merely
+agreed closely would be a parity failure. Pinned by `test_composition_does_not_re_propagate_per_covariance_component`.
 
-Not "chasing performance" — computing the same thing four times is a defect (project-owner ruling, 2026-07-26).
 Machine: this dev box, .venv312.
 
 ## 2026-07-27 — kick tolerance: a 245x regression caught by this gate, and a 4x win (0.27.0rc1)
@@ -608,8 +601,8 @@ logged above, not these fixes; the analytical path is flat at 1.2/1.4 ms. Nothin
 moved a number.
 
 **The harness itself was broken and silently so.** It still imported
-`max_influx_circulated`, which this cycle renamed to `_max_influx_circulated` when the
-marching oracle went private — so the gate's own script died on import. It was not run
+`max_influx_circulated`, which this cycle renamed to `_max_influx_circulated` — so the
+gate's own script died on import. It was not run
 between that rename and now. Fixed in this change. A blocking gate that cannot start is
 indistinguishable from a gate that passes if nobody reads the output, which is the second
 time this cycle the benchmark gate has caught something only because it was actually run.

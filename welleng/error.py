@@ -501,7 +501,7 @@ class ErrorModel():
           the partial-course-length convention (:meth:`_xcl_partial_enev`): NOT
           MC-validated (course length has no independent MC ground truth at a
           fractional point); a STATED convention, station-exact at f=0,1,
-          continuous between, one-oracle with assay. ``xcl_mag`` holds each such
+          continuous between. ``xcl_mag`` holds each such
           term's magnitude, reconstructed from its stored ``e_NEV`` (model-general
           -- reads the sheet value, not the function default).
         - ``"linear"`` -- any other ring-fenced term (e.g. ABXY-TI*S, XYM*E) the
@@ -585,8 +585,7 @@ class ErrorModel():
         make the public entry point batched -- ``cov_nev_at`` takes one measured
         depth and returns one (3, 3) -- and there is deliberately no per-leg or
         per-query cache here: everything below is model-invariant, built once and
-        indexed. The batched/vectorised form of the interior covariance is
-        outside this module's scope -- this entry point is scalar by design.
+        indexed.
 
         Returns a dict with, for the ``"standard"`` sources, ``e_DIA`` (S, n, 3),
         ``e_NEV_star`` (S, n, 3), ``sigma_e_NEV`` (S, n, 3) and the boolean
@@ -703,17 +702,15 @@ class ErrorModel():
           ``cov_NEV[i] - outer(e_NEV_star[i]) + outer(g_i) + outer(g_j)`` with
           ``g_i = e_NEV_star[i] + coup + (1-f) qi`` and ``g_j = f qj`` -- the
           partial q-own term splits (1-f)/f across the two stations (slerp-
-          Jacobian ~ f; exact at both ends, ~slerp tolerance interior -- assay's
-          symbolic Propagator is the exact oracle).
+          Jacobian ~ f; exact at both ends, ~slerp tolerance interior).
 
         XCLA/XCLH (the course-length recurrence terms, typically dominant on
         deviated wells) use the partial-course-length convention
         (``cov_NEV[i] + outer(e_NEV(i->q))``, :meth:`_xcl_partial_enev`) -- a
         STATED convention (not MC-validated: course length has no independent MC
-        ground truth at a fractional point), station-exact at f=0,1, one-oracle
-        with the symbolic reference. Any remaining ring-fenced term
-        (:meth:`_interior_prep` class ``"linear"``) uses linear covariance
-        interpolation. Reproduces the
+        ground truth at a fractional point), station-exact at f=0,1. Any
+        remaining ring-fenced term (:meth:`_interior_prep` class ``"linear"``)
+        uses linear covariance interpolation. Reproduces the
         stored ``cov_NEV[i+1]`` at ``f -> 1`` to machine precision. See
         derivation (welleng development notes, not shipped).
 
@@ -725,7 +722,7 @@ class ErrorModel():
         the ``1/sin(inc)`` azimuth weights are ill-conditioned.
 
         Both columns below are from ONE run against the SAME MC realisation
-        (welleng 0.26.0 and its symbolic reference): 30 m survey 0-3000 m
+        (welleng 0.26.0): 30 m survey 0-3000 m
         building vertical to 60 deg over 300-1800 m, interior point ``f = 0.5``,
         interpolated-position MC at N = 300,000 seed 7, ``dp_basis`` balanced
         tangent, smooth measurement terms only (XCLA/XCLH excluded — an
@@ -749,8 +746,8 @@ class ErrorModel():
         where the number is load-bearing.
 
         (An earlier version of this table shipped in 0.26.0rc9 with a stale
-        continuous column — 9.1 / 1.6 / 0.16 — measured before assay's
-        ``dref`` fix removed a constant VV double-count. It overstated their
+        continuous column — 9.1 / 1.6 / 0.16 — measured before a constant VV
+        double-count was removed from it. It overstated that column's
         error, so the published "~2x closer" UNDER-sold the gap. Withdrawn in
         rc14, replaced here with the provenance above.)
 
@@ -816,9 +813,8 @@ class ErrorModel():
         rand = st["random"]
         # random: two INDEPENDENT measurements -> two outer products. The partial
         # q-own term splits (1-f)/f between stations i and i+1 (slerp-Jacobian
-        # ~ f; exact at both ends, ~slerp tolerance in the interior -- assay's
-        # symbolic is the exact oracle). Both endpoints recover
-        # cov_NEV[i]/[i+1] exactly. The query-independent
+        # ~ f; exact at both ends, ~slerp tolerance in the interior). Both
+        # endpoints recover cov_NEV[i]/[i+1] exactly. The query-independent
         # `cov_NEV - outer(e_NEV_star, e_NEV_star)` part is pre-summed.
         g_i = st["e_NEV_star"][rand, i] + coup[rand] + (1.0 - f) * qi[rand]
         g_j = f * qj[rand]

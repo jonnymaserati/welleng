@@ -1,6 +1,6 @@
 """Arc-faithful interior covariance ``ErrorModel.cov_nev_at``.
 
-Guards the interior-covariance evaluation used by clearance / pathfinder EOU:
+Guards the interior-covariance evaluation used by clearance and interior EOU:
 - endpoint recovery (f->0 == cov_NEV[i], f->1 == cov_NEV[i+1]) to machine precision
   -- the regression test for the f->0 option-c bug (partial out-leg
   coupling was dropped);
@@ -119,9 +119,8 @@ def test_source_stacked_form_matches_a_per_source_reference():
     relative), not bit-exact, purely because einsum accumulates the sum in a
     different order than a sequential ``+=``.
 
-    NB this vectorises over SOURCES within one scalar query. The public entry
-    point stays scalar -- one measured depth in, one (3, 3) out. The batched
-    form over query depths is a batch consumer's and the symbolic reference's.
+    NB this vectorises over SOURCES within one query: one measured depth in,
+    one (3, 3) out.
     """
     import numpy as np
     import welleng as we
