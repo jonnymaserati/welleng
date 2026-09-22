@@ -2227,8 +2227,9 @@ class Survey(MinCurve):
         ).T.reshape(-1, 3)
         survey_new[-1] = self.survey_deg[-1]
 
-        # Update the new survey header as the new azimuth reference is 'grid'.
-        sh = self.header
+        # The new survey's azimuths are grid-referenced; set that on a COPY so
+        # this survey keeps the reference it was built with.
+        sh = copy.copy(self.header)
         sh.azi_reference = 'grid'
 
         # Create a new Survey instance
@@ -3030,7 +3031,8 @@ def _interpolate_surveys(
 
     sorted_arr = sorted_arr[:, np.argsort(sorted_arr[0, :])]
 
-    sh = survey.header
+    # a COPY: the caller's survey keeps the reference it was built with
+    sh = copy.copy(survey.header)
     sh.azi_reference = 'grid'
 
     survey_interpolated = Survey(

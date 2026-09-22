@@ -162,10 +162,21 @@ def test_interpolate_md_matches_the_two_station_route():
     assert checked == 200 * 15  # 3 synthetic + 12 ISCWSA
 
 
-def test_interpolate_md_does_not_touch_the_callers_header():
-    s = Survey_(md=[0, 500, 1000], inc=[0, 10, 30], azi=[0, 20, 40],
-                header=we.survey.SurveyHeader(azi_reference="true"))
-    s.interpolate_md(700.0)
+def _call_interpolate_survey(s):
     from welleng.survey import _interpolate_survey
     _interpolate_survey(s, 50.0, 1)
+
+
+@pytest.mark.parametrize("call", [
+    lambda s: s.interpolate_md(700.0),
+    _call_interpolate_survey,
+    lambda s: s.interpolate_mds([250.0, 750.0]),
+    lambda s: s.maximum_curvature(),
+], ids=["interpolate_md", "_interpolate_survey", "interpolate_mds",
+        "maximum_curvature"])
+def test_building_a_grid_survey_does_not_touch_the_callers_header(call):
+    """Each route builds a grid-referenced survey; the caller's keeps its own."""
+    s = Survey_(md=[0, 500, 1000], inc=[0, 10, 30], azi=[0, 20, 40],
+                header=we.survey.SurveyHeader(azi_reference="true"))
+    call(s)
     assert s.header.azi_reference == "true"
