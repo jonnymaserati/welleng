@@ -180,3 +180,30 @@ def test_building_a_grid_survey_does_not_touch_the_callers_header(call):
                 header=we.survey.SurveyHeader(azi_reference="true"))
     call(s)
     assert s.header.azi_reference == "true"
+
+
+def test_a_survey_does_not_write_into_the_header_it_was_given():
+    """The constructor writes its datum into its header; that must be its own."""
+    base = Survey_(md=[0, 500, 1000], inc=[0, 10, 30], azi=[0, 20, 40],
+                   start_nev=[100.0, 200.0, 300.0])
+    Survey_(md=[0, 100], inc=[0, 5], azi=[0, 0], header=base.header,
+            start_nev=[9.0, 9.0, 9.0])
+    assert list(base.header.start_nev) == [100.0, 200.0, 300.0]
+
+
+def test_slice_survey_leaves_the_original_header_alone():
+    from welleng.survey import slice_survey
+    s = Survey_(md=[0, 500, 1000, 1500], inc=[0, 10, 30, 45], azi=[0, 20, 40, 60],
+                start_nev=[100.0, 200.0, 300.0])
+    sl = slice_survey(s, 1)
+    assert list(s.header.start_nev) == [100.0, 200.0, 300.0]
+    assert sl.header is not s.header
+    assert list(sl.header.start_nev) != [100.0, 200.0, 300.0]
+
+
+def test_grid_header_copies():
+    from welleng.survey import grid_header
+    h = we.survey.SurveyHeader(azi_reference="true")
+    g = grid_header(h)
+    assert (h.azi_reference, g.azi_reference) == ("true", "grid")
+    assert g is not h and g.mag_defaults is not h.mag_defaults

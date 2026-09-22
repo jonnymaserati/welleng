@@ -1005,7 +1005,10 @@ class Survey(MinCurve):
             self.header = SurveyHeader()
         else:
             assert isinstance(header, SurveyHeader)
-            self.header = header
+            # a COPY: this survey writes its datum into its header below, and a
+            # header shared with the survey it came from would carry that write
+            # back into the other survey
+            self.header = copy.deepcopy(header)
         assert unit == self.header.depth_unit, (
             "inconsistent units with header"
         )
@@ -2227,10 +2230,7 @@ class Survey(MinCurve):
         ).T.reshape(-1, 3)
         survey_new[-1] = self.survey_deg[-1]
 
-        # The new survey's azimuths are grid-referenced; set that on a COPY so
-        # this survey keeps the reference it was built with.
-        sh = copy.copy(self.header)
-        sh.azi_reference = 'grid'
+        sh = grid_header(self.header)
 
         # Create a new Survey instance
         survey = Survey(
@@ -2735,6 +2735,18 @@ class TurnPoint:
         self.location = location
 
 
+def grid_header(header: "SurveyHeader") -> "SurveyHeader":
+    """A copy of ``header`` whose azimuths are grid-referenced.
+
+    For a survey DERIVED from another whose angles are already on grid
+    (``azi_grid_rad``): building it on the original header would apply the
+    grid convergence a second time. The original header is not modified.
+    """
+    h = copy.deepcopy(header)
+    h.azi_reference = "grid"
+    return h
+
+
 def get_node(
     survey: "Survey", idx: int, interpolated: bool = False
 ) -> Node:
@@ -2886,10 +2898,7 @@ def _interpolate_survey(
         )
     ).reshape(3, 3)
 
-    # a COPY: the interpolated azimuth is grid-referenced, but the caller's own
-    # survey keeps whatever reference it was built with
-    sh = copy.copy(survey.header)
-    sh.azi_reference = 'grid'
+    sh = grid_header(survey.header)
 
     s = Survey(
         md=np.array(
@@ -3031,9 +3040,7 @@ def _interpolate_surveys(
 
     sorted_arr = sorted_arr[:, np.argsort(sorted_arr[0, :])]
 
-    # a COPY: the caller's survey keeps the reference it was built with
-    sh = copy.copy(survey.header)
-    sh.azi_reference = 'grid'
+    sh = grid_header(survey.header)
 
     survey_interpolated = Survey(
         md=sorted_arr[0, :],

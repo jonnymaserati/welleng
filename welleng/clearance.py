@@ -14,7 +14,9 @@ from scipy.spatial import KDTree
 from scipy.spatial.distance import cdist
 
 from .mesh import WellMesh, to_trimesh
-from .survey import Survey, _interpolate_survey, _interpolate_pos_nev, slice_survey
+from .survey import (
+    Survey, _interpolate_survey, _interpolate_pos_nev, grid_header, slice_survey
+)
 from .utils import NEV_to_HLA
 
 # Acceptance criteria (SPE-187073 policy layer) live in a focused module;
@@ -751,8 +753,7 @@ class IscwsaClearance(Clearance):
 
                 node = self.ref.interpolate_md(md)
 
-                sh = self.ref.header
-                sh.azi_reference = 'grid'
+                sh = grid_header(self.ref.header)
 
                 survey = Survey(
                     md=np.insert(

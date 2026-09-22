@@ -52,7 +52,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from .conditioning import ShareMode
-from .survey import Survey, SurveyHeader
+from .survey import Survey, SurveyHeader, grid_header
 
 __all__ = ["SurveySection", "SurveyComposition"]
 
@@ -446,7 +446,7 @@ class SurveyComposition:
         # Compose in the grid domain; force the unified header to match so the
         # supplied grid angles are interpreted consistently.
         if header.azi_reference != "grid":
-            header = _grid_header(header)
+            header = grid_header(header)
 
         survey = Survey(
             md=md, inc=inc, azi=azi, deg=False, header=header,
@@ -713,8 +713,3 @@ def _parse_date(value: Optional[str]) -> Optional[datetime]:
     return None
 
 
-def _grid_header(header: SurveyHeader) -> SurveyHeader:
-    import copy
-    h = copy.copy(header)
-    h.azi_reference = "grid"
-    return h
