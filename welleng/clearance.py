@@ -1392,39 +1392,27 @@ class MeshClearance(Clearance):
             # else:
             self.collision.append(collision)
 
-    def _fun(self, x, survey, pos):
-        """
-        Interpolates a point on a well trajectory and returns
-        the distance between the interpolated point and the
-        position provided.
-
-        Uses the lightweight position-only interpolation (no Survey object
-        is constructed) since this is the inner cost function of the
-        closest-point optimisation and only the NEV position is needed.
-        """
-        new_pos = _interpolate_pos_nev(survey, x[0], 0)
-        dist = norm(new_pos - pos, axis=-1)
-
-        return dist
-
     def _get_closest_nev(self, survey, pos):
-        """
-        Using an optimization function to determine the closest
-        point along a well trajectory to the position provided.
-        """
-        bnds = [(0, survey.md[1] - survey.md[0])]
-        res = optimize.minimize(
-            self._fun,
-            bnds[0][1] / 2,
-            # method='SLSQP',
-            method='Powell',
-            bounds=bnds,
-            args=(survey, pos)
-            )
+        """Closest point to ``pos`` on the first leg of ``survey``.
 
-        nev = _interpolate_pos_nev(survey, res.x[0], 0)
-
-        return (nev, res)
+        The leg is a circular arc, so the closest point is closed-form
+        (:func:`_closest_x_on_arc`) rather than searched for. Returns
+        ``(nev, result)``: the point's NEV position and a
+        :class:`scipy.optimize.OptimizeResult` with ``x[0]`` the distance
+        along the leg from its first station and ``fun`` the distance from
+        ``pos``.
+        """
+        inc = np.asarray(survey.inc_rad[:2], float)
+        azi = np.asarray(survey.azi_grid_rad[:2], float)
+        tan = np.column_stack([
+            np.sin(inc) * np.cos(azi), np.sin(inc) * np.sin(azi), np.cos(inc)
+        ])
+        p0 = np.array([survey.n[0], survey.e[0], survey.tvd[0]], float)
+        x = _closest_x_on_arc(p0, tan[0], tan[1], survey.md[1] - survey.md[0],
+                              survey.dogleg[1], pos)
+        nev = _interpolate_pos_nev(survey, x, 0)
+        return nev, optimize.OptimizeResult(
+            x=np.array([x]), fun=float(norm(nev - pos)))
 
 
 def get_ref_sigma(sigma1, sigma2, sigma3, kop_index):

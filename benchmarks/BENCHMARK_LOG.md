@@ -805,3 +805,19 @@ true-referenced surveys with 1.7 deg convergence, near-vertical with an azimuth 
 worst relative difference 4.7e-14. `_leg_inc_azi` agrees with `inc_azi_at` within 1e-14
 rad on curved, straight, vertical and near-pi legs. Machine: AMD Ryzen 9 5950X, Python
 3.12.3, .venv312.
+
+## 2026-09-23 — `MeshClearance` closest point on the centreline in closed form (0.30.0.dev0)
+
+`MeshClearance._get_closest_nev` found the centreline point nearest a mesh contact point with a
+scipy Powell search, once per reference leg and up to twice per contact on the offset. A
+leg is a circular arc, so the point is closed-form (`_closest_x_on_arc`, the same form the
+ISCWSA path uses, with its symbolic proof).
+
+| ISCWSA reference vs offsets 03, 06, 09, 11 | Powell | closed form |
+|---|---|---|
+| `MeshClearance(sigma=2.445)`, total | 8.3 s | **2.7 s** (~3.1x) |
+
+Parity vs the Powell results: reported SF identical; centre-to-centre distance within
+2.0e-6 m, closest-point md within 1.5e-5 m (the Powell tolerance); the closed-form
+distance is never larger than Powell's. Machine: AMD Ryzen 9 5950X, Python 3.12.3,
+.venv312.
