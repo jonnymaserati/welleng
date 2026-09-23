@@ -754,3 +754,18 @@ Brent tolerance). ISCWSA clearance tests (published SF) pass. The `fae6e33` step
 minima (`interpolate_mds`) and the shared-offset-station rule. Remaining profile:
 minimum search 60%, dominated by single-point `MinCurve.interpolate` calls.
 Machine: AMD Ryzen 9 5950X, Python 3.12.3, .venv312.
+
+## 2026-09-23 — `Survey.interpolate_tvd` Nodes via `_interpolate_node` (0.30.0.dev0)
+
+`interpolate_tvd` built a three-station `Survey` per TVD crossing to take one Node from it;
+it now takes the Node from `_interpolate_node` (the `MinCurve.interpolate` route
+`interpolate_md` already uses).
+
+| `interpolate_tvd`, ISCWSA reference well, 200 TVDs | µs/call |
+|---|---|
+| Survey per crossing | 723.4 |
+| `_interpolate_node` | **349.0** |
+
+**2.1x.** Parity over 338 Nodes (ISCWSA 11-well set, reference well, a reversing well that
+builds past horizontal): md, direction and interpolated flag identical; positions within
+2.3e-13 m. Machine: AMD Ryzen 9 5950X, Python 3.12.3, .venv312.

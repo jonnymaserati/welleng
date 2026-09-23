@@ -3244,8 +3244,9 @@ def interpolate_tvd(survey: "Survey", tvd: float, **kwargs: Any) -> list:
             0, len(survey.md) - 2))
         x = md - survey.md[idx]
         interp = not (x <= tol_md or abs(x - survey.delta_md[idx + 1]) <= tol_md)
-        s = _interpolate_survey(survey, x=x, index=idx)
-        nodes.append(get_node(s, 1, interpolated=interp))
+        node = _interpolate_node(survey, x=x, index=idx)
+        node.interpolated = interp
+        nodes.append(node)
         last_md = md
 
     return nodes
