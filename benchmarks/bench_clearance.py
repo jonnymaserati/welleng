@@ -1,9 +1,11 @@
-"""Benchmark for ISCWSA pedal-curve clearance (``IscwsaClearance``).
+"""Benchmark for clearance: ISCWSA pedal curve (``IscwsaClearance``) and the
+Mahalanobis separation factor (``MahalanobisClearance``).
 
 Times the reference well against each offset of the ISCWSA standard set of
 wellpaths for evaluating clearance scenarios (the validation set in
-``tests/test_data/clearance_iscwsa_well_data.json``), with and without the
-interpolated-minimum refinement (``minimize_sf``). Run from the repo root:
+``tests/test_data/clearance_iscwsa_well_data.json``): the pedal curve with and
+without the interpolated-minimum refinement (``minimize_sf``), and the
+Mahalanobis separation factor. Run from the repo root:
 
     python benchmarks/bench_clearance.py
 
@@ -18,7 +20,7 @@ import warnings
 
 import numpy as np
 
-from welleng.clearance import IscwsaClearance
+from welleng.clearance import IscwsaClearance, MahalanobisClearance
 from welleng.survey import Survey, make_survey_header
 
 DATA = "tests/test_data/clearance_iscwsa_well_data.json"
@@ -40,15 +42,14 @@ def load_surveys(path=DATA):
     return surveys
 
 
-def run(surveys, minimize_sf):
+def run(surveys, minimize_sf=False, cls=IscwsaClearance):
     ref = surveys["Reference well"]
+    kwargs = {} if cls is MahalanobisClearance else {"minimize_sf": minimize_sf}
     for name, off in surveys.items():
         if name == "Reference well":
             continue
-        IscwsaClearance(
-            ref, off, minimize_sf=minimize_sf,
-            kop_depth=900.0 if name == "10 - well" else -np.inf,
-        )
+        cls(ref, off, kop_depth=900.0 if name == "10 - well" else -np.inf,
+            **kwargs)
 
 
 def best_of(fn, repeats=5):
@@ -67,5 +68,8 @@ if __name__ == "__main__":
     print(f"ISCWSA set: reference vs {n} offsets (best of 5)")
     for minimize_sf in (False, True):
         t = best_of(lambda: run(surveys, minimize_sf))
-        print(f"  minimize_sf={minimize_sf!s:5}  {1e3 * t:8.1f} ms total"
+        print(f"  pedal, minimize_sf={minimize_sf!s:5}  {1e3 * t:8.1f} ms total"
               f"  {1e3 * t / n:7.1f} ms/pair")
+    t = best_of(lambda: run(surveys, cls=MahalanobisClearance))
+    print(f"  Mahalanobis               {1e3 * t:8.1f} ms total"
+          f"  {1e3 * t / n:7.1f} ms/pair")

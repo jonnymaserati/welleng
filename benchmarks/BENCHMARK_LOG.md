@@ -769,3 +769,19 @@ it now takes the Node from `_interpolate_node` (the `MinCurve.interpolate` route
 **2.1x.** Parity over 338 Nodes (ISCWSA 11-well set, reference well, a reversing well that
 builds past horizontal): md, direction and interpolated flag identical; positions within
 2.3e-13 m. Machine: AMD Ryzen 9 5950X, Python 3.12.3, .venv312.
+
+## 2026-09-23 — `MahalanobisClearance` baseline (0.30.0.dev0)
+
+Added to `benchmarks/bench_clearance.py`. ISCWSA set, reference vs 11 offsets, best of 5:
+
+| ISCWSA set, 11 pairs | `develop` `e19d6f1` | now |
+|---|---|---|
+| `MahalanobisClearance` | 150.5 ms/pair | **135.6 ms/pair** |
+
+Separation factors vs `develop` within 1.2e-14 (this branch's clearance changes are on
+the pedal path; this class shares only `_interpolate_pos_nev` and `cov_nev_at`).
+Profile: 97% in the narrowphase -- 107 bounded Nelder-Mead searches, 4340 objective
+evaluations, each one `cov_nev_at` (53% of total) and one arc interpolation (23%) per
+well. Only 10 of the 107 searches end on a point another search already found, so
+merging candidates would save under 10%; not done. Machine: AMD Ryzen 9 5950X, Python
+3.12.3, .venv312.
