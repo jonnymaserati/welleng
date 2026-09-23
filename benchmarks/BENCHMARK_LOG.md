@@ -730,3 +730,27 @@ anchoring `interpolate_md` uses; one helper, `_anchored_nev`).
 **1.8x.** Parity vs the previous output over 4500 points (ISCWSA 11-well set and
 reference, near-pi, straight, reversing): max |dpos| 2.7e-12 m. ISCWSA clearance tests
 (published SF) unchanged. Machine: this dev box, .venv312.
+
+## 2026-09-23 — `IscwsaClearance`: closest-point angles from the arc kernel; minimum search by Brent per leg (0.30.0.dev0)
+
+New benchmark `benchmarks/bench_clearance.py`: reference vs the 11 offsets of the ISCWSA
+standard clearance set, best of 5. Profile (cProfile, `minimize_sf=True`) before this
+change: 82% of the time in `_get_closest_points`, almost all of it `_interpolate_survey`
+building a 3-station `Survey` per reference station (1852 builds) only to read one point's
+md/inc/azi. Those now come from one `MinCurve.interpolate(md, angles=True)` call over all
+stations. The minimum search is bounded Brent per reference leg (was a 65-point scan plus
+Brent in the best bracket): 716 separation-factor evaluations for the 14 minima, was 1109.
+
+| ISCWSA set, 11 pairs | `develop` `e19d6f1` | `fae6e33` | after | vs `develop` |
+|---|---|---|---|---|
+| `minimize_sf=False` | 49.7 ms/pair | 52.1 ms/pair | **8.3 ms/pair** | ~6.0x |
+| `minimize_sf=True` | 99.4 ms/pair | 111.6 ms/pair | **35.6 ms/pair** | ~2.8x |
+
+Parity: against `fae6e33`, station and inserted separation factors, closest-point md, inc,
+azimuth, positions and covariances bit-identical over all 22 runs (11 wells x both
+modes). All 14 inserted minima match a 4000-point scan to <= 1.5e-11 (well 09: 5e-9, the
+Brent tolerance). ISCWSA clearance tests (published SF) pass. The `fae6e33` step over
+`develop` (+5%/+12%) is the correctness work on this branch: real covariance at inserted
+minima (`interpolate_mds`) and the shared-offset-station rule. Remaining profile:
+minimum search 60%, dominated by single-point `MinCurve.interpolate` calls.
+Machine: AMD Ryzen 9 5950X, Python 3.12.3, .venv312.

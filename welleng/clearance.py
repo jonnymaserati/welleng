@@ -15,7 +15,7 @@ from scipy.spatial.distance import cdist
 
 from .mesh import WellMesh, to_trimesh
 from .survey import (
-    Survey, _interior_cov_nev, _interpolate_survey, _interpolate_pos_nev,
+    Survey, _interior_cov_nev, _interpolate_pos_nev,
     slice_survey,
 )
 from .utils import NEV_to_HLA
@@ -859,27 +859,18 @@ class IscwsaClearance(Clearance):
                 station, legs)
             closest.append((
                 station,
-                _interpolate_survey(self.offset, xo, oi),
+                self.offset.md[oi] + xo,
                 (xo, dist),
                 self._interpolate_covs(oi + 1, t_mult),
                 pos,
             ))
 
         self.closest = closest
-        md, inc, azi, n, e, tvd, x, y, z,  = np.array([
-            [
-                r[1].md[1],
-                r[1].inc_rad[1],
-                r[1].azi_grid_rad[1],
-                r[4][0],
-                r[4][1],
-                r[4][2],
-                r[4][1],
-                r[4][0],
-                r[4][2],
-            ]
-            for r in self.closest
-        ]).T
+        # angles at the closest points from the arc kernel, all at once
+        md = np.array([r[1] for r in self.closest])
+        _, inc, azi = self.offset.interpolate(md, angles=True)
+        n, e, tvd = np.array([r[4] for r in self.closest]).T
+        x, y, z = e, n, tvd
 
         cov_hla = np.array([
             [
