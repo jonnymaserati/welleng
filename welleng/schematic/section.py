@@ -93,16 +93,21 @@ def build_section(
     dwg.add(Polyline([tuple(P(m)) for m in md_grid], layer=L_PATH, style=_PATH))
 
     # cement annuli then casing steel outlines
+    # cement where the model records it (Tubular.cement_intervals: primary
+    # job + recorded annular cement); nothing recorded draws nothing
     for c in sorted(bore.drawable_casings, key=lambda c: -c.od_in):
-        if c.toc_md is None:
-            continue          # no cement RECORDED: draw nothing, claim nothing
-        dwg.add(Hatch(ribbon(c.toc_md, c.shoe_md, c.od_in),
-                      pattern="cement", layer=L_CEMENT, style=_CEMENT))
+        for top, base in c.cement_intervals():
+            dwg.add(Hatch(ribbon(top, base, c.od_in),
+                          pattern="cement", layer=L_CEMENT, style=_CEMENT))
     for c in bore.drawable_casings:
-        dwg.add(Polygon(ribbon(c.top_md, c.shoe_md, c.od_in),
-                        layer=L_CASING,
-                        style=Style(color="#222222", lineweight=0.5, fill=None)))
-        _shoe(dwg, P, normal, radial, c.shoe_md, c.od_in)
+        # steel where it is still in the hole (milled lengths removed)
+        for top, base in c.steel_intervals():
+            dwg.add(Polygon(ribbon(top, base, c.od_in),
+                            layer=L_CASING,
+                            style=Style(color="#222222", lineweight=0.5,
+                                        fill=None)))
+        if c.shoe_remains:
+            _shoe(dwg, P, normal, radial, c.shoe_md, c.od_in)
         p = P(c.shoe_md)
         nrm, _ = normal(c.shoe_md)
         w = c.od_in * _IN2M * radial.at(c.shoe_md) / 2.0
@@ -118,6 +123,19 @@ def build_section(
         dwg.add(Hatch(ribbon(pl.top_md, pl.base_md, bore_id),
                       pattern="plug", layer=L_PLUG, style=_PLUG))
         dwg.add(Text(tuple(P(mid)), pl.name, height=2.0,
+                     layer=L_ANNOTATION, style=Style(color="#6b5d2f")))
+
+    # mechanical plugs: a short bore-width block at the setting depth
+    for mp in bore.mechanical_plugs:
+        cand = [c.id_in for c in bore.drawable_casings
+                if c.top_md <= mp.md <= c.shoe_md and not c.milled_at(mp.md)
+                and (mp.casing_od_in is None or c.has_od(mp.casing_od_in))]
+        bore_id = min(cand) if cand else 6.0
+        dwg.add(Polygon(ribbon(mp.md - 3.0, mp.md + 3.0, bore_id),
+                        layer=L_PLUG,
+                        style=Style(color="#111111", lineweight=0.4,
+                                    fill="#4a4a4a")))
+        dwg.add(Text(tuple(P(mp.md)), mp.name, height=2.0,
                      layer=L_ANNOTATION, style=Style(color="#6b5d2f")))
 
     # completion tubing follows the path

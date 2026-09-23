@@ -141,6 +141,62 @@ class TubularSection(_Base):
     grade: Optional[str] = None
 
 
+class CementInterval(_Base):
+    """Cement recorded behind a string over ``top_md``..``base_md`` (MD).
+
+    For cement beyond the primary job (``Tubular.toc_md`` to the shoe): a
+    squeeze, a perforate-wash-cement job placing cement above the primary top,
+    or a logged interval. Several intervals with gaps between them say that
+    the gaps hold no RECORDED cement -- they do not say the gaps are empty.
+    """
+
+    top_md: float
+    base_md: float
+    origin: Optional[str] = Field(
+        None,
+        description="how the cement got there or how it is known, e.g. "
+                    "'primary', 'squeeze', 'perf-wash-cement', 'logged'; "
+                    "None = not recorded",
+    )
+
+    @model_validator(mode="after")
+    def _ordered(self) -> "CementInterval":
+        if self.base_md <= self.top_md:
+            raise ValueError(
+                f"cement interval base_md {self.base_md} is at or above "
+                f"top_md {self.top_md}")
+        return self
+
+
+class MilledInterval(_Base):
+    """A length of a string removed by milling (a section mill or a window),
+    ``top_md``..``base_md`` (MD). OSDU ``TubularComponentType`` ``CAS.MWI``
+    (MilledWindow). The string stays ONE string; only its steel is absent here.
+    """
+
+    top_md: float
+    base_md: float
+
+    @model_validator(mode="after")
+    def _ordered(self) -> "MilledInterval":
+        if self.base_md <= self.top_md:
+            raise ValueError(
+                f"milled interval base_md {self.base_md} is at or above "
+                f"top_md {self.top_md}")
+        return self
+
+
+def _merge(intervals: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+    """Union of ``(top, base)`` intervals, sorted, touching ones joined."""
+    out: List[Tuple[float, float]] = []
+    for top, base in sorted(intervals):
+        if out and top <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], base))
+        else:
+            out.append((top, base))
+    return out
+
+
 class Tubular(_Base):
     """Base for run steel tubulars. OSDU ``Tubular`` / WITSML ``tubular``.
 
@@ -183,6 +239,17 @@ class Tubular(_Base):
         default_factory=list,
         description="diameters of a tapered/combination string, top to shoe; "
                     "empty = a single-diameter string",
+    )
+    annular_cement: List[CementInterval] = Field(
+        default_factory=list,
+        description="cement behind the string BEYOND the primary job "
+                    "(toc_md to the shoe): squeezes, perf-wash-cement, logged "
+                    "intervals. toc_md stays the primary job.",
+    )
+    milled: List[MilledInterval] = Field(
+        default_factory=list,
+        description="lengths of this string removed by milling (section mill "
+                    "or window); the string stays one string",
     )
     # --- catalogue key + auto-filled dimensions (OSDU TubularComponent) ---
     nominal_weight_ppf: Optional[float] = Field(
@@ -315,6 +382,79 @@ class Tubular(_Base):
             )
         return self
 
+    @model_validator(mode="after")
+    def _check_cement_and_milled(self) -> "Tubular":
+        """Annular cement and milled lengths must lie on the string.
+
+        Cement above ``top_md`` is not behind THIS string (a liner's cement
+        above its top is in the parent casing), and cement below the shoe is
+        in open hole, not an annulus. A milled length outside the string
+        removes steel that was never there. Milled lengths may not overlap.
+        """
+        base = self.shoe_md
+        for c in self.annular_cement:
+            if c.top_md < self.top_md - 1e-6 or (
+                    base is not None and c.base_md > base + 1e-6):
+                raise ValueError(
+                    f"{self.name}: annular cement {c.top_md}-{c.base_md} m is "
+                    f"not behind the string ({self.top_md}-{base} m)")
+        for m in self.milled:
+            if m.top_md < self.top_md - 1e-6 or (
+                    base is not None and m.base_md > base + 1e-6):
+                raise ValueError(
+                    f"{self.name}: milled interval {m.top_md}-{m.base_md} m "
+                    f"is outside the string ({self.top_md}-{base} m)")
+        ms = sorted(self.milled, key=lambda m: m.top_md)
+        for a, b in zip(ms, ms[1:]):
+            if b.top_md < a.base_md - 1e-6:
+                raise ValueError(
+                    f"{self.name}: milled intervals {a.top_md}-{a.base_md} and "
+                    f"{b.top_md}-{b.base_md} m overlap")
+        return self
+
+    def cement_intervals(self) -> List[Tuple[float, float]]:
+        """Every recorded annular-cement interval behind this string, merged:
+        the primary job (``toc_md`` to the shoe) plus :attr:`annular_cement`.
+
+        The ONE place a renderer or consumer asks where cement is behind a
+        string. Empty when nothing is recorded -- never a default.
+        """
+        spans = [(c.top_md, c.base_md) for c in self.annular_cement]
+        if self.toc_md is not None and self.shoe_md is not None \
+                and self.toc_md < self.shoe_md:
+            spans.append((self.toc_md, self.shoe_md))
+        return _merge(spans)
+
+    def milled_at(self, md: float) -> bool:
+        """True when ``md`` lies in a milled length of this string."""
+        return any(m.top_md <= md <= m.base_md for m in self.milled)
+
+    def steel_profile(self) -> List[Tuple[float, float, float, float]]:
+        """:meth:`profile` with the milled lengths removed: the steel that is
+        actually in the hole, ``(top_md, base_md, od_in, id_in)`` pieces."""
+        out = []
+        cuts = _merge([(m.top_md, m.base_md) for m in self.milled])
+        for top, base, od, id_ in self.profile():
+            pieces = [(top, base)]
+            for ct, cb in cuts:
+                nxt = []
+                for a, b in pieces:
+                    if cb <= a or ct >= b:
+                        nxt.append((a, b))
+                        continue
+                    if ct > a:
+                        nxt.append((a, ct))
+                    if cb < b:
+                        nxt.append((cb, b))
+                pieces = nxt
+            out.extend((a, b, od, id_) for a, b in pieces if b > a)
+        return out
+
+    def steel_intervals(self) -> List[Tuple[float, float]]:
+        """``(top_md, base_md)`` extents of steel in the hole: the string's run
+        with milled lengths removed (diameter changes ignored)."""
+        return _merge([(a, b) for a, b, _od, _id in self.steel_profile()])
+
     # -- depth-aware geometry --------------------------------------------- #
     def profile(self) -> List[Tuple[float, float, float, float]]:
         """``(top_md, base_md, od_in, id_in)`` per diameter, top to shoe."""
@@ -377,6 +517,12 @@ class Casing(Tubular):
         """True when this string terminates in a shoe."""
         return self.kind in ("casing", "liner")
 
+    @property
+    def shoe_remains(self) -> bool:
+        """True when the string has a shoe and it has not been milled away."""
+        return (self.has_shoe and self.shoe_md is not None
+                and not self.milled_at(self.shoe_md))
+
 
 class CementPlug(_Base):
     """A set cement plug in the bore. OSDU well-activity ``CementJob`` output."""
@@ -393,6 +539,48 @@ class CementPlug(_Base):
     @model_validator(mode="after")
     def _check_plug_type(self) -> "CementPlug":
         _osdu_check("CementPlugType", self.plug_type, "plug_type")
+        return self
+
+
+_PLUG_CODES = {
+    "bridge_plug": ("WBEQP.BRP", "WBEQP.DBP", "WBEQP.WRBP"),
+    "cement_retainer": ("WBEQP.RET",),
+}
+
+
+class MechanicalPlug(_Base):
+    """A mechanical plug set in the bore: a bridge plug or a cement retainer.
+
+    A plug in CASING, set once the completion is out, and the support a
+    cement plug is placed on. Not a packer: a packer seals an annulus around a
+    tubing string; a mechanical plug closes the bore. OSDU
+    ``TubularComponentType`` ``WBEQP.BRP`` (BridgePlug), ``WBEQP.DBP``
+    (DrillableBridgePlug), ``WBEQP.WRBP`` (WirelineRetrievableBridgePlug),
+    ``WBEQP.RET`` (CementRetainer).
+    """
+
+    name: str = "Bridge plug"
+    kind: Literal["bridge_plug", "cement_retainer"] = "bridge_plug"
+    md: float = Field(..., description="setting depth, MD")
+    casing_od_in: Optional[float] = Field(
+        None, description="OD (in) of the string it is set in; None = the "
+                          "innermost string there")
+    component_type: Optional[str] = Field(
+        None,
+        description="OSDU TubularComponentType code: WBEQP.BRP | WBEQP.DBP | "
+                    "WBEQP.WRBP (bridge_plug) or WBEQP.RET (cement_retainer)",
+    )
+
+    @model_validator(mode="after")
+    def _check_component_type(self) -> "MechanicalPlug":
+        _osdu_check("TubularComponentType", self.component_type,
+                    "component_type")
+        if self.component_type is not None \
+                and self.component_type not in _PLUG_CODES[self.kind]:
+            raise ValueError(
+                f"mechanical plug {self.name!r}: component_type "
+                f"{self.component_type!r} is not a {self.kind} "
+                f"(expected one of {', '.join(_PLUG_CODES[self.kind])})")
         return self
 
 
@@ -572,6 +760,7 @@ class Wellbore(_Base):
     hole_sections: List[HoleSection] = Field(default_factory=list)
     casings: List[Casing] = Field(default_factory=list)
     cement_plugs: List[CementPlug] = Field(default_factory=list)
+    mechanical_plugs: List[MechanicalPlug] = Field(default_factory=list)
     annulus_fluids: List[AnnulusFluid] = Field(default_factory=list)
     perforations: List[Perforation] = Field(default_factory=list)
     completion: List[CompletionItem] = Field(default_factory=list)
@@ -668,6 +857,15 @@ class Wellbore(_Base):
                         "be set through a completion that is still in the hole. "
                         "Pull or cut the tubing (shorten the run) first."
                     )
+        for p in self.mechanical_plugs:
+            for top, base in runs:
+                if top <= p.md <= base:
+                    raise ValueError(
+                        f"mechanical plug {p.name!r} at {p.md} m is inside a "
+                        f"tubing run ({top}-{base} m): a plug in casing cannot "
+                        "be set where the completion is still in the hole. "
+                        "Pull or cut the tubing (shorten the run) first."
+                    )
         return self
 
 
@@ -694,11 +892,9 @@ class WellSchematic(_Base):
         if "wellbores" in data:
             return data
         data = dict(data)  # don't mutate the caller's dict
-        bore_keys = (
-            "survey", "hole_sections", "casings", "cement_plugs",
-            "annulus_fluids", "perforations", "completion",
-            "id", "parent_id", "kickoff_md",
-        )
+        # derived from Wellbore itself, so a field added to the bore reaches
+        # the flat form too (a hand-kept list dropped the next one added)
+        bore_keys = tuple(Wellbore.model_fields)
         bore = {k: data.pop(k) for k in list(data) if k in bore_keys}
         if bore:
             data["wellbores"] = [bore]

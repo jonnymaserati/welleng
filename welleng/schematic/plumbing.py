@@ -138,7 +138,8 @@ def _casings(bore: Wellbore, ancestors: Sequence[Wellbore]) -> List[Casing]:
 
 def _bore_r_in(md: float, cas: Sequence[Casing],
                hole_in: Optional[float]) -> Optional[float]:
-    ids = [c.id_in / 2.0 for c in cas if c.top_md <= md <= c.shoe_md]
+    ids = [c.id_in / 2.0 for c in cas
+           if c.top_md <= md <= c.shoe_md and not c.milled_at(md)]
     if ids:
         return min(ids)
     return hole_in
@@ -152,7 +153,8 @@ def _outer_edge_in(
     min(next-outer casing ID, drilled hole).
     """
     ids = [d.id_in / 2.0 for d in cas
-           if d.od_in > c.od_in and d.top_md <= md <= d.shoe_md]
+           if d.od_in > c.od_in and d.top_md <= md <= d.shoe_md
+           and not d.milled_at(md)]
     hr = hole_in if hole_in is not None else (min(ids) if ids else c.od_in / 2.0 + 1.0)
     if ids and min(ids) < hr:
         return min(ids), False           # confined by steel
@@ -165,6 +167,7 @@ def _outer_edge_in(
 _STEEL = dict(facecolor="0.2", edgecolor="k", lw=0.4, zorder=3)
 _CEMENT = dict(facecolor="0.72", edgecolor="none", zorder=1)
 _PLUG = dict(facecolor="0.72", edgecolor="0.4", lw=0.4, zorder=2.5)
+_MECH_PLUG = dict(facecolor="0.29", edgecolor="k", lw=0.5, zorder=4.5)
 
 # Fallback fills keyed on the fluid NAME, used only when a fluid carries no
 # explicit colour. Deliberately washed-out: an annulus fluid is background to
@@ -258,18 +261,30 @@ def _draw_hole(ax, cl: Centreline, bore: Wellbore, md0: float, md1: float):
 def _draw_casing(ax, cl: Centreline, c: Casing, cas: Sequence[Casing], bore: Wellbore):
     ro, ri = cl.rdraw(c.od_in / 2), cl.rdraw(c.id_in / 2)
     md = np.linspace(c.top_md, c.shoe_md, 240)
-    # annular cement toc -> shoe, casing OD -> outer edge (hole wall in open hole)
-    # toc_md None = no cement RECORDED: draw nothing, claim nothing
-    mdc = md[md >= c.toc_md] if c.toc_md is not None else md[:0]
-    if mdc.size:
+    # annular cement where the model records it (Tubular.cement_intervals),
+    # casing OD -> outer edge (hole wall in open hole); nothing recorded draws
+    # nothing
+    for top, base in c.cement_intervals():
+        mdc = md[(md >= top) & (md <= base)]
+        if not mdc.size:
+            continue
         oR = np.empty(mdc.size)
         for i, m in enumerate(mdc):
             edge_in, open_hole = _outer_edge_in(c, m, cas, _hole_r_in(m, bore))
             e = cl.rdraw(edge_in)
             oR[i] = e
         _band(ax, cl, mdc, ro, oR, **_CEMENT)
-    # steel wall
-    _band(ax, cl, md, ri, ro, **_STEEL)
+    # steel wall, where it is still in the hole (milled lengths removed)
+    if not c.milled:
+        _band(ax, cl, md, ri, ro, **_STEEL)
+    else:
+        for top, base in c.steel_intervals():
+            _band(ax, cl, np.linspace(top, base, 120), ri, ro, **_STEEL)
+    if not c.shoe_remains:
+        lx, ly = cl.perp(c.shoe_md, ro + cl.rdraw(2.0), 1)
+        ax.text(float(lx[0]), float(ly[0]), c.name, fontsize=5.2,
+                va="center", zorder=6)
+        return
     # right-angle black shoe tri: vertical leg UP the outer wall, apex OUTWARD
     nx, ny = cl.ndir(c.shoe_md)
     tx, ty = cl.tdir(c.shoe_md)
@@ -325,6 +340,27 @@ def _draw_plug(ax, cl: Centreline, plug, cas: Sequence[Casing], bore: Wellbore):
     lx, ly = cl.perp(plug.base_md, lr + cl.rdraw(1.5), 1)
     ax.text(float(lx[0]), float(cl.y((plug.top_md + plug.base_md) / 2)),
             plug.name, fontsize=5.2, va="center", color="0.35")
+
+
+def _draw_mechanical_plug(ax, cl: Centreline, mp, cas: Sequence[Casing],
+                          bore: Wellbore):
+    """Dark block across the bore at the setting depth: a bridge plug or
+    cement retainer closes the bore of the string it is set in."""
+    hosts = [c for c in cas if c.top_md <= mp.md <= c.shoe_md
+             and not c.milled_at(mp.md)
+             and (mp.casing_od_in is None or c.has_od(mp.casing_od_in))]
+    r_in = (min(c.id_in for c in hosts) / 2.0) if hosts \
+        else (_hole_r_in(mp.md, bore) or 3.0)
+    rr = cl.rdraw(r_in)
+    half = max(1.0, 0.35 * rr)
+    md = np.linspace(mp.md - half, mp.md + half, 8)
+    nx, ny = cl.ndir(md)
+    xL, yL = cl.x(md) - rr * nx, cl.y(md) - rr * ny
+    xR, yR = cl.x(md) + rr * nx, cl.y(md) + rr * ny
+    ax.fill(np.r_[xL, xR[::-1]], np.r_[yL, yR[::-1]], **_MECH_PLUG)
+    lx, ly = cl.perp(mp.md, rr + cl.rdraw(1.5), 1)
+    ax.text(float(lx[0]), float(ly[0]), mp.name, fontsize=5.2, va="center",
+            color="0.2")
 
 
 # --------------------------------------------------------------------------
@@ -393,6 +429,8 @@ def render_plumbing(
             _draw_liner_hanger(ax, cl, c, cas, start)
         for plug in b.cement_plugs:
             _draw_plug(ax, cl, plug, cas, b)
+        for mp in b.mechanical_plugs:
+            _draw_mechanical_plug(ax, cl, mp, cas, b)
 
     ax.set_aspect("equal")
     ax.set_ylim(ymax * 1.05, -ymax * 0.06)
