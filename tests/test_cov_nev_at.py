@@ -143,7 +143,9 @@ def test_source_stacked_form_matches_a_per_source_reference():
         i = int(np.searchsorted(smd, q) - 1)
         i = max(0, min(i, len(smd) - 2))
         f = float((q - smd[i]) / (smd[i + 1] - smd[i]))
-        inc_q, azi_q = em._interior_angles(i, f)
+        inc_q, azi_q = em.survey.inc_azi_at(q)
+        azi_q = (sazi[i] if inc_q == 0.0
+                 else azi_q + em.survey.header.convergence)
         Lq = q - smd[i]
         dd, di, da = em._partial_star_drk(sinc[i], sazi[i], inc_q, azi_q, Lq)
         pd, pi_, pa = em._partial_plus1_drk(sinc[i], sazi[i], dd, Lq)
@@ -188,3 +190,27 @@ def test_source_stacked_form_matches_a_per_source_reference():
             np.max(np.abs(got - ref)) / max(1e-30, np.max(np.abs(ref)))
         )
     assert worst < 1e-14, f"source-stacked form drifted: {worst:.2e} relative"
+
+
+def test_cov_nev_at_refuses_outside_the_survey():
+    """No covariance above the first station or beyond the last: extrapolating
+    the partial-leg weights returned a plausible matrix (trace ~27 m^2 at
+    md = -10 on ISCWSA well 03) for a depth that was never surveyed."""
+    import numpy as np
+    import pytest
+    import welleng as we
+
+    md = np.arange(0, 3000, 30.)
+    inc = np.clip((md - 300) / 1500 * 60, 0, 60)
+    azi = np.linspace(10., 80., len(md))
+    header = we.survey.SurveyHeader(
+        azi_reference='true', b_total=50000., dip=60., declination=0.
+    )
+    em = we.error.ErrorModel(
+        we.survey.Survey(md=md, inc=inc, azi=azi, header=header)
+    )
+    for q in (md[0] - 10.0, md[-1] + 10.0):
+        with pytest.raises(ValueError, match="outside the survey"):
+            em.cov_nev_at(q)
+    em.cov_nev_at(md[0])
+    em.cov_nev_at(md[-1])

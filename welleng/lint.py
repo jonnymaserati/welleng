@@ -168,7 +168,7 @@ class Finding:
 
     def __str__(self) -> str:
         if self.axis == "slerp":
-            return (f"{self.path}:{self.line}: hand-written SLERP arc tangent "
+            return (f"{self.path}:{self.line}: hand-written arc tangent "
                     f"-- a second implementation of the arc kernel.\n"
                     f"    {self.source}\n"
                     f"    use: MinCurve.interpolate(md, angles=True)")
@@ -336,16 +336,49 @@ def _has_sin(node: ast.AST) -> bool:
     return any(_is_sin(n) for n in ast.walk(node))
 
 
+def _has_cos(node: ast.AST) -> bool:
+    return any(isinstance(n, ast.Call) and (getattr(n.func, "attr", None)
+               or getattr(n.func, "id", None)) == "cos" for n in ast.walk(node))
+
+
+#: The one place the arc tangent is written out: the kernel itself.
+_KERNEL = ("welleng/utils.py", ("_arc_tangent", "_arc_inplane"))
+
+
 class _SlerpVisitor(ast.NodeVisitor):
-    """A SLERP blend of two tangents: ``sin(complement) ... / sin(...)``.
+    """A hand-written arc tangent, in either spelling:
+
+    - SLERP blend: ``sin(complement) ... / sin(...)``;
+    - Rodrigues in-plane vector: ``(t2 - cos(a) * t1) / sin(a)``.
 
     The denominator may be the sine itself or a name assigned from an
-    expression containing one (``s = np.where(straight, 1.0, np.sin(dl))``).
+    expression containing one (``s = np.where(straight, 1.0, np.sin(dl))``),
+    optionally indexed. The kernel (``MinCurve``'s ``_arc_tangent``) is the one
+    exempt place.
     """
 
     def __init__(self, path: str, lines: Sequence[str]) -> None:
         self.path, self.lines, self.findings = path, lines, []
         self._sin_names: set = set()
+        self._func: List[str] = []
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+        self._func.append(node.name)
+        self.generic_visit(node)
+        self._func.pop()
+
+    visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]
+
+    def _in_kernel(self) -> bool:
+        return (self.path.replace("\\", "/").endswith(_KERNEL[0])
+                and any(f in _KERNEL[1] for f in self._func))
+
+    def _flag(self, node: ast.AST) -> None:
+        line = self.lines[node.lineno - 1]  # type: ignore[attr-defined]
+        if SLERP_NOQA not in line and not self._in_kernel():
+            self.findings.append(Finding(
+                path=self.path, line=node.lineno,  # type: ignore[attr-defined]
+                axis="slerp", source=line.strip()))
 
     def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802 (ast API)
         if _has_sin(node.value):
@@ -355,19 +388,25 @@ class _SlerpVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _sin_denominator(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Subscript):
+            node = node.value
         return _is_sin(node) or (isinstance(node, ast.Name)
                                  and node.id in self._sin_names)
 
     def visit_BinOp(self, node: ast.BinOp) -> None:  # noqa: N802 (ast API)
         if isinstance(node.op, ast.Div) and self._sin_denominator(node.right):
-            for sub in ast.walk(node.left):
-                if _is_sin(sub) and _complement(sub.args[0]):  # type: ignore[attr-defined]
-                    line = self.lines[node.lineno - 1]
-                    if SLERP_NOQA not in line:
-                        self.findings.append(Finding(
-                            path=self.path, line=node.lineno, axis="slerp",
-                            source=line.strip()))
-                    break
+            left = node.left
+            if (isinstance(left, ast.BinOp) and isinstance(left.op, ast.Sub)
+                    and isinstance(left.right, ast.BinOp)
+                    and isinstance(left.right.op, ast.Mult)
+                    and _has_cos(left.right)):
+                # cos(a) TIMES a vector: ``1 - cos(x)`` (half-angle) is not one
+                self._flag(node)                  # Rodrigues u-form
+            else:
+                for sub in ast.walk(left):
+                    if _is_sin(sub) and _complement(sub.args[0]):  # type: ignore[attr-defined]
+                        self._flag(node)          # SLERP blend
+                        break
         self.generic_visit(node)
 
 

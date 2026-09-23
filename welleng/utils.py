@@ -1,3 +1,4 @@
+import math
 import re
 from typing import Annotated, Literal, Union
 
@@ -153,9 +154,17 @@ def _arc_tangent(v1, v2, th, sin_th, phi, R, curved, x):
     two agree with to ~1 ulp but which divides by ``sin(theta)`` per query.
     """
     cw = curved[..., None]
-    u = (v2 - np.cos(th)[..., None] * v1) / sin_th[..., None]
+    u = _arc_inplane(v1, v2, th, sin_th)
     tang_curved = np.cos(phi)[..., None] * v1 + np.sin(phi)[..., None] * u
     return np.where(cw, tang_curved, v1)
+
+
+def _arc_inplane(v1, v2, th, sin_th):
+    """The arc plane's unit vector perpendicular to ``v1``, towards ``v2`` --
+    the Rodrigues ``u``: the tangent at partial dogleg ``phi`` is
+    ``cos(phi) v1 + sin(phi) u``. Depends only on the leg, so
+    :meth:`MinCurve._leg_frames` computes it once per survey."""
+    return (v2 - np.cos(th)[..., None] * v1) / sin_th[..., None]
 
 
 def min_curve_step(delta_md, inc1, azi1, inc2, azi2, rf=None):
@@ -375,6 +384,7 @@ class MinCurve:
         # Per-station unit tangents are constants; cache them once so
         # interpolate() doesn't recompute get_vec on every query (welleng #307).
         self._tangents = get_vec(inc, azi, deg=False)
+        self._leg_frames_cache = None
         inc_1, inc_2 = inc[:-1], inc[1:]
         azi_1, azi_2 = azi[:-1], azi[1:]
 
@@ -501,6 +511,38 @@ class MinCurve:
                 return pos[0], float(inc_i[0]), float(azi_i[0])
             return pos, inc_i, azi_i
         return pos[0] if scalar else pos
+
+    def _leg_frames(self):
+        """Per-leg ``(v1, u, curved)``: start tangent, the in-plane vector
+        :func:`_arc_inplane` and whether the leg is curved. The kernel's
+        one-time set-up, computed once per survey rather than per query."""
+        if self._leg_frames_cache is None:
+            v1, v2 = self._tangents[:-1], self._tangents[1:]
+            th, sin_th, _, _, curved, _ = _arc_geometry(
+                v1, v2, self.dogleg[1:], self.delta_md[1:], np.zeros(len(v1)))
+            self._leg_frames_cache = (v1, _arc_inplane(v1, v2, th, sin_th),
+                                      curved)
+        return self._leg_frames_cache
+
+    def _leg_inc_azi(self, i, x):
+        """Inclination and azimuth (radians, azimuth in ``[0, 2*pi)``) at
+        distance ``x`` past station ``i`` -- :meth:`inc_azi_at` for a caller
+        that already holds the leg, as a scalar.
+
+        Same arc and same in-plane vector (:meth:`_leg_frames`); the scalar
+        arithmetic agrees with :meth:`inc_azi_at` to a few ulp, asserted in the
+        tests.
+        """
+        v1, u, curved = self._leg_frames()
+        if curved[i]:
+            dmd = self.delta_md[i + 1]
+            phi = x * self.dogleg[i + 1] / (1.0 if dmd == 0.0 else dmd)
+            e, n, v = math.cos(phi) * v1[i] + math.sin(phi) * u[i]
+        else:
+            e, n, v = v1[i]
+        inc = math.atan2(math.hypot(e, n), v)
+        azi = math.atan2(e, n) % (2.0 * math.pi)
+        return inc, azi
 
     def inc_azi_at(self, md):
         """Inclination / azimuth (radians) at measured depth(s) -- ATTITUDE ONLY.

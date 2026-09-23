@@ -291,8 +291,8 @@ class Clearance:
     def _at(curve, q):
         """Evaluate the continuous curve at parameter (measured depth) q.
 
-        Position is interpolated by **minimum curvature** (SLERP of the unit
-        tangents, via ``_interpolate_pos_nev``) — the same wellpath the
+        Position is interpolated by **minimum curvature** (the arc kernel,
+        ``MinCurve.interpolate``, via ``_interpolate_pos_nev``) — the same wellpath the
         separation rule uses, so the between-station closest approach follows the
         true arc, not the chord. Covariance is the **arc-faithful**
         ``ErrorModel.cov_nev_at`` when the survey carries an error model (the same

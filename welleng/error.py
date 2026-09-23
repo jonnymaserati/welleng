@@ -541,35 +541,6 @@ class ErrorModel():
         self._interior_prep_cache = cached
         return cached
 
-    def _interior_angles(self, i, f):
-        """Interior (inc, azi) at arc-fraction ``f`` on leg ``[i, i+1]``, radians.
-
-        The same minimum-curvature slerp the position interpolation uses,
-        ``sin((1-f)a)/sin(a) t_i + sin(f a)/sin(a) t_{i+1}``.
-        """
-        smd, sinc, sazi = self.survey_rad.T
-        dogleg = float(self.survey.dogleg[i + 1])
-        if dogleg < 1e-9:
-            return sinc[i], sazi[i]
-        vec_i = np.array([
-            np.sin(sinc[i]) * np.cos(sazi[i]),
-            np.sin(sinc[i]) * np.sin(sazi[i]),
-            np.cos(sinc[i]),
-        ])
-        vec_j = np.array([
-            np.sin(sinc[i + 1]) * np.cos(sazi[i + 1]),
-            np.sin(sinc[i + 1]) * np.sin(sazi[i + 1]),
-            np.cos(sinc[i + 1]),
-        ])
-        theta = dogleg * f
-        u = (vec_j - np.cos(dogleg) * vec_i) / np.sin(dogleg)
-        vec_q = np.cos(theta) * vec_i + np.sin(theta) * u
-        vec_q = vec_q / np.linalg.norm(vec_q)
-        return (
-            float(np.arccos(np.clip(vec_q[2], -1.0, 1.0))),
-            float(np.arctan2(vec_q[1], vec_q[0])) % (2 * np.pi),
-        )
-
     def _interior_stacks(self):
         """Per-class source arrays, stacked once per model, for :meth:`cov_nev_at`.
 
@@ -752,21 +723,43 @@ class ErrorModel():
         Parameters
         ----------
         md : float
-            Measured depth of the interior point (survey depth units).
+            Measured depth of the interior point (survey depth units), within
+            the survey: ``survey.md[0] <= md <= survey.md[-1]``.
 
         Returns
         -------
         numpy.ndarray
             The (3, 3) NEV covariance at ``md``.
+
+        Raises
+        ------
+        ValueError
+            If ``md`` lies outside the survey. There is no covariance above the
+            first station or beyond the last one to report; extrapolating the
+            partial-leg weights would return a plausible matrix for a depth that
+            was never surveyed.
         """
         smd, sinc, sazi = self.survey_rad.T
+        if not smd[0] <= md <= smd[-1]:
+            raise ValueError(
+                f"md={md} is outside the survey ({smd[0]} to {smd[-1]}); "
+                "cov_nev_at does not extrapolate.")
         n = len(smd)
         i = int(np.searchsorted(smd, md) - 1)
         i = max(0, min(i, n - 2))
         seg = smd[i + 1] - smd[i]
         f = 0.0 if seg == 0.0 else float((md - smd[i]) / seg)
 
-        inc_q, azi_q = self._interior_angles(i, f)
+        # interior attitude from the arc kernel (grid azimuth), turned to this
+        # model's true azimuth by the header's grid convergence -- a rotation
+        # about vertical, which the arc commutes with. Not the true-grid
+        # difference at station i: at a vertical station the grid azimuth is
+        # stored as 0 while the true one keeps its input value. Where the
+        # interior is itself vertical its azimuth is undefined, and the
+        # model's own station azimuth is used, as at the stations.
+        inc_q, azi_q = self.survey._leg_inc_azi(i, md - smd[i])
+        azi_q = (sazi[i] if inc_q == 0.0
+                 else azi_q + self.survey.header.convergence)
 
         Lq = md - smd[i]
         # partial-leg weights [i -> q]: drk (own, far station = q) and drkplus1

@@ -785,3 +785,23 @@ evaluations, each one `cov_nev_at` (53% of total) and one arc interpolation (23%
 well. Only 10 of the 107 searches end on a point another search already found, so
 merging candidates would save under 10%; not done. Machine: AMD Ryzen 9 5950X, Python
 3.12.3, .venv312.
+
+## 2026-09-23 — `cov_nev_at` interior attitude from the arc kernel; per-leg in-plane vector cached (0.30.0.dev0)
+
+`ErrorModel.cov_nev_at` took its interior attitude from a private copy of the arc tangent
+(`_interior_angles`). It now uses `MinCurve._leg_inc_azi`, a scalar single-leg attitude on
+the kernel's own in-plane vector, which `MinCurve._leg_frames` now computes once per survey
+(it was recomputed per query inside `_arc_tangent`). Routing through the array entry
+point `inc_azi_at` instead measured 121.7 µs/call (+72%) -- array set-up on one md -- so
+the single-leg method exists for callers that already hold the leg.
+
+| ISCWSA well 03, 2000 random md | before | after |
+|---|---|---|
+| `cov_nev_at` | 72.1 µs/call | **63.7 µs/call** |
+| `MahalanobisClearance`, ISCWSA set | 135.0 ms/pair | **130.5 ms/pair** |
+
+Parity vs the previous `cov_nev_at` over 5815 points (ISCWSA set, grid- and
+true-referenced surveys with 1.7 deg convergence, near-vertical with an azimuth wrap):
+worst relative difference 4.7e-14. `_leg_inc_azi` agrees with `inc_azi_at` within 1e-14
+rad on curved, straight, vertical and near-pi legs. Machine: AMD Ryzen 9 5950X, Python
+3.12.3, .venv312.
