@@ -447,8 +447,13 @@ class IscwsaClearance(Clearance):
     clearance_args: List
         See 'welleng.clearance.Clearance` for args.
     minimize_sf: bool
-        If `True` (default), then the closest points on the reference well
-        are determined and added to the `ref` object as interpolated stations.
+        If `True` (default), the separation-factor minimum between each
+        reference station that is a local minimum and its neighbours is found
+        (bounded search on each reference leg) and, where it is below the
+        station's value, inserted into `ref` as an interpolated station with
+        its position, attitude and covariance interpolated on the arc
+        (`Survey.interpolate_mds`). The value reported there is the minimum
+        the search found.
     clearance_kwargs: dict
          See 'welleng.clearance.Clearance` for kwargs.
 

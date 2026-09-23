@@ -125,6 +125,28 @@ cov = survey.err.errors.cov_NEVs       # NEV covariance per station
 > curve. Companion paper:
 > [doi:10.5281/zenodo.21130979](https://doi.org/10.5281/zenodo.21130979).
 
+### New in 0.30
+
+- **`Survey` has one anchor and one position array (breaking).** `start_xyz` and `start_nev`
+  are the same point in two frames: give either; given both, they must agree or `Survey`
+  raises — they are no longer added. `pos_nev`, `n`/`e`/`tvd`, `x`/`y`/`z` and `pos_xyz` are
+  views of one array and cannot disagree. Supplied `n`/`e`/`tvd` are the station positions,
+  kept as given; `supplied_residual` reports how far they sit from the minimum-curvature path.
+  A `Survey` keeps a copy of its header rather than writing into the one passed in.
+- **Clearance minima carry their real covariance.** `IscwsaClearance(minimize_sf=True)`
+  inserted its between-station minima with zero covariance, overstating the separation factor
+  there (by up to ~0.4 on the ISCWSA set). The minima are now inserted through
+  `Survey.interpolate_mds` with the arc-faithful covariance, the value reported is the minimum
+  the search found, and an offset station shared by two legs is one point. Station separation
+  factors still reproduce the published ISCWSA set. On that set clearance is ~6× faster for
+  station SFs and ~2.8× with `minimize_sf`.
+- **`ErrorModel.cov_nev_at` refuses outside the survey.** It raises for a measured depth above
+  the first station or beyond the last, rather than extrapolating a covariance for a depth that
+  was never surveyed. Interior values are unchanged.
+- **`python -m welleng.lint`** checks a package for linear interpolation of a trajectory axis
+  and for hand-written arc tangents (SLERP or Rodrigues form) — both of which the
+  minimum-curvature methods on `MinCurve` / `Survey` already provide.
+
 ### New in 0.29
 
 - **EDM reader, expanded** — the streaming Landmark **EDM / COMPASS** reader

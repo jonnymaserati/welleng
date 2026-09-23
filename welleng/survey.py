@@ -939,6 +939,12 @@ class Survey(MinCurve):
         tvd: (,n) list or array of floats (default: None)
             List or array of local well bore z coordinates, i.e. depth
             and usually relative to surface or mean sea level.
+            When ``n``, ``e`` and ``tvd`` are given they ARE the station
+            positions (``pos_nev`` and every position field), kept as given
+            -- a survey may be a set of points rather than a path, so they are
+            not recomputed. Their first station is the anchor.
+            :attr:`supplied_residual` reports the largest difference from the
+            minimum-curvature path through the same stations.
         x: (,n) list or array of floats (default: None)
             List or array of local well bore x coordinates, which is
             usually aligned to the east direction.
@@ -949,6 +955,8 @@ class Survey(MinCurve):
             List or array of well bore true vertical depths relative
             to the well surface datum (usually the drill floor
             elevation DFE, so not always identical to tvd).
+            ``x``, ``y``, ``z`` are the same positions as ``e``, ``n``,
+            ``tvd``; given both, they must agree or ``ValueError`` is raised.
         vec: (n,3) list or array of (,3) floats (default: None)
             List or array of well bore unit vectors that describe the
             inclination and azimuth of the well relative to (x,y,z)
@@ -957,7 +965,8 @@ class Survey(MinCurve):
             A SurveyHeader object with information about the well location
             and survey data. If left default then a SurveyHeader will be
             generated with the default properties assigned, but these may
-            not be relevant and may result in incorrect data.
+            not be relevant and may result in incorrect data. The survey
+            keeps a copy: the header passed in is not modified.
         radius: float or (,n) list or array of floats (default: None)
             If a single float is specified, this value will be
             assigned to the entire well bore. If a list or array of
@@ -985,6 +994,11 @@ class Survey(MinCurve):
             The start position of the well bore in (x,y,z) coordinates.
         start_nev: (,3) list or array of floats (default: [0,0,0])
             The start position of the well bore in (n,e,v) coordinates.
+            ``start_xyz`` and ``start_nev`` are ONE point, the survey's anchor,
+            written in two frames: give either. Given both (non-zero), they
+            must be the same point or ``ValueError`` is raised; they are never
+            added. When station positions are supplied, the first of them is
+            the anchor and these are not used.
         start_cov_nev: (,3,3) list or array of floats (default: None)
             The covariance matrix for the start position of the well
             bore in (n,e,v) coordinates.
@@ -2937,7 +2951,7 @@ def _interpolate_survey(
     assert index < len(survey.md) - 1, "Index is out of range"
 
     # Interpolated inc/azi via the inherited MinCurve arc interpolation -- Survey
-    # IS a MinCurve, so this is the single source of the min-curve SLERP (no
+    # IS a MinCurve, so this is the single source of the arc tangent (no
     # duplicated tangent maths here). azi is grid-referenced (MinCurve was built
     # on azi_grid_rad).
     _, inc, azi = survey.interpolate(survey.md[index] + x, angles=True)

@@ -658,7 +658,7 @@ class ErrorModel():
 
         For an interior point ``q`` at arc-fraction ``f`` on leg ``[i, i+1]``,
         station ``i`` and station ``i+1`` both drive the partial leg (via the
-        min-curve slerp), so the interior propagates BOTH: the own weight
+        minimum-curvature arc), so the interior propagates BOTH: the own weight
         ``drk(i->q)`` (far station) AND station i's out-leg coupling
         ``drkplus1(i->q)`` (near station). This is exact at BOTH ends -- the
         own-only form (drk alone) is exact at f->1 but drops the coupling and
@@ -671,8 +671,9 @@ class ErrorModel():
         - random (two INDEPENDENT measurements -> two outer products):
           ``cov_NEV[i] - outer(e_NEV_star[i]) + outer(g_i) + outer(g_j)`` with
           ``g_i = e_NEV_star[i] + coup + (1-f) qi`` and ``g_j = f qj`` -- the
-          partial q-own term splits (1-f)/f across the two stations (slerp-
-          Jacobian ~ f; exact at both ends, ~slerp tolerance interior).
+          partial q-own term splits (1-f)/f across the two stations (the arc
+          tangent's Jacobian ~ f; exact at both ends, to that approximation in
+          the interior).
 
         XCLA/XCLH (the course-length recurrence terms, typically dominant on
         deviated wells) use the partial-course-length convention
@@ -803,8 +804,8 @@ class ErrorModel():
         coup = E_i @ Jp                              # station-i partial coupling
         rand = st["random"]
         # random: two INDEPENDENT measurements -> two outer products. The partial
-        # q-own term splits (1-f)/f between stations i and i+1 (slerp-Jacobian
-        # ~ f; exact at both ends, ~slerp tolerance in the interior). Both
+        # q-own term splits (1-f)/f between stations i and i+1 (arc-tangent
+        # Jacobian ~ f; exact at both ends, approximate in the interior). Both
         # endpoints recover cov_NEV[i]/[i+1] exactly. The query-independent
         # `cov_NEV - outer(e_NEV_star, e_NEV_star)` part is pre-summed.
         g_i = st["e_NEV_star"][rand, i] + coup[rand] + (1.0 - f) * qi[rand]

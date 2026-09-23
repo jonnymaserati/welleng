@@ -141,9 +141,9 @@ _INTERP_FUNCS = {"interp"}          # np.interp / numpy.interp / bare interp
 #: positions and the residual is stated.
 NOQA = "# lint: trajectory-interp ok"
 
-#: Suppresses the SLERP rule on one line. For a symbolic derivation or a test
-#: oracle that states the published form (Sawaryn & Thorogood 2005, Eq. 13) on
-#: purpose -- never for numeric code that runs.
+#: Suppresses the arc-tangent rule on one line. For a symbolic derivation or a
+#: test oracle that states the published form (Sawaryn & Thorogood 2005, Eq. 13)
+#: on purpose -- never for numeric code that runs.
 SLERP_NOQA = "# lint: slerp ok"
 
 
@@ -414,14 +414,16 @@ def find_slerp_arc_tangent(
     paths: Iterable[str] | str,
     exclude: Sequence[str] = (".venv", "site-packages", "build", ".git"),
 ) -> List[Finding]:
-    """Every hand-written SLERP blend of arc tangents under ``paths``.
+    """Every hand-written arc tangent under ``paths``, in either spelling.
 
-    ``(sin(a - d) t1 + sin(d) t2) / sin(a)`` re-implements the minimum-curvature
-    arc tangent that :meth:`welleng.utils.MinCurve.interpolate` already
-    provides (``angles=True``), there in the Rodrigues ``u``-form, which divides
-    by ``sin(a)`` once in set-up rather than per query. A second
-    implementation agrees today and drifts the first time either is changed.
-    Call ``MinCurve.interpolate`` instead.
+    The SLERP blend ``(sin(a - d) t1 + sin(d) t2) / sin(a)`` and the Rodrigues
+    in-plane vector ``(t2 - cos(a) t1) / sin(a)`` both re-implement the
+    minimum-curvature arc tangent that :meth:`welleng.utils.MinCurve.interpolate`
+    (``angles=True``) and :meth:`~welleng.utils.MinCurve.inc_azi_at` provide.
+    A second implementation agrees today and drifts the first time either is
+    changed. Call the ``MinCurve`` methods instead. The kernel itself is the
+    one exempt place; ``(1 - cos x) / sin x`` (``tan(x/2)``) is not a tangent
+    and is not flagged. The function name predates the Rodrigues form.
 
     Same contract as :func:`find_linear_survey_interpolation`: empty when
     clean; an unparseable file is reported, not skipped.
@@ -453,7 +455,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     """CLI: ``python -m welleng.lint [--quiet] PATH...``. Exit 1 on findings.
 
     Runs both rules: linear interpolation of a trajectory axis, and a
-    hand-written SLERP arc tangent.
+    hand-written arc tangent.
     """
     args = list(sys.argv[1:] if argv is None else argv)
     quiet = "--quiet" in args
