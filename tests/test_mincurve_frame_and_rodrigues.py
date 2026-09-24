@@ -199,3 +199,25 @@ def test_leg_inc_azi_matches_inc_azi_at():
                 d = abs(a[1] - b[1])
                 # azimuth is undefined at vertical; elsewhere compare mod 2 pi
                 assert a[0] < 1e-12 or min(d, 2 * np.pi - d) < 1e-13
+
+
+def test_leg_frames_rebuild_the_kernel_tangent():
+    """cos(phi) v1 + sin(phi) u, from the public leg frame, is the tangent
+    interpolate(angles=True) returns -- including through north and near pi."""
+    md = np.arange(0.0, 211.0, 30.0)
+    inc = np.radians([0.3, 20, 60, 90, 88, 150, 2.0, 179.0])
+    azi = np.radians([10, 350, 5, 90, 95, 300, 20, 200])
+    mc = MinCurve(md, inc, azi)
+    v1, u, curved = mc.leg_frames()
+    for i in range(len(md) - 1):
+        for f in (0.1, 0.5, 0.9):
+            x = f * mc.delta_md[i + 1]
+            _, qi, qa = mc.interpolate(md[i] + x, angles=True)
+            want = np.array([np.sin(qi) * np.sin(qa), np.sin(qi) * np.cos(qa),
+                             np.cos(qi)])
+            if curved[i]:
+                phi = x * mc.dogleg[i + 1] / mc.delta_md[i + 1]
+                got = np.cos(phi) * v1[i] + np.sin(phi) * u[i]
+            else:
+                got = v1[i]
+            assert np.allclose(got, want, atol=1e-12)

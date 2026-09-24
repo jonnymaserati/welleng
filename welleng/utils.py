@@ -163,7 +163,7 @@ def _arc_inplane(v1, v2, th, sin_th):
     """The arc plane's unit vector perpendicular to ``v1``, towards ``v2`` --
     the Rodrigues ``u``: the tangent at partial dogleg ``phi`` is
     ``cos(phi) v1 + sin(phi) u``. Depends only on the leg, so
-    :meth:`MinCurve._leg_frames` computes it once per survey."""
+    :meth:`MinCurve.leg_frames` computes it once per survey."""
     return (v2 - np.cos(th)[..., None] * v1) / sin_th[..., None]
 
 
@@ -514,10 +514,16 @@ class MinCurve:
             return pos, inc_i, azi_i
         return pos[0] if scalar else pos
 
-    def _leg_frames(self):
-        """Per-leg ``(v1, u, curved)``: start tangent, the in-plane vector
-        :func:`_arc_inplane` and whether the leg is curved. The kernel's
-        one-time set-up, computed once per survey rather than per query."""
+    def leg_frames(self):
+        """Each leg's frame, ``(v1, u, curved)``, arrays over the legs.
+
+        ``v1`` (n-1, 3) is the leg's start tangent and ``u`` (n-1, 3) the unit
+        vector in the arc's plane, perpendicular to ``v1``, towards the end
+        tangent: the tangent at partial dogleg ``phi`` is
+        ``cos(phi) v1 + sin(phi) u``. ``curved`` (n-1,) is False for a straight
+        leg, whose ``u`` is not defined (read ``v1`` only). Components are
+        (east, north, vertical down). Computed once per survey.
+        """
         if self._leg_frames_cache is None:
             v1, v2 = self._tangents[:-1], self._tangents[1:]
             th, sin_th, _, _, curved, _ = _arc_geometry(
@@ -531,11 +537,11 @@ class MinCurve:
         distance ``x`` past station ``i`` -- :meth:`inc_azi_at` for a caller
         that already holds the leg, as a scalar.
 
-        Same arc and same in-plane vector (:meth:`_leg_frames`); the scalar
+        Same arc and same in-plane vector (:meth:`leg_frames`); the scalar
         arithmetic agrees with :meth:`inc_azi_at` to a few ulp, asserted in the
         tests.
         """
-        v1, u, curved = self._leg_frames()
+        v1, u, curved = self.leg_frames()
         if curved[i]:
             dmd = self.delta_md[i + 1]
             phi = x * self.dogleg[i + 1] / (1.0 if dmd == 0.0 else dmd)
