@@ -200,11 +200,11 @@ def _wall_strings(bore, casings):
 
 
 def _steel_at(c, md: float) -> bool:
-    """True when string ``c`` has steel at ``md``: within its run and not in
-    a milled length. Tubing pseudo-strings carry no ``milled``."""
-    return (c.top_md <= md <= c.shoe_md
-            and not any(m.top_md <= md <= m.base_md
-                        for m in getattr(c, "milled", ())))
+    """True when string ``c`` has steel at ``md`` (``Tubular.steel_at``: its
+    run, below any cut, outside milled lengths). Tubing pseudo-strings have
+    no cut or milling: their run is their steel."""
+    steel_at = getattr(c, "steel_at", None)
+    return steel_at(md) if steel_at else c.top_md <= md <= c.shoe_md
 
 
 def _annulus_outer_r(md: float, inner, casings, hole) -> float:
@@ -284,6 +284,8 @@ def _annulus_segments(md_top: float, md_base: float, casings, hole):
         # crossovers included: a combination string's own diameter step moves
         # the annulus wall as surely as another string's shoe does.
         milled = [e for m in getattr(c, "milled", ()) for e in (m.top_md, m.base_md)]
+        if getattr(c, "cut_md", None) is not None:
+            milled.append(c.cut_md)
         for m in (c.top_md, c.shoe_md, *c.crossovers(), *milled):
             if md_top < m < md_base:
                 edges.add(m)
@@ -366,6 +368,8 @@ def _draw_liner_hangers(dwg, casings, radial, d, norm, ymax) -> None:
             continue                        # run from surface: not hung
         if getattr(c, "kind", "casing") == "tubular":
             continue                        # hung from the wellhead, not above
+        if getattr(c, "cut_md", None) is not None:
+            continue                        # cut and pulled: hanger recovered
         hosts = [h.id_at(c.top_md) / 2.0 for h in casings
                  if h.od_at(c.top_md) > c.od_at(c.top_md)
                  and h.top_md <= c.top_md <= h.shoe_md]

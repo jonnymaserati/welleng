@@ -138,8 +138,7 @@ def _casings(bore: Wellbore, ancestors: Sequence[Wellbore]) -> List[Casing]:
 
 def _bore_r_in(md: float, cas: Sequence[Casing],
                hole_in: Optional[float]) -> Optional[float]:
-    ids = [c.id_in / 2.0 for c in cas
-           if c.top_md <= md <= c.shoe_md and not c.milled_at(md)]
+    ids = [c.id_in / 2.0 for c in cas if c.steel_at(md)]
     if ids:
         return min(ids)
     return hole_in
@@ -153,8 +152,7 @@ def _outer_edge_in(
     min(next-outer casing ID, drilled hole).
     """
     ids = [d.id_in / 2.0 for d in cas
-           if d.od_in > c.od_in and d.top_md <= md <= d.shoe_md
-           and not d.milled_at(md)]
+           if d.od_in > c.od_in and d.steel_at(md)]
     hr = hole_in if hole_in is not None else (min(ids) if ids else c.od_in / 2.0 + 1.0)
     if ids and min(ids) < hr:
         return min(ids), False           # confined by steel
@@ -275,7 +273,7 @@ def _draw_casing(ax, cl: Centreline, c: Casing, cas: Sequence[Casing], bore: Wel
             oR[i] = e
         _band(ax, cl, mdc, ro, oR, **_CEMENT)
     # steel wall, where it is still in the hole (milled lengths removed)
-    if not c.milled:
+    if not c.milled and c.cut_md is None:
         _band(ax, cl, md, ri, ro, **_STEEL)
     else:
         for top, base in c.steel_intervals():
@@ -304,8 +302,8 @@ def _draw_casing(ax, cl: Centreline, c: Casing, cas: Sequence[Casing], bore: Wel
 def _draw_liner_hanger(ax, cl: Centreline, c: Casing,
                        cas: Sequence[Casing], start_md: float):
     """Box-with-X in the annulus each side, at a hung liner's top (top_md > start)."""
-    if c.top_md <= start_md + 1e-6:
-        return
+    if c.top_md <= start_md + 1e-6 or c.cut_md is not None:
+        return                    # not hung, or cut and pulled (hanger recovered)
     hosts = [d.id_in / 2.0 for d in cas
              if d.od_in > c.od_in and d.top_md <= c.top_md <= d.shoe_md]
     if not hosts:
@@ -346,8 +344,7 @@ def _draw_mechanical_plug(ax, cl: Centreline, mp, cas: Sequence[Casing],
                           bore: Wellbore):
     """Dark block across the bore at the setting depth: a bridge plug or
     cement retainer closes the bore of the string it is set in."""
-    hosts = [c for c in cas if c.top_md <= mp.md <= c.shoe_md
-             and not c.milled_at(mp.md)
+    hosts = [c for c in cas if c.steel_at(mp.md)
              and (mp.casing_od_in is None or c.has_od(mp.casing_od_in))]
     r_in = (min(c.id_in for c in hosts) / 2.0) if hosts \
         else (_hole_r_in(mp.md, bore) or 3.0)

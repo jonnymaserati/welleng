@@ -176,6 +176,15 @@ class MilledInterval(_Base):
 
     top_md: float
     base_md: float
+    cement_removed: Optional[bool] = Field(
+        None,
+        description="True: the annular cement was removed with the steel "
+                    "(section milling + underream); False: it remains (e.g. a "
+                    "sidetrack window); None: NOT RECORDED. Only False keeps "
+                    "cement drawn over the length -- cement shown where it may "
+                    "have been milled out would claim a barrier that may not be "
+                    "there.",
+    )
 
     @model_validator(mode="after")
     def _ordered(self) -> "MilledInterval":
@@ -184,6 +193,24 @@ class MilledInterval(_Base):
                 f"milled interval base_md {self.base_md} is at or above "
                 f"top_md {self.top_md}")
         return self
+
+
+def _subtract(top: float, base: float,
+              cuts: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+    """``(top, base)`` with the merged ``cuts`` removed, as the pieces left."""
+    pieces = [(top, base)]
+    for ct, cb in cuts:
+        nxt = []
+        for a, b in pieces:
+            if cb <= a or ct >= b:
+                nxt.append((a, b))
+                continue
+            if ct > a:
+                nxt.append((a, ct))
+            if cb < b:
+                nxt.append((cb, b))
+        pieces = nxt
+    return [(a, b) for a, b in pieces if b > a]
 
 
 def _merge(intervals: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
@@ -250,6 +277,13 @@ class Tubular(_Base):
         default_factory=list,
         description="lengths of this string removed by milling (section mill "
                     "or window); the string stays one string",
+    )
+    cut_md: Optional[float] = Field(
+        None,
+        description="cut-and-pull: the string was cut here and recovered "
+                    "above. top_md keeps meaning where it was RUN from; the "
+                    "remaining stub stands on its own cement (no hanger). "
+                    "None = not cut",
     )
     # --- catalogue key + auto-filled dimensions (OSDU TubularComponent) ---
     nominal_weight_ppf: Optional[float] = Field(
@@ -392,12 +426,24 @@ class Tubular(_Base):
         removes steel that was never there. Milled lengths may not overlap.
         """
         base = self.shoe_md
+        if self.cut_md is not None:
+            if self.cut_md <= self.top_md or (
+                    base is not None and self.cut_md >= base):
+                raise ValueError(
+                    f"{self.name}: cut_md {self.cut_md} m is not on the string "
+                    f"({self.top_md}-{base} m)")
+            if self.toc_md is not None and self.toc_md < self.cut_md - 1e-6:
+                raise ValueError(
+                    f"{self.name}: cut at {self.cut_md} m is below the top of "
+                    f"cement at {self.toc_md} m -- the string above the cut is "
+                    "cemented and could not have been recovered")
+        start = self.top_md if self.cut_md is None else self.cut_md
         for c in self.annular_cement:
-            if c.top_md < self.top_md - 1e-6 or (
+            if c.top_md < start - 1e-6 or (
                     base is not None and c.base_md > base + 1e-6):
                 raise ValueError(
                     f"{self.name}: annular cement {c.top_md}-{c.base_md} m is "
-                    f"not behind the string ({self.top_md}-{base} m)")
+                    f"not behind the string ({start}-{base} m)")
         for m in self.milled:
             if m.top_md < self.top_md - 1e-6 or (
                     base is not None and m.base_md > base + 1e-6):
@@ -419,35 +465,46 @@ class Tubular(_Base):
         The ONE place a renderer or consumer asks where cement is behind a
         string. Empty when nothing is recorded -- never a default.
         """
-        spans = [(c.top_md, c.base_md) for c in self.annular_cement]
+        spans = _merge([(t, b) for t, b, _o in self.cement_records()])
+        cuts = _merge([(m.top_md, m.base_md) for m in self.milled
+                       if m.cement_removed is not False])
+        return [p for t, b in spans for p in _subtract(t, b, cuts)]
+
+    def cement_records(self) -> List[Tuple[float, float, Optional[str]]]:
+        """Recorded cement behind the string as stated, UNMERGED, with each
+        interval's origin -- the primary job as ``'primary'``. For a consumer
+        that must tell primary from remedial cement apart;
+        :meth:`cement_intervals` is where cement is drawn."""
+        recs = [(c.top_md, c.base_md, c.origin) for c in self.annular_cement]
         if self.toc_md is not None and self.shoe_md is not None \
                 and self.toc_md < self.shoe_md:
-            spans.append((self.toc_md, self.shoe_md))
-        return _merge(spans)
+            recs.append((self.toc_md, self.shoe_md, "primary"))
+        return sorted(recs, key=lambda r: (r[0], r[1]))
 
     def milled_at(self, md: float) -> bool:
         """True when ``md`` lies in a milled length of this string."""
         return any(m.top_md <= md <= m.base_md for m in self.milled)
 
+    def steel_at(self, md: float) -> bool:
+        """True when this string has steel at ``md``: within its run, below
+        any cut and outside milled lengths. The one test a renderer uses for
+        "is this string here"."""
+        if self.shoe_md is None or not self.top_md <= md <= self.shoe_md:
+            return False
+        if self.cut_md is not None and md < self.cut_md:
+            return False
+        return not self.milled_at(md)
+
     def steel_profile(self) -> List[Tuple[float, float, float, float]]:
         """:meth:`profile` with the milled lengths removed: the steel that is
         actually in the hole, ``(top_md, base_md, od_in, id_in)`` pieces."""
         out = []
-        cuts = _merge([(m.top_md, m.base_md) for m in self.milled])
+        removed = [(m.top_md, m.base_md) for m in self.milled]
+        if self.cut_md is not None:
+            removed.append((self.top_md, self.cut_md))
+        cuts = _merge(removed)
         for top, base, od, id_ in self.profile():
-            pieces = [(top, base)]
-            for ct, cb in cuts:
-                nxt = []
-                for a, b in pieces:
-                    if cb <= a or ct >= b:
-                        nxt.append((a, b))
-                        continue
-                    if ct > a:
-                        nxt.append((a, ct))
-                    if cb < b:
-                        nxt.append((cb, b))
-                pieces = nxt
-            out.extend((a, b, od, id_) for a, b in pieces if b > a)
+            out.extend((a, b, od, id_) for a, b in _subtract(top, base, cuts))
         return out
 
     def steel_intervals(self) -> List[Tuple[float, float]]:

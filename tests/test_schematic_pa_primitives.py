@@ -153,7 +153,9 @@ def test_section_draws_the_after_state():
     before = build_section(WellSchematic.from_dict(copy.deepcopy(BASE)))
     after = build_section(_after_state())
     assert len(_layers(after, "CASING")) == len(_layers(before, "CASING")) + 1
-    assert len(_layers(after, "CEMENT")) == len(_layers(before, "CEMENT")) + 1
+    # +1 perf-wash-cement; +1 because the primary cement is split at the
+    # milled window, whose cement removal is not recorded (so not drawn)
+    assert len(_layers(after, "CEMENT")) == len(_layers(before, "CEMENT")) + 2
     assert len(_layers(after, "PLUG")) == 2
 
 
@@ -180,3 +182,46 @@ def test_plumbing_draws_the_after_state_and_no_shoe_on_a_screen():
     render_plumbing(WellSchematic.from_dict(copy.deepcopy(BASE)), ax=ax)
     assert n_with_screen == len(_shoe_triangles(ax)) == 2 * 3   # 3 casings
     plt.close(fig)
+
+
+def test_milled_cement_drawn_only_when_recorded_as_remaining():
+    kept = _casing(milled=[{"top_md": 1500, "base_md": 1550,
+                            "cement_removed": False}])
+    assert kept.cement_intervals() == [(1400.0, 2600.0)]
+    for removed in (True, None):         # removed, or NOT RECORDED
+        c = _casing(milled=[{"top_md": 1500, "base_md": 1550,
+                             "cement_removed": removed}])
+        assert c.cement_intervals() == [(1400.0, 1500), (1550, 2600.0)]
+
+
+def test_cement_records_keep_origin_unmerged():
+    c = _casing(annular_cement=[
+        {"top_md": 1350, "base_md": 1450, "origin": "squeeze"}])
+    assert c.cement_records() == [(1350, 1450, "squeeze"),
+                                  (1400.0, 2600.0, "primary")]
+
+
+def test_cut_and_pull():
+    c = _casing(toc_md=1400.0, cut_md=1200.0)
+    assert c.steel_intervals() == [(1200.0, 2600.0)]
+    assert not c.steel_at(1100) and c.steel_at(1300)
+    with pytest.raises(ValueError, match="could not have been recovered"):
+        _casing(toc_md=1000.0, cut_md=1200.0)        # cut below the TOC
+    with pytest.raises(ValueError, match="not behind the string"):
+        _casing(cut_md=1200.0, annular_cement=[{"top_md": 1100,
+                                                "base_md": 1300}])
+    with pytest.raises(ValueError, match="not on the string"):
+        _casing(cut_md=2700.0)
+
+
+def test_cut_stub_draws_no_hanger():
+    """A cut stub stands on its own cement: no hanger. Moving top_md down to
+    the cut (the workaround before cut_md) drew one that does not exist."""
+    def hangers(**nine_five_eighths):
+        data = copy.deepcopy(BASE)
+        data["casings"][2].update(nine_five_eighths)
+        dwg = build_column(WellSchematic.from_dict(data))
+        return [e for e in dwg.entities
+                if getattr(e, "layer", None) == "HANGER"]
+    assert len(hangers(cut_md=1100.0)) == 0
+    assert len(hangers(top_md=1100.0)) > 0       # the workaround: a false hanger

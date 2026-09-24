@@ -128,7 +128,7 @@ def build_section(
     # mechanical plugs: a short bore-width block at the setting depth
     for mp in bore.mechanical_plugs:
         cand = [c.id_in for c in bore.drawable_casings
-                if c.top_md <= mp.md <= c.shoe_md and not c.milled_at(mp.md)
+                if c.steel_at(mp.md)
                 and (mp.casing_od_in is None or c.has_od(mp.casing_od_in))]
         bore_id = min(cand) if cand else 6.0
         dwg.add(Polygon(ribbon(mp.md - 3.0, mp.md + 3.0, bore_id),
