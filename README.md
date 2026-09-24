@@ -143,6 +143,9 @@ cov = survey.err.errors.cov_NEVs       # NEV covariance per station
 - **`ErrorModel.cov_nev_at` refuses outside the survey.** It raises for a measured depth above
   the first station or beyond the last, rather than extrapolating a covariance for a depth that
   was never surveyed. Interior values are unchanged.
+- **Schematics after plug and abandonment** — mechanical plugs (bridge plug, cement retainer),
+  lengths of a string milled out, a string cut and pulled, and annular cement beyond the primary
+  job (squeezes, perforate-wash-cement), drawn in the column, section and plumbing views.
 - **`python -m welleng.lint`** checks a package for linear interpolation of a trajectory axis
   and for hand-written arc tangents (SLERP or Rodrigues form) — both of which the
   minimum-curvature methods on `MinCurve` / `Survey` already provide.
