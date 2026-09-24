@@ -45,16 +45,18 @@ _FILL = Style(color="#e6e6e6", lineweight=0.0, fill="#ececec")
 class DepthLayout:
     """Shared depth<->paper mapping handed to every track."""
 
-    mode: str
-    resolver: DepthResolver
+    mode: str               # depth domain, "MD" or "TVD"
+    resolver: DepthResolver  # maps MD to plotting depth in ``mode``
     v_scale: float          # paper mm per depth-metre
     ymax: float             # max depth (metres) in ``mode``
 
     def y(self, md) -> float:
+        """Paper y (mm) for ``md``: its depth in ``mode`` times ``v_scale``."""
         return float(self.resolver.depth(md, self.mode)) * self.v_scale
 
     @property
     def bottom(self) -> float:
+        """Paper y (mm) of ``ymax``, the foot of every track."""
         return self.ymax * self.v_scale
 
 
@@ -65,6 +67,7 @@ class Track:
     width = 30.0
 
     def build(self, dwg: Drawing, layout: DepthLayout, x0: float) -> None:
+        """Draw the track into ``dwg`` with its left edge at paper ``x0`` (mm)."""
         raise NotImplementedError
 
     def _header(self, dwg: Drawing, x0: float) -> None:
@@ -73,10 +76,13 @@ class Track:
 
 
 class DepthTrack(Track):
+    """Depth ruler: gridlines and depth labels (m) in the layout's domain."""
+
     title = "depth"
     width = 14.0
 
     def build(self, dwg, layout, x0):
+        """Draw gridlines and labels at a rounded step from 0 to ``ymax``."""
         dwg.add_layer("GRID")
         dwg.add_layer("ANNOTATION")
         self._header(dwg, x0)
@@ -101,6 +107,7 @@ def _remap(entities, kx: float, ky: float, x0: float):
     heights and line weights are already paper-mm and are NOT touched.
     """
     def pt(p):
+        """Map a world point to paper mm in the band."""
         return (x0 + p[0] * kx, p[1] * ky)
 
     out = []
@@ -164,6 +171,7 @@ class SchematicTrack(Track):
         self.rock = rock
 
     def build(self, dwg, layout, x0):
+        """Draw the remapped column and the casing and plug names."""
         from .column import _free_slot, build_column
 
         col = build_column(self.schematic, mode=layout.mode, bare=True,
@@ -208,6 +216,8 @@ class SchematicTrack(Track):
 
 
 class LithologyTrack(Track):
+    """Formation bands filled with each formation's colour, names rotated."""
+
     title = "litho"
     width = 16.0
 
@@ -216,6 +226,7 @@ class LithologyTrack(Track):
         self.width = width
 
     def build(self, dwg, layout, x0):
+        """Draw one rectangle per band from ``formation_bands()``."""
         dwg.add_layer("LITHO")
         dwg.add_layer("ANNOTATION")
         self._header(dwg, x0)
@@ -230,6 +241,8 @@ class LithologyTrack(Track):
 
 
 class IntervalsTrack(Track):
+    """Formation bands flagged as seal or flow, labelled SEAL or FLOW."""
+
     title = "seal/flow"
     width = 12.0
 
@@ -238,6 +251,7 @@ class IntervalsTrack(Track):
         self.width = width
 
     def build(self, dwg, layout, x0):
+        """Draw a band per seal or flow formation; others are skipped."""
         dwg.add_layer("INTERVALS")
         dwg.add_layer("ANNOTATION")
         self._header(dwg, x0)
@@ -256,6 +270,8 @@ class IntervalsTrack(Track):
 
 
 class PPFPTrack(Track):
+    """Pore and frac pressure curves against depth, window between shaded."""
+
     title = "PP / FP"
     width = 44.0
 
@@ -264,6 +280,10 @@ class PPFPTrack(Track):
         self.width = width
 
     def build(self, dwg, layout, x0):
+        """Draw the curves on a linear pressure axis spanning the band.
+
+        Draws only the header when the schematic has no pressures.
+        """
         dwg.add_layer("PPFP")
         dwg.add_layer("ANNOTATION")
         self._header(dwg, x0)
@@ -278,6 +298,7 @@ class PPFPTrack(Track):
         span = pmax - pmin
 
         def px(p):
+            """Paper x (mm) for pressure ``p`` in the profile's unit."""
             return x0 + (p - pmin) / span * self.width
 
         ys = [layout.y(m) for m in pp.md]

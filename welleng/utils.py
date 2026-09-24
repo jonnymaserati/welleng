@@ -281,6 +281,8 @@ def _sin_cos_roots(a, b, c, alpha):
 
 
 class MinCurve:
+    """Minimum-curvature geometry of a survey in local coordinates."""
+
     def __init__(
         self,
         md,
@@ -732,6 +734,11 @@ def get_nev(
 
 
 def get_xyz(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
+    """Convert ``[n, e, v]`` positions to ``(n, 3)`` ``[x, y, z]``.
+
+    ``x`` is east and ``y`` north: ``start_nev`` is subtracted from ``pos``,
+    the first two columns are swapped, and ``start_xyz`` is added.
+    """
     y, x, z = (
         np.array([pos]).reshape(-1, 3) - np.array([start_nev])
     ).T
@@ -1042,6 +1049,27 @@ def NEV_to_HLA(
 
 
 def HLA_to_NEV(survey, HLA, cov=True, trans=None):
+    """Transform from HLA to NEV coordinate system; the inverse of
+    :func:`NEV_to_HLA`.
+
+    Parameters
+    ----------
+    survey: (n,3) array of floats
+        The [md, inc, azi] survey listing array, inc and azi in radians.
+        Unused when ``trans`` is given.
+    HLA: (n,3) or (n,3,3) array of floats
+        The HLA coordinates or covariance matrices.
+    cov: boolean
+        If True, ``HLA`` is (n,3,3) covariance matrices, else (n,3)
+        coordinates.
+    trans: (n,3,3) array of floats or None
+        A precomputed :func:`get_transform` result; ``None`` computes it from
+        ``survey``.
+
+    Returns
+    -------
+    NEV: (n,3) or (n,3,3) array of floats
+    """
     if trans is None:
         trans = get_transform(survey)
 
@@ -1123,12 +1151,18 @@ def _zyz_matrix(alpha: float, beta: float, gamma: float) -> NDArray:
 
 
 def get_unit_vec(vec):
+    """``vec`` divided by its (whole-array) Euclidean norm."""
     vec = vec / np.linalg.norm(vec)
 
     return vec
 
 
 def linear_convert(data, factor):
+    """Multiply a value, or each item of a list, by ``factor``.
+
+    ``None`` items pass through as ``None``. A list in returns a list; any
+    other input returns a single value.
+    """
     flag = False
     if not isinstance(data, list):
         flag = True
@@ -1141,6 +1175,12 @@ def linear_convert(data, factor):
 
 
 def make_cov(a, b, c, long=False):
+    """Build a covariance matrix from three standard deviations.
+
+    ``long=False`` gives the diagonal matrix ``diag(a**2, b**2, c**2)``;
+    ``long=True`` gives the full outer product (fully correlated). With
+    (n,) array inputs the result is (n, 3, 3); with scalars, (3, 3).
+    """
     # a, b, c = np.sqrt(np.array([a, b, c]))
     if long:
         cov = np.array([
@@ -1280,6 +1320,8 @@ def _get_arc_pos_and_vec(dogleg, radius):
 
 
 class Arc:
+    """A circular arc of given dogleg and radius, built at a local origin."""
+
     def __init__(self, dogleg, radius):
         """
         Generates a generic arc that can be transformed with a specific pos

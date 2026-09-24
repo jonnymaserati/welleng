@@ -792,6 +792,7 @@ class PressureProfile(_Base):
         """
 
         def conv(sg: float, h: float) -> float:
+            """Pressure in ``unit`` of an ``sg`` column over TVD ``h`` (m)."""
             p_pa = sg * 1000.0 * _G * h
             p_bar = p_pa / 1.0e5
             return p_bar if unit == "bar" else p_bar * 14.5037738
@@ -1000,15 +1001,19 @@ class WellSchematic(_Base):
 
     @classmethod
     def from_dict(cls, data: dict) -> "WellSchematic":
+        """Build and validate a schematic from a plain dict."""
         return cls.model_validate(data)
 
     @classmethod
     def from_json(cls, text: Union[str, bytes]) -> "WellSchematic":
+        """Build and validate a schematic from a JSON string or bytes."""
         return cls.model_validate(json.loads(text))
 
     @classmethod
     def load(cls, path: Union[str, Path]) -> "WellSchematic":
+        """Read and validate a schematic from a JSON file at ``path``."""
         return cls.from_json(Path(path).read_text())
 
     def to_json(self, **kwargs) -> str:
+        """Serialise to JSON; ``kwargs`` pass to ``model_dump_json``."""
         return self.model_dump_json(**kwargs)

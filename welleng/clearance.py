@@ -748,6 +748,7 @@ class IscwsaClearance(Clearance):
         lo, hi = -float(delta_md[0]), float(delta_md[1])
 
         def f(x):
+            """Separation factor at MD offset ``x`` (m) from station ``i``."""
             return self._get_sf_min(np.array([x]), i, delta_md)
 
         best = None

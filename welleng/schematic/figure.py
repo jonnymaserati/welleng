@@ -87,6 +87,7 @@ class WellFigure:
 
     @property
     def drawing(self) -> Drawing:
+        """The composite :class:`Drawing`, built on first access."""
         if self._drawing is None:
             self.build()
         return self._drawing

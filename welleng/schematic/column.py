@@ -177,18 +177,23 @@ class _TubingWall:
         self.name = item.name or "tubing"
 
     def od_at(self, md: float) -> float:
+        """Tubing OD (inches); constant, ``md`` is ignored."""
         return self.od_in
 
     def id_at(self, md: float) -> float:
+        """Tubing ID (inches), OD when unrecorded; ``md`` is ignored."""
         return self.id_in
 
     def has_od(self, od_in: float, tol: float = 1e-6) -> bool:
+        """Whether the tubing OD matches ``od_in`` (inches) within ``tol``."""
         return abs(self.od_in - od_in) <= tol
 
     def profile(self):
+        """One (top_md, shoe_md, od_in, id_in) row: the tubing is uniform."""
         return [(self.top_md, self.shoe_md, self.od_in, self.id_in)]
 
     def crossovers(self):
+        """No crossovers: the tubing is a single uniform section."""
         return []
 
 
@@ -454,6 +459,7 @@ def build_column(
     radial = radial_scale_for(bore, resolver, mode=mode, default=default_radial_scale)
 
     def d(md):
+        """Plotting depth (m) of ``md`` in ``mode``."""
         return float(resolver.depth(md, mode))
 
     dwg = Drawing(name=f"{schematic.well.name}_column_{mode}")

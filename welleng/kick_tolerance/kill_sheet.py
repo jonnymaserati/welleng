@@ -91,15 +91,16 @@ class MudModel:
     say where it came from.
     """
 
-    rho_ref_ppg: float
-    compressibility_per_psi: float = 0.0
+    rho_ref_ppg: float  # density [ppg] at the reference conditions
+    compressibility_per_psi: float = 0.0  # isothermal compressibility c [1/psi]
     thermal_expansion_per_degf: float = 0.0
     #: Reference conditions the density is quoted AT -- surface, normally.
-    p_ref_psi: float = 14.7
-    t_ref_degf: float = 60.0
+    p_ref_psi: float = 14.7  # reference pressure [psi]
+    t_ref_degf: float = 60.0  # reference temperature [degF]
 
     @property
     def incompressible_isothermal(self) -> bool:
+        """True when both compressibility and thermal expansion are zero."""
         return (self.compressibility_per_psi == 0.0
                 and self.thermal_expansion_per_degf == 0.0)
 
@@ -204,11 +205,11 @@ def string_capacity(id_in: float) -> float:
 class PumpSchedule:
     """One row of the drill-pipe pressure schedule."""
 
-    strokes: int
-    volume_bbl: float
+    strokes: int  # pump strokes from the start of the kill
+    volume_bbl: float  # volume pumped [bbl] at ``strokes``
     drillpipe_psi: float
     #: Fraction of the surface-to-bit displacement completed, 0.0 -> 1.0.
-    fraction: float
+    fraction: float  # 0.0 at surface, 1.0 with kill mud at the bit
 
 
 @dataclass(frozen=True)
@@ -258,14 +259,14 @@ class KillSheetInputs:
     schedule_steps: int = 10
     #: Mud model for the CURRENT mud. ``None`` = incompressible isothermal,
     #: i.e. exactly what the classic sheet assumes.
-    mud: Optional[MudModel] = None
-    surface_temp_degf: float = 60.0
+    mud: Optional[MudModel] = None  # used by ``method="analytical"`` only
+    surface_temp_degf: float = 60.0  # surface temperature [degF], analytical only
     geothermal_gradient_degf_per_ft: float = 0.0
     #: Front TVD [ft] as a function of the fraction of the string displaced.
     #: Default assumes a VERTICAL string -- in a deviated well the kill mud
     #: front reaches a given TVD after less pumping than this implies, and the
     #: caller must supply the well's own MD->TVD map.
-    front_tvd: Optional[object] = None
+    front_tvd: Optional[object] = None  # f(fraction) -> TVD [ft]; analytical
 
 
 @dataclass(frozen=True)
@@ -276,16 +277,16 @@ class KillSheetResult:
     #: Initial circulating pressure [psi] = SCRP + SIDP.
     icp_psi: float
     #: Final circulating pressure [psi] = SCRP * KMW / OMW.
-    fcp_psi: float
-    strokes_to_bit: int
-    strokes_bit_to_surface: Optional[int]
-    strokes_total: Optional[int]
-    minutes_to_bit: Optional[float]
+    fcp_psi: float  # [psi], reached at ``strokes_to_bit``
+    strokes_to_bit: int  # string volume / pump output, rounded
+    strokes_bit_to_surface: Optional[int]  # None without ``annulus_volume_bbl``
+    strokes_total: Optional[int]  # both legs; None without annulus volume
+    minutes_to_bit: Optional[float]  # at ``scr_rate_spm``; None when it is unset
     minutes_total: Optional[float]
     #: Drill-pipe pressure vs strokes, ICP at 0 to FCP at ``strokes_to_bit``.
     schedule: List[PumpSchedule] = field(default_factory=list)
     #: Non-fatal observations a driller should see on the sheet.
-    notes: List[str] = field(default_factory=list)
+    notes: List[str] = field(default_factory=list)  # e.g. SICP above MAASP
 
     def pressure_at(self, strokes: float) -> float:
         """Scheduled drill-pipe pressure [psi] at ``strokes`` pumped.

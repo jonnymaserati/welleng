@@ -65,12 +65,19 @@ def build_section(
         return np.array([resolver.vs(m, azimuth), resolver.tvd_at(m)])
 
     def normal(m):
+        """Unit (normal, tangent) of the path in the (VS, TVD) plane at ``m``.
+
+        The tangent is the chord over ``m`` +/- 2.5 m, clipped to the survey;
+        a degenerate chord gives a vertical tangent.
+        """
         d = P(min(md_grid[-1], m + 2.5)) - P(max(md_grid[0], m - 2.5))
         norm = np.linalg.norm(d)
         t = d / norm if norm > 1e-9 else np.array([0.0, 1.0])
         return np.array([-t[1], t[0]]), t
 
     def ribbon(top, base, od_in):
+        """Closed outline of a band of diameter ``od_in`` (inches, scaled by
+        the radial exaggeration) centred on the path from ``top`` to ``base`` MD."""
         n = max(4, int((base - top) / 20))
         mm = np.linspace(top, base, n)
         up, dn = [], []
