@@ -92,6 +92,7 @@ def _mute(colour: str, f: float = _ROCK_MUTE) -> str:
     return "#" + "".join(f"{int(round(v * 255)):02x}" for v in out)
 _CEMENT = Style(color="#8a8a8a", lineweight=0.2, fill="#bdbdbd")
 _PLUG = Style(color="#6f6f6f", lineweight=0.25, fill="#a6a6a6")
+_MECH_PLUG = Style(color="#111111", lineweight=0.3, fill="#4a4a4a")
 _TUBING = Style(color="#1565c0", lineweight=0.45)
 _GRID = Style(color="#cccccc", lineweight=0.15, linestyle="dotted")
 _LABEL = Style(color="#111111", lineweight=0.2)
@@ -198,6 +199,14 @@ def _wall_strings(bore, casings):
     return list(casings) + tubing
 
 
+def _steel_at(c, md: float) -> bool:
+    """True when string ``c`` has steel at ``md`` (``Tubular.steel_at``: its
+    run, below any cut, outside milled lengths). Tubing pseudo-strings have
+    no cut or milling: their run is their steel."""
+    steel_at = getattr(c, "steel_at", None)
+    return steel_at(md) if steel_at else c.top_md <= md <= c.shoe_md
+
+
 def _annulus_outer_r(md: float, inner, casings, hole) -> float:
     """Outer boundary of ``inner``'s annulus AT ``md``, as a radius in inches.
 
@@ -209,7 +218,7 @@ def _annulus_outer_r(md: float, inner, casings, hole) -> float:
     """
     r_inner = inner.od_at(md) / 2.0
     cands = [c.id_at(md) / 2.0 for c in casings
-             if c.od_at(md) > inner.od_at(md) and c.top_md <= md <= c.shoe_md]
+             if c.od_at(md) > inner.od_at(md) and _steel_at(c, md)]
     cands += [h.bit_in / 2.0 for h in hole if h.top_md <= md <= h.base_md]
     return min(cands) if cands else r_inner + 1.0
 
@@ -274,7 +283,10 @@ def _annulus_segments(md_top: float, md_base: float, casings, hole):
     for c in casings:
         # crossovers included: a combination string's own diameter step moves
         # the annulus wall as surely as another string's shoe does.
-        for m in (c.top_md, c.shoe_md, *c.crossovers()):
+        milled = [e for m in getattr(c, "milled", ()) for e in (m.top_md, m.base_md)]
+        if getattr(c, "cut_md", None) is not None:
+            milled.append(c.cut_md)
+        for m in (c.top_md, c.shoe_md, *c.crossovers(), *milled):
             if md_top < m < md_base:
                 edges.add(m)
     for h in hole:
@@ -356,6 +368,8 @@ def _draw_liner_hangers(dwg, casings, radial, d, norm, ymax) -> None:
             continue                        # run from surface: not hung
         if getattr(c, "kind", "casing") == "tubular":
             continue                        # hung from the wellhead, not above
+        if getattr(c, "cut_md", None) is not None:
+            continue                        # cut and pulled: hanger recovered
         hosts = [h.id_at(c.top_md) / 2.0 for h in casings
                  if h.od_at(c.top_md) > c.od_at(c.top_md)
                  and h.top_md <= c.top_md <= h.shoe_md]
@@ -503,13 +517,14 @@ def build_column(
         label = f.name + (f" ({f.density_sg:g} sg)" if f.density_sg else "")
         labels.append((y_lbl, (lo + hi) / 2.0 * s_lbl, label, _FLUID_LABEL))
 
-    # --- cement in annuli (toc -> shoe) ------------------------------------
+    # --- cement in annuli ---------------------------------------------------
     # Casings only: a tubing run has no annular cement, and _wall_strings adds
-    # tubing to `ordered` purely so a fluid can name the A annulus.
+    # tubing to `ordered` purely so a fluid can name the A annulus. Where the
+    # cement is comes from the model (Tubular.cement_intervals: the primary job
+    # plus any recorded annular cement); nothing recorded draws nothing.
     for c in sorted(casings, key=lambda c: -c.od_in):
-        if c.toc_md is None:
-            continue          # no cement RECORDED: draw nothing, claim nothing
-        for a, b in _annulus_segments(c.toc_md, c.shoe_md, casings, hole):
+        for a, b in (seg for top, base in c.cement_intervals()
+                     for seg in _annulus_segments(top, base, casings, hole)):
             mid_seg = (a + b) / 2.0
             r_in = c.od_at(mid_seg) / 2.0
             r_out = _annulus_outer_r(mid_seg, c, casings, hole)
@@ -534,7 +549,7 @@ def build_column(
         # string on one hanger; drawing a shoe at each diameter change asserts
         # the string ends there and the annulus opens below it, both false.
         prof = c.profile()
-        for seg_top, seg_base, seg_od, seg_id in prof:
+        for seg_top, seg_base, seg_od, seg_id in c.steel_profile():
             for sign in (-1, 1):
                 dwg.add(Polygon(
                     _band(seg_od / 2.0, seg_id / 2.0,
@@ -542,7 +557,7 @@ def build_column(
                     layer=L_CASING, style=_STEEL))
         shoe_top, _shoe_base, shoe_od, shoe_id = prof[-1]
         r_out, r_in = shoe_od / 2.0, shoe_id / 2.0
-        if not getattr(c, "has_shoe", True):
+        if not getattr(c, "shoe_remains", getattr(c, "has_shoe", True)):
             # Screens and junk terminate; they have no shoe, and a shoe is a
             # BARRIER-RELEVANT symbol -- drawing one asserts a barrier that is
             # not there. Label off the string end instead.
@@ -592,6 +607,27 @@ def build_column(
         dwg.add(Hatch(band, pattern="solid", layer=L_PLUG, style=_PLUG))
         s = radial.at(d(mid))
         labels.append((d(mid), -r_in * s, p.name, _CEMENT_LABEL))
+
+    # --- mechanical plugs (bridge plug / cement retainer) --------------------
+    # A plug closes the BORE of the string it is set in: drawn across that
+    # string's ID, as a short solid block (a seal, not a length of well).
+    for p in bore.mechanical_plugs:
+        hosts = [c for c in casings if _steel_at(c, p.md)
+                 and (p.casing_od_in is None or c.has_od(p.casing_od_in))]
+        r_in = (min(c.id_at(p.md) for c in hosts) / 2.0) if hosts else 3.0
+        y = d(p.md)
+        s = radial.at(y)
+        h = min(2.0 * r_in * s * _norm * PACKER_ASPECT, ymax * 0.008)
+        h = max(h, ymax * 0.002)
+        dwg.add(Polygon(
+            [(-r_in * s, y - h / 2.0), (r_in * s, y - h / 2.0),
+             (r_in * s, y + h / 2.0), (-r_in * s, y + h / 2.0)],
+            layer=L_PLUG, style=_MECH_PLUG))
+        if p.kind == "cement_retainer":
+            # the retainer's through-bore: a slot the cement is pumped through
+            dwg.add(Polyline([(0.0, y - h / 2.0), (0.0, y + h / 2.0)],
+                             layer=L_PLUG, style=_LEADER))
+        labels.append((y, -r_in * s, p.name, _CEMENT_LABEL))
 
     # --- completion --------------------------------------------------------
     # Tubing runs whose depths meet are ONE string. Drawn as independent

@@ -46,7 +46,10 @@ from .models import (
     Casing,
     AnnulusFluid,
     Perforation,
+    CementInterval,
     CementPlug,
+    MechanicalPlug,
+    MilledInterval,
     CompletionItem,
     Formation,
     HoleSection,
@@ -73,7 +76,10 @@ from .tracks import (
 __all__ = [
     # models
     "Well", "Wellbore", "WellSchematic", "SurveyRef", "HoleSection",
-    "Tubular", "TubularSection", "Casing", "CementPlug", "AnnulusFluid",
+    "Tubular", "TubularSection", "Casing", "CementInterval",
+    "CementPlug",
+    "MechanicalPlug",
+    "MilledInterval", "AnnulusFluid",
     "Perforation", "CompletionItem", "Formation", "PressureProfile",
     # drawing model
     "Drawing", "Layer", "ViewTransform", "RadialScale", "Style", "Symbol",
