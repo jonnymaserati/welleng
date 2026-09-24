@@ -97,3 +97,35 @@ def test_transform_projection_coordinates():
         result,
         np.full_like(result, REFERENCE.get('wgs84-utm31'))
     )
+
+
+def test_transform_refuses_a_ballpark_datum_shift():
+    """ED50 -> ETRS89 onshore Netherlands has no operation of stated accuracy
+    valid there without grids; PROJ's fallback ("ballpark") returns the
+    coordinates unchanged, ~130 m out, so the transform refuses."""
+    import pytest
+    geo = we.survey.SurveyParameters('EPSG:4230')             # ED50 lat/lon
+    with pytest.raises(ValueError, match="unchanged"):
+        geo.transform_coordinates([(52.0, 4.5)], 'EPSG:4258')
+
+
+def test_transform_uses_an_operation_valid_where_the_points_are():
+    geo = we.survey.SurveyParameters('EPSG:4230')
+    # Dutch North Sea: covered by ED50 to ETRS89 (15), stated 1 m
+    out = geo.transform_coordinates([(54.0, 4.5)], 'EPSG:4258')
+    assert "ED50 to ETRS89 (15)" in geo.last_operation["name"]
+    assert geo.last_operation["accuracy_m"] == 1.0
+    moved = np.hypot((out[0][0] - 54.0) * 111_000,
+                     (out[0][1] - 4.5) * 111_000 * np.cos(np.radians(54.0)))
+    assert 50.0 < moved < 200.0                       # a real datum shift
+    # onshore Netherlands to WGS 84: ED50 to WGS 84 (18), not an operation
+    # whose area of use ends south of the point
+    CALCULATOR.transform_coordinates(
+        (REFERENCE['easting'], REFERENCE['northing']), 'EPSG:32631')
+    assert "ED50 to WGS 84 (18)" in CALCULATOR.last_operation["name"]
+
+
+def test_transform_same_datum_is_a_conversion():
+    CALCULATOR.transform_coordinates(
+        (REFERENCE['easting'], REFERENCE['northing']), 'EPSG:4230')
+    assert CALCULATOR.last_operation["accuracy_m"] == 0.0
