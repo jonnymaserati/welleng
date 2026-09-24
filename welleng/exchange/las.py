@@ -74,12 +74,12 @@ class LasError(Exception):
 class LasFile:
     """A parsed LAS log. ``curves`` maps mnemonic -> 1-D array."""
 
-    well: dict[str, Any] = field(default_factory=dict)
-    curves: dict[str, np.ndarray] = field(default_factory=dict)
-    units: dict[str, str] = field(default_factory=dict)
-    descriptions: dict[str, str] = field(default_factory=dict)
-    index_mnemonic: str = "DEPT"
-    source: str | None = None
+    well: dict[str, Any] = field(default_factory=dict)  # ~Well section values
+    curves: dict[str, np.ndarray] = field(default_factory=dict)  # values as read
+    units: dict[str, str] = field(default_factory=dict)  # declared unit, or ""
+    descriptions: dict[str, str] = field(default_factory=dict)  # curve description
+    index_mnemonic: str = "DEPT"  # mnemonic of the index (first) curve
+    source: str | None = None  # file path read; None for text or bytes input
 
     # -- access ----------------------------------------------------------- #
     def mnemonics(self) -> list[str]:
@@ -88,6 +88,7 @@ class LasFile:
 
     @property
     def depth(self) -> np.ndarray:
+        """The index curve in its declared unit, unconverted; see :meth:`depth_m`."""
         return self.curves[self.index_mnemonic]
 
     @property

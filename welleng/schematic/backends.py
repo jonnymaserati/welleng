@@ -194,6 +194,7 @@ def to_pdf(drawing: Drawing, path: str, sheet: str = "A4") -> str:
 
 
 def to_png(drawing: Drawing, path: str, dpi: int = 150) -> str:
+    """Render via :func:`to_matplotlib` to a PNG at ``dpi``; returns ``path``."""
     import matplotlib.pyplot as plt
 
     fig = to_matplotlib(drawing)
@@ -211,9 +212,11 @@ def to_svg(drawing: Drawing, path: str, margin: float = 8.0) -> str:
     xmin, ymin, xmax, ymax = _bbox(prims)
     # SVG y increases downward; our paper y is negative-for-deeper, so flip.
     def sx(x):
+        """Drawing x (mm) to SVG x, left edge of the bbox at ``margin``."""
         return x - xmin + margin
 
     def sy(y):
+        """Drawing y (mm) to SVG y, flipped, bbox ``ymax`` at ``margin``."""
         return (-y) - (-ymax) + margin
 
     w = (xmax - xmin) + 2 * margin

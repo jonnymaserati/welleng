@@ -166,8 +166,8 @@ def _norm(basename: str) -> str:
 class WinlogProject:
     """A parsed WinLog datapack. ``well`` is the header; tables are read lazily."""
 
-    path: str
-    well: dict[str, str] = field(default_factory=dict)
+    path: str  # the datapack directory
+    well: dict[str, str] = field(default_factory=dict)  # .wwf header: MNEMONIC -> value
     _dbf_paths: dict[str, str] = field(default_factory=dict)   # norm-name -> path
     _cache: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     _counts: dict[str, int] = field(default_factory=dict)      # norm-name -> n_records

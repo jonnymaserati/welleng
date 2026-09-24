@@ -78,9 +78,11 @@ class Centreline:
         self._y = resolver.depth(self.grid, mode)
 
     def x(self, md):
+        """Vertical-section departure (m) at ``md``, linear between grid points."""
         return np.interp(md, self.grid, self._x)
 
     def y(self, md):
+        """Plotting depth (m, ``mode``) at ``md``, linear between grid points."""
         return np.interp(md, self.grid, self._y)
 
     def rdraw(self, r_in: float) -> float:
@@ -399,6 +401,7 @@ def render_plumbing(
         vs_azi = _default_vs_azi(resolvers)
 
     def ancestors(b: Wellbore) -> List[Wellbore]:
+        """Parent bores of ``b`` present in the schematic, root first."""
         chain: List[Wellbore] = []
         p = b.parent_id
         while p is not None and p in bores:

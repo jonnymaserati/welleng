@@ -295,16 +295,16 @@ class DroppedTerm:
     ``welleng/errors/conformance.py`` -- not a defect in the survey.
     """
 
-    code: str
+    code: str  # ISCWSA term code
     """The term's ISCWSA code, e.g. ``'XYM3E'``."""
 
-    missing: Optional[str]
+    missing: Optional[str]  # unbound variable name; None if not recoverable
     """The variable the formula referenced and the interpreter could not bind,
     where that is recoverable from the error. ``None`` means the evaluation
     failed for some other reason -- see :attr:`reason`, and do not read None
     as "nothing was missing"."""
 
-    reason: str
+    reason: str  # the underlying exception, as text
     """The underlying exception, as text."""
 
     def __str__(self) -> str:

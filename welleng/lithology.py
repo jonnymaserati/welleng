@@ -60,15 +60,16 @@ class LithologyError(Exception):
 class Interval:
     """One lithostratigraphic interval. ``pattern`` is an FGDC section-37 code."""
 
-    name: str
-    top: float
-    base: float
+    name: str  # unit name, as labelled on the column
+    top: float  # top depth, in the caller's depth units
+    base: float  # base depth, same units as ``top``
     colour: str = "#ffffff"
-    pattern: int | None = None
-    note: str = ""
+    pattern: int | None = None  # FGDC code; None draws flat colour only
+    note: str = ""  # free text carried with the interval
 
     @property
     def thickness(self) -> float:
+        """``base - top``, in the depth units of the interval."""
         return self.base - self.top
 
 
@@ -269,15 +270,15 @@ class PatternMatch:
     actively contradicted.
     """
 
-    code: int | None
+    code: int | None  # set only when ``reason`` is ``matched``
     """FGDC pattern number, or ``None``."""
 
-    reason: str
+    reason: str  # one of the five values listed below
     """``matched`` · ``ambiguous`` (two lithologies, or a class word too broad)
     · ``unmapped`` (a rock the FGDC chart has no pattern for) ·
     ``no_lithology`` (the name does not mention rock at all) · ``no_name``."""
 
-    words: tuple[str, ...] = ()
+    words: tuple[str, ...] = ()  # lithology words found in the name
     """The lithology words seen, so a caller can say what it could not resolve."""
 
     @property
@@ -448,9 +449,11 @@ class FgdcPatterns:
 
     @property
     def available(self) -> bool:
+        """True when a pattern directory is set and exists."""
         return bool(self.directory) and os.path.isdir(self.directory)
 
     def path(self, code: int) -> str | None:
+        """Path to ``<code>.png``, or None if the directory or file is absent."""
         if not self.available:
             return None
         p = os.path.join(self.directory, f"{int(code)}.png")

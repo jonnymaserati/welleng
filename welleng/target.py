@@ -180,6 +180,7 @@ class Target:
 
     @location.setter
     def location(self, value):
+        """Set ``n``, ``e``, ``tvd`` from a 3-vector; ``None`` clears all three."""
         if value is None:
             self.n = self.e = self.tvd = None
             return

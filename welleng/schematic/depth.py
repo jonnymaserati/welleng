@@ -194,6 +194,11 @@ class DepthResolver:
         return pos[idx]
 
     def tvd_at(self, md):
+        """Minimum-curvature TVD (m) at ``md``, scalar or array.
+
+        Out-of-range MDs are reported (see :data:`STRICT_RANGE`) and clamped
+        to the surveyed range.
+        """
         self._check_range(md, "tvd_at")
         out = self._at(md)[:, 2]
         return out if np.ndim(md) else float(out[0])
@@ -224,9 +229,11 @@ class DepthResolver:
 
     @property
     def total_depth(self):
+        """Deepest MD (m) of the survey; same value as :attr:`md_max`."""
         return float(self.md[-1])
 
     def max_depth(self, mode: str = "MD") -> float:
+        """Plotting depth (m) of the deepest station in ``mode``."""
         return float(self.depth(self.md[-1], mode))
 
 

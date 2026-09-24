@@ -216,6 +216,7 @@ class SuggestHit(NLOGModel):
 
     @property
     def borehole_id(self) -> Optional[int]:
+        """``object_id`` as an int, or None when the hit carries none."""
         return int(self.object_id) if self.object_id is not None else None
 
 
@@ -240,6 +241,7 @@ class DocumentRecord(NLOGModel):
 
     @property
     def title(self) -> str:
+        """``full_title``, else ``bar_code_title``, else ``""``."""
         return self.full_title or self.bar_code_title or ""
 
     def hint(self) -> DocumentHint:

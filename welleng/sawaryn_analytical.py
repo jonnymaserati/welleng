@@ -1414,10 +1414,12 @@ def solve_clc_landing_region(p1, t1, t4, target, R1, R2=None, k=1.0):
         c, u, v = frame = _target_frame(target)
 
         def Pv(A):                             # vectorised: (M, 2) -> (M, 3)
+            """In-plane ``(a, b)`` offsets to NEV points on the target plane."""
             A = np.atleast_2d(A)
             return c + A[:, 0:1] * u + A[:, 1:2] * v
 
         def p4_of(ab):
+            """One in-plane ``(a, b)`` offset to its NEV point."""
             return Pv(np.asarray(ab, float)[None])[0]
 
         if shape == "rectangle":
@@ -1498,6 +1500,7 @@ def solve_clc_landing_region(p1, t1, t4, target, R1, R2=None, k=1.0):
         ext = k * np.sqrt(np.diag(target.cov))
 
         def maha_b(A):
+            """Squared Mahalanobis distance of each NEV point from the centre."""
             D = (np.atleast_2d(A) - center) @ Li.T
             return np.sum(D * D, axis=1)
         val, x = _refine_batched(

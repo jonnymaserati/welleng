@@ -98,13 +98,14 @@ class SurfaceCoordinates:
     because a wrong projection assumption is silent.
     """
 
-    dx: list[float]
-    dy: list[float]
-    coord_system: str
-    units: str
+    dx: list[float]  # x coordinate per station, in ``units``
+    dy: list[float]  # y coordinate per station, in ``units``
+    coord_system: str  # the survey's coordSystemCode, as declared
+    units: str  # "metre" or "degree", resolved from ``coord_system``
 
     @property
     def is_projected(self) -> bool:
+        """True when the coordinates are in metres (a projected system)."""
         return self.units == "metre"
 
 

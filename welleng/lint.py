@@ -149,11 +149,11 @@ SLERP_NOQA = "# lint: slerp ok"
 class Finding:
     """One linear interpolation of a trajectory axis."""
 
-    path: str
-    line: int
-    axis: str
+    path: str  # the scanned file, as walked from ``paths``
+    line: int  # 1-based line number; 0 when the file could not be parsed
+    axis: str  # the axis name, ``'slerp'``, or ``'<unreadable>'``
     """The trajectory axis being interpolated (the ``fp`` argument)."""
-    source: str
+    source: str  # the offending source line, stripped
     """The offending source line, stripped."""
 
     @property
@@ -215,6 +215,7 @@ class _Visitor(ast.NodeVisitor):
         self.bound: dict = {}
 
     def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802 (ast API)
+        """Record each plain name bound from a trajectory axis."""
         axis = _axis_name(node.value)
         if axis is not None:
             for target in node.targets:
@@ -223,6 +224,7 @@ class _Visitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:  # noqa: N802
+        """As :meth:`visit_Assign`, for an annotated assignment."""
         if node.value is not None:
             axis = _axis_name(node.value)
             if axis is not None and isinstance(node.target, ast.Name):
@@ -243,6 +245,7 @@ class _Visitor(ast.NodeVisitor):
         return None
 
     def visit_Call(self, node: ast.Call) -> None:  # noqa: N802 (ast API)
+        """Flag an interpolation call whose ``fp`` is a trajectory axis."""
         func = node.func
         name = (func.attr if isinstance(func, ast.Attribute)
                 else func.id if isinstance(func, ast.Name) else None)
@@ -361,6 +364,7 @@ class _SlerpVisitor(ast.NodeVisitor):
         self._func: List[str] = []
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+        """Track the enclosing function name, for the kernel exemption."""
         self._func.append(node.name)
         self.generic_visit(node)
         self._func.pop()
@@ -379,6 +383,7 @@ class _SlerpVisitor(ast.NodeVisitor):
                 axis="slerp", source=line.strip()))
 
     def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802 (ast API)
+        """Record each plain name assigned from an expression with a sine."""
         if _has_sin(node.value):
             for tgt in node.targets:
                 if isinstance(tgt, ast.Name):
@@ -392,6 +397,7 @@ class _SlerpVisitor(ast.NodeVisitor):
                                  and node.id in self._sin_names)
 
     def visit_BinOp(self, node: ast.BinOp) -> None:  # noqa: N802 (ast API)
+        """Flag a division by a sine in either arc-tangent spelling."""
         if isinstance(node.op, ast.Div) and self._sin_denominator(node.right):
             left = node.left
             if (isinstance(left, ast.BinOp) and isinstance(left.op, ast.Sub)
