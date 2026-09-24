@@ -1,7 +1,7 @@
 """Tests for the RGD lithostratigraphy nomenclature resolver.
 
 Hierarchy is the verified deliverable (names are OCR-raw). Acceptance anchor: the
-P11 De Ruyter codes welleng-drilling flagged must all resolve, and the prefix
+P11 De Ruyter codes previously flagged must all resolve, and the prefix
 pairs it could only flag "unresolved" must now classify as parent/child.
 """
 import pytest
@@ -75,7 +75,7 @@ def test_only_stratigraphic_codes_survive_the_cleanup():
     # non-lithostratigraphic tokens (organisation abbreviations, legend words)
     # were swept out of the scanned pages; the invariant that removed them is
     # "every real RGD code roots to a 2-letter group". Assert it holds — no code
-    # roots to a non-group short token (welleng-projects 2026-09-07).
+    # roots to a non-group short token.
     units = rgd._units()
     groups = {c for c, u in units.items() if u["parent"] is None and len(c) == 2}
 

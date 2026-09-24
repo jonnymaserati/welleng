@@ -20,7 +20,7 @@ lock it against the migration engine (``_max_influx_circulated``):
 
    So the marching path's assurance is: internal reasonableness, monotonicity,
    and agreement with the analytical solver. Real engineering assurance --
-   NOT paper reproduction. See ``docs/dev/KICK_CLOSED_FORM_AUDIT.md``.
+   NOT paper reproduction.
 
   * conservative mode reproduces the migration's safe-side bound on standard
     geometry (base / weak-zone / sloped-FP), and stays CONSERVATIVE (<= the march)

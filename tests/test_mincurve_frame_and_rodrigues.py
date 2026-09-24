@@ -180,3 +180,22 @@ def test_the_nev_attitude_is_the_true_one_not_a_transposed_one():
         i, a = MinCurve(md, inc, azi, frame=frame).inc_azi_at(50.0)
         assert np.degrees(i) == pytest.approx(90.0, abs=1e-9)
         assert np.degrees(a) % 360 == pytest.approx(0.0, abs=1e-9)
+
+
+def test_leg_inc_azi_matches_inc_azi_at():
+    """The single-leg scalar attitude (cov_nev_at's) and inc_azi_at share the
+    arc and the in-plane vector; only the scalar arithmetic differs, so they
+    agree to a few ulp -- on curved, straight, vertical and near-pi legs."""
+    md = np.arange(0.0, 331.0, 30.0)
+    inc = np.radians([0, 0, 5, 30, 30, 90, 179.0, 1.0, 1.0, 60, 60, 120])
+    azi = np.radians([0, 0, 10, 350, 350, 20, 200.0, 25, 25, 359.9, 0.1, 90])
+    for mc in (MinCurve(MD, INC, AZI), MinCurve(MD, INC, AZI, frame="nev"),
+               MinCurve(md, inc, azi)):
+        for i in range(len(mc.md) - 1):
+            for x in np.linspace(0.0, mc.delta_md[i + 1], 7):
+                a = mc._leg_inc_azi(i, float(x))
+                b = mc.inc_azi_at(float(mc.md[i] + x))
+                assert abs(a[0] - b[0]) < 1e-14
+                d = abs(a[1] - b[1])
+                # azimuth is undefined at vertical; elsewhere compare mod 2 pi
+                assert a[0] < 1e-12 or min(d, 2 * np.pi - d) < 1e-13

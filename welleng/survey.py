@@ -31,7 +31,6 @@ from .utils import (
     HLA_to_NEV,
     NEV_to_HLA,
     get_xyz,
-    min_curve_step,
     radius_from_dls,
 )
 from .error import ErrorModel, ERROR_MODELS
@@ -703,6 +702,44 @@ class Survey(MinCurve):
     reference systems (true/magnetic/grid), calculates dogleg severity, toolface,
     build/turn rates, and optionally propagates ISCWSA error model covariances.
 
+    ⚠️ IF ALL YOU WANT IS THE WELLPATH, USE ``welleng.MinCurve`` INSTEAD
+    -------------------------------------------------------------------
+    ``Survey`` SUBCLASSES :class:`~welleng.utils.MinCurve`: the geometry is the
+    base class, and what ``Survey`` adds is a 26-field header. Positions,
+    dogleg, TVD, attitude at a depth and arc interpolation are all available
+    from ``MinCurve`` alone, with 16 attributes instead of 77.
+
+    ⛔ **The header is not free, and the cost is not speed** (construction is
+    only ~1.4x). **Every header field left unset takes a DEFAULT, and several
+    of those defaults are ASSERTIONS about the well, not neutral values:**
+
+    ======================  ==========  ====================================
+    field                   default     what it asserts
+    ======================  ==========  ====================================
+    ``latitude``            51.4934     the well is at Greenwich
+    ``longitude``           0.0098      "
+    ``altitude``            0.0         at sea level
+    ``b_total`` / ``dip``   50000 / 70  a geomagnetic field
+    ``declination``         0.0         true north == magnetic north
+    ``convergence``         0.0         grid north == true north
+    ``survey_date``         today       surveyed today
+    ======================  ==========  ====================================
+
+    🔴 These are load-bearing, not cosmetic: ``header.latitude`` feeds the gyro
+    earth-rate terms (``welleng.errors.tool_errors``) and the ISCWSA
+    conformance inputs. A ``Survey`` built for geometry and later handed an
+    error model computes its gyro terms at Greenwich, silently, for any well
+    that is not in south-east London. ``mag_source`` records provenance for the
+    magnetic values; ``latitude``, ``longitude``, ``altitude`` and
+    ``survey_date`` carry no such marker.
+
+    ⇒ Reach for ``Survey`` when the header data EXISTS and something needs it:
+    error models and uncertainty, azimuth referencing, units, survey
+    composition, export. Reach for ``MinCurve`` for a wellpath. Promote with
+    :meth:`Survey.from_min_curve` when the extra data turns up -- it handles
+    the radians/degrees difference between the two, which silently flattens a
+    well if done by hand.
+
     Attributes
     ----------
     header : SurveyHeader
@@ -902,6 +939,12 @@ class Survey(MinCurve):
         tvd: (,n) list or array of floats (default: None)
             List or array of local well bore z coordinates, i.e. depth
             and usually relative to surface or mean sea level.
+            When ``n``, ``e`` and ``tvd`` are given they ARE the station
+            positions (``pos_nev`` and every position field), kept as given
+            -- a survey may be a set of points rather than a path, so they are
+            not recomputed. Their first station is the anchor.
+            :attr:`supplied_residual` reports the largest difference from the
+            minimum-curvature path through the same stations.
         x: (,n) list or array of floats (default: None)
             List or array of local well bore x coordinates, which is
             usually aligned to the east direction.
@@ -912,6 +955,8 @@ class Survey(MinCurve):
             List or array of well bore true vertical depths relative
             to the well surface datum (usually the drill floor
             elevation DFE, so not always identical to tvd).
+            ``x``, ``y``, ``z`` are the same positions as ``e``, ``n``,
+            ``tvd``; given both, they must agree or ``ValueError`` is raised.
         vec: (n,3) list or array of (,3) floats (default: None)
             List or array of well bore unit vectors that describe the
             inclination and azimuth of the well relative to (x,y,z)
@@ -920,7 +965,8 @@ class Survey(MinCurve):
             A SurveyHeader object with information about the well location
             and survey data. If left default then a SurveyHeader will be
             generated with the default properties assigned, but these may
-            not be relevant and may result in incorrect data.
+            not be relevant and may result in incorrect data. The survey
+            keeps a copy: the header passed in is not modified.
         radius: float or (,n) list or array of floats (default: None)
             If a single float is specified, this value will be
             assigned to the entire well bore. If a list or array of
@@ -948,6 +994,11 @@ class Survey(MinCurve):
             The start position of the well bore in (x,y,z) coordinates.
         start_nev: (,3) list or array of floats (default: [0,0,0])
             The start position of the well bore in (n,e,v) coordinates.
+            ``start_xyz`` and ``start_nev`` are ONE point, the survey's anchor,
+            written in two frames: give either. Given both (non-zero), they
+            must be the same point or ``ValueError`` is raised; they are never
+            added. When station positions are supplied, the first of them is
+            the anchor and these are not used.
         start_cov_nev: (,3,3) list or array of floats (default: None)
             The covariance matrix for the start position of the well
             bore in (n,e,v) coordinates.
@@ -967,7 +1018,10 @@ class Survey(MinCurve):
             self.header = SurveyHeader()
         else:
             assert isinstance(header, SurveyHeader)
-            self.header = header
+            # a COPY: this survey writes its datum into its header below, and a
+            # header shared with the survey it came from would carry that write
+            # back into the other survey
+            self.header = copy.deepcopy(header)
         assert unit == self.header.depth_unit, (
             "inconsistent units with header"
         )
@@ -1019,22 +1073,13 @@ class Survey(MinCurve):
         self.e = np.array(e) if e is not None else e  # type: ignore[assignment]
         self.tvd = np.array(tvd) if tvd is not None else tvd  # type: ignore[assignment]
 
-        # start_nev will be overwritten if n, e, tvd data provided
-        if not all((self.n is None, self.e is None, self.tvd is None)):
-            self.start_nev = np.array(
-                [self.n[0], self.e[0], self.tvd[0]]
-            )
-        else:
-            self.start_nev = np.array(start_nev)
+        self._resolve_anchor(start_xyz, start_nev, x, y, z)
 
         # Georeferencing truth lives on the header: mirror the resolved global
         # datum there (the position transform reads it from the header).
         self.header.start_nev = self.start_nev
         self.header.start_xyz = np.asarray(self.start_xyz, dtype=float)
 
-        self.x = np.array(x) if x is not None else x  # type: ignore[assignment]
-        self.y = np.array(y) if y is not None else y  # type: ignore[assignment]
-        self.z = np.array(z) if z is not None else z  # type: ignore[assignment]
         if vec is not None:
             if nev:
                 self.vec_nev = vec  # type: ignore[assignment]
@@ -1094,6 +1139,58 @@ class Survey(MinCurve):
             self._get_toolface_and_rates()
             return self.__dict__[name]
         raise AttributeError(name)
+
+    @classmethod
+    def from_min_curve(cls, min_curve, **kwargs) -> "Survey":
+        """Promote a :class:`~welleng.utils.MinCurve` to a full ``Survey``.
+
+        ``Survey`` IS a ``MinCurve`` -- the geometry is the base class and the
+        header is what a ``Survey`` adds. Reach for ``MinCurve`` when all that
+        is wanted is a wellpath; promote here when the extra data actually
+        exists and something needs it (error models, azimuth referencing,
+        units, export).
+
+        ⚠️ ``MinCurve`` holds inc and azi in RADIANS; ``Survey`` takes DEGREES
+        unless told otherwise. This passes ``deg=False`` for you. Doing the
+        promotion by hand and forgetting it reads each radian value as a
+        degree, which FLATTENS the well rather than raising an error: a 60
+        degree hold becomes 1.05 degrees, i.e. near-vertical. Measured on a
+        900 m build-hold. Every value stays in range, the survey is still
+        monotonic and well formed, and nothing downstream objects.
+
+        ⚠️ Every header field left unset takes a DEFAULT, and several of those
+        are assertions rather than neutral values -- ``latitude`` defaults to
+        51.4934 (Greenwich) and feeds the gyro earth-rate terms. Supply what
+        is known; do not promote to get a Survey-shaped object you do not need.
+
+        Parameters
+        ----------
+        min_curve: welleng.utils.MinCurve
+            The geometry to promote.
+        **kwargs
+            Passed to ``Survey``: ``header``, ``error_model``, ``start_nev``
+            and the rest. ``deg`` is set to ``False`` unless given.
+
+        Returns
+        -------
+        Survey
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from welleng.utils import MinCurve
+        >>> from welleng.survey import Survey
+        >>> mc = MinCurve(
+        ...     np.array([0., 30.]), np.radians([0., 3.]), np.radians([0., 45.])
+        ... )
+        >>> survey = Survey.from_min_curve(mc)
+        >>> bool(np.allclose(survey.inc_rad, mc.inc))
+        True
+        """
+        kwargs.setdefault("deg", False)
+        return cls(
+            md=min_curve.md, inc=min_curve.inc, azi=min_curve.azi, **kwargs
+        )
 
     def _process_azi_ref(
         self, inc: ArrayLike, azi: ArrayLike, deg: bool
@@ -1211,21 +1308,80 @@ class Survey(MinCurve):
         # move+rotate+scale transform (the header owns the georef state).
         sc = self.header.grid_scale_factor
         _A = np.array([[0.0, sc, 0.0], [sc, 0.0, 0.0], [0.0, 0.0, 1.0]])
-        _sx = np.asarray(self.header.start_xyz, dtype=float)
-        _sn = np.asarray(self.header.start_nev, dtype=float)
-        _b = np.array([_sx[1] * sc + _sn[0], _sx[0] * sc + _sn[1], _sx[2] + _sn[2]])
-        self.pos_xyz = self.poss + self.start_xyz
-        self.pos_nev = self.poss @ _A.T + _b
-
-        if self.x is None:
-            self.x, self.y, self.z = (self.poss + self.start_xyz).T
-        if self.n is None:
-            self._get_nev()
+        self._local_to_nev = _A
+        # ONE anchor (start_nev), ONE transform: every position field below is
+        # a view of pos_nev, so they cannot disagree.
+        _b = np.asarray(self.header.start_nev, dtype=float)
+        self._computed_nev = self.poss @ _A.T + _b
+        # Supplied positions ARE the positions: a Survey may be a set of points
+        # (e.g. the closest points on an offset well), not a path to recompute.
+        self.pos_nev = (
+            self._computed_nev if self.supplied_nev is None
+            else self.supplied_nev.copy()
+        )
+        self.pos_xyz = self.pos_nev[:, [1, 0, 2]]
+        self.n, self.e, self.tvd = self.pos_nev.T
+        self.x, self.y, self.z = self.pos_xyz.T
         if vec is None:
             self.vec_xyz = get_vec(self.inc_rad, self.azi_grid_rad, deg=False)
             self.vec_nev = get_vec(
                 self.inc_rad, self.azi_grid_rad, deg=False, nev=True
             )
+
+    def _resolve_anchor(self, start_xyz, start_nev, x=None, y=None, z=None) -> None:
+        """Resolve the survey's ONE anchor: the first station's position.
+
+        ``start_xyz`` (east, north, tvd) and ``start_nev`` (north, east, tvd)
+        are the same point written in two frames. Either may be given; if both
+        are given (non-zero) they must be that same point, or this refuses --
+        they are never added. Supplied station positions (``n``, ``e``,
+        ``tvd``) set the anchor from their first station and are kept, as
+        given, in :attr:`supplied_nev`, and they ARE the survey's positions --
+        a survey may be a set of points rather than a path, so they are never
+        recomputed. Every position field is a view of one array, so they
+        cannot disagree. :attr:`supplied_residual` reports the largest
+        difference between the supplied positions and the minimum-curvature
+        path through the same stations.
+        """
+        sx = np.asarray(start_xyz, dtype=float).reshape(3)
+        sn = np.asarray(start_nev, dtype=float).reshape(3)
+        nev_given = all(v is not None for v in (self.n, self.e, self.tvd))
+        xyz_given = all(v is not None for v in (x, y, z))
+        from_nev = (np.column_stack([self.n, self.e, self.tvd]).astype(float)
+                    if nev_given else None)
+        from_xyz = (np.column_stack([y, x, z]).astype(float)   # (E,N,V) -> (N,E,V)
+                    if xyz_given else None)
+        if from_nev is not None and from_xyz is not None and not np.allclose(
+                from_nev, from_xyz, rtol=0, atol=1e-9):
+            raise ValueError(
+                "n/e/tvd and x/y/z are the same positions in two frames but "
+                "disagree; pass one of them.")
+        self.supplied_nev = from_nev if from_nev is not None else from_xyz
+        if self.supplied_nev is not None:
+            anchor = self.supplied_nev[0]
+        elif sx.any() and sn.any():
+            if not np.allclose(sx[[1, 0, 2]], sn, rtol=0, atol=1e-9):
+                raise ValueError(
+                    "start_xyz and start_nev describe the SAME point in two frames "
+                    f"(E,N,TVD vs N,E,TVD) but disagree: start_xyz={sx.tolist()}, "
+                    f"start_nev={sn.tolist()}. Pass one of them."
+                )
+            anchor = sn
+        elif sx.any():
+            anchor = sx[[1, 0, 2]]
+        else:
+            anchor = sn
+        self.start_nev = anchor
+        self.start_xyz = anchor[[1, 0, 2]]
+
+    @property
+    def supplied_residual(self) -> Optional[float]:
+        """Largest |supplied - minimum-curvature| station position, or ``None``
+        if no positions were supplied. Meaningful only when the stations form a
+        path; for a set of points it measures nothing useful."""
+        if self.supplied_nev is None:
+            return None
+        return float(np.max(np.abs(self.supplied_nev - self._computed_nev)))
 
     def _get_nev(self) -> None:
         self.n, self.e, self.tvd = get_nev(
@@ -1518,9 +1674,10 @@ class Survey(MinCurve):
 
         Returns
         -------
-        node: we.node.Node object
+        node: we.node.Node object or None
             A node with attributes describing the point at the provided
-            measured depth.
+            measured depth, or ``None`` if ``md`` is above the first station
+            or beyond the last -- the survey is never extrapolated.
 
         Examples
         --------
@@ -1549,12 +1706,14 @@ class Survey(MinCurve):
             'interpolated': True
         }
         """
-        s = interpolate_md(self, md)
-        if s is None:
-            return None
-        node = get_node(s, -1, s.interpolated[-1])  # type: ignore[index]
-
-        return node
+        if md < self.md[0]:
+            return None  # above the first station: nothing was surveyed there
+        idx = int(np.searchsorted(self.md, md, side="left")) - 1
+        if idx >= len(self.md) - 1:
+            return None  # beyond the last station
+        if idx < 0:
+            return _interpolate_node(self, 0.0, 0)
+        return _interpolate_node(self, md - self.md[idx], idx)
 
     def interpolate_tvd(self, tvd: float) -> list:
         """Interpolate the survey at a target true vertical depth.
@@ -1573,9 +1732,15 @@ class Survey(MinCurve):
         list of Node
             Every crossing of ``tvd``, sorted by measured depth (normally a
             single element; empty if ``tvd`` is outside the well's TVD range).
+            A ``tvd`` equal to a turning point's TVD is touched once, not
+            crossed, and returns ONE Node at the turning point.
 
         Notes
         -----
+        ``tvd`` is in this survey's own depth frame (the frame of
+        :attr:`tvd`), so the survey's start depth is accounted for here.
+        :meth:`MinCurve.interpolate_tvd` takes the LOCAL frame instead.
+
         Breaking change (welleng 0.15.0): returns a ``list`` of Nodes instead
         of a single Node. Use ``interpolate_tvd(tvd)[0]`` on a monotonic well
         for the previous behaviour.
@@ -2128,9 +2293,7 @@ class Survey(MinCurve):
         ).T.reshape(-1, 3)
         survey_new[-1] = self.survey_deg[-1]
 
-        # Update the new survey header as the new azimuth reference is 'grid'.
-        sh = self.header
-        sh.azi_reference = 'grid'
+        sh = grid_header(self.header)
 
         # Create a new Survey instance
         survey = Survey(
@@ -2635,6 +2798,29 @@ class TurnPoint:
         self.location = location
 
 
+def derived_header(header: "SurveyHeader", **fields: Any) -> "SurveyHeader":
+    """A copy of ``header`` with ``fields`` set; the original is not modified.
+
+    For building a survey from another one with some header values changed.
+    Setting them on the original header instead would change the survey it
+    belongs to.
+    """
+    h = copy.deepcopy(header)
+    for name, value in fields.items():
+        setattr(h, name, value)
+    return h
+
+
+def grid_header(header: "SurveyHeader") -> "SurveyHeader":
+    """A copy of ``header`` whose azimuths are grid-referenced.
+
+    For a survey DERIVED from another whose angles are already on grid
+    (``azi_grid_rad``): building it on the original header would apply the
+    grid convergence a second time. The original header is not modified.
+    """
+    return derived_header(header, azi_reference="grid")
+
+
 def get_node(
     survey: "Survey", idx: int, interpolated: bool = False
 ) -> Node:
@@ -2703,19 +2889,19 @@ def interpolate_mds(survey: "Survey", md: ArrayLike) -> "Survey":
     assert md[0] >= survey.md[0], "The shortest md is not within the survey"
     assert md[-1] <= survey.md[-1], "The largest md is beyond the survey"
 
-    # get the closest (preceding) survey stations
-    idxs = np.searchsorted(survey.md, md, side="left") - 1
-    idxs = np.clip(idxs, 0, len(survey.md) - 2)
-
-    xs = md - survey.md[idxs]
-
-    return _interpolate_surveys(survey, md, xs, idxs)
+    return _interpolate_surveys(survey, md)
 
 
 def interpolate_md(survey: "Survey", md: float) -> Optional["Survey"]:
     """
     Interpolates a survey at a given measured depth.
+
+    Returns ``None`` when ``md`` lies outside the survey -- above the first
+    station or beyond the last. There is no extrapolation at either end.
     """
+    if md < survey.md[0]:
+        return None  # above the first station: nothing was surveyed there
+
     # get the closest survey stations
     idx = np.searchsorted(survey.md, md, side="left") - 1
 
@@ -2765,7 +2951,7 @@ def _interpolate_survey(
     assert index < len(survey.md) - 1, "Index is out of range"
 
     # Interpolated inc/azi via the inherited MinCurve arc interpolation -- Survey
-    # IS a MinCurve, so this is the single source of the min-curve SLERP (no
+    # IS a MinCurve, so this is the single source of the arc tangent (no
     # duplicated tangent maths here). azi is grid-referenced (MinCurve was built
     # on azi_grid_rad).
     _, inc, azi = survey.interpolate(survey.md[index] + x, angles=True)
@@ -2780,8 +2966,7 @@ def _interpolate_survey(
         )
     ).reshape(3, 3)
 
-    sh = survey.header
-    sh.azi_reference = 'grid'
+    sh = grid_header(survey.header)
 
     s = Survey(
         md=np.array(
@@ -2810,12 +2995,43 @@ def _interpolate_survey(
     return s
 
 
-def _interpolate_surveys(
-    survey: "Survey", md: np.ndarray, xs: np.ndarray, indexes: np.ndarray
-) -> "Survey":
+def _interpolate_node(survey: "Survey", x: float = 0, index: int = 0) -> Node:
+    """The Node at distance ``x`` past station ``index``.
+
+    Position and angles both come from :meth:`MinCurve.interpolate` -- the arc
+    displacement from station ``index`` is added to that station's stored
+    ``n, e, tvd`` -- so no intermediate two-station Survey is built. Agrees
+    with the previous two-station route: directions bit-identical, positions
+    within 2.4 ulp on the ISCWSA 11-well set and synthetic builds. Near a pi
+    dogleg the half-angle position loses precision as ~``1/cos(theta/2)**2``
+    (see :meth:`MinCurve.interpolate`); at 177 deg it is ~1e-12 m, about twice
+    the previous route's error.
     """
-    Interpolate multiple points at distances ``xs`` between their respective
-    pairs of survey stations using minimum curvature. Vectorized equivalent
+    index = _ensure_int_or_float(index, int)  # type: ignore[assignment]
+    x = _ensure_int_or_float(x, float)
+
+    assert index < len(survey.md) - 1, "Index is out of range"
+
+    md = survey.md[index] + x
+    pos, inc, azi = survey.interpolate(md, angles=True)
+    vec_nev = get_vec(inc, azi, deg=False, nev=True)
+
+    interpolated = not (x == 0 or x == survey.md[index + 1] - survey.md[index])
+
+    return Node(
+        pos=_anchored_nev(survey, pos, index, x).tolist(),
+        vec=np.asarray(vec_nev).reshape(-1)[:3].tolist(),
+        md=float(md),
+        unit=survey.header.depth_unit,
+        nev=True,
+        interpolated=interpolated,
+    )
+
+
+def _interpolate_surveys(survey: "Survey", md: np.ndarray) -> "Survey":
+    """
+    Interpolate the survey at several measured depths and return a new Survey
+    of the original stations plus the interpolated ones. Vectorized equivalent
     of `_interpolate_survey`.
 
     Parameters
@@ -2823,15 +3039,8 @@ def _interpolate_surveys(
         survey: welleng.Survey
             A survey object with at least two survey stations.
         md: (,n) array of floats
-            The measured depths of the points of interest. Assumes that
-            each value in md is not already in survey.md.
-        xs: (,n) array of floats
-            Lengths along the well path from each indexed survey station to
-            perform the interpolation at. Must be less than the length to the
-            next survey station.
-        indexes: (,n) array of ints
-            The indexes of the survey station from which to interpolate each
-            x in xs.
+            The measured depths of the points of interest, inside the survey.
+            Assumes that no value in md is already in survey.md.
 
     Returns
     -------
@@ -2839,59 +3048,43 @@ def _interpolate_surveys(
             Note that an `interpolated` property is added indicating if the
             survey station is interpolated (True) or not (False).
     """
-    assert indexes[-1] < len(survey.md) - 1, "Index is out of range"
+    # inc/azi from the one arc kernel (MinCurve.interpolate, Rodrigues tangent);
+    # azi is grid-referenced because MinCurve was built on azi_grid_rad
+    pos, inc, azi = survey.interpolate(md, angles=True)
 
-    total_doglegs = survey.dogleg[indexes + 1]
-    azi, inc = np.zeros(len(xs)), np.zeros(len(xs))
-
-    # regions which are effectively straight (tangent sections)
-    mask = np.where(total_doglegs < 1e-14)
-    azi[mask] = survey.azi_grid_rad[indexes][mask]
-    inc[mask] = survey.inc_rad[indexes][mask]
-
-    # regions which are not straight
-    mask = np.where(total_doglegs >= 1e-14)
-    t1 = survey.vec_xyz[indexes][mask]
-    t2 = survey.vec_xyz[indexes + 1][mask]
-
-    dogleg = (
-        xs[mask] * (total_doglegs[mask] / survey.delta_md[indexes + 1][mask])
-    )
-
-    t = (
-        t1 * (
-            np.sin(total_doglegs[mask] - dogleg)
-            / np.sin(total_doglegs[mask])
-        )[:, np.newaxis]
-        + t2 * (np.sin(dogleg) / np.sin(total_doglegs[mask]))[:, np.newaxis]
-    )
-
-    # normalise tangent vectors
-    t = t / np.linalg.norm(t, axis=-1).reshape(-1, 1)
-
-    inc_azi = get_angles(t)
-    inc[mask], azi[mask] = inc_azi[:, 0], inc_azi[:, 1]
+    # Positions: the survey's own at its stations; between them, the arc
+    # displacement from the bracketing station added to that station's position
+    # -- the same rule as interpolate_md, so the two entry points agree.
+    idx = np.clip(np.searchsorted(survey.md, md, side="left") - 1,
+                  0, len(survey.md) - 2)
+    nev_new = _anchored_nev(survey, np.atleast_2d(pos), idx, md - survey.md[idx])
 
     # merge the interpolated stations with the original stations and sort on md
     len_svy = len(survey.md)
     len_md = len(md)
-    sorted_arr = np.zeros((3, len_svy + len_md))
+    sorted_arr = np.zeros((6, len_svy + len_md))
     sorted_arr[0, 0:len_svy] = survey.md
     sorted_arr[0, len_svy:] = md
     sorted_arr[1, 0:len_svy] = survey.inc_rad
     sorted_arr[1, len_svy:] = inc
     sorted_arr[2, 0:len_svy] = survey.azi_grid_rad
     sorted_arr[2, len_svy:] = azi
+    sorted_arr[3:, 0:len_svy] = survey.pos_nev.T
+    sorted_arr[3:, len_svy:] = nev_new.T
 
     sorted_arr = sorted_arr[:, np.argsort(sorted_arr[0, :])]
 
-    sh = survey.header
-    sh.azi_reference = 'grid'
+    sh = grid_header(survey.header)
 
     survey_interpolated = Survey(
         md=sorted_arr[0, :],
         inc=sorted_arr[1, :],
         azi=sorted_arr[2, :],
+        # positions are carried only if the source's were supplied; otherwise
+        # the merged survey computes them (identical, from the same stations)
+        n=sorted_arr[3] if survey.supplied_nev is not None else None,
+        e=sorted_arr[4] if survey.supplied_nev is not None else None,
+        tvd=sorted_arr[5] if survey.supplied_nev is not None else None,
         start_xyz=survey.start_xyz,
         start_nev=survey.start_nev,
         header=sh,
@@ -2900,42 +3093,26 @@ def _interpolate_surveys(
         error_model=None
     )
 
-    survey_interpolated.interpolated = ~np.isin(
-        survey_interpolated.md, survey.md
-    )
+    was = getattr(survey, "interpolated", None)
+    was = (np.zeros(len(survey.md), bool) if was is None
+           else np.asarray(was, dtype=bool))
+    survey_interpolated.interpolated = ~np.isin(survey_interpolated.md, survey.md)
+    # a station of the source that was itself interpolated stays flagged
+    survey_interpolated.interpolated[
+        np.isin(survey_interpolated.md, survey.md[was])] = True
 
-    # carry the wellbore radius from the preceding station and, if present,
-    # linearly interpolate the covariance between stations (mirrors the scalar
-    # `_interpolate_survey` covariance interpolation).
-    i = -1
-    radii = []
-    cov_nev = []
-    unit_cov_nev = 0
-    for (station_md, is_interpolated) in zip(
-        survey_interpolated.md,
-        survey_interpolated.interpolated
-    ):
-        if not is_interpolated:
-            i += 1
-            if survey.cov_nev is not None:
-                j = 1 if i < len(survey.md) - 1 else 0
-                if j == 1:
-                    delta_md = survey.md[i + j] - survey.md[i]
-                    unit_cov_nev = (
-                        survey.cov_nev[i + j] - survey.cov_nev[i]
-                    ) / delta_md
-                else:
-                    unit_cov_nev = 0
-        radii.append(survey.radius[i])
-        if survey.cov_nev is not None:
-            cov_nev.append(
-                survey.cov_nev[i]
-                + ((station_md - survey.md[i]) * unit_cov_nev)
-            )
-
-    survey_interpolated.radius = np.array(radii)
-    if bool(cov_nev):
-        survey_interpolated.cov_nev = np.array(cov_nev)
+    # carry the wellbore radius from the preceding station; covariance at an
+    # interpolated md from the single interior-covariance rule
+    k = np.clip(np.searchsorted(survey.md, survey_interpolated.md, side="right") - 1,
+                0, len(survey.md) - 1)
+    survey_interpolated.radius = np.asarray(survey.radius)[k]
+    if survey.cov_nev is not None:
+        cov_nev = np.asarray(survey.cov_nev)[k].copy()         # stations: their own
+        new = np.where(survey.md[k] != survey_interpolated.md)[0]
+        for j in new:                  # cov_nev_at is one md in, one (3, 3) out
+            cov_nev[j] = _interior_cov_nev(
+                survey, int(k[j]), survey_interpolated.md[j] - survey.md[k[j]])
+        survey_interpolated.cov_nev = cov_nev
         survey_interpolated.cov_hla = NEV_to_HLA(
             survey_interpolated.survey_rad,
             survey_interpolated.cov_nev
@@ -2952,25 +3129,48 @@ def _interpolate_pos_nev(
     position at distance ``x`` from ``survey[index]`` without constructing
     a Survey object.  Used as the inner cost function for closest-point
     optimisations in clearance calculations.
-    """
-    if survey.dogleg[index + 1] == 0:
-        inc2 = survey.inc_rad[index]
-        azi2 = survey.azi_grid_rad[index]
-    else:
-        t1 = survey.vec_xyz[index]
-        t2 = survey.vec_xyz[index + 1]
-        total_dogleg = survey.dogleg[index + 1]
-        dogleg = x * (total_dogleg / survey.delta_md[index + 1])
-        t = (
-            (math.sin(total_dogleg - dogleg) / math.sin(total_dogleg)) * t1
-            + (math.sin(dogleg) / math.sin(total_dogleg)) * t2
-        )
-        t /= np.linalg.norm(t)
-        inc2, azi2 = get_angles(t)[0]
 
-    pos = np.array([survey.n[index], survey.e[index], survey.tvd[index]])
-    step = min_curve_step(x, survey.inc_rad[index], survey.azi_grid_rad[index], inc2, azi2)
-    return pos + step
+    The arc displacement comes from :meth:`MinCurve.interpolate` (the one arc
+    kernel) and is added to station ``index``'s stored ``n, e, tvd``.
+    """
+    return _anchored_nev(survey, survey.interpolate(survey.md[index] + x), index, x)
+
+
+def _interior_cov_nev(survey: "Survey", index: int, x: float) -> np.ndarray:
+    """Covariance (3, 3) at distance ``x`` past station ``index``.
+
+    The analytical ``ErrorModel.cov_nev_at`` when the survey carries an error
+    model; otherwise linear interpolation of the station covariances by arc
+    fraction. The ONE place this is decided: interpolate_mds and clearance
+    both call it.
+    """
+    err = getattr(survey, "err", None)
+    if err is not None:
+        return err.cov_nev_at(survey.md[index] + x).reshape(3, 3)
+    cov = survey.cov_nev
+    dmd = survey.md[index + 1] - survey.md[index]
+    mult = x / dmd if dmd else 0.0
+    return (cov[index] + mult * (cov[index + 1] - cov[index])).reshape(3, 3)
+
+
+def _anchored_nev(survey: "Survey", pos, index, x) -> np.ndarray:
+    """N, E, TVD of a point a distance ``x`` past station ``index``, from its
+    local (east, north, tvd) arc position ``pos``: station ``index``'s own
+    position plus the arc displacement from it, through the survey's own
+    georeferencing transform (grid scale factor included).
+
+    Each leg is anchored on its OWN station. Where positions were supplied
+    and differ from the minimum-curvature path (e.g. published values rounded
+    to the centimetre), a leg's end therefore lands up to that difference
+    away from the next station -- this is the anchoring the ISCWSA clearance
+    validation data follow, and distributing the closure along the leg
+    instead moved station separation factors three times further from the
+    published values. ``x`` is accepted for a uniform signature.
+    Scalar ``index`` with ``pos`` (3,), or arrays with ``pos`` (n, 3).
+    """
+    index = np.asarray(index)
+    disp = (np.asarray(pos, dtype=float) - survey.poss[index]) @ survey._local_to_nev.T
+    return survey.pos_nev[index] + disp
 
 
 def tvd_turning_points(survey: "Survey") -> np.ndarray:
@@ -3058,8 +3258,9 @@ def interpolate_tvd(survey: "Survey", tvd: float, **kwargs: Any) -> list:
             0, len(survey.md) - 2))
         x = md - survey.md[idx]
         interp = not (x <= tol_md or abs(x - survey.delta_md[idx + 1]) <= tol_md)
-        s = _interpolate_survey(survey, x=x, index=idx)
-        nodes.append(get_node(s, 1, interpolated=interp))
+        node = _interpolate_node(survey, x=x, index=idx)
+        node.interpolated = interp
+        nodes.append(node)
         last_md = md
 
     return nodes
@@ -3834,7 +4035,7 @@ def interpolate_survey(
             )
     survey_interpolated.radius = np.array(radii)
     if bool(cov_nev):
-        survey_interpolated.cov_nev = np.array(cov_nev)
+        survey_interpolated.cov_nev = cov_nev
         survey_interpolated.cov_hla = NEV_to_HLA(
             survey_interpolated.survey_rad,
             survey_interpolated.cov_nev

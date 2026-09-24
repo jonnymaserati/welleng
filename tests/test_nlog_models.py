@@ -128,3 +128,54 @@ def test_document_title_falls_back_to_the_barcode():
     assert DocumentRecord.model_validate(
         {"fullTitle": "f", "barCodeTitle": "b"}).title == "f"
     assert DocumentRecord.model_validate({}).title == ""
+
+
+class TestConsumerReportedDefects:
+    """Both found by a consumer using the typed API for real work, 2026-09-20.
+
+    Both are the same shape: an accessor that answers with silence instead of
+    refusing, so the caller reads "no data" where the truth is "wrong type" or
+    "wrong attribute".
+    """
+
+    def test_confidentiality_date_parses_epoch_millis(self):
+        """NLOG sends epoch MILLISECONDS. Typed `str`, EVERY row raised, so
+        boreholes_typed() was unusable for all ~6737 boreholes."""
+        from welleng.exchange.nlog_models import BoreholeSummary
+        m = BoreholeSummary.model_validate(
+            {"boreholeDbk": 1, "confidentialityDate": 1246485600000})
+        assert m.confidentiality_date is not None
+        assert m.confidentiality_date.year == 2009
+
+    def test_epoch_is_not_read_as_seconds(self):
+        """Pydantic reads a bare int as epoch SECONDS, which would place every
+        well in 1970 SILENTLY rather than raising. The conversion is explicit
+        for that reason, so pin it."""
+        from welleng.exchange.nlog_models import BoreholeSummary
+        m = BoreholeSummary.model_validate(
+            {"boreholeDbk": 1, "confidentialityDate": 1246485600000})
+        assert m.confidentiality_date.year > 2000, "read as seconds, not millis"
+
+    def test_absent_confidentiality_date_stays_none(self):
+        from welleng.exchange.nlog_models import BoreholeSummary
+        assert BoreholeSummary.model_validate(
+            {"boreholeDbk": 1}).confidentiality_date is None
+
+    def test_kind_is_reachable_and_agrees_with_hint(self):
+        """`.kind` is the attribute a caller reaches for. Without it a filter
+        matched nothing on a borehole that HAS the document, reading as
+        'no such document'."""
+        from welleng.exchange.nlog_models import DocumentRecord
+        rec = DocumentRecord.model_validate(
+            {"fullTitle": "MWD End of Well Report(161-3455)(24 Oct 2006)",
+             "assetTypeCode": "AERA", "assetBfileDbk": 1})
+        assert rec.kind == rec.hint().kind
+        assert rec.kind != "" and rec.kind is not None
+
+    def test_unknown_is_an_answer_not_a_failure(self):
+        from welleng.exchange.nlog_models import DocumentRecord
+        rec = DocumentRecord.model_validate(
+            {"fullTitle": "Something nobody has a pattern for",
+             "assetTypeCode": "ZZZZ", "assetBfileDbk": 2})
+        assert rec.kind == "unknown"
+        assert rec.hint().confident is False

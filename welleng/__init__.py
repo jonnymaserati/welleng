@@ -38,6 +38,13 @@ _SUBMODULES = (
 #: Names re-exported from a submodule: ``name -> submodule``. Kept working
 #: because they were part of the public surface before this file went lazy.
 _REEXPORTS = {
+    # MinCurve is the GEOMETRY kernel and the right default for a wellpath:
+    # Survey subclasses it and adds a 26-field header whose defaults are
+    # assertions (latitude defaults to Greenwich and feeds the gyro terms).
+    # It lived at welleng.utils.MinCurve, which is why callers reached past it
+    # for welleng.survey.Survey. Promote with Survey.from_min_curve when the
+    # header data actually exists.
+    "MinCurve": "utils",
     "EDMReader": "exchange.edm_stream",
     "open_edm": "exchange.edm_stream",
     "classify_tool": "exchange.edm_stream",

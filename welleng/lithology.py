@@ -160,7 +160,7 @@ def colour(unit_id: str) -> str | None:
 
     ⚠️ **These colours are welleng's presentation choice, NOT a published
     standard.** TNO's DINOloket stratigraphic nomenclature is the authority and
-    is not yet ingested here (``docs/dev/NLOG_STRATIGRAPHY_NOMENCLATURE.md``).
+    is not yet ingested here.
     Say so on any figure that uses them.
     """
     g = group_of(unit_id)

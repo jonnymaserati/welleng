@@ -7,8 +7,8 @@ total-field or dip failure indicates magnetic interference (e.g. insufficient
 non-magnetic spacing, or proximity to casing) so the azimuth at that station is
 unreliable; a total-gravity failure indicates an accelerometer problem.
 
-Validated: reproduces a commercial vendor's own per-station DE-QC pass/fail
-flags to 100% agreement, with the vendor's total-field / dip tolerances
+Validated against field survey data: reproduces vendor-computed per-station
+QC pass/fail flags to 100% agreement, with the total-field / dip tolerances
 recovered as ~826 nT and ~0.44 deg.
 """
 from __future__ import annotations

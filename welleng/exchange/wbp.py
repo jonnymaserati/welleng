@@ -4,6 +4,7 @@ from ..survey import (
     TurnPoint,
     Survey,
     SurveyHeader,
+    grid_header,
     get_sections,
     from_connections,
 )
@@ -770,8 +771,7 @@ def strip_duplicates(survey):
         else:
             temp.append(s)
 
-    sh = survey.header
-    sh.azi_reference = 'grid'
+    sh = grid_header(survey.header)
 
     md, inc, azi, radius = np.array(temp).reshape(-1, 4).T
 

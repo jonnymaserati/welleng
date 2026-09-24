@@ -1,3 +1,4 @@
+import math
 import re
 from typing import Annotated, Literal, Union
 
@@ -153,9 +154,17 @@ def _arc_tangent(v1, v2, th, sin_th, phi, R, curved, x):
     two agree with to ~1 ulp but which divides by ``sin(theta)`` per query.
     """
     cw = curved[..., None]
-    u = (v2 - np.cos(th)[..., None] * v1) / sin_th[..., None]
+    u = _arc_inplane(v1, v2, th, sin_th)
     tang_curved = np.cos(phi)[..., None] * v1 + np.sin(phi)[..., None] * u
     return np.where(cw, tang_curved, v1)
+
+
+def _arc_inplane(v1, v2, th, sin_th):
+    """The arc plane's unit vector perpendicular to ``v1``, towards ``v2`` --
+    the Rodrigues ``u``: the tangent at partial dogleg ``phi`` is
+    ``cos(phi) v1 + sin(phi) u``. Depends only on the leg, so
+    :meth:`MinCurve._leg_frames` computes it once per survey."""
+    return (v2 - np.cos(th)[..., None] * v1) / sin_th[..., None]
 
 
 def min_curve_step(delta_md, inc1, azi1, inc2, azi2, rf=None):
@@ -226,6 +235,31 @@ def _arc_tvd_crossings(u1, u2, alpha, delta_md, dvert):
     a = u1 * np.sin(alpha)
     b = u1 * np.cos(alpha) - u2
     c = dvert * alpha * np.sin(alpha) / delta_md + b
+    return _sin_cos_roots(a, b, c, alpha)
+
+
+def _arc_inclination_crossings(u1, u2, alpha, cos_target):
+    """Subtended angles in ``[0, alpha]`` at which a min-curve arc's
+    inclination equals a target. Closed-form *Interpolation on Inclination* of
+    Sawaryn & Thorogood (2005, SPE-84246-PA), Eqs. 20-22 + Eq. 1: the tangent's
+    vertical component equals ``cos_target`` where
+    ``A sin d + B cos d = C`` with ``A = u2 - cos(alpha) u1``,
+    ``B = sin(alpha) u1``, ``C = sin(alpha) cos_target``. ``u1``/``u2`` are the
+    start/end unit-tangent vertical components. Returns 0, 1 or 2 roots.
+    """
+    return _sin_cos_roots(
+        u2 - np.cos(alpha) * u1,
+        np.sin(alpha) * u1,
+        np.sin(alpha) * cos_target,
+        alpha,
+    )
+
+
+def _sin_cos_roots(a, b, c, alpha):
+    """Roots in ``[0, alpha]`` of ``a sin d + b cos d = c`` (Sawaryn & Thorogood
+    2005, Eq. 1), by the half-angle substitution
+    ``d = 2 atan2(a +/- sqrt(a^2 + b^2 - c^2), b + c)``. Discriminant guarded;
+    returns 0, 1 or 2 roots."""
     disc = a * a + b * b - c * c
     if disc < -1e-12:
         return []
@@ -276,6 +310,20 @@ class MinCurve:
 
         Notes
         -----
+        ⛔ **``np.interp`` on ``poss``, ``tvd`` or an angle between stations is
+        the ANTI-PATTERN this class exists to replace.** A survey between
+        stations is a circular ARC, not a chord; the chord returns a monotonic,
+        in-range, WRONG answer whose size is set by the CALLER's station
+        spacing, so no test of the caller's will fail. Measured on real
+        surveys: 0.33 m of TVD and **3.63 m laterally** on a 55-station
+        sidetrack at 3.4 deg/30 m, and 7.22 m of TVD at 150 m spacing. Use
+        :meth:`interpolate`, :meth:`interpolate_tvd` or :meth:`inc_azi_at`.
+        ``python -m welleng.lint <path>`` detects it, and
+        :func:`welleng.lint.find_linear_survey_interpolation` is importable so
+        a CONSUMER can assert its own repo clean -- the defect has been fixed
+        nine times as changes and twice more in consumers who never called a
+        guarded function, so the check is the only thing that travels.
+
         MinCurve is units-agnostic: ``md`` may be in any length unit and the
         geometry is all ratios/angles. Dogleg severity (which needs a per-unit
         coefficient) is the :meth:`dls` method, into which the caller injects the
@@ -295,6 +343,17 @@ class MinCurve:
             order, which :class:`~welleng.survey.Survey` consumes.
             ``"nev"`` -- ``[northing, easting, tvd]``, for a caller whose own
             convention is N/E and which would otherwise swap every result back.
+
+        🔴 **``delta_x``, ``delta_y`` and ``delta_z`` do NOT follow ``frame``.**
+        They are per-station increments in AXIS terms -- **x EAST, y NORTH,
+        z TVD -- in BOTH frames**. Only ``poss`` and :meth:`interpolate` follow
+        ``frame``. Under ``frame="nev"`` ``poss[:, 0]`` is NORTHING while
+        ``delta_x`` is still EASTING, so the two surfaces disagree by
+        construction and **mixing them transposes the well**. Defensible -- x/y
+        are axis names, not compass names -- but stated here because the
+        warning above only says not to INFER the order from them, which leaves
+        a reader who takes that warning correctly with no way to learn what
+        they positively are. (Reported by a consumer, 2026-09-20.)
 
         This is a BASIS, not a second algorithm. The arc kernel
         (:func:`arc_step`) is coordinate-agnostic and returns whatever basis it
@@ -325,6 +384,7 @@ class MinCurve:
         # Per-station unit tangents are constants; cache them once so
         # interpolate() doesn't recompute get_vec on every query (welleng #307).
         self._tangents = get_vec(inc, azi, deg=False)
+        self._leg_frames_cache = None
         inc_1, inc_2 = inc[:-1], inc[1:]
         azi_1, azi_2 = azi[:-1], azi[1:]
 
@@ -416,8 +476,11 @@ class MinCurve:
         -----
         NEVER linear-interpolate a trajectory. Agrees with
         :meth:`welleng.survey.Survey.interpolate_md` to sub-ulp for doglegs up
-        to ~2 rad; near ``pi`` this half-angle form is the better-conditioned of
-        the two (~0.1 ulp vs tens for the balanced-tangential node path).
+        to ~2 rad. Near ``pi`` the half-angle position divides by
+        ``cos(theta/2) -> 0``: against a 50-digit reference on a 100 m leg the
+        error grows as ~``1/cos(theta/2)**2`` -- 1e-13 m at 170 deg, 4e-12 m at
+        177 deg, 1e-9 m at 179.9 deg. The tangent (Rodrigues ``u``-form) divides
+        by ``sin(theta)`` once, in set-up.
         """
         scalar = np.ndim(md) == 0
         q = np.atleast_1d(np.asarray(md, dtype=float))
@@ -448,6 +511,38 @@ class MinCurve:
                 return pos[0], float(inc_i[0]), float(azi_i[0])
             return pos, inc_i, azi_i
         return pos[0] if scalar else pos
+
+    def _leg_frames(self):
+        """Per-leg ``(v1, u, curved)``: start tangent, the in-plane vector
+        :func:`_arc_inplane` and whether the leg is curved. The kernel's
+        one-time set-up, computed once per survey rather than per query."""
+        if self._leg_frames_cache is None:
+            v1, v2 = self._tangents[:-1], self._tangents[1:]
+            th, sin_th, _, _, curved, _ = _arc_geometry(
+                v1, v2, self.dogleg[1:], self.delta_md[1:], np.zeros(len(v1)))
+            self._leg_frames_cache = (v1, _arc_inplane(v1, v2, th, sin_th),
+                                      curved)
+        return self._leg_frames_cache
+
+    def _leg_inc_azi(self, i, x):
+        """Inclination and azimuth (radians, azimuth in ``[0, 2*pi)``) at
+        distance ``x`` past station ``i`` -- :meth:`inc_azi_at` for a caller
+        that already holds the leg, as a scalar.
+
+        Same arc and same in-plane vector (:meth:`_leg_frames`); the scalar
+        arithmetic agrees with :meth:`inc_azi_at` to a few ulp, asserted in the
+        tests.
+        """
+        v1, u, curved = self._leg_frames()
+        if curved[i]:
+            dmd = self.delta_md[i + 1]
+            phi = x * self.dogleg[i + 1] / (1.0 if dmd == 0.0 else dmd)
+            e, n, v = math.cos(phi) * v1[i] + math.sin(phi) * u[i]
+        else:
+            e, n, v = v1[i]
+        inc = math.atan2(math.hypot(e, n), v)
+        azi = math.atan2(e, n) % (2.0 * math.pi)
+        return inc, azi
 
     def inc_azi_at(self, md):
         """Inclination / azimuth (radians) at measured depth(s) -- ATTITUDE ONLY.
@@ -517,6 +612,15 @@ class MinCurve:
         ``tvd`` is in the LOCAL frame (relative to station 0, like the TVD column
         of :attr:`poss`); ``Survey`` layers its datum on top. Empty if the target
         is never reached.
+
+        ⚠️ A TVD in a datum frame (e.g. an EDM or LAS TVD column) passed here
+        is offset by the first station's depth. Where that offset value still
+        lies inside the local TVD range it returns a WRONG measured depth;
+        where it does not, it returns ``[]``, indistinguishable from "never
+        reached". Both are silent: ``MinCurve`` holds no datum, so it cannot
+        detect either. Use :meth:`Survey.interpolate_tvd` (build
+        with :meth:`Survey.from_min_curve` and a ``start_nev``) when the TVD
+        carries a datum. A TVD equal to a turning point's TVD returns one MD.
         """
         z = self.poss[:, 2]
         u = np.cos(np.asarray(self.inc, dtype=float))

@@ -187,7 +187,7 @@ def test_geopressure_default_units_honour_source_units():
     """Geopressure TVD defaults to the reader's ``source_units`` so one
     open_edm(...) call is internally consistent -- geopressure TVD lines up with
     the survey/formation TVD from the SAME reader, not a mix of feet and metres
-    (welleng-design flag 2026-08-11). ``units=`` still overrides per call."""
+    ``units=`` still overrides per call."""
     wbid = None
     r_ft = open_edm(VOLVE, source_units="feet", with_geopressure=True)
     wbid = next(w.wellbore_id for w in r_ft.wellbores.values()

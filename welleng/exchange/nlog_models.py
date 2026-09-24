@@ -28,10 +28,11 @@ Three rules these models follow
 """
 from __future__ import annotations
 
+import datetime as _dt
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 __all__ = [
     "ASSET_TYPES",
@@ -245,6 +246,26 @@ class DocumentRecord(NLOGModel):
         """What this document probably is. See :func:`classify_document`."""
         return classify_document(self.title, self.asset_type)
 
+    @property
+    def kind(self) -> str:
+        """The classified kind -- a key of :data:`DOCUMENT_KINDS`, or ``'unknown'``.
+
+        The same value as ``hint().kind``: two entry points, never two answers.
+
+        It exists because ``kind`` is the attribute a caller reaches for, and
+        without it the payload's own null ``kind`` field surfaced instead --
+        so ``[d for d in documents_typed(id) if d.kind == "composite_log"]``
+        returned NOTHING on a borehole that has two, and read as "no such
+        document" rather than as a missing accessor. Reported by a consumer
+        2026-09-20.
+
+        ⚠️ ``'unknown'`` is a real answer, not a failure: an asset code does
+        NOT determine content, and ``hint().confident`` says whether the kind
+        came from the TITLE or was inferred. Filter on ``kind`` only when you
+        have read ``confident``.
+        """
+        return self.hint().kind
+
 
 class LogFileRecord(NLOGModel):
     """One log file in the log inventory -- LAS, LIS, DLIS, ASCII.
@@ -292,10 +313,29 @@ class BoreholeSummary(NLOGModel):
     purpose: Optional[str] = Field(None, alias="purposeCd")
     result: Optional[str] = Field(None, alias="resultCode")
     on_offshore: Optional[str] = Field(None, alias="onOffshore")
-    confidentiality_date: Optional[str] = Field(
+    confidentiality_date: Optional[_dt.datetime] = Field(
         None, alias="confidentialityDate",
-        description="A well past this date is public. ⚠️ Absence here is NOT "
-                    "evidence that a well is unrestricted.")
+        description="The date this borehole's DRILLING data left confidentiality. "
+                    "⚠️ Absence here is NOT evidence that a well is unrestricted. "
+                    "⚠️ Measured 2026-09-17: this is the well's endDate + 10 years, "
+                    "so it tracks the DRILLING campaign and says nothing about when "
+                    "a later filing -- an abandonment report, say -- becomes public. "
+                    "Do not use it to reason about document availability.")
+
+    @field_validator("confidentiality_date", mode="before")
+    @classmethod
+    def _epoch_millis(cls, value):
+        """NLOG sends this as epoch MILLISECONDS, not a string and not seconds.
+
+        Typed ``str``, every row of the catalogue raised ValidationError and
+        ``boreholes_typed()`` was unusable for all ~6737 boreholes. Pydantic
+        reads a bare int as epoch SECONDS, which would silently place every
+        well in 1970 instead of raising -- so the conversion is explicit here
+        rather than left to coercion.
+        """
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return _dt.datetime.fromtimestamp(value / 1000.0, tz=_dt.timezone.utc)
+        return value
 
 
 def as_models(rows: List[dict], model) -> List[Any]:

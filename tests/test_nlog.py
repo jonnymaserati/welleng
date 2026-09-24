@@ -235,8 +235,7 @@ def test_stratigraphy_carries_datum_and_md_intervals(monkeypatch):
     assert (iv1.unit_id, iv1.quality, iv1.anomaly) == ("CKGR", "TD", "UU")
 # -- id_for_name(): alias-tolerant title resolution -----------------------
 # Real P11 De Ruyter rows (public NLOG identifiers only): NLOG titles a bore
-# "NAME (ALIAS)", which an exact match silently misses. Regression for the
-# welleng-drilling finding (2026-09-06).
+# "NAME (ALIAS)", which an exact match silently misses. Regression test.
 def _patch_suggest(monkeypatch, rows):
     monkeypatch.setattr(
         _nlog.NLOGClient, "suggest", lambda self, q: rows, raising=True
