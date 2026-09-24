@@ -79,10 +79,8 @@ In a consumer's suite::
         assert find_linear_survey_interpolation("src") == []
 
 ⛔ **Do NOT write that test as ``skipif`` on ImportError.** A repo that cannot
-import this check and skips has a gate that cannot run reading as a pass --
-the failure mode where a gate silently skipped because a tool was not on
-the PATH. Declare the
-dependency, or let the test error loudly. **A green suite must mean "clean",
+import this check and skips has a check that cannot run reading as a pass.
+Declare the dependency, or let the test error loudly. **A green suite must mean "clean",
 never "not checked".**
 
 ⚠️ **What a clean run does and does not mean.** This walks PACKAGE SOURCE. It
