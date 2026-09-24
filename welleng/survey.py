@@ -19,6 +19,8 @@ import math
 import warnings
 from datetime import datetime
 from pyproj import CRS, Proj, Transformer
+from pyproj.aoi import AreaOfInterest
+from pyproj.transformer import TransformerGroup
 from pyproj.enums import TransformDirection
 from scipy.spatial.transform import Rotation as R
 
@@ -231,6 +233,7 @@ class SurveyParameters(Proj):
     def transform_coordinates(
         self, coords: ArrayLike, to_projection: str,
         altitude: Optional[float] = None,
+        area_of_interest: Optional[Any] = None,
         **kwargs: Any
     ) -> ArrayLike:
         """Transforms coordinates from instance's projection to another
@@ -244,11 +247,31 @@ class SurveyParameters(Proj):
             (x, y, z) format, where x is East/West and y is North/South.
         to_projection: str
             The EPSG code of the desired coordinates.
+        area_of_interest: pyproj AreaOfInterest, or (west, south, east, north)
+            in degrees, optional
+            Where the coordinates are. Narrows the candidate operations to
+            those valid there, which can change the datum transformation
+            chosen (and its accuracy). ``None`` considers every candidate.
 
         Returns
         -------
         result: ArrayLike
             An array of transformed coordinates in the desired projection.
+
+        Raises
+        ------
+        ValueError
+            If the only operation available is of unknown accuracy -- a
+            "ballpark" datum shift, which can leave the coordinates unchanged
+            (ED50 to ETRS89 geographic, about 130 m in the Netherlands) while
+            appearing to succeed.
+
+        Notes
+        -----
+        The operation used -- its name, stated accuracy (m), and whether every
+        candidate was usable (``best_available`` is False when a candidate
+        needs a transformation grid that is not installed) -- is recorded on
+        :attr:`last_operation`.
 
         Examples
         --------
@@ -259,8 +282,13 @@ class SurveyParameters(Proj):
         >>> result = calculator.transform_coordinates(
         ...     coords=[(588319.02, 5770571.03)], to_projection='EPSG:32631'
         ... )
-        >>> print(result)
-        [[ 588225.93417027 5770360.56500115]]
+        >>> print(result)  # doctest: +SKIP
+        [[ 588226.55871189 5770360.93971979]]
+        >>> calculator.last_operation["name"]  # doctest: +SKIP
+        'Inverse of UTM zone 31N + ED50 to WGS 84 (18) + UTM zone 31N'
+
+        The operation is the most accurate one (stated accuracy) whose area of
+        use contains the coordinates.
 
         To place a well head given as geographic latitude/longitude -- e.g. an
         EDM ``geo_latitude`` / ``geo_longitude`` -- into a map's projection
@@ -281,10 +309,60 @@ class SurveyParameters(Proj):
         different map system than the target (as on Volve) -- go via the
         geographic lat/long instead.
         """
-        transformer = Transformer.from_crs(
-            self.crs, CRS(to_projection)
-        )
+        if area_of_interest is not None and not isinstance(
+                area_of_interest, AreaOfInterest):
+            area_of_interest = AreaOfInterest(*area_of_interest)
+        group = TransformerGroup(self.crs, CRS(to_projection),
+                                 area_of_interest=area_of_interest)
+        if not group.transformers:
+            raise ValueError(
+                f"no coordinate operation from {self.crs.to_string()} to "
+                f"{to_projection}")
         _coords = np.array(coords)
+        pts = (_coords if len(_coords.shape) > 1
+               else _coords.reshape((1, -1)))[:, :2]
+        # the points in the source datum's geographic lon/lat (a conversion,
+        # exact), to keep only the operations valid where they are. The input
+        # is in the source CRS's own axis order; always_xy wants east first.
+        xy = pts.T.astype(float)
+        if self.crs.axis_info and self.crs.axis_info[0].direction.lower() in (
+                "north", "south"):
+            xy = xy[::-1]
+        lon, lat = Transformer.from_crs(
+            self.crs, self.crs.geodetic_crs, always_xy=True
+        ).transform(*xy)
+        lon, lat = np.atleast_1d(lon), np.atleast_1d(lat)
+
+        def _covers(tr) -> bool:
+            a = tr.area_of_use
+            return a is None or bool(
+                np.all((lon >= a.west) & (lon <= a.east)
+                       & (lat >= a.south) & (lat <= a.north)))
+
+        # of the operations valid there, the most accurate with a STATED
+        # accuracy: a pure conversion states 0; PROJ's "ballpark" datum
+        # shift states none (-1) and can leave the coordinates unchanged
+        known = [tr for tr in group.transformers
+                 if _covers(tr) and tr.accuracy is not None
+                 and tr.accuracy >= 0]
+        transformer = (min(known, key=lambda tr: tr.accuracy) if known
+                       else next((tr for tr in group.transformers
+                                  if _covers(tr)), group.transformers[0]))
+        if transformer.accuracy is None or transformer.accuracy < 0:
+            missing = [op.name for op in group.unavailable_operations]
+            raise ValueError(
+                f"no operation of stated accuracy from "
+                f"{self.crs.to_string()} to {to_projection} is valid where "
+                f"these coordinates are; the only one left is "
+                f"{transformer.description!r}, which can return them "
+                "unchanged."
+                + (f" Operations needing transformation grids that are not "
+                   f"installed: {'; '.join(missing)}." if missing else ""))
+        self.last_operation = {
+            "name": transformer.description,
+            "accuracy_m": transformer.accuracy,
+            "best_available": group.best_available,
+        }
         result = list(transformer.itransform(
             (
                 _coords.tolist() if len(_coords.shape) > 1
@@ -1632,16 +1710,20 @@ class Survey(MinCurve):
 
     def interpolate_mds(self, md: ArrayLike) -> "Survey":
         """
-        Method to interpolate positions at an array of measured depths and
-        return a new `welleng.Survey` object. This is a vectorized equivalent
-        of looping the scalar `interpolate_md`, and produces a survey
-        equivalent to `interpolate_survey` when passed the same station
-        measured depths.
+        Insert stations at the measured depths ``md`` and return the merged
+        survey: EVERY original station plus the new ones, sorted by MD, as a
+        new `welleng.Survey` (this survey is not modified). It does not return
+        only the requested points -- row 0 is still the first survey station.
+
+        A requested depth that is already a station, or repeated, adds no row.
+        To take just the requested points, select them by depth, e.g.
+        ``r.md[np.isin(r.md, md)]``; for one point, :meth:`interpolate_md`
+        returns it directly.
 
         Parameters
         ----------
         md: (,n) list or array of floats
-            The measured depths of the points of interest.
+            The measured depths to insert.
 
         Returns
         -------
@@ -1914,10 +1996,16 @@ class Survey(MinCurve):
             self.vertical_section = None
 
     def get_vertical_section(
-        self, vertical_section_azimuth: float, deg: bool = True
+        self, vertical_section_azimuth: float, deg: bool = True,
+        origin: Optional[ArrayLike] = None,
     ) -> np.ndarray:
         """
-        Calculate the vertical section.
+        Vertical section: each station's horizontal displacement from
+        ``origin``, projected onto ``vertical_section_azimuth``.
+
+        Computed from the station positions (``n``, ``e``), so it is exact
+        at the stations, needs no azimuth averaging and is correct for a
+        path through north. The survey is not modified.
 
         Parameters
         ----------
@@ -1928,30 +2016,29 @@ class Survey(MinCurve):
         deg: boolean (default: True)
             Indicates whether the vertical section azimuth parameter is in
             degrees or radians (True or False respectively).
+        origin: (2,) array of floats or None (default: None)
+            ``(n, e)`` of the vertical-section origin, in the survey's
+            position frame (e.g. the slot). ``None`` uses the first station.
 
         Returns
         -------
-        result: (n, 1) ndarray
+        result: (n,) ndarray
+            Vertical section at each station, in the survey's length unit.
         """
-        vertical_section_azimuth = (
-            vertical_section_azimuth if not deg
-            else math.radians(vertical_section_azimuth)
-        )
-        azi_temp = getattr(
-            self,
-            f"azi_{self.azi_ref_lookup[self.header.azi_reference]}_rad"
-        )
-        azi_temp[np.where(self.inc_rad == 0.0)] = (
-            vertical_section_azimuth
-        )
-        result = np.cos(
-            vertical_section_azimuth
-            - (azi_temp[1:] + azi_temp[:-1]) / 2
-        ) * self.hypot
-
-        result = np.cumsum(np.hstack(([0.0], result)))
-
-        return result
+        az = (vertical_section_azimuth if not deg
+              else math.radians(vertical_section_azimuth))
+        # positions are grid-north referenced; turn the azimuth from the
+        # header's reference to grid: true = grid + convergence, magnetic =
+        # true - declination
+        ref = self.header.azi_reference
+        if ref == "true":
+            az -= self.header.convergence
+        elif ref == "magnetic":
+            az -= self.header.convergence - self.header.declination
+        n0, e0 = ((self.n[0], self.e[0]) if origin is None
+                  else np.asarray(origin, dtype=float)[:2])
+        return (np.asarray(self.n) - n0) * math.cos(az) \
+            + (np.asarray(self.e) - e0) * math.sin(az)
 
     def set_vertical_section(
         self, vertical_section_azimuth: float, deg: bool = True
@@ -1971,7 +2058,10 @@ class Survey(MinCurve):
             Indicates whether the vertical section azimuth parameter is in
             degrees or radians (True or False respectively).
         """
-        self.header.vertical_section_azimuth = vertical_section_azimuth
+        # the header holds radians
+        self.header.vertical_section_azimuth = (
+            math.radians(vertical_section_azimuth) if deg
+            else vertical_section_azimuth)
         self.vertical_section = self.get_vertical_section(
             vertical_section_azimuth, deg
         )
