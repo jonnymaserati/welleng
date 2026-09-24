@@ -1950,6 +1950,8 @@ dependencies = [
 [package.optional-dependencies]
 all = [
     { name = "coolprop" },
+    { name = "lasio" },
+    { name = "matplotlib" },
     { name = "mpmath" },
     { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -2002,7 +2004,9 @@ dev = [
 requires-dist = [
     { name = "coolprop", marker = "extra == 'all'", specifier = ">=8.0.0,<9" },
     { name = "coolprop", marker = "extra == 'kick'", specifier = ">=8.0.0,<9" },
+    { name = "lasio", marker = "extra == 'all'" },
     { name = "lasio", marker = "extra == 'las'" },
+    { name = "matplotlib", marker = "extra == 'all'" },
     { name = "matplotlib", marker = "extra == 'las'" },
     { name = "mpmath", marker = "extra == 'all'" },
     { name = "networkx", marker = "extra == 'all'" },
