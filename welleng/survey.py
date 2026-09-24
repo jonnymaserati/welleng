@@ -249,9 +249,8 @@ class SurveyParameters(Proj):
             The EPSG code of the desired coordinates.
         area_of_interest: pyproj AreaOfInterest, or (west, south, east, north)
             in degrees, optional
-            Where the coordinates are. Narrows the candidate operations to
-            those valid there, which can change the datum transformation
-            chosen (and its accuracy). ``None`` considers every candidate.
+            Where the coordinates are, for choosing the operation. ``None``
+            uses the extent of ``coords`` themselves.
 
         Returns
         -------
@@ -261,17 +260,21 @@ class SurveyParameters(Proj):
         Raises
         ------
         ValueError
-            If the only operation available is of unknown accuracy -- a
+            If no operation of stated accuracy is valid where the coordinates
+            are, directly or through WGS 84. PROJ's remaining fallback is a
             "ballpark" datum shift, which can leave the coordinates unchanged
-            (ED50 to ETRS89 geographic, about 130 m in the Netherlands) while
-            appearing to succeed.
+            (ED50 to ETRS89, about 130 m in the Netherlands) while appearing
+            to succeed.
 
         Notes
         -----
-        The operation used -- its name, stated accuracy (m), and whether every
-        candidate was usable (``best_available`` is False when a candidate
-        needs a transformation grid that is not installed) -- is recorded on
-        :attr:`last_operation`.
+        Of the operations valid where the coordinates are, the most accurate
+        with a stated accuracy is used; if none is valid directly, the route
+        through WGS 84 is used, each leg chosen the same way. The operation --
+        its name (both legs for a route), stated accuracy (m, summed over the
+        legs), and whether every direct candidate was usable
+        (``best_available`` is False when one needs a transformation grid
+        that is not installed) -- is recorded on :attr:`last_operation`.
 
         Examples
         --------
@@ -309,15 +312,6 @@ class SurveyParameters(Proj):
         different map system than the target (as on Volve) -- go via the
         geographic lat/long instead.
         """
-        if area_of_interest is not None and not isinstance(
-                area_of_interest, AreaOfInterest):
-            area_of_interest = AreaOfInterest(*area_of_interest)
-        group = TransformerGroup(self.crs, CRS(to_projection),
-                                 area_of_interest=area_of_interest)
-        if not group.transformers:
-            raise ValueError(
-                f"no coordinate operation from {self.crs.to_string()} to "
-                f"{to_projection}")
         _coords = np.array(coords)
         pts = (_coords if len(_coords.shape) > 1
                else _coords.reshape((1, -1)))[:, :2]
@@ -332,44 +326,66 @@ class SurveyParameters(Proj):
             self.crs, self.crs.geodetic_crs, always_xy=True
         ).transform(*xy)
         lon, lat = np.atleast_1d(lon), np.atleast_1d(lat)
-
+        if area_of_interest is None:
+            # the points' own extent: the candidates PROJ lists then include
+            # the routes valid there (e.g. via WGS 84), not only direct ones
+            area_of_interest = AreaOfInterest(
+                float(lon.min()), float(lat.min()),
+                float(lon.max()), float(lat.max()))
+        elif not isinstance(area_of_interest, AreaOfInterest):
+            area_of_interest = AreaOfInterest(*area_of_interest)
         def _covers(tr) -> bool:
             a = tr.area_of_use
             return a is None or bool(
                 np.all((lon >= a.west) & (lon <= a.east)
                        & (lat >= a.south) & (lat <= a.north)))
 
-        # of the operations valid there, the most accurate with a STATED
-        # accuracy: a pure conversion states 0; PROJ's "ballpark" datum
-        # shift states none (-1) and can leave the coordinates unchanged
-        known = [tr for tr in group.transformers
-                 if _covers(tr) and tr.accuracy is not None
-                 and tr.accuracy >= 0]
-        transformer = (min(known, key=lambda tr: tr.accuracy) if known
-                       else next((tr for tr in group.transformers
-                                  if _covers(tr)), group.transformers[0]))
-        if transformer.accuracy is None or transformer.accuracy < 0:
-            missing = [op.name for op in group.unavailable_operations]
-            raise ValueError(
-                f"no operation of stated accuracy from "
-                f"{self.crs.to_string()} to {to_projection} is valid where "
-                f"these coordinates are; the only one left is "
-                f"{transformer.description!r}, which can return them "
-                "unchanged."
-                + (f" Operations needing transformation grids that are not "
-                   f"installed: {'; '.join(missing)}." if missing else ""))
+        def _best(src, dst):
+            """Of the operations src -> dst valid where the points are, the
+            most accurate with a STATED accuracy (a pure conversion states 0;
+            PROJ's "ballpark" datum shift states none, -1, and can leave the
+            coordinates unchanged). ``(transformer or None, group)``."""
+            group = TransformerGroup(src, dst,
+                                     area_of_interest=area_of_interest)
+            known = [tr for tr in group.transformers
+                     if _covers(tr) and tr.accuracy is not None
+                     and tr.accuracy >= 0]
+            return (min(known, key=lambda tr: tr.accuracy) if known
+                    else None), group
+
+        target = CRS(to_projection)
+        direct, group = _best(self.crs, target)
+        steps = [direct] if direct is not None else None
+        if steps is None:
+            # no direct operation is valid there: try the route through
+            # WGS 84, whose legs PROJ does not list as one candidate
+            wgs84 = CRS("EPSG:4326")
+            first, g1 = _best(self.crs, wgs84)
+            second, g2 = _best(wgs84, target)
+            if first is not None and second is not None:
+                steps = [first, second]
+            else:
+                missing = [op.name for g in (group, g1, g2)
+                           for op in g.unavailable_operations]
+                raise ValueError(
+                    f"no operation of stated accuracy from "
+                    f"{self.crs.to_string()} to {to_projection} is valid "
+                    "where these coordinates are, directly or through "
+                    "WGS 84; PROJ's remaining fallback can return them "
+                    "unchanged."
+                    + (f" Operations needing transformation grids that are "
+                       f"not installed: {'; '.join(dict.fromkeys(missing))}."
+                       if missing else ""))
         self.last_operation = {
-            "name": transformer.description,
-            "accuracy_m": transformer.accuracy,
+            "name": " + ".join(tr.description for tr in steps),
+            "accuracy_m": float(sum(tr.accuracy for tr in steps)),
             "best_available": group.best_available,
         }
-        result = list(transformer.itransform(
-            (
-                _coords.tolist() if len(_coords.shape) > 1
-                else _coords.reshape((1, -1)).tolist()
-            ),
-            direction=TransformDirection('FORWARD'), **kwargs
-        ))
+        result = (_coords.tolist() if len(_coords.shape) > 1
+                  else _coords.reshape((1, -1)).tolist())
+        for tr in steps:
+            result = list(tr.itransform(
+                result, direction=TransformDirection('FORWARD'), **kwargs))
 
         return np.array(result)
 
