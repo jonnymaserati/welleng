@@ -10,7 +10,7 @@ try:
 except ImportError:
     PLOTLY = False
 
-from .survey import interpolate_md, Survey
+from .survey import grid_header, interpolate_md, Survey
 from .units import ureg
 
 
@@ -136,8 +136,7 @@ class TorqueDrag:
 
         md, inc, azi = zip(*sorted(zip(md, inc, azi)))
 
-        sh = self.survey_original.header
-        sh.azi_reference = 'grid'
+        sh = grid_header(self.survey_original.header)
 
         self.survey = Survey(
             md=md, inc=inc, azi=azi, header=sh, deg=False

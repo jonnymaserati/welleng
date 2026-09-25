@@ -82,6 +82,34 @@ class NLOGError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class SurfaceCoordinates:
+    """Horizontal coordinates WITH the code that says what they are.
+
+    ⭐ **This exists because a description is not enough where the defect is
+    the value's SCOPE.** ``coordSystemCode`` is per WELL, not per dataset, so
+    one well's ``dx`` is 523292 m and its neighbour's is 3.34 DEGREES -- in the
+    same column, both valid floats. A caveat on the field warns whoever reads
+    it; carrying the code WITH the coordinates means the pair cannot be
+    separated in the first place, which is the only version that survives being
+    passed to a function.
+
+    ``units`` is resolved, not copied: ``"metre"`` or ``"degree"``. Building
+    this RAISES on an unrecognised or absent code rather than defaulting,
+    because a wrong projection assumption is silent.
+    """
+
+    dx: list[float]  # x coordinate per station, in ``units``
+    dy: list[float]  # y coordinate per station, in ``units``
+    coord_system: str  # the survey's coordSystemCode, as declared
+    units: str  # "metre" or "degree", resolved from ``coord_system``
+
+    @property
+    def is_projected(self) -> bool:
+        """True when the coordinates are in metres (a projected system)."""
+        return self.units == "metre"
+
+
+@dataclass(frozen=True)
 class DirSurvey:
     """One directional survey for a borehole, in SI units (m, degrees)."""
 
@@ -103,6 +131,50 @@ class DirSurvey:
     @property
     def n_stations(self) -> int:
         return len(self.md)
+
+    def surface_units(self) -> str:
+        """``"metre"`` or ``"degree"`` for this survey's surface coordinates.
+
+        🔴 ``coord_system`` is **per well, not per field**, and projected and
+        geographic codes put values of wildly different magnitude in the same
+        columns: a De Ruyter well is ``ED50-UTM31`` with an easting near
+        523292 m, while P11-04 is ``ED50-GEOGR`` with x = 3.34 -- DEGREES. A
+        consumer that hard-codes the national grid places that well half a
+        million metres away and nothing complains, because both are valid
+        floats.
+
+        Raises rather than defaulting on an unrecognised code: a wrong datum
+        assumption is silent, and silence is the failure mode here.
+        """
+        code = (self.coord_system or "").strip().upper()
+        if not code:
+            raise NLOGError(
+                "this survey declares no coordSystemCode -- refusing to assume "
+                "a projection. Establish it before using dx/dy."
+            )
+        if code.endswith("GEOGR") or "GEOG" in code:
+            return "degree"
+        if "UTM" in code or "RD" in code:
+            return "metre"
+        raise NLOGError(
+            f"unrecognised coordSystemCode {self.coord_system!r} -- refusing to "
+            "guess whether these coordinates are metres or degrees."
+        )
+
+    def surface_coordinates(self) -> "SurfaceCoordinates":
+        """``dx``/``dy`` bound to the code that says what they mean.
+
+        Prefer this to reading ``.dx`` and ``.dy`` directly: those are bare
+        floats that a caller can carry off without ``coord_system``, and one
+        well in a set is routinely geographic while its neighbours are
+        projected. Raises on an unrecognised or absent code -- see
+        :meth:`surface_units`.
+        """
+        return SurfaceCoordinates(
+            dx=list(self.dx), dy=list(self.dy),
+            coord_system=str(self.coord_system),
+            units=self.surface_units(),
+        )
 
     @property
     def max_inclination(self) -> float:
@@ -167,7 +239,14 @@ class DirSurvey:
         not a measurement and an error model was requested, because the
         result would be a confident position derived from a
         placeholder — pass ``error_model=None`` to build geometry only,
-        or set ``force=True`` in ``header_kwargs`` to override."""
+        or set ``force=True`` in ``header_kwargs`` to override.
+
+        The survey's TVD is datumed to NLOG's own first-station depth (via
+        ``start_nev``), so TVD is absolute rather than relative to the first
+        station. This matters when the survey does not start at MD 0 — a
+        conductor/tie-in survey beginning at, say, MD 30 m would otherwise report
+        TVD 0 there and read 30 m shallow everywhere below.
+        """
         import numpy as np
         import welleng as we
 
@@ -185,10 +264,14 @@ class DirSurvey:
             azi_reference="grid" if (self.north_ref or "G") == "G" else "true",
             **header_kwargs,
         )
+        kwargs = {}
+        if self.tvd and self.tvd[0] is not None:
+            # datum TVD to NLOG's first-station depth (lateral left relative)
+            kwargs["start_nev"] = np.array([0.0, 0.0, float(self.tvd[0])])
         return we.survey.Survey(
             md=np.asarray(self.md), inc=np.asarray(self.inc),
             azi=np.asarray(self.azi), deg=True, header=header,
-            error_model=error_model,
+            error_model=error_model, **kwargs,
         )
 
 
@@ -334,6 +417,106 @@ class NLOGClient:
             raise NLOGError(f"boreholes failed: {exc}") from exc
         return out if isinstance(out, list) else out.get("boreholes", [])
 
+    def documents_typed(self, borehole_id: int) -> list:
+        """:meth:`documents`, as :class:`~welleng.exchange.nlog_models.DocumentRecord`.
+
+        Each record carries ``.hint()`` -- what the document probably is and
+        what that kind of document usually holds -- so a caller can choose
+        which of seventeen files to open instead of fetching all of them.
+        """
+        from .nlog_models import DocumentRecord, as_models
+        return as_models(self.documents(borehole_id), DocumentRecord)
+
+    def log_documents_typed(self, borehole_id: int) -> list:
+        """:meth:`log_documents`, as
+        :class:`~welleng.exchange.nlog_models.LogFileRecord`."""
+        from .nlog_models import LogFileRecord, as_models
+        return as_models(self.log_documents(borehole_id), LogFileRecord)
+
+    def boreholes_typed(self, filters: dict | None = None) -> list:
+        """:meth:`boreholes`, as
+        :class:`~welleng.exchange.nlog_models.BoreholeSummary`."""
+        from .nlog_models import BoreholeSummary, as_models
+        return as_models(self.boreholes(filters), BoreholeSummary)
+
+    def suggest_typed(self, query: str) -> list:
+        """:meth:`suggest`, as
+        :class:`~welleng.exchange.nlog_models.SuggestHit`.
+
+        ⚠️ NLOG's names are hyphenated exactly: ``"P11-A-02A"`` resolves and
+        ``"P11-A02A"`` returns nothing. ``.borehole_id`` is the int every other
+        call wants.
+        """
+        from .nlog_models import SuggestHit, as_models
+        return as_models(self.suggest(query), SuggestHit)
+
+    def find_documents(self, borehole_id: int, kind: str | None = None,
+                       *, retrievable_only: bool = True) -> list:
+        """Documents of a given ``kind`` (a key of ``DOCUMENT_KINDS``).
+
+        ``kind=None`` returns everything, classified. ``retrievable_only``
+        drops the ones NLOG itself marks lost -- a catalogued document is not
+        a retrievable one.
+        """
+        out = []
+        for d in self.documents_typed(borehole_id):
+            if retrievable_only and (d.lost or d.has_file is False):
+                continue
+            if kind is None or d.hint().kind == kind:
+                out.append(d)
+        return out
+
+    def find_log_curves(
+        self,
+        borehole_id: int,
+        *,
+        quantity: str | None = None,
+        depth: float | None = None,
+        max_files: int = 12,
+    ) -> list:
+        """Which of this well's LAS files actually carry a given measurement.
+
+        The inventory states DEPTHS, never CURVES, so this fetches the
+        candidates and reads them: each file is opened with
+        :func:`~welleng.exchange.las.open_las` and its mnemonics resolved
+        through the published vendor map
+        (:func:`welleng.osdu_ref.curve_quantity`), which is how ``RHOB``,
+        ``RHOZ`` and ``BDCX`` all answer to ``"mass per volume"``.
+
+        ``depth`` pre-filters on the inventory's stated interval, so asking for
+        a density curve over the reservoir opens two files instead of eleven.
+
+        Returns ``(LogFileRecord, {quantity: [mnemonic, ...]})`` pairs. A file
+        that cannot be read, or whose index is not a length, is reported with
+        ``{"error": ...}`` rather than skipped -- a log that failed to open is
+        not a log without curves, and the two are indistinguishable once one
+        of them is silently dropped.
+        """
+        from .las import LasError, open_las
+
+        cands = [r for r in self.log_documents_typed(borehole_id)
+                 if (r.file_type or "").upper() == "LAS"
+                 and r.bfile_dbk is not None]
+        if depth is not None:
+            cands = [r for r in cands if r.covers(depth)]
+        cands = cands[:max_files]
+
+        out = []
+        for rec in cands:
+            try:
+                las = open_las(self.fetch_document(rec.bfile_dbk, log=True))
+                groups = las.curves_by_quantity()
+            except (LasError, Exception) as exc:       # noqa: BLE001
+                out.append((rec, {"error": f"{type(exc).__name__}: {exc}"}))
+                continue
+            if quantity is not None:
+                hit = las.curves_by_quantity(quantity)
+                if not hit:
+                    continue
+                groups = {quantity: hit}
+            out.append((rec, {k: v for k, v in groups.items() if k}))
+        return out
+
     def documents(self, borehole_id: int) -> list[dict]:
         d = self._post("documents", borehole_id)
         return d if isinstance(d, list) else d.get("documents", [])
@@ -365,6 +548,29 @@ class NLOGClient:
                 remark=s.get("remark"),
             ))
         return out
+
+    def production(self, borehole_id: int) -> dict:
+        """Monthly production/injection figures for a borehole (raw rows).
+
+        Returns the payload as served: ``boreholeName``, the depth-datum
+        fields, and ``prodFigures`` -- one row per month with ``startDate``
+        (epoch ms), ``productionTypeCode`` and ``quantityOil`` / ``Gas`` /
+        ``Water`` / ``Condensate`` / ``Brine`` / ``Diesel`` / ``Nitrogen`` /
+        ``Salt`` / ``Inhibitor``.
+
+        🔴 **THE UNITS ARE NOT IN THE PAYLOAD AND THIS METHOD DOES NOT GUESS
+        THEM.** They decide the answer: on one well, reading oil and gas both
+        as m3 gives a GOR of 77 sm3/sm3 -- an oil well with associated gas --
+        while reading oil as 1000 m3 gives 85,000, which would read as dry
+        gas. Same rows, opposite well. Establish the unit basis against the
+        operator's own reporting (or NLOG's portal) before deriving anything
+        from these numbers, and state the basis alongside any figure quoted.
+
+        Rows are returned unconverted and unaggregated on purpose: a caller
+        that has confirmed its units can convert, and one that has not should
+        not be handed a number that looks ready to use.
+        """
+        return self._post("prodfigures", borehole_id)
 
     def stratigraphy(
         self, borehole_id: int, preferred_only: bool = True

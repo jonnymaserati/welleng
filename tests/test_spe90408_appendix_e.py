@@ -81,8 +81,6 @@ Tables 1/2 (accel), 3/4 (gyro), 6/7 (continuous), 9 (misalignment Alt.3),
 the ISCWSA diagnostics .dat files. Fixtures:
 ``tests/test_data/spe90408_example_models/example_{1,3}.json``.
 
-See ``docs/dev/VALIDATION.md`` for the repo-wide validation catalogue and the
-full known-differences list.
 """
 from __future__ import annotations
 
