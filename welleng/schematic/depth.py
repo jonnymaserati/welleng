@@ -26,6 +26,12 @@ from .models import SurveyRef, Wellbore
 #: warning and why that is a migration courtesy rather than a judgement.
 STRICT_RANGE = False
 
+#: Largest disagreement (m) between a survey's own TVD column
+#: (:attr:`SurveyRef.tvd`) and minimum curvature on its inclination and
+#: azimuth that :class:`DepthResolver` accepts. Past it the two are different
+#: answers to one question and neither can be preferred, so it refuses.
+MAX_STATION_TVD_GAP_M = 1.0
+
 
 class DepthResolver:
     """Resolve depth relationships from a survey via minimum curvature.
@@ -104,6 +110,28 @@ class DepthResolver:
             **kwargs,
         )
         self._stations = stations           # the REAL survey; lookups use this
+        # The survey's own TVD column, where it lists one, is compared with
+        # minimum curvature on its own angles. Compared RELATIVE to the first
+        # station that has a TVD, so the check is about the angles and not
+        # about the tie-in. The worst gap is carried on the object.
+        self.station_tvd_gap_m = None
+        if survey_ref.tvd is not None:
+            rec = np.asarray(survey_ref.tvd, dtype=float)
+            ok = np.isfinite(rec)
+            if np.count_nonzero(ok) >= 2:
+                calc = np.asarray(stations.tvd, dtype=float)
+                k = int(np.argmax(ok))
+                gap = np.abs((calc[ok] - calc[k]) - (rec[ok] - rec[k]))
+                self.station_tvd_gap_m = float(gap.max())
+                if self.station_tvd_gap_m > MAX_STATION_TVD_GAP_M:
+                    raise ValueError(
+                        f"survey {name!r}: its TVD column disagrees with "
+                        "minimum curvature on its own inclination and azimuth "
+                        f"by {self.station_tvd_gap_m:.2f} m (limit "
+                        f"{MAX_STATION_TVD_GAP_M:.1f} m) -- a bad station or a "
+                        "listing computed by another method. Reconcile the "
+                        "survey before placing depths on it."
+                    )
         self.survey = we.survey.interpolate_mds(stations, grid)
         # interpolate_mds merges the true stations into the grid, so take the
         # md array it actually produced rather than assuming it is `grid`.
@@ -218,6 +246,30 @@ class DepthResolver:
         if np.ndim(md):
             return (p[:, 0], p[:, 1], p[:, 2])
         return (float(p[0, 0]), float(p[0, 1]), float(p[0, 2]))
+
+    def inc_azi_at(self, md):
+        """Minimum-curvature (inclination, azimuth) in degrees at ``md``.
+
+        Scalar or array. Azimuth is in the reference the survey's ``azi`` was
+        given in, in ``[0, 360)``. Out-of-range MDs are reported (see
+        :data:`STRICT_RANGE`) and clamped to the surveyed range.
+        """
+        self._check_range(md, "inc_azi_at")
+        a = np.clip(np.asarray(md, dtype=float), self.md_min, self.md_max)
+        inc, azi = self._stations.inc_azi_at(a)
+        return np.degrees(inc), np.degrees(azi)
+
+    def md_at_tvd(self, tvd: float):
+        """Every MD (m) at which the path reaches ``tvd``, sorted.
+
+        Exact inverse of minimum curvature, reversal-robust
+        (:meth:`welleng.survey.Survey.interpolate_tvd`; Sawaryn & Thorogood
+        2005, SPE-84246-PA): a lateral that climbs back through a TVD returns
+        each crossing, and the caller decides which it means. ``tvd`` is in
+        the same frame as :meth:`tvd_at`. Empty where the path never reaches
+        it.
+        """
+        return [float(n.md) for n in self._stations.interpolate_tvd(float(tvd))]
 
     def vs(self, md, azimuth_deg: float):
         """Vertical-section departure at ``md`` projected onto ``azimuth_deg``."""

@@ -667,7 +667,9 @@ def build_column(
         if item.type != "tubing":
             y = d(item.md)
             s = radial.at(y)
-            width = item.od_in * s
+            # label anchor: the item's own OD where recorded, else the width
+            # it is drawn to (set below)
+            width = None if item.od_in is None else item.od_in * s
             if item.type == "packer":
                 # A packer SEALS THE ANNULUS: it spans from the tubing OD out
                 # to its own sealing OD (the casing ID it sets against), and
@@ -685,8 +687,16 @@ def build_column(
                 # the casing -- is what it actually sets in down there.
                 r_ids = [c.id_at(item.md) / 2.0 for c in casings
                          if c.top_md <= item.md <= c.shoe_md]
+                if not r_ids and item.od_in is None:
+                    raise ValueError(
+                        f"packer {item.name or ''!r} at {item.md} m: no OD "
+                        "recorded and no casing or liner at that depth to set "
+                        "in -- its sealing OD cannot be placed")
                 r_host = min(r_ids) if r_ids else item.od_in / 2.0
-                r_seal = min(item.od_in / 2.0, r_host)
+                r_seal = (r_host if item.od_in is None
+                          else min(item.od_in / 2.0, r_host))
+                if width is None:
+                    width = 2.0 * r_seal * s
                 r_tbg = next(
                     (t.od_in / 2.0 for t in bore.completion
                      if t.type == "tubing"
@@ -712,8 +722,14 @@ def build_column(
                     (t.od_in / 2.0 for t in bore.completion
                      if t.type == "tubing"
                      and (t.top_md or 0.0) <= item.md <= (t.base_md or item.md)),
-                    item.od_in / 2.0,
+                    None if item.od_in is None else item.od_in / 2.0,
                 )
+                if r_tbg is None:
+                    raise ValueError(
+                        f"{item.type} {item.name or ''!r} at {item.md} m: no OD "
+                        "recorded and no tubing at that depth to mount it in")
+                if width is None:
+                    width = 2.0 * r_tbg * s
                 w = r_tbg * s
                 hv = min(2.0 * w * _norm * VALVE_ASPECT, ymax * 0.006)
                 hv = max(hv, ymax * 0.002)

@@ -77,6 +77,18 @@ class SurveyRef(_Base):
     md: List[float]
     inc: List[float]
     azi: List[float]
+    tvd: Optional[List[float]] = Field(
+        None,
+        description=(
+            "The survey's own TVD column, parallel to md, when the source "
+            "lists one; None where it does not. Not used to place anything: "
+            "positions always come from minimum curvature on md/inc/azi. It "
+            "is compared against that, and DepthResolver refuses a survey "
+            "whose TVD column disagrees with its own angles by more than "
+            "MAX_STATION_TVD_GAP_M. Entries may be NaN where a station's TVD "
+            "was not recorded."
+        ),
+    )
     tie_in_tvd: Optional[float] = Field(
         None,
         description=(
@@ -94,6 +106,8 @@ class SurveyRef(_Base):
     def _equal_length(self) -> "SurveyRef":
         if not (len(self.md) == len(self.inc) == len(self.azi)):
             raise ValueError("md, inc and azi must have equal length")
+        if self.tvd is not None and len(self.tvd) != len(self.md):
+            raise ValueError("tvd must have the same length as md")
         if len(self.md) < 2:
             raise ValueError("survey needs at least two stations")
         return self
@@ -719,7 +733,24 @@ class CompletionItem(_Base):
 
     type: Literal["tubing", "packer", "sssv", "nipple"]
     name: Optional[str] = None
-    od_in: float
+    od_in: Optional[float] = Field(
+        None,
+        description=(
+            "Outside diameter (in). Required for tubing. For a packer, None "
+            "means the OD was not recorded: renderers draw it to the ID of "
+            "the innermost casing or liner at its depth (the string it sets "
+            "in) and refuse where there is none. For an sssv or nipple, None "
+            "draws it in the tubing it belongs to."
+        ),
+    )
+    inner_string: Optional[str] = Field(
+        None,
+        description=(
+            "Name of the string this item seals on or hangs (a Casing name, "
+            "or a tubing CompletionItem name), where recorded. None means "
+            "not recorded; the nest view then infers it and says so."
+        ),
+    )
     md: Optional[float] = None
     top_md: Optional[float] = None
     base_md: Optional[float] = None
@@ -729,6 +760,8 @@ class CompletionItem(_Base):
         if self.type == "tubing":
             if self.top_md is None or self.base_md is None:
                 raise ValueError("tubing needs top_md and base_md")
+            if self.od_in is None:
+                raise ValueError("tubing needs od_in")
         else:
             if self.md is None:
                 raise ValueError(f"{self.type} needs md")
@@ -809,11 +842,23 @@ class Wellbore(_Base):
 
     ``parent_id`` + ``kickoff_md`` position a lateral off its parent. For a
     single-bore well ``parent_id`` is ``None`` and ``kickoff_md`` is 0.
+    Where the lateral leaves through a milled window, ``window_md`` places it
+    and :attr:`branch_md` is the window.
     """
 
     id: str = "main"
     parent_id: Optional[str] = None
     kickoff_md: float = 0.0
+    window_md: Optional[float] = Field(
+        None,
+        description=(
+            "MD on the parent of the milled window this bore leaves through, "
+            "where one was recorded; None where it was not (an open-hole "
+            "kick-off, or not recorded). A branch through a window enters "
+            "the parent's casing bore at the window, which can lie above the "
+            "recorded kick-off. Requires parent_id."
+        ),
+    )
     survey: SurveyRef
     hole_sections: List[HoleSection] = Field(default_factory=list)
     casings: List[Casing] = Field(default_factory=list)
@@ -822,6 +867,21 @@ class Wellbore(_Base):
     annulus_fluids: List[AnnulusFluid] = Field(default_factory=list)
     perforations: List[Perforation] = Field(default_factory=list)
     completion: List[CompletionItem] = Field(default_factory=list)
+
+    @property
+    def branch_md(self) -> float:
+        """MD on the parent where this bore leaves it: the window, else the kick-off."""
+        return self.kickoff_md if self.window_md is None else self.window_md
+
+    @model_validator(mode="after")
+    def _window_needs_parent(self) -> "Wellbore":
+        """A window is on a parent's casing; a root bore has none to leave."""
+        if self.window_md is not None and self.parent_id is None:
+            raise ValueError(
+                f"wellbore {self.id!r}: window_md is set but parent_id is not; "
+                "a window is where a bore leaves its parent"
+            )
+        return self
 
     # --- what can actually be drawn ---------------------------------------
     @property

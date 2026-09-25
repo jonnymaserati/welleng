@@ -411,12 +411,12 @@ def render_plumbing(
 
     ymax = 0.0
     # root(s) first, then children (draw order = trunk behind)
-    order = sorted(bores.values(), key=lambda b: b.kickoff_md)
+    order = sorted(bores.values(), key=lambda b: b.branch_md)
     for b in order:
         cl = Centreline(resolvers[b.id], vs_azi, mode=mode, exag=exag)
         anc = ancestors(b)
         cas = _casings(b, anc)
-        start = b.kickoff_md if b.parent_id else float(resolvers[b.id].md[0])
+        start = b.branch_md if b.parent_id else float(resolvers[b.id].md[0])
         td = float(resolvers[b.id].md[-1])
         ymax = max(ymax, float(cl.y(td)))
         _draw_hole(ax, cl, b, start, td)
