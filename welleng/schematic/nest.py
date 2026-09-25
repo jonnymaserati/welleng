@@ -515,6 +515,7 @@ def render_nest(schematic: WellSchematic, *, mode: str = "md-paused",
 
     # ---- TVD: minimum curvature on each bore's survey -------------------------
     tvd_fn, datum, res = None, None, {}
+    tie: Dict[str, float] = {}      # bore -> TVD offset tying it to its parent
     if mode == "tvd":
         datum = schematic.well.datum_elevation_m
         if datum is None:
@@ -536,7 +537,23 @@ def render_nest(schematic: WellSchematic, *, mode: str = "md-paused",
                     f"{n}: MD {md:.1f} m is outside its survey "
                     f"({r.md_min:.1f}-{r.md_max:.1f} m) -- no TVD is drawn "
                     "for it, and none is extrapolated")
-            return r.tvd_at(min(max(md, r.md_min), r.md_max)) - datum
+            return (r.tvd_at(min(max(md, r.md_min), r.md_max)) - datum
+                    + tie.get(n, 0.0))
+
+        # A child's own survey can put the shared branch point a little off
+        # its parent's (it ties in at its own kick-off). Tie it to the parent
+        # there, so its depth has no step at the branch; say so past 1 cm.
+        for n in names:                          # parents come first
+            if parent[n]:
+                tie[n] = tvd_fn(parent[n], kop[n]) - (
+                    res[n].tvd_at(kop[n]) - datum)
+                if abs(tie[n]) > 0.01:
+                    side = "shallower" if tie[n] > 0 else "deeper"
+                    caveats.append(
+                        f"{short[n]}: its survey puts the branch point "
+                        f"{abs(tie[n]) * 100:.1f} cm {side} than "
+                        f"{short[parent[n]]}'s; its TVD is tied to "
+                        f"{short[parent[n]]}'s there")
 
     # ---- figure, scales -----------------------------------------------------
     FIG_W, FIG_H = 9.6, 11.0
@@ -615,12 +632,18 @@ def render_nest(schematic: WellSchematic, *, mode: str = "md-paused",
                 continue
             # every MD on n where its TVDSS is the void's (exact inverse;
             # a climbing lateral crosses more than once)
-            for m in res[n].md_at_tvd(dv + datum):
+            for m in res[n].md_at_tvd(dv + datum - tie.get(n, 0.0)):
                 if md0 - 1e-9 <= m <= md1 + 1e-9 and \
                         (parent[n] is None or m > kop[n]):
                     mds.append(m)
         out = [first] if first is not None else []
-        for m in sorted(set(mds)):
+        # one node per MD: a grid node and an inverse root an ulp apart would
+        # emit a void's edges twice and draw back up through it
+        merged: List[float] = []
+        for m in sorted(mds):
+            if not merged or m - merged[-1] > 1e-6:
+                merged.append(m)
+        for m in merged:
             if first is not None and m <= md0 + 1e-9:
                 continue
             d = dmap.domain(n, m)
@@ -1126,8 +1149,6 @@ def render_nest(schematic: WellSchematic, *, mode: str = "md-paused",
                     caveats.append(f"{short[n]} {nm} at {pk.md:.0f} m: no OD "
                                    "recorded and no host casing -- not drawn")
                     continue
-                caveats.append(f"{nm} at {pk.md:.0f} m: OD not recorded -- "
-                               "drawn to its host casing [DERIVED]")
                 seal = min(i for _o, i in host)
             else:
                 seal = pk.od_in
@@ -1137,6 +1158,10 @@ def render_nest(schematic: WellSchematic, *, mode: str = "md-paused",
                 caveats.append(f"{short[n]} {nm} at {pk.md:.0f} m: no string to "
                                "hang or seal on -- not drawn")
                 continue
+            if pk.od_in is None:
+                caveats.append(f"{nm} at {pk.md:.0f} m: OD not recorded -- "
+                               f"drawn to its host casing ID {seal:.3f}in "
+                               "[DERIVED]")
             if why:
                 caveats.append(f"{nm} at {pk.md:.0f} m: {why}")
             # the box meets the host casing's WALL as drawn (its OD)

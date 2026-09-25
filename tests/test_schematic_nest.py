@@ -278,8 +278,8 @@ def test_the_pause_takes_the_packers_off_the_bends(nest):
 
 
 def test_a_packer_with_no_od_is_drawn_to_its_host_and_says_so(nest):
-    assert any("production packer at 2600 m: OD not recorded" in c
-               for c in nest.caveats)
+    assert any("production packer at 2600 m: OD not recorded -- drawn to its "
+               "host casing ID 6.184in [DERIVED]" in c for c in nest.caveats)
     assert not any("inner string" in c and "not in the model" in c
                    for c in nest.caveats)
 
@@ -475,3 +475,87 @@ def test_resolver_refuses_a_tvd_column_that_disagrees_with_its_angles():
         DepthResolver(SurveyRef(md=md, inc=inc, azi=azi, tvd=bad))
     with pytest.raises(ValueError, match="same length"):
         SurveyRef(md=md, inc=inc, azi=azi, tvd=col[:2])
+
+
+# --------------------------------------------------------------------------
+# no path turns back across a pause
+# --------------------------------------------------------------------------
+def _backtracks(view):
+    """Consecutive path nodes going from a pause's bottom edge to its top:
+    a wall drawn back up through the pause."""
+    hits = []
+    for n, P in view.paths.items():
+        for a, b in zip(P[:-1], P[1:]):
+            for y0, y1, _v in view.depth_map.spans():
+                if abs(a[1] - y1) < 1e-9 and abs(b[1] - y0) < 1e-9:
+                    hits.append((n, a[4], b[4]))
+    return hits
+
+
+def _building_parent():
+    """ST1 leaves the pilot at 1838 m while the pilot is building: the TVD
+    inverse there returns the branch MD to within an ulp, not exactly."""
+    sch = _family()
+    pilot, s1, _s2 = sch.wellbores
+    pilot.survey = SurveyRef(md=[0.0, 1500.0, 3400.0], inc=[0.0, 0.0, 30.0],
+                             azi=[0.0, 0.0, 0.0])
+    s1.kickoff_md = 1838.0
+    s1.survey = SurveyRef(
+        md=[0.0, 1500.0, 1838.0, 2400.0, 3400.0],
+        inc=[0.0, 0.0, 30.0 * 338.0 / 1900.0, 60.0, 60.0],
+        azi=[0.0, 0.0, 0.0, 90.0, 90.0])
+    return sch
+
+
+def _child_survey_off_parent(inc_at_branch):
+    """ST2's own survey puts the shared branch point off ST1's (inc 40.1 at
+    2200 m: 15.5 cm shallower; 39.9: 15.5 cm deeper)."""
+    sch = _family()
+    sch.wellbores[2].survey = SurveyRef(
+        md=[0.0, 1800.0, 2200.0, 2800.0, 3400.0],
+        inc=[0.0, 0.0, inc_at_branch, 80.0, 80.0],
+        azi=[0.0, 0.0, 90.0, 120.0, 120.0])
+    return sch
+
+
+@pytest.mark.parametrize("build", [
+    _family, _building_parent,
+    lambda: _child_survey_off_parent(40.1),
+    lambda: _child_survey_off_parent(39.9),
+], ids=["base", "building-parent", "child-shallower", "child-deeper"])
+@pytest.mark.parametrize("mode", DEPTH_MODES)
+def test_a_path_never_turns_back_across_a_pause(build, mode):
+    import matplotlib.pyplot as plt
+    view = render_nest(build(), mode=mode)
+    try:
+        assert _backtracks(view) == []
+    finally:
+        plt.close(view.fig)
+
+
+def test_a_child_survey_off_its_parent_is_tied_and_said():
+    import matplotlib.pyplot as plt
+    view = render_nest(_child_survey_off_parent(40.1), mode="tvd")
+    try:
+        said = "ST2: its survey puts the branch point 15.5 cm shallower than ST1"
+        assert any(said in c for c in view.caveats), view.caveats
+        # tied: no step in ST2's depth at its branch point
+        d = view.depth_map
+        assert d.domain("X-1-ST2", 2200.0 + 1e-6) == pytest.approx(
+            d.domain("X-1-ST1", 2200.0), abs=1e-4)
+    finally:
+        plt.close(view.fig)
+
+
+def test_a_packer_not_drawn_is_not_also_said_to_be_drawn():
+    import matplotlib.pyplot as plt
+    sch = _family()
+    s2 = sch.wellbores[2]
+    s2.completion = [c for c in s2.completion if c.type == "packer"]
+    s2.completion[0].inner_string = None          # nothing to seal on
+    view = render_nest(sch, mode="md")
+    try:
+        mine = [c for c in view.caveats if "production packer" in c]
+        assert len(mine) == 1 and "not drawn" in mine[0], mine
+    finally:
+        plt.close(view.fig)
