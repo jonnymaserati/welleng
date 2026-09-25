@@ -307,7 +307,7 @@ def _draw_liner_hanger(ax, cl: Centreline, c: Casing,
     if c.top_md <= start_md + 1e-6 or c.cut_md is not None:
         return                    # not hung, or cut and pulled (hanger recovered)
     hosts = [d.id_in / 2.0 for d in cas
-             if d.od_in > c.od_in and d.top_md <= c.top_md <= d.shoe_md]
+             if d.od_in > c.od_in and d.steel_at(c.top_md)]
     if not hosts:
         return
     ro, hri = cl.rdraw(c.od_in / 2), cl.rdraw(min(hosts))

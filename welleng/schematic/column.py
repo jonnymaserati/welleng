@@ -308,6 +308,7 @@ def _rock_inner_r(md: float, casings, hole) -> float:
     holes = [h.bit_in / 2.0 for h in hole if h.top_md <= md <= h.base_md]
     if holes:
         return max(holes)
+    # the hole a string was run in, whether or not it was later cut or milled
     ods = [c.od_at(md) / 2.0 for c in casings if c.top_md <= md <= c.shoe_md]
     return max(ods) if ods else 0.0
 
@@ -377,7 +378,7 @@ def _draw_liner_hangers(dwg, casings, radial, d, norm, ymax) -> None:
             continue                        # cut and pulled: hanger recovered
         hosts = [h.id_at(c.top_md) / 2.0 for h in casings
                  if h.od_at(c.top_md) > c.od_at(c.top_md)
-                 and h.top_md <= c.top_md <= h.shoe_md]
+                 and _steel_at(h, c.top_md)]
         if not hosts:
             continue                        # nothing to hang from
         y = d(c.top_md)
@@ -409,7 +410,7 @@ def _draw_perforations(dwg, bore, casings, hole, radial, d) -> None:
         if pf.base_md <= pf.top_md:
             continue
         mid = (pf.top_md + pf.base_md) / 2.0
-        present = [c for c in casings if c.top_md <= mid <= c.shoe_md]
+        present = [c for c in casings if _steel_at(c, mid)]
         if pf.casing_od_in is not None:
             shot = next((c for c in present if c.has_od(pf.casing_od_in)), None)
         else:
@@ -606,7 +607,7 @@ def build_column(
     for p in bore.cement_plugs:
         mid = (p.top_md + p.base_md) / 2.0
         candidates = [c.id_at(mid) / 2.0 for c in casings
-                      if c.top_md <= mid <= c.shoe_md]
+                      if _steel_at(c, mid)]
         r_in = min(candidates) if candidates else 3.0
         band = _wall(r_in, d(p.top_md), d(p.base_md), radial, 1) \
             + _wall(r_in, d(p.top_md), d(p.base_md), radial, -1)[::-1]
@@ -686,7 +687,7 @@ def build_column(
                 # liner's wall and into the cement, because the liner -- not
                 # the casing -- is what it actually sets in down there.
                 r_ids = [c.id_at(item.md) / 2.0 for c in casings
-                         if c.top_md <= item.md <= c.shoe_md]
+                         if _steel_at(c, item.md)]
                 if not r_ids and item.od_in is None:
                     raise ValueError(
                         f"packer {item.name or ''!r} at {item.md} m: no OD "
