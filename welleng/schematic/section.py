@@ -125,7 +125,7 @@ def build_section(
     for pl in bore.cement_plugs:
         mid = (pl.top_md + pl.base_md) / 2.0
         cand = [c.id_in for c in bore.drawable_casings
-                if c.top_md <= mid <= c.shoe_md]
+                if c.steel_at(mid)]
         bore_id = min(cand) if cand else 6.0
         dwg.add(Hatch(ribbon(pl.top_md, pl.base_md, bore_id),
                       pattern="plug", layer=L_PLUG, style=_PLUG))

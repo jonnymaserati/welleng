@@ -494,15 +494,20 @@ def render_nest(schematic: WellSchematic, *, mode: str = "md-paused",
                            f"inner string {pk.inner_string!r} is not in the "
                            "model -- inferred instead")
         b = bore_of[n]
-        cands = ([(c.od_in, c.top_md, c.shoe_md) for c in b.drawable_casings]
-                 + [(c.od_in, c.top_md, c.base_md) for c in b.completion
-                    if c.type == "tubing"])
+        # (od, top, base, can be hung) per length of steel: a cut or milled
+        # string is steel only where it remains, and a length starting at a
+        # cut or a milled interval has no hanger
+        cands = [(c.od_in, t, bs, c.cut_md is None and abs(t - c.top_md) < 1e-9)
+                 for c in b.drawable_casings for t, bs in c.steel_intervals()]
+        cands += [(c.od_in, c.top_md, c.base_md, True) for c in b.completion
+                  if c.type == "tubing"]
         cands = [c for c in cands if c[0] < outer_od - 1e-6]
-        through = [od for od, t, bs in cands if t < pk.md - 1e-6 and pk.md < bs]
+        through = [od for od, t, bs, _h in cands
+                   if t < pk.md - 1e-6 and pk.md < bs]
         if through:
             return min(through), None
-        hung = [(t - pk.md, od) for od, t, bs in cands
-                if -1e-6 <= t - pk.md <= HANG_TOL_M]
+        hung = [(t - pk.md, od) for od, t, bs, h in cands
+                if h and -1e-6 <= t - pk.md <= HANG_TOL_M]
         if hung:
             return min(hung)[1], None
         above = [(pk.md - c.base_md, c.od_in) for c in b.completion

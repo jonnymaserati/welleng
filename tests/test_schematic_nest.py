@@ -559,3 +559,25 @@ def test_a_packer_not_drawn_is_not_also_said_to_be_drawn():
         assert len(mine) == 1 and "not drawn" in mine[0], mine
     finally:
         plt.close(view.fig)
+
+
+def test_a_cut_string_is_not_what_a_packer_seals_on():
+    import matplotlib.pyplot as plt
+
+    def with_string(cut_md):
+        sch = _family()
+        s2 = sch.wellbores[2]
+        s2.completion = [c for c in s2.completion if c.type == "packer"]
+        s2.completion[0].inner_string = None
+        s2.casings.append(Casing(name="5-1/2in", kind="tubular", od_in=5.5,
+                                 nominal_weight_ppf=17.0, top_md=2300.0,
+                                 shoe_md=3000.0, cut_md=cut_md))
+        view = render_nest(sch, mode="md")
+        plt.close(view.fig)
+        return [c for c in view.caveats if "production packer" in c]
+
+    # known positive: the whole string passes through the packer at 2600 m
+    assert not any("not drawn" in c for c in with_string(None))
+    # cut at 2700 m and pulled above: nothing left there to seal on
+    (said,) = with_string(2700.0)
+    assert "no string to hang or seal on -- not drawn" in said
