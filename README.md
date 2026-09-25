@@ -146,6 +146,11 @@ cov = survey.err.errors.cov_NEVs       # NEV covariance per station
 - **Schematics after plug and abandonment** — mechanical plugs (bridge plug, cement retainer),
   lengths of a string milled out, a string cut and pulled, and annular cement beyond the primary
   job (squeezes, perforate-wash-cement), drawn in the column, section and plumbing views.
+- **Nest view of a multi-bore well** — `welleng.schematic.nest.render_nest` draws a parent bore
+  and its sidetracks in swim lanes on a depth axis in TVD, MD, or MD with the clock paused at
+  each branch point, so a connector no longer lands on the parent's completion. A lateral can
+  leave through a milled window (`Wellbore.window_md`), a packer's OD may be left unrecorded,
+  and `DepthResolver` gives attitude at an MD and every MD at a TVD.
 - **`python -m welleng.lint`** checks a package for linear interpolation of a trajectory axis
   and for hand-written arc tangents (SLERP or Rodrigues form) — both of which the
   minimum-curvature methods on `MinCurve` / `Survey` already provide.
