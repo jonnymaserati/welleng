@@ -214,6 +214,8 @@ def build_section(
     p_view = np.array([-np.sin(a_vs), np.cos(a_vs), 0.0])  # normal to the view plane
 
     def r_max(a, b):
+
+        """Widest drawn radius (m) on MD a..b: the hole, or a string where wider."""
         rs = [h.bit_in * _IN2M / 2.0 for h in holes if h.top_md < b and h.base_md > a]
         rs += [c.od_in * _IN2M / 2.0 for c in casings if c.top_md < b and c.shoe_md > a]
         return max(rs) if rs else 0.0
@@ -254,6 +256,7 @@ def build_section(
 
     # --- geometry helpers: position and normal at MD, exact minimum curvature ----
     def frame(m):
+        """Position (VS, TVD), unit normal and unit tangent at MD(s) ``m``."""
         m = np.atleast_1d(np.asarray(m, float))
         P = np.column_stack((resolver.vs(m, azimuth), resolver.tvd_at(m)))
         inc, azi = resolver.inc_azi_at(m)
@@ -264,14 +267,20 @@ def build_section(
         return P, np.column_stack((t[:, 1], -t[:, 0])), t
 
     def radii(r, mm):
+
+        """Radius (m) at each MD in ``mm``: a constant or a function of MD."""
         return (
             np.array([r(m) for m in mm]) if callable(r) else np.full(mm.shape, float(r))
         )
 
     def samples(a, b):
+
+        """MDs from ``a`` to ``b`` at half the resolver step."""
         return np.linspace(a, b, max(2, int((b - a) / max(step / 2.0, 1.0)) + 2))
 
     def band(dwg, a, b, r_lo, r_hi, layer, style, kind=Polygon):
+
+        """A band between two radii from MD ``a`` to ``b``, one entity per side."""
         if b <= a:
             return
         mm = samples(a, b)
@@ -288,6 +297,8 @@ def build_section(
             )
 
     def trace(dwg, a, b, r, layer, style):
+
+        """A line at radius ``r`` from MD ``a`` to ``b``, one per side."""
         if b <= a:
             return
         mm = samples(a, b)
@@ -303,6 +314,8 @@ def build_section(
             )
 
     def across(dwg, m, r_lo, r_hi, layer, style):
+
+        """A line across radii ``r_lo``..``r_hi`` along the normal at MD ``m``."""
         P, N, _ = frame(m)
         for sg in (-1.0, 1.0):
             a = P[0] + sg * r_lo * E * N[0]
@@ -420,6 +433,7 @@ def build_section(
 
     # --- plugs and completion ------------------------------------------------------
     def bore_r(m, od=None):
+        """Bore radius (m) at ``m``: the innermost string there (optionally by OD)."""
         cand = [
             c.id_at(m)
             for c in casings
@@ -607,12 +621,16 @@ def _place_callouts(
         items.append([lines, anchor, centre, w, hh])
 
     def bbox(it):
+
+        """Callout box (x0, x1, y0, y1) in world units."""
         _, _, (cx, cy), w, hh = it
         return cx - w / 2, cx + w / 2, cy - hh / 2, cy + hh / 2
 
     mg = 0.01 * W
 
     def clash(i, x0, x1, y0, y1):
+
+        """True if a box leaves the frame, meets the drawing or another callout."""
         if x0 < fx0 or x1 > fx1 or y0 < fy0 or y1 > fy1:
             return True
         if np.any(
