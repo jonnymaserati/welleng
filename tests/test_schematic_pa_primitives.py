@@ -152,11 +152,15 @@ def test_column_draws_the_after_state():
 def test_section_draws_the_after_state():
     before = build_section(WellSchematic.from_dict(copy.deepcopy(BASE)))
     after = build_section(_after_state())
-    assert len(_layers(after, "CASING")) == len(_layers(before, "CASING")) + 1
-    # +1 perf-wash-cement; +1 because the primary cement is split at the
-    # milled window, whose cement removal is not recorded (so not drawn)
-    assert len(_layers(after, "CEMENT")) == len(_layers(before, "CEMENT")) + 2
-    assert len(_layers(after, "PLUG")) == 2
+    # every interval is drawn as one entity on each side of the path, so each
+    # counts twice. The milled window splits the 9-5/8 wall: +1 interval.
+    assert len(_layers(after, "CASING")) == len(_layers(before, "CASING")) + 2
+    # +1 perf-wash-cement interval; +1 because the primary cement is split at
+    # the milled window, whose cement removal is not recorded (so not drawn).
+    # Each interval is a band per side plus a top-of-cement line per side.
+    assert len(_layers(after, "CEMENT")) == len(_layers(before, "CEMENT")) + 2 * 2 * 2
+    # the cement plug and the bridge plug, one entity per side each
+    assert len(_layers(after, "PLUG")) == 2 * 2
 
 
 def _shoe_triangles(ax):
