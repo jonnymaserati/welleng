@@ -399,12 +399,30 @@ def _draw_liner_hangers(dwg, casings, radial, d, norm, ymax) -> None:
             dwg.add(Line((x0, y1), (x1, y0), layer=L_HANGER, style=_HANGER))
 
 
-def _draw_perforations(dwg, bore, casings, hole, radial, d) -> None:
-    """Perforation marks crossing the shot casing wall into the formation.
+#: A perforation or punch whose drawn height is below this fraction of the
+#: drawing's depth extent is drawn as a BREAK in the shot wall, not a ladder:
+#: at page scale a short ladder's ticks merge into one bar across the annulus,
+#: which reads as a pin, not as holes.
+PERF_LADDER_MIN_FRAC = 0.02
+#: Minimum drawn height of a break, as a fraction of the depth extent, so a
+#: 1 m punch is still visible on a whole-well page.
+PERF_BREAK_MIN_FRAC = 0.006
+#: Methods drawn as a break whatever their length: a punch or cut opens the
+#: wall at one place; it is not a shot interval.
+PERF_BREAK_METHODS = frozenset({"T-C-Punch"})
+_BREAK = Style(color="#ffffff", lineweight=0.0, fill="#ffffff")
+_BREAK_END = Style(color="#222222", lineweight=0.35)
 
-    Drawn as a ladder of ticks rather than a filled band: perforations are
-    discrete holes through the wall, and a band would read as an interval of
-    missing casing.
+
+def _draw_perforations(dwg, bore, casings, hole, radial, d, ymax) -> None:
+    """Perforations and punches through the shot casing wall.
+
+    A long perforated zone is a ladder of ticks from the wall's OD outward into
+    the annulus and formation: discrete holes, never a band, and no tick inside
+    the bore or across the wall. A short interval, or a punch, is a BREAK in the
+    shot wall -- the wall cleared over the interval with a cut-end line at top
+    and bottom -- the drawing-office convention for an opening in a string. Its
+    height is at least :data:`PERF_BREAK_MIN_FRAC` of the depth extent.
     """
     for pf in getattr(bore, "perforations", []) or []:
         if pf.base_md <= pf.top_md:
@@ -417,16 +435,31 @@ def _draw_perforations(dwg, bore, casings, hole, radial, d) -> None:
             shot = min(present, key=lambda c: c.od_at(mid)) if present else None
         if shot is None:
             continue                        # names a string that is not there
+        y0, y1 = d(pf.top_md), d(pf.base_md)
+        short = abs(y1 - y0) < PERF_LADDER_MIN_FRAC * ymax
+        if pf.method in PERF_BREAK_METHODS or short:
+            h = max(abs(y1 - y0), PERF_BREAK_MIN_FRAC * ymax)
+            ym = (y0 + y1) / 2.0
+            ya, yb = ym - h / 2.0, ym + h / 2.0
+            s = radial.at(ym)
+            r_in, r_out = shot.id_at(mid) / 2.0, shot.od_at(mid) / 2.0
+            for sign in (-1, 1):
+                xi, xo = sign * r_in * s, sign * r_out * s
+                dwg.add(Polygon([(xi, ya), (xo, ya), (xo, yb), (xi, yb)],
+                                layer=L_PERF, style=_BREAK))
+                for y in (ya, yb):
+                    dwg.add(Line((xi, y), (xo, y), layer=L_PERF, style=_BREAK_END))
+            continue
         # tick spacing from the interval, capped so a long zone stays legible
         n = max(2, min(int((pf.base_md - pf.top_md) / 8.0), 40))
         for k in range(n + 1):
             md = pf.top_md + (pf.base_md - pf.top_md) * k / n
             y = d(md)
             s = radial.at(y)
-            r_in = shot.id_at(md) / 2.0
+            r_wall = shot.od_at(md) / 2.0
             r_far = _annulus_outer_r(md, shot, casings, hole)
             for sign in (-1, 1):
-                dwg.add(Line((sign * r_in * s, y), (sign * r_far * s, y),
+                dwg.add(Line((sign * r_wall * s, y), (sign * r_far * s, y),
                              layer=L_PERF, style=_PERF))
 
 
@@ -755,7 +788,7 @@ def build_column(
     # already be down or it paints them out. Insertion order is the z-order
     # in every backend, so it has to agree with the layer list above.
     _draw_liner_hangers(dwg, casings, radial, d, _norm, ymax)
-    _draw_perforations(dwg, bore, casings, hole, radial, d)
+    _draw_perforations(dwg, bore, casings, hole, radial, d, ymax)
 
     # --- annotations in side gutters, de-collided --------------------------
     if bare:

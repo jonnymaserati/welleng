@@ -641,17 +641,19 @@ def test_flat_form_hoists_perforations():
     assert s.wellbores[0].perforations[0].base_md == 2400
 
 
-def test_perforations_cross_the_shot_wall_into_the_annulus():
+def test_perforations_run_from_the_shot_wall_od_into_the_annulus():
+    """Ticks start at the wall's OD: a tick across the wall or inside the bore
+    reads as something set in the well, not a hole through the string."""
     from welleng.schematic.column import L_PERF
     dwg = _perf_column([{"top_md": 2300, "base_md": 2400,
                          "casing_od_in": 7.0}])
     ticks = [e for e in dwg.entities if getattr(e, "layer", None) == L_PERF]
     assert ticks
     s = 30.0                                    # radial scale below 2000 m
-    r_in, r_hole = 6.18 / 2.0, 8.5 / 2.0
+    r_od, r_hole = 7.0 / 2.0, 8.5 / 2.0
     for e in ticks:
         x0, x1 = abs(e.start[0]), abs(e.end[0])
-        assert min(x0, x1) == pytest.approx(r_in * s, rel=1e-6)
+        assert min(x0, x1) == pytest.approx(r_od * s, rel=1e-6)
         assert max(x0, x1) == pytest.approx(r_hole * s, rel=1e-6)
 
 
@@ -680,7 +682,7 @@ def test_perforations_default_to_the_innermost_string_there():
     dwg = _perf_column([{"top_md": 2300, "base_md": 2400}])
     inner = min(abs(e.start[0]) for e in dwg.entities
                 if getattr(e, "layer", None) == L_PERF)
-    assert inner == pytest.approx(6.18 / 2.0 * 30.0, rel=1e-6)
+    assert inner == pytest.approx(7.0 / 2.0 * 30.0, rel=1e-6)
 
 
 def test_perforations_can_name_an_outer_string():
@@ -691,7 +693,45 @@ def test_perforations_can_name_an_outer_string():
                          "casing_od_in": 9.625}])
     inner = min(abs(e.start[0]) for e in dwg.entities
                 if getattr(e, "layer", None) == L_PERF)
-    assert inner == pytest.approx(8.68 / 2.0 * 32.0, rel=1e-6)
+    assert inner == pytest.approx(9.625 / 2.0 * 32.0, rel=1e-6)
+
+
+def _perf_entities(dwg):
+    from welleng.schematic.column import L_PERF
+    return [e for e in dwg.entities if getattr(e, "layer", None) == L_PERF]
+
+
+@pytest.mark.parametrize("perf", [
+    {"top_md": 2350, "base_md": 2351, "casing_od_in": 7.0, "method": "T-C-Punch"},
+    {"top_md": 2350, "base_md": 2351, "casing_od_in": 7.0},
+    {"top_md": 2300, "base_md": 2400, "casing_od_in": 7.0, "method": "T-C-Punch"},
+])
+def test_a_punch_or_short_interval_is_a_break_in_the_wall_not_a_bar(perf):
+    """A 1 m punch drawn as a tick ladder put three ticks within a pixel, from
+    the ID to the annulus outer wall: one solid bar across the annulus, read as
+    a pin. It is drawn as a break in the shot wall: nothing crosses the
+    annulus and nothing enters the bore."""
+    from welleng.schematic.column import _BREAK
+    ents = _perf_entities(_perf_column([perf]))
+    s = 30.0
+    r_id, r_od, r_hole = 6.18 / 2.0 * s, 7.0 / 2.0 * s, 8.5 / 2.0 * s
+    breaks = [e for e in ents if getattr(e, "style", None) == _BREAK]
+    assert len(breaks) == 2                        # one per side
+    for e in ents:
+        xs = [abs(p[0]) for p in getattr(e, "points", None) or [e.start, e.end]]
+        assert min(xs) == pytest.approx(r_id, rel=1e-6)
+        assert max(xs) == pytest.approx(r_od, rel=1e-6)
+        assert max(xs) < r_hole                    # never across the annulus
+
+
+def test_a_break_has_a_visible_minimum_height():
+    from welleng.schematic.column import PERF_BREAK_MIN_FRAC, _BREAK
+    dwg = _perf_column([{"top_md": 2350, "base_md": 2351, "casing_od_in": 7.0,
+                         "method": "T-C-Punch"}])
+    ys = [p[1] for e in _perf_entities(dwg) if e.style == _BREAK for p in e.points]
+    ymax = max(abs(p[1]) for e in dwg.entities
+               for p in (getattr(e, "points", None) or []))
+    assert max(ys) - min(ys) >= PERF_BREAK_MIN_FRAC * ymax * 0.99
 
 
 def test_perforations_naming_an_absent_string_are_skipped():
