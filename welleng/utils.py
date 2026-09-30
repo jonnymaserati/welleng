@@ -1,3 +1,4 @@
+import math
 import re
 from typing import Annotated, Literal, Union
 
@@ -111,6 +112,12 @@ def arc_step(v1, v2, theta, dmd, x):
     # masking / reshape) so N-D batched callers -- e.g. cov/dense-sweep surfaces
     # feeding (n_leg, n_query, 3) -- work exactly like the 1-D case (welleng
     # #308 regression, api-caught: the old inline forms were broadcast-clean).
+    g = _arc_geometry(v1, v2, theta, dmd, x)
+    return _arc_disp(v1, v2, *g), _arc_tangent(v1, v2, *g)
+
+
+def _arc_geometry(v1, v2, theta, dmd, x):
+    """Shared set-up for the arc forms: guarded angles and the curved mask."""
     s = np.sin(theta)
     curved = (theta >= 1e-14) & (np.abs(s) >= 1e-12)   # (...) plane well-defined
     th = np.where(curved, theta, 1.0)                  # guarded denominators
@@ -118,19 +125,46 @@ def arc_step(v1, v2, theta, dmd, x):
     dmd_safe = np.where(dmd == 0.0, 1.0, dmd)
     phi = x * theta / dmd_safe                         # partial dogleg
     R = dmd / th
+    return th, sin_th, phi, R, curved, x
+
+
+def _arc_disp(v1, v2, th, sin_th, phi, R, curved, x):
+    """Position: half-angle where curved, else the straight chord ``x*v1``.
+
+    Split from the tangent so a caller wanting only an ATTITUDE does not pay
+    for a position it discards. A consumer resolving inc/azi at 1000 mesh
+    boundaries per survey was spending ~70% of the call on the displacement and
+    throwing it away.
+    """
     cw = curved[..., None]
-    # Position: half-angle where curved, else the straight chord x*v1.
     hc = np.cos((th - phi) / 2) / np.cos(th / 2)
     hs = np.sin((th - phi) / 2) / np.sin(th / 2)
     disp_curved = (R * np.sin(phi / 2))[..., None] * (
         (v1 + v2) * hc[..., None] + (v1 - v2) * hs[..., None]
     )
-    disp = np.where(cw, disp_curved, x[..., None] * v1)
-    # Tangent: Rodrigues u-form where curved, else the start tangent v1.
-    u = (v2 - np.cos(th)[..., None] * v1) / sin_th[..., None]
+    return np.where(cw, disp_curved, x[..., None] * v1)
+
+
+def _arc_tangent(v1, v2, th, sin_th, phi, R, curved, x):
+    """Tangent: Rodrigues ``u``-form where curved, else the start tangent.
+
+    The ``1/sin(theta)`` is a one-time set-up on the in-plane basis vector
+    ``u``, so there is no per-query amplifier and no small-angle branch -- the
+    reason this is the Rodrigues form rather than the SLERP blend, which the
+    two agree with to ~1 ulp but which divides by ``sin(theta)`` per query.
+    """
+    cw = curved[..., None]
+    u = _arc_inplane(v1, v2, th, sin_th)
     tang_curved = np.cos(phi)[..., None] * v1 + np.sin(phi)[..., None] * u
-    tangent = np.where(cw, tang_curved, v1)
-    return disp, tangent
+    return np.where(cw, tang_curved, v1)
+
+
+def _arc_inplane(v1, v2, th, sin_th):
+    """The arc plane's unit vector perpendicular to ``v1``, towards ``v2`` --
+    the Rodrigues ``u``: the tangent at partial dogleg ``phi`` is
+    ``cos(phi) v1 + sin(phi) u``. Depends only on the leg, so
+    :meth:`MinCurve.leg_frames` computes it once per survey."""
+    return (v2 - np.cos(th)[..., None] * v1) / sin_th[..., None]
 
 
 def min_curve_step(delta_md, inc1, azi1, inc2, azi2, rf=None):
@@ -201,6 +235,31 @@ def _arc_tvd_crossings(u1, u2, alpha, delta_md, dvert):
     a = u1 * np.sin(alpha)
     b = u1 * np.cos(alpha) - u2
     c = dvert * alpha * np.sin(alpha) / delta_md + b
+    return _sin_cos_roots(a, b, c, alpha)
+
+
+def _arc_inclination_crossings(u1, u2, alpha, cos_target):
+    """Subtended angles in ``[0, alpha]`` at which a min-curve arc's
+    inclination equals a target. Closed-form *Interpolation on Inclination* of
+    Sawaryn & Thorogood (2005, SPE-84246-PA), Eqs. 20-22 + Eq. 1: the tangent's
+    vertical component equals ``cos_target`` where
+    ``A sin d + B cos d = C`` with ``A = u2 - cos(alpha) u1``,
+    ``B = sin(alpha) u1``, ``C = sin(alpha) cos_target``. ``u1``/``u2`` are the
+    start/end unit-tangent vertical components. Returns 0, 1 or 2 roots.
+    """
+    return _sin_cos_roots(
+        u2 - np.cos(alpha) * u1,
+        np.sin(alpha) * u1,
+        np.sin(alpha) * cos_target,
+        alpha,
+    )
+
+
+def _sin_cos_roots(a, b, c, alpha):
+    """Roots in ``[0, alpha]`` of ``a sin d + b cos d = c`` (Sawaryn & Thorogood
+    2005, Eq. 1), by the half-angle substitution
+    ``d = 2 atan2(a +/- sqrt(a^2 + b^2 - c^2), b + c)``. Discriminant guarded;
+    returns 0, 1 or 2 roots."""
     disc = a * a + b * b - c * c
     if disc < -1e-12:
         return []
@@ -222,11 +281,14 @@ def _arc_tvd_crossings(u1, u2, alpha, delta_md, dvert):
 
 
 class MinCurve:
+    """Minimum-curvature geometry of a survey in local coordinates."""
+
     def __init__(
         self,
         md,
         inc,
         azi,
+        frame: str = "env",
     ):
         """
         Generate LOCAL geometric data from a well bore survey.
@@ -250,11 +312,67 @@ class MinCurve:
 
         Notes
         -----
+        ⛔ **``np.interp`` on ``poss``, ``tvd`` or an angle between stations is
+        the ANTI-PATTERN this class exists to replace.** A survey between
+        stations is a circular ARC, not a chord; the chord returns a monotonic,
+        in-range, WRONG answer whose size is set by the CALLER's station
+        spacing, so no test of the caller's will fail. Measured on real
+        surveys: 0.33 m of TVD and **3.63 m laterally** on a 55-station
+        sidetrack at 3.4 deg/30 m, and 7.22 m of TVD at 150 m spacing. Use
+        :meth:`interpolate`, :meth:`interpolate_tvd` or :meth:`inc_azi_at`.
+        ``python -m welleng.lint <path>`` detects it, and
+        :func:`welleng.lint.find_linear_survey_interpolation` is importable so
+        a CONSUMER can assert its own repo clean -- the defect has been fixed
+        nine times as changes and twice more in consumers who never called a
+        guarded function, so the check is the only thing that travels.
+
         MinCurve is units-agnostic: ``md`` may be in any length unit and the
         geometry is all ratios/angles. Dogleg severity (which needs a per-unit
         coefficient) is the :meth:`dls` method, into which the caller injects the
         coefficient for its units.
+
+        ⚠️ **``poss`` column order follows ``frame``, and the DEFAULT is
+        ``[easting, northing, tvd]``** -- x/y, NOT N/E. A consumer adopting
+        this kernel transposed N and E against its own ``[northing, easting,
+        tvd]`` convention, and a transpose is SILENT on any well roughly
+        symmetric in the two axes: it surfaces as a mislocated surface datum,
+        not as an error. Establish the order with a due-north and a due-east
+        probe rather than by reading ``delta_x``/``delta_y``, which invite the
+        wrong guess -- or just pass ``frame="nev"`` and stop converting.
+
+        ``frame``
+            ``"env"`` (default) -- ``[easting, northing, tvd]``, the historical
+            order, which :class:`~welleng.survey.Survey` consumes.
+            ``"nev"`` -- ``[northing, easting, tvd]``, for a caller whose own
+            convention is N/E and which would otherwise swap every result back.
+
+        🔴 **``delta_x``, ``delta_y`` and ``delta_z`` do NOT follow ``frame``.**
+        They are per-station increments in AXIS terms -- **x EAST, y NORTH,
+        z TVD -- in BOTH frames**. Only ``poss`` and :meth:`interpolate` follow
+        ``frame``. Under ``frame="nev"`` ``poss[:, 0]`` is NORTHING while
+        ``delta_x`` is still EASTING, so the two surfaces disagree by
+        construction and **mixing them transposes the well**. Defensible -- x/y
+        are axis names, not compass names -- but stated here because the
+        warning above only says not to INFER the order from them, which leaves
+        a reader who takes that warning correctly with no way to learn what
+        they positively are. (Reported by a consumer, 2026-09-20.)
+
+        This is a BASIS, not a second algorithm. The arc kernel
+        (:func:`arc_step`) is coordinate-agnostic and returns whatever basis it
+        is given, so both frames run the same code over differently-ordered
+        tangents -- there is no second path to drift, and no golden anchoring a
+        dead one. ``"nev"`` is in fact marginally the cheaper of the two:
+        ``min_curve_step`` already computes in ``[N, E, V]`` and the default
+        spends a column swap converting it.
         """
+        frame = str(frame).lower()
+        if frame not in ("env", "nev"):
+            raise ValueError(
+                f"frame must be 'env' or 'nev', got {frame!r}. 'env' is "
+                "[easting, northing, tvd] (the default, and what Survey "
+                "consumes); 'nev' is [northing, easting, tvd]."
+            )
+        self.frame = frame
 
         self.md = md
         survey_length = len(self.md)
@@ -268,6 +386,7 @@ class MinCurve:
         # Per-station unit tangents are constants; cache them once so
         # interpolate() doesn't recompute get_vec on every query (welleng #307).
         self._tangents = get_vec(inc, azi, deg=False)
+        self._leg_frames_cache = None
         inc_1, inc_2 = inc[:-1], inc[1:]
         azi_1, azi_2 = azi[:-1], azi[1:]
 
@@ -297,6 +416,10 @@ class MinCurve:
         deltas = min_curve_step(
             self.delta_md[1:], inc_1, azi_1, inc_2, azi_2, self.rf[1:]
         )
+        # `min_curve_step` returns [N, E, V]. delta_x/delta_y keep their
+        # historical meaning (x = easting, y = northing) in BOTH frames -- they
+        # are named for the axis, not for a column index, so a consumer reading
+        # them is unaffected by `frame`.
         self.delta_y = np.zeros(survey_length); self.delta_y[1:] = deltas[:, 0]
         self.delta_x = np.zeros(survey_length); self.delta_x[1:] = deltas[:, 1]
         self.delta_z = np.zeros(survey_length); self.delta_z[1:] = deltas[:, 2]
@@ -305,9 +428,29 @@ class MinCurve:
         # caller applies any start/surface offset; MinCurve holds no datum state.
         # column_stack + cumsum directly; the previous np.vstack(...) wrapper was
         # pure overhead (atleast_2d + a per-row stack dispatcher) on the hot path.
-        self.poss = np.cumsum(
+        #
+        self.poss = self._to_frame(np.cumsum(
             np.column_stack((self.delta_x, self.delta_y, self.delta_z)), axis=0
-        )
+        ))
+
+    def _to_frame(self, pos):
+        """Canonical ``[E, N, V]`` positions into the caller's ``frame``.
+
+        ⭐ **The ONLY place in this class that knows about ``frame``.** The
+        first version of this option carried the frame in the tangent basis
+        instead, which put a "which basis is this?" question into every site
+        reading a column -- and immediately produced the exact bug the option
+        exists to prevent, twice, in the two calls to ``get_angles``: a
+        confident WRONG attitude, which nothing downstream can catch because
+        inclination and azimuth are frame-independent quantities.
+
+        So the arithmetic is canonical throughout and the frame is a
+        presentation step on POSITIONS only. Attitudes cannot be affected by
+        it, because the code that computes them never sees it. The conversion
+        measured 2% of an interpolate call, which is the whole price of making
+        the error class impossible rather than tested-for.
+        """
+        return pos if self.frame == "env" else pos[..., [1, 0, 2]]
 
     def interpolate(self, md, angles=False):
         """Minimum-curvature position at arbitrary measured depth(s).
@@ -335,8 +478,11 @@ class MinCurve:
         -----
         NEVER linear-interpolate a trajectory. Agrees with
         :meth:`welleng.survey.Survey.interpolate_md` to sub-ulp for doglegs up
-        to ~2 rad; near ``pi`` this half-angle form is the better-conditioned of
-        the two (~0.1 ulp vs tens for the balanced-tangential node path).
+        to ~2 rad. Near ``pi`` the half-angle position divides by
+        ``cos(theta/2) -> 0``: against a 50-digit reference on a 100 m leg the
+        error grows as ~``1/cos(theta/2)**2`` -- 1e-13 m at 170 deg, 4e-12 m at
+        177 deg, 1e-9 m at 179.9 deg. The tangent (Rodrigues ``u``-form) divides
+        by ``sin(theta)`` once, in set-up.
         """
         scalar = np.ndim(md) == 0
         q = np.atleast_1d(np.asarray(md, dtype=float))
@@ -347,22 +493,99 @@ class MinCurve:
         DL = self.dogleg[idx + 1]
         dmd = self.delta_md[idx + 1]
         # Single arc kernel (welleng #308): local displacement + query tangent
-        # from the bracketing station, in the tangents' [E, N, V] basis.
-        disp, t_query = arc_step(
-            self._tangents[idx], self._tangents[idx + 1], DL, dmd, x
-        )
-        pos = self.poss[idx].astype(float) + disp
+        # from the bracketing station, in the tangents' own basis. The two
+        # halves are requested SEPARATELY so nothing is computed and discarded
+        # -- the tangent is skipped entirely when no angles were asked for.
+        v1, v2 = self._tangents[idx], self._tangents[idx + 1]
+        g = _arc_geometry(v1, v2, DL, dmd, x)
+        # `poss` is already in the caller's frame; the kernel's displacement
+        # is canonical, so it is converted before they are added.
+        pos = self.poss[idx].astype(float) + self._to_frame(
+            _arc_disp(v1, v2, *g))
         pos[~in_range] = np.nan
         if angles:
             # inc/azi only for the angles=True return -- one get_angles on the
             # query tangent, not a per-position round-trip.
-            ang = get_angles(t_query)
+            ang = get_angles(_arc_tangent(v1, v2, *g))
             inc_i = np.where(in_range, ang[:, 0], np.nan)
             azi_i = np.where(in_range, ang[:, 1], np.nan)
             if scalar:
                 return pos[0], float(inc_i[0]), float(azi_i[0])
             return pos, inc_i, azi_i
         return pos[0] if scalar else pos
+
+    def leg_frames(self):
+        """Each leg's frame, ``(v1, u, curved)``, arrays over the legs.
+
+        ``v1`` (n-1, 3) is the leg's start tangent and ``u`` (n-1, 3) the unit
+        vector in the arc's plane, perpendicular to ``v1``, towards the end
+        tangent: the tangent at partial dogleg ``phi`` is
+        ``cos(phi) v1 + sin(phi) u``. ``curved`` (n-1,) is False for a straight
+        leg, whose ``u`` is not defined (read ``v1`` only). Components are
+        (east, north, vertical down). Computed once per survey.
+        """
+        if self._leg_frames_cache is None:
+            v1, v2 = self._tangents[:-1], self._tangents[1:]
+            th, sin_th, _, _, curved, _ = _arc_geometry(
+                v1, v2, self.dogleg[1:], self.delta_md[1:], np.zeros(len(v1)))
+            self._leg_frames_cache = (v1, _arc_inplane(v1, v2, th, sin_th),
+                                      curved)
+        return self._leg_frames_cache
+
+    def _leg_inc_azi(self, i, x):
+        """Inclination and azimuth (radians, azimuth in ``[0, 2*pi)``) at
+        distance ``x`` past station ``i`` -- :meth:`inc_azi_at` for a caller
+        that already holds the leg, as a scalar.
+
+        Same arc and same in-plane vector (:meth:`leg_frames`); the scalar
+        arithmetic agrees with :meth:`inc_azi_at` to a few ulp, asserted in the
+        tests.
+        """
+        v1, u, curved = self.leg_frames()
+        if curved[i]:
+            dmd = self.delta_md[i + 1]
+            phi = x * self.dogleg[i + 1] / (1.0 if dmd == 0.0 else dmd)
+            e, n, v = math.cos(phi) * v1[i] + math.sin(phi) * u[i]
+        else:
+            e, n, v = v1[i]
+        inc = math.atan2(math.hypot(e, n), v)
+        azi = math.atan2(e, n) % (2.0 * math.pi)
+        return inc, azi
+
+    def inc_azi_at(self, md):
+        """Inclination / azimuth (radians) at measured depth(s) -- ATTITUDE ONLY.
+
+        ``interpolate(md, angles=True)`` also builds the position, and a caller
+        that wants only an attitude pays for a displacement it discards: the
+        half-angle position is roughly 70% of that call. A consumer resolving
+        inc/azi at every mesh boundary of a torque-and-drag solve was doing
+        exactly that, so this skips it.
+
+        Same arc, same Rodrigues tangent, same answers as
+        ``interpolate(md, angles=True)[1:]`` -- asserted bitwise in the tests,
+        because the moment these two could differ there would be two
+        implementations of an attitude.
+
+        Returns
+        -------
+        (inc, azi) : arrays of radians, or floats for scalar ``md``.
+            Azimuth is in ``[0, 2*pi)``. ``md`` outside the survey range
+            yields ``nan`` rather than the nearest station's attitude.
+        """
+        scalar = np.ndim(md) == 0
+        q = np.atleast_1d(np.asarray(md, dtype=float))
+        mds = np.asarray(self.md, dtype=float)
+        in_range = (q >= mds[0]) & (q <= mds[-1])
+        idx = np.clip(np.searchsorted(mds, q, side="left") - 1, 0, len(mds) - 2)
+        x = q - mds[idx]
+        v1, v2 = self._tangents[idx], self._tangents[idx + 1]
+        g = _arc_geometry(v1, v2, self.dogleg[idx + 1], self.delta_md[idx + 1], x)
+        ang = get_angles(_arc_tangent(v1, v2, *g))
+        inc = np.where(in_range, ang[:, 0], np.nan)
+        azi = np.where(in_range, np.mod(ang[:, 1], 2.0 * np.pi), np.nan)
+        if scalar:
+            return float(inc[0]), float(azi[0])
+        return inc, azi
 
     def tvd_turning_points(self):
         """Measured depths where the path's TVD turns (passes horizontal).
@@ -397,6 +620,15 @@ class MinCurve:
         ``tvd`` is in the LOCAL frame (relative to station 0, like the TVD column
         of :attr:`poss`); ``Survey`` layers its datum on top. Empty if the target
         is never reached.
+
+        ⚠️ A TVD in a datum frame (e.g. an EDM or LAS TVD column) passed here
+        is offset by the first station's depth. Where that offset value still
+        lies inside the local TVD range it returns a WRONG measured depth;
+        where it does not, it returns ``[]``, indistinguishable from "never
+        reached". Both are silent: ``MinCurve`` holds no datum, so it cannot
+        detect either. Use :meth:`Survey.interpolate_tvd` (build
+        with :meth:`Survey.from_min_curve` and a ``start_nev``) when the TVD
+        carries a datum. A TVD equal to a turning point's TVD returns one MD.
         """
         z = self.poss[:, 2]
         u = np.cos(np.asarray(self.inc, dtype=float))
@@ -508,6 +740,11 @@ def get_nev(
 
 
 def get_xyz(pos, start_xyz=[0., 0., 0.], start_nev=[0., 0., 0.]):
+    """Convert ``[n, e, v]`` positions to ``(n, 3)`` ``[x, y, z]``.
+
+    ``x`` is east and ``y`` north: ``start_nev`` is subtracted from ``pos``,
+    the first two columns are swapped, and ``start_xyz`` is added.
+    """
     y, x, z = (
         np.array([pos]).reshape(-1, 3) - np.array([start_nev])
     ).T
@@ -818,6 +1055,27 @@ def NEV_to_HLA(
 
 
 def HLA_to_NEV(survey, HLA, cov=True, trans=None):
+    """Transform from HLA to NEV coordinate system; the inverse of
+    :func:`NEV_to_HLA`.
+
+    Parameters
+    ----------
+    survey: (n,3) array of floats
+        The [md, inc, azi] survey listing array, inc and azi in radians.
+        Unused when ``trans`` is given.
+    HLA: (n,3) or (n,3,3) array of floats
+        The HLA coordinates or covariance matrices.
+    cov: boolean
+        If True, ``HLA`` is (n,3,3) covariance matrices, else (n,3)
+        coordinates.
+    trans: (n,3,3) array of floats or None
+        A precomputed :func:`get_transform` result; ``None`` computes it from
+        ``survey``.
+
+    Returns
+    -------
+    NEV: (n,3) or (n,3,3) array of floats
+    """
     if trans is None:
         trans = get_transform(survey)
 
@@ -857,13 +1115,60 @@ def get_sigmas(cov, long=False):
         return (np.sqrt(aa), np.sqrt(bb), np.sqrt(cc))
 
 
+def _zyz_matrix(alpha: float, beta: float, gamma: float) -> NDArray:
+    """The EXTRINSIC z-y-z rotation matrix, i.e. ``Rz(gamma) @ Ry(beta) @ Rz(alpha)``.
+
+    Equivalent to ``scipy.spatial.transform.Rotation.from_euler('zyz',
+    [alpha, beta, gamma], degrees=False).as_matrix()`` -- lowercase in scipy's
+    notation means EXTRINSIC, rotations about the fixed frame, which is why the
+    matrix product runs right-to-left in the order the angles are given.
+
+    Written out rather than called because building a ``Rotation`` object and
+    invoking ``.apply()`` costs ~24 us per call against ~3 us for the matrix,
+    and ``Arc.transform`` sits on the connector's curve-hold-curve path where
+    it is called per candidate solution. Agreement with scipy is machine
+    precision (~4e-16 over random angles), and a parity test holds it there.
+
+    ⚠️ SCALAR ONLY, and that is the whole of the advantage. scipy's ``Rotation``
+    is itself vectorised, so its per-call overhead amortises across a batch and
+    the advantage inverts at **N ~ 7**: measured 5.1 us vs 19.9 us at N=1, but
+    444 us vs 102 us at N=100. For many rotations at once call scipy, not this
+    in a loop -- same division as ``get_toolface_fast`` against the vectorised
+    ``get_toolface``.
+
+    Parameters
+    ----------
+    alpha, beta, gamma: float
+        The three rotation angles in RADIANS, applied about fixed z, y, z.
+
+    Returns
+    -------
+    (3, 3) array
+    """
+    ca, sa = np.cos(alpha), np.sin(alpha)
+    cb, sb = np.cos(beta), np.sin(beta)
+    cc, sc = np.cos(gamma), np.sin(gamma)
+
+    return np.array([
+        [cc * cb * ca - sc * sa, -cc * cb * sa - sc * ca, cc * sb],
+        [sc * cb * ca + cc * sa, -sc * cb * sa + cc * ca, sc * sb],
+        [-sb * ca, sb * sa, cb],
+    ])
+
+
 def get_unit_vec(vec):
+    """``vec`` divided by its (whole-array) Euclidean norm."""
     vec = vec / np.linalg.norm(vec)
 
     return vec
 
 
 def linear_convert(data, factor):
+    """Multiply a value, or each item of a list, by ``factor``.
+
+    ``None`` items pass through as ``None``. A list in returns a list; any
+    other input returns a single value.
+    """
     flag = False
     if not isinstance(data, list):
         flag = True
@@ -876,6 +1181,12 @@ def linear_convert(data, factor):
 
 
 def make_cov(a, b, c, long=False):
+    """Build a covariance matrix from three standard deviations.
+
+    ``long=False`` gives the diagonal matrix ``diag(a**2, b**2, c**2)``;
+    ``long=True`` gives the full outer product (fully correlated). With
+    (n,) array inputs the result is (n, 3, 3); with scalars, (3, 3).
+    """
     # a, b, c = np.sqrt(np.array([a, b, c]))
     if long:
         cov = np.array([
@@ -1015,6 +1326,8 @@ def _get_arc_pos_and_vec(dogleg, radius):
 
 
 class Arc:
+    """A circular arc of given dogleg and radius, built at a local origin."""
+
     def __init__(self, dogleg, radius):
         """
         Generates a generic arc that can be transformed with a specific pos
@@ -1066,14 +1379,10 @@ class Arc:
         if target:
             vec *= -1
         inc, azi = get_angles(vec, nev=True).reshape(2)
-        angles = [
-            toolface,
-            inc,
-            azi
-        ]
-        r = R.from_euler('zyz', angles, degrees=False)
 
-        pos_new, vec_new = r.apply(np.vstack((self.pos, self.vec)))
+        pos_new, vec_new = (
+            _zyz_matrix(toolface, inc, azi) @ np.vstack((self.pos, self.vec)).T
+        ).T
 
         # make sure vec_new is a unit vector:
         vec_new = get_unit_vec(vec_new)

@@ -597,3 +597,61 @@ def test_survey_from_positions_fused_negligible_md_drift():
     nev_r = np.c_[r.n, r.e, r.tvd]
     assert np.max(np.abs(nev_r - pf)) < 1e-4              # round-trips on its own MD
     assert abs(md_r[-1] - md[-1]) < 0.05                 # < 5 cm drift over 3 km
+
+
+class TestZyzMatrixParity:
+    """`Arc.transform` builds the z-y-z rotation directly instead of calling
+    scipy, because a Rotation object plus .apply() costs ~24 us against ~3 us
+    for the matrix, and get_arc sits on the connector's CLC path.
+
+    scipy remains the oracle: these assert the hand-written matrix IS that
+    rotation, not merely close to it. Without this the convention is a
+    corrected line that the next author cannot see -- the red suite is what
+    travels.
+    """
+
+    def test_matches_scipy_to_machine_precision(self):
+        from scipy.spatial.transform import Rotation as R
+        from welleng.utils import _zyz_matrix
+
+        rng = np.random.default_rng(20260920)
+        worst = 0.0
+        for _ in range(500):
+            a = rng.uniform(0.0, 2 * np.pi)
+            b = rng.uniform(0.0, np.pi)
+            c = rng.uniform(0.0, 2 * np.pi)
+            mine = _zyz_matrix(a, b, c)
+            theirs = R.from_euler('zyz', [a, b, c], degrees=False).as_matrix()
+            worst = max(worst, float(np.abs(mine - theirs).max()))
+        assert worst < 1e-14, f"diverged from scipy by {worst:.3e}"
+
+    def test_lowercase_zyz_is_extrinsic(self):
+        """The convention, pinned. scipy reads lowercase as EXTRINSIC -- fixed
+        frame -- so the product runs Rz(gamma) @ Ry(beta) @ Rz(alpha). Getting
+        this backwards yields a plausible rotation that is wrong, which is the
+        expensive kind: it composes, it is orthonormal, and nothing downstream
+        complains.
+        """
+        from welleng.utils import _zyz_matrix
+
+        a, b, c = 0.3, 0.7, 1.1
+
+        def rz(t):
+            return np.array([[np.cos(t), -np.sin(t), 0.],
+                             [np.sin(t), np.cos(t), 0.], [0., 0., 1.]])
+
+        def ry(t):
+            return np.array([[np.cos(t), 0., np.sin(t)],
+                             [0., 1., 0.], [-np.sin(t), 0., np.cos(t)]])
+
+        extrinsic = rz(c) @ ry(b) @ rz(a)
+        np.testing.assert_allclose(_zyz_matrix(a, b, c), extrinsic, atol=1e-15)
+        # and it is NOT the intrinsic reading
+        intrinsic = rz(a) @ ry(b) @ rz(c)
+        assert not np.allclose(_zyz_matrix(a, b, c), intrinsic)
+
+    def test_is_a_rotation(self):
+        from welleng.utils import _zyz_matrix
+        m = _zyz_matrix(1.2, 0.4, 2.9)
+        np.testing.assert_allclose(m @ m.T, np.eye(3), atol=1e-14)
+        assert np.isclose(np.linalg.det(m), 1.0)

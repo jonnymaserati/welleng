@@ -312,8 +312,8 @@ def test_f14_actual_composed_multi_tool_vs_compass(ipm):
     compared against COMPASS's own composed covariances.
 
     With per-term cross-run realisation sharing and the 'well' bucket
-    composed (both landed after probcol's multi-well lateral-under-run
-    report), the perpendicular-to-heading axes sit within ~1% of COMPASS at
+    composed (both landed after a multi-well lateral under-run was
+    reported), the perpendicular-to-heading axes sit within ~1% of COMPASS at
     TD and NOTHING runs materially under — the residuals are on the
     conservative side (sigma_V up to ~+28% mid-well). Bands assert exactly
     that: no non-conservative under-run, bounded overshoot.
@@ -462,7 +462,7 @@ def test_f15d_ew_high_inc_no_lateral_underrun(ipm):
             f"non-conservative under-run returned (axis {col})"
 
 
-# -- raw DP_TOOL_TERM / CD_SURVEY_PROGRAM surface (welleng-probcol spec) -------
+# -- raw DP_TOOL_TERM / CD_SURVEY_PROGRAM surface -------------------------------
 def test_tool_terms_opt_in_and_shape():
     """tool_terms surfaces the raw DP_TOOL_TERM rows for a survey tool (opt-in),
     sorted by sequence_no, with the term fields a survey-program layer needs."""

@@ -56,6 +56,11 @@ dependencies = [
     "openpyxl>=3.1",
     "pandas>=2.0",
     "pint>=0.20",
+    # welleng.schematic and welleng.exchange.nlog_models are shipped features
+    # built on it. It was undeclared: `import welleng.schematic` raised
+    # ModuleNotFoundError in a clean install, found by a consumer installing
+    # from a pin rather than from a dev tree that happened to have it.
+    "pydantic>=2.0",
     "pyproj>=3.4",
     "PyYAML>=6.0",
 ]
@@ -78,6 +83,16 @@ viz = [
 ]
 analytical = [
     "python-flint",
+]
+# LAS well logs (welleng.exchange.las): lasio reads the format, matplotlib
+# renders the track plot. BOTH are lazy imports -- `import welleng` works
+# without either, and the reader wraps lasio behind welleng's own LasFile
+# (numpy arrays + dicts), so the backend can be swapped without touching a
+# consumer. lasio's only hard dependency is numpy, which welleng already has;
+# its pandas path is unused here.
+las = [
+    "lasio",
+    "matplotlib",
 ]
 # Kick-tolerance extras: coolprop = optional CCUS / reference-EOS mixture gas
 # backend; sympy = the envelope/monotonicity analysis. Core kick-tolerance
@@ -107,6 +122,8 @@ all = [
     "coolprop>=8.0.0,<9",   # load-bearing; bounded to tested major (see [kick] note)
     "sympy",
     "mpmath",   # explicit (also a sympy dep): 200-bit oracle for the #307 fpcore gate
+    "lasio",                # [las]: LAS reader
+    "matplotlib",           # [las]: track plot; also the schematic renderers
 ]
 
 [project.urls]
@@ -123,7 +140,7 @@ packages = ["welleng"]
 "welleng" = "welleng"
 
 # Ship the PEP 561 marker so downstream type checkers pick up welleng's
-# inline annotations (see docs/dev/TYPING.md, issue #133).
+# inline annotations (issue #133).
 [tool.hatch.build.targets.wheel.force-include]
 "welleng/py.typed" = "welleng/py.typed"
 
@@ -137,6 +154,7 @@ packages = ["welleng"]
 include = [
     "welleng/**/*.py",
     "welleng/**/*.json",
+    "welleng/**/*.json.gz",
     "welleng/**/*.yaml",
     "welleng/**/*.md",
     "welleng/py.typed",

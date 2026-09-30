@@ -1,10 +1,7 @@
 """``_eq15_coeff`` — one Eq. 15 coefficient without paying for the other ten.
 
-The critical-radius solve needs only ``c0``. Evaluating all eleven cost a
-c0-only caller 2.4x (a batch consumer: 33.3 vs 14.0 ms at N = 10,000; 1004.6 vs
-386.5 ms at N = 200,000), which was 90% of their batched critical radius when
-they first built it. They had worked around it by extracting ``c0`` into
-generated modules of their own that had to be regenerated on every pin bump.
+The critical-radius solve needs only ``c0``; evaluating all eleven to obtain it
+is wasted work.
 
 The eleven expressions are machine-generated ~4000-term resultant expansions
 that no human edits by hand, so splitting them out of the single ``return [...]``

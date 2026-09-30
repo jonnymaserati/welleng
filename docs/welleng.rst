@@ -112,6 +112,14 @@ welleng.io module
    :undoc-members:
    :show-inheritance:
 
+welleng.lithology module
+------------------------
+
+.. automodule:: welleng.lithology
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 welleng.mesh module
 -------------------
 
@@ -144,6 +152,14 @@ welleng.osdu module
    :undoc-members:
    :show-inheritance:
 
+welleng.osdu\_ref module
+------------------------
+
+.. automodule:: welleng.osdu_ref
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 welleng.survey module
 ---------------------
 
@@ -172,6 +188,14 @@ welleng.torque\_drag module
 ---------------------------
 
 .. automodule:: welleng.torque_drag
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+welleng.lint module
+-------------------
+
+.. automodule:: welleng.lint
    :members:
    :undoc-members:
    :show-inheritance:
