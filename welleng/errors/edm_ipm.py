@@ -321,7 +321,6 @@ def parse_edm_ipm(path: str) -> EDMIPM:
 #: vertical term COMPASS applies but does not export in DP_TOOL_TERM (exact source
 #: not established — a wireline/depth-term-substitution hypothesis was tested
 #: against F-12 and did not hold). Applied only via ``compass_gyro_parity=True``.
-#: See docs/dev/EDM_ERROR_MODEL_CONTRACT.md.
 COMPASS_GYRO_TVDSF = 2.73e-4
 
 

@@ -51,6 +51,22 @@ def test_to_welleng_refuses_error_model_on_fabricated_azimuth():
                      b_total=50000., dip=70., declination=0.)
 
 
+def test_to_welleng_datums_tvd_to_first_station():
+    # an NLOG survey starting at MD 30 with its own TVD datum: to_welleng must
+    # produce ABSOLUTE TVD (30 m at the first station), not first-station-relative
+    # (which would read 30 m shallow everywhere and mis-site a casing cut).
+    import numpy as np
+    s = DirSurvey(borehole_name="X", md=[30., 100., 200.], inc=[0., 0., 0.],
+                  azi=[0., 0., 0.], tvd=[30., 100., 200.], dx=[0.] * 3, dy=[0.] * 3,
+                  north_ref="G", coord_system=None, proc_method="MC",
+                  convergence=0., declination=None, proc_date_ms=None, remark=None)
+    sv = s.to_welleng()                       # geometry only (vertical, harmless)
+    assert sv.tvd[0] == pytest.approx(30.0)
+    import welleng as we
+    node = we.survey.interpolate_md(sv, 87.5)
+    assert float(np.asarray(node.tvd).ravel()[-1]) == pytest.approx(87.5)
+
+
 def test_to_welleng_allows_override_and_geometry_only():
     s = _sv([0, 500, 1000, 1500], [0.5, 1, 2, 3], [0, 0, 0, 0])
     geom = s.to_welleng()                      # no error model: fine
@@ -219,8 +235,7 @@ def test_stratigraphy_carries_datum_and_md_intervals(monkeypatch):
     assert (iv1.unit_id, iv1.quality, iv1.anomaly) == ("CKGR", "TD", "UU")
 # -- id_for_name(): alias-tolerant title resolution -----------------------
 # Real P11 De Ruyter rows (public NLOG identifiers only): NLOG titles a bore
-# "NAME (ALIAS)", which an exact match silently misses. Regression for the
-# welleng-drilling finding (2026-09-06).
+# "NAME (ALIAS)", which an exact match silently misses. Regression test.
 def _patch_suggest(monkeypatch, rows):
     monkeypatch.setattr(
         _nlog.NLOGClient, "suggest", lambda self, q: rows, raising=True
@@ -258,3 +273,64 @@ def test_id_for_name_returns_none_when_alias_match_is_ambiguous(monkeypatch):
 def test_id_for_name_none_when_unknown(monkeypatch):
     _patch_suggest(monkeypatch, [{"objectId": "9", "title": "F06-07"}])
     assert _nlog.NLOGClient().id_for_name("P11-B-01") is None
+
+
+# --- coordSystemCode is per WELL, and degrees live in the same columns ------ #
+def _survey(code):
+    from welleng.exchange.nlog import DirSurvey
+    return DirSurvey(
+        borehole_name="X", md=[0.0, 100.0], inc=[0.0, 0.0], azi=[0.0, 0.0],
+        tvd=[0.0, 100.0], dx=[0.0, 0.0], dy=[0.0, 0.0], north_ref="G",
+        coord_system=code, proc_method="MC", convergence=None,
+        declination=None, proc_date_ms=None, remark=None,
+    )
+
+
+@pytest.mark.parametrize("code,unit", [
+    ("ED50-UTM31", "metre"),
+    ("WGS84-UTM31", "metre"),
+    ("RD", "metre"),
+    ("ED50-GEOGR", "degree"),
+])
+def test_surface_units_are_read_not_assumed(code, unit):
+    assert _survey(code).surface_units() == unit
+
+
+@pytest.mark.parametrize("code", [None, "", "SOMETHING-ELSE"])
+def test_an_unmapped_coord_system_is_refused_not_defaulted(code):
+    """A geographic well read as the national grid lands half a million metres
+    away, and both values are valid floats -- nothing complains."""
+    from welleng.exchange.nlog import NLOGError
+    with pytest.raises(NLOGError):
+        _survey(code).surface_units()
+
+
+# --- coordinates travel WITH the code that says what they are --------------- #
+def _coord_survey(code):
+    from welleng.exchange.nlog import DirSurvey
+    return DirSurvey(
+        borehole_name="X", md=[0.0, 100.0], inc=[0.0, 0.0], azi=[0.0, 0.0],
+        tvd=[0.0, 100.0], dx=[0.0, 12.0], dy=[0.0, 3.0], north_ref="G",
+        coord_system=code, proc_method="MC", convergence=None,
+        declination=None, proc_date_ms=None, remark=None,
+    )
+
+
+def test_surface_coordinates_carry_their_own_units():
+    """A description warns whoever reads it; carrying the code WITH the
+    coordinates means the pair cannot be separated by passing them to a
+    function. One well in a set is routinely geographic while its neighbours
+    are projected, and both are valid floats."""
+    c = _coord_survey("ED50-UTM31").surface_coordinates()
+    assert c.units == "metre" and c.is_projected
+    assert c.dx == [0.0, 12.0] and c.coord_system == "ED50-UTM31"
+
+    g = _coord_survey("ED50-GEOGR").surface_coordinates()
+    assert g.units == "degree" and not g.is_projected
+
+
+@pytest.mark.parametrize("code", [None, "", "SOMETHING-ELSE"])
+def test_pairing_refuses_an_unmapped_code(code):
+    from welleng.exchange.nlog import NLOGError
+    with pytest.raises(NLOGError):
+        _coord_survey(code).surface_coordinates()

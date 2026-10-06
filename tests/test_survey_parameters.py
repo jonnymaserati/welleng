@@ -97,3 +97,49 @@ def test_transform_projection_coordinates():
         result,
         np.full_like(result, REFERENCE.get('wgs84-utm31'))
     )
+
+
+def test_transform_refuses_when_no_operation_is_valid_there():
+    """A point outside ED50's area of use (mid-Atlantic) has no operation of
+    stated accuracy to ETRS89, directly or through WGS 84; PROJ's fallback
+    ("ballpark") would return it unchanged, so the transform refuses."""
+    import pytest
+    geo = we.survey.SurveyParameters('EPSG:4230')             # ED50 lat/lon
+    with pytest.raises(ValueError, match="unchanged"):
+        geo.transform_coordinates([(40.0, -40.0)], 'EPSG:4258')
+
+
+def test_transform_routes_through_wgs84_where_no_direct_operation_is_valid():
+    """Onshore Netherlands, ED50 -> ETRS89: no direct operation of stated
+    accuracy is valid there without grids, so it goes through WGS 84 -- not
+    PROJ's fallback, which returned the input unchanged (~130 m)."""
+    geo = we.survey.SurveyParameters('EPSG:4230')
+    out = geo.transform_coordinates([(52.0, 4.5)], 'EPSG:4258')
+    op = geo.last_operation
+    assert "ED50 to WGS 84 (18)" in op["name"] and "ETRS89 to WGS 84" in op["name"]
+    assert op["accuracy_m"] == 2.0
+    moved = np.hypot((out[0][0] - 52.0) * 111_000,
+                     (out[0][1] - 4.5) * 111_000 * np.cos(np.radians(52.0)))
+    assert 50.0 < moved < 200.0                       # a real datum shift
+
+
+def test_transform_uses_an_operation_valid_where_the_points_are():
+    geo = we.survey.SurveyParameters('EPSG:4230')
+    # Dutch North Sea: covered by ED50 to ETRS89 (15), stated 1 m
+    out = geo.transform_coordinates([(54.0, 4.5)], 'EPSG:4258')
+    assert "ED50 to ETRS89 (15)" in geo.last_operation["name"]
+    assert geo.last_operation["accuracy_m"] == 1.0
+    moved = np.hypot((out[0][0] - 54.0) * 111_000,
+                     (out[0][1] - 4.5) * 111_000 * np.cos(np.radians(54.0)))
+    assert 50.0 < moved < 200.0                       # a real datum shift
+    # onshore Netherlands to WGS 84: ED50 to WGS 84 (18), not an operation
+    # whose area of use ends south of the point
+    CALCULATOR.transform_coordinates(
+        (REFERENCE['easting'], REFERENCE['northing']), 'EPSG:32631')
+    assert "ED50 to WGS 84 (18)" in CALCULATOR.last_operation["name"]
+
+
+def test_transform_same_datum_is_a_conversion():
+    CALCULATOR.transform_coordinates(
+        (REFERENCE['easting'], REFERENCE['northing']), 'EPSG:4230')
+    assert CALCULATOR.last_operation["accuracy_m"] == 0.0

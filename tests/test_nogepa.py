@@ -69,7 +69,6 @@ def test_bubble_state_closed_form_reduces_to_nogepa_exactly():
     A-2 simplification (1) excludes. Matching that table therefore CONCEALED a
     1290 psi error in where the gas was evaluated. NOGEPA is an independent,
     mandated formula and it cannot be satisfied by the wrong construction.
-    See docs/dev/KICK_CLOSED_FORM_AUDIT.md.
     """
     from welleng.kick_tolerance.nogepa import NOGEPA_G
 

@@ -12,7 +12,7 @@ The SIGN (geothermal > isothermal) is not interpretation: the closed form gives
 A ∝ T_td / T_s, so a geothermal profile (T_td > T_s) inflates A -- and hence KT --
 above any single-temperature isothermal (ratio = 1). Isothermal-at-TD is the
 hottest shoe case and the most conservative. (NB: SPE-208788-PA's prose summary of
-this figure states the opposite sign -- see docs/dev/VALIDATION.md; the primary
+this figure states the opposite sign; the primary
 figure + this closed form + welleng all give geothermal > isothermal.)
 """
 import pytest

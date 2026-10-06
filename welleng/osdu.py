@@ -31,6 +31,7 @@ from typing import Any, Optional
 from .hierarchy import (
     Datum, Field, Organisation, Site, Well, Wellbore, WellNetwork,
 )
+from .osdu_ref import osdu_id
 
 # --------------------------------------------------------------------------- #
 # 1. explicit, pinned OSDU schema versions (bump here when a schema advances)
@@ -329,8 +330,10 @@ def from_osdu(record: dict[str, Any]) -> Any:
             wellhead_depth=_to_m(
                 vm.get("VerticalMeasurement"),
                 vm.get("VerticalMeasurementUnitOfMeasureID") or uom),
+            # No elevation in the record means NOT RECORDED, not zero: a
+            # zero here is a claim that the datum sits at the reference.
             datum=Datum(name=vm.get("VerticalMeasurementPathID", "datum"),
-                        elevation=_to_m(vm.get("VerticalMeasurement"), uom) or 0.0),
+                        elevation=_to_m(vm.get("VerticalMeasurement"), uom)),
         )
     if entity == "WellboreTrajectory":
         # returns the tie metadata; station bulk is a referenced dataset, loaded
@@ -348,6 +351,67 @@ def from_osdu(record: dict[str, Any]) -> Any:
                                  or data.get("OrganisationName")
                                  or data.get("FieldName", "")))
     raise ValueError(f"no from_osdu mapper for entity {entity!r}")
+
+
+def survey_to_osdu(survey: Any, wellbore_id: str, *,
+                   version: Optional[str] = None, uom: str = "m",
+                   namespace: str = "") -> dict[str, Any]:
+    """Map a :class:`welleng.survey.Survey` to an OSDU ``WellboreTrajectory``.
+
+    Emits the trajectory's HEADER -- the record that says how the survey was
+    referenced, computed and acquired. The station array itself is a separate
+    dataset in OSDU and is not produced here.
+
+    Every reference-data field is populated only when it RESOLVES; a field we
+    cannot state is omitted rather than guessed at, because a wrong azimuth
+    reference or calculation method is silently wrong in the direction that
+    still looks plausible.
+
+    ``namespace`` is the data partition. Without it the reference ids are
+    partition-relative and will not match the schema pattern -- fine for
+    composing, not for ingesting.
+
+    Parameters
+    ----------
+    survey : welleng.survey.Survey
+    wellbore_id : str
+        The parent wellbore's OSDU id.
+    """
+    from .osdu_ref import osdu_id, survey_tool_type_for
+
+    h = survey.header
+    data: dict[str, Any] = {"WellboreID": wellbore_id}
+    md = getattr(survey, "md", None)
+    if md is not None and len(md):
+        data["TopDepthMeasuredDepth"] = _from_m(float(md[0]), uom)
+        data["BaseDepthMeasuredDepth"] = _from_m(float(md[-1]), uom)
+
+    azi = h.osdu_azi_reference()
+    if azi is not None:
+        data["AzimuthReferenceType"] = osdu_id(
+            "AzimuthReferenceType", azi, namespace)
+
+    # dp_basis is welleng's term for OSDU's CalculationMethodType, and it is
+    # the distinction that has faked residuals in analytical-vs-MC comparison
+    # -- worth stating explicitly on anything we export.
+    calc = {"min_curve": "MinimumCurvature",
+            "balanced_tangent": "BalancedTangential"}.get(
+                getattr(h, "dp_basis", None))
+    if calc is not None:
+        data["CalculationMethodType"] = osdu_id(
+            "CalculationMethodType", calc, namespace)
+
+    tool = survey_tool_type_for(getattr(survey, "error_model", None) or "")
+    if tool is not None:
+        data["SurveyToolTypeID"] = osdu_id("SurveyToolType", tool, namespace)
+
+    if getattr(h, "survey_date", None):
+        data["AcquisitionDate"] = str(h.survey_date)
+    if getattr(h, "name", None):
+        data["SurveyReferenceIdentifier"] = str(h.name)
+
+    return {"kind": build_kind("WellboreTrajectory", version),
+            "id": f"{wellbore_id}:trajectory", "data": data}
 
 
 def to_osdu(entity: Any, *, version: Optional[str] = None,
@@ -402,13 +466,28 @@ def to_osdu(entity: Any, *, version: Optional[str] = None,
         return {"kind": build_kind("Wellbore", version), "id": entity.id, "data": data}
     if isinstance(entity, Well):
         vm = []
-        if entity.wellhead_depth is not None or entity.datum is not None:
+        # The datum elevation if we hold one, else the wellhead depth. An
+        # entity carrying a datum whose elevation was never recorded emits NO
+        # VerticalMeasurement rather than a zero -- publishing 0.0 into OSDU
+        # asserts the datum is at the reference (offshore: the rotary table at
+        # sea level), and a consumer cannot tell that apart from a survey.
+        _elev = entity.datum.elevation if entity.datum is not None else None
+        if _elev is None:
+            _elev = entity.wellhead_depth
+        if _elev is not None:
             vm = [{
-                "VerticalMeasurement": _from_m(
-                    (entity.datum.elevation if entity.datum
-                     else entity.wellhead_depth), uom),
+                "VerticalMeasurement": _from_m(_elev, uom),
                 "VerticalMeasurementUnitOfMeasureID": uom,
             }]
+            # The reference FRAME, as a code. A measurement without one says
+            # how far, not from what -- and a consumer cannot tell an RKB
+            # elevation from a seabed one. Omitted rather than guessed when the
+            # local string does not resolve.
+            ref = entity.datum.osdu_reference() if entity.datum else None
+            if ref is not None:
+                vm[0]["VerticalMeasurementTypeID"] = osdu_id(
+                    "VerticalMeasurementType", ref
+                )
         return {"kind": build_kind("Well", version), "id": entity.id,
                 "data": {"FacilityName": entity.name, "VerticalMeasurements": vm}}
     if isinstance(entity, (Organisation, Field, Site)):

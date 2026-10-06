@@ -19,8 +19,6 @@ THE HISTORY, because the revision names only make sense with it:
   EXACTLY to NOGEPA-50 Section 3.2 under NOGEPA's assumptions -- see
   ``tests/test_nogepa.py``, which is the closed form's external anchor.
 
-Full audit, with the decomposition and the numbers:
-``docs/dev/KICK_CLOSED_FORM_AUDIT.md``.
 """
 
 import math
