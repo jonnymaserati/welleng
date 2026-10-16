@@ -22,7 +22,8 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 
 # The rules this test asserts. Update BOTH lists together when welleng.lint
 # gains a rule.
-EXPECTED_RULES = {"find_linear_survey_interpolation", "find_slerp_arc_tangent"}
+EXPECTED_RULES = {"find_linear_survey_interpolation", "find_slerp_arc_tangent",
+                  "find_attitude_difference"}
 
 KNOWN_POSITIVES = {
     "find_linear_survey_interpolation": """
@@ -35,6 +36,11 @@ KNOWN_POSITIVES = {
         import numpy as np
         def f(t1, t2, total, d):
             return t1 * (np.sin(total - d) / np.sin(total))[:, None] + t2
+    """,
+    "find_attitude_difference": """
+        import numpy as np
+        def f(survey):
+            return np.gradient(survey.inc_rad, survey.md)
     """,
 }
 
