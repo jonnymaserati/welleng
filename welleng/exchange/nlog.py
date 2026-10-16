@@ -8,9 +8,10 @@ that unmeasured (assumed / back-filled) azimuth columns can be
 detected automatically before an error model is attached to them.
 
 Endpoint shape, determined by reading the app bundle
-(``main-*.js``, ``URL_PREFIX = "/nlog-mapviewer"``):
+(``main-*.js``, ``URL_PREFIX = "/nlog-mapviewer-api"``; the
+viewer itself is still served at ``/nlog-mapviewer``):
 
-    POST /nlog-mapviewer/rest/brh/<resource>
+    POST /nlog-mapviewer-api/rest/brh/<resource>
     body: the bare integer borehole id (NOT JSON-wrapped)
     resources: details, dirsurveys, documents, logdocuments,
                measurements, coreruns, photos
@@ -18,7 +19,7 @@ Endpoint shape, determined by reading the app bundle
     GET  /brh-web/rest/brh/document/<bfileDbk>       (scanned reports)
     GET  /brh-web/rest/brh/logdocument/<bfileDbk>    (LIS/LAS/DLIS/TXT)
 
-    POST /nlog-mapviewer/rest/brh/boreholes
+    POST /nlog-mapviewer-api/rest/brh/boreholes
     body: a JSON filter object ({} = the whole catalogue)
     -> the datacenter overview list, one row per borehole keyed by
        boreholeDbk, with status/purpose/result/dates. This is the
@@ -57,7 +58,7 @@ def _strip_title_alias(title: str) -> str:
     return _TITLE_ALIAS.sub("", str(title)).strip()
 
 BASE = "https://www.nlog.nl"
-API = f"{BASE}/nlog-mapviewer/rest/brh"
+API = f"{BASE}/nlog-mapviewer-api/rest/brh"
 FILES = f"{BASE}/brh-web/rest/brh"
 
 Resource = Literal[
@@ -354,7 +355,7 @@ class NLOGClient:
         WELLBORE / NITG_NR / UWI and carries no borehole id) and the
         API (which keys on the numeric id in the map-viewer URL).
         """
-        url = (f"{BASE}/nlog-mapviewer/rest/search/suggest/brh/"
+        url = (f"{BASE}/nlog-mapviewer-api/rest/search/suggest/brh/"
                f"{urllib.parse.quote(query)}")
         req = urllib.request.Request(
             url, headers={"Accept": "application/json",
