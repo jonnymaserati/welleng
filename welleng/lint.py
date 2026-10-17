@@ -103,8 +103,10 @@ from dataclasses import dataclass
 from typing import Iterable, List, Optional, Sequence
 
 __all__ = [
+    "ANGLE_AXES",
     "Finding",
     "TRAJECTORY_AXES",
+    "find_attitude_difference",
     "find_linear_survey_interpolation",
     "main",
 ]
@@ -175,12 +177,31 @@ class Finding:
                 f"ARC.\n    {self.source}\n    use: {self.replacement}")
 
 
+#: Calls that hand back their first argument's values, converted or reshaped:
+#: an axis passed through one is still that axis.
+_PASS_THROUGH = frozenset({
+    "asarray", "asanyarray", "ascontiguousarray", "array", "atleast_1d", "copy",
+    "ravel", "squeeze", "flatten", "list", "tuple", "float",
+    "radians", "degrees", "deg2rad", "rad2deg", "unwrap",
+})
+
+
+def _call_name(node: ast.Call) -> Optional[str]:
+    """The called name: ``np.asarray`` -> ``asarray``, ``list`` -> ``list``."""
+    f = node.func
+    return (f.attr if isinstance(f, ast.Attribute)
+            else f.id if isinstance(f, ast.Name) else None)
+
+
 def _axis_name(node: ast.AST) -> Optional[str]:
     """The trajectory-axis name this expression yields, if it is one.
 
-    Looks through ``np.asarray(...)``/``np.array(...)``/``list(...)`` and
-    subscripts, because ``np.interp(x, xp, np.asarray(survey.tvd, float))`` is
-    the same defect wearing a coat.
+    Looks through the value-preserving wrappers in :data:`_PASS_THROUGH`
+    (``np.asarray(...)``, ``np.radians(...)``, ``list(...)``) and subscripts,
+    because ``np.interp(x, xp, np.asarray(survey.tvd, float))`` is the same
+    defect wearing a coat. Any other call is a new quantity computed from its
+    arguments, not the axis: ``np.diff(model(incs))`` differences the model's
+    output, not the inclinations.
     """
     if isinstance(node, ast.Attribute):
         return node.attr if node.attr in TRAJECTORY_AXES else None
@@ -188,7 +209,7 @@ def _axis_name(node: ast.AST) -> Optional[str]:
         return node.id if node.id in TRAJECTORY_AXES else None
     if isinstance(node, ast.Call):
         # np.asarray(survey.tvd, float) -> look at the first argument
-        if node.args:
+        if node.args and _call_name(node) in _PASS_THROUGH:
             return _axis_name(node.args[0])
         return None
     if isinstance(node, ast.Subscript):
@@ -240,7 +261,8 @@ class _Visitor(ast.NodeVisitor):
             return self.bound.get(node.id)
         if isinstance(node, ast.Subscript):
             return self._rebound_axis(node.value)
-        if isinstance(node, ast.Call) and node.args:
+        if (isinstance(node, ast.Call) and node.args
+                and _call_name(node) in _PASS_THROUGH):
             return self._rebound_axis(node.args[0])
         return None
 
@@ -455,11 +477,101 @@ def find_slerp_arc_tangent(
     return out
 
 
+#: The attitude axes: angles at the stations, whose difference along MD is not the
+#: curvature of the path between them.
+ANGLE_AXES = frozenset(a for a in TRAJECTORY_AXES if a.startswith(("inc", "azi")))
+
+_DIFF_FUNCS = {"gradient", "diff"}   # np.gradient / np.diff / numpy.* / bare
+
+#: Suppresses the attitude-difference rule on one line, where the difference is
+#: wanted as such (a build or turn rate reported per leg, its form stated).
+ATTITUDE_NOQA = "# lint: attitude-difference ok"
+
+
+def _called_axis(node: ast.AST) -> Optional[str]:
+    """The attitude axis a call returns by its name: ``inc_rad(s)``,
+    ``survey.azimuth(md)``. A helper that hands back the station angles is the
+    same defect one line removed."""
+    if isinstance(node, ast.Subscript):
+        node = node.value
+    if not isinstance(node, ast.Call):
+        return None
+    f = node.func
+    name = (f.attr if isinstance(f, ast.Attribute)
+            else f.id if isinstance(f, ast.Name) else None)
+    return name if name in ANGLE_AXES else None
+
+
+class _AttitudeVisitor(_Visitor):
+    """``np.gradient`` or ``np.diff`` of an inclination or azimuth array."""
+
+    def visit_Call(self, node: ast.Call) -> None:  # noqa: N802 (ast API)
+        """Flag a difference whose first argument is an attitude axis."""
+        func = node.func
+        name = (func.attr if isinstance(func, ast.Attribute)
+                else func.id if isinstance(func, ast.Name) else None)
+        if name in _DIFF_FUNCS and node.args:
+            arg = node.args[0]
+            axis = (_called_axis(arg) or _axis_name(arg) or self._rebound_axis(arg))
+            if axis in ANGLE_AXES:
+                src = ""
+                if 0 < node.lineno <= len(self.lines):
+                    src = self.lines[node.lineno - 1].strip()
+                if ATTITUDE_NOQA not in src:
+                    self.findings.append(Finding(
+                        path=self.path, line=node.lineno, axis="attitude:" + axis,
+                        source=src))
+        self.generic_visit(node)
+
+
+def find_attitude_difference(
+    paths: Iterable[str] | str,
+    exclude: Sequence[str] = (".venv", "site-packages", "build", ".git"),
+) -> List[Finding]:
+    """Every ``np.gradient`` or ``np.diff`` of station inclination or azimuth.
+
+    Curvature, build or turn taken as a finite difference of the station angles
+    is not the curvature of the minimum-curvature path. Along each leg the path is
+    one arc of constant curvature, ``dogleg / delta_md``, stepping at the
+    stations; ``np.gradient``'s central difference averages two legs, smearing
+    that step; a difference of inclination alone drops the turn, which the
+    dogleg carries; and azimuth wraps at 0/360, so a difference across north
+    reads as a near-full turn. Use the survey's own ``dogleg`` and ``delta_md``
+    (``survey.dogleg / survey.delta_md`` per leg), or ``survey.dls``.
+
+    Same contract as :func:`find_linear_survey_interpolation`: empty when
+    clean; an unparseable file is reported, not skipped. Names are matched as
+    that rule matches them, through ``np.asarray(...)``, subscripts and a local
+    bound from an attitude axis.
+    """
+    if isinstance(paths, (str, pathlib.Path)):
+        paths = [paths]
+    out: List[Finding] = []
+    for p in paths:
+        root = pathlib.Path(p)
+        files = sorted(root.rglob("*.py")) if root.is_dir() else [root]
+        for f in files:
+            sp = str(f)
+            if any(x in sp for x in exclude):
+                continue
+            try:
+                text = f.read_text(encoding="utf-8")
+                tree = ast.parse(text)
+            except (OSError, SyntaxError, UnicodeDecodeError) as exc:
+                out.append(Finding(path=sp, line=0, axis="<unreadable>",
+                                   source=f"could not parse: {exc}"))
+                continue
+            v = _AttitudeVisitor(sp, text.splitlines())
+            v.visit(tree)
+            out.extend(v.findings)
+    return out
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """CLI: ``python -m welleng.lint [--quiet] PATH...``. Exit 1 on findings.
 
-    Runs both rules: linear interpolation of a trajectory axis, and a
-    hand-written arc tangent.
+    Runs every rule: linear interpolation of a trajectory axis, a hand-written
+    arc tangent, and a finite difference of station inclination or azimuth.
     """
     args = list(sys.argv[1:] if argv is None else argv)
     quiet = "--quiet" in args
@@ -467,7 +579,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not args:
         print("usage: python -m welleng.lint [--quiet] PATH...", file=sys.stderr)
         return 2
-    findings = find_linear_survey_interpolation(args) + find_slerp_arc_tangent(args)
+    findings = (find_linear_survey_interpolation(args) + find_slerp_arc_tangent(args)
+                + find_attitude_difference(args))
     if not quiet:
         for f in findings:
             print(f)
