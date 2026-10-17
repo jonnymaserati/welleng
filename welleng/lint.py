@@ -177,12 +177,31 @@ class Finding:
                 f"ARC.\n    {self.source}\n    use: {self.replacement}")
 
 
+#: Calls that hand back their first argument's values, converted or reshaped:
+#: an axis passed through one is still that axis.
+_PASS_THROUGH = frozenset({
+    "asarray", "asanyarray", "ascontiguousarray", "array", "atleast_1d", "copy",
+    "ravel", "squeeze", "flatten", "list", "tuple", "float",
+    "radians", "degrees", "deg2rad", "rad2deg", "unwrap",
+})
+
+
+def _call_name(node: ast.Call) -> Optional[str]:
+    """The called name: ``np.asarray`` -> ``asarray``, ``list`` -> ``list``."""
+    f = node.func
+    return (f.attr if isinstance(f, ast.Attribute)
+            else f.id if isinstance(f, ast.Name) else None)
+
+
 def _axis_name(node: ast.AST) -> Optional[str]:
     """The trajectory-axis name this expression yields, if it is one.
 
-    Looks through ``np.asarray(...)``/``np.array(...)``/``list(...)`` and
-    subscripts, because ``np.interp(x, xp, np.asarray(survey.tvd, float))`` is
-    the same defect wearing a coat.
+    Looks through the value-preserving wrappers in :data:`_PASS_THROUGH`
+    (``np.asarray(...)``, ``np.radians(...)``, ``list(...)``) and subscripts,
+    because ``np.interp(x, xp, np.asarray(survey.tvd, float))`` is the same
+    defect wearing a coat. Any other call is a new quantity computed from its
+    arguments, not the axis: ``np.diff(model(incs))`` differences the model's
+    output, not the inclinations.
     """
     if isinstance(node, ast.Attribute):
         return node.attr if node.attr in TRAJECTORY_AXES else None
@@ -190,7 +209,7 @@ def _axis_name(node: ast.AST) -> Optional[str]:
         return node.id if node.id in TRAJECTORY_AXES else None
     if isinstance(node, ast.Call):
         # np.asarray(survey.tvd, float) -> look at the first argument
-        if node.args:
+        if node.args and _call_name(node) in _PASS_THROUGH:
             return _axis_name(node.args[0])
         return None
     if isinstance(node, ast.Subscript):
@@ -242,7 +261,8 @@ class _Visitor(ast.NodeVisitor):
             return self.bound.get(node.id)
         if isinstance(node, ast.Subscript):
             return self._rebound_axis(node.value)
-        if isinstance(node, ast.Call) and node.args:
+        if (isinstance(node, ast.Call) and node.args
+                and _call_name(node) in _PASS_THROUGH):
             return self._rebound_axis(node.args[0])
         return None
 

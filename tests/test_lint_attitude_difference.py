@@ -49,6 +49,24 @@ def test_ignores_depths_positions_and_the_suppressed_line(tmp_path):
     assert hits == []
 
 
+def test_a_model_output_over_angles_is_not_an_angle(tmp_path):
+    # the two shapes a consumer's tests hit: a monotonicity check on a model's
+    # output, computed over an inclination array; a wrapper that keeps the values
+    # (np.unwrap) still carries the angle
+    hits = _scan(tmp_path, """
+        import numpy as np
+        def f(model, survey, incs, vs):
+            v = model(incs, 0.2)
+            a = np.all(np.diff(v) > 0)
+            b = np.all(np.diff(model(incs)) > 0)
+            vs = [model(i) for i in incs]
+            c = np.all(np.diff(vs) > 0)
+            d = np.diff(np.unwrap(survey.azi_rad))
+            return a, b, c, d
+    """)
+    assert [h.axis for h in hits] == ["attitude:azi_rad"]
+
+
 def test_the_package_is_clean():
     assert find_attitude_difference(PKG) == []
 
