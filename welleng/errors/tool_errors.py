@@ -2811,8 +2811,9 @@ def XYM3L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
             ) / 2
             * mag
         )
+        # coeff is per interval (len N-1): station 1's interval is coeff[0].
         e_NEV_sing[1, 0] = (
-            coeff[1]
+            coeff[0]
             * (
                 error.survey.md[2] + error.survey.md[1]
                 - 2 * error.survey.md[0]
