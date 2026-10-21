@@ -305,8 +305,8 @@ Cold (per-survey re-parse = old) vs warm (cached = new steady state):
 The saving is a ~fixed parse cost (~6–20 ms), so it dominates SMALL/typical
 surveys most (3.1× at 100 stn) and compounds across a batch (the same MWD model
 was re-parsed N times). `cov_nev` is **bit-identical** cold vs warm
-(`test_error_model_cache::test_cached_cov_identical_to_cold`). OPEN + non-breaking
-(fixes repeated I/O, not a commercial capability); feeds the lazy error-class
+(`test_error_model_cache::test_cached_cov_identical_to_cold`). Non-breaking
+(fixes repeated I/O); feeds the lazy error-class
 redesign (parse model defs once, reuse per section). Regression:
 `tests/test_error_model_cache.py` (4).
 
@@ -447,14 +447,11 @@ and monotonicity sweeps' existing budget. Machine: this dev box, .venv312.
 
 ## 2026-07-26 — `ErrorModel.cov_nev_at` source-stacked evaluation (0.26.0rc12)
 
-a downstream consumer profiled `MahalanobisClearance` in `mode="exact"`: one check on a real path
-(124 candidate stations x 12 Volve offsets) spent **2.98 s of 3.67 s — 81% — inside 8906 SCALAR
-`cov_nev_at` calls**, issuing 219k `np.outer` products. It is the binding constraint of every
-`plan()` call that reports an oracle SF.
+Profiling `MahalanobisClearance` in `mode="exact"`: one check on a real path (124 candidate
+stations x 12 Volve offsets) spent **2.98 s of 3.67 s — 81% — inside 8906 `cov_nev_at` calls**,
+issuing 219k `np.outer` products.
 
-They asked for a batched `cov_nev_at(md_array)`. **Refused — that is a vectorised public entry
-point, which is a batch consumer's / outside this module's scope -- the public entry point is scalar by design.** What core
-CAN do is make the SCALAR call faster, and almost all of the win was available there: a single
+Most of that was per-call overhead rather than arithmetic: a single
 interior evaluation touches all 35 sources of the default MWD model, and at 3-vector sizes numpy's
 per-call overhead dominated the arithmetic.
 
@@ -467,8 +464,7 @@ axis instead of a 35-iteration Python loop with ~37 `np.outer` products.
 | per-source loop (rc11) | 0.540 |
 | source-stacked (rc12) | **0.097** |
 
-**5.6x on the scalar path.** Public API unchanged and still strictly scalar — one measured depth in,
-one (3, 3) out.
+**5.6x per call.** Public API unchanged — one measured depth in, one (3, 3) out.
 
 Numerical parity vs the per-source loop: **max 2.7e-16 relative (~1 ulp)** across 137 queries on
 build / vertical / horizontal surveys. NOT bit-identical, and the reason is only that einsum
@@ -476,13 +472,12 @@ accumulates the sum in a different order than a sequential `+=`. Pinned by
 `test_source_stacked_form_matches_a_per_source_reference`, which re-implements the replaced loop
 verbatim inside the test and asserts < 1e-14 relative.
 
-Projected on pathfinder's profile: 2.98 s -> ~0.53 s, so the check goes 3.67 s -> ~1.2 s, **~3x**
-against the ~3.6x ceiling they estimated for a 10x — i.e. most of the win, without a batched public
-API. Machine: this dev box, .venv312.
+Projected on the profile above: 2.98 s -> ~0.53 s, so the check goes 3.67 s -> ~1.2 s, **~3x**.
+Machine: this dev box, .venv312.
 
 ## 2026-07-26 — `SurveyComposition` propagation sharing (0.26.0rc13)
 
-a downstream consumer profiled their programme setup and found `SurveyComposition` was **93% of it**
+Profiling a two-section programme setup found `SurveyComposition` was **93% of it**
 (28.71 ms of 30.95 ms), running **8 full `ErrorModel` propagations for a 2-section compose**.
 
 Cause: `_compose_component` is called once per covariance component (global / systematic / random /
@@ -503,11 +498,9 @@ so a mutated composition can never read a stale run.
 | multi-model, after | **5** | **13.4** |
 
 **BIT-IDENTICAL** on `cov_nev`, `cov_nev_global`, `cov_nev_systematic`, `cov_nev_random`,
-`cov_nev_well` — required, not merely observed: this is an MC-gated path that probcol's
-`covariances_at(programme=)` anchors on, so a change that merely agreed closely would be a parity
-failure. Pinned by `test_composition_does_not_re_propagate_per_covariance_component`.
+`cov_nev_well` — required, not merely observed: this is an MC-gated path, so a change that merely
+agreed closely would be a parity failure. Pinned by `test_composition_does_not_re_propagate_per_covariance_component`.
 
-Not "chasing performance" — computing the same thing four times is a defect (project-owner ruling, 2026-07-26).
 Machine: this dev box, .venv312.
 
 ## 2026-07-27 — kick tolerance: a 245x regression caught by this gate, and a 4x win (0.27.0rc1)
@@ -608,8 +601,8 @@ logged above, not these fixes; the analytical path is flat at 1.2/1.4 ms. Nothin
 moved a number.
 
 **The harness itself was broken and silently so.** It still imported
-`max_influx_circulated`, which this cycle renamed to `_max_influx_circulated` when the
-marching oracle went private — so the gate's own script died on import. It was not run
+`max_influx_circulated`, which this cycle renamed to `_max_influx_circulated` — so the
+gate's own script died on import. It was not run
 between that rename and now. Fixed in this change. A blocking gate that cannot start is
 indistinguishable from a gate that passes if nobody reads the output, which is the second
 time this cycle the benchmark gate has caught something only because it was actually run.
@@ -678,3 +671,153 @@ five validation anchors re-measured — not in the same change as a bit-identica
 refactor. See [[feedback-solve-dont-search]].
 
 Machine: this dev box, .venv312.
+
+## 2026-09-22 — `Survey.interpolate_md` via `MinCurve.interpolate` (0.30.0.dev0)
+
+Each call built a two-station `Survey` (which rebuilt a `MinCurve`) and then a `Node`:
+profiling showed ~80% of the time in that construction and ~19% in the arc interpolation.
+The Node is now built from `MinCurve.interpolate` directly — arc displacement from the
+bracketing station added to that station's stored `n, e, tvd`.
+
+| `interpolate_md`, 101-station survey, one md | µs/call |
+|---|---|
+| two-station `Survey` route | 368.8 |
+| `MinCurve.interpolate` route | **123.1** |
+
+**3.0x.** Remaining cost is the arc kernel itself plus per-call numpy overhead on
+single-element arrays.
+
+Parity vs the previous route (`test_interpolate_md_matches_the_two_station_route`, 3000
+random mds over the ISCWSA 11-well set + reference, a reversing well, a feet survey and a
+true-referenced survey with convergence): directions, md, flag and unit **identical**;
+positions within **2.4 ulp** relative. Not bit-identical — the two routes sum in a
+different order. At a 177 deg dogleg (not in the gate set) both routes lose precision:
+against a 50-digit reference the new route is 2.35e-12 m and the previous 1.21e-12 m on a
+100 m leg. Machine: this dev box, .venv312, Python 3.12.3, numpy 2.5.0.
+
+Also fixed in passing: `_interpolate_survey` set `azi_reference = 'grid'` on the CALLER's
+header, so one `interpolate_md` on a true-referenced survey left it reading as grid. It now
+works on a copy (`test_interpolate_md_does_not_touch_the_callers_header`).
+
+## 2026-09-22 — `interpolate_mds` angles via `MinCurve.interpolate` (0.30.0.dev0)
+
+`_interpolate_surveys` carried its own SLERP blend of the station tangents; it now takes
+inc/azi from `MinCurve.interpolate(md, angles=True)`, the same arc kernel `interpolate_md`
+uses.
+
+| `interpolate_mds`, 101 stations + 1000 mds | ms/call |
+|---|---|
+| own SLERP blend | 1.35 |
+| `MinCurve.interpolate` | 1.40 |
+
+Flat within run-to-run noise. Parity against the previous output over 17 surveys (ISCWSA
+11-well set and reference, reversing, near-pi, feet, true-referenced, straight): md and
+interpolated flags identical; inc within 6.4e-15 rad, azimuth within 1.2e-15 rad x
+sin(inc); positions within 3.0 ulp. Machine: this dev box, .venv312.
+
+## 2026-09-22 — `_interpolate_pos_nev` via `MinCurve.interpolate` (0.30.0.dev0)
+
+The clearance closest-point cost function computed its interpolated tangent with its own
+SLERP blend and stepped with `min_curve_step`. It now takes the arc position from
+`MinCurve.interpolate`, anchored at the bracketing station's stored `n, e, tvd` (the same
+anchoring `interpolate_md` uses; one helper, `_anchored_nev`).
+
+| `_interpolate_pos_nev`, one point, 101-station survey | µs/call |
+|---|---|
+| own SLERP + `min_curve_step` | 72.4 |
+| `MinCurve.interpolate` | **39.5** |
+
+**1.8x.** Parity vs the previous output over 4500 points (ISCWSA 11-well set and
+reference, near-pi, straight, reversing): max |dpos| 2.7e-12 m. ISCWSA clearance tests
+(published SF) unchanged. Machine: this dev box, .venv312.
+
+## 2026-09-23 — `IscwsaClearance`: closest-point angles from the arc kernel; minimum search by Brent per leg (0.30.0.dev0)
+
+New benchmark `benchmarks/bench_clearance.py`: reference vs the 11 offsets of the ISCWSA
+standard clearance set, best of 5. Profile (cProfile, `minimize_sf=True`) before this
+change: 82% of the time in `_get_closest_points`, almost all of it `_interpolate_survey`
+building a 3-station `Survey` per reference station (1852 builds) only to read one point's
+md/inc/azi. Those now come from one `MinCurve.interpolate(md, angles=True)` call over all
+stations. The minimum search is bounded Brent per reference leg (was a 65-point scan plus
+Brent in the best bracket): 716 separation-factor evaluations for the 14 minima, was 1109.
+
+| ISCWSA set, 11 pairs | `develop` `e19d6f1` | `fae6e33` | after | vs `develop` |
+|---|---|---|---|---|
+| `minimize_sf=False` | 49.7 ms/pair | 52.1 ms/pair | **8.3 ms/pair** | ~6.0x |
+| `minimize_sf=True` | 99.4 ms/pair | 111.6 ms/pair | **35.6 ms/pair** | ~2.8x |
+
+Parity: against `fae6e33`, station and inserted separation factors, closest-point md, inc,
+azimuth, positions and covariances bit-identical over all 22 runs (11 wells x both
+modes). All 14 inserted minima match a 4000-point scan to <= 1.5e-11 (well 09: 5e-9, the
+Brent tolerance). ISCWSA clearance tests (published SF) pass. The `fae6e33` step over
+`develop` (+5%/+12%) is the correctness work on this branch: real covariance at inserted
+minima (`interpolate_mds`) and the shared-offset-station rule. Remaining profile:
+minimum search 60%, dominated by single-point `MinCurve.interpolate` calls.
+Machine: AMD Ryzen 9 5950X, Python 3.12.3, .venv312.
+
+## 2026-09-23 — `Survey.interpolate_tvd` Nodes via `_interpolate_node` (0.30.0.dev0)
+
+`interpolate_tvd` built a three-station `Survey` per TVD crossing to take one Node from it;
+it now takes the Node from `_interpolate_node` (the `MinCurve.interpolate` route
+`interpolate_md` already uses).
+
+| `interpolate_tvd`, ISCWSA reference well, 200 TVDs | µs/call |
+|---|---|
+| Survey per crossing | 723.4 |
+| `_interpolate_node` | **349.0** |
+
+**2.1x.** Parity over 338 Nodes (ISCWSA 11-well set, reference well, a reversing well that
+builds past horizontal): md, direction and interpolated flag identical; positions within
+2.3e-13 m. Machine: AMD Ryzen 9 5950X, Python 3.12.3, .venv312.
+
+## 2026-09-23 — `MahalanobisClearance` baseline (0.30.0.dev0)
+
+Added to `benchmarks/bench_clearance.py`. ISCWSA set, reference vs 11 offsets, best of 5:
+
+| ISCWSA set, 11 pairs | `develop` `e19d6f1` | now |
+|---|---|---|
+| `MahalanobisClearance` | 150.5 ms/pair | **135.6 ms/pair** |
+
+Separation factors vs `develop` within 1.2e-14 (this branch's clearance changes are on
+the pedal path; this class shares only `_interpolate_pos_nev` and `cov_nev_at`).
+Profile: 97% in the narrowphase -- 107 bounded Nelder-Mead searches, 4340 objective
+evaluations, each one `cov_nev_at` (53% of total) and one arc interpolation (23%) per
+well. Only 10 of the 107 searches end on a point another search already found, so
+merging candidates would save under 10%; not done. Machine: AMD Ryzen 9 5950X, Python
+3.12.3, .venv312.
+
+## 2026-09-23 — `cov_nev_at` interior attitude from the arc kernel; per-leg in-plane vector cached (0.30.0.dev0)
+
+`ErrorModel.cov_nev_at` took its interior attitude from a private copy of the arc tangent
+(`_interior_angles`). It now uses `MinCurve._leg_inc_azi`, a scalar single-leg attitude on
+the kernel's own in-plane vector, which `MinCurve._leg_frames` now computes once per survey
+(it was recomputed per query inside `_arc_tangent`). Routing through the array entry
+point `inc_azi_at` instead measured 121.7 µs/call (+72%) -- array set-up on one md -- so
+the single-leg method exists for callers that already hold the leg.
+
+| ISCWSA well 03, 2000 random md | before | after |
+|---|---|---|
+| `cov_nev_at` | 72.1 µs/call | **63.7 µs/call** |
+| `MahalanobisClearance`, ISCWSA set | 135.0 ms/pair | **130.5 ms/pair** |
+
+Parity vs the previous `cov_nev_at` over 5815 points (ISCWSA set, grid- and
+true-referenced surveys with 1.7 deg convergence, near-vertical with an azimuth wrap):
+worst relative difference 4.7e-14. `_leg_inc_azi` agrees with `inc_azi_at` within 1e-14
+rad on curved, straight, vertical and near-pi legs. Machine: AMD Ryzen 9 5950X, Python
+3.12.3, .venv312.
+
+## 2026-09-23 — `MeshClearance` closest point on the centreline in closed form (0.30.0.dev0)
+
+`MeshClearance._get_closest_nev` found the centreline point nearest a mesh contact point with a
+scipy Powell search, once per reference leg and up to twice per contact on the offset. A
+leg is a circular arc, so the point is closed-form (`_closest_x_on_arc`, the same form the
+ISCWSA path uses, with its symbolic proof).
+
+| ISCWSA reference vs offsets 03, 06, 09, 11 | Powell | closed form |
+|---|---|---|
+| `MeshClearance(sigma=2.445)`, total | 8.3 s | **2.7 s** (~3.1x) |
+
+Parity vs the Powell results: reported SF identical; centre-to-centre distance within
+2.0e-6 m, closest-point md within 1.5e-5 m (the Powell tolerance); the closed-form
+distance is never larger than Powell's. Machine: AMD Ryzen 9 5950X, Python 3.12.3,
+.venv312.

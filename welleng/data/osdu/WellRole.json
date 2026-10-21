@@ -1,0 +1,30 @@
+{
+ "list": "WellRole",
+ "kind": "osdu:wks:Manifest:1.0.0",
+ "governance": "OPEN",
+ "source": "https://community.opengroup.org/osdu/data/data-definitions/-/raw/master/ReferenceValues/Manifests/reference-data/OPEN/WellRole.1.json",
+ "commit": "a91f1bcaecb8eab338d3f62ec6adc662034a11e4",
+ "committed": "2024-03-29",
+ "retrieved": "2026-09-09",
+ "licence": "Apache-2.0",
+ "attribution": [
+  "PPDM Association"
+ ],
+ "codes": {
+  "Inject.MultipleProducts": "Multiple Products",
+  "Inject.SingleProduct": "Single Product",
+  "ProduceInject.Cyclic": "Cyclic",
+  "ProduceInject.Simultaneous": "Simultaneous",
+  "Service.Disposal": "Disposal",
+  "Service.Observation": "Observation",
+  "Service.Relief": "Relief",
+  "Service.Storage": "Storage",
+  "Service.Supply": "Supply",
+  "Inject": "Inject",
+  "NoRole": "No role",
+  "Produce": "Produce",
+  "ProduceInject": "Produce/Inject",
+  "Research": "Research",
+  "Service": "Service"
+ }
+}

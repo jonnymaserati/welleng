@@ -7,11 +7,18 @@ import re
 import yaml
 import os
 from collections import OrderedDict
+from dataclasses import dataclass
 from functools import lru_cache
+from typing import List, Optional
 # import imp
 
 # import welleng.error
-from ..utils import NEV_to_HLA
+from ..utils import (
+    NEV_to_HLA,
+    _arc_geometry,
+    _arc_inclination_crossings,
+    _arc_tangent,
+)
 from .interpreter import evaluate_formula
 
 
@@ -244,6 +251,133 @@ TOOL_INDEX = os.path.join(
 ACCURACY = 1e-6
 
 
+#: Refuse, rather than warn, when a latitude-dependent error model is asked to
+#: compute at the package fallback location.
+#:
+#: Default False ONLY as a migration courtesy: turning it on today raises in
+#: 115 places in this repo's own suite and in every downstream consumer that
+#: builds a gyro survey without a location. That count IS the finding -- it
+#: measures how invisible the substitution has been -- and the refusal is the
+#: correct end state. Set it True in any pipeline whose numbers are acted on.
+STRICT_LOCATION = False
+
+#: Refuse, rather than warn, when a tool-model term cannot be evaluated and
+#: would otherwise contribute ZERO covariance.
+#:
+#: Default False for the same migration reason as ``STRICT_LOCATION``: the
+#: dropped terms are documented ISCWSA-JSON schema gaps, and refusing would
+#: make those models unusable rather than partly-usable. But the fallback is
+#: ANTI-CONSERVATIVE -- see :class:`DroppedTerm`.
+STRICT_TERMS = False
+
+
+@dataclass(frozen=True)
+class DroppedTerm:
+    """A tool-model term that could not be evaluated, and so contributed zero.
+
+    ⚠️ **Zero is the anti-conservative direction for an uncertainty.** A term
+    that contributes nothing is indistinguishable, in the resulting covariance,
+    from a tool that is perfect in that respect -- so the survey's EOU comes
+    out SMALLER than the model specifies, in a quantity that feeds
+    anti-collision.
+
+    This is recorded on the object rather than only warned about because a
+    warning is fired once, at computation time, into whatever filter happened
+    to be installed -- and is gone by the time anyone is handed the result.
+    A consumer that did not see the warning can still ask::
+
+        em = ErrorModel(survey, error_model=...)
+        if em.errors.dropped_terms:
+            ...                     # the EOU is understated; by these terms
+
+    The cause is a documented gap in the ISCWSA JSON schema (cross-station
+    references, per-tool calibration constants), catalogued by
+    ``welleng/errors/conformance.py`` -- not a defect in the survey.
+    """
+
+    code: str  # ISCWSA term code
+    """The term's ISCWSA code, e.g. ``'XYM3E'``."""
+
+    missing: Optional[str]  # unbound variable name; None if not recoverable
+    """The variable the formula referenced and the interpreter could not bind,
+    where that is recoverable from the error. ``None`` means the evaluation
+    failed for some other reason -- see :attr:`reason`, and do not read None
+    as "nothing was missing"."""
+
+    reason: str  # the underlying exception, as text
+    """The underlying exception, as text."""
+
+    def __str__(self) -> str:
+        what = f"missing variable {self.missing!r}" if self.missing else self.reason
+        return f"{self.code} (contributed zero covariance: {what})"
+
+
+def _missing_variable(exc: Exception) -> Optional[str]:
+    """The unbound name from a NameError, or None if it is not one.
+
+    None means NOT RECOVERABLE, never "nothing was missing" -- the caller
+    records the raw reason alongside it.
+    """
+    if isinstance(exc, NameError):
+        m = re.search(r"name '([^']+)' is not defined", str(exc))
+        if m:
+            return m.group(1)
+    return None
+
+
+def _model_uses_latitude(em) -> bool:
+    """True when any of this tool's weight functions references ``Latitude``."""
+    try:
+        blob = json.dumps(em)
+    except (TypeError, ValueError):
+        blob = str(em)
+    return "Latitude" in blob
+
+
+def _latitude_rad(survey, em) -> float:
+    """Header latitude in radians -- or a refusal, where it changes the answer.
+
+    ⚠️ **The existing magnetic guard is inverted for exactly this case.**
+    ``ErrorModel._validate_mag_reference`` refuses a MAGNETIC model whose
+    field values came from package defaults, and returns early for a gyro --
+    correct, a gyro needs no magnetic reference. But **a gyro is the model that
+    needs LATITUDE**: the OWSG gyro azimuth terms carry ``1 / Cos(Latitude)``.
+    So the one model family that depends on location was the one family let
+    through, and it computed at the fallback ~51.5 deg N without a word.
+
+    The error is anti-conservative and not small: against the fallback, the
+    term is understated by ~20% at 60 deg N and ~45% at 70 deg N -- ordinary
+    North Sea latitudes, in a model that feeds anti-collision. (Understated-by
+    is ``1 - 1/ratio``, not the ratio: the first draft of this docstring said
+    25% at 60 deg N, which is the RATIO 1.245 misread as a percentage.)
+
+    Refused only for a model that actually references ``Latitude``: the MWD
+    models do not, and raising for them would break every survey that never
+    needed the value. Same rule as the grid-convergence warning -- speak where
+    the absence changes an answer, stay quiet where it cannot.
+    """
+    hdr = survey.header
+    # NOT `latitude is None`: the header SUBSTITUTES a fallback location, so by
+    # the time we see it the value is always a number. `_location_defaulted` is
+    # the only thing that still knows it was invented.
+    if not getattr(hdr, "_location_defaulted", False):
+        return np.radians(float(hdr.latitude))
+    if _model_uses_latitude(em):
+        msg = (
+            "this error model's weight functions depend on Latitude (the gyro "
+            "azimuth terms carry 1/cos(latitude)) and the survey header's "
+            "location came from the package FALLBACK, not from the well. The "
+            "fallback sits at ~51.5 deg N, so a North Sea well at 60 deg N has "
+            "its gyro azimuth term understated by ~20%, and one at 70 deg N by "
+            "~45% -- ANTI-CONSERVATIVE, in a model that feeds anti-collision. "
+            "Set SurveyHeader(latitude=..., longitude=...)."
+        )
+        if STRICT_LOCATION:
+            raise ValueError(msg)
+        warnings.warn(msg, stacklevel=2)
+    return np.radians(float(hdr.latitude))      # unused by this model
+
+
 class ToolError:
     def __init__(
         self,
@@ -268,6 +402,11 @@ class ToolError:
 
         self.e = error
         self.errors = {}
+        #: Terms that could not be evaluated and contributed ZERO covariance,
+        #: understating this survey's EOU. Empty is the normal case. See
+        #: :class:`DroppedTerm` -- recorded here because a warning is gone by
+        #: the time anyone is handed the result.
+        self.dropped_terms: List[DroppedTerm] = []
 
         # Resolve the tool model file. Try the legacy YAML location
         # first (welleng/errors/tool_codes/<model>.yaml); if it doesn't
@@ -507,7 +646,7 @@ class ToolError:
             "BField": float(survey.header.b_total or 50000.0),
             "Bfield": float(survey.header.b_total or 50000.0),   # casing alias: MFI formulas use Bfield
             "EarthRate": earth_rate,
-            "Latitude": np.radians(float(survey.header.latitude or 0.0)),
+            "Latitude": _latitude_rad(survey, self.em),
             "NoiseReductionFactor": nrf,
             "RAD": np.pi / 180.0,
             # Canted-accelerometer 180deg tool-rotation switching operator
@@ -582,17 +721,35 @@ class ToolError:
             # documented schema gaps in the ISCWSA JSON spec; see
             # welleng/errors/conformance.py output for the catalogue.
             #
-            # User-facing behaviour: emit a warning identifying the
-            # missing variable, then contribute zero from this term so
-            # the model as a whole still produces a usable Survey.
+            # User-facing behaviour: RECORD the drop on this object, warn
+            # naming the missing variable, then contribute zero from this term
+            # so the model as a whole still produces a usable Survey.
+            #
+            # ⚠️ Zero is the ANTI-CONSERVATIVE direction: the term contributes
+            # nothing, so the EOU comes out smaller than the model specifies.
+            # The warning alone was not enough -- it fires once, into whatever
+            # filter is installed, and a consumer handed the resulting Survey
+            # later has no way to ask. Hence `self.dropped_terms`.
             import warnings
-            warnings.warn(
-                f"JSON tool model term {code!r} could not be evaluated "
-                f"({exc}). Term contributes zero covariance to this Survey. "
-                f"This is a known ISCWSA-JSON schema gap; see "
-                f"welleng/errors/conformance.py.",
-                RuntimeWarning,
+            missing = _missing_variable(exc)
+            self.dropped_terms.append(
+                DroppedTerm(code=str(code), missing=missing, reason=str(exc))
             )
+            named = (f"it references {missing!r}, which the interpreter cannot "
+                     f"bind" if missing else f"{exc}")
+            msg = (
+                f"JSON tool model term {code!r} could not be evaluated: "
+                f"{named}. The term contributes ZERO covariance, so this "
+                f"survey's uncertainty is UNDERSTATED by whatever that term "
+                f"models -- the anti-conservative direction. Known "
+                f"ISCWSA-JSON schema gap (see welleng/errors/conformance.py); "
+                f"read ErrorModel.errors.dropped_terms to see it after the "
+                f"fact, or set welleng.errors.tool_errors.STRICT_TERMS = True "
+                f"to refuse instead."
+            )
+            if STRICT_TERMS:
+                raise ValueError(msg) from exc
+            warnings.warn(msg, RuntimeWarning)
             d = np.zeros(n)
             i = np.zeros(n)
             a = np.zeros(n)
@@ -933,20 +1090,17 @@ class ToolError:
         if omega < 1e-9:
             vg = va
         else:
-            so = np.sin(omega)
-
-            def vec(t):
-                return (np.sin((1.0 - t) * omega) * va
-                        + np.sin(t * omega) * vb) / so
-
-            lo_t, hi_t = 0.0, 1.0             # V(t) decreases monotonically
-            for _ in range(60):
-                mt = 0.5 * (lo_t + hi_t)
-                if vec(mt)[2] > target_v:
-                    lo_t = mt
-                else:
-                    hi_t = mt
-            vg = vec(0.5 * (lo_t + hi_t))
+            # closed form (Sawaryn & Thorogood 2005, Eqs. 20-22 + Eq. 1): the
+            # subtended angle where the inclination reaches the gate; the first
+            # crossing from station ``start - 1``. With none in range (the gate
+            # is touched only at an end), take the nearer end.
+            roots = _arc_inclination_crossings(va[2], vb[2], omega, target_v)
+            if roots:
+                d = min(roots)
+            else:
+                d = 0.0 if abs(va[2] - target_v) <= abs(vb[2] - target_v) else omega
+            g = _arc_geometry(va, vb, omega, omega, d)
+            vg = _arc_tangent(va, vb, *g)
         gate_azi = float(np.arctan2(vg[1], vg[0]))
         scal = {k: v for k, v in bindings.items() if np.isscalar(v)}
         scal.update({

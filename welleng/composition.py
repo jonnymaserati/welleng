@@ -52,7 +52,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from .conditioning import ShareMode
-from .survey import Survey, SurveyHeader
+from .survey import Survey, SurveyHeader, derived_header, grid_header
 
 __all__ = ["SurveySection", "SurveyComposition"]
 
@@ -446,7 +446,7 @@ class SurveyComposition:
         # Compose in the grid domain; force the unified header to match so the
         # supplied grid angles are interpreted consistently.
         if header.azi_reference != "grid":
-            header = _grid_header(header)
+            header = grid_header(header)
 
         survey = Survey(
             md=md, inc=inc, azi=azi, deg=False, header=header,
@@ -562,7 +562,7 @@ class SurveyComposition:
         # TWO propagations (with and without the override), not one per
         # component. Un-cached, a 2-section compose ran EIGHT full ErrorModel
         # propagations where 2-3 suffice, discarding three quarters of each
-        # result (measured at 93% of a downstream consumer's programme setup).
+        # result (measured at 93% of a two-section programme setup).
         severed = attr in ("cov_nev_systematic", "cov_nev_well") and k > 0
         cache = getattr(self, "_run_cache", None)
         if cache is None:
@@ -578,9 +578,7 @@ class SurveyComposition:
             # depth — depth-from-surface transferred at the tie, so the new
             # realisation carries none of it. (Named ISCWSA models bind
             # ``MD`` and are unaffected.)
-            import copy
-            header = copy.copy(header)
-            header._tmd_datum = float(groups[0].md[0])
+            header = derived_header(header, _tmd_datum=float(groups[0].md[0]))
         run = Survey(
             md=md, inc=inc, azi=azi, deg=False, header=header,
             error_model=groups[0].error_model, start_nev=start_nev,
@@ -713,8 +711,3 @@ def _parse_date(value: Optional[str]) -> Optional[datetime]:
     return None
 
 
-def _grid_header(header: SurveyHeader) -> SurveyHeader:
-    import copy
-    h = copy.copy(header)
-    h.azi_reference = "grid"
-    return h
