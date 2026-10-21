@@ -125,5 +125,10 @@ def evaluate_formula(
     # Eval-on-whitelisted-AST: compile and call eval against the
     # restricted namespace. Safe because _validate ensures only the
     # allowed node/name set is present.
+    # Floating-point warnings are silenced inside the eval: the restricted
+    # builtins have no ``__import__``, which the warnings machinery needs on
+    # Python 3.15, so a numpy RuntimeWarning (e.g. a divide by zero at a tie
+    # station) would otherwise surface as KeyError. Values are unchanged.
     code = compile(tree, "<formula>", "eval")
-    return eval(code, {"__builtins__": {}}, ns)
+    with np.errstate(all="ignore"):
+        return eval(code, {"__builtins__": {}}, ns)

@@ -85,3 +85,13 @@ def test_all_formula_variables_are_bindable(json_path):
         f"these terms would silently contribute ZERO covariance: "
         + "; ".join(f"{var!r} in {sorted(terms)}" for var, terms in undefined.items())
     )
+
+
+def test_a_floating_point_warning_inside_a_formula_does_not_raise():
+    # XYM3E/XYM4E evaluate sqrt(10/(MD-MDPrev)), a divide by zero at the tie
+    # station. The value there is inf; the other stations are unaffected.
+    md = np.array([100.0, 200.0])
+    prev = np.array([100.0, 100.0])
+    got = evaluate_formula("sqrt(10/(MD-MDPrev))", {"MD": md, "MDPrev": prev})
+    assert np.isinf(got[0])
+    assert got[1] == np.sqrt(10 / 100.0)
