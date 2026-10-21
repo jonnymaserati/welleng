@@ -503,6 +503,12 @@ class ErrorModel():
           continuous between. ``xcl_mag`` holds each such
           term's magnitude, reconstructed from its stored ``e_NEV`` (model-general
           -- reads the sheet value, not the function default).
+        - ``"own_only"`` -- XCLA/XCLH under ``xcl_representation == 'dia'``: an
+          interval angle error acting on its own leg only. Interior is
+          ``cov_NEV[i] + outer(e(q))`` with ``e(q) = f * drk(i->q) . e_DIA[i+1]``
+          (true azimuth, as the term is built), plus ``f**2`` times the
+          lateral-direct part of ``e_NEV[i+1]`` near vertical. Station-exact at
+          f=0,1; a stated convention, not MC-validated.
         - ``"linear"`` -- any other ring-fenced term (e.g. ABXY-TI*S, XYM*E) the
           ``drk * e_DIA`` form cannot reproduce and that is not a course-length
           term: falls back to linear covariance interpolation. Self-protecting
@@ -517,7 +523,13 @@ class ErrorModel():
         vlim = float(getattr(self.survey.header, "vertical_inc_limit", 0.0))
         dmd = md[1:] - md[:-1]
         classes, xcl_mag = {}, {}
+        xcl_dia = getattr(
+            self.survey.header, "xcl_representation", "nev_direct"
+        ) == "dia"
         for name, src in self.errors.errors.items():
+            if name in self._COURSE_LENGTH_TERMS and xcl_dia:
+                classes[name] = "own_only"
+                continue
             if name in self._COURSE_LENGTH_TERMS:
                 classes[name] = "course_length"
                 xcl_mag[name] = self._reconstruct_xcl_mag(
@@ -679,7 +691,11 @@ class ErrorModel():
         deviated wells) use the partial-course-length convention
         (``cov_NEV[i] + outer(e_NEV(i->q))``, :meth:`_xcl_partial_enev`) -- a
         STATED convention (not MC-validated: course length has no independent MC
-        ground truth at a fractional point), station-exact at f=0,1. Any
+        ground truth at a fractional point), station-exact at f=0,1. With
+        ``xcl_representation == 'dia'`` they are instead interval angle errors
+        acting on their own leg only (:meth:`_interior_prep` class
+        ``"own_only"``), also station-exact at f=0,1 and equal to the
+        course-length form on a hold leg. Any
         remaining ring-fenced term (:meth:`_interior_prep` class ``"linear"``)
         uses linear covariance interpolation. Reproduces the
         stored ``cov_NEV[i+1]`` at ``f -> 1`` to machine precision.
@@ -826,6 +842,20 @@ class ErrorModel():
                     name, xcl_mag[name], tort, vlim,
                     sinc[i], azt[i], inc_q, azt_q, Lq
                 )
+                cov += src.cov_NEV[i] + np.outer(enq, enq)
+            elif cls == "own_only":
+                tdd, tdi, tda = self._partial_star_drk(
+                    sinc[i], azt[i], inc_q, azt_q, Lq
+                )
+                fdd, fdi, fda = self._partial_star_drk(
+                    sinc[i], azt[i], sinc[i + 1], azt[i + 1], seg
+                )
+                D, I, A = src.e_DIA[i + 1]
+                full = fdd * D + fdi * I + fda * A
+                # e_NEV[i+1] minus its angle part is the lateral-direct floor
+                # (XCLA near vertical); it scales with the course length squared.
+                enq = (f * (tdd * D + tdi * I + tda * A)
+                       + f * f * (src.e_NEV[i + 1] - full))
                 cov += src.cov_NEV[i] + np.outer(enq, enq)
             elif cls == "linear":
                 cov += src.cov_NEV[i] + f * (src.cov_NEV[i + 1] - src.cov_NEV[i])
