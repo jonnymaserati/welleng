@@ -214,3 +214,29 @@ def test_cov_nev_at_refuses_outside_the_survey():
             em.cov_nev_at(q)
     em.cov_nev_at(md[0])
     em.cov_nev_at(md[-1])
+
+
+def test_xcl_dia_interior_is_own_leg_only():
+    """Under the DIA recast, XCLA/XCLH are interval angle errors on their own leg:
+    the interior is station-exact at both ends, and on a hold leg (no change in
+    angle, so the tortuosity floor sets the magnitude) it equals the
+    course-length form of the NEV-direct representation."""
+    dia = _build("dia").err
+    nev = _build("nev_direct").err
+    classes = dia._interior_prep()[0]
+    assert classes["XCLA"] == "own_only"
+    assert classes["XCLH"] == "own_only"
+    md, inc, azi = dia.survey_rad.T
+    for i in range(len(md) - 1):
+        eps = 1e-9 * max(1.0, md[i + 1])
+        for q, ref in ((md[i] + eps, dia.errors.cov_NEVs[i]),
+                       (md[i + 1] - eps, dia.errors.cov_NEVs[i + 1])):
+            got = dia.cov_nev_at(q)
+            assert np.max(np.abs(got - ref)) / max(1e-9, np.max(np.abs(ref))) < 1e-7
+    hold = [i for i in range(1, len(md) - 1)
+            if inc[i] > 0.1 and inc[i] == inc[i + 1] and azi[i] == azi[i + 1]]
+    assert hold, "fixture has no hold leg"
+    for i in hold:
+        q = 0.5 * (md[i] + md[i + 1])
+        a, b = dia.cov_nev_at(q), nev.cov_nev_at(q)
+        assert np.max(np.abs(a - b)) / np.max(np.abs(b)) < 1e-12
