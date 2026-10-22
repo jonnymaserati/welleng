@@ -179,6 +179,7 @@ class ErrorModel():
             ), axis=-1)
             self._iscwsa_surface_tieon = self._wants_surface_tieon(error_model)
             self._first_station_is_root = self._resolve_first_station_root()
+            self._first_station_allowance = self._resolve_first_station_allowance()
             self.survey_drdp = self.survey_rad
             self.drdp = self._drdp(self.survey_drdp)
             self.drdp_sing = self._drdp_sing(self.survey_drdp)
@@ -203,6 +204,7 @@ class ErrorModel():
         self.survey = survey
         self._iscwsa_surface_tieon = self._wants_surface_tieon(error_model)
         self._first_station_is_root = self._resolve_first_station_root()
+        self._first_station_allowance = self._resolve_first_station_allowance()
 
         self.survey_rad = np.stack((
             self.survey.md,
@@ -284,6 +286,23 @@ class ErrorModel():
                 "geomagnetic web service."
             )
 
+    def _resolve_first_station_allowance(self):
+        """Whether the first station's attitude error spans the whole first leg.
+
+        The one decision for the slot allowance (ISCWSA §4.7.1.1): the header's
+        ``first_station_allowance`` where it is set, else the model's own rule,
+        a surface root under a Rev 5+ ISCWSA model. Read by ``_drdp``,
+        ``_drdp_min_curve`` and the partial-leg interior covariance; the
+        vertical-hole terms read the header through
+        ``tool_errors._singular_first_station``.
+        """
+        override = getattr(self.survey.header, 'first_station_allowance', None)
+        if override == "uncorrelated":
+            return False      # carried uncorrelated, by ToolError._tie_station_cov
+        if override is not None:
+            return bool(override)
+        return bool(self._first_station_is_root and self._iscwsa_surface_tieon)
+
     def _resolve_first_station_root(self):
         """Whether the first survey station is the well's own root/slot (fresh
         attitude + depth-reference uncertainty seeded there) as opposed to a
@@ -328,6 +347,10 @@ class ErrorModel():
         catch. Note it never fires unless the survey is surface-rooted
         (``md[0] == 0``) anyway -- a tied-on survey (e.g. Volve, md[0] != 0)
         gets no doubling regardless.
+
+        This is the model's own rule only. ``SurveyHeader.first_station_allowance``
+        overrides it where set; :meth:`_resolve_first_station_allowance` is the
+        one place the two are combined.
         """
         if isinstance(error_model, dict):
             meta = error_model.get('metadata', {})
@@ -418,8 +441,13 @@ class ErrorModel():
         attitude is known perfectly and get no doubling. Also excluded: COMPASS
         IPM imports, which carry their own tie-on (``tie_type`` rows) and must
         not have the ISCWSA doubling stacked on top. Gated by
-        :meth:`_wants_surface_tieon` (keyed on model framework +
-        ``revision_number``, not a name-string suffix).
+        :meth:`_resolve_first_station_allowance`: the header's
+        ``first_station_allowance`` where set, else :meth:`_wants_surface_tieon`
+        (keyed on model framework + ``revision_number``, not a name-string
+        suffix) at a surface root. ISCWSA's Rev 4 example calculator applies no
+        allowance; the covariances listed in the ISCWSA standard clearance well
+        set (r4, 2017) were generated with it on Rev 4
+        (``first_station_allowance=True``).
         """
         return e_NEV_star + np.vstack(
             (
@@ -859,6 +887,10 @@ class ErrorModel():
                 cov += src.cov_NEV[i] + np.outer(enq, enq)
             elif cls == "linear":
                 cov += src.cov_NEV[i] + f * (src.cov_NEV[i + 1] - src.cov_NEV[i])
+        # the first station's own term carried uncorrelated: it acts over the
+        # first half of the first leg and is whole beyond it
+        tie = self.errors.cov_NEV_tie
+        cov += tie * (min(1.0, 2.0 * f) ** 2 if i == 0 else 1.0)
         # A covariance is symmetric; enforce it against floating-point drift from
         # the outer-product sums so downstream (e.g. the Mahalanobis solve) sees
         # a clean symmetric matrix.
@@ -1075,7 +1107,7 @@ class ErrorModel():
         # there, but E/V bite for a deviated slot. Only at a true surface root
         # (md[0] == 0); a below-datum tie-on carries station 0 externally. rev4
         # predates the tie-on.
-        if self._first_station_is_root and self._iscwsa_surface_tieon:
+        if self._first_station_allowance:
             N[0] *= 2
             E[0] *= 2
             V[0] *= 2
@@ -1112,7 +1144,7 @@ class ErrorModel():
         # double the FIRST station's azi column (N,E; azi-V is identically 0).
         # Only at a true surface root (md[0] == 0); a below-datum tie-on carries
         # station 0 externally.
-        if self._first_station_is_root and self._iscwsa_surface_tieon:
+        if self._first_station_allowance:
             N[0] *= 2
             E[0] *= 2
 
@@ -1328,7 +1360,7 @@ class ErrorModel():
         # surface-boundary conventions (identical to _drdp)
         if self._first_station_is_root:
             result[0, 0:3] = [si[0] * ca[0], si[0] * sa[0], ci[0]]
-        if self._first_station_is_root and self._iscwsa_surface_tieon:
+        if self._first_station_allowance:
             result[1, 3:9] *= 2
         return result
 
@@ -1429,7 +1461,7 @@ class ErrorModel():
         # Consequence (documented once in :meth:`_sigma_e_NEV_systematic`): this
         # doubling makes the first leg ~1.5x a bare minimum-curvature MC. That is
         # the mandated slot allowance, NOT a bug -- do not re-weight an MC to it.
-        if self._first_station_is_root and self._iscwsa_surface_tieon:
+        if self._first_station_allowance:
             result[1, 3:9] *= 2
 
         # drkplus1_dDepth: rows 0..n-2 (negated dc)

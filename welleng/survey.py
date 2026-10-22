@@ -463,6 +463,7 @@ class SurveyHeader:
         xcl_representation: str = "nev_direct",
         dp_basis: str = "balanced_tangent",
         tie_on: Optional[bool] = None,
+        first_station_allowance: Optional[Union[bool, str]] = None,
         deg: bool = True,
         depth_unit: str = 'meters',
         surface_unit: str = 'meters',
@@ -567,6 +568,45 @@ class SurveyHeader:
             yet implemented -- treat ``tie_on=False`` as opt-in, deliberately
             more conservative than the reference default, pending that work.
             Leave it ``None`` to match a reference covariance exactly.
+        first_station_allowance: bool, "uncorrelated" or None (default: None)
+            How the first station's own measured attitude error is carried over
+            the first leg. ``True``: the slot allowance (ISCWSA Error Model
+            Definition §4.7.1.1) -- the first leg takes the whole of that error
+            rather than half, coherently with the later stations of the same
+            survey run. In vertical hole the singular weights of XYM3 and XYM4 give
+            station 1 the whole first leg; elsewhere the first station's
+            inclination and azimuth weights are doubled (§4.7.1.1 eq. 32).
+
+            ``None`` applies each model's own rule: Rev 5 and later at a surface
+            root, not Rev 4. This reproduces ISCWSA's own example calculators;
+            for Rev 4 it matches the ISCWSA MWD Rev 4 example spreadsheet at
+            every station of the wells of the ISCWSA standard set of well paths
+            for evaluating clearance scenarios (r4, May 2017), to 1e-13 m on
+            eight of its twelve wells. ``True`` applies the allowance at the
+            first station of any survey, including a tie-on; ``False`` never.
+
+            The covariances listed in that clearance set were generated with
+            the allowance applied to Rev 4 and the surface position exact:
+            ``first_station_allowance=True`` with ``tie_on=True``, and each
+            well's grid convergence at its own slot (ED50 / UTM zone 31N, as
+            the set states it), reproduces them within 0.15 mm on eleven of its
+            twelve wells, and its separation factors within 0.002 wherever they
+            are below 10.
+
+            ``"uncorrelated"``: a tie-on station surveyed by another run, such
+            as a sidetrack's kick-off on its parent. The first station's own
+            attitude error over half a first leg, evaluated through each error
+            source's weights at its attitude and without the depth terms, is
+            added uncorrelated with the survey's errors at every later station
+            (``ErrorModel.errors.cov_NEV_tie``; over the first half-leg the
+            interior covariance takes it in proportion). This is ISCWSA common
+            practice: the tie-on uncertainty "simply added to downhole survey
+            uncertainty", its correlation "invariably uncorrelated" (Current
+            Common Practice in Collision Avoidance Calculations, 2017, §2.8).
+            With ``tie_on=True`` it reproduces the clearance set's sidetrack
+            (offset 10) within 0.3 mm laterally and 1.5 mm along hole; high side
+            differs by up to 3.9 mm in the build below the kick-off, under 0.2 mm
+            on the hold; that difference is not yet attributed.
         deg: bool (default: True)
             Indicates whether the survey angles are measured in degrees
             (True) or radians (False).
@@ -615,6 +655,11 @@ class SurveyHeader:
         self.xcl_representation = xcl_representation
         self.dp_basis = dp_basis
         self.tie_on = tie_on
+        if first_station_allowance not in (None, True, False, "uncorrelated"):
+            raise ValueError(
+                "first_station_allowance is None, True, False or 'uncorrelated'"
+            )
+        self.first_station_allowance = first_station_allowance
         self.grid_scale_factor = grid_scale_factor
         # Global datum (georeferencing truth lives on the header). Survey resolves
         # these from its data/args and writes them here; the position transform

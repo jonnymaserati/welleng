@@ -442,6 +442,28 @@ class Clearance:
 
 class IscwsaClearance(Clearance):
     """
+    The ISCWSA separation factor between a reference and an offset well
+    (Sawaryn et al., 2017, SPE-187073-MS): the centre-to-centre distance less
+    the two radii and the surface margin, over k times the pedal-curve radius
+    of the two wells' covariances summed, with the project-ahead uncertainty.
+    The two covariances are summed as independent, as the rule and the ISCWSA
+    common practice prescribe (Current Common Practice in Collision Avoidance
+    Calculations, 2017, §2.9).
+
+    Reference: the ISCWSA standard set of well paths for evaluating clearance
+    scenarios (r4, 17 May 2017) lists Rev 4 covariances generated with the
+    first station's attitude error over the whole first leg and the surface
+    position exact. With ``SurveyHeader(first_station_allowance=True,
+    tie_on=True)`` on its surface wells, and each well's grid convergence at
+    its own slot as the set states it, the separation factors reproduce to
+    within 0.002 wherever they are below 10; with the default header, which
+    follows ISCWSA's Rev 4 example calculator, to within 0.01. Its sidetrack
+    (offset 10) takes ``first_station_allowance="uncorrelated"`` and is
+    compared with ``kop_depth`` at the kick-off, which re-zeros the reference
+    there: both wells' pedal-curve radii then agree with the set's to its
+    two-decimal rounding. The set computes its factors from those rounded
+    radii, which bounds the agreement where the radii are small.
+
     Parameters:
     -----------
     clearance_args: List

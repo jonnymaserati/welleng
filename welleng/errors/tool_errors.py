@@ -531,6 +531,10 @@ class ToolError:
                 )
 
         shape = (len(self.e.survey_rad), 3, 3)
+        #: The first station's own attitude error over half its first leg, added
+        #: uncorrelated with the survey's errors beyond the first station
+        #: (``SurveyHeader.first_station_allowance="uncorrelated"``), else zero.
+        self.cov_NEV_tie = self._tie_station_cov(model)
         self.cov_NEVs = np.zeros(shape)
         self.cov_NEVs_random = np.zeros(shape)
         self.cov_NEVs_systematic = np.zeros(shape)
@@ -574,7 +578,48 @@ class ToolError:
                 self.cov_NEVs_within_pad += value.cov_NEV
                 self.cov_DIAs_within_pad += value.cov_DIA
 
+        self.cov_NEVs[1:] += self.cov_NEV_tie
+        self.cov_NEVs_random[1:] += self.cov_NEV_tie
+
         self.cov_HLAs = NEV_to_HLA(self.e.survey_rad, self.cov_NEVs)
+
+    def _tie_station_cov(self, model):
+        """The first station's own attitude error over half its first leg, as an
+        uncorrelated (3, 3) NEV covariance in metres squared; zero unless the
+        header's ``first_station_allowance`` is ``"uncorrelated"``.
+
+        ISCWSA, Current Common Practice in Collision Avoidance Calculations
+        (2017), §2.8: the uncertainty at the tie-on depth of the first downhole
+        station "simply added to downhole survey uncertainty", its correlation
+        "invariably uncorrelated" -- a tie-on station surveyed by another run,
+        such as a sidetrack's kick-off on its parent. Each error source's own
+        term is evaluated by the model at the first station's attitude, over a
+        leg as long as the survey's first leg, through the source's own weights
+        (the vertical-hole ones included); its depth part is excluded, the
+        depth error being carried absolute from the datum.
+        """
+        survey = self.e.survey
+        if getattr(survey.header, 'first_station_allowance', None) != "uncorrelated":
+            return np.zeros((3, 3))
+        from ..survey import Survey
+        import copy
+        md = np.asarray(survey.md, dtype=float)
+        leg = md[1] - md[0]
+        header = copy.copy(survey.header)
+        header.first_station_allowance = None
+        header.tie_on = True
+        aux = Survey(
+            md=md[0] + leg * np.arange(3.0),
+            inc=np.full(3, survey.inc_rad[0]),
+            azi=np.full(3, getattr(survey, f"azi_{survey.header.azi_reference}_rad")[0]),
+            deg=False, header=header, error_model=model,
+        )
+        cov = np.zeros((3, 3))
+        depth = aux.err.drdp[1, 0:3]
+        for err in aux.err.errors.errors.values():
+            p = np.asarray(err.e_NEV_star, dtype=float)[1] - depth * err.e_DIA[1][0]
+            cov += np.outer(p, p)
+        return cov
 
     def _get_the_func_out(self, err):
         if err in self.exceptional_funcs:
@@ -1634,6 +1679,22 @@ def ABXY_TI1(
     return error._generate_error(code, e_DIA, propagation, NEV)
 
 
+def _singular_first_station(error, default=None):
+    """Whether a vertical-hole (singular) term gives station 1 the whole first leg.
+
+    The header's ``first_station_allowance`` where set, else ``default``, else
+    the ISCWSA workbooks' rule: Rev 5 and later, not Rev 4.
+    """
+    override = getattr(error.survey.header, 'first_station_allowance', None)
+    if override == "uncorrelated":
+        return False
+    if override is not None:
+        return bool(override)
+    if default is not None:
+        return default
+    return error.error_model.lower().split(' ')[-1] != 'rev4'
+
+
 def ABIXY_TI2(
     code, error, mag=0.004, propagation='systematic', NEV=True, **kwargs
 ):
@@ -1720,6 +1781,11 @@ def ABIXY_TI2(
                 / error.survey.header.G
             )
         )
+        # the last station's own term is the leg into it, as at every other
+        # station; the padding row above left it zero
+        d_last = error.survey.md[-1] - error.survey.md[-2]
+        azi = error.survey_rad[-1, 2]
+        e_NEV_star_sing[-1] = np.array([-sin(azi), cos(azi), 0.0]) * 0.5 * d_last * mag / error.survey.header.G
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(
@@ -1768,7 +1834,7 @@ def ABXY_TI2(
                 np.zeros((1, 3))
             )
         )
-        if error.error_model.lower().split(' ')[-1] != 'rev4':
+        if _singular_first_station(error):
             e_NEV_sing[1, 1] = (
                 (
                     error.survey.md[2]
@@ -1797,7 +1863,7 @@ def ABXY_TI2(
                 np.zeros((1, 3))
             )
         )
-        if error.error_model.lower().split(' ')[-1] != 'rev4':
+        if _singular_first_station(error):
             e_NEV_star_sing[1, 1] = (
                 (error.survey.md[1] - error.survey.md[0])
                 * mag
@@ -1806,6 +1872,11 @@ def ABXY_TI2(
                     / error.survey.header.G
                 )
             )
+        # the last station's own term is the leg into it, as at every other
+        # station; the padding row above left it zero
+        d_last = error.survey.md[-1] - error.survey.md[-2]
+        azi = error.survey_rad[-1, 2]
+        e_NEV_star_sing[-1] = np.array([-sin(azi), cos(azi), 0.0]) * 0.5 * d_last * mag / error.survey.header.G
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(
@@ -2077,6 +2148,11 @@ def CNA(
                 np.zeros((1, 3))
             )
         )
+        # the last station's own term is the leg into it, as at every other
+        # station; the padding row above left it zero
+        d_last = error.survey.md[-1] - error.survey.md[-2]
+        azi = getattr(error.survey, f"azi_{error.survey.header.azi_reference}_rad")[-1]
+        e_NEV_star_sing[-1] = np.array([-sin(azi), cos(azi), 0.0]) * 0.5 * d_last * mag
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(
@@ -2499,6 +2575,12 @@ def XYM3(
                 np.zeros((1, 3))
             )
         )
+        if _singular_first_station(error, default=False):
+            # station 1 takes the whole first leg (ISCWSA §4.7.1.1)
+            e_NEV_sing[1, 0] = (
+                (error.survey.md[2] + error.survey.md[1] - 2 * error.survey.md[0])
+                / 2 * mag
+            )
         e_NEV[sing] = e_NEV_sing[sing]
 
         e_NEV_star = error._e_NEV_star(e_DIA)
@@ -2512,6 +2594,12 @@ def XYM3(
                 np.zeros((1, 3))
             )
         )
+        # the last station's own term is the leg into it, as at every other
+        # station; the padding row above left it zero
+        d_last = error.survey.md[-1] - error.survey.md[-2]
+        e_NEV_star_sing[-1] = np.array([0.5 * d_last * mag, 0.0, 0.0])
+        if _singular_first_station(error, default=False):
+            e_NEV_star_sing[1, 0] = (error.survey.md[1] - error.survey.md[0]) * mag
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(
@@ -2622,6 +2710,12 @@ def XYM4(
                 np.zeros((1, 3))
             )
         )
+        if _singular_first_station(error, default=False):
+            # station 1 takes the whole first leg (ISCWSA §4.7.1.1)
+            e_NEV_sing[1, 1] = (
+                (error.survey.md[2] + error.survey.md[1] - 2 * error.survey.md[0])
+                / 2 * mag
+            )
         e_NEV[sing] = e_NEV_sing[sing]
 
         e_NEV_star = error._e_NEV_star(e_DIA)
@@ -2635,6 +2729,12 @@ def XYM4(
                 np.zeros((1, 3))
             )
         )
+        # the last station's own term is the leg into it, as at every other
+        # station; the padding row above left it zero
+        d_last = error.survey.md[-1] - error.survey.md[-2]
+        e_NEV_star_sing[-1] = np.array([0.0, 0.5 * d_last * mag, 0.0])
+        if _singular_first_station(error, default=False):
+            e_NEV_star_sing[1, 1] = (error.survey.md[1] - error.survey.md[0]) * mag
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(
