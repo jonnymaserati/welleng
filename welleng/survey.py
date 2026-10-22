@@ -463,6 +463,7 @@ class SurveyHeader:
         xcl_representation: str = "nev_direct",
         dp_basis: str = "balanced_tangent",
         tie_on: Optional[bool] = None,
+        first_station_allowance: Optional[bool] = None,
         deg: bool = True,
         depth_unit: str = 'meters',
         surface_unit: str = 'meters',
@@ -567,6 +568,16 @@ class SurveyHeader:
             yet implemented -- treat ``tie_on=False`` as opt-in, deliberately
             more conservative than the reference default, pending that work.
             Leave it ``None`` to match a reference covariance exactly.
+        first_station_allowance: bool or None (default: None)
+            Whether the first station's own measured attitude carries its error
+            over the first leg (ISCWSA Error Model Definition §4.7.1.1, the slot
+            allowance: the first leg takes its full error rather than half).
+            ``None`` applies each model's own rule: Rev 5 and later at a surface
+            root, not Rev 4. ``True`` applies it at the first station whatever
+            the model and whether or not it is a tie-on; ``False`` never. The
+            ISCWSA standard set of wellpaths for evaluating clearance scenarios
+            (r4, May 2017) tabulates Rev 4 covariances with it applied, the
+            sidetrack's at its kick-off too.
         deg: bool (default: True)
             Indicates whether the survey angles are measured in degrees
             (True) or radians (False).
@@ -615,6 +626,7 @@ class SurveyHeader:
         self.xcl_representation = xcl_representation
         self.dp_basis = dp_basis
         self.tie_on = tie_on
+        self.first_station_allowance = first_station_allowance
         self.grid_scale_factor = grid_scale_factor
         # Global datum (georeferencing truth lives on the header). Survey resolves
         # these from its data/args and writes them here; the position transform

@@ -1634,6 +1634,20 @@ def ABXY_TI1(
     return error._generate_error(code, e_DIA, propagation, NEV)
 
 
+def _singular_first_station(error, default=None):
+    """Whether a vertical-hole (singular) term gives station 1 the whole first leg.
+
+    The header's ``first_station_allowance`` where set, else ``default``, else
+    the ISCWSA workbooks' rule: Rev 5 and later, not Rev 4.
+    """
+    override = getattr(error.survey.header, 'first_station_allowance', None)
+    if override is not None:
+        return bool(override)
+    if default is not None:
+        return default
+    return error.error_model.lower().split(' ')[-1] != 'rev4'
+
+
 def ABIXY_TI2(
     code, error, mag=0.004, propagation='systematic', NEV=True, **kwargs
 ):
@@ -1773,7 +1787,7 @@ def ABXY_TI2(
                 np.zeros((1, 3))
             )
         )
-        if error.error_model.lower().split(' ')[-1] != 'rev4':
+        if _singular_first_station(error):
             e_NEV_sing[1, 1] = (
                 (
                     error.survey.md[2]
@@ -1802,7 +1816,7 @@ def ABXY_TI2(
                 np.zeros((1, 3))
             )
         )
-        if error.error_model.lower().split(' ')[-1] != 'rev4':
+        if _singular_first_station(error):
             e_NEV_star_sing[1, 1] = (
                 (error.survey.md[1] - error.survey.md[0])
                 * mag
@@ -2515,6 +2529,12 @@ def XYM3(
                 np.zeros((1, 3))
             )
         )
+        if _singular_first_station(error, default=False):
+            # station 1 takes the whole first leg (ISCWSA §4.7.1.1)
+            e_NEV_sing[1, 0] = (
+                (error.survey.md[2] + error.survey.md[1] - 2 * error.survey.md[0])
+                / 2 * mag
+            )
         e_NEV[sing] = e_NEV_sing[sing]
 
         e_NEV_star = error._e_NEV_star(e_DIA)
@@ -2532,6 +2552,8 @@ def XYM3(
         # station; the padding row above left it zero
         d_last = error.survey.md[-1] - error.survey.md[-2]
         e_NEV_star_sing[-1] = np.array([0.5 * d_last * mag, 0.0, 0.0])
+        if _singular_first_station(error, default=False):
+            e_NEV_star_sing[1, 0] = (error.survey.md[1] - error.survey.md[0]) * mag
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(
@@ -2642,6 +2664,12 @@ def XYM4(
                 np.zeros((1, 3))
             )
         )
+        if _singular_first_station(error, default=False):
+            # station 1 takes the whole first leg (ISCWSA §4.7.1.1)
+            e_NEV_sing[1, 1] = (
+                (error.survey.md[2] + error.survey.md[1] - 2 * error.survey.md[0])
+                / 2 * mag
+            )
         e_NEV[sing] = e_NEV_sing[sing]
 
         e_NEV_star = error._e_NEV_star(e_DIA)
@@ -2659,6 +2687,8 @@ def XYM4(
         # station; the padding row above left it zero
         d_last = error.survey.md[-1] - error.survey.md[-2]
         e_NEV_star_sing[-1] = np.array([0.0, 0.5 * d_last * mag, 0.0])
+        if _singular_first_station(error, default=False):
+            e_NEV_star_sing[1, 1] = (error.survey.md[1] - error.survey.md[0]) * mag
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(

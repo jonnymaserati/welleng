@@ -179,6 +179,7 @@ class ErrorModel():
             ), axis=-1)
             self._iscwsa_surface_tieon = self._wants_surface_tieon(error_model)
             self._first_station_is_root = self._resolve_first_station_root()
+            self._first_station_allowance = self._resolve_first_station_allowance()
             self.survey_drdp = self.survey_rad
             self.drdp = self._drdp(self.survey_drdp)
             self.drdp_sing = self._drdp_sing(self.survey_drdp)
@@ -203,6 +204,7 @@ class ErrorModel():
         self.survey = survey
         self._iscwsa_surface_tieon = self._wants_surface_tieon(error_model)
         self._first_station_is_root = self._resolve_first_station_root()
+        self._first_station_allowance = self._resolve_first_station_allowance()
 
         self.survey_rad = np.stack((
             self.survey.md,
@@ -283,6 +285,18 @@ class ErrorModel():
                 "(+ survey_date) so they can be looked up from the BGS "
                 "geomagnetic web service."
             )
+
+    def _resolve_first_station_allowance(self):
+        """Whether the first station's attitude error spans the whole first leg.
+
+        The one decision for the slot allowance (ISCWSA §4.7.1.1): the header's
+        ``first_station_allowance`` where it is set, else the model's own rule,
+        a surface root under a Rev 5+ ISCWSA model.
+        """
+        override = getattr(self.survey.header, 'first_station_allowance', None)
+        if override is not None:
+            return bool(override)
+        return bool(self._first_station_is_root and self._iscwsa_surface_tieon)
 
     def _resolve_first_station_root(self):
         """Whether the first survey station is the well's own root/slot (fresh
@@ -1075,7 +1089,7 @@ class ErrorModel():
         # there, but E/V bite for a deviated slot. Only at a true surface root
         # (md[0] == 0); a below-datum tie-on carries station 0 externally. rev4
         # predates the tie-on.
-        if self._first_station_is_root and self._iscwsa_surface_tieon:
+        if self._first_station_allowance:
             N[0] *= 2
             E[0] *= 2
             V[0] *= 2
@@ -1112,7 +1126,7 @@ class ErrorModel():
         # double the FIRST station's azi column (N,E; azi-V is identically 0).
         # Only at a true surface root (md[0] == 0); a below-datum tie-on carries
         # station 0 externally.
-        if self._first_station_is_root and self._iscwsa_surface_tieon:
+        if self._first_station_allowance:
             N[0] *= 2
             E[0] *= 2
 
@@ -1328,7 +1342,7 @@ class ErrorModel():
         # surface-boundary conventions (identical to _drdp)
         if self._first_station_is_root:
             result[0, 0:3] = [si[0] * ca[0], si[0] * sa[0], ci[0]]
-        if self._first_station_is_root and self._iscwsa_surface_tieon:
+        if self._first_station_allowance:
             result[1, 3:9] *= 2
         return result
 
@@ -1429,7 +1443,7 @@ class ErrorModel():
         # Consequence (documented once in :meth:`_sigma_e_NEV_systematic`): this
         # doubling makes the first leg ~1.5x a bare minimum-curvature MC. That is
         # the mandated slot allowance, NOT a bug -- do not re-weight an MC to it.
-        if self._first_station_is_root and self._iscwsa_surface_tieon:
+        if self._first_station_allowance:
             result[1, 3:9] *= 2
 
         # drkplus1_dDepth: rows 0..n-2 (negated dc)
