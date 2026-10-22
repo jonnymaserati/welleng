@@ -55,10 +55,14 @@ def test_core_reproduces_the_iscwsa_rev4_calculator_on_the_set():
 
 def test_the_option_reproduces_the_set_listing():
     # 4 dp listing: rounding half-width 5e-5 m; the remaining tolerance is the set's
-    # own implementation difference, pinned per well where it is larger.
-    pinned = {"05 - well": 7.1990e-04, "10 - well": 2.5228e-02}
+    # own implementation difference, pinned per well where it is larger. The
+    # sidetrack (10) carries its kick-off station's error uncorrelated (ISCWSA
+    # common practice 2017, section 2.8); its residual is an exchange of variance
+    # between H and A in the build, under 0.2 mm on the hold.
+    pinned = {"05 - well": 7.1990e-04, "10 - well": 3.9303e-03}
     for name, w in SET.items():
-        got = _sigma_hla(_survey(w, True, True), len(w["MD"]))
+        allowance = "uncorrelated" if name == "10 - well" else True
+        got = _sigma_hla(_survey(w, allowance, True), len(w["MD"]))
         want = np.array([w["sigmaH"], w["sigmaL"], w["sigmaA"]]).T
         d = np.abs(got - want).max()
         if name in pinned:
@@ -94,3 +98,37 @@ def test_the_listing_differs_from_itself_at_its_last_digit():
         assert a["MD"][:i + 2] == b["MD"][:j + 2]
         assert a["IncDeg"][:i + 2] == b["IncDeg"][:j + 2]
         assert a["sigmaH"][i] != b["sigmaH"][j]
+
+
+def test_the_tie_on_station_carried_uncorrelated():
+    """first_station_allowance="uncorrelated": the first station's own attitude
+    error over half its first leg, from every non-depth source through its own
+    weights, added once and independently beyond the first station."""
+    w = SET["10 - well"]
+    plain = _survey(w, None, True)
+    tied = _survey(w, "uncorrelated", True)
+    tie = tied.err.errors.cov_NEV_tie
+    # vertical kick-off: the misalignments XYM3/XYM4 give each lateral axis
+    # (0.5 x 30 m x 0.1 deg)^2; the accelerometer terms add a little; no vertical
+    xym = (0.5 * 30.0 * np.deg2rad(0.1)) ** 2
+    assert xym < tie[0, 0] < 1.1 * xym and xym < tie[1, 1] < 1.1 * xym
+    assert abs(tie[2, 2]) < 1e-12
+    # zero at the first station, the same constant at every later one
+    d = np.asarray(tied.cov_nev) - np.asarray(plain.cov_nev)
+    assert np.allclose(d[0], 0.0) and np.allclose(d[1:], tie)
+    # the interior covariance takes it over the first half-leg, whole beyond
+    assert np.allclose(tied.err.cov_nev_at(w["MD"][1]), np.asarray(tied.cov_nev)[1])
+    q = w["MD"][0] + 15.0
+    half = tied.err.cov_nev_at(q) - plain.err.cov_nev_at(q)
+    assert np.allclose(half, tie)
+    # it is not the coherent allowance as well
+    assert not tied.err._first_station_allowance
+
+
+def test_first_station_allowance_takes_four_values():
+    import pytest
+    from welleng.survey import SurveyHeader
+    for v in (None, True, False, "uncorrelated"):
+        SurveyHeader(first_station_allowance=v)
+    with pytest.raises(ValueError, match="first_station_allowance"):
+        SurveyHeader(first_station_allowance="coherent")

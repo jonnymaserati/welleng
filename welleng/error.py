@@ -297,6 +297,8 @@ class ErrorModel():
         ``tool_errors._singular_first_station``.
         """
         override = getattr(self.survey.header, 'first_station_allowance', None)
+        if override == "uncorrelated":
+            return False      # carried uncorrelated, by ToolError._tie_station_cov
         if override is not None:
             return bool(override)
         return bool(self._first_station_is_root and self._iscwsa_surface_tieon)
@@ -885,6 +887,10 @@ class ErrorModel():
                 cov += src.cov_NEV[i] + np.outer(enq, enq)
             elif cls == "linear":
                 cov += src.cov_NEV[i] + f * (src.cov_NEV[i + 1] - src.cov_NEV[i])
+        # the first station's own term carried uncorrelated: it acts over the
+        # first half of the first leg and is whole beyond it
+        tie = self.errors.cov_NEV_tie
+        cov += tie * (min(1.0, 2.0 * f) ** 2 if i == 0 else 1.0)
         # A covariance is symmetric; enforce it against floating-point drift from
         # the outer-product sums so downstream (e.g. the Mahalanobis solve) sees
         # a clean symmetric matrix.

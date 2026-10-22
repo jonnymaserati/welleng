@@ -457,7 +457,11 @@ class IscwsaClearance(Clearance):
     tie_on=True)`` on its surface wells the separation factors reproduce to
     within 0.002 wherever they are below 10; with the default header, which
     follows ISCWSA's Rev 4 example calculator, to within 0.01. Its sidetrack
-    (offset 10) is compared with ``kop_depth`` at the kick-off.
+    (offset 10) takes ``first_station_allowance="uncorrelated"`` and is
+    compared with ``kop_depth`` at the kick-off, which re-zeros the reference
+    there: both wells' pedal-curve radii then agree with the set's to its
+    two-decimal rounding. The set computes its factors from those rounded
+    radii, which bounds the agreement where the radii are small.
 
     Parameters:
     -----------

@@ -531,6 +531,10 @@ class ToolError:
                 )
 
         shape = (len(self.e.survey_rad), 3, 3)
+        #: The first station's own attitude error over half its first leg, added
+        #: uncorrelated with the survey's errors beyond the first station
+        #: (``SurveyHeader.first_station_allowance="uncorrelated"``), else zero.
+        self.cov_NEV_tie = self._tie_station_cov(model)
         self.cov_NEVs = np.zeros(shape)
         self.cov_NEVs_random = np.zeros(shape)
         self.cov_NEVs_systematic = np.zeros(shape)
@@ -574,7 +578,48 @@ class ToolError:
                 self.cov_NEVs_within_pad += value.cov_NEV
                 self.cov_DIAs_within_pad += value.cov_DIA
 
+        self.cov_NEVs[1:] += self.cov_NEV_tie
+        self.cov_NEVs_random[1:] += self.cov_NEV_tie
+
         self.cov_HLAs = NEV_to_HLA(self.e.survey_rad, self.cov_NEVs)
+
+    def _tie_station_cov(self, model):
+        """The first station's own attitude error over half its first leg, as an
+        uncorrelated (3, 3) NEV covariance in metres squared; zero unless the
+        header's ``first_station_allowance`` is ``"uncorrelated"``.
+
+        ISCWSA, Current Common Practice in Collision Avoidance Calculations
+        (2017), §2.8: the uncertainty at the tie-on depth of the first downhole
+        station "simply added to downhole survey uncertainty", its correlation
+        "invariably uncorrelated" -- a tie-on station surveyed by another run,
+        such as a sidetrack's kick-off on its parent. Each error source's own
+        term is evaluated by the model at the first station's attitude, over a
+        leg as long as the survey's first leg, through the source's own weights
+        (the vertical-hole ones included); its depth part is excluded, the
+        depth error being carried absolute from the datum.
+        """
+        survey = self.e.survey
+        if getattr(survey.header, 'first_station_allowance', None) != "uncorrelated":
+            return np.zeros((3, 3))
+        from ..survey import Survey
+        import copy
+        md = np.asarray(survey.md, dtype=float)
+        leg = md[1] - md[0]
+        header = copy.copy(survey.header)
+        header.first_station_allowance = None
+        header.tie_on = True
+        aux = Survey(
+            md=md[0] + leg * np.arange(3.0),
+            inc=np.full(3, survey.inc_rad[0]),
+            azi=np.full(3, getattr(survey, f"azi_{survey.header.azi_reference}_rad")[0]),
+            deg=False, header=header, error_model=model,
+        )
+        cov = np.zeros((3, 3))
+        depth = aux.err.drdp[1, 0:3]
+        for err in aux.err.errors.errors.values():
+            p = np.asarray(err.e_NEV_star, dtype=float)[1] - depth * err.e_DIA[1][0]
+            cov += np.outer(p, p)
+        return cov
 
     def _get_the_func_out(self, err):
         if err in self.exceptional_funcs:
@@ -1641,6 +1686,8 @@ def _singular_first_station(error, default=None):
     the ISCWSA workbooks' rule: Rev 5 and later, not Rev 4.
     """
     override = getattr(error.survey.header, 'first_station_allowance', None)
+    if override == "uncorrelated":
+        return False
     if override is not None:
         return bool(override)
     if default is not None:

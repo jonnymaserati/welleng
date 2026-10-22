@@ -568,12 +568,12 @@ class SurveyHeader:
             yet implemented -- treat ``tie_on=False`` as opt-in, deliberately
             more conservative than the reference default, pending that work.
             Leave it ``None`` to match a reference covariance exactly.
-        first_station_allowance: bool or None (default: None)
-            Whether the first station's own measured attitude carries its error
-            over the first leg (ISCWSA Error Model Definition §4.7.1.1, the slot
-            allowance): the first leg then takes the whole of that error rather
-            than half, coherently with the later stations of the same survey
-            run. In vertical hole the singular weights of XYM3 and XYM4 give
+        first_station_allowance: bool, "uncorrelated" or None (default: None)
+            How the first station's own measured attitude error is carried over
+            the first leg. ``True``: the slot allowance (ISCWSA Error Model
+            Definition §4.7.1.1) -- the first leg takes the whole of that error
+            rather than half, coherently with the later stations of the same
+            survey run. In vertical hole the singular weights of XYM3 and XYM4 give
             station 1 the whole first leg; elsewhere the first station's
             inclination and azimuth weights are doubled (§4.7.1.1 eq. 32).
 
@@ -589,11 +589,23 @@ class SurveyHeader:
             the allowance applied to Rev 4 and the surface position exact:
             ``first_station_allowance=True`` with ``tie_on=True`` reproduces
             them within 0.15 mm on ten of its twelve wells, and its separation
-            factors within 0.002 wherever they are below 10. The set's sidetrack
-            (offset 10) instead adds the kick-off station's own error
-            uncorrelated with the sidetrack's survey (ISCWSA, Current Common
-            Practice in Collision Avoidance Calculations, 2017, §2.8), which
-            this option does not do.
+            factors within 0.002 wherever they are below 10.
+
+            ``"uncorrelated"``: a tie-on station surveyed by another run, such
+            as a sidetrack's kick-off on its parent. The first station's own
+            attitude error over half a first leg, evaluated through each error
+            source's weights at its attitude and without the depth terms, is
+            added uncorrelated with the survey's errors at every later station
+            (``ErrorModel.errors.cov_NEV_tie``; over the first half-leg the
+            interior covariance takes it in proportion). This is ISCWSA common
+            practice: the tie-on uncertainty "simply added to downhole survey
+            uncertainty", its correlation "invariably uncorrelated" (Current
+            Common Practice in Collision Avoidance Calculations, 2017, §2.8).
+            With ``tie_on=True`` it reproduces the clearance set's sidetrack
+            (offset 10) within 0.3 mm laterally and 1.5 mm along hole; high side
+            differs by up to 3.9 mm in the build below the kick-off (the set's
+            own generator, whose implementation is not published), under 0.2 mm
+            on the hold.
         deg: bool (default: True)
             Indicates whether the survey angles are measured in degrees
             (True) or radians (False).
@@ -642,6 +654,10 @@ class SurveyHeader:
         self.xcl_representation = xcl_representation
         self.dp_basis = dp_basis
         self.tie_on = tie_on
+        if first_station_allowance not in (None, True, False, "uncorrelated"):
+            raise ValueError(
+                "first_station_allowance is None, True, False or 'uncorrelated'"
+            )
         self.first_station_allowance = first_station_allowance
         self.grid_scale_factor = grid_scale_factor
         # Global datum (georeferencing truth lives on the header). Survey resolves
