@@ -753,6 +753,15 @@ class WellNetwork:
             First wellbore node identifier.
         b : str
             Second wellbore node identifier.
+        md_a, md_b : float, optional
+            Measured depth in metres of the compared point on each wellbore;
+            the nearest station is used, TD when ``None``.
+        error_model : str
+            Error model used for a survey that carries none.
+        share_mode : {None, 'all_independent', 'globals_shared', \
+'globals_and_systematic_shared'}, optional
+            Which error sources the divergent branches share below the
+            side-track point (see Notes); ``None`` treats them as independent.
 
         Returns
         -------
@@ -805,15 +814,16 @@ class WellNetwork:
         full-from-surface (as EDM definitive surveys are), so they agree over
         the shared trunk.
 
-        Implemented is the trunk cancellation (the dominant effect).
-        **Deferred:** the source-context cross-term
-        ``- 2 * Cov_shared_source`` between the *divergent* branches (same tool
-        run / geomag date / datum — the RP's same-job / different-job
-        partial-correlation table). Without it two
-        same-job laterals are treated as independent below the kickoff, which is
-        slightly *conservative* (over-states relative uncertainty) — the safe
-        direction. Add it with the per-term systematic / random classification
-        from the error engine.
+        The trunk cancellation is always applied. The source-context cross term
+        between the divergent branches is applied when ``share_mode`` names
+        shared sources: each shared source contributes
+        ``(v_a − v_b)(v_a − v_b)ᵀ``, with ``v`` its signed position-error
+        vector below the side-track point in each branch
+        (:func:`welleng.conditioning.combine_covariances`). That is smaller than
+        the independent sum where the branches weight the source alike and
+        larger where they weight it oppositely, so neither ``share_mode`` is
+        conservative in general. ``None`` or ``'all_independent'`` treats the
+        divergent branches as independent.
         """
         import numpy as np
         # Mixed datum-realisation guard: if both wellbores pin an origin
@@ -862,18 +872,29 @@ class WellNetwork:
             # Shared trunk cancels; divergent branches treated as independent.
             return C_a + C_b - 2.0 * C_st
         # Per-term source-context sharing between the DIVERGENT branches (same
-        # tool run / geomag era). Subtract the trunk to get each branch's own
-        # covariance components, then combine via welleng.conditioning under the
-        # requested share_mode (RP same-job/different-job table).
+        # tool run / geomag era): each shared source acts on both branches
+        # through its signed vector below the side-track point, combined by
+        # welleng.conditioning under the requested share_mode (RP
+        # same-job/different-job table).
         from .conditioning import combine_covariances
-        _, Ga, Sa = self._abs_cov_components(self.node(a), md_a, error_model)
-        _, Gb, Sb = self._abs_cov_components(self.node(b), md_b, error_model)
-        _, Gst, Sst = self._abs_cov_components(self.node(a), st_md, error_model)
+        st_wb = self.node(a)
+        vec = {}
+        for kind in ("global", "systematic"):
+            ca, va = self._abs_vecs(wb_a, md_a, error_model, kind)
+            cb, vb = self._abs_vecs(wb_b, md_b, error_model, kind)
+            cs, vs = self._abs_vecs(st_wb, st_md, error_model, kind)
+            codes = [c for c in ca if c in cb and c in cs]
+
+            def pick(cc, v, codes=codes):
+                return np.array([v[cc.index(c)] for c in codes]).reshape(-1, 3)
+            st = pick(cs, vs)
+            vec[kind] = ((pick(ca, va) - st)[None], (pick(cb, vb) - st)[None])
         br_a, br_b = C_a - C_st, C_b - C_st          # divergent-branch totals
         res = combine_covariances(
             br_a[None], br_b[None],
-            cov_global_a=(Ga - Gst)[None], cov_global_b=(Gb - Gst)[None],
-            cov_systematic_a=(Sa - Sst)[None], cov_systematic_b=(Sb - Sst)[None],
+            vec_global_a=vec["global"][0], vec_global_b=vec["global"][1],
+            vec_systematic_a=vec["systematic"][0],
+            vec_systematic_b=vec["systematic"][1],
             share_mode=share_mode,
         )
         return np.asarray(res.cov_combined)[0]
@@ -924,50 +945,26 @@ class WellNetwork:
         idx = int(np.argmin(np.abs(np.asarray(s.md) - md)))   # nearest station
         return cov[idx]
 
-    def _abs_cov_components(self, wb: "Wellbore", md, error_model: str):
-        """Total, global, and systematic NEV covariance components at ``md``.
+    def _abs_vecs(self, wb: "Wellbore", md, error_model: str, propagation: str):
+        """Signed position-error vectors of one propagation's sources at ``md``.
 
-        Returns the three ISCWSA propagation-mode covariance buckets a wellbore
-        exposes (``cov_nev`` total, ``cov_nev_global``, ``cov_nev_systematic``)
-        at the nearest station to ``md`` (or at TD when ``md`` is ``None``),
-        computing them via welleng's ``ErrorModel`` if not cached. Consumed by
-        :meth:`relative_covariance` when a ``share_mode`` folds the divergent
-        branches' shared error sources.
-
-        Parameters
-        ----------
-        wb : Wellbore
-            The wellbore whose survey covariance is wanted.
-        md : float or None
-            Measured depth, in metres; ``None`` selects the last station.
-        error_model : str
-            welleng error-model name used if the survey has no cached error.
-
-        Returns
-        -------
-        tuple of numpy.ndarray
-            ``(total, global, systematic)`` — each a 3x3 NEV covariance in
-            metres squared.
-
-        Raises
-        ------
-        ValueError
-            If ``wb`` has no survey attached.
+        Returns the error-source codes of that propagation and their (k, 3)
+        NEV vectors at one standard deviation, in metres, at the nearest station
+        to ``md`` (TD when ``None``); a source's covariance is ``v vᵀ``. The
+        survey's own error model is used where it has one, else ``error_model``.
         """
         import numpy as np
         from .error import ErrorModel
         s = wb.survey
         if s is None:
             raise ValueError(f"wellbore {wb.id!r} has no survey")
-        tot = getattr(s, "cov_nev", None)
-        glob = getattr(s, "cov_nev_global", None)
-        sys = getattr(s, "cov_nev_systematic", None)
-        if tot is None or glob is None or sys is None:
-            em = ErrorModel(s, error_model=error_model).errors
-            tot, glob, sys = em.cov_nev, em.cov_NEVs_global, em.cov_NEVs_systematic
-        tot, glob, sys = np.asarray(tot), np.asarray(glob), np.asarray(sys)
+        err = getattr(s, "err", None)
+        if err is None:
+            err = ErrorModel(s, error_model=error_model)
         idx = -1 if md is None else int(np.argmin(np.abs(np.asarray(s.md) - md)))
-        return tot[idx], glob[idx], sys[idx]
+        items = [(k, np.asarray(e.sigma_e_NEV, dtype=float)[idx])
+                 for k, e in err.errors.errors.items() if e.propagation == propagation]
+        return [k for k, _ in items], np.array([v for _, v in items]).reshape(-1, 3)
 
     def _sidetrack_md(self, a: str, b: str):
         """Return the deepest common measured depth of two wellbores.

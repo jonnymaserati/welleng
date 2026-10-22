@@ -36,10 +36,9 @@ covariance carry:
 
 The result is one unified :class:`~welleng.survey.Survey` whose total covariance
 *and* per-component (``cov_nev_global`` / ``cov_nev_systematic`` /
-``cov_nev_random``) breakdown are correctly composed. Preserving that breakdown
-is what lets the relative-error / anti-collision framework
-(:func:`welleng.conditioning.combine_covariances`) later difference two composed
-wellbores with correct cancellation of shared global terms.
+``cov_nev_random``) breakdown are correctly composed. It carries no per-source
+signed vectors, so :func:`welleng.conditioning.source_vectors` refuses it and two
+composed wellbores combine only as independent.
 """
 
 from __future__ import annotations

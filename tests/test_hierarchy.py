@@ -125,15 +125,28 @@ def test_relative_covariance_ancestor_matches_manual():
     assert 1.0 < _sig(C_rel) < 100.0
 
 
-def test_relative_covariance_share_mode_monotonic():
-    """More shared error sources -> smaller relative uncertainty (RP table);
-    still exactly zero at the shared kick-off under any share_mode."""
+def test_relative_covariance_share_mode_is_the_exact_cross_term():
+    """A shared source acts on both divergent branches through its signed vector
+    below the side-track point, so the share-mode result is the independent one
+    less v_a v_b' + v_b v_a' over the shared sources (Williamson Eq. A-24 with
+    correlation one for them). Zero at the shared kick-off under any mode."""
     net = _parent_and_sidetracks()
-    indep = _sig(net.relative_covariance("S1", "S2", share_mode="all_independent"))
-    glob = _sig(net.relative_covariance("S1", "S2", share_mode="globals_shared"))
-    both = _sig(net.relative_covariance(
+    model = "ISCWSA MWD Rev5.11"
+    indep = np.asarray(net.relative_covariance("S1", "S2",
+                                               share_mode="all_independent"))
+    cross = {}
+    for kind in ("global", "systematic"):
+        ca, va = net._abs_vecs(net.node("S1"), None, model, kind)
+        cb, vb = net._abs_vecs(net.node("S2"), None, model, kind)
+        cs, vs = net._abs_vecs(net.node("S1"), 1000.0, model, kind)
+        assert ca == cb == cs and ca
+        a, b = va - vs, vb - vs
+        cross[kind] = a.T @ b + b.T @ a
+    glob = np.asarray(net.relative_covariance("S1", "S2", share_mode="globals_shared"))
+    both = np.asarray(net.relative_covariance(
         "S1", "S2", share_mode="globals_and_systematic_shared"))
-    assert indep > glob > both > 0.0
+    assert np.allclose(glob, indep - cross["global"], atol=1e-12)
+    assert np.allclose(both, indep - cross["global"] - cross["systematic"], atol=1e-12)
     z = _sig(net.relative_covariance(
         "S1", "S2", md_a=1000.0, md_b=1000.0, share_mode="globals_shared"))
     assert z < 1e-6
