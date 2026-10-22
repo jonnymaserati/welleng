@@ -158,7 +158,7 @@ If your work relies on a specific method, please **also** cite the relevant pape
   Separation Rule.* SPE Drilling & Completion 34, 01–15. SPE 187073-PA.
   [doi:10.2118/187073-PA](https://doi.org/10.2118/187073-PA)
 - **Mahalanobis collision probability** — Brooks, A. G. (2010). *A New Look at
-  Wellbore-Collision Probability.* SPE Drilling & Completion 25(2), 223–232.
+  Wellbore-Collision Probability.* SPE Drilling & Completion 25(2), 223–229.
   SPE 116155-PA. [doi:10.2118/116155-PA](https://doi.org/10.2118/116155-PA);
   and Brooks, A. G., Wilson, H. (1996). SPE 36863-MS.
   [doi:10.2118/36863-MS](https://doi.org/10.2118/36863-MS)
