@@ -2456,7 +2456,6 @@ def XYM1(
 def XYM2(
     code, error, mag=0.00175, propagation='systematic', NEV=True, **kwargs
 ):
-    propagation = 'systematic'  # incorrect in the rev5 model tab
     dpde = np.zeros((len(error.survey_rad), 3))
     dpde[:, 2] = -1
     e_DIA = dpde * mag
@@ -3014,7 +3013,6 @@ def XYM3L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
 
 
 def XYM4L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
-    propagation = 'random'
     coeff = np.ones(len(error.survey.md))
     coeff[1:] = np.amax(np.stack((
         coeff[1:],
