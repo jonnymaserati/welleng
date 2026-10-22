@@ -162,7 +162,7 @@ codes:
   XYM2:
     function: XYM2
     magnitude: 0.0017453292519943296
-    propagation: random
+    propagation: systematic
     unit: rad
   XYM3E:
     function: XYM3L
@@ -172,7 +172,7 @@ codes:
   XYM4E:
     function: XYM4L
     magnitude: 0.005235987755982988
-    propagation: systematic
+    propagation: random
     unit: rad
 header:
   Application: None
