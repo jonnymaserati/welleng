@@ -605,9 +605,8 @@ class SurveyHeader:
             Common Practice in Collision Avoidance Calculations, 2017, §2.8).
             With ``tie_on=True`` it reproduces the clearance set's sidetrack
             (offset 10) within 0.3 mm laterally and 1.5 mm along hole; high side
-            differs by up to 3.9 mm in the build below the kick-off (the set's
-            own generator, whose implementation is not published), under 0.2 mm
-            on the hold.
+            differs by up to 3.9 mm in the build below the kick-off, under 0.2 mm
+            on the hold; that difference is not yet attributed.
         deg: bool (default: True)
             Indicates whether the survey angles are measured in degrees
             (True) or radians (False).

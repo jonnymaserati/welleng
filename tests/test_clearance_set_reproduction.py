@@ -79,8 +79,9 @@ def test_the_option_reproduces_the_set_listing():
     # 4 dp listing: rounding half-width 5e-5 m; the remaining tolerance is the set's
     # own implementation difference, pinned per well where it is larger. The
     # sidetrack (10) carries its kick-off station's error uncorrelated (ISCWSA
-    # common practice 2017, section 2.8); its residual is an exchange of variance
-    # between H and A in the build, under 0.2 mm on the hold.
+    # common practice 2017, section 2.8); its residual, an exchange of variance
+    # between H and A in the build and under 0.2 mm on the hold, is not yet
+    # attributed and is pinned so any change to it is seen.
     pinned = {"10 - well": 3.9303e-03}
     for name, w in SET.items():
         allowance = "uncorrelated" if name == "10 - well" else True
