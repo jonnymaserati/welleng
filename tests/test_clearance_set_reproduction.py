@@ -7,6 +7,8 @@
 2. Against the set's own listing (r4, 17 May 2017), whose covariances were
    generated with the first station's attitude error spanning the first leg and the
    surface position exact: ``first_station_allowance=True`` with ``tie_on=True``.
+   Its azimuths are grid north (ED50 / UTM zone 31N), each well with the grid
+   convergence of its own slot, which the listing states to 0.01 deg.
 
 The listing is tabulated to 4 decimal places and is not consistent with itself at the
 last digit (test below), so it is reproduced to its rounding plus a stated tolerance.
@@ -14,6 +16,7 @@ last digit (test below), so it is reproduced to its rounding plus a stated toler
 import json
 
 import numpy as np
+from pyproj import Proj
 
 from welleng.clearance import IscwsaClearance
 from welleng.survey import Survey, make_survey_header
@@ -23,9 +26,28 @@ with open("tests/test_data/clearance_iscwsa_well_data.json") as f:
 with open("tests/test_data/clearance_set_iscwsa_rev4_workbook.json") as f:
     WORKBOOK = json.load(f)["sigma_hla"]
 
+# slot easting and northing (m, ED50 / UTM zone 31N) from each well's sheet
+SLOT = {
+    "Reference well": (500000.00, 6651566.71), "01 - well": (500099.96, 6651566.71),
+    "02 - well": (500000.00, 6651666.67), "03 - well": (500010.00, 6651566.71),
+    "04 - well": (500019.99, 6651566.71), "05 - well": (499500.20, 6651516.73),
+    "06 - well": (500099.96, 6649267.63), "07 - well": (500079.97, 6649267.63),
+    "08 - well": (499100.36, 6651066.91), "09 - well": (500000.00, 6650567.11),
+    "10 - well": (500000.00, 6651566.71), "11 - well": (499000.40, 6650167.27),
+}
 
-def _survey(w, allowance=None, tie_on=None):
-    sh = make_survey_header(w["header"])
+
+def _slot_convergence(name):
+    """Grid convergence at the well's slot, deg (positive east)."""
+    p = Proj("EPSG:23031")
+    lon, lat = p(*SLOT[name], inverse=True)
+    return p.get_factors(lon, lat).meridian_convergence
+
+
+def _survey(w, allowance=None, tie_on=None, convergence=0.0):
+    h = dict(w["header"])
+    h["convergence"] = np.deg2rad(convergence)
+    sh = make_survey_header(h)
     sh.first_station_allowance = allowance
     sh.tie_on = tie_on
     return Survey(md=w["MD"], inc=w["IncDeg"], azi=w["AziDeg"], n=w["N"], e=w["E"],
@@ -59,10 +81,11 @@ def test_the_option_reproduces_the_set_listing():
     # sidetrack (10) carries its kick-off station's error uncorrelated (ISCWSA
     # common practice 2017, section 2.8); its residual is an exchange of variance
     # between H and A in the build, under 0.2 mm on the hold.
-    pinned = {"05 - well": 7.1990e-04, "10 - well": 3.9303e-03}
+    pinned = {"10 - well": 3.9303e-03}
     for name, w in SET.items():
         allowance = "uncorrelated" if name == "10 - well" else True
-        got = _sigma_hla(_survey(w, allowance, True), len(w["MD"]))
+        s = _survey(w, allowance, True, _slot_convergence(name))
+        got = _sigma_hla(s, len(w["MD"]))
         want = np.array([w["sigmaH"], w["sigmaL"], w["sigmaA"]]).T
         d = np.abs(got - want).max()
         if name in pinned:
@@ -72,7 +95,7 @@ def test_the_option_reproduces_the_set_listing():
 
 
 def test_the_option_reproduces_the_set_separation_factors():
-    S = {n: _survey(w, True, True) for n, w in SET.items()}
+    S = {n: _survey(w, True, True, _slot_convergence(n)) for n, w in SET.items()}
     for n, s in S.items():
         s.radius = np.full(len(s.md), 0.4572 if n == "Reference well" else 0.3048)
     for name, s in S.items():
@@ -132,3 +155,17 @@ def test_first_station_allowance_takes_four_values():
         SurveyHeader(first_station_allowance=v)
     with pytest.raises(ValueError, match="first_station_allowance"):
         SurveyHeader(first_station_allowance="coherent")
+
+
+def test_slot_convergence_is_the_listings():
+    # each sheet's "Convergence at slot", to its 0.01 deg; and without it well 05,
+    # the one hold at an oblique magnetic azimuth, is short by 0.72 mm in sigma L
+    stated = {"05 - well": -0.01, "08 - well": -0.01, "11 - well": -0.02}
+    for name in SLOT:
+        assert round(_slot_convergence(name), 2) + 0.0 == stated.get(name, 0.0), name
+    w = SET["05 - well"]
+    want = np.array(w["sigmaL"])
+    for conv, d in ((0.0, 7.1990e-04), (_slot_convergence("05 - well"), 1.5e-4)):
+        got = _sigma_hla(_survey(w, True, True, conv), len(w["MD"]))[:, 1]
+        e = np.abs(got - want).max()
+        assert (abs(e - d) < 1e-6) if conv == 0.0 else e < d, (conv, e)

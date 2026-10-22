@@ -454,7 +454,8 @@ class IscwsaClearance(Clearance):
     scenarios (r4, 17 May 2017) lists Rev 4 covariances generated with the
     first station's attitude error over the whole first leg and the surface
     position exact. With ``SurveyHeader(first_station_allowance=True,
-    tie_on=True)`` on its surface wells the separation factors reproduce to
+    tie_on=True)`` on its surface wells, and each well's grid convergence at
+    its own slot as the set states it, the separation factors reproduce to
     within 0.002 wherever they are below 10; with the default header, which
     follows ISCWSA's Rev 4 example calculator, to within 0.01. Its sidetrack
     (offset 10) takes ``first_station_allowance="uncorrelated"`` and is

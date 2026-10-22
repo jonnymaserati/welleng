@@ -587,9 +587,11 @@ class SurveyHeader:
 
             The covariances listed in that clearance set were generated with
             the allowance applied to Rev 4 and the surface position exact:
-            ``first_station_allowance=True`` with ``tie_on=True`` reproduces
-            them within 0.15 mm on ten of its twelve wells, and its separation
-            factors within 0.002 wherever they are below 10.
+            ``first_station_allowance=True`` with ``tie_on=True``, and each
+            well's grid convergence at its own slot (ED50 / UTM zone 31N, as
+            the set states it), reproduces them within 0.15 mm on eleven of its
+            twelve wells, and its separation factors within 0.002 wherever they
+            are below 10.
 
             ``"uncorrelated"``: a tie-on station surveyed by another run, such
             as a sidetrack's kick-off on its parent. The first station's own
