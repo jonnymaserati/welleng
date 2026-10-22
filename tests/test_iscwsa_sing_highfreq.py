@@ -244,7 +244,7 @@ def test_abxy_ti2_sing_structure(model):
     exp_eE = np.zeros_like(md)
     exp_esE = np.zeros_like(md)
     exp_eE[1:-1] = c * (md[2:] - md[:-2]) / 2
-    exp_esE[1:-1] = c * (md[1:-1] - md[:-2]) / 2
+    exp_esE[1:] = c * (md[1:] - md[:-1]) / 2       # the last station's too
     if not rev4:                                   # first-station overrides
         exp_eE[1] = c * (md[2] + md[1] - 2 * md[0]) / 2
         exp_esE[1] = c * (md[1] - md[0])

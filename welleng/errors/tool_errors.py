@@ -1720,6 +1720,11 @@ def ABIXY_TI2(
                 / error.survey.header.G
             )
         )
+        # the last station's own term is the leg into it, as at every other
+        # station; the padding row above left it zero
+        d_last = error.survey.md[-1] - error.survey.md[-2]
+        azi = error.survey_rad[-1, 2]
+        e_NEV_star_sing[-1] = np.array([-sin(azi), cos(azi), 0.0]) * 0.5 * d_last * mag / error.survey.header.G
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(
@@ -1806,6 +1811,11 @@ def ABXY_TI2(
                     / error.survey.header.G
                 )
             )
+        # the last station's own term is the leg into it, as at every other
+        # station; the padding row above left it zero
+        d_last = error.survey.md[-1] - error.survey.md[-2]
+        azi = error.survey_rad[-1, 2]
+        e_NEV_star_sing[-1] = np.array([-sin(azi), cos(azi), 0.0]) * 0.5 * d_last * mag / error.survey.header.G
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(
@@ -2077,6 +2087,11 @@ def CNA(
                 np.zeros((1, 3))
             )
         )
+        # the last station's own term is the leg into it, as at every other
+        # station; the padding row above left it zero
+        d_last = error.survey.md[-1] - error.survey.md[-2]
+        azi = getattr(error.survey, f"azi_{error.survey.header.azi_reference}_rad")[-1]
+        e_NEV_star_sing[-1] = np.array([-sin(azi), cos(azi), 0.0]) * 0.5 * d_last * mag
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(
@@ -2513,6 +2528,10 @@ def XYM3(
                 np.zeros((1, 3))
             )
         )
+        # the last station's own term is the leg into it, as at every other
+        # station; the padding row above left it zero
+        d_last = error.survey.md[-1] - error.survey.md[-2]
+        e_NEV_star_sing[-1] = np.array([0.5 * d_last * mag, 0.0, 0.0])
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(
@@ -2636,6 +2655,10 @@ def XYM4(
                 np.zeros((1, 3))
             )
         )
+        # the last station's own term is the leg into it, as at every other
+        # station; the padding row above left it zero
+        d_last = error.survey.md[-1] - error.survey.md[-2]
+        e_NEV_star_sing[-1] = np.array([0.0, 0.5 * d_last * mag, 0.0])
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(
