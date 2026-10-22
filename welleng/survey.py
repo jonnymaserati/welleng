@@ -463,7 +463,7 @@ class SurveyHeader:
         xcl_representation: str = "nev_direct",
         dp_basis: str = "balanced_tangent",
         tie_on: Optional[bool] = None,
-        first_station_allowance: Optional[bool] = None,
+        first_station_allowance: Optional[Union[bool, str]] = None,
         deg: bool = True,
         depth_unit: str = 'meters',
         surface_unit: str = 'meters',
