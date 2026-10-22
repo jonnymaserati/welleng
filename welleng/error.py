@@ -291,7 +291,10 @@ class ErrorModel():
 
         The one decision for the slot allowance (ISCWSA §4.7.1.1): the header's
         ``first_station_allowance`` where it is set, else the model's own rule,
-        a surface root under a Rev 5+ ISCWSA model.
+        a surface root under a Rev 5+ ISCWSA model. Read by ``_drdp``,
+        ``_drdp_min_curve`` and the partial-leg interior covariance; the
+        vertical-hole terms read the header through
+        ``tool_errors._singular_first_station``.
         """
         override = getattr(self.survey.header, 'first_station_allowance', None)
         if override is not None:
@@ -342,6 +345,10 @@ class ErrorModel():
         catch. Note it never fires unless the survey is surface-rooted
         (``md[0] == 0``) anyway -- a tied-on survey (e.g. Volve, md[0] != 0)
         gets no doubling regardless.
+
+        This is the model's own rule only. ``SurveyHeader.first_station_allowance``
+        overrides it where set; :meth:`_resolve_first_station_allowance` is the
+        one place the two are combined.
         """
         if isinstance(error_model, dict):
             meta = error_model.get('metadata', {})
@@ -432,8 +439,13 @@ class ErrorModel():
         attitude is known perfectly and get no doubling. Also excluded: COMPASS
         IPM imports, which carry their own tie-on (``tie_type`` rows) and must
         not have the ISCWSA doubling stacked on top. Gated by
-        :meth:`_wants_surface_tieon` (keyed on model framework +
-        ``revision_number``, not a name-string suffix).
+        :meth:`_resolve_first_station_allowance`: the header's
+        ``first_station_allowance`` where set, else :meth:`_wants_surface_tieon`
+        (keyed on model framework + ``revision_number``, not a name-string
+        suffix) at a surface root. ISCWSA's Rev 4 example calculator applies no
+        allowance; the covariances listed in the ISCWSA standard clearance well
+        set (r4, 2017) were generated with it on Rev 4
+        (``first_station_allowance=True``).
         """
         return e_NEV_star + np.vstack(
             (

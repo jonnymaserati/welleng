@@ -571,13 +571,29 @@ class SurveyHeader:
         first_station_allowance: bool or None (default: None)
             Whether the first station's own measured attitude carries its error
             over the first leg (ISCWSA Error Model Definition §4.7.1.1, the slot
-            allowance: the first leg takes its full error rather than half).
+            allowance): the first leg then takes the whole of that error rather
+            than half, coherently with the later stations of the same survey
+            run. In vertical hole the singular weights of XYM3 and XYM4 give
+            station 1 the whole first leg; elsewhere the first station's
+            inclination and azimuth weights are doubled (§4.7.1.1 eq. 32).
+
             ``None`` applies each model's own rule: Rev 5 and later at a surface
-            root, not Rev 4. ``True`` applies it at the first station whatever
-            the model and whether or not it is a tie-on; ``False`` never. The
-            ISCWSA standard set of wellpaths for evaluating clearance scenarios
-            (r4, May 2017) tabulates Rev 4 covariances with it applied, the
-            sidetrack's at its kick-off too.
+            root, not Rev 4. This reproduces ISCWSA's own example calculators;
+            for Rev 4 it matches the ISCWSA MWD Rev 4 example spreadsheet at
+            every station of the wells of the ISCWSA standard set of well paths
+            for evaluating clearance scenarios (r4, May 2017), to 1e-13 m on
+            eight of its twelve wells. ``True`` applies the allowance at the
+            first station of any survey, including a tie-on; ``False`` never.
+
+            The covariances listed in that clearance set were generated with
+            the allowance applied to Rev 4 and the surface position exact:
+            ``first_station_allowance=True`` with ``tie_on=True`` reproduces
+            them within 0.15 mm on ten of its twelve wells, and its separation
+            factors within 0.002 wherever they are below 10. The set's sidetrack
+            (offset 10) instead adds the kick-off station's own error
+            uncorrelated with the sidetrack's survey (ISCWSA, Current Common
+            Practice in Collision Avoidance Calculations, 2017, §2.8), which
+            this option does not do.
         deg: bool (default: True)
             Indicates whether the survey angles are measured in degrees
             (True) or radians (False).

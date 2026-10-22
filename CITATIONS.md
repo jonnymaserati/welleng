@@ -119,6 +119,10 @@ If your work relies on a specific method, please **also** cite the relevant pape
   (2004). *Prediction of Wellbore Position Accuracy When Surveyed With
   Gyroscopic Tools.* SPE 90408.
   [doi:10.2118/90408-MS](https://doi.org/10.2118/90408-MS)
+- **ISCWSA example calculators** — ISCWSA. *MWD Error Model Example
+  Spreadsheets,* Revision 4 and Revision 5.11 (test wells ISCWSA #1–#3).
+  <https://www.iscwsa.net> (per-source and total covariances; the conformance
+  reference for the Rev 4 and Rev 5.11 models)
 - **Rotating 6-axis MWD** — ISCWSA Rotating Survey Workgroup (2026).
   *Rotating Six-Axis Magnetic Survey Error Model V1* (2026-06-02).
   <https://www.iscwsa.net> (model `ISCWSA Rot 6Axis MWD+SRGM`; published
@@ -158,7 +162,7 @@ If your work relies on a specific method, please **also** cite the relevant pape
   Separation Rule.* SPE Drilling & Completion 34, 01–15. SPE 187073-PA.
   [doi:10.2118/187073-PA](https://doi.org/10.2118/187073-PA)
 - **Mahalanobis collision probability** — Brooks, A. G. (2010). *A New Look at
-  Wellbore-Collision Probability.* SPE Drilling & Completion 25(2), 223–232.
+  Wellbore-Collision Probability.* SPE Drilling & Completion 25(2), 223–229.
   SPE 116155-PA. [doi:10.2118/116155-PA](https://doi.org/10.2118/116155-PA);
   and Brooks, A. G., Wilson, H. (1996). SPE 36863-MS.
   [doi:10.2118/36863-MS](https://doi.org/10.2118/36863-MS)
@@ -170,6 +174,17 @@ If your work relies on a specific method, please **also** cite the relevant pape
   Bang, J. (2017). *Quantification of Wellbore-Collision Probability by Novel
   Analytic Methods.* SPE Drilling & Completion. SPE 184644-PA.
   [doi:10.2118/184644-PA](https://doi.org/10.2118/184644-PA)
+- **Clearance test data** — ISCWSA Collision Avoidance Work Group (2017).
+  *Standard Set of Well Paths for Use in Evaluating Clearance Calculations,*
+  r4, 17 May 2017. <https://www.iscwsa.net> (reference and offset well
+  listings, covariances and separation factors; reproduced by
+  `tests/test_clearance_iscwsa.py` and `tests/test_clearance_set_reproduction.py`)
+- **Common practice** — ISCWSA Collision Avoidance Work Group (2017).
+  *Collision Avoidance Calculations — Current Common Practice,* October 2017.
+  <https://www.iscwsa.net> (§2.8 tie-on uncertainty, §2.9 relative uncertainty)
+- **Side-tracks** — ISCWSA (2022). *Recommendations on Side-track Wellbore
+  Clearance Scans,* rev 1.0. <https://www.iscwsa.net> (§3.2.2 method b,
+  implemented in `welleng.hierarchy.WellNetwork.relative_covariance`)
 
 ### Kick tolerance
 
