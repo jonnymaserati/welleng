@@ -110,10 +110,14 @@ class Clearance:
         design and ensures that the separation rule will prohibit the
         activity before nominal contact between the reference and offset
         wells, even if the position uncertainty is zero.
-    Rr : float
-        The openhole radius of the reference borehole (in meters).
-    Ro : float
-        The openhole radius of the offset borehole (in meters).
+    Rr : float, (n,) array or None
+        The openhole radius of the reference borehole (in meters). The
+        clearance reads the radius from ``reference.radius``; set it there
+        (``Survey(radius=...)``). If given, ``Rr`` must equal that radius at
+        every station, otherwise a ``ValueError`` is raised. Default None.
+    Ro : float, (n,) array or None
+        The openhole radius of the offset borehole (in meters), read from
+        ``offset.radius``, with the same rule as ``Rr``. Default None.
     kop_depth: float
         The kick-off point (measured) depth along the well bore - the
         default value assures that the first survey station is utilized.
@@ -133,8 +137,8 @@ class Clearance:
         k: float = 3.5,
         sigma_pa: float = 0.5,
         Sm: float = 0.3,
-        Rr: float = 0.4572,
-        Ro: float = 0.3048,
+        Rr: float | np.ndarray | None = None,
+        Ro: float | np.ndarray | None = None,
         kop_depth: float = -np.inf,
     ):
         self.reference = reference
@@ -163,18 +167,32 @@ class Clearance:
 
     def _get_radii(self, Rr, Ro):
         """
-        If well bore radius data is provided, use this, otherwise use the
-        defaults values.
+        The radii are the surveys' own (``Survey.radius``). A radius passed
+        here as well is checked against the survey's and refused if it
+        disagrees, rather than silently ignored.
         """
-        if self.ref.radius is not None:
-            self.Rr = self.ref.radius
-        else:
-            self.Rr = np.full(len(self.ref.md), Rr)
+        self.Rr = self._survey_radius(self.ref, Rr, "Rr", "reference")
+        self.Ro = self._survey_radius(self.offset, Ro, "Ro", "offset")
 
-        if self.offset.radius is not None:
-            self.Ro = self.offset.radius
-        else:
-            self.Ro = np.full(len(self.offset.md), Ro)
+    @staticmethod
+    def _survey_radius(survey, given, name, role):
+        radius = np.asarray(survey.radius, dtype=float).reshape(-1)
+        if given is None:
+            return radius
+        try:
+            given = np.broadcast_to(np.asarray(given, dtype=float), radius.shape)
+        except ValueError:
+            raise ValueError(
+                f"{name} must be a single value or one value per {role} "
+                f"survey station."
+            ) from None
+        if not np.array_equal(given, radius):
+            raise ValueError(
+                f"{name} disagrees with the {role} survey's radius, which is "
+                f"the radius the clearance uses. Set the radius on the {role} "
+                f"Survey (radius=) and omit {name}."
+            )
+        return radius
 
     def _get_ref_cov_below_kop(self):
         """
@@ -818,8 +836,6 @@ class IscwsaClearance(Clearance):
                 k=self.k,
                 sigma_pa=self.sigma_pa,
                 Sm=self.Sm,
-                Rr=self.Rr,
-                Ro=self.Ro,
                 kop_depth=self.kop_depth
             )
 
