@@ -326,12 +326,15 @@ def _missing_variable(exc: Exception) -> Optional[str]:
 
 
 def _model_uses_latitude(em) -> bool:
-    """True when any of this tool's weight functions references ``Latitude``."""
+    """True when any of this tool's weight functions references latitude:
+    ``Latitude`` (ISCWSA/OWSG vocabulary), or ``lat`` / ``erot`` (COMPASS IPM
+    vocabulary; ``erot`` is the horizontal earth rate, which carries
+    cos(latitude))."""
     try:
         blob = json.dumps(em)
     except (TypeError, ValueError):
         blob = str(em)
-    return "Latitude" in blob
+    return "Latitude" in blob or re.search(r"\b(lat|erot)\b", blob) is not None
 
 
 def _latitude_rad(survey, em) -> float:
@@ -733,7 +736,12 @@ class ToolError:
             "tvd": bindings["TVD"],
             "gtot": bindings["Gfield"], "mtot": bindings["BField"],
             "dip": bindings["Dip"], "lat": bindings["Latitude"],
-            "erot": earth_rate, "mtf": 1.0,
+            # IPM gyro weights divide by erot where the ISCWSA Definition
+            # divides by the HORIZONTAL earth rate Omega*cos(latitude)
+            # (Definition of the ISCWSA Error Model Rev 5.03, stationary
+            # gyro weighting functions, pp. 65-66); no IPM formula applies
+            # cos(lat) itself, so erot carries it.
+            "erot": earth_rate * np.cos(bindings["Latitude"]), "mtf": 1.0,
         })
         # Named intermediates (COMPASS tie-type 'n' rows), evaluated in
         # sequence order so later ones may reference earlier ones.
