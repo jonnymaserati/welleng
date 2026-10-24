@@ -821,3 +821,19 @@ Parity vs the Powell results: reported SF identical; centre-to-centre distance w
 2.0e-6 m, closest-point md within 1.5e-5 m (the Powell tolerance); the closed-form
 distance is never larger than Powell's. Machine: AMD Ryzen 9 5950X, Python 3.12.3,
 .venv312.
+
+## 2026-10-24 — `MahalanobisClearance` refines along station edges (0.30.0)
+
+Correctness fix, not speed work. The separation factor has a kink at a survey station
+(the covariance's slope changes there) and the minimum can sit on it: on the ISCWSA
+standard set with the Rev 5.11 model (scenario 04) it lies exactly on a reference station,
+and the search across the station stopped 1.6e-5 above it. Each candidate now also gets a
+1-D bounded search along each station edge (one well held at a station, using that
+station's own position and covariance). The least of the searches is kept, so a result
+can only move down.
+
+Cost: one 1-D search per adjacent leg per candidate, on top of the existing search; the
+profile is dominated by `cov_nev_at` inside the narrowphase objective, as before. Results:
+all eleven scenarios within a certified lower bound and the attained value + 1e-6
+(`tests/test_clearance_mahalanobis_certified.py`); scenario 04 moves from 0.4784681 to
+0.4784525; the others move by under 1e-11. Full suite green.

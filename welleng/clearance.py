@@ -1114,7 +1114,10 @@ class MahalanobisClearance(Clearance):
         a heuristic rather than a guarantee.
     tol : float, default 1e-3
         Narrowphase convergence tolerance on the curve parameter (measured
-        depth), m.
+        depth), m. Each candidate is refined across its neighbouring
+        stations and, separately, along each station edge (one well held at
+        a station): the separation factor has a kink at a station, and the
+        minimum can lie on it.
 
     Attributes
     ----------
@@ -1163,6 +1166,14 @@ class MahalanobisClearance(Clearance):
         # stations. Converges to a tolerance (no fixed step); each search is
         # bounded to the candidate's neighbouring segments.
         #
+        # The SF surface is smooth inside each (reference leg, offset leg) cell
+        # but has a kink across a station (the covariance's slope changes
+        # there), and the minimum can sit ON that kink, where a search spanning
+        # it stalls short. So besides the search across the station, each
+        # station edge (one well held at a station, the other free along one
+        # leg) is searched in one dimension and each cell on its own; the
+        # least of them is kept, so adding them can only lower the result.
+        #
         # Candidates = EVERY local minimum of the broadphase profile (each close
         # approach straddles a local minimum, so this catches a sharp crossing
         # whatever its rank) UNION the n_candidates globally-lowest stations
@@ -1176,14 +1187,31 @@ class MahalanobisClearance(Clearance):
         local = set(np.atleast_1d(argrelmin(sf)[0]).tolist())
         local.update(int(x) for x in np.argsort(sf)[:int(min(self._n_candidates, len(sf)))])
         local.update((0, len(sf) - 1))      # endpoints argrelmin cannot flag
+
+        def legs(md, i):
+            # the legs either side of station i (one at an end)
+            return [(md[a], md[a + 1]) for a in (i - 1, i) if 0 <= a < len(md) - 1]
+
         for i in sorted(local):
             j = best_j[i]
+            ref_legs, off_legs = legs(Rmd, i), legs(Omd, j)
             bounds = [(Rmd[max(i - 1, 0)], Rmd[min(i + 1, len(Rmd) - 1)]),
                       (Omd[max(j - 1, 0)], Omd[min(j + 1, len(Omd) - 1)])]
             res = optimize.minimize(objective, x0=[Rmd[i], Omd[j]], method="Nelder-Mead",
-                           bounds=bounds,
-                           options={"xatol": self._tol, "fatol": 1e-7})
-            sf[i] = min(sf[i], float(res.fun))
+                                    bounds=bounds,
+                                    options={"xatol": self._tol, "fatol": 1e-7})
+            best = min(sf[i], float(res.fun))   # across the station, as before
+            for lo, hi in off_legs:             # reference held at station i
+                res = optimize.minimize_scalar(
+                    lambda q: self._sf_point(Rp[i], Rc[i], Rr[i], *self._at(off, q)),
+                    bounds=(lo, hi), method="bounded", options={"xatol": self._tol})
+                best = min(best, float(res.fun))
+            for lo, hi in ref_legs:             # offset held at station j
+                res = optimize.minimize_scalar(
+                    lambda q: self._sf_point(*self._at(ref, q), Op[j], Oc[j], Ro[j]),
+                    bounds=(lo, hi), method="bounded", options={"xatol": self._tol})
+                best = min(best, float(res.fun))
+            sf[i] = best
         return sf
 
 
