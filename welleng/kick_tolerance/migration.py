@@ -1402,8 +1402,7 @@ def _max_influx_circulated(
        capacity discontinuity and fills the tight section to TD -- so ``V*`` may be
        marginally non-conservative near such a breakpoint. The exact/conservative
        value comes from the analytical solver evaluated at the COMPLETE breakpoint
-       set (gas-top- AND gas-bottom-at-boundary + deepest position); see
-       the welleng kick-tolerance design notes (not shipped).
+       set (gas-top- AND gas-bottom-at-boundary + deepest position).
     """
     if temp_profile is None:
         temp_profile = geothermal          # geothermal is the default when supplied

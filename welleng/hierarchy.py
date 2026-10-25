@@ -71,10 +71,18 @@ class DatumRealisation:
     shift : tuple of float, default (0, 0, 0)
         Position shift ``(dN, dE, dV)`` in metres FROM the superseded
         realisation to this one (the original realisation carries zeros).
-    radial_error : float, default 0.0
+    radial_error : float or None, default None
         1-sigma horizontal position uncertainty of THIS realisation, metres.
         A re-survey usually *reduces* this — the new realisation's value
         replaces (not adds to) the old one for absolute-positioning use.
+
+        ``None`` means **NOT ESTABLISHED**, and ``0.0`` means *established as
+        negligible*. They are different claims and only one of them is usually
+        true: a datum whose uncertainty nobody recorded is not a perfectly
+        known datum. Nothing in core consumes this yet, which is exactly why
+        it is worth fixing now — the value becomes load-bearing the moment a
+        relative-covariance path starts adding slot uncertainty, and by then
+        every stored realisation would read as exact.
     supersedes : str or None, default None
         The ``id`` of the realisation this one supersedes; ``None`` for the
         original. Enforced append-only by :meth:`Datum.add_realisation`.
@@ -83,7 +91,7 @@ class DatumRealisation:
     date: Optional[str] = None
     document: Optional[str] = None
     shift: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    radial_error: float = 0.0
+    radial_error: Optional[float] = None
     supersedes: Optional[str] = None
 
 
@@ -100,12 +108,25 @@ class Datum:
     ----------
     name : str
         Human-readable datum name / identifier.
-    elevation : float, default 0.0
+    elevation : float, optional
         Datum elevation, in metres, above mean sea level (or the field
-        reference given by ``reference``).
-    reference : str, default "MSL"
-        The elevation reference frame — one of ``"MSL"``, ``"RKB"``, ``"RT"``,
-        ``"wellhead"``, etc.
+        reference given by ``reference``). ``None`` -- the default -- means
+        NOT RECORDED, and is not the same as zero. Zero is a claim that the
+        datum sits at the reference: offshore that says the rotary table is at
+        sea level, understating every TVDSS by the air gap plus the RT height
+        (commonly 20-45 m). An unrecorded elevation therefore stays ``None``
+        so a consumer has to handle it, rather than reading a fabricated
+        sea-level datum as a measured one.
+    reference : str, optional
+        The elevation reference frame — ``"MSL"``, ``"RKB"``, ``"RT"``,
+        ``"seabed"``, and so on. Free-form by design (field data uses whatever
+        the operator wrote), but :meth:`osdu_reference` maps it onto the OSDU
+        ``VerticalMeasurementType`` vocabulary so the frame is expressible as a
+        code rather than a habit. ``None`` -- the default -- means the frame
+        was not recorded. It is NOT defaulted to ``"MSL"``: that would make an
+        unrecorded frame indistinguishable from a stated one, and would let
+        :meth:`osdu_reference` emit a confident ``MeanSeaLevel`` code derived
+        from nothing.
     realisations : list of DatumRealisation, optional
         The datum's position-survey history, oldest first — an APPEND-ONLY
         document chain (see :class:`DatumRealisation`). Manage it through
@@ -127,9 +148,30 @@ class Datum:
     and mixed-realisation comparisons become detectable instead of silent.
     """
     name: str
-    elevation: float = 0.0                 # above MSL (or the field reference)
-    reference: str = "MSL"                 # MSL | RKB | RT | wellhead | ...
+    elevation: Optional[float] = None      # above MSL; None == NOT RECORDED
+    reference: Optional[str] = None        # see osdu_reference(); None == unrecorded
     realisations: list[DatumRealisation] = field(default_factory=list)
+
+    # -- the reference frame, as a code ------------------------------------- #
+    def osdu_reference(self) -> Optional[str]:
+        """``reference`` as an OSDU ``VerticalMeasurementType`` code, or None.
+
+        A depth datum is the one field that moves EVERY depth in the well if it
+        is wrong, and it was carried here as a free string whose vocabulary
+        lived in a trailing comment. This maps it onto the published list
+        (``RotaryTable``, ``KellyBushing``, ``MeanSeaLevel``, ``DrillFloor``,
+        ``Seafloor``, …).
+
+        ``None`` means the string did not resolve confidently -- which is the
+        honest answer for a bare ``"wellhead"``, since OSDU distinguishes the
+        casing-head, tubing-head and top/bottom flanges and the input does not.
+        It is also the answer when no frame was recorded at all.
+        The stored ``reference`` is never rewritten.
+        """
+        if self.reference is None:
+            return None
+        from .osdu_ref import resolve       # lazy: keeps import light
+        return resolve("VerticalMeasurementType", self.reference)
 
     # -- the document chain ------------------------------------------------- #
     def add_realisation(self, realisation: DatumRealisation) -> DatumRealisation:
@@ -302,7 +344,7 @@ class Well(_Node):
         The owning :class:`Site` (inherited from :class:`_Node`).
     slot : tuple of float or None, default None
         Slot offset ``(ns, ew)`` from the site origin, in metres.
-    slot_radial_error : float, default 0.0
+    slot_radial_error : float or None, default None
         Radial (1-sigma) slot-position uncertainty, in metres.
     wellhead_depth : float or None, default None
         Wellhead depth, in metres.
@@ -317,7 +359,9 @@ class Well(_Node):
     convergence cancels (see :class:`Site`).
     """
     slot: Optional[tuple[float, float]] = None   # (ns, ew) offset from site origin
-    slot_radial_error: float = 0.0               # slot-position uncertainty
+    #: 1-sigma slot-position uncertainty, metres. ``None`` = NOT ESTABLISHED;
+    #: ``0.0`` = established as negligible. See DatumRealisation.radial_error.
+    slot_radial_error: Optional[float] = None
     wellhead_depth: Optional[float] = None
     datum: Optional[Datum] = None                # per-well RKB/rotary datum
 
@@ -709,6 +753,15 @@ class WellNetwork:
             First wellbore node identifier.
         b : str
             Second wellbore node identifier.
+        md_a, md_b : float, optional
+            Measured depth in metres of the compared point on each wellbore;
+            the nearest station is used, TD when ``None``.
+        error_model : str
+            Error model used for a survey that carries none.
+        share_mode : {None, 'all_independent', 'globals_shared', \
+'globals_and_systematic_shared'}, optional
+            Which error sources the divergent branches share below the
+            side-track point (see Notes); ``None`` treats them as independent.
 
         Returns
         -------
@@ -761,15 +814,16 @@ class WellNetwork:
         full-from-surface (as EDM definitive surveys are), so they agree over
         the shared trunk.
 
-        Implemented is the trunk cancellation (the dominant effect).
-        **Deferred:** the source-context cross-term
-        ``- 2 * Cov_shared_source`` between the *divergent* branches (same tool
-        run / geomag date / datum — the RP's same-job / different-job
-        partial-correlation table). Without it two
-        same-job laterals are treated as independent below the kickoff, which is
-        slightly *conservative* (over-states relative uncertainty) — the safe
-        direction. Add it with the per-term systematic / random classification
-        from the error engine.
+        The trunk cancellation is always applied. The source-context cross term
+        between the divergent branches is applied when ``share_mode`` names
+        shared sources: each shared source contributes
+        ``(v_a − v_b)(v_a − v_b)ᵀ``, with ``v`` its signed position-error
+        vector below the side-track point in each branch
+        (:func:`welleng.conditioning.combine_covariances`). That is smaller than
+        the independent sum where the branches weight the source alike and
+        larger where they weight it oppositely, so neither ``share_mode`` is
+        conservative in general. ``None`` or ``'all_independent'`` treats the
+        divergent branches as independent.
         """
         import numpy as np
         # Mixed datum-realisation guard: if both wellbores pin an origin
@@ -802,9 +856,12 @@ class WellNetwork:
             # cancellation), which is conservative (over-states relative).
             import warnings
             warnings.warn(
-                "relative_covariance: divergence (kick-off) MD unavailable; "
-                "returning the naive independent sum (no shared-trunk "
-                "cancellation)", stacklevel=2,
+                f"relative_covariance({a!r}, {b!r}): the divergence "
+                "(kick-off) MD is unavailable, so the shared trunk cannot be "
+                "located and the naive independent sum is returned -- no "
+                "cancellation, which OVER-states the relative uncertainty. "
+                "Set Wellbore.kickoff_md on the divergent wellbore(s) to get "
+                "the cancelling form.", stacklevel=2,
             )
             return C_a + C_b
         # Covariance at the side-track (divergence) point on the shared trunk.
@@ -815,18 +872,30 @@ class WellNetwork:
             # Shared trunk cancels; divergent branches treated as independent.
             return C_a + C_b - 2.0 * C_st
         # Per-term source-context sharing between the DIVERGENT branches (same
-        # tool run / geomag era). Subtract the trunk to get each branch's own
-        # covariance components, then combine via welleng.conditioning under the
-        # requested share_mode (RP same-job/different-job table).
+        # tool run / geomag era): each shared source acts on both branches
+        # through its signed vector below the side-track point, combined by
+        # welleng.conditioning under the requested share_mode (RP
+        # same-job/different-job table).
         from .conditioning import combine_covariances
-        _, Ga, Sa = self._abs_cov_components(self.node(a), md_a, error_model)
-        _, Gb, Sb = self._abs_cov_components(self.node(b), md_b, error_model)
-        _, Gst, Sst = self._abs_cov_components(self.node(a), st_md, error_model)
+        st_wb = self.node(a)
+        vec = {}
+        for kind in ("global", "systematic"):
+            ca, va = self._abs_vecs(wb_a, md_a, error_model, kind)
+            cb, vb = self._abs_vecs(wb_b, md_b, error_model, kind)
+            cs, vs = self._abs_vecs(st_wb, st_md, error_model, kind)
+            codes = [c for c in ca if c in cb and c in cs]
+
+            def pick(cc, v, codes=codes):
+                """The vectors ``v`` (codes ``cc``) of the shared codes, in order."""
+                return np.array([v[cc.index(c)] for c in codes]).reshape(-1, 3)
+            st = pick(cs, vs)
+            vec[kind] = ((pick(ca, va) - st)[None], (pick(cb, vb) - st)[None])
         br_a, br_b = C_a - C_st, C_b - C_st          # divergent-branch totals
         res = combine_covariances(
             br_a[None], br_b[None],
-            cov_global_a=(Ga - Gst)[None], cov_global_b=(Gb - Gst)[None],
-            cov_systematic_a=(Sa - Sst)[None], cov_systematic_b=(Sb - Sst)[None],
+            vec_global_a=vec["global"][0], vec_global_b=vec["global"][1],
+            vec_systematic_a=vec["systematic"][0],
+            vec_systematic_b=vec["systematic"][1],
             share_mode=share_mode,
         )
         return np.asarray(res.cov_combined)[0]
@@ -877,50 +946,26 @@ class WellNetwork:
         idx = int(np.argmin(np.abs(np.asarray(s.md) - md)))   # nearest station
         return cov[idx]
 
-    def _abs_cov_components(self, wb: "Wellbore", md, error_model: str):
-        """Total, global, and systematic NEV covariance components at ``md``.
+    def _abs_vecs(self, wb: "Wellbore", md, error_model: str, propagation: str):
+        """Signed position-error vectors of one propagation's sources at ``md``.
 
-        Returns the three ISCWSA propagation-mode covariance buckets a wellbore
-        exposes (``cov_nev`` total, ``cov_nev_global``, ``cov_nev_systematic``)
-        at the nearest station to ``md`` (or at TD when ``md`` is ``None``),
-        computing them via welleng's ``ErrorModel`` if not cached. Consumed by
-        :meth:`relative_covariance` when a ``share_mode`` folds the divergent
-        branches' shared error sources.
-
-        Parameters
-        ----------
-        wb : Wellbore
-            The wellbore whose survey covariance is wanted.
-        md : float or None
-            Measured depth, in metres; ``None`` selects the last station.
-        error_model : str
-            welleng error-model name used if the survey has no cached error.
-
-        Returns
-        -------
-        tuple of numpy.ndarray
-            ``(total, global, systematic)`` — each a 3x3 NEV covariance in
-            metres squared.
-
-        Raises
-        ------
-        ValueError
-            If ``wb`` has no survey attached.
+        Returns the error-source codes of that propagation and their (k, 3)
+        NEV vectors at one standard deviation, in metres, at the nearest station
+        to ``md`` (TD when ``None``); a source's covariance is ``v vᵀ``. The
+        survey's own error model is used where it has one, else ``error_model``.
         """
         import numpy as np
         from .error import ErrorModel
         s = wb.survey
         if s is None:
             raise ValueError(f"wellbore {wb.id!r} has no survey")
-        tot = getattr(s, "cov_nev", None)
-        glob = getattr(s, "cov_nev_global", None)
-        sys = getattr(s, "cov_nev_systematic", None)
-        if tot is None or glob is None or sys is None:
-            em = ErrorModel(s, error_model=error_model).errors
-            tot, glob, sys = em.cov_nev, em.cov_NEVs_global, em.cov_NEVs_systematic
-        tot, glob, sys = np.asarray(tot), np.asarray(glob), np.asarray(sys)
+        err = getattr(s, "err", None)
+        if err is None:
+            err = ErrorModel(s, error_model=error_model)
         idx = -1 if md is None else int(np.argmin(np.abs(np.asarray(s.md) - md)))
-        return tot[idx], glob[idx], sys[idx]
+        items = [(k, np.asarray(e.sigma_e_NEV, dtype=float)[idx])
+                 for k, e in err.errors.errors.items() if e.propagation == propagation]
+        return [k for k, _ in items], np.array([v for _, v in items]).reshape(-1, 3)
 
     def _sidetrack_md(self, a: str, b: str):
         """Return the deepest common measured depth of two wellbores.
@@ -1047,7 +1092,7 @@ class WellNetwork:
         WellNetwork
             The reconstructed network.
         """
-        from .survey import Survey, SurveyHeader
+        from .survey import Survey
         net = cls()
         raw = {d["id"]: d for d in data["nodes"]}
         built: dict[str, _Node] = {}
@@ -1069,7 +1114,7 @@ class WellNetwork:
                 dm = d.get("datum")
                 n = Well(id=d["id"], name=d["name"], parent=parent,
                          slot=tuple(d["slot"]) if d.get("slot") else None,
-                         slot_radial_error=d.get("slot_radial_error", 0.0),
+                         slot_radial_error=d.get("slot_radial_error"),
                          wellhead_depth=d.get("wellhead_depth"),
                          datum=_datum_from_dict(dm))
             elif kind == "Wellbore":
@@ -1079,7 +1124,7 @@ class WellNetwork:
                     survey = Survey(
                         md=sv["md"], inc=sv["inc"], azi=sv["azi"],
                         deg=sv.get("deg", False),
-                        header=(SurveyHeader(**sv["header"])
+                        header=(_survey_header_from_dict(sv["header"])
                                 if sv.get("header") else None),
                                     start_nev=sv.get("start_nev", [0., 0., 0.]),
                                     error_model=sv.get("error_model"))
@@ -1283,7 +1328,11 @@ def network_from_edm(reader, *, surveys: bool = False) -> WellNetwork:
             elevation = _f(row_d, "datum_elevation")
             datum = Datum(
                 name=row_d.get("datum_name", row_d.get("datum_id", "datum")),
-                elevation=0.0 if elevation is None else elevation * length,
+                # An absent EDM datum elevation stays ABSENT. CD_DATUM quotes
+                # elevation above MSL, so the frame is a schema fact here and
+                # is stated; the NUMBER is not, and 0.0 would read as a
+                # measured sea-level datum.
+                elevation=None if elevation is None else elevation * length,
                 reference="MSL",
             )
         wells[wid] = Well(
@@ -1291,7 +1340,10 @@ def network_from_edm(reader, *, surveys: bool = False) -> WellNetwork:
             name=row.get("well_common_name", wid),
             parent=sites.get(row.get("site_id")),
             slot=slot,
-            slot_radial_error=0.0 if radial is None else radial * length,
+            # An absent EDM slot uncertainty stays ABSENT. Converting it to
+            # 0.0 here was the silent step: the export simply did not carry the
+            # value, and a zero says the slot is exactly known.
+            slot_radial_error=None if radial is None else radial * length,
             wellhead_depth=None if wellhead is None else wellhead * length,
             datum=datum,
         )
@@ -1364,17 +1416,37 @@ def _datum_dict(datum: Optional[Datum]) -> Optional[dict]:
     }
 
 
+def _survey_header_from_dict(d: dict):
+    """Rebuild a ``SurveyHeader`` from a serialised one, tolerating extras.
+
+    A header serialises its whole ``__dict__``, so splatting that back into the
+    constructor makes the SERIALISED FORM the constructor signature: any
+    attribute added later -- derived, cached, or a provenance flag -- breaks
+    every round trip of every previously written file. Filtering to the
+    declared parameters is the same rule the NLOG models follow for a payload
+    we do not control: keep what you understand, do not choke on the rest.
+    """
+    import inspect
+
+    from .survey import SurveyHeader
+
+    allowed = set(inspect.signature(SurveyHeader.__init__).parameters) - {"self"}
+    return SurveyHeader(**{k: v for k, v in d.items() if k in allowed})
+
+
 def _datum_from_dict(dm: Optional[dict]) -> Optional[Datum]:
     """Rebuild a :class:`Datum` (+ its realisation chain) from a dict."""
     if not dm:
         return None
-    datum = Datum(name=dm["name"], elevation=dm.get("elevation", 0.0),
-                  reference=dm.get("reference", "MSL"))
+    # No defaults: a round trip through a dict that omits these must not
+    # invent a sea-level datum (see Datum.elevation).
+    datum = Datum(name=dm["name"], elevation=dm.get("elevation"),
+                  reference=dm.get("reference"))
     for r in dm.get("realisations", []):
         datum.add_realisation(DatumRealisation(
             id=r["id"], date=r.get("date"), document=r.get("document"),
             shift=tuple(r.get("shift", (0.0, 0.0, 0.0))),
-            radial_error=r.get("radial_error", 0.0),
+            radial_error=r.get("radial_error"),
             supersedes=r.get("supersedes"),
         ))
     return datum

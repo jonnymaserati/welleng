@@ -167,6 +167,17 @@ class ErrorModel():
             interpreter without any file resolution.
         """
 
+        from .errors.tool_errors import ISCWSA_DEFINITION_CURRENT
+        #: The ISCWSA Error Model Definition revision whose formulas were applied
+        #: (``SurveyHeader.iscwsa_definition``), and whether a later revision
+        #: supersedes it (the current one is ``ISCWSA_DEFINITION_CURRENT``).
+        self.iscwsa_definition = getattr(
+            survey.header, "iscwsa_definition", ISCWSA_DEFINITION_CURRENT
+        )
+        self.iscwsa_definition_superseded = (
+            self.iscwsa_definition != ISCWSA_DEFINITION_CURRENT
+        )
+
         if isinstance(error_model, dict):
             self.error_model = error_model.get(
                 'metadata', {}
@@ -179,6 +190,7 @@ class ErrorModel():
             ), axis=-1)
             self._iscwsa_surface_tieon = self._wants_surface_tieon(error_model)
             self._first_station_is_root = self._resolve_first_station_root()
+            self._first_station_allowance = self._resolve_first_station_allowance()
             self.survey_drdp = self.survey_rad
             self.drdp = self._drdp(self.survey_drdp)
             self.drdp_sing = self._drdp_sing(self.survey_drdp)
@@ -203,6 +215,7 @@ class ErrorModel():
         self.survey = survey
         self._iscwsa_surface_tieon = self._wants_surface_tieon(error_model)
         self._first_station_is_root = self._resolve_first_station_root()
+        self._first_station_allowance = self._resolve_first_station_allowance()
 
         self.survey_rad = np.stack((
             self.survey.md,
@@ -284,6 +297,23 @@ class ErrorModel():
                 "geomagnetic web service."
             )
 
+    def _resolve_first_station_allowance(self):
+        """Whether the first station's attitude error spans the whole first leg.
+
+        The one decision for the slot allowance (ISCWSA §4.7.1.1): the header's
+        ``first_station_allowance`` where it is set, else the model's own rule,
+        a surface root under a Rev 5+ ISCWSA model. Read by ``_drdp``,
+        ``_drdp_min_curve`` and the partial-leg interior covariance; the
+        vertical-hole terms read the header through
+        ``tool_errors._singular_first_station``.
+        """
+        override = getattr(self.survey.header, 'first_station_allowance', None)
+        if override == "uncorrelated":
+            return False      # carried uncorrelated, by ToolError._tie_station_cov
+        if override is not None:
+            return bool(override)
+        return bool(self._first_station_is_root and self._iscwsa_surface_tieon)
+
     def _resolve_first_station_root(self):
         """Whether the first survey station is the well's own root/slot (fresh
         attitude + depth-reference uncertainty seeded there) as opposed to a
@@ -328,6 +358,10 @@ class ErrorModel():
         catch. Note it never fires unless the survey is surface-rooted
         (``md[0] == 0``) anyway -- a tied-on survey (e.g. Volve, md[0] != 0)
         gets no doubling regardless.
+
+        This is the model's own rule only. ``SurveyHeader.first_station_allowance``
+        overrides it where set; :meth:`_resolve_first_station_allowance` is the
+        one place the two are combined.
         """
         if isinstance(error_model, dict):
             meta = error_model.get('metadata', {})
@@ -410,8 +444,7 @@ class ErrorModel():
         MC to close it (that would fake an allowance the physical propagation
         deliberately omits). This is DISTINCT from the non-surface tie-leak
         correction (:meth:`cov_nev_at`, the ``smd[0] != 0.0`` guard), which was a
-        genuine bug. See docs/dev/VALIDATION.md ("first-leg tie-on") and
-        tests/test_iscwsa_surface_tieon.py.
+        genuine bug. See tests/test_iscwsa_surface_tieon.py.
 
         REVISION APPLICABILITY. The star-vector summation (eq. 27) is the general
         model framework -- ALL revisions. The surface slot allowance (the
@@ -419,8 +452,13 @@ class ErrorModel():
         attitude is known perfectly and get no doubling. Also excluded: COMPASS
         IPM imports, which carry their own tie-on (``tie_type`` rows) and must
         not have the ISCWSA doubling stacked on top. Gated by
-        :meth:`_wants_surface_tieon` (keyed on model framework +
-        ``revision_number``, not a name-string suffix).
+        :meth:`_resolve_first_station_allowance`: the header's
+        ``first_station_allowance`` where set, else :meth:`_wants_surface_tieon`
+        (keyed on model framework + ``revision_number``, not a name-string
+        suffix) at a surface root. ISCWSA's Rev 4 example calculator applies no
+        allowance; the covariances listed in the ISCWSA standard clearance well
+        set (r4, 2017) were generated with it on Rev 4
+        (``first_station_allowance=True``).
         """
         return e_NEV_star + np.vstack(
             (
@@ -501,9 +539,15 @@ class ErrorModel():
           the partial-course-length convention (:meth:`_xcl_partial_enev`): NOT
           MC-validated (course length has no independent MC ground truth at a
           fractional point); a STATED convention, station-exact at f=0,1,
-          continuous between, one-oracle with assay. ``xcl_mag`` holds each such
+          continuous between. ``xcl_mag`` holds each such
           term's magnitude, reconstructed from its stored ``e_NEV`` (model-general
           -- reads the sheet value, not the function default).
+        - ``"own_only"`` -- XCLA/XCLH under ``xcl_representation == 'dia'``: an
+          interval angle error acting on its own leg only. Interior is
+          ``cov_NEV[i] + outer(e(q))`` with ``e(q) = f * drk(i->q) . e_DIA[i+1]``
+          (true azimuth, as the term is built), plus ``f**2`` times the
+          lateral-direct part of ``e_NEV[i+1]`` near vertical. Station-exact at
+          f=0,1; a stated convention, not MC-validated.
         - ``"linear"`` -- any other ring-fenced term (e.g. ABXY-TI*S, XYM*E) the
           ``drk * e_DIA`` form cannot reproduce and that is not a course-length
           term: falls back to linear covariance interpolation. Self-protecting
@@ -518,7 +562,13 @@ class ErrorModel():
         vlim = float(getattr(self.survey.header, "vertical_inc_limit", 0.0))
         dmd = md[1:] - md[:-1]
         classes, xcl_mag = {}, {}
+        xcl_dia = getattr(
+            self.survey.header, "xcl_representation", "nev_direct"
+        ) == "dia"
         for name, src in self.errors.errors.items():
+            if name in self._COURSE_LENGTH_TERMS and xcl_dia:
+                classes[name] = "own_only"
+                continue
             if name in self._COURSE_LENGTH_TERMS:
                 classes[name] = "course_length"
                 xcl_mag[name] = self._reconstruct_xcl_mag(
@@ -542,35 +592,6 @@ class ErrorModel():
         self._interior_prep_cache = cached
         return cached
 
-    def _interior_angles(self, i, f):
-        """Interior (inc, azi) at arc-fraction ``f`` on leg ``[i, i+1]``, radians.
-
-        The same minimum-curvature slerp the position interpolation uses,
-        ``sin((1-f)a)/sin(a) t_i + sin(f a)/sin(a) t_{i+1}``.
-        """
-        smd, sinc, sazi = self.survey_rad.T
-        dogleg = float(self.survey.dogleg[i + 1])
-        if dogleg < 1e-9:
-            return sinc[i], sazi[i]
-        vec_i = np.array([
-            np.sin(sinc[i]) * np.cos(sazi[i]),
-            np.sin(sinc[i]) * np.sin(sazi[i]),
-            np.cos(sinc[i]),
-        ])
-        vec_j = np.array([
-            np.sin(sinc[i + 1]) * np.cos(sazi[i + 1]),
-            np.sin(sinc[i + 1]) * np.sin(sazi[i + 1]),
-            np.cos(sinc[i + 1]),
-        ])
-        theta = dogleg * f
-        u = (vec_j - np.cos(dogleg) * vec_i) / np.sin(dogleg)
-        vec_q = np.cos(theta) * vec_i + np.sin(theta) * u
-        vec_q = vec_q / np.linalg.norm(vec_q)
-        return (
-            float(np.arccos(np.clip(vec_q[2], -1.0, 1.0))),
-            float(np.arctan2(vec_q[1], vec_q[0])) % (2 * np.pi),
-        )
-
     def _interior_stacks(self):
         """Per-class source arrays, stacked once per model, for :meth:`cov_nev_at`.
 
@@ -585,8 +606,7 @@ class ErrorModel():
         make the public entry point batched -- ``cov_nev_at`` takes one measured
         depth and returns one (3, 3) -- and there is deliberately no per-leg or
         per-query cache here: everything below is model-invariant, built once and
-        indexed. The batched/vectorised form of the interior covariance is
-        outside this module's scope -- this entry point is scalar by design.
+        indexed.
 
         Returns a dict with, for the ``"standard"`` sources, ``e_DIA`` (S, n, 3),
         ``e_NEV_star`` (S, n, 3), ``sigma_e_NEV`` (S, n, 3) and the boolean
@@ -689,7 +709,7 @@ class ErrorModel():
 
         For an interior point ``q`` at arc-fraction ``f`` on leg ``[i, i+1]``,
         station ``i`` and station ``i+1`` both drive the partial leg (via the
-        min-curve slerp), so the interior propagates BOTH: the own weight
+        minimum-curvature arc), so the interior propagates BOTH: the own weight
         ``drk(i->q)`` (far station) AND station i's out-leg coupling
         ``drkplus1(i->q)`` (near station). This is exact at BOTH ends -- the
         own-only form (drk alone) is exact at f->1 but drops the coupling and
@@ -702,20 +722,22 @@ class ErrorModel():
         - random (two INDEPENDENT measurements -> two outer products):
           ``cov_NEV[i] - outer(e_NEV_star[i]) + outer(g_i) + outer(g_j)`` with
           ``g_i = e_NEV_star[i] + coup + (1-f) qi`` and ``g_j = f qj`` -- the
-          partial q-own term splits (1-f)/f across the two stations (slerp-
-          Jacobian ~ f; exact at both ends, ~slerp tolerance interior -- assay's
-          symbolic Propagator is the exact oracle).
+          partial q-own term splits (1-f)/f across the two stations (the arc
+          tangent's Jacobian ~ f; exact at both ends, to that approximation in
+          the interior).
 
         XCLA/XCLH (the course-length recurrence terms, typically dominant on
         deviated wells) use the partial-course-length convention
         (``cov_NEV[i] + outer(e_NEV(i->q))``, :meth:`_xcl_partial_enev`) -- a
         STATED convention (not MC-validated: course length has no independent MC
-        ground truth at a fractional point), station-exact at f=0,1, one-oracle
-        with the symbolic reference. Any remaining ring-fenced term
-        (:meth:`_interior_prep` class ``"linear"``) uses linear covariance
-        interpolation. Reproduces the
-        stored ``cov_NEV[i+1]`` at ``f -> 1`` to machine precision. See
-        derivation (welleng development notes, not shipped).
+        ground truth at a fractional point), station-exact at f=0,1. With
+        ``xcl_representation == 'dia'`` they are instead interval angle errors
+        acting on their own leg only (:meth:`_interior_prep` class
+        ``"own_only"``), also station-exact at f=0,1 and equal to the
+        course-length form on a hold leg. Any
+        remaining ring-fenced term (:meth:`_interior_prep` class ``"linear"``)
+        uses linear covariance interpolation. Reproduces the
+        stored ``cov_NEV[i+1]`` at ``f -> 1`` to machine precision.
 
         INTERIOR ACCURACY IS GEOMETRY-DEPENDENT — do not read "exact at both
         ends" as "accurate throughout". Both this boundary-anchored form and
@@ -725,7 +747,7 @@ class ErrorModel():
         the ``1/sin(inc)`` azimuth weights are ill-conditioned.
 
         Both columns below are from ONE run against the SAME MC realisation
-        (welleng 0.26.0 and its symbolic reference): 30 m survey 0-3000 m
+        (welleng 0.26.0): 30 m survey 0-3000 m
         building vertical to 60 deg over 300-1800 m, interior point ``f = 0.5``,
         interpolated-position MC at N = 300,000 seed 7, ``dp_basis`` balanced
         tangent, smooth measurement terms only (XCLA/XCLH excluded — an
@@ -749,29 +771,51 @@ class ErrorModel():
         where the number is load-bearing.
 
         (An earlier version of this table shipped in 0.26.0rc9 with a stale
-        continuous column — 9.1 / 1.6 / 0.16 — measured before assay's
-        ``dref`` fix removed a constant VV double-count. It overstated their
+        continuous column — 9.1 / 1.6 / 0.16 — measured before a constant VV
+        double-count was removed from it. It overstated that column's
         error, so the published "~2x closer" UNDER-sold the gap. Withdrawn in
         rc14, replaced here with the provenance above.)
 
         Parameters
         ----------
         md : float
-            Measured depth of the interior point (survey depth units).
+            Measured depth of the interior point (survey depth units), within
+            the survey: ``survey.md[0] <= md <= survey.md[-1]``.
 
         Returns
         -------
         numpy.ndarray
             The (3, 3) NEV covariance at ``md``.
+
+        Raises
+        ------
+        ValueError
+            If ``md`` lies outside the survey. There is no covariance above the
+            first station or beyond the last one to report; extrapolating the
+            partial-leg weights would return a plausible matrix for a depth that
+            was never surveyed.
         """
         smd, sinc, sazi = self.survey_rad.T
+        if not smd[0] <= md <= smd[-1]:
+            raise ValueError(
+                f"md={md} is outside the survey ({smd[0]} to {smd[-1]}); "
+                "cov_nev_at does not extrapolate.")
         n = len(smd)
         i = int(np.searchsorted(smd, md) - 1)
         i = max(0, min(i, n - 2))
         seg = smd[i + 1] - smd[i]
         f = 0.0 if seg == 0.0 else float((md - smd[i]) / seg)
 
-        inc_q, azi_q = self._interior_angles(i, f)
+        # interior attitude from the arc kernel (grid azimuth), turned to this
+        # model's true azimuth by the header's grid convergence -- a rotation
+        # about vertical, which the arc commutes with. Not the true-grid
+        # difference at station i: at a vertical station the grid azimuth is
+        # stored as 0 while the true one keeps its input value. Where the
+        # interior is itself vertical its azimuth is undefined, and the
+        # model's own station azimuth is used, as at the stations.
+        inc_q, azi_q = self.survey._leg_inc_azi(i, md - smd[i])
+        azi_q = (sazi[i] if inc_q == 0.0
+                 else azi_q + self.survey.header.convergence)
 
         Lq = md - smd[i]
         # partial-leg weights [i -> q]: drk (own, far station = q) and drkplus1
@@ -815,10 +859,9 @@ class ErrorModel():
         coup = E_i @ Jp                              # station-i partial coupling
         rand = st["random"]
         # random: two INDEPENDENT measurements -> two outer products. The partial
-        # q-own term splits (1-f)/f between stations i and i+1 (slerp-Jacobian
-        # ~ f; exact at both ends, ~slerp tolerance in the interior -- assay's
-        # symbolic is the exact oracle). Both endpoints recover
-        # cov_NEV[i]/[i+1] exactly. The query-independent
+        # q-own term splits (1-f)/f between stations i and i+1 (arc-tangent
+        # Jacobian ~ f; exact at both ends, approximate in the interior). Both
+        # endpoints recover cov_NEV[i]/[i+1] exactly. The query-independent
         # `cov_NEV - outer(e_NEV_star, e_NEV_star)` part is pre-summed.
         g_i = st["e_NEV_star"][rand, i] + coup[rand] + (1.0 - f) * qi[rand]
         g_j = f * qj[rand]
@@ -839,8 +882,26 @@ class ErrorModel():
                     sinc[i], azt[i], inc_q, azt_q, Lq
                 )
                 cov += src.cov_NEV[i] + np.outer(enq, enq)
+            elif cls == "own_only":
+                tdd, tdi, tda = self._partial_star_drk(
+                    sinc[i], azt[i], inc_q, azt_q, Lq
+                )
+                fdd, fdi, fda = self._partial_star_drk(
+                    sinc[i], azt[i], sinc[i + 1], azt[i + 1], seg
+                )
+                D, I, A = src.e_DIA[i + 1]
+                full = fdd * D + fdi * I + fda * A
+                # e_NEV[i+1] minus its angle part is the lateral-direct floor
+                # (XCLA near vertical); it scales with the course length squared.
+                enq = (f * (tdd * D + tdi * I + tda * A)
+                       + f * f * (src.e_NEV[i + 1] - full))
+                cov += src.cov_NEV[i] + np.outer(enq, enq)
             elif cls == "linear":
                 cov += src.cov_NEV[i] + f * (src.cov_NEV[i + 1] - src.cov_NEV[i])
+        # the first station's own term carried uncorrelated: it acts over the
+        # first half of the first leg and is whole beyond it
+        tie = self.errors.cov_NEV_tie
+        cov += tie * (min(1.0, 2.0 * f) ** 2 if i == 0 else 1.0)
         # A covariance is symmetric; enforce it against floating-point drift from
         # the outer-product sums so downstream (e.g. the Mahalanobis solve) sees
         # a clean symmetric matrix.
@@ -1057,7 +1118,7 @@ class ErrorModel():
         # there, but E/V bite for a deviated slot. Only at a true surface root
         # (md[0] == 0); a below-datum tie-on carries station 0 externally. rev4
         # predates the tie-on.
-        if self._first_station_is_root and self._iscwsa_surface_tieon:
+        if self._first_station_allowance:
             N[0] *= 2
             E[0] *= 2
             V[0] *= 2
@@ -1094,7 +1155,7 @@ class ErrorModel():
         # double the FIRST station's azi column (N,E; azi-V is identically 0).
         # Only at a true surface root (md[0] == 0); a below-datum tie-on carries
         # station 0 externally.
-        if self._first_station_is_root and self._iscwsa_surface_tieon:
+        if self._first_station_allowance:
             N[0] *= 2
             E[0] *= 2
 
@@ -1310,7 +1371,7 @@ class ErrorModel():
         # surface-boundary conventions (identical to _drdp)
         if self._first_station_is_root:
             result[0, 0:3] = [si[0] * ca[0], si[0] * sa[0], ci[0]]
-        if self._first_station_is_root and self._iscwsa_surface_tieon:
+        if self._first_station_allowance:
             result[1, 3:9] *= 2
         return result
 
@@ -1411,7 +1472,7 @@ class ErrorModel():
         # Consequence (documented once in :meth:`_sigma_e_NEV_systematic`): this
         # doubling makes the first leg ~1.5x a bare minimum-curvature MC. That is
         # the mandated slot allowance, NOT a bug -- do not re-weight an MC to it.
-        if self._first_station_is_root and self._iscwsa_surface_tieon:
+        if self._first_station_allowance:
             result[1, 3:9] *= 2
 
         # drkplus1_dDepth: rows 0..n-2 (negated dc)

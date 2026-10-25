@@ -89,30 +89,37 @@ def _bindings_from_survey(survey) -> dict[str, Any]:
         "Dip": float(survey.header.dip),
         "BField": float(survey.header.b_total or 50000.0),
         "Bfield": float(survey.header.b_total or 50000.0),   # casing alias (MFI formulas use Bfield)
-        "EarthRate": 0.262516,            # rad/hr (~ 15.041 deg/hr)
+        "EarthRate": 7.292115e-5 * 3600.0,  # rad/hr; Definition Rev 5.13 s4.3
         "Latitude": np.radians(float(survey.header.latitude or 0.0)),
         "RAD": np.pi / 180.0,             # used in some singularity formulas
     }
 
 
 class _ShimError:
-    """Minimal stand-in to capture the dpde array each legacy weight
-    function would have passed downstream to ``Error._generate_error``.
+    """Stand-in that captures the e_DIA array each legacy weight function
+    passes downstream to ``Error._generate_error``.
+
+    Every other attribute (``survey_rad``, ``drdp_sing``, ``_e_NEV``,
+    ``error_model``, ...) is read from a real ``ErrorModel`` on the same
+    survey, so the weight functions that build a vertical-hole branch run as
+    in production instead of raising here and reading as "no legacy weight
+    function".
     """
-    def __init__(self, survey):
-        self.survey = survey
-        self.survey_rad = np.column_stack(
-            [survey.md, survey.inc_rad, survey.azi_grid_rad]
-        )
+    def __init__(self, survey, model):
+        self._model = model
         self._captured: dict[str, np.ndarray] = {}
 
-    def _generate_error(self, code, e_DIA, propagation, NEV):
+    def __getattr__(self, name):
+        return getattr(self._model, name)
+
+    def _generate_error(self, code, e_DIA, *args, **kwargs):
         self._captured[code] = e_DIA
-        return e_DIA
+        return self._model._generate_error(code, e_DIA, *args, **kwargs)
 
 
 def _legacy_eval_term(term_name: str, legacy_func_name: str, mag_si: float,
-                      prop_mode: str, survey) -> np.ndarray | None:
+                      prop_mode: str, survey, model,
+                      **kwargs) -> np.ndarray | None:
     """Look the legacy weight function up by name and call it.
 
     ``mag_si`` is already scaled to SI base units (the legacy functions
@@ -122,9 +129,9 @@ def _legacy_eval_term(term_name: str, legacy_func_name: str, mag_si: float,
     func = getattr(TE, legacy_func_name, None)
     if func is None:
         return None
-    shim = _ShimError(survey)
+    shim = _ShimError(survey, model)
     try:
-        func(term_name, shim, mag=mag_si, propagation=prop_mode, NEV=True)
+        func(term_name, shim, mag=mag_si, propagation=prop_mode, NEV=True, **kwargs)
     except Exception:
         return None
     return shim._captured.get(term_name)
@@ -171,6 +178,17 @@ def compare_model(json_path: str, survey, *,
         if isinstance(_pv, (int, float)):
             bindings[_pk] = float(_pv)
     n = len(survey.md)
+    from ..error import ErrorModel
+    reference = ErrorModel(survey, error_model="ISCWSA MWD Rev5.11")
+    # Stations where the weight functions are singular (inc below the vertical
+    # limit): the legacy functions zero e_DIA there and substitute in NEV, the
+    # formulas divide by sin(inc). e_DIA is compared at every other station.
+    regular = np.asarray(survey.inc_rad) >= survey.header.vertical_inc_limit
+
+    # The XCL weight functions take the model's tortuosity as a keyword.
+    legacy_kwargs = (
+        {"tortuosity": bindings["XCLTortuosity"]} if "XCLTortuosity" in bindings else {}
+    )
 
     results: list[TermResult] = []
     for term in model["terms"]:
@@ -198,7 +216,10 @@ def compare_model(json_path: str, survey, *,
             ))
             continue
 
-        legacy_eDIA = _legacy_eval_term(name, legacy_fn_name, mag_si, prop_mode, survey)
+        legacy_eDIA = _legacy_eval_term(
+            name, legacy_fn_name, mag_si, prop_mode, survey, reference,
+            **legacy_kwargs,
+        )
         if legacy_eDIA is None:
             results.append(TermResult(
                 name=name, legacy_function=legacy_fn_name,
@@ -208,8 +229,8 @@ def compare_model(json_path: str, survey, *,
             ))
             continue
 
-        diff = np.abs(legacy_eDIA - interp_eDIA)
-        denom = np.maximum(np.abs(legacy_eDIA), 1e-30)
+        diff = np.abs(legacy_eDIA - interp_eDIA)[regular]
+        denom = np.maximum(np.abs(legacy_eDIA[regular]), 1e-30)
         rel = diff / denom
         results.append(TermResult(
             name=name, legacy_function=legacy_fn_name,

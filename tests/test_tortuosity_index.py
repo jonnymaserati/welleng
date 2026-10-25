@@ -10,7 +10,7 @@ References
 The published method gives no raw survey data (proprietary wells), so these
 tests validate against (a) analytic closed forms, (b) dimensional / qualitative
 invariants, and (c) regression anchors re-baselined against the current
-implementation. See docs/dev/VALIDATION.md.
+implementation.
 """
 import numpy as np
 import welleng as we

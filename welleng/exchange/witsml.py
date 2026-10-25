@@ -112,6 +112,15 @@ class LogInfo:
     mnemonics: Tuple[str, ...]
     null_value: float
     member: str = field(repr=False)
+    """⚠️ The archive path of this log's XML member. **NOT AN IDENTITY.**
+
+    It is a SiteCom storage path, and its segments are not object numbers: a
+    regex on it matched two different wellbores on one Volve well, silently
+    blending their channels. Select on :attr:`wellbore` (from the log's own
+    ``<nameWellbore>``) or use ``WITSMLReader.find(..., wellbore=...)``. This
+    field is for reading the member back, and for nothing else.
+    """
+
     _reader: "WITSMLReader" = field(repr=False, default=None)
 
     @property
@@ -145,8 +154,7 @@ class TubularComponent:
     a wrong value moves a drag-free hookload row by ~120 kN. Verify against the
     OD/ID geometry (weight must sit between the annulus steel and a solid bar of
     the OD, +5-15% tool-joint) before trusting it -- that credibility check is
-    the consumer's (readers-vs-logic), not this raw reader's. See
-    ``docs/dev/WITSML_SCHEMA_MAP.md``.
+    the consumer's (readers-vs-logic), not this raw reader's.
     """
 
     sequence: int
@@ -322,14 +330,46 @@ class WITSMLReader:
         return sorted({li.well for li in self.logs if li.well})
 
     def find(
-        self, mnemonic: str, well: Optional[str] = None
+        self,
+        mnemonic: str,
+        well: Optional[str] = None,
+        wellbore: Optional[str] = None,
     ) -> List[LogInfo]:
-        """Logs carrying ``mnemonic`` (case-sensitive), optionally in one well."""
+        """Logs carrying ``mnemonic`` (case-sensitive), optionally narrowed.
+
+        ⚠️ **Filter by ``wellbore``, never by a path regex on**
+        :attr:`LogInfo.member`. A consumer selected logs with a member-path
+        pattern -- the obvious thing to do, because in a zip the path is what
+        you can see -- and one pattern matched **two different wellbores**,
+        because the segment it keyed on is a SiteCom path element and not a
+        wellbore number. The channels split totally along that seam: some
+        mnemonics came only from one wellbore, others only from the other, and
+        hookload was a blend of both. Nothing errored, the arrays were full and
+        the counts looked healthy.
+
+        ``wellbore`` matches :attr:`LogInfo.wellbore`, which comes from the
+        log's own ``<nameWellbore>`` and IS the identity.
+        """
         out = []
         for li in self.logs:
-            if mnemonic in li.mnemonics and (well is None or li.well == well):
-                out.append(li)
+            if mnemonic not in li.mnemonics:
+                continue
+            if well is not None and li.well != well:
+                continue
+            if wellbore is not None and li.wellbore != wellbore:
+                continue
+            out.append(li)
         return out
+
+    @property
+    def wellbores(self) -> List[str]:
+        """Every distinct wellbore name in this source, sorted.
+
+        Here so a caller can SEE how many wellbores a selection spans before
+        trusting it -- the defect above was invisible precisely because nobody
+        could easily ask.
+        """
+        return sorted({li.wellbore for li in self.logs if li.wellbore})
 
     # -- data parse (on demand) ----------------------------------------------
     def _read_curves(

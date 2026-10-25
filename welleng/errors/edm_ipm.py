@@ -35,8 +35,8 @@ COMPASS IPM conventions (COMPASS 5000 manual, ch. 3 "Survey Tool Editor"):
   (magnetic azimuth), ``azt`` (true), ``azi`` (grid), ``tmd`` (measured
   depth), ``dmd`` (course length to the previous station), ``tvd``,
   ``gtot`` (total gravity), ``mtot`` (total B-field, nT), ``dip``, ``lat``
-  (latitude), ``erot`` (earth rate), ``mtf`` (metres-to-feet — identity
-  here, welleng evaluates in SI).
+  (latitude), ``erot`` (horizontal earth rate, Omega*cos(lat)), ``mtf``
+  (metres-to-feet — identity here, welleng evaluates in SI).
 
 Intermediate names may contain ``-`` (e.g. ``ngxy-b1``), which would parse
 as subtraction — they are mangled to ``_`` in both definitions and
@@ -321,7 +321,6 @@ def parse_edm_ipm(path: str) -> EDMIPM:
 #: vertical term COMPASS applies but does not export in DP_TOOL_TERM (exact source
 #: not established — a wireline/depth-term-substitution hypothesis was tested
 #: against F-12 and did not hold). Applied only via ``compass_gyro_parity=True``.
-#: See docs/dev/EDM_ERROR_MODEL_CONTRACT.md.
 COMPASS_GYRO_TVDSF = 2.73e-4
 
 

@@ -13,7 +13,6 @@ from scipy.spatial import KDTree
 
 from .utils import HLA_to_NEV, get_sigmas
 from .survey import slice_survey, Survey
-from .visual import figure
 
 
 class WellMesh:
@@ -338,6 +337,7 @@ class WellMesh:
         plotly.graph_objects.Figure
             A plotly Figure instance.
         """
+        from .visual import figure      # deferred: see welleng/survey.py
         fig = figure(self, type, **kwargs)
         return fig
 

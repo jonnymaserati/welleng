@@ -7,11 +7,18 @@ import re
 import yaml
 import os
 from collections import OrderedDict
+from dataclasses import dataclass
 from functools import lru_cache
+from typing import List, Optional
 # import imp
 
 # import welleng.error
-from ..utils import NEV_to_HLA
+from ..utils import (
+    NEV_to_HLA,
+    _arc_geometry,
+    _arc_inclination_crossings,
+    _arc_tangent,
+)
 from .interpreter import evaluate_formula
 
 
@@ -243,6 +250,204 @@ TOOL_INDEX = os.path.join(
 
 ACCURACY = 1e-6
 
+# ISCWSA Error Model Definition revisions whose formulas can be applied
+# (SurveyHeader.iscwsa_definition). The last is the current revision and the default.
+ISCWSA_DEFINITIONS = ("5.03", "5.13")
+ISCWSA_DEFINITION_CURRENT = ISCWSA_DEFINITIONS[-1]
+# Misalignment minimum course length where the tool model gives none: "ISCWSA models
+# will default to a value of 10m" (Definition Rev 5.13 s5.1.2).
+MISALIGNMENT_MIN_COURSE_LENGTH_DEFAULT = 10.0
+
+
+def _misalignment_min_course_length(header):
+    """L_min (m) from the tool model header, else the Definition's 10 m default."""
+    value = (header or {}).get("Misalignment Min Course Length")
+    if value is None:
+        return MISALIGNMENT_MIN_COURSE_LENGTH_DEFAULT
+    from ..units import ureg
+    return float(ureg.Quantity(str(value)).to("meter").magnitude)
+
+
+# The OWSG sheets write the XYM3E/XYM4E damping term as this expression, with
+# L_min = 10 m and no interval condition (Definition Rev 5.03's form).
+_SHEET_DAMPING = "Max(1, sqrt(10/(MD-MDPrev)))"
+_DAMPED_FIELDS = (
+    "depth_formula", "inclination_formula", "azimuth_formula",
+    "north_singularity", "east_singularity", "vertical_singularity",
+)
+
+
+def _with_misalignment_damping(term, bindings, error, header):
+    """The term with the sheet's damping expression replaced by M from
+    _misalignment_damping, bound as ``XYMDamping``; other terms unchanged."""
+    if not any(
+        isinstance(term.get(f), str) and _SHEET_DAMPING in term[f]
+        for f in _DAMPED_FIELDS
+    ):
+        return term
+    if "XYMDamping" not in bindings:
+        bindings["XYMDamping"] = _misalignment_damping(error, header)
+    out = dict(term)
+    for f in _DAMPED_FIELDS:
+        if isinstance(out.get(f), str):
+            out[f] = out[f].replace(_SHEET_DAMPING, "XYMDamping")
+    return out
+
+
+def _misalignment_damping(error, header=None):
+    """The damping term M of XYM3E/XYM4E at every station (station 0 has none: 1).
+
+    ISCWSA Error Model Definition s5.1.2 eq. (39), M = max(1, sqrt(L_min / dD))
+    with dD the interval to the previous station. Rev 5.13 (from Rev 5.12) applies it
+    only where 0.1 m < dD < L_min and takes M = 1 otherwise; Rev 5.03 applies it at
+    every interval, so a repeated measured depth has no value there and is refused.
+    """
+    md = np.asarray(error.survey.md, dtype=float)
+    d_md = np.diff(md)
+    l_min = _misalignment_min_course_length(header)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        damping = np.maximum(1.0, np.sqrt(l_min / d_md))
+    if error.survey.header.iscwsa_definition == "5.03":
+        if np.any(d_md <= 0.0):
+            raise ValueError(
+                "a station repeats the previous measured depth; the XYM3E/XYM4E "
+                "damping term of ISCWSA Definition Rev 5.03 has no value there "
+                "(iscwsa_definition)"
+            )
+    else:
+        damping = np.where((d_md > 0.1) & (d_md < l_min), damping, 1.0)
+    return np.concatenate(([1.0], damping))
+
+
+#: Refuse, rather than warn, when a latitude-dependent error model is asked to
+#: compute at the package fallback location.
+#:
+#: Default False ONLY as a migration courtesy: turning it on today raises in
+#: 115 places in this repo's own suite and in every downstream consumer that
+#: builds a gyro survey without a location. That count IS the finding -- it
+#: measures how invisible the substitution has been -- and the refusal is the
+#: correct end state. Set it True in any pipeline whose numbers are acted on.
+STRICT_LOCATION = False
+
+#: Refuse, rather than warn, when a tool-model term cannot be evaluated and
+#: would otherwise contribute ZERO covariance.
+#:
+#: Default False for the same migration reason as ``STRICT_LOCATION``: the
+#: dropped terms are documented ISCWSA-JSON schema gaps, and refusing would
+#: make those models unusable rather than partly-usable. But the fallback is
+#: ANTI-CONSERVATIVE -- see :class:`DroppedTerm`.
+STRICT_TERMS = False
+
+
+@dataclass(frozen=True)
+class DroppedTerm:
+    """A tool-model term that could not be evaluated, and so contributed zero.
+
+    ⚠️ **Zero is the anti-conservative direction for an uncertainty.** A term
+    that contributes nothing is indistinguishable, in the resulting covariance,
+    from a tool that is perfect in that respect -- so the survey's EOU comes
+    out SMALLER than the model specifies, in a quantity that feeds
+    anti-collision.
+
+    This is recorded on the object rather than only warned about because a
+    warning is fired once, at computation time, into whatever filter happened
+    to be installed -- and is gone by the time anyone is handed the result.
+    A consumer that did not see the warning can still ask::
+
+        em = ErrorModel(survey, error_model=...)
+        if em.errors.dropped_terms:
+            ...                     # the EOU is understated; by these terms
+
+    The cause is a documented gap in the ISCWSA JSON schema (cross-station
+    references, per-tool calibration constants), catalogued by
+    ``welleng/errors/conformance.py`` -- not a defect in the survey.
+    """
+
+    code: str  # ISCWSA term code
+    """The term's ISCWSA code, e.g. ``'XYM3E'``."""
+
+    missing: Optional[str]  # unbound variable name; None if not recoverable
+    """The variable the formula referenced and the interpreter could not bind,
+    where that is recoverable from the error. ``None`` means the evaluation
+    failed for some other reason -- see :attr:`reason`, and do not read None
+    as "nothing was missing"."""
+
+    reason: str  # the underlying exception, as text
+    """The underlying exception, as text."""
+
+    def __str__(self) -> str:
+        what = f"missing variable {self.missing!r}" if self.missing else self.reason
+        return f"{self.code} (contributed zero covariance: {what})"
+
+
+def _missing_variable(exc: Exception) -> Optional[str]:
+    """The unbound name from a NameError, or None if it is not one.
+
+    None means NOT RECOVERABLE, never "nothing was missing" -- the caller
+    records the raw reason alongside it.
+    """
+    if isinstance(exc, NameError):
+        m = re.search(r"name '([^']+)' is not defined", str(exc))
+        if m:
+            return m.group(1)
+    return None
+
+
+def _model_uses_latitude(em) -> bool:
+    """True when any of this tool's weight functions references latitude:
+    ``Latitude`` (ISCWSA/OWSG vocabulary), or ``lat`` / ``erot`` (COMPASS IPM
+    vocabulary; ``erot`` is the horizontal earth rate, which carries
+    cos(latitude))."""
+    try:
+        blob = json.dumps(em)
+    except (TypeError, ValueError):
+        blob = str(em)
+    return "Latitude" in blob or re.search(r"\b(lat|erot)\b", blob) is not None
+
+
+def _latitude_rad(survey, em) -> float:
+    """Header latitude in radians -- or a refusal, where it changes the answer.
+
+    ⚠️ **The existing magnetic guard is inverted for exactly this case.**
+    ``ErrorModel._validate_mag_reference`` refuses a MAGNETIC model whose
+    field values came from package defaults, and returns early for a gyro --
+    correct, a gyro needs no magnetic reference. But **a gyro is the model that
+    needs LATITUDE**: the OWSG gyro azimuth terms carry ``1 / Cos(Latitude)``.
+    So the one model family that depends on location was the one family let
+    through, and it computed at the fallback ~51.5 deg N without a word.
+
+    The error is anti-conservative and not small: against the fallback, the
+    term is understated by ~20% at 60 deg N and ~45% at 70 deg N -- ordinary
+    North Sea latitudes, in a model that feeds anti-collision. (Understated-by
+    is ``1 - 1/ratio``, not the ratio: the first draft of this docstring said
+    25% at 60 deg N, which is the RATIO 1.245 misread as a percentage.)
+
+    Refused only for a model that actually references ``Latitude``: the MWD
+    models do not, and raising for them would break every survey that never
+    needed the value. Same rule as the grid-convergence warning -- speak where
+    the absence changes an answer, stay quiet where it cannot.
+    """
+    hdr = survey.header
+    # NOT `latitude is None`: the header SUBSTITUTES a fallback location, so by
+    # the time we see it the value is always a number. `_location_defaulted` is
+    # the only thing that still knows it was invented.
+    if not getattr(hdr, "_location_defaulted", False):
+        return np.radians(float(hdr.latitude))
+    if _model_uses_latitude(em):
+        msg = (
+            "this error model's weight functions depend on Latitude (the gyro "
+            "azimuth terms carry 1/cos(latitude)) and the survey header's "
+            "location came from the package FALLBACK, not from the well. The "
+            "fallback sits at ~51.5 deg N, so a North Sea well at 60 deg N has "
+            "its gyro azimuth term understated by ~20%, and one at 70 deg N by "
+            "~45% -- ANTI-CONSERVATIVE, in a model that feeds anti-collision. "
+            "Set SurveyHeader(latitude=..., longitude=...)."
+        )
+        if STRICT_LOCATION:
+            raise ValueError(msg)
+        warnings.warn(msg, stacklevel=2)
+    return np.radians(float(hdr.latitude))      # unused by this model
+
 
 class ToolError:
     def __init__(
@@ -268,6 +473,11 @@ class ToolError:
 
         self.e = error
         self.errors = {}
+        #: Terms that could not be evaluated and contributed ZERO covariance,
+        #: understating this survey's EOU. Empty is the normal case. See
+        #: :class:`DroppedTerm` -- recorded here because a warning is gone by
+        #: the time anyone is handed the result.
+        self.dropped_terms: List[DroppedTerm] = []
 
         # Resolve the tool model file. Try the legacy YAML location
         # first (welleng/errors/tool_codes/<model>.yaml); if it doesn't
@@ -392,6 +602,10 @@ class ToolError:
                 )
 
         shape = (len(self.e.survey_rad), 3, 3)
+        #: The first station's own attitude error over half its first leg, added
+        #: uncorrelated with the survey's errors beyond the first station
+        #: (``SurveyHeader.first_station_allowance="uncorrelated"``), else zero.
+        self.cov_NEV_tie = self._tie_station_cov(model)
         self.cov_NEVs = np.zeros(shape)
         self.cov_NEVs_random = np.zeros(shape)
         self.cov_NEVs_systematic = np.zeros(shape)
@@ -435,7 +649,48 @@ class ToolError:
                 self.cov_NEVs_within_pad += value.cov_NEV
                 self.cov_DIAs_within_pad += value.cov_DIA
 
+        self.cov_NEVs[1:] += self.cov_NEV_tie
+        self.cov_NEVs_random[1:] += self.cov_NEV_tie
+
         self.cov_HLAs = NEV_to_HLA(self.e.survey_rad, self.cov_NEVs)
+
+    def _tie_station_cov(self, model):
+        """The first station's own attitude error over half its first leg, as an
+        uncorrelated (3, 3) NEV covariance in metres squared; zero unless the
+        header's ``first_station_allowance`` is ``"uncorrelated"``.
+
+        ISCWSA, Current Common Practice in Collision Avoidance Calculations
+        (2017), §2.8: the uncertainty at the tie-on depth of the first downhole
+        station "simply added to downhole survey uncertainty", its correlation
+        "invariably uncorrelated" -- a tie-on station surveyed by another run,
+        such as a sidetrack's kick-off on its parent. Each error source's own
+        term is evaluated by the model at the first station's attitude, over a
+        leg as long as the survey's first leg, through the source's own weights
+        (the vertical-hole ones included); its depth part is excluded, the
+        depth error being carried absolute from the datum.
+        """
+        survey = self.e.survey
+        if getattr(survey.header, 'first_station_allowance', None) != "uncorrelated":
+            return np.zeros((3, 3))
+        from ..survey import Survey
+        import copy
+        md = np.asarray(survey.md, dtype=float)
+        leg = md[1] - md[0]
+        header = copy.copy(survey.header)
+        header.first_station_allowance = None
+        header.tie_on = True
+        aux = Survey(
+            md=md[0] + leg * np.arange(3.0),
+            inc=np.full(3, survey.inc_rad[0]),
+            azi=np.full(3, getattr(survey, f"azi_{survey.header.azi_reference}_rad")[0]),
+            deg=False, header=header, error_model=model,
+        )
+        cov = np.zeros((3, 3))
+        depth = aux.err.drdp[1, 0:3]
+        for err in aux.err.errors.errors.values():
+            p = np.asarray(err.e_NEV_star, dtype=float)[1] - depth * err.e_DIA[1][0]
+            cov += np.outer(p, p)
+        return cov
 
     def _get_the_func_out(self, err):
         if err in self.exceptional_funcs:
@@ -490,7 +745,7 @@ class ToolError:
         # (see _json_to_em_adapter). EarthRate falls back to the standard
         # sidereal value (15.041 deg/hr) used by the gyro-azimuth terms.
         hdr = self.em.get("header", {}) if hasattr(self, "em") else {}
-        earth_rate = float(getattr(survey.header, "earth_rate", None) or 0.262516)
+        earth_rate = float(getattr(survey.header, "earth_rate", None) or 7.292115e-5 * 3600.0)
         nrf = float(
             hdr.get("Noise Reduction Factor")
             if hdr.get("Noise Reduction Factor") is not None
@@ -507,7 +762,7 @@ class ToolError:
             "BField": float(survey.header.b_total or 50000.0),
             "Bfield": float(survey.header.b_total or 50000.0),   # casing alias: MFI formulas use Bfield
             "EarthRate": earth_rate,
-            "Latitude": np.radians(float(survey.header.latitude or 0.0)),
+            "Latitude": _latitude_rad(survey, self.em),
             "NoiseReductionFactor": nrf,
             "RAD": np.pi / 180.0,
             # Canted-accelerometer 180deg tool-rotation switching operator
@@ -549,7 +804,12 @@ class ToolError:
             "tvd": bindings["TVD"],
             "gtot": bindings["Gfield"], "mtot": bindings["BField"],
             "dip": bindings["Dip"], "lat": bindings["Latitude"],
-            "erot": earth_rate, "mtf": 1.0,
+            # IPM gyro weights divide by erot where the ISCWSA Definition
+            # divides by the HORIZONTAL earth rate Omega*cos(latitude)
+            # (Definition of the ISCWSA Error Model Rev 5.03, stationary
+            # gyro weighting functions, pp. 65-66); no IPM formula applies
+            # cos(lat) itself, so erot carries it.
+            "erot": earth_rate * np.cos(bindings["Latitude"]), "mtf": 1.0,
         })
         # Named intermediates (COMPASS tie-type 'n' rows), evaluated in
         # sequence order so later ones may reference earlier ones.
@@ -564,6 +824,7 @@ class ToolError:
         # running random-walk). These cannot be evaluated by a single
         # vectorised call -- evaluate them station-by-station with the
         # static-gyro inclination gate, then return.
+        term = _with_misalignment_damping(term, bindings, self.e, hdr)
         recur = self._recurrence_var(term["azimuth_formula"])
         if recur is not None:
             return self._call_interpreter_recurrence(
@@ -582,17 +843,35 @@ class ToolError:
             # documented schema gaps in the ISCWSA JSON spec; see
             # welleng/errors/conformance.py output for the catalogue.
             #
-            # User-facing behaviour: emit a warning identifying the
-            # missing variable, then contribute zero from this term so
-            # the model as a whole still produces a usable Survey.
+            # User-facing behaviour: RECORD the drop on this object, warn
+            # naming the missing variable, then contribute zero from this term
+            # so the model as a whole still produces a usable Survey.
+            #
+            # ⚠️ Zero is the ANTI-CONSERVATIVE direction: the term contributes
+            # nothing, so the EOU comes out smaller than the model specifies.
+            # The warning alone was not enough -- it fires once, into whatever
+            # filter is installed, and a consumer handed the resulting Survey
+            # later has no way to ask. Hence `self.dropped_terms`.
             import warnings
-            warnings.warn(
-                f"JSON tool model term {code!r} could not be evaluated "
-                f"({exc}). Term contributes zero covariance to this Survey. "
-                f"This is a known ISCWSA-JSON schema gap; see "
-                f"welleng/errors/conformance.py.",
-                RuntimeWarning,
+            missing = _missing_variable(exc)
+            self.dropped_terms.append(
+                DroppedTerm(code=str(code), missing=missing, reason=str(exc))
             )
+            named = (f"it references {missing!r}, which the interpreter cannot "
+                     f"bind" if missing else f"{exc}")
+            msg = (
+                f"JSON tool model term {code!r} could not be evaluated: "
+                f"{named}. The term contributes ZERO covariance, so this "
+                f"survey's uncertainty is UNDERSTATED by whatever that term "
+                f"models -- the anti-conservative direction. Known "
+                f"ISCWSA-JSON schema gap (see welleng/errors/conformance.py); "
+                f"read ErrorModel.errors.dropped_terms to see it after the "
+                f"fact, or set welleng.errors.tool_errors.STRICT_TERMS = True "
+                f"to refuse instead."
+            )
+            if STRICT_TERMS:
+                raise ValueError(msg) from exc
+            warnings.warn(msg, RuntimeWarning)
             d = np.zeros(n)
             i = np.zeros(n)
             a = np.zeros(n)
@@ -751,7 +1030,6 @@ class ToolError:
         segment to bound drift. ``self._min_D is None`` (the default) takes the
         byte-identical validated path.
         """
-        import warnings
 
         var, mode = recur
         formula = term["azimuth_formula"]
@@ -780,15 +1058,18 @@ class ToolError:
         hi = np.inf if hi_deg is None else float(hi_deg)
 
         gate = hdr.get("XY Static Gyro End Inc")
-        if "GXYRunningSpeed" not in bindings or (gate is None and not zoned):
-            warnings.warn(
-                f"continuous-gyro term {code!r} needs 'GXYRunningSpeed' (and, "
-                f"unless inc-zoned, 'XY Static Gyro End Inc') tool parameters "
-                f"(JSON parameters block); missing -> zero covariance.",
-                RuntimeWarning,
+        # An error term that cannot be evaluated is not zero uncertainty: refuse,
+        # naming the tool parameter the term needs.
+        speed = "GZRunningSpeed" if "GZRunningSpeed" in formula else "GXYRunningSpeed"
+        missing = [k for k in (speed,) if k not in bindings]
+        if gate is None and not zoned:
+            missing.append("XY Static Gyro End Inc")
+        if missing:
+            raise ValueError(
+                f"continuous-gyro term {code!r} needs the tool parameter(s) "
+                f"{', '.join(repr(m) for m in missing)}, which the tool model "
+                f"does not give."
             )
-            zeros = np.zeros((n, 3))
-            return self.e._generate_error(code, zeros, propagation, NEV=True)
         gate = float(gate) if gate is not None else -np.inf
 
         # Per-station scalar bindings reused each step (running speed,
@@ -933,20 +1214,17 @@ class ToolError:
         if omega < 1e-9:
             vg = va
         else:
-            so = np.sin(omega)
-
-            def vec(t):
-                return (np.sin((1.0 - t) * omega) * va
-                        + np.sin(t * omega) * vb) / so
-
-            lo_t, hi_t = 0.0, 1.0             # V(t) decreases monotonically
-            for _ in range(60):
-                mt = 0.5 * (lo_t + hi_t)
-                if vec(mt)[2] > target_v:
-                    lo_t = mt
-                else:
-                    hi_t = mt
-            vg = vec(0.5 * (lo_t + hi_t))
+            # closed form (Sawaryn & Thorogood 2005, Eqs. 20-22 + Eq. 1): the
+            # subtended angle where the inclination reaches the gate; the first
+            # crossing from station ``start - 1``. With none in range (the gate
+            # is touched only at an end), take the nearer end.
+            roots = _arc_inclination_crossings(va[2], vb[2], omega, target_v)
+            if roots:
+                d = min(roots)
+            else:
+                d = 0.0 if abs(va[2] - target_v) <= abs(vb[2] - target_v) else omega
+            g = _arc_geometry(va, vb, omega, omega, d)
+            vg = _arc_tangent(va, vb, *g)
         gate_azi = float(np.arctan2(vg[1], vg[0]))
         scal = {k: v for k, v in bindings.items() if np.isscalar(v)}
         scal.update({
@@ -1244,13 +1522,27 @@ class ToolError:
                 return np.zeros(n)
             try:
                 val = evaluate_formula(f, bindings)
-            except Exception:
-                # Defensive fallback: a singular weight whose formula fails to
-                # evaluate (a variable not in scope, a malformed expression)
-                # contributes zero rather than crashing -- the main eval path does
-                # the same. XCLTortuosity and the prev-station vars (MDPrev, ...) are
-                # now bound, so XCL's singular weight evaluates; this only guards a
-                # genuinely unbound/malformed term.
+            except Exception as exc:
+                # A singular weight whose formula fails to evaluate contributes
+                # zero at the vertical stations, as the main evaluation path does,
+                # and is recorded the same way (dropped_terms, warning, or a
+                # refusal under STRICT_TERMS): zero understates the uncertainty.
+                import warnings
+                code = f"{term.get('name')} ({key})"
+                missing = _missing_variable(exc)
+                self.dropped_terms.append(
+                    DroppedTerm(code=code, missing=missing, reason=str(exc))
+                )
+                msg = (
+                    f"vertical-hole weight {code!r} could not be evaluated: "
+                    f"{exc}. It contributes ZERO at the vertical stations, so the "
+                    f"uncertainty there is UNDERSTATED; see "
+                    f"ErrorModel.errors.dropped_terms, or set "
+                    f"welleng.errors.tool_errors.STRICT_TERMS = True to refuse."
+                )
+                if STRICT_TERMS:
+                    raise ValueError(msg) from exc
+                warnings.warn(msg, RuntimeWarning)
                 return np.zeros(n)
             return np.broadcast_to(
                 np.asarray(val, dtype=float), (n,)
@@ -1292,20 +1584,14 @@ class ToolError:
     def _initiate_func_dict(self):
         """Map weight-function name -> implementation.
 
-        Update when error functions are added/removed. A ``# Needs QAQC`` flag marks
-        a function not yet validated. After the 2026-06-29 audit these are all
-        **OWSG-specific** terms, outside the base ISCWSA standard model -- so the
-        ISCWSA standard test wells legitimately do NOT exercise them and there is no
-        in-repo ISCWSA reference to validate against; they would need OWSG
-        (extended-model) reference data:
-          - MDI, MFI, AMID, ABIZ, ASIZ, MSIXY: only in the OWSG ``+AX``/``+IFR``
-            axial-interference-correction models (MWD+IFR1+AX, MWD+SRGM+AX, ...).
-          - CNA, CNI: only in the BLIND/UNKNOWN/FINDS/TREND special models
-            (gyro "Linear Cone").
-          - ASIXY, ABIXY, MBIXY: in no current JSON model at all -- legacy-only.
-        See the welleng error-model engine notes S6. The base-ISCWSA terms that DO have
-        reference data (XYM3E/XYM4E/DBHR) are validated per-source to 5e-5 by
-        tests/test_iscwsa_mwd_error.py and are no longer flagged.
+        Update when error functions are added/removed. Every weight function here
+        that the ISCWSA Error Model Definition Rev 5.13 s11 lists is asserted, station by
+        station, against the Definition's weighting function in
+        tests/test_iscwsa_weights_definition.py, and against the OWSG tool-model formula
+        for every shipped model in tests/test_iscwsa_json_conformance.py. AMID is a
+        historic term (no longer in s11) and is checked against the OWSG formula only.
+        XCLA/XCLH, XYM3L/XYM4L and DBHR are checked per source against the ISCWSA test
+        well data in tests/test_iscwsa_mwd_error.py.
         """
         self.func_dict = {
             'ABXY_TI1': ABXY_TI1,
@@ -1341,16 +1627,16 @@ class ToolError:
             'XCLH': XCLH,
             'XYM3E': XYM3E,  # validated: test_iscwsa_mwd_error (per-source, 5e-5)
             'XYM4E': XYM4E,  # validated: test_iscwsa_mwd_error (per-source, 5e-5)
-            'ASIXY_TI1': ASIXY_TI1,  # Needs QAQC
-            'ASIXY_TI2': ASIXY_TI2,  # Needs QAQC
-            'ASIXY_TI3': ASIXY_TI3,  # Needs QAQC
-            'ABIXY_TI1': ABIXY_TI1,  # Needs QAQC
-            'ABIXY_TI2': ABIXY_TI2,  # Needs QAQC
-            'ABIZ': ABIZ,  # checked: tests/test_abiz_amil_definition.py
-            'ASIZ': ASIZ,  # Needs QAQC
-            'MBIXY_TI1': MBIXY_TI1,  # Needs QAQC
-            'MBIXY_TI2': MBIXY_TI2,  # Needs QAQC
-            'MDI': MDI,  # Needs QAQC
+            'ASIXY_TI1': ASIXY_TI1,
+            'ASIXY_TI2': ASIXY_TI2,
+            'ASIXY_TI3': ASIXY_TI3,
+            'ABIXY_TI1': ABIXY_TI1,
+            'ABIXY_TI2': ABIXY_TI2,
+            'ABIZ': ABIZ,
+            'ASIZ': ASIZ,
+            'MBIXY_TI1': MBIXY_TI1,
+            'MBIXY_TI2': MBIXY_TI2,
+            'MDI': MDI,
             # Gyro-tool weight functions (AXYZ_*, GXY_*) previously lived
             # here as a half-finished first attempt flagged '# Needs QAQC'.
             # Deleted 2026-04-16 in favour of a JSON-schema + interpreter
@@ -1358,14 +1644,14 @@ class ToolError:
             # ISCWSA error-models JSON schema directly. Gyro tools will be
             # added as JSON files driven by that interpreter, not as
             # hand-coded Python weight functions.
-            'MFI': MFI,  # Needs QAQC
-            'MSIXY_TI1': MSIXY_TI1,  # Needs QAQC
-            'MSIXY_TI2': MSIXY_TI2,  # Needs QAQC
-            'MSIXY_TI3': MSIXY_TI3,  # Needs QAQC
+            'MFI': MFI,
+            'MSIXY_TI1': MSIXY_TI1,
+            'MSIXY_TI2': MSIXY_TI2,
+            'MSIXY_TI3': MSIXY_TI3,
             'DBHR': DBHR,  # validated: test_iscwsa_mwd_error (per-source, 5e-5)
-            'AMID': AMID,  # Needs QAQC
-            'CNA': CNA,  # Needs QAQC
-            'CNI': CNI,  # Needs QAQC
+            'AMID': AMID,
+            'CNA': CNA,
+            'CNI': CNI,
         }
 
 
@@ -1482,6 +1768,22 @@ def ABXY_TI1(
     return error._generate_error(code, e_DIA, propagation, NEV)
 
 
+def _singular_first_station(error, default=None):
+    """Whether a vertical-hole (singular) term gives station 1 the whole first leg.
+
+    The header's ``first_station_allowance`` where set, else ``default``, else
+    the ISCWSA workbooks' rule: Rev 5 and later, not Rev 4.
+    """
+    override = getattr(error.survey.header, 'first_station_allowance', None)
+    if override == "uncorrelated":
+        return False
+    if override is not None:
+        return bool(override)
+    if default is not None:
+        return default
+    return error.error_model.lower().split(' ')[-1] != 'rev4'
+
+
 def ABIXY_TI2(
     code, error, mag=0.004, propagation='systematic', NEV=True, **kwargs
 ):
@@ -1568,6 +1870,11 @@ def ABIXY_TI2(
                 / error.survey.header.G
             )
         )
+        # the last station's own term is the leg into it, as at every other
+        # station; the padding row above left it zero
+        d_last = error.survey.md[-1] - error.survey.md[-2]
+        azi = error.survey_rad[-1, 2]
+        e_NEV_star_sing[-1] = np.array([-sin(azi), cos(azi), 0.0]) * 0.5 * d_last * mag / error.survey.header.G
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(
@@ -1616,7 +1923,7 @@ def ABXY_TI2(
                 np.zeros((1, 3))
             )
         )
-        if error.error_model.lower().split(' ')[-1] != 'rev4':
+        if _singular_first_station(error):
             e_NEV_sing[1, 1] = (
                 (
                     error.survey.md[2]
@@ -1645,7 +1952,7 @@ def ABXY_TI2(
                 np.zeros((1, 3))
             )
         )
-        if error.error_model.lower().split(' ')[-1] != 'rev4':
+        if _singular_first_station(error):
             e_NEV_star_sing[1, 1] = (
                 (error.survey.md[1] - error.survey.md[0])
                 * mag
@@ -1654,6 +1961,11 @@ def ABXY_TI2(
                     / error.survey.header.G
                 )
             )
+        # the last station's own term is the leg into it, as at every other
+        # station; the padding row above left it zero
+        d_last = error.survey.md[-1] - error.survey.md[-2]
+        azi = error.survey_rad[-1, 2]
+        e_NEV_star_sing[-1] = np.array([-sin(azi), cos(azi), 0.0]) * 0.5 * d_last * mag / error.survey.header.G
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(
@@ -1925,6 +2237,11 @@ def CNA(
                 np.zeros((1, 3))
             )
         )
+        # the last station's own term is the leg into it, as at every other
+        # station; the padding row above left it zero
+        d_last = error.survey.md[-1] - error.survey.md[-2]
+        azi = getattr(error.survey, f"azi_{error.survey.header.azi_reference}_rad")[-1]
+        e_NEV_star_sing[-1] = np.array([-sin(azi), cos(azi), 0.0]) * 0.5 * d_last * mag
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(
@@ -2305,7 +2622,6 @@ def XYM1(
 def XYM2(
     code, error, mag=0.00175, propagation='systematic', NEV=True, **kwargs
 ):
-    propagation = 'systematic'  # incorrect in the rev5 model tab
     dpde = np.zeros((len(error.survey_rad), 3))
     dpde[:, 2] = -1
     e_DIA = dpde * mag
@@ -2349,6 +2665,12 @@ def XYM3(
                 np.zeros((1, 3))
             )
         )
+        if _singular_first_station(error, default=False):
+            # station 1 takes the whole first leg (ISCWSA §4.7.1.1)
+            e_NEV_sing[1, 0] = (
+                (error.survey.md[2] + error.survey.md[1] - 2 * error.survey.md[0])
+                / 2 * mag
+            )
         e_NEV[sing] = e_NEV_sing[sing]
 
         e_NEV_star = error._e_NEV_star(e_DIA)
@@ -2362,6 +2684,12 @@ def XYM3(
                 np.zeros((1, 3))
             )
         )
+        # the last station's own term is the leg into it, as at every other
+        # station; the padding row above left it zero
+        d_last = error.survey.md[-1] - error.survey.md[-2]
+        e_NEV_star_sing[-1] = np.array([0.5 * d_last * mag, 0.0, 0.0])
+        if _singular_first_station(error, default=False):
+            e_NEV_star_sing[1, 0] = (error.survey.md[1] - error.survey.md[0]) * mag
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(
@@ -2370,19 +2698,7 @@ def XYM3(
 
 
 def XYM3E(code, error, mag=0.00524, propagation='random', NEV=True, **kwargs):
-    coeff = np.ones(len(error.survey.md))
-    coeff[1:-1] = np.amax(np.stack((
-        coeff[1:-1],
-        sqrt(
-            10 / error.drdp_sing['delta_md']
-        )
-    ), axis=-1), axis=-1)
-    coeff[-1] = np.amax(np.stack((
-        coeff[-1],
-        sqrt(
-            10 / (error.survey.md[-1] - error.survey.md[-2])
-        )
-    ), axis=-1), axis=-1)
+    coeff = _misalignment_damping(error, kwargs.get('header'))
 
     dpde = np.zeros((len(error.survey.md), 3))
     # ISCWSA v5.13 §5.1.2 (XYM3E): M.Abs(Cos(I)) * Cos(AzT) -- Abs wraps Cos(I)
@@ -2472,6 +2788,12 @@ def XYM4(
                 np.zeros((1, 3))
             )
         )
+        if _singular_first_station(error, default=False):
+            # station 1 takes the whole first leg (ISCWSA §4.7.1.1)
+            e_NEV_sing[1, 1] = (
+                (error.survey.md[2] + error.survey.md[1] - 2 * error.survey.md[0])
+                / 2 * mag
+            )
         e_NEV[sing] = e_NEV_sing[sing]
 
         e_NEV_star = error._e_NEV_star(e_DIA)
@@ -2485,6 +2807,12 @@ def XYM4(
                 np.zeros((1, 3))
             )
         )
+        # the last station's own term is the leg into it, as at every other
+        # station; the padding row above left it zero
+        d_last = error.survey.md[-1] - error.survey.md[-2]
+        e_NEV_star_sing[-1] = np.array([0.0, 0.5 * d_last * mag, 0.0])
+        if _singular_first_station(error, default=False):
+            e_NEV_star_sing[1, 1] = (error.survey.md[1] - error.survey.md[0]) * mag
         e_NEV_star[sing] = e_NEV_star_sing[sing]
 
         return error._generate_error(
@@ -2493,19 +2821,7 @@ def XYM4(
 
 
 def XYM4E(code, error, mag=0.00524, propagation='random', NEV=True, **kwargs):
-    coeff = np.ones(len(error.survey.md))
-    coeff[1:-1] = np.amax(np.stack((
-        coeff[1:-1],
-        sqrt(
-            10 / error.drdp_sing['delta_md']
-        )
-    ), axis=-1), axis=-1)
-    coeff[-1] = np.amax(np.stack((
-        coeff[-1],
-        sqrt(
-            10 / (error.survey.md[-1] - error.survey.md[-2])
-        )
-    ), axis=-1), axis=-1)
+    coeff = _misalignment_damping(error, kwargs.get('header'))
 
     dpde = np.zeros((len(error.survey.md), 3))
     # ISCWSA v5.13 §5.1.2 (XYM4E): M.Abs(Cos(I)) * Sin(AzT) and
@@ -2760,13 +3076,7 @@ def XCLH(code, error, mag=0.167, propagation='random', NEV=True, **kwargs):
 
 
 def XYM3L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
-    coeff = np.ones(len(error.survey.md) - 1)
-    coeff = np.amax(np.stack((
-        coeff,
-        sqrt(
-            10 / (error.survey.md[1:] - error.survey.md[:-1])
-        )
-    ), axis=-1), axis=-1)
+    coeff = _misalignment_damping(error, kwargs.get('header'))[1:]
 
     # Rev 5.11 XYM3E/XYM3L weights per workbook: ABS(COS(inc)) only, cos(azi)
     # keeps its sign so azimuths beyond 90° flip contribution correctly.
@@ -2863,14 +3173,7 @@ def XYM3L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
 
 
 def XYM4L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
-    propagation = 'random'
-    coeff = np.ones(len(error.survey.md))
-    coeff[1:] = np.amax(np.stack((
-        coeff[1:],
-        sqrt(
-            10 / (error.survey.md[1:] - error.survey.md[:-1])
-        )
-    ), axis=-1), axis=-1)
+    coeff = _misalignment_damping(error, kwargs.get('header'))
 
     # Rev 5.11 XYM4E/XYM4L azi-axis weight per workbook:
     # ABS(COS(inc)) * COS(azi) / SIN(inc) * coeff.

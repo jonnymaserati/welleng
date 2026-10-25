@@ -312,8 +312,8 @@ def test_f14_actual_composed_multi_tool_vs_compass(ipm):
     compared against COMPASS's own composed covariances.
 
     With per-term cross-run realisation sharing and the 'well' bucket
-    composed (both landed after probcol's multi-well lateral-under-run
-    report), the perpendicular-to-heading axes sit within ~1% of COMPASS at
+    composed (both landed after a multi-well lateral under-run was
+    reported), the perpendicular-to-heading axes sit within ~1% of COMPASS at
     TD and NOTHING runs materially under — the residuals are on the
     conservative side (sigma_V up to ~+28% mid-well). Bands assert exactly
     that: no non-conservative under-run, bounded overshoot.
@@ -462,7 +462,7 @@ def test_f15d_ew_high_inc_no_lateral_underrun(ipm):
             f"non-conservative under-run returned (axis {col})"
 
 
-# -- raw DP_TOOL_TERM / CD_SURVEY_PROGRAM surface (welleng-probcol spec) -------
+# -- raw DP_TOOL_TERM / CD_SURVEY_PROGRAM surface -------------------------------
 def test_tool_terms_opt_in_and_shape():
     """tool_terms surfaces the raw DP_TOOL_TERM rows for a survey tool (opt-in),
     sorted by sequence_no, with the term fields a survey-program layer needs."""
@@ -590,3 +590,58 @@ def test_ipm_lenient_skips_malformed_weighting_function():
         model = ipm_to_error_model(tool, strict=False)
     names = [t["name"] for t in model["terms"]]
     assert "good" in names and "typo" not in names
+
+
+def test_ipm_gyro_earth_rate_is_horizontal(ipm):
+    """COMPASS gyro weights divide by ``erot`` where the ISCWSA Definition
+    (Rev 5.03, stationary gyro weighting functions, pp. 65-66) divides by the
+    horizontal earth rate Omega*cos(latitude). Reference: COMPASS's own stored
+    covariances on Volve F-15D, gyro run alone ("Wellbore Surveyor, stat",
+    surface to 1310 m, latitude 58.44 deg). Tolerance: sigma_N and sigma_E
+    within 1% of COMPASS at every station (measured within 0.3%); with the
+    full earth rate sigma_E ran 8% under by 1310 m. sigma_V is not asserted:
+    it carries the documented well-level vertical residual."""
+    from welleng.exchange.edm_stream import EDMReader, FEET_TO_METERS as F
+
+    r = EDMReader(VOLVE)
+    for hid, stations in r._def_stations.items():
+        h = r.headers[hid]
+        wb = r.wellbores.get(h.wellbore_id)
+        if wb and wb.name == "F-15D" and h.phase == "ACTUAL":
+            st = sorted(stations, key=lambda s: s["md"])
+            header = h
+    mag = [m for m in ipm.magnetics
+           if m.get("wellbore_id") == header.wellbore_id][0]
+    md = np.array([s["md"] for s in st]) * F
+    n = int(np.argmin(np.abs(md - 1310.0))) + 1
+    inc = np.array([s["inc"] for s in st])[:n]
+    azi = np.array([s["azi"] for s in st])[:n]
+    cc = np.array([s["cov"] for s in st])[:n] * F ** 2
+
+    sh = we.survey.SurveyHeader(
+        name="F-15D", azi_reference="grid",
+        latitude=58.4416, longitude=1.8875,
+        b_total=float(mag["field_strength"]),
+        dip=float(mag["dip_angle"]),
+        declination=float(mag["declination"]),
+    )
+    sv = we.survey.Survey(md=md[:n], inc=inc, azi=azi, header=sh,
+                          error_model=ipm.error_model("Wellbore Surveyor, stat"),
+                          deg=True)
+    cov = np.asarray(sv.cov_nev)
+    m = np.arange(n) > 0                  # past the first (tie) station
+    ratio_n = np.sqrt(cov[m, 0, 0] / cc[m, 3])
+    ratio_e = np.sqrt(cov[m, 1, 1] / cc[m, 0])
+    assert np.all(np.abs(ratio_n - 1) < 0.01), ratio_n.min()
+    assert np.all(np.abs(ratio_e - 1) < 0.01), ratio_e.min()
+
+
+def test_ipm_gyro_counts_as_latitude_dependent():
+    """An IPM gyro (formulas in ``erot`` / ``lat``) depends on latitude like an
+    OWSG gyro (``Latitude``); an MWD model does not."""
+    from welleng.errors.tool_errors import _model_uses_latitude
+
+    assert _model_uses_latitude({"azimuth_formula": "cos(azt)/erot"})
+    assert _model_uses_latitude({"azimuth_formula": "1/(cos(lat)*cos(inc))"})
+    assert _model_uses_latitude({"azimuth_formula": "1/Cos(Latitude)"})
+    assert not _model_uses_latitude({"azimuth_formula": "latsf*tvd + sin(azm)"})

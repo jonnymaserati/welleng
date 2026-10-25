@@ -121,7 +121,7 @@ def test_surveyheader_user_values_leave_mag_model_none():
 
 def test_bundled_wmm_not_expired():
     # staleness gate: FAIL once the bundled WMM is past its window, so the
-    # 5-yearly coefficient refresh (docs/dev/FUTURE_WORK.md) can't be silently
+    # 5-yearly coefficient refresh can't be silently
     # missed. Deliberately time-aware -- it is validating a real-world validity
     # window, not code behaviour. Out-of-window dates already fail SAFE at
     # runtime (local raises -> BGS fallback); this just forces the refresh.
@@ -132,7 +132,7 @@ def test_bundled_wmm_not_expired():
     now = today.year + (today.timetuple().tm_yday - 1) / 365.25
     assert now <= vt, (
         f"bundled WMM expired (valid to {vt:.0f}); refresh the coefficients "
-        "(WMM2030) -- see docs/dev/FUTURE_WORK.md"
+        "(WMM2030)"
     )
     if vt - now < 0.5:
         warnings.warn(

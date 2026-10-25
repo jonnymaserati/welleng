@@ -86,8 +86,7 @@ class Fluid:
            / alpha_1)``, and the two largely cancel.
 
            The defect is in the depth-averaging, not the data. Measured
-           2026-07-27; unfixed because this module is slated for replacement by
-           the welleng-drilling fluid model.
+           2026-07-27; not yet fixed.
 
         This paper was written in oilfield units, so we'll convert inputs to
         ppg, ft, F and psi.

@@ -13,13 +13,20 @@ import numpy as np
 
 import welleng as we
 
+DECLINATION = 2.1
+# Stations at the weights' feature points: vertical-near and horizontal inclination
+# (cos I = 0), and magnetic azimuth on and either side of each quadrant boundary
+# (sin Am, cos Am = 0), so every sign change and extremum is a station.
+INC = (5.0, 30.0, 60.0, 89.0, 90.0, 91.0, 120.0)
+AM = tuple(q + d for q in (0.0, 90.0, 180.0, 270.0) for d in (-1.0, 0.0, 1.0, 45.0))
+
+
 def _survey(model):
-    n = 300
-    md = np.linspace(0.0, 6000.0, n)
-    inc = np.linspace(5.0, 120.0, n)
-    azi = np.mod(np.linspace(10.0, 10.0 + 3 * 360.0, n), 360.0)
+    inc = np.array([i for i in INC for _ in AM])
+    azi = np.mod(np.array([a for _ in INC for a in AM]) + DECLINATION, 360.0)
+    md = 30.0 * np.arange(len(inc))  # station count only; weights are per station
     header = we.survey.SurveyHeader(
-        name="t", latitude=60.0, b_total=50300.0, dip=72.3, declination=2.1,
+        name="t", latitude=60.0, b_total=50300.0, dip=72.3, declination=DECLINATION,
         convergence=0.0, G=9.80665, azi_reference="true",
     )
     with warnings.catch_warnings():

@@ -4,7 +4,7 @@ The uncertainty surface is approximated by an n_verts polygon. "circumscribed"
 (the default) scales the polygon out by 1/cos(pi/n_verts) so it contains the
 ellipse and never under-represents the uncertainty for the given sigma — the
 safety-conservative choice; "inscribed" puts the vertices on the ellipse and
-under-counts the area between them. See docs/dev and the MTI/anti-collision work.
+under-counts the area between them.
 
 Skipped if the optional mesh dependencies (trimesh + python-fcl) are absent.
 """

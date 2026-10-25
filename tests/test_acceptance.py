@@ -69,7 +69,7 @@ def test_the_verdict_carries_the_action_and_criterion():
 
 
 def test_re_exported_from_clearance_where_consumers_look():
-    # pathfinder searched welleng.clearance for these; the re-export is contract
+    # consumers look in welleng.clearance for these; the re-export is contract
     from welleng.clearance import (  # noqa: F401
         AcceptanceCriteria as AC, classify as clf, SF_CRITICAL as sc,
     )
@@ -79,9 +79,9 @@ def test_re_exported_from_clearance_where_consumers_look():
 
 
 def test_to_dict_is_the_canonical_json_serialisation():
-    """welleng-pathfinder's A1 provenance stamps the criterion so a stored result
-    records what "acceptable" meant when computed. `to_dict` is the blessed form so
-    all four consumers stamp byte-identically instead of each hand-rolling asdict.
+    """A consumer that stamps the criterion on a stored result records what
+    "acceptable" meant when computed. `to_dict` is the blessed form so every
+    consumer stamps byte-identically instead of each hand-rolling asdict.
     """
     import dataclasses
     import json

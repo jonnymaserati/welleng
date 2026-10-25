@@ -14,7 +14,10 @@ from scipy.spatial import KDTree
 from scipy.spatial.distance import cdist
 
 from .mesh import WellMesh, to_trimesh
-from .survey import Survey, _interpolate_survey, _interpolate_pos_nev, slice_survey
+from .survey import (
+    Survey, _interior_cov_nev, _interpolate_pos_nev,
+    slice_survey,
+)
 from .utils import NEV_to_HLA
 
 # Acceptance criteria (SPE-187073 policy layer) live in a focused module;
@@ -73,6 +76,7 @@ def _closest_x_on_arc(P0, t0, t1, delta_md, dogleg, Q, eps=1e-9):
     return theta * R
 
 
+
 class Clearance:
     """
     Initialize a `welleng.clearance.Clearance` object.
@@ -106,10 +110,14 @@ class Clearance:
         design and ensures that the separation rule will prohibit the
         activity before nominal contact between the reference and offset
         wells, even if the position uncertainty is zero.
-    Rr : float
-        The openhole radius of the reference borehole (in meters).
-    Ro : float
-        The openhole radius of the offset borehole (in meters).
+    Rr : float, (n,) array or None
+        The openhole radius of the reference borehole (in meters). The
+        clearance reads the radius from ``reference.radius``; set it there
+        (``Survey(radius=...)``). If given, ``Rr`` must equal that radius at
+        every station, otherwise a ``ValueError`` is raised. Default None.
+    Ro : float, (n,) array or None
+        The openhole radius of the offset borehole (in meters), read from
+        ``offset.radius``, with the same rule as ``Rr``. Default None.
     kop_depth: float
         The kick-off point (measured) depth along the well bore - the
         default value assures that the first survey station is utilized.
@@ -129,8 +137,8 @@ class Clearance:
         k: float = 3.5,
         sigma_pa: float = 0.5,
         Sm: float = 0.3,
-        Rr: float = 0.4572,
-        Ro: float = 0.3048,
+        Rr: float | np.ndarray | None = None,
+        Ro: float | np.ndarray | None = None,
         kop_depth: float = -np.inf,
     ):
         self.reference = reference
@@ -159,18 +167,32 @@ class Clearance:
 
     def _get_radii(self, Rr, Ro):
         """
-        If well bore radius data is provided, use this, otherwise use the
-        defaults values.
+        The radii are the surveys' own (``Survey.radius``). A radius passed
+        here as well is checked against the survey's and refused if it
+        disagrees, rather than silently ignored.
         """
-        if self.ref.radius is not None:
-            self.Rr = self.ref.radius
-        else:
-            self.Rr = np.full(len(self.ref.md), Rr)
+        self.Rr = self._survey_radius(self.ref, Rr, "Rr", "reference")
+        self.Ro = self._survey_radius(self.offset, Ro, "Ro", "offset")
 
-        if self.offset.radius is not None:
-            self.Ro = self.offset.radius
-        else:
-            self.Ro = np.full(len(self.offset.md), Ro)
+    @staticmethod
+    def _survey_radius(survey, given, name, role):
+        radius = np.asarray(survey.radius, dtype=float).reshape(-1)
+        if given is None:
+            return radius
+        try:
+            given = np.broadcast_to(np.asarray(given, dtype=float), radius.shape)
+        except ValueError:
+            raise ValueError(
+                f"{name} must be a single value or one value per {role} "
+                f"survey station."
+            ) from None
+        if not np.array_equal(given, radius):
+            raise ValueError(
+                f"{name} disagrees with the {role} survey's radius, which is "
+                f"the radius the clearance uses. Set the radius on the {role} "
+                f"Survey (radius=) and omit {name}."
+            )
+        return radius
 
     def _get_ref_cov_below_kop(self):
         """
@@ -287,8 +309,8 @@ class Clearance:
     def _at(curve, q):
         """Evaluate the continuous curve at parameter (measured depth) q.
 
-        Position is interpolated by **minimum curvature** (SLERP of the unit
-        tangents, via ``_interpolate_pos_nev``) — the same wellpath the
+        Position is interpolated by **minimum curvature** (the arc kernel,
+        ``MinCurve.interpolate``, via ``_interpolate_pos_nev``) — the same wellpath the
         separation rule uses, so the between-station closest approach follows the
         true arc, not the chord. Covariance is the **arc-faithful**
         ``ErrorModel.cov_nev_at`` when the survey carries an error model (the same
@@ -438,13 +460,40 @@ class Clearance:
 
 class IscwsaClearance(Clearance):
     """
+    The ISCWSA separation factor between a reference and an offset well
+    (Sawaryn et al., 2017, SPE-187073-MS): the centre-to-centre distance less
+    the two radii and the surface margin, over k times the pedal-curve radius
+    of the two wells' covariances summed, with the project-ahead uncertainty.
+    The two covariances are summed as independent, as the rule and the ISCWSA
+    common practice prescribe (Current Common Practice in Collision Avoidance
+    Calculations, 2017, §2.9).
+
+    Reference: the ISCWSA standard set of well paths for evaluating clearance
+    scenarios (r4, 17 May 2017) lists Rev 4 covariances generated with the
+    first station's attitude error over the whole first leg and the surface
+    position exact. With ``SurveyHeader(first_station_allowance=True,
+    tie_on=True)`` on its surface wells, and each well's grid convergence at
+    its own slot as the set states it, the separation factors reproduce to
+    within 0.002 wherever they are below 10; with the default header, which
+    follows ISCWSA's Rev 4 example calculator, to within 0.01. Its sidetrack
+    (offset 10) takes ``first_station_allowance="uncorrelated"`` and is
+    compared with ``kop_depth`` at the kick-off, which re-zeros the reference
+    there: both wells' pedal-curve radii then agree with the set's to its
+    two-decimal rounding. The set computes its factors from those rounded
+    radii, which bounds the agreement where the radii are small.
+
     Parameters:
     -----------
     clearance_args: List
         See 'welleng.clearance.Clearance` for args.
     minimize_sf: bool
-        If `True` (default), then the closest points on the reference well
-        are determined and added to the `ref` object as interpolated stations.
+        If `True` (default), the separation-factor minimum between each
+        reference station that is a local minimum and its neighbours is found
+        (bounded search on each reference leg) and, where it is below the
+        station's value, inserted into `ref` as an interpolated station with
+        its position, attitude and covariance interpolated on the arc
+        (`Survey.interpolate_mds`). The value reported there is the minimum
+        the search found.
     clearance_kwargs: dict
          See 'welleng.clearance.Clearance` for kwargs.
 
@@ -620,19 +669,61 @@ class IscwsaClearance(Clearance):
             self.get_sf_mins()
 
     @staticmethod
-    def _interior_cov(survey, idx, x, mult):
+    def _interior_cov(survey, idx, x):
         """Covariance at an interior point ``x`` along the leg starting at
-        station ``idx`` of ``survey``. Uses the arc-faithful analytical
-        ``ErrorModel.cov_nev_at`` when the survey carries an error model
-        (the ~25%-near-doglegs fix); falls back to linear covariance
-        interpolation (``mult`` = arc fraction) when it does not -- e.g. a
-        KOP-sliced reference or a survey supplied with a bare ``cov_nev``.
+        station ``idx`` of ``survey`` -- the single interior-covariance rule,
+        :func:`welleng.survey._interior_cov_nev` (analytical ``cov_nev_at``
+        with an error model, linear by arc fraction without one).
         """
-        err = getattr(survey, 'err', None)
-        if err is not None:
-            return err.cov_nev_at(survey.md[idx] + x).reshape(3, 3)
-        cov = survey.cov_nev
-        return (cov[idx] + mult * (cov[idx + 1] - cov[idx])).reshape(3, 3)
+        return _interior_cov_nev(survey, idx, x)
+
+    def _offset_point(self, oi, xo, bound):
+        """Position and arc fraction of the point ``xo`` along offset leg
+        ``oi``. A point at the leg's far end is station ``oi + 1`` itself.
+
+        Each leg is anchored on its own first station, so the far end of leg
+        ``oi`` computed along the arc differs from the stored station
+        ``oi + 1`` by the rounding of the supplied positions. Taking the arc
+        end would give that station two positions, and the closest point
+        would jump between them as the reference point moves.
+        """
+        if bound > 0 and xo >= bound * (1.0 - 1e-12):
+            return self.offset_nevs[oi + 1], 1.0
+        return (_interpolate_pos_nev(self.offset, xo, oi),
+                xo / bound if bound > 0 else 0.0)
+
+    def _closest_offset_point(self, p, legs):
+        """Closest point to ``p`` over the offset legs ``legs``, as
+        ``(leg, position, arc fraction, distance, along-leg distance)``.
+
+        A leg whose closest point is clamped to a station it shares with
+        another leg in ``legs`` is not a candidate when that other leg has an
+        interior closest point: the station is also the other leg's end, so
+        on one continuous path that interior point is at least as close. The
+        legs are anchored on their own first stations, so the two copies of a
+        station differ by the supplied positions' rounding, and without this
+        rule the choice could flip to the wrong copy.
+        """
+        cands = []
+        for oi in legs:
+            bound = self.offset.md[oi + 1] - self.offset.md[oi]
+            # analytic closest point on the offset arc (local frame, same as
+            # _get_closest_points)
+            xo = _closest_x_on_arc(
+                self._off_local_pos[oi], self._off_local_tan[oi],
+                self._off_local_tan[oi + 1], bound,
+                self.offset.dogleg[oi + 1], p)
+            pos, t = self._offset_point(oi, xo, bound)
+            station = oi if t == 0.0 else oi + 1 if t == 1.0 else None
+            cands.append((oi, pos, t, float(norm(pos - p)), station,
+                          bound if t == 1.0 else xo))
+        interior = {c[0] for c in cands if c[4] is None}
+        keep = [c for c in cands
+                if c[4] is None or not ({c[4] - 1, c[4]} - {c[0]}) & interior]
+        # on a tie (both legs at their shared station) take the later leg,
+        # where that station is the start and needs no arc
+        best = min(keep or cands, key=lambda c: (c[3], -c[0]))
+        return best[:4] + best[5:]
 
     def _get_sf_min(self, x, i, delta_md):
         # scipy.optimize.minimize passes x as a 1-element array; extract scalar
@@ -647,42 +738,28 @@ class IscwsaClearance(Clearance):
         if x < 0:
             ii = i - 1
             xx = delta_md[0] + x
-            mult = xx / delta_md[0]
         else:
             ii = i
             xx = x
-            mult = xx / delta_md[1]
 
         # Interpolated reference position and covariance — no Survey needed
         ref_pos = _interpolate_pos_nev(self.ref, xx, ii)
-        ref_cov = self._interior_cov(self.ref, ii, xx, mult)
+        ref_cov = self._interior_cov(self.ref, ii, xx)
         ref_r = self.Rr[ii + 1]
 
         # Find closest point on offset in the two intervals around self.idx[i]
         off_idx = self.idx[i]
         n_off = len(self.offset.md)
 
-        best_dist = np.inf
-        best_u = None
-        best_off_cov = None
-        best_off_r = None
-
-        for oi in range(max(0, off_idx - 1), min(off_idx + 1, n_off - 2) + 1):
-            bound = self.offset.md[oi + 1] - self.offset.md[oi]
-            # analytic closest point on the offset arc to ref_pos (local frame,
-            # same as _get_closest_points) -- the true minimum, was scipy Powell.
-            xo = _closest_x_on_arc(
-                self._off_local_pos[oi], self._off_local_tan[oi],
-                self._off_local_tan[oi + 1], bound,
-                self.offset.dogleg[oi + 1], ref_pos)
-            off_pos = _interpolate_pos_nev(self.offset, xo, oi)
-            res_fun = float(norm(off_pos - ref_pos))
-            if res_fun < best_dist:
-                best_dist = res_fun
-                t_mult = xo / bound if bound > 0 else 0.0
-                best_u = off_pos - ref_pos
-                best_off_cov = self._interior_cov(self.offset, oi, xo, t_mult)
-                best_off_r = self.Ro[oi] + t_mult * (self.Ro[oi + 1] - self.Ro[oi])
+        legs = range(max(0, off_idx - 1), min(off_idx + 1, n_off - 2) + 1)
+        oi, off_pos, t_mult, best_dist, _ = self._closest_offset_point(
+            ref_pos, legs)
+        best_u = off_pos - ref_pos
+        # the pedal path's own offset covariance (linear, sidetrack-corrected
+        # when present), so the value minimised here is the value reported
+        # after insertion
+        best_off_cov = self._interpolate_covs(oi + 1, t_mult)[1]
+        best_off_r = self.Ro[oi] + t_mult * (self.Ro[oi + 1] - self.Ro[oi])
 
         dist = best_dist
         if dist < 1e-10:
@@ -693,8 +770,39 @@ class IscwsaClearance(Clearance):
         off_pcr = np.sqrt(max(0.0, float(u @ best_off_cov @ u)))
         sigma_s = np.sqrt(ref_pcr ** 2 + off_pcr ** 2)
         eou = self.k * np.sqrt(sigma_s ** 2 + self.sigma_pa ** 2)
-        # Sm=0.0 matches the original (using Sm=0 for min-finding)
-        return float((dist - ref_r - best_off_r) / eou)
+        # the pedal separation factor, Sm included: the minimum found here is
+        # the minimum of the value reported
+        return float((dist - ref_r - best_off_r - self.Sm) / eou)
+
+    def _interval_minimum(self, i, delta_md):
+        """The separation-factor minimum between the stations either side of
+        station ``i``, or ``None`` when station ``i`` is itself the minimum.
+
+        Bounded Brent on each leg. The separation factor has a kink at the
+        station, where the reference leg changes, so each leg is searched on
+        its own. A point is returned only if it is strictly below the
+        station's own value -- which also keeps a degenerate interval (a
+        sidetrack's kick-off, where the wells share a hole) from producing a
+        point.
+        """
+        lo, hi = -float(delta_md[0]), float(delta_md[1])
+
+        def f(x):
+            """Separation factor at MD offset ``x`` (m) from station ``i``."""
+            return self._get_sf_min(np.array([x]), i, delta_md)
+
+        best = None
+        for a, b in ((lo, 0.0), (0.0, hi)):
+            if b <= a:
+                continue
+            res = optimize.minimize_scalar(f, bounds=(a, b), method="bounded",
+                                           options={"xatol": 1e-6})
+            if best is None or res.fun < best[1]:
+                best = (float(res.x), float(res.fun))
+        station = float(np.ravel(self.sf)[i])
+        if best is None or not best[1] < station or best[0] in (0.0, lo, hi):
+            return None
+        return best
 
     def get_sf_mins(self):
         """
@@ -712,84 +820,22 @@ class IscwsaClearance(Clearance):
 
         for minima in minimas[0].tolist():
             delta_md = self.ref.delta_md[minima: minima + 2]
-            bounds = [[-delta_md[0], delta_md[1]]]
-            # x0 = (np.diff(bounds) / 2)
-            x0 = [0]
-            args = (minima, delta_md)
-            # options = {
-            #     'eps': np.sum(delta_md) / 10
-            # }
-
-            # SLSQP and L-BFGS-B don't work when using neg to pos ranges in
-            # this example, but Powell seems to do the job.
-            result = optimize.minimize(
-                self._get_sf_min,
-                x0,
-                method='Powell',
-                bounds=bounds,
-                args=args,
-            )
-
-            if any((
-                result.x == 0,
-                result.x in delta_md
-            )):
-                continue
-
-            else:
-                sf_interpolated.append((
-                    self.ref.md[minima] + result.x[0], result.fun
-                ))
+            x_min = self._interval_minimum(minima, delta_md)
+            if x_min is not None:
+                sf_interpolated.append((self.ref.md[minima] + x_min[0], x_min[1]))
 
         if bool(sf_interpolated):
-            for md, sf in sf_interpolated:
-                # i = np.searchsorted(self.sf[:, 0], md, side='right')
-                i = np.searchsorted(self.ref.md, md, side='right')
-                self.sf = np.insert(
-                    self.sf, i, np.array([md, sf, 1]), axis=0
-                )
-
-                node = self.ref.interpolate_md(md)
-
-                sh = self.ref.header
-                sh.azi_reference = 'grid'
-
-                survey = Survey(
-                    md=np.insert(
-                        self.ref.md, i, node.md
-                    ),
-                    inc=np.insert(
-                        self.ref.inc_rad, i, node.inc_rad
-                    ),
-                    azi=np.insert(
-                        self.ref.azi_grid_rad, i, node.azi_rad
-                    ),
-                    cov_nev=np.insert(
-                        self.ref.cov_nev, i, node.cov_nev, axis=0
-                    ),
-                    start_nev=self.ref.start_nev,
-                    start_xyz=self.ref.start_xyz,
-                    deg=False,
-                    interpolated=np.insert(
-                        self.ref.interpolated, i, True
-                    ),
-                    radius=np.insert(
-                        self.ref.radius, i, self.ref.radius[i]
-                    ),
-                    header=sh
-                )
-
-                self.ref = survey
-
-                pass
+            # Insert the minima into the reference with the ONE interpolation:
+            # positions, angles, radius, flags and -- the point of it --
+            # covariance from the interior-covariance rule, not zeros.
+            self.ref = self.ref.interpolate_mds(
+                sorted(md for md, _ in sf_interpolated))
 
             clearance_args = (deepcopy(self.ref), self.offset)
             clearance_kwargs = dict(
                 k=self.k,
                 sigma_pa=self.sigma_pa,
                 Sm=self.Sm,
-                Rr=self.Rr,
-                Ro=self.Ro,
                 kop_depth=self.kop_depth
             )
 
@@ -811,11 +857,7 @@ class IscwsaClearance(Clearance):
         points = [
             [
                 c[0],
-                [
-                    c[1].n[1],
-                    c[1].e[1],
-                    c[1].tvd[1]
-                ]
+                list(c[4])
             ]
             for c in self.closest
         ]
@@ -841,8 +883,8 @@ class IscwsaClearance(Clearance):
         # different frame (they coincide only for a default header).
         _oi = np.asarray(self.offset.inc_rad, float)
         _oa = np.asarray(self.offset.azi_grid_rad, float)
-        self._off_local_pos = _op = self.offset_nevs
-        self._off_local_tan = _ot = np.column_stack([
+        self._off_local_pos = self.offset_nevs
+        self._off_local_tan = np.column_stack([
             np.sin(_oi) * np.cos(_oa), np.sin(_oi) * np.sin(_oa), np.cos(_oi)
         ])
 
@@ -855,59 +897,24 @@ class IscwsaClearance(Clearance):
             # search per segment; the min-curvature segment is a planar circular
             # arc, so the closest point is closed-form). `x*` in [0, seg_md],
             # `f*` the achieved centre-to-centre distance.
-            if i > 0:
-                seg_md = self.offset.md[i] - self.offset.md[i - 1]
-                x_1 = _closest_x_on_arc(
-                    _op[i - 1], _ot[i - 1], _ot[i], seg_md,
-                    self.offset.dogleg[i], station)
-                f_1 = float(norm(
-                    _interpolate_pos_nev(self.offset, x_1, i - 1) - station))
-                sigma_new_1 = self._interpolate_covs(i, x_1 / seg_md)
-                valid_1 = True
-            else:
-                valid_1 = False
-
-            if i < len(self.offset_nevs) - 1:
-                seg_md = self.offset.md[i + 1] - self.offset.md[i]
-                x_2 = _closest_x_on_arc(
-                    _op[i], _ot[i], _ot[i + 1], seg_md,
-                    self.offset.dogleg[i + 1], station)
-                f_2 = float(norm(
-                    _interpolate_pos_nev(self.offset, x_2, i) - station))
-                sigma_new_2 = self._interpolate_covs(i + 1, x_2 / seg_md)
-                valid_2 = True
-            else:
-                valid_2 = False
-
-            if valid_1 and valid_2 and f_1 < f_2 or not valid_2:
-                closest.append((
-                    station,
-                    _interpolate_survey(self.offset, x_1, i - 1),
-                    (x_1, f_1), sigma_new_1
-                ))
-            else:
-                closest.append((
-                    station,
-                    _interpolate_survey(self.offset, x_2, i),
-                    (x_2, f_2),
-                    sigma_new_2
-                ))
+            legs = [leg for leg in (i - 1, i)
+                    if 0 <= leg < len(self.offset_nevs) - 1]
+            oi, pos, t_mult, dist, xo = self._closest_offset_point(
+                station, legs)
+            closest.append((
+                station,
+                self.offset.md[oi] + xo,
+                (xo, dist),
+                self._interpolate_covs(oi + 1, t_mult),
+                pos,
+            ))
 
         self.closest = closest
-        md, inc, azi, n, e, tvd, x, y, z,  = np.array([
-            [
-                r[1].md[1],
-                r[1].inc_rad[1],
-                r[1].azi_grid_rad[1],
-                r[1].n[1],
-                r[1].e[1],
-                r[1].tvd[1],
-                r[1].x[1],
-                r[1].y[1],
-                r[1].z[1],
-            ]
-            for r in self.closest
-        ]).T
+        # angles at the closest points from the arc kernel, all at once
+        md = np.array([r[1] for r in self.closest])
+        _, inc, azi = self.offset.interpolate(md, angles=True)
+        n, e, tvd = np.array([r[4] for r in self.closest]).T
+        x, y, z = e, n, tvd
 
         cov_hla = np.array([
             [
@@ -1123,7 +1130,10 @@ class MahalanobisClearance(Clearance):
         a heuristic rather than a guarantee.
     tol : float, default 1e-3
         Narrowphase convergence tolerance on the curve parameter (measured
-        depth), m.
+        depth), m. Each candidate is refined across its neighbouring
+        stations and, separately, along each station edge (one well held at
+        a station): the separation factor has a kink at a station, and the
+        minimum can lie on it.
 
     Attributes
     ----------
@@ -1172,6 +1182,14 @@ class MahalanobisClearance(Clearance):
         # stations. Converges to a tolerance (no fixed step); each search is
         # bounded to the candidate's neighbouring segments.
         #
+        # The SF surface is smooth inside each (reference leg, offset leg) cell
+        # but has a kink across a station (the covariance's slope changes
+        # there), and the minimum can sit ON that kink, where a search spanning
+        # it stalls short. So besides the search across the station, each
+        # station edge (one well held at a station, the other free along one
+        # leg) is searched in one dimension and each cell on its own; the
+        # least of them is kept, so adding them can only lower the result.
+        #
         # Candidates = EVERY local minimum of the broadphase profile (each close
         # approach straddles a local minimum, so this catches a sharp crossing
         # whatever its rank) UNION the n_candidates globally-lowest stations
@@ -1185,14 +1203,31 @@ class MahalanobisClearance(Clearance):
         local = set(np.atleast_1d(argrelmin(sf)[0]).tolist())
         local.update(int(x) for x in np.argsort(sf)[:int(min(self._n_candidates, len(sf)))])
         local.update((0, len(sf) - 1))      # endpoints argrelmin cannot flag
+
+        def legs(md, i):
+            """The legs either side of station ``i`` (one at an end)."""
+            return [(md[a], md[a + 1]) for a in (i - 1, i) if 0 <= a < len(md) - 1]
+
         for i in sorted(local):
             j = best_j[i]
+            ref_legs, off_legs = legs(Rmd, i), legs(Omd, j)
             bounds = [(Rmd[max(i - 1, 0)], Rmd[min(i + 1, len(Rmd) - 1)]),
                       (Omd[max(j - 1, 0)], Omd[min(j + 1, len(Omd) - 1)])]
             res = optimize.minimize(objective, x0=[Rmd[i], Omd[j]], method="Nelder-Mead",
-                           bounds=bounds,
-                           options={"xatol": self._tol, "fatol": 1e-7})
-            sf[i] = min(sf[i], float(res.fun))
+                                    bounds=bounds,
+                                    options={"xatol": self._tol, "fatol": 1e-7})
+            best = min(sf[i], float(res.fun))   # across the station, as before
+            for lo, hi in off_legs:             # reference held at station i
+                res = optimize.minimize_scalar(
+                    lambda q: self._sf_point(Rp[i], Rc[i], Rr[i], *self._at(off, q)),
+                    bounds=(lo, hi), method="bounded", options={"xatol": self._tol})
+                best = min(best, float(res.fun))
+            for lo, hi in ref_legs:             # offset held at station j
+                res = optimize.minimize_scalar(
+                    lambda q: self._sf_point(*self._at(ref, q), Op[j], Oc[j], Ro[j]),
+                    bounds=(lo, hi), method="bounded", options={"xatol": self._tol})
+                best = min(best, float(res.fun))
+            sf[i] = best
         return sf
 
 
@@ -1424,39 +1459,27 @@ class MeshClearance(Clearance):
             # else:
             self.collision.append(collision)
 
-    def _fun(self, x, survey, pos):
-        """
-        Interpolates a point on a well trajectory and returns
-        the distance between the interpolated point and the
-        position provided.
-
-        Uses the lightweight position-only interpolation (no Survey object
-        is constructed) since this is the inner cost function of the
-        closest-point optimisation and only the NEV position is needed.
-        """
-        new_pos = _interpolate_pos_nev(survey, x[0], 0)
-        dist = norm(new_pos - pos, axis=-1)
-
-        return dist
-
     def _get_closest_nev(self, survey, pos):
-        """
-        Using an optimization function to determine the closest
-        point along a well trajectory to the position provided.
-        """
-        bnds = [(0, survey.md[1] - survey.md[0])]
-        res = optimize.minimize(
-            self._fun,
-            bnds[0][1] / 2,
-            # method='SLSQP',
-            method='Powell',
-            bounds=bnds,
-            args=(survey, pos)
-            )
+        """Closest point to ``pos`` on the first leg of ``survey``.
 
-        nev = _interpolate_pos_nev(survey, res.x[0], 0)
-
-        return (nev, res)
+        The leg is a circular arc, so the closest point is closed-form
+        (:func:`_closest_x_on_arc`) rather than searched for. Returns
+        ``(nev, result)``: the point's NEV position and a
+        :class:`scipy.optimize.OptimizeResult` with ``x[0]`` the distance
+        along the leg from its first station and ``fun`` the distance from
+        ``pos``.
+        """
+        inc = np.asarray(survey.inc_rad[:2], float)
+        azi = np.asarray(survey.azi_grid_rad[:2], float)
+        tan = np.column_stack([
+            np.sin(inc) * np.cos(azi), np.sin(inc) * np.sin(azi), np.cos(inc)
+        ])
+        p0 = np.array([survey.n[0], survey.e[0], survey.tvd[0]], float)
+        x = _closest_x_on_arc(p0, tan[0], tan[1], survey.md[1] - survey.md[0],
+                              survey.dogleg[1], pos)
+        nev = _interpolate_pos_nev(survey, x, 0)
+        return nev, optimize.OptimizeResult(
+            x=np.array([x]), fun=float(norm(nev - pos)))
 
 
 def get_ref_sigma(sigma1, sigma2, sigma3, kop_index):

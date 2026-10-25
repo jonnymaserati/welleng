@@ -8,8 +8,8 @@ The equations are scale-free in each sensor (they depend only on ratios), so the
 accelerometer and magnetometer readings may be supplied in any self-consistent
 units (e.g. mG and nT, or m/s^2 and T) -- the result is identical.
 
-Validated against an operator's commercial-vendor survey (raw sensors -> the
-vendor's own computed inc/azi) to 0.005 deg inclination and 0.03 deg azimuth.
+Validated against field survey data (raw sensors vs vendor-computed
+inc/azi) to 0.005 deg inclination and 0.03 deg azimuth.
 """
 from __future__ import annotations
 

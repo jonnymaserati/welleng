@@ -169,37 +169,23 @@ def _reference_and_composed(tie_share_mode):
     return reference, composed
 
 
-def _relative_sigma(a, b, combine_mode):
-    return combine_covariances(
-        a.cov_nev, b.cov_nev,
-        cov_global_a=a.cov_nev_global, cov_global_b=b.cov_nev_global,
-        cov_systematic_a=a.cov_nev_systematic,
-        cov_systematic_b=b.cov_nev_systematic,
-        share_mode=combine_mode,
-    ).sigma_combined
-
-
-def test_share_mode_tie_all_independent_larger_than_globals_shared():
-    """An all_independent tie leaves its post-tie global in the non-cancelling
-    bucket, so the difference against a well sharing the campaign geomag is
-    LARGER than for a globals_shared tie (globals don't cancel)."""
-    ref, gs = _reference_and_composed("globals_shared")
+def test_share_mode_tie_all_independent_keeps_less_in_the_global_bucket():
+    """An all_independent tie moves its post-tie global out of the bucket of the
+    campaign's one geomagnetic realisation."""
+    _, gs = _reference_and_composed("globals_shared")
     _, ai = _reference_and_composed("all_independent")
-    rel_gs = _relative_sigma(ref, gs, "globals_shared")[-1]
-    rel_ai = _relative_sigma(ref, ai, "globals_shared")[-1]
-    assert rel_ai > rel_gs
-    # and the cancellable global bucket is (much) smaller for the independent tie
     assert np.trace(ai.cov_nev_global[-1]) < np.trace(gs.cov_nev_global[-1])
 
 
-def test_combine_share_mode_ordering_on_composed_buckets():
-    """The composed per-component buckets drive combine_covariances: more
-    sharing -> more cancellation -> smaller combined covariance."""
+def test_a_composed_survey_has_no_source_vectors_to_share():
+    """Sharing needs each source's signed vector; a composed survey keeps
+    covariance buckets only, so it is refused rather than combined on them."""
+    from welleng.conditioning import source_vectors
     ref, comp = _reference_and_composed("globals_shared")
-    rel_indep = _relative_sigma(ref, comp, "all_independent")[-1]
-    rel_glob = _relative_sigma(ref, comp, "globals_shared")[-1]
-    rel_both = _relative_sigma(ref, comp, "globals_and_systematic_shared")[-1]
-    assert rel_indep > rel_glob > rel_both
+    with pytest.raises(ValueError, match="no per-source error vectors"):
+        source_vectors(ref, comp, "global")
+    r = combine_covariances(ref.cov_nev, comp.cov_nev, share_mode="all_independent")
+    assert np.allclose(r.cov_combined, ref.cov_nev + comp.cov_nev)
 
 
 # --------------------------------------------------------------------------- #
@@ -419,8 +405,8 @@ def test_composition_does_not_re_propagate_per_covariance_component():
     the result must be BIT-IDENTICAL to computing each separately -- this is an
     efficiency fix on an MC-gated path, so "close" is not good enough.
 
-    a consumer's profile: `SurveyComposition` was 93% of their programme
-    setup, running 8 full ErrorModel propagations for a 2-section compose and
+    profiling a two-section programme setup: `SurveyComposition` was 93% of
+    it, running 8 full ErrorModel propagations for a 2-section compose and
     discarding three quarters of each result.
     """
     import welleng.error as error_module

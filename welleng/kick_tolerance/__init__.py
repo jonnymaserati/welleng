@@ -225,6 +225,15 @@ from .gas_z_coolprop import (
 # against the pore/fracture (PPFP) envelope at every exposed depth (conservative,
 # safe-side). numpy-only -- no optional dependency. The step trajectory is the
 # animation data.
+from .kill_sheet import (
+    KillSheetInputs,
+    KillSheetResult,
+    MudModel,
+    PumpSchedule,
+    column_pressure,
+    kill_sheet,
+    string_capacity,
+)
 from .migration import (
     WellSection,
     MigrationStep,
@@ -305,6 +314,9 @@ __all__ = [
     "maasp",
     "MaaspResult",
     "ppg_to_gradient",
+    # kill sheet
+    "KillSheetInputs", "KillSheetResult", "MudModel", "PumpSchedule",
+    "column_pressure", "kill_sheet", "string_capacity",
     "gradient_to_ppg",
     "gas_state_from_density",
     "GasState",
