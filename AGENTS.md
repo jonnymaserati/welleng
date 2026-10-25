@@ -6,7 +6,7 @@ Instructions for coding agents. Read before changing code.
 
 ## Setup
 
-Python 3.10+. Use `uv`, not bare `pip`:
+Python 3.11+. Use `uv`, not bare `pip`:
 
 ```bash
 uv venv .venv312 --python 3.12
