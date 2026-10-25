@@ -19,6 +19,15 @@ every field component (the model's own numerical-agreement spec is 0.1 nT), far
 below the model's ~physical uncertainty. Coefficients: ``welleng/data/wmm2025.json``
 (converted from ``WMM2025.COF``); see its ``provenance`` field.
 
+WMM is a main-field model: it does not resolve crustal anomalies. For
+directional-drilling azimuth references, the SPE WPTS / ISCWSA eBook
+*Introduction to Wellbore Positioning*, Revision 10 (2026), ch. 4 "Points to
+Ponder", p. 32, recommends a licensed high-definition global model, with any
+IFR crustal correction applied to the declination rather than to the azimuth.
+The WMM values here suit planning and checks; pass the declination, dip and
+total field from such a model where the survey's azimuth depends on them.
+https://www.iscwsa.net/ebooks/
+
 Service documentation:
 https://geomag.bgs.ac.uk/web_service/GMModels/help/parameters
 """
