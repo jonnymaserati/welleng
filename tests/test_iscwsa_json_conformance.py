@@ -40,8 +40,10 @@ JSON_ROOT = Path(__file__).parent.parent / "welleng" / "errors" / "iscwsa_json" 
 # NO_LEGACY (they evaluate but welleng's legacy hand-coded dispatcher never
 # implemented them, so there is nothing to diff against). The only remaining
 # INTERP_FAILED are the recurrence/noise gyro terms (GXY-RN/GD/GRW).
+# 2026-10-25: AMIL's hand-coded sign corrected to the Definition (Rev 5.13 term 32);
+# it was the one DIFFER on MWD+SRGM.
 EXPECTED = [
-    ("MWD+SRGM.json",   29, 1, 0,  5, 35),
+    ("MWD+SRGM.json",   30, 0, 0,  5, 35),
     ("GYRO-NS.json",     6, 0, 1, 11, 18),
     ("GYRO-NS-CT.json",  6, 0, 3, 10, 19),
     ("GYRO-MWD.json",    6, 0, 1, 11, 18),
