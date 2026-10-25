@@ -961,7 +961,6 @@ class ToolError:
         segment to bound drift. ``self._min_D is None`` (the default) takes the
         byte-identical validated path.
         """
-        import warnings
 
         var, mode = recur
         formula = term["azimuth_formula"]
@@ -990,15 +989,18 @@ class ToolError:
         hi = np.inf if hi_deg is None else float(hi_deg)
 
         gate = hdr.get("XY Static Gyro End Inc")
-        if "GXYRunningSpeed" not in bindings or (gate is None and not zoned):
-            warnings.warn(
-                f"continuous-gyro term {code!r} needs 'GXYRunningSpeed' (and, "
-                f"unless inc-zoned, 'XY Static Gyro End Inc') tool parameters "
-                f"(JSON parameters block); missing -> zero covariance.",
-                RuntimeWarning,
+        # An error term that cannot be evaluated is not zero uncertainty: refuse,
+        # naming the tool parameter the term needs.
+        speed = "GZRunningSpeed" if "GZRunningSpeed" in formula else "GXYRunningSpeed"
+        missing = [k for k in (speed,) if k not in bindings]
+        if gate is None and not zoned:
+            missing.append("XY Static Gyro End Inc")
+        if missing:
+            raise ValueError(
+                f"continuous-gyro term {code!r} needs the tool parameter(s) "
+                f"{', '.join(repr(m) for m in missing)}, which the tool model "
+                f"does not give."
             )
-            zeros = np.zeros((n, 3))
-            return self.e._generate_error(code, zeros, propagation, NEV=True)
         gate = float(gate) if gate is not None else -np.inf
 
         # Per-station scalar bindings reused each step (running speed,
