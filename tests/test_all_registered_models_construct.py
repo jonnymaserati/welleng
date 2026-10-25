@@ -15,9 +15,30 @@ import pytest
 import welleng as we
 from welleng.error import ERROR_MODELS
 
+# The published CB_Film gyro sheets give a continuous z-gyro drift term (GZ-GD) but no
+# running speed for it, so the term cannot be evaluated. These models are refused,
+# naming the missing parameter, rather than built with that term at zero uncertainty.
+NOT_EVALUABLE = {
+    "CB_Film_GMS", "CB_Film_GMS_Fl", "CB_Film_GSS", "CB_Film_GSS_Fl",
+}
 
-@pytest.mark.parametrize("model", sorted(ERROR_MODELS))
+
+def test_models_missing_a_parameter_are_refused_naming_it():
+    for model in sorted(NOT_EVALUABLE):
+        with pytest.raises(ValueError, match="GZRunningSpeed"):
+            _construct(model)
+
+
+@pytest.mark.parametrize("model", sorted(set(ERROR_MODELS) - NOT_EVALUABLE))
 def test_model_constructs_and_is_finite(model):
+    cov = _construct(model)
+    assert cov.shape == (34, 3, 3)
+    assert np.all(np.isfinite(cov))
+    # positive-semidefinite-ish sanity at TD
+    assert np.all(np.linalg.eigvalsh(cov[-1]) >= -1e-8)
+
+
+def _construct(model):
     md = np.arange(0, 1001, 30.0)
     inc = np.clip((md - 100) / 300.0, 0, 3.0)   # peaks at 3 deg
     azi = np.full_like(md, 45.0)
@@ -30,8 +51,4 @@ def test_model_constructs_and_is_finite(model):
         s = we.survey.Survey(
             md=md, inc=inc, azi=azi, header=sh, error_model=model
         )
-        cov = np.asarray(s.cov_nev)
-    assert cov.shape == (len(md), 3, 3)
-    assert np.all(np.isfinite(cov))
-    # positive-semidefinite-ish sanity at TD
-    assert np.all(np.linalg.eigvalsh(cov[-1]) >= -1e-8)
+        return np.asarray(s.cov_nev)

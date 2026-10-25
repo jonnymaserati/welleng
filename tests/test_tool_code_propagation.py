@@ -17,7 +17,11 @@ def _declared(errors):
     return {k: v["propagation"] for k, v in errors.em["codes"].items()}
 
 
-@pytest.mark.parametrize("model", sorted(ERROR_MODELS))
+# Refused at construction (tests/test_all_registered_models_construct.py).
+NOT_EVALUABLE = {"CB_Film_GMS", "CB_Film_GMS_Fl", "CB_Film_GSS", "CB_Film_GSS_Fl"}
+
+
+@pytest.mark.parametrize("model", sorted(set(ERROR_MODELS) - NOT_EVALUABLE))
 def test_applied_propagation_is_the_declared_one(model):
     survey = Survey(
         md=np.array([0.0, 500.0, 1000.0, 1500.0]),
