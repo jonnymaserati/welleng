@@ -886,6 +886,7 @@ class WellNetwork:
             codes = [c for c in ca if c in cb and c in cs]
 
             def pick(cc, v, codes=codes):
+                """The vectors ``v`` (codes ``cc``) of the shared codes, in order."""
                 return np.array([v[cc.index(c)] for c in codes]).reshape(-1, 3)
             st = pick(cs, vs)
             vec[kind] = ((pick(ca, va) - st)[None], (pick(cb, vb) - st)[None])
