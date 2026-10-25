@@ -38,13 +38,12 @@ keywords = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "License :: OSI Approved :: Apache Software License",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Natural Language :: English",
     "Topic :: Scientific/Engineering",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     # numpy majors reliably break the scientific-Python ecosystem, so it is
     # major-CAPPED (tested on 2.x); the rest carry lower bounds only (a floor
@@ -187,7 +186,7 @@ exclude = [
 # unannotated defs would flood the output and drown real findings.
 # Matches the dev/CI interpreter. Required >= 3.12 because current numpy
 # type stubs use PEP 695 `type` statements that mypy only parses under 3.12+
-# (the runtime floor stays 3.10 per [project].requires-python).
+# (the runtime floor stays 3.11 per [project].requires-python).
 python_version = "3.12"
 ignore_missing_imports = true
 warn_unused_ignores = true
