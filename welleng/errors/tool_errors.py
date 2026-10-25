@@ -1522,13 +1522,27 @@ class ToolError:
                 return np.zeros(n)
             try:
                 val = evaluate_formula(f, bindings)
-            except Exception:
-                # Defensive fallback: a singular weight whose formula fails to
-                # evaluate (a variable not in scope, a malformed expression)
-                # contributes zero rather than crashing -- the main eval path does
-                # the same. XCLTortuosity and the prev-station vars (MDPrev, ...) are
-                # now bound, so XCL's singular weight evaluates; this only guards a
-                # genuinely unbound/malformed term.
+            except Exception as exc:
+                # A singular weight whose formula fails to evaluate contributes
+                # zero at the vertical stations, as the main evaluation path does,
+                # and is recorded the same way (dropped_terms, warning, or a
+                # refusal under STRICT_TERMS): zero understates the uncertainty.
+                import warnings
+                code = f"{term.get('name')} ({key})"
+                missing = _missing_variable(exc)
+                self.dropped_terms.append(
+                    DroppedTerm(code=code, missing=missing, reason=str(exc))
+                )
+                msg = (
+                    f"vertical-hole weight {code!r} could not be evaluated: "
+                    f"{exc}. It contributes ZERO at the vertical stations, so the "
+                    f"uncertainty there is UNDERSTATED; see "
+                    f"ErrorModel.errors.dropped_terms, or set "
+                    f"welleng.errors.tool_errors.STRICT_TERMS = True to refuse."
+                )
+                if STRICT_TERMS:
+                    raise ValueError(msg) from exc
+                warnings.warn(msg, RuntimeWarning)
                 return np.zeros(n)
             return np.broadcast_to(
                 np.asarray(val, dtype=float), (n,)
