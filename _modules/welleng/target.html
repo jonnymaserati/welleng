@@ -1,0 +1,356 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.target &mdash; welleng 0.30.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=a7ea5d77"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            welleng
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.target</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.target</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Drilling target definitions for wellbore trajectory planning and visualization.</span>
+
+<span class="sd">A :class:`Target` is a region in 3D space that a trajectory aims to reach. It</span>
+<span class="sd">carries a position, a shape, shape geometry, and an orientation (the plane the</span>
+<span class="sd">shape lies in). Shapes range from a bare point through 1D (line), 2D (circle,</span>
+<span class="sd">ellipse, rectangle, polygon) to a 3D ``volume``, and a probabilistic</span>
+<span class="sd">``gaussian`` target defined by a covariance about its mean rather than a hard</span>
+<span class="sd">boundary.</span>
+
+<span class="sd">Construction is geometry-only and requires no optional dependencies; only</span>
+<span class="sd">:meth:`Target.plot_data` (rendering) needs ``vedo``.</span>
+<span class="sd">"""</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">vedo</span><span class="w"> </span><span class="kn">import</span> <span class="n">Circle</span>
+    <span class="n">VEDO</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">VEDO</span> <span class="o">=</span> <span class="kc">False</span>
+
+<span class="c1"># Recognised target shapes, ordered by the positional degrees of freedom a</span>
+<span class="c1"># landing point has within the shape (used by the trajectory solver).</span>
+<span class="n">SHAPES</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s1">'point'</span><span class="p">,</span>      <span class="c1"># 0 DOF</span>
+    <span class="s1">'line'</span><span class="p">,</span>       <span class="c1"># 1 DOF (along the line/segment)</span>
+    <span class="s1">'circle'</span><span class="p">,</span>     <span class="c1"># 2 DOF (planar, on the target frame, |r| &lt;= radius)</span>
+    <span class="s1">'ellipse'</span><span class="p">,</span>    <span class="c1"># 2 DOF (planar)</span>
+    <span class="s1">'rectangle'</span><span class="p">,</span>  <span class="c1"># 2 DOF (planar)</span>
+    <span class="s1">'polygon'</span><span class="p">,</span>    <span class="c1"># 2 DOF (planar)</span>
+    <span class="s1">'volume'</span><span class="p">,</span>     <span class="c1"># 3 DOF (extruded region: 2D shape + thickness)</span>
+    <span class="s1">'cube'</span><span class="p">,</span>       <span class="c1"># 3 DOF (axis-aligned box in NEV: geometry half_extents)</span>
+    <span class="s1">'sphere'</span><span class="p">,</span>     <span class="c1"># 3 DOF (ball in NEV: geometry radius)</span>
+    <span class="s1">'gaussian'</span><span class="p">,</span>   <span class="c1"># 3 DOF (Mahalanobis ellipsoid: mean + covariance cov)</span>
+<span class="p">)</span>
+
+<span class="c1"># Positional DOF a landing point has within each shape.</span>
+<span class="n">_SHAPE_DIM</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s1">'point'</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s1">'line'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="s1">'circle'</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s1">'ellipse'</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s1">'rectangle'</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s1">'polygon'</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+    <span class="s1">'volume'</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span> <span class="s1">'cube'</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span> <span class="s1">'sphere'</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span> <span class="s1">'gaussian'</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<div class="viewcode-block" id="Target">
+<a class="viewcode-back" href="../../welleng.html#welleng.target.Target">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Target</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""A geometric or probabilistic target zone in 3D space.</span>
+
+<span class="sd">    Represents a target region at a given subsurface location, on a plane set by</span>
+<span class="sd">    ``orientation``/``dip``/``azimuth``, with a shape-specific geometry. A</span>
+<span class="sd">    ``gaussian`` target instead carries a covariance ``cov`` about its mean</span>
+<span class="sd">    (the position), for probabilistic (uncertainty-aware) targeting.</span>
+
+<span class="sd">    The object is a pure data/geometry primitive — it constructs without any</span>
+<span class="sd">    optional dependency. :meth:`plot_data` (vedo rendering) is the only method</span>
+<span class="sd">    that requires ``vedo``.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    name : str</span>
+<span class="sd">        Identifier for the target.</span>
+<span class="sd">    n, e, tvd : float</span>
+<span class="sd">        Position (northing, easting, true vertical depth), metres. Also exposed</span>
+<span class="sd">        as :attr:`position` and :attr:`location` (a 3-vector).</span>
+<span class="sd">    shape : str or None</span>
+<span class="sd">        One of :data:`SHAPES`, or ``None`` if unspecified.</span>
+<span class="sd">    locked : int</span>
+<span class="sd">        Lock state of the target.</span>
+<span class="sd">    orientation : float</span>
+<span class="sd">        Rotation about the vertical axis, degrees.</span>
+<span class="sd">    dip : float</span>
+<span class="sd">        Dip of the target plane, degrees.</span>
+<span class="sd">    azimuth : float</span>
+<span class="sd">        Azimuth of the target plane, degrees.</span>
+<span class="sd">    cov : ndarray of shape (3, 3) or None</span>
+<span class="sd">        NEV covariance for a ``gaussian`` target (mean = position); ``None`` for</span>
+<span class="sd">        hard-boundary shapes.</span>
+<span class="sd">    color : str</span>
+<span class="sd">        Display colour for rendering.</span>
+<span class="sd">    alpha : float</span>
+<span class="sd">        Opacity for rendering (0.0 to 1.0).</span>
+<span class="sd">    geometry : dict</span>
+<span class="sd">        Shape-specific dimensional parameters (e.g. ``radius`` for a circle;</span>
+<span class="sd">        ``radius_1``/``radius_2`` for an ellipse; ``pos1``/``pos2`` for a</span>
+<span class="sd">        rectangle; ``vertices`` for a polygon; ``thickness_up``/</span>
+<span class="sd">        ``thickness_down`` to extrude a 2D shape into a ``volume``).</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="Target.__init__">
+<a class="viewcode-back" href="../../welleng.html#welleng.target.Target.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">,</span>
+        <span class="n">n</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">e</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">tvd</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">shape</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">location</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">geometry</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">locked</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+        <span class="n">orientation</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+        <span class="n">dip</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+        <span class="n">azimuth</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+        <span class="n">cov</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">color</span><span class="o">=</span><span class="s1">'green'</span><span class="p">,</span>
+        <span class="n">alpha</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">geometry_kwargs</span><span class="p">,</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Initialize a Target.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        name : str</span>
+<span class="sd">            Identifier for the target.</span>
+<span class="sd">        n, e, tvd : float, optional</span>
+<span class="sd">            Position (northing, easting, TVD) in metres. Alternatively pass</span>
+<span class="sd">            ``location=[n, e, tvd]``.</span>
+<span class="sd">        shape : str, optional</span>
+<span class="sd">            One of :data:`SHAPES`. May be left ``None`` and set later.</span>
+<span class="sd">        location : sequence of float, optional</span>
+<span class="sd">            Position as ``[n, e, tvd]``; an alternative to ``n``/``e``/``tvd``.</span>
+<span class="sd">        geometry : dict, optional</span>
+<span class="sd">            Shape-specific parameters as a dict. Alternatively pass them as</span>
+<span class="sd">            keyword arguments (e.g. ``radius=30``), which are collected into</span>
+<span class="sd">            :attr:`geometry`.</span>
+<span class="sd">        locked : int, optional</span>
+<span class="sd">            Lock state (0 = unlocked).</span>
+<span class="sd">        orientation, dip, azimuth : float, optional</span>
+<span class="sd">            Target-plane orientation angles, degrees.</span>
+<span class="sd">        cov : array_like of shape (3, 3), optional</span>
+<span class="sd">            NEV covariance for a ``gaussian`` target (mean = position).</span>
+<span class="sd">        color : str, optional</span>
+<span class="sd">            Display colour.</span>
+<span class="sd">        alpha : float, optional</span>
+<span class="sd">            Opacity (0.0 to 1.0).</span>
+<span class="sd">        **geometry_kwargs</span>
+<span class="sd">            Shape-specific parameters collected into :attr:`geometry` when</span>
+<span class="sd">            ``geometry`` is not given explicitly. For ``circle``: ``radius``.</span>
+<span class="sd">            For ``ellipse``: ``radius_1``, ``radius_2``, optional ``res``. For</span>
+<span class="sd">            ``rectangle``: ``pos1``, ``pos2``.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        ValueError</span>
+<span class="sd">            If ``shape`` is given but not one of :data:`SHAPES`.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">location</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">location</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">location</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+            <span class="n">n</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">tvd</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">location</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="n">location</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="n">location</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+
+        <span class="k">if</span> <span class="n">shape</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">shape</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">SHAPES</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"shape </span><span class="si">{</span><span class="n">shape</span><span class="si">!r}</span><span class="s2"> not in </span><span class="si">{</span><span class="n">SHAPES</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n</span> <span class="o">=</span> <span class="n">n</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">e</span> <span class="o">=</span> <span class="n">e</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tvd</span> <span class="o">=</span> <span class="n">tvd</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">shape</span> <span class="o">=</span> <span class="n">shape</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">locked</span> <span class="o">=</span> <span class="n">locked</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">orientation</span> <span class="o">=</span> <span class="n">orientation</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dip</span> <span class="o">=</span> <span class="n">dip</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">azimuth</span> <span class="o">=</span> <span class="n">azimuth</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cov</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">cov</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">cov</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">color</span> <span class="o">=</span> <span class="n">color</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">alpha</span> <span class="o">=</span> <span class="n">alpha</span>
+        <span class="c1"># geometry precedence: an explicit dict wins; otherwise collect kwargs.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">geometry</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="nb">dict</span><span class="p">(</span><span class="n">geometry</span><span class="p">)</span> <span class="k">if</span> <span class="n">geometry</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">dict</span><span class="p">(</span><span class="n">geometry_kwargs</span><span class="p">)</span>
+        <span class="p">)</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">position</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Position as an ``ndarray([n, e, tvd])``, or ``None`` if unset."""</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">e</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">tvd</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">n</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">e</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tvd</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+
+    <span class="c1"># ``location`` mirrors ``position`` for callers that used the WBP name.</span>
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">location</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Alias of :attr:`position` (the ``[n, e, tvd]`` 3-vector)."""</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">position</span>
+
+    <span class="nd">@location</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">location</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Set ``n``, ``e``, ``tvd`` from a 3-vector; ``None`` clears all three."""</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">n</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">e</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tvd</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">return</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">e</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tvd</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">mean</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Mean of a ``gaussian`` target (its position); ``None`` otherwise."""</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">position</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="s1">'gaussian'</span> <span class="k">else</span> <span class="kc">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">dim</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Positional DOF a landing point has within the shape (see :data:`SHAPES`)."""</span>
+        <span class="k">return</span> <span class="n">_SHAPE_DIM</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Target.plot_data">
+<a class="viewcode-back" href="../../welleng.html#welleng.target.Target.plot_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">plot_data</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Generate a vedo mesh object for rendering the target.</span>
+
+<span class="sd">        Currently supports the ``circle`` shape. The target is positioned at</span>
+<span class="sd">        (n, e, tvd) and rotated according to dip and orientation.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        vedo object</span>
+<span class="sd">            A vedo geometry object representing the target, with the target name</span>
+<span class="sd">            assigned to its ``flag`` attribute.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        AssertionError</span>
+<span class="sd">            If ``vedo`` is not installed.</span>
+<span class="sd">        """</span>
+        <span class="k">assert</span> <span class="n">VEDO</span><span class="p">,</span> <span class="s2">"ImportError: try pip install welleng[easy]"</span>
+
+        <span class="n">pos</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">n</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">e</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tvd</span><span class="p">]</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="s2">"circle"</span><span class="p">:</span>
+            <span class="n">g</span> <span class="o">=</span> <span class="n">Circle</span><span class="p">(</span>
+                <span class="n">pos</span><span class="o">=</span><span class="n">pos</span><span class="p">,</span>
+                <span class="n">r</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">geometry</span><span class="p">[</span><span class="s1">'radius'</span><span class="p">],</span>
+                <span class="n">c</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">color</span><span class="p">,</span>
+                <span class="n">alpha</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">alpha</span><span class="p">,</span>
+                <span class="c1"># res=self.geometry['res']</span>
+            <span class="p">)</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">flag</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">pos</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">n</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">e</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">rotate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dip</span><span class="p">,</span> <span class="n">point</span><span class="o">=</span><span class="n">pos</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">rotate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">orientation</span><span class="p">,</span> <span class="n">point</span><span class="o">=</span><span class="n">pos</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">g</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

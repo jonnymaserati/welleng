@@ -1,0 +1,560 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.osdu_ref &mdash; welleng 0.30.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=a7ea5d77"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            welleng
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.osdu_ref</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.osdu_ref</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""OSDU reference-data code lists — resolve, validate, annotate.</span>
+
+<span class="sd">:mod:`welleng.osdu` maps the *shape* of an OSDU record (which entity, which</span>
+<span class="sd">schema version, which units). This module supplies the other half: the</span>
+<span class="sd">**controlled vocabularies** that a record's ``...TypeID`` / ``...ID`` fields</span>
+<span class="sd">must carry. A record with the right shape and no reference-data ids is</span>
+<span class="sd">structurally valid and semantically empty.</span>
+
+<span class="sd">Design</span>
+<span class="sd">------</span>
+<span class="sd">**Annotation, never renaming.** welleng's own vocabulary does not change --</span>
+<span class="sd">``azi_reference="true"`` stays ``"true"``. :func:`resolve` maps a value ONTO an</span>
+<span class="sd">OSDU code and hands it back for the caller to record alongside; it never</span>
+<span class="sd">rewrites the caller's string. Adoption that is not additive is a breaking</span>
+<span class="sd">change for every consumer.</span>
+
+<span class="sd">**Governance decides strictness.** OSDU publishes each list under one of three</span>
+<span class="sd">governance models, and that is exactly the right validation policy, so it is</span>
+<span class="sd">used directly rather than re-invented per list:</span>
+
+<span class="sd">======== ==========================================================</span>
+<span class="sd">governance behaviour of :func:`validate` on an unknown code</span>
+<span class="sd">======== ==========================================================</span>
+<span class="sd">FIXED    raise -- the set is closed, so an unknown value is an error</span>
+<span class="sd">OPEN     warn and pass through -- operators may extend the list</span>
+<span class="sd">LOCAL    pass through silently -- the shipped list is a starter set</span>
+<span class="sd">======== ==========================================================</span>
+
+<span class="sd">Data</span>
+<span class="sd">----</span>
+<span class="sd">One slimmed JSON per list in ``welleng/data/osdu/``, refreshed by</span>
+<span class="sd">``scripts/fetch_osdu_reference_data.py``. Only the lists welleng actually uses</span>
+<span class="sd">are carried; 451 are published. Each file records its source URL, retrieval</span>
+<span class="sd">date, governance tier and ``AttributionAuthority`` -- several of these lists</span>
+<span class="sd">are curated by PPDM rather than by OSDU, and that travels with the data.</span>
+
+<span class="sd">Source: https://community.opengroup.org/osdu/data/data-definitions (Apache-2.0).</span>
+
+<span class="sd">Example</span>
+<span class="sd">-------</span>
+<span class="sd">&gt;&gt;&gt; from welleng import osdu_ref</span>
+<span class="sd">&gt;&gt;&gt; osdu_ref.resolve("VerticalMeasurementType", "RKB")</span>
+<span class="sd">'RotaryTable'</span>
+<span class="sd">&gt;&gt;&gt; osdu_ref.resolve("AzimuthReferenceType", "grid")</span>
+<span class="sd">'GridNorth'</span>
+<span class="sd">&gt;&gt;&gt; osdu_ref.osdu_id("CementPlugType", "Abandonment")</span>
+<span class="sd">'reference-data--CementPlugType:Abandonment'</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">lru_cache</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">NamedTuple</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="n">_DATA</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">"data"</span> <span class="o">/</span> <span class="s2">"osdu"</span>
+
+<span class="c1">#: Governance tiers, strictest first.</span>
+<span class="n">FIXED</span><span class="p">,</span> <span class="n">OPEN</span><span class="p">,</span> <span class="n">LOCAL</span> <span class="o">=</span> <span class="s2">"FIXED"</span><span class="p">,</span> <span class="s2">"OPEN"</span><span class="p">,</span> <span class="s2">"LOCAL"</span>
+
+
+<div class="viewcode-block" id="OsduRefError">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu_ref.OsduRefError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">OsduRefError</span><span class="p">(</span><span class="ne">KeyError</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""A reference-data list or code could not be resolved."""</span></div>
+
+
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># loading</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="nd">@lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_load</span><span class="p">(</span><span class="n">list_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">_DATA</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">list_name</span><span class="si">}</span><span class="s2">.json"</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">is_file</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="n">OsduRefError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"no vendored OSDU list </span><span class="si">{</span><span class="n">list_name</span><span class="si">!r}</span><span class="s2">; available: "</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="s1">', '</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">available</span><span class="p">())</span><span class="si">}</span><span class="s2">. Add it to LISTS in "</span>
+            <span class="s2">"scripts/fetch_osdu_reference_data.py and re-run that script."</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">read_text</span><span class="p">())</span>
+
+
+<div class="viewcode-block" id="available">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu_ref.available">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">available</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Names of the vendored reference-data lists."""</span>
+    <span class="k">return</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">stem</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">_DATA</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">"*.json"</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="codes">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu_ref.codes">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">codes</span><span class="p">(</span><span class="n">list_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""``{code: display name}`` for a list. Deprecated codes are not present."""</span>
+    <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span><span class="n">_load</span><span class="p">(</span><span class="n">list_name</span><span class="p">)[</span><span class="s2">"codes"</span><span class="p">])</span></div>
+
+
+
+<div class="viewcode-block" id="governance">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu_ref.governance">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">governance</span><span class="p">(</span><span class="n">list_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""``FIXED`` / ``OPEN`` / ``LOCAL`` -- who may extend the list."""</span>
+    <span class="k">return</span> <span class="n">_load</span><span class="p">(</span><span class="n">list_name</span><span class="p">)[</span><span class="s2">"governance"</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="provenance">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu_ref.provenance">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">provenance</span><span class="p">(</span><span class="n">list_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Source URL, retrieval date, licence and attribution authorities."""</span>
+    <span class="n">doc</span> <span class="o">=</span> <span class="n">_load</span><span class="p">(</span><span class="n">list_name</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">doc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span>
+            <span class="p">(</span><span class="s2">"list"</span><span class="p">,</span> <span class="s2">"kind"</span><span class="p">,</span> <span class="s2">"governance"</span><span class="p">,</span> <span class="s2">"source"</span><span class="p">,</span> <span class="s2">"commit"</span><span class="p">,</span> <span class="s2">"committed"</span><span class="p">,</span>
+             <span class="s2">"retrieved"</span><span class="p">,</span> <span class="s2">"licence"</span><span class="p">,</span> <span class="s2">"attribution"</span><span class="p">)}</span></div>
+
+
+
+<div class="viewcode-block" id="pinned_commit">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu_ref.pinned_commit">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">pinned_commit</span><span class="p">(</span><span class="n">list_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""The upstream commit this list's values were taken at.</span>
+
+<span class="sd">    The pin is what makes drift DETECTABLE: a retrieval date says when we</span>
+<span class="sd">    looked, only the commit says what we looked at. ``scripts/</span>
+<span class="sd">    fetch_osdu_reference_data.py --check`` compares every pin against</span>
+<span class="sd">    ``master`` and exits non-zero when one has moved -- which matters because a</span>
+<span class="sd">    code already STORED in someone's data may have been deprecated or renamed</span>
+<span class="sd">    upstream, and nothing in the stored record would show it.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">_load</span><span class="p">(</span><span class="n">list_name</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"commit"</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># resolve / validate</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_norm</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Fold case, spacing and separators so ``"Rotary Table"``, ``"rotary-table"``</span>
+<span class="sd">    and ``"RotaryTable"`` compare equal."""</span>
+    <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">"[^a-z0-9]"</span><span class="p">,</span> <span class="s2">""</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+
+
+<span class="nd">@lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_index</span><span class="p">(</span><span class="n">list_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Normalised lookup: code AND display name both point at the code."""</span>
+    <span class="n">idx</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">code</span><span class="p">,</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">_load</span><span class="p">(</span><span class="n">list_name</span><span class="p">)[</span><span class="s2">"codes"</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">idx</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">_norm</span><span class="p">(</span><span class="n">code</span><span class="p">),</span> <span class="n">code</span><span class="p">)</span>
+        <span class="n">idx</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">_norm</span><span class="p">(</span><span class="n">name</span><span class="p">),</span> <span class="n">code</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">idx</span>
+
+
+<span class="c1">#: Field synonyms that no amount of string folding will bridge. Keyed by list,</span>
+<span class="c1">#: then by the normalised local term. Deliberately small: an entry here is a</span>
+<span class="c1">#: judgement that two vocabularies mean the same thing, and each one should be</span>
+<span class="c1">#: defensible on its own.</span>
+<span class="n">_ALIASES</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"VerticalMeasurementType"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">"rkb"</span><span class="p">:</span> <span class="s2">"RotaryTable"</span><span class="p">,</span>            <span class="c1"># rotary kelly bushing, used</span>
+        <span class="s2">"kb"</span><span class="p">:</span> <span class="s2">"KellyBushing"</span><span class="p">,</span>            <span class="c1"># interchangeably in the field but</span>
+        <span class="s2">"rt"</span><span class="p">:</span> <span class="s2">"RotaryTable"</span><span class="p">,</span>             <span class="c1"># OSDU separates the two</span>
+        <span class="s2">"msl"</span><span class="p">:</span> <span class="s2">"MeanSeaLevel"</span><span class="p">,</span>
+        <span class="s2">"df"</span><span class="p">:</span> <span class="s2">"DrillFloor"</span><span class="p">,</span>
+        <span class="s2">"gl"</span><span class="p">:</span> <span class="s2">"GroundLevel"</span><span class="p">,</span>
+        <span class="s2">"seabed"</span><span class="p">:</span> <span class="s2">"Seafloor"</span><span class="p">,</span>
+        <span class="c1"># NB "mudline" needs no alias -- it is its own OSDU code (MLS), and</span>
+        <span class="c1"># the list carries BOTH MLS and Seafloor for what is one surface. That</span>
+        <span class="c1"># duplication is OSDU's, not ours; resolving each term to the code that</span>
+        <span class="c1"># names it is the only defensible behaviour.</span>
+        <span class="c1"># NOT mapped: "wellhead". OSDU has CasingHeadFlange, TubingHeadFlange</span>
+        <span class="c1"># and TopBottomFlange, and a bare "wellhead" does not say which. An</span>
+        <span class="c1"># unresolved value is recoverable; a wrong one is not.</span>
+    <span class="p">},</span>
+    <span class="s2">"VerticalMeasurementPath"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">"md"</span><span class="p">:</span> <span class="s2">"MeasuredDepth"</span><span class="p">,</span>
+        <span class="s2">"tvd"</span><span class="p">:</span> <span class="s2">"TrueVerticalDepth"</span><span class="p">,</span>
+        <span class="s2">"tvdss"</span><span class="p">:</span> <span class="s2">"TrueVerticalDepth"</span><span class="p">,</span>    <span class="c1"># subsea is a DATUM, not a path</span>
+    <span class="p">},</span>
+    <span class="s2">"AzimuthReferenceType"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">"true"</span><span class="p">:</span> <span class="s2">"TrueNorth"</span><span class="p">,</span>
+        <span class="s2">"grid"</span><span class="p">:</span> <span class="s2">"GridNorth"</span><span class="p">,</span>
+        <span class="s2">"magnetic"</span><span class="p">:</span> <span class="s2">"MagneticNorth"</span><span class="p">,</span>
+    <span class="p">},</span>
+<span class="p">}</span>
+
+
+<div class="viewcode-block" id="Match">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu_ref.Match">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Match</span><span class="p">(</span><span class="n">NamedTuple</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""A resolution result, and HOW it was reached.</span>
+
+<span class="sd">    An export layer has to be able to refuse a weak match, and a bare</span>
+<span class="sd">    ``code | None`` cannot express "matched, but only on similarity". ``how``</span>
+<span class="sd">    is one of:</span>
+
+<span class="sd">    ``"exact"``</span>
+<span class="sd">        the value IS the published code.</span>
+<span class="sd">    ``"name"``</span>
+<span class="sd">        it matched the code's display name (case and separators folded).</span>
+<span class="sd">    ``"alias"``</span>
+<span class="sd">        it matched a hand-kept field synonym -- a judgement that two</span>
+<span class="sd">        vocabularies mean the same thing, defensible but ours, not OSDU's.</span>
+<span class="sd">    ``"none"``</span>
+<span class="sd">        no match; ``code`` is ``None``.</span>
+
+<span class="sd">    Truthy exactly when a code was found, so ``if resolve_match(...)`` reads</span>
+<span class="sd">    naturally.</span>
+<span class="sd">    """</span>
+
+    <span class="n">code</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">how</span><span class="p">:</span> <span class="nb">str</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__bool__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">code</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="resolve_match">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu_ref.resolve_match">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_match</span><span class="p">(</span><span class="n">list_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Match</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">""":func:`resolve`, but reporting how the match was reached."""</span>
+    <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">Match</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">"none"</span><span class="p">)</span>
+    <span class="n">key</span> <span class="o">=</span> <span class="n">_norm</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">key</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">Match</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">"none"</span><span class="p">)</span>
+    <span class="n">lists</span> <span class="o">=</span> <span class="n">_load</span><span class="p">(</span><span class="n">list_name</span><span class="p">)[</span><span class="s2">"codes"</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">lists</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">Match</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s2">"exact"</span><span class="p">)</span>
+    <span class="n">hit</span> <span class="o">=</span> <span class="n">_index</span><span class="p">(</span><span class="n">list_name</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">hit</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">Match</span><span class="p">(</span><span class="n">hit</span><span class="p">,</span> <span class="s2">"exact"</span> <span class="k">if</span> <span class="n">_norm</span><span class="p">(</span><span class="n">hit</span><span class="p">)</span> <span class="o">==</span> <span class="n">key</span> <span class="k">else</span> <span class="s2">"name"</span><span class="p">)</span>
+    <span class="n">alias</span> <span class="o">=</span> <span class="n">_ALIASES</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">list_name</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">Match</span><span class="p">(</span><span class="n">alias</span><span class="p">,</span> <span class="s2">"alias"</span><span class="p">)</span> <span class="k">if</span> <span class="n">alias</span> <span class="k">else</span> <span class="n">Match</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">"none"</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="resolve">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu_ref.resolve">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve</span><span class="p">(</span><span class="n">list_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Best OSDU code for a local ``value``, or ``None`` if there is no match.</span>
+
+<span class="sd">    Matching is deliberately forgiving -- exact code, display name, then a</span>
+<span class="sd">    small hand-kept alias table -- because the input is a field string, not an</span>
+<span class="sd">    identifier. It is a LOOKUP, not a rewrite: the caller keeps its own value</span>
+<span class="sd">    and records this alongside it.</span>
+
+<span class="sd">    ``None`` means "no confident match", never "invalid". Use</span>
+<span class="sd">    :func:`resolve_match` when the caller needs to act on HOW it matched.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">resolve_match</span><span class="p">(</span><span class="n">list_name</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">code</span></div>
+
+
+
+<div class="viewcode-block" id="validate">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu_ref.validate">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate</span><span class="p">(</span><span class="n">list_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">code</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="o">*</span><span class="p">,</span>
+             <span class="n">field</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"value"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Check ``code`` against the list, with strictness set by its governance.</span>
+
+<span class="sd">    ``FIXED`` raises on an unknown code, ``OPEN`` warns and passes it through</span>
+<span class="sd">    (operators may extend an OPEN list), ``LOCAL`` passes silently (the shipped</span>
+<span class="sd">    values are a starter set). ``None`` is always allowed -- absence is not a</span>
+<span class="sd">    validation question.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">code</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">code</span> <span class="ow">in</span> <span class="n">codes</span><span class="p">(</span><span class="n">list_name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">code</span>
+    <span class="n">gov</span> <span class="o">=</span> <span class="n">governance</span><span class="p">(</span><span class="n">list_name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">gov</span> <span class="o">==</span> <span class="n">FIXED</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">OsduRefError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2">=</span><span class="si">{</span><span class="n">code</span><span class="si">!r}</span><span class="s2"> is not in the OSDU </span><span class="si">{</span><span class="n">list_name</span><span class="si">}</span><span class="s2"> list, which is "</span>
+            <span class="s2">"FIXED -- the set is closed, so this is a data error, not an "</span>
+            <span class="s2">"extension."</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">gov</span> <span class="o">==</span> <span class="n">OPEN</span><span class="p">:</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2">=</span><span class="si">{</span><span class="n">code</span><span class="si">!r}</span><span class="s2"> is not a published OSDU </span><span class="si">{</span><span class="n">list_name</span><span class="si">}</span><span class="s2"> code. "</span>
+            <span class="s2">"That list is OPEN, so an operator extension is legitimate -- but "</span>
+            <span class="s2">"it will not be recognised by a consumer using the standard list."</span><span class="p">,</span>
+            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">code</span></div>
+
+
+
+<div class="viewcode-block" id="osdu_id">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu_ref.osdu_id">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">osdu_id</span><span class="p">(</span><span class="n">list_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">code</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">namespace</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""The reference-data id a record's ``...ID`` field carries.</span>
+
+<span class="sd">    The schemas constrain these to</span>
+<span class="sd">    ``&lt;namespace&gt;:reference-data--&lt;List&gt;:&lt;code&gt;:&lt;version&gt;``, with the version</span>
+<span class="sd">    segment optionally empty -- so the **trailing colon is part of the form**,</span>
+<span class="sd">    not a typo, and a namespace is required for the id to validate.</span>
+
+<span class="sd">    ``namespace`` left empty returns the partition-relative stem, which is what</span>
+<span class="sd">    a caller composing a record against its own partition wants; it will not</span>
+<span class="sd">    match the schema pattern until the partition is prefixed.</span>
+<span class="sd">    """</span>
+    <span class="n">stem</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"reference-data--</span><span class="si">{</span><span class="n">list_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">code</span><span class="si">}</span><span class="s2">:"</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">namespace</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">stem</span><span class="si">}</span><span class="s2">"</span> <span class="k">if</span> <span class="n">namespace</span> <span class="k">else</span> <span class="n">stem</span></div>
+
+
+
+<div class="viewcode-block" id="survey_tool_type_for">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu_ref.survey_tool_type_for">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">survey_tool_type_for</span><span class="p">(</span><span class="n">error_model</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""OSDU ``SurveyToolType`` code for a welleng error-model NAME.</span>
+
+<span class="sd">    welleng names a model by its OWSG short name (``"MWD+SRGM"``,</span>
+<span class="sd">    ``"GYRO-NS_Fl"``); the OSDU code appends the model id</span>
+<span class="sd">    (``MWD+SRGM_A001Mc``). Matches on the short-name prefix and returns</span>
+<span class="sd">    ``None`` unless exactly one code matches -- an ambiguous tool is not a</span>
+<span class="sd">    tool.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">error_model</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="c1"># the short name must be followed by the id segment, not by more name</span>
+    <span class="n">key</span> <span class="o">=</span> <span class="n">_norm</span><span class="p">(</span><span class="n">error_model</span><span class="p">)</span>
+    <span class="n">exact</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">_load</span><span class="p">(</span><span class="s2">"SurveyToolType"</span><span class="p">)[</span><span class="s2">"codes"</span><span class="p">]</span>
+             <span class="k">if</span> <span class="n">_norm</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">"_"</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span> <span class="o">==</span> <span class="n">key</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">exact</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">exact</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="kc">None</span></div>
+
+
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># log curve mnemonics</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="nd">@lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_curves</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""``{"Vendor:MNEMONIC": [property, unit quantity]}`` -- 42,919 entries.</span>
+
+<span class="sd">    Stored gzipped (~200 KB) because a curve mnemonic is genuinely not</span>
+<span class="sd">    guessable and the alternative is a hand-written family list that gets it</span>
+<span class="sd">    wrong.</span>
+<span class="sd">    """</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">gzip</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">_DATA</span> <span class="o">/</span> <span class="s2">"LogCurveType.json.gz"</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">is_file</span><span class="p">():</span>                                   <span class="c1"># pragma: no cover</span>
+        <span class="k">raise</span> <span class="n">OsduRefError</span><span class="p">(</span>
+            <span class="s2">"the LogCurveType map is not installed; run "</span>
+            <span class="s2">"scripts/fetch_osdu_reference_data.py"</span>
+        <span class="p">)</span>
+    <span class="k">with</span> <span class="n">gzip</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">"rt"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">fh</span><span class="p">)[</span><span class="s2">"curves"</span><span class="p">]</span>
+
+
+<span class="nd">@lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_by_mnemonic</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">tuple</span><span class="p">]]:</span>
+    <span class="n">idx</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">tuple</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="p">(</span><span class="n">prop</span><span class="p">,</span> <span class="n">unit</span><span class="p">)</span> <span class="ow">in</span> <span class="n">_curves</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">vendor</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">mnemonic</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s2">":"</span><span class="p">)</span>
+        <span class="n">idx</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">mnemonic</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">vendor</span><span class="p">,</span> <span class="n">prop</span><span class="p">,</span> <span class="n">unit</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">idx</span>
+
+
+<div class="viewcode-block" id="curve_property">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu_ref.curve_property">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">curve_property</span><span class="p">(</span><span class="n">mnemonic</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">vendor</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""The measured property behind a log-curve ``mnemonic``, or ``None``.</span>
+
+<span class="sd">    Mnemonics are contractor- and vintage-specific: bulk density ships as</span>
+<span class="sd">    ``RHOB`` (Schlumberger, Halliburton), ``RHOZ`` (Schlumberger) and ``BDCX``</span>
+<span class="sd">    (Baker Hughes). This resolves them through the published vendor map rather</span>
+<span class="sd">    than through a hand-written name list, which is what reported "no density</span>
+<span class="sd">    curve" on 12 of 14 wells that had one.</span>
+
+<span class="sd">    ``vendor`` narrows the lookup when the log says who ran it. Without it, a</span>
+<span class="sd">    mnemonic that means **different things to different vendors** returns</span>
+<span class="sd">    ``None`` rather than picking one -- an ambiguous answer is worse than none</span>
+<span class="sd">    for a measurement that feeds a calculation.</span>
+<span class="sd">    """</span>
+    <span class="n">hits</span> <span class="o">=</span> <span class="n">_by_mnemonic</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">mnemonic</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span> <span class="p">[])</span>
+    <span class="k">if</span> <span class="n">vendor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="n">_norm</span><span class="p">(</span><span class="n">vendor</span><span class="p">)</span>
+        <span class="n">hits</span> <span class="o">=</span> <span class="p">[</span><span class="n">h</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">hits</span> <span class="k">if</span> <span class="n">_norm</span><span class="p">(</span><span class="n">h</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">==</span> <span class="n">key</span><span class="p">]</span>
+    <span class="n">props</span> <span class="o">=</span> <span class="p">{</span><span class="n">h</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">hits</span> <span class="k">if</span> <span class="n">h</span><span class="p">[</span><span class="mi">1</span><span class="p">]}</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">props</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">props</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="curve_quantity">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu_ref.curve_quantity">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">curve_quantity</span><span class="p">(</span><span class="n">mnemonic</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">vendor</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""The UNIT QUANTITY behind a mnemonic (``"mass per volume"``, …), or None.</span>
+
+<span class="sd">    More robust than :func:`curve_property` and usually the one to reach for.</span>
+<span class="sd">    Vendors name the same measurement differently -- ``RHOB`` is *density* to</span>
+<span class="sd">    one and *bulk density* to another -- so the property can disagree while the</span>
+<span class="sd">    quantity does not, and the quantity is what makes two curves comparable.</span>
+
+<span class="sd">    Still ``None`` when the quantity itself is ambiguous, which is the case</span>
+<span class="sd">    that matters: ``DT`` is *time per length* to two vendors and plain *time*</span>
+<span class="sd">    to a third, and those are not the same curve.</span>
+<span class="sd">    """</span>
+    <span class="n">hits</span> <span class="o">=</span> <span class="n">_by_mnemonic</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">mnemonic</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span> <span class="p">[])</span>
+    <span class="k">if</span> <span class="n">vendor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="n">_norm</span><span class="p">(</span><span class="n">vendor</span><span class="p">)</span>
+        <span class="n">hits</span> <span class="o">=</span> <span class="p">[</span><span class="n">h</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">hits</span> <span class="k">if</span> <span class="n">_norm</span><span class="p">(</span><span class="n">h</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">==</span> <span class="n">key</span><span class="p">]</span>
+    <span class="n">q</span> <span class="o">=</span> <span class="p">{</span><span class="n">h</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">hits</span> <span class="k">if</span> <span class="n">h</span><span class="p">[</span><span class="mi">2</span><span class="p">]}</span>
+    <span class="k">return</span> <span class="n">q</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">q</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="curve_vendors">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu_ref.curve_vendors">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">curve_vendors</span><span class="p">(</span><span class="n">mnemonic</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">tuple</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Every ``(vendor, property, unit quantity)`` published for a mnemonic.</span>
+
+<span class="sd">    Use this when :func:`curve_property` returns ``None`` to see whether the</span>
+<span class="sd">    mnemonic is unknown or merely ambiguous -- the two need different handling.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">_by_mnemonic</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">mnemonic</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span> <span class="p">[]))</span></div>
+
+
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># survey tool types</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<div class="viewcode-block" id="survey_tool_type">
+<a class="viewcode-back" href="../../welleng.html#welleng.osdu_ref.survey_tool_type">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">survey_tool_type</span><span class="p">(</span><span class="n">short_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">model_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""OSDU ``SurveyToolType`` code for an error model, or ``None``.</span>
+
+<span class="sd">    The published codes are ``"&lt;short name&gt;_&lt;OWSG model id&gt;"`` -- e.g.</span>
+<span class="sd">    ``MWD+SRGM_A001Mc``, ``GYRO-NS_A020Gb`` -- which is exactly the pair every</span>
+<span class="sd">    welleng error model already carries in its metadata. **100 of welleng's 101</span>
+<span class="sd">    models resolve.** So this is less an adoption than a label: the models ARE</span>
+<span class="sd">    these tools, they simply never said so.</span>
+
+<span class="sd">    The one exception is the ISCWSA 6-axis rotating model (``D007Ma``), which</span>
+<span class="sd">    is **not in the published list at all** -- not a spelling difference; no</span>
+<span class="sd">    code in the 101 carries that id. It returns ``None``, and that gap is a</span>
+<span class="sd">    contribution candidate rather than something to paper over.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">short_name</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">model_id</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">_index</span><span class="p">(</span><span class="s2">"SurveyToolType"</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">_norm</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">short_name</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">model_id</span><span class="si">}</span><span class="s2">"</span><span class="p">))</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

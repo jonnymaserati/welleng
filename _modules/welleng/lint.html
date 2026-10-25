@@ -1,0 +1,718 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.lint &mdash; welleng 0.30.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=a7ea5d77"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            welleng
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.lint</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.lint</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Source-level checks for ways of misusing a survey that no test will catch.</span>
+
+<span class="sd">Why this is a LINT and not a test</span>
+<span class="sd">---------------------------------</span>
+<span class="sd">The defect this module exists for is ``np.interp(md, survey.md, survey.tvd)``:</span>
+<span class="sd">a straight chord through (MD, TVD) where the trajectory is a circular arc. It</span>
+<span class="sd">cannot be caught numerically by the repo that commits it, because the error</span>
+<span class="sd">scales with the CALLER's station spacing, not with anything the committing repo</span>
+<span class="sd">controls. On a densely-sampled survey (~30 m stations) it is right to a few</span>
+<span class="sd">centimetres; on a 13-station design survey with 480 m gaps the same line is out</span>
+<span class="sd">by **14.4 m of TVD**. So every fixture passes, nothing errors, and the answer</span>
+<span class="sd">is plausible, in range, and monotonic. The only place to catch it is the source.</span>
+
+<span class="sd">Why it lives in CORE</span>
+<span class="sd">--------------------</span>
+<span class="sd">Because the alternative is nine copies. The first consumer to hit this wrote an</span>
+<span class="sd">excellent regex guard for its own repo -- and that guard missed one live</span>
+<span class="sd">instance in its own source (``np.interp(md, p_md, parent.inc)``, because the</span>
+<span class="sd">pattern looked for ``inc_deg``/``inc_rad`` and this was ``.inc``). A guard</span>
+<span class="sd">forked into every repo is the same duplication problem one level up, with each</span>
+<span class="sd">fork carrying its own holes. This one is AST-based, so it sees the attribute</span>
+<span class="sd">regardless of what the object is called, and a hole fixed here is fixed for</span>
+<span class="sd">every consumer at once.</span>
+
+<span class="sd">The rule</span>
+<span class="sd">--------</span>
+<span class="sd">Flag a call when **the interpolated quantity** -- ``fp``, the third argument --</span>
+<span class="sd">is a trajectory axis (md, tvd, inc, azi, n/e/northing/easting). That is the</span>
+<span class="sd">precise statement of the defect, and it is what separates it from the ordinary,</span>
+<span class="sd">correct thing right next to it:</span>
+
+<span class="sd">    np.interp(tvd, self.tvd, self.sigma_V)     # OK  -- a PROPERTY against depth</span>
+<span class="sd">    np.interp(md, survey.md, survey.tvd)       # BAD -- the TRAJECTORY itself</span>
+<span class="sd">    np.interp(md, p_md, parent.inc)            # BAD -- and an ANGLE at that</span>
+<span class="sd">    np.interp(mid[2], target.tvd, target.md)   # BAD -- the inverse, same error</span>
+
+<span class="sd">Interpolating a property (pore pressure, temperature, a log curve) against a</span>
+<span class="sd">depth axis is not flagged: a lint that cries wolf gets switched off, and then it</span>
+<span class="sd">protects nothing.</span>
+
+<span class="sd">Why that exemption is safe -- and what it does NOT say</span>
+<span class="sd">-----------------------------------------------------</span>
+<span class="sd">It is NOT that a property is exempt from the geometry. A log sample is a point in</span>
+<span class="sd">space like any other, so the chord is wrong there too. The deviation of a chord</span>
+<span class="sd">from the arc is the sagitta, ``R(1 - cos(kappa*h/2))``, which goes as</span>
+<span class="sd">**(kappa*h)^2** -- so the STEP decides the magnitude, not the kind of data:</span>
+
+<span class="sd">    at 4.16 deg/30 m (R = 413 m), chord-vs-arc at the midpoint of a step</span>
+
+<span class="sd">        h = 1 m    3.0e-04 m          h = 20 m   1.2e-01 m</span>
+<span class="sd">        h = 5 m    7.6e-03 m          h = 30 m   2.7e-01 m</span>
+
+<span class="sd">The exemption is safe because of WHO OWNS THE ERROR, not because of the data</span>
+<span class="sd">type. Interpolating the TRAJECTORY hands the caller a position this library is</span>
+<span class="sd">responsible for, wrong by an amount set by *their* station spacing -- which this</span>
+<span class="sd">repo does not control and no test here can fail on. Interpolating a property is</span>
+<span class="sd">a modelling choice the caller makes about data the caller sampled, at a spacing</span>
+<span class="sd">the caller can see.</span>
+
+<span class="sd">⚠️ So the exemption transfers badly, and knowingly: a COARSELY sampled property</span>
+<span class="sd">-- a 20-30 m formation-tops list, a sparse pressure survey, an MDT point set --</span>
+<span class="sd">passes this lint while carrying 10-30 cm of position error. That cannot be</span>
+<span class="sd">detected statically, because the step is a property of the caller's data and not</span>
+<span class="sd">of the source text. If you are placing something in space from a sparse depth</span>
+<span class="sd">axis, this lint is silent and it is not evidence that you are right.</span>
+
+<span class="sd">(Magnitudes verified against the closed-form sagitta.)</span>
+
+<span class="sd">Usage::</span>
+
+<span class="sd">    python -m welleng.lint src/            # exits 1 on findings</span>
+<span class="sd">    python -m welleng.lint --quiet pkg/    # exit code only</span>
+
+<span class="sd">In a consumer's suite::</span>
+
+<span class="sd">    from welleng.lint import find_linear_survey_interpolation</span>
+
+<span class="sd">    def test_no_linear_survey_interpolation():</span>
+<span class="sd">        assert find_linear_survey_interpolation("src") == []</span>
+
+<span class="sd">⛔ **Do NOT write that test as ``skipif`` on ImportError.** A repo that cannot</span>
+<span class="sd">import this check and skips has a check that cannot run reading as a pass.</span>
+<span class="sd">Declare the dependency, or let the test error loudly. **A green suite must mean "clean",</span>
+<span class="sd">never "not checked".**</span>
+
+<span class="sd">⚠️ **What a clean run does and does not mean.** This walks PACKAGE SOURCE. It</span>
+<span class="sd">does not see notebooks, loose scripts, or spec files, so **a pass says the</span>
+<span class="sd">PACKAGE is clean, not the REPO.** Worth knowing before quoting a zero.</span>
+
+<span class="sd">⭐ Why a check rather than a convention: this defect was fixed **nine times as</span>
+<span class="sd">CHANGES**, and reminders and conventions were both tried. The check</span>
+<span class="sd">found **twelve more instances in core the day it existed**, and later three in</span>
+<span class="sd">a consumer that had never called a guarded function -- it reimplemented the</span>
+<span class="sd">decision, which is invisible to any guard on the function. A corrected line is</span>
+<span class="sd">invisible to the next author; a red suite is not.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">ast</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pathlib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">"ANGLE_AXES"</span><span class="p">,</span>
+    <span class="s2">"Finding"</span><span class="p">,</span>
+    <span class="s2">"TRAJECTORY_AXES"</span><span class="p">,</span>
+    <span class="s2">"find_attitude_difference"</span><span class="p">,</span>
+    <span class="s2">"find_linear_survey_interpolation"</span><span class="p">,</span>
+    <span class="s2">"main"</span><span class="p">,</span>
+<span class="p">]</span>
+
+<span class="c1">#: Attribute/variable names that ARE the trajectory. Interpolating one of these</span>
+<span class="c1">#: linearly against MD is the defect; interpolating something else against one</span>
+<span class="c1">#: of them as an axis is ordinary and correct.</span>
+<span class="n">TRAJECTORY_AXES</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span>
+    <span class="s2">"md"</span><span class="p">,</span> <span class="s2">"mds"</span><span class="p">,</span> <span class="s2">"measured_depth"</span><span class="p">,</span>
+    <span class="s2">"tvd"</span><span class="p">,</span> <span class="s2">"tvds"</span><span class="p">,</span> <span class="s2">"tvd_m"</span><span class="p">,</span> <span class="s2">"true_vertical_depth"</span><span class="p">,</span>
+    <span class="s2">"inc"</span><span class="p">,</span> <span class="s2">"incs"</span><span class="p">,</span> <span class="s2">"inc_deg"</span><span class="p">,</span> <span class="s2">"inc_rad"</span><span class="p">,</span> <span class="s2">"inclination"</span><span class="p">,</span> <span class="s2">"inclination_deg"</span><span class="p">,</span>
+    <span class="s2">"azi"</span><span class="p">,</span> <span class="s2">"azis"</span><span class="p">,</span> <span class="s2">"azi_deg"</span><span class="p">,</span> <span class="s2">"azi_rad"</span><span class="p">,</span> <span class="s2">"azimuth"</span><span class="p">,</span> <span class="s2">"azimuth_deg"</span><span class="p">,</span>
+    <span class="s2">"n"</span><span class="p">,</span> <span class="s2">"e"</span><span class="p">,</span> <span class="s2">"northing"</span><span class="p">,</span> <span class="s2">"easting"</span><span class="p">,</span> <span class="s2">"pos_nev"</span><span class="p">,</span> <span class="s2">"pos_xyz"</span><span class="p">,</span> <span class="s2">"poss"</span><span class="p">,</span>
+<span class="p">})</span>
+
+<span class="c1">#: What to reach for instead. Keyed by the axis being interpolated.</span>
+<span class="n">_REPLACEMENT</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"tvd"</span><span class="p">:</span> <span class="s2">"survey.interpolate_md(md).pos_nev[2] (or interpolate_mds for many)"</span><span class="p">,</span>
+    <span class="s2">"md"</span><span class="p">:</span> <span class="s2">"survey.interpolate_tvd(tvd) -- closed form, returns EVERY crossing "</span>
+          <span class="s2">"where TVD reverses, which a linear or bisection inverse cannot"</span><span class="p">,</span>
+    <span class="s2">"inc"</span><span class="p">:</span> <span class="s2">"survey.interpolate_md(md).inc_deg -- an ANGLE on an arc"</span><span class="p">,</span>
+    <span class="s2">"azi"</span><span class="p">:</span> <span class="s2">"survey.interpolate_md(md).azi_deg -- an ANGLE, and azimuth WRAPS "</span>
+           <span class="s2">"at 0/360, so a linear blend across the wrap swings the tangent "</span>
+           <span class="s2">"through the opposite heading"</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="n">_INTERP_FUNCS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"interp"</span><span class="p">}</span>          <span class="c1"># np.interp / numpy.interp / bare interp</span>
+
+<span class="c1">#: Explicit, greppable opt-out. A suppression you have to TYPE is a decision on</span>
+<span class="c1">#: the record; a lint that quietly exempts a pattern is one nobody revisits.</span>
+<span class="c1">#: Use it only where the interpolated points are already exact minimum-curvature</span>
+<span class="c1">#: positions and the residual is stated.</span>
+<span class="n">NOQA</span> <span class="o">=</span> <span class="s2">"# lint: trajectory-interp ok"</span>
+
+<span class="c1">#: Suppresses the arc-tangent rule on one line. For a symbolic derivation or a</span>
+<span class="c1">#: test oracle that states the published form (Sawaryn &amp; Thorogood 2005, Eq. 13)</span>
+<span class="c1">#: on purpose -- never for numeric code that runs.</span>
+<span class="n">SLERP_NOQA</span> <span class="o">=</span> <span class="s2">"# lint: slerp ok"</span>
+
+
+<div class="viewcode-block" id="Finding">
+<a class="viewcode-back" href="../../welleng.html#welleng.lint.Finding">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Finding</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""One linear interpolation of a trajectory axis."""</span>
+
+    <span class="n">path</span><span class="p">:</span> <span class="nb">str</span>  <span class="c1"># the scanned file, as walked from ``paths``</span>
+    <span class="n">line</span><span class="p">:</span> <span class="nb">int</span>  <span class="c1"># 1-based line number; 0 when the file could not be parsed</span>
+    <span class="n">axis</span><span class="p">:</span> <span class="nb">str</span>  <span class="c1"># the axis name, ``'slerp'``, or ``'&lt;unreadable&gt;'``</span>
+<span class="w">    </span><span class="sd">"""The trajectory axis being interpolated (the ``fp`` argument)."""</span>
+    <span class="n">source</span><span class="p">:</span> <span class="nb">str</span>  <span class="c1"># the offending source line, stripped</span>
+<span class="w">    </span><span class="sd">"""The offending source line, stripped."""</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">replacement</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""What to use instead."""</span>
+        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">text</span> <span class="ow">in</span> <span class="n">_REPLACEMENT</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">axis</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="ow">or</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">axis</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">text</span>
+        <span class="k">return</span> <span class="s2">"the survey's own minimum-curvature interpolators"</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">axis</span> <span class="o">==</span> <span class="s2">"slerp"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">line</span><span class="si">}</span><span class="s2">: hand-written arc tangent "</span>
+                    <span class="sa">f</span><span class="s2">"-- a second implementation of the arc kernel.</span><span class="se">\n</span><span class="s2">"</span>
+                    <span class="sa">f</span><span class="s2">"    </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">source</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
+                    <span class="sa">f</span><span class="s2">"    use: MinCurve.interpolate(md, angles=True)"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">line</span><span class="si">}</span><span class="s2">: linear interpolation of "</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">axis</span><span class="si">!r}</span><span class="s2"> -- a survey between stations is a circular "</span>
+                <span class="sa">f</span><span class="s2">"ARC.</span><span class="se">\n</span><span class="s2">    </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">source</span><span class="si">}</span><span class="se">\n</span><span class="s2">    use: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">replacement</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span></div>
+
+
+
+<span class="c1">#: Calls that hand back their first argument's values, converted or reshaped:</span>
+<span class="c1">#: an axis passed through one is still that axis.</span>
+<span class="n">_PASS_THROUGH</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span>
+    <span class="s2">"asarray"</span><span class="p">,</span> <span class="s2">"asanyarray"</span><span class="p">,</span> <span class="s2">"ascontiguousarray"</span><span class="p">,</span> <span class="s2">"array"</span><span class="p">,</span> <span class="s2">"atleast_1d"</span><span class="p">,</span> <span class="s2">"copy"</span><span class="p">,</span>
+    <span class="s2">"ravel"</span><span class="p">,</span> <span class="s2">"squeeze"</span><span class="p">,</span> <span class="s2">"flatten"</span><span class="p">,</span> <span class="s2">"list"</span><span class="p">,</span> <span class="s2">"tuple"</span><span class="p">,</span> <span class="s2">"float"</span><span class="p">,</span>
+    <span class="s2">"radians"</span><span class="p">,</span> <span class="s2">"degrees"</span><span class="p">,</span> <span class="s2">"deg2rad"</span><span class="p">,</span> <span class="s2">"rad2deg"</span><span class="p">,</span> <span class="s2">"unwrap"</span><span class="p">,</span>
+<span class="p">})</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_call_name</span><span class="p">(</span><span class="n">node</span><span class="p">:</span> <span class="n">ast</span><span class="o">.</span><span class="n">Call</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""The called name: ``np.asarray`` -&gt; ``asarray``, ``list`` -&gt; ``list``."""</span>
+    <span class="n">f</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">func</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">attr</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Attribute</span><span class="p">)</span>
+            <span class="k">else</span> <span class="n">f</span><span class="o">.</span><span class="n">id</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Name</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_axis_name</span><span class="p">(</span><span class="n">node</span><span class="p">:</span> <span class="n">ast</span><span class="o">.</span><span class="n">AST</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""The trajectory-axis name this expression yields, if it is one.</span>
+
+<span class="sd">    Looks through the value-preserving wrappers in :data:`_PASS_THROUGH`</span>
+<span class="sd">    (``np.asarray(...)``, ``np.radians(...)``, ``list(...)``) and subscripts,</span>
+<span class="sd">    because ``np.interp(x, xp, np.asarray(survey.tvd, float))`` is the same</span>
+<span class="sd">    defect wearing a coat. Any other call is a new quantity computed from its</span>
+<span class="sd">    arguments, not the axis: ``np.diff(model(incs))`` differences the model's</span>
+<span class="sd">    output, not the inclinations.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Attribute</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">node</span><span class="o">.</span><span class="n">attr</span> <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">attr</span> <span class="ow">in</span> <span class="n">TRAJECTORY_AXES</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">node</span><span class="o">.</span><span class="n">id</span> <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">id</span> <span class="ow">in</span> <span class="n">TRAJECTORY_AXES</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Call</span><span class="p">):</span>
+        <span class="c1"># np.asarray(survey.tvd, float) -&gt; look at the first argument</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">args</span> <span class="ow">and</span> <span class="n">_call_name</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="ow">in</span> <span class="n">_PASS_THROUGH</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_axis_name</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Subscript</span><span class="p">):</span>
+        <span class="c1"># d["tvd"] -- the axis is in the KEY, not the object</span>
+        <span class="n">sl</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">slice</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">sl</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Constant</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">sl</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">sl</span><span class="o">.</span><span class="n">value</span> <span class="ow">in</span> <span class="n">TRAJECTORY_AXES</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">sl</span><span class="o">.</span><span class="n">value</span>
+        <span class="k">return</span> <span class="n">_axis_name</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+    <span class="k">return</span> <span class="kc">None</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">_Visitor</span><span class="p">(</span><span class="n">ast</span><span class="o">.</span><span class="n">NodeVisitor</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">lines</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">path</span> <span class="o">=</span> <span class="n">path</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lines</span> <span class="o">=</span> <span class="n">lines</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">findings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Finding</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="c1">#: local name -&gt; the trajectory axis it was bound FROM.</span>
+        <span class="c1">#: ``tvd_s = np.asarray(survey.tvd, float)`` is the most natural line</span>
+        <span class="c1">#: anyone writes, and matching the argument's NAME alone missed it:</span>
+        <span class="c1">#: a consumer's three real instances scored ZERO until the variables</span>
+        <span class="c1">#: were renamed, at which point the same file scored five. Name</span>
+        <span class="c1">#: matching cannot be the whole rule.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bound</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">visit_Assign</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">:</span> <span class="n">ast</span><span class="o">.</span><span class="n">Assign</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># noqa: N802 (ast API)</span>
+<span class="w">        </span><span class="sd">"""Record each plain name bound from a trajectory axis."""</span>
+        <span class="n">axis</span> <span class="o">=</span> <span class="n">_axis_name</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">axis</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">target</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">targets</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Name</span><span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">bound</span><span class="p">[</span><span class="n">target</span><span class="o">.</span><span class="n">id</span><span class="p">]</span> <span class="o">=</span> <span class="n">axis</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">generic_visit</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">visit_AnnAssign</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">:</span> <span class="n">ast</span><span class="o">.</span><span class="n">AnnAssign</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># noqa: N802</span>
+<span class="w">        </span><span class="sd">"""As :meth:`visit_Assign`, for an annotated assignment."""</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">axis</span> <span class="o">=</span> <span class="n">_axis_name</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">axis</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Name</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">bound</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">id</span><span class="p">]</span> <span class="o">=</span> <span class="n">axis</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">generic_visit</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_rebound_axis</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ast</span><span class="o">.</span><span class="n">AST</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""The axis a REBOUND local carries, if any. Looks through the same</span>
+<span class="sd">        wrappers as :func:`_axis_name` so ``tvd_s[ok]`` resolves too."""</span>
+        <span class="k">if</span> <span class="n">node</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Name</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">bound</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Subscript</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rebound_axis</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Call</span><span class="p">)</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">args</span>
+                <span class="ow">and</span> <span class="n">_call_name</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="ow">in</span> <span class="n">_PASS_THROUGH</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rebound_axis</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">visit_Call</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">:</span> <span class="n">ast</span><span class="o">.</span><span class="n">Call</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># noqa: N802 (ast API)</span>
+<span class="w">        </span><span class="sd">"""Flag an interpolation call whose ``fp`` is a trajectory axis."""</span>
+        <span class="n">func</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">func</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">attr</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Attribute</span><span class="p">)</span>
+                <span class="k">else</span> <span class="n">func</span><span class="o">.</span><span class="n">id</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Name</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">_INTERP_FUNCS</span><span class="p">:</span>
+            <span class="c1"># `fp` may be positional (args[2]) OR a keyword. Reading args[2]</span>
+            <span class="c1"># alone let `np.interp(q, md, fp=survey.tvd)` through untouched --</span>
+            <span class="c1"># a STRUCTURAL miss, independent of what the argument is called.</span>
+            <span class="n">fp</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">args</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">3</span><span class="p">:</span>
+                <span class="n">fp</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">kw</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">keywords</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">kw</span><span class="o">.</span><span class="n">arg</span> <span class="o">==</span> <span class="s2">"fp"</span><span class="p">:</span>
+                    <span class="n">fp</span> <span class="o">=</span> <span class="n">kw</span><span class="o">.</span><span class="n">value</span>
+            <span class="n">axis</span> <span class="o">=</span> <span class="n">_axis_name</span><span class="p">(</span><span class="n">fp</span><span class="p">)</span> <span class="k">if</span> <span class="n">fp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">axis</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">axis</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rebound_axis</span><span class="p">(</span><span class="n">fp</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">axis</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">src</span> <span class="o">=</span> <span class="s2">""</span>
+                <span class="k">if</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">node</span><span class="o">.</span><span class="n">lineno</span> <span class="o">&lt;=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lines</span><span class="p">):</span>
+                    <span class="n">src</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lines</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">lineno</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">NOQA</span> <span class="ow">in</span> <span class="n">src</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">generic_visit</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+                    <span class="k">return</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">findings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">Finding</span><span class="p">(</span><span class="n">path</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">,</span> <span class="n">line</span><span class="o">=</span><span class="n">node</span><span class="o">.</span><span class="n">lineno</span><span class="p">,</span>
+                            <span class="n">axis</span><span class="o">=</span><span class="n">axis</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="n">src</span><span class="p">)</span>
+                <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">generic_visit</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="find_linear_survey_interpolation">
+<a class="viewcode-back" href="../../welleng.html#welleng.lint.find_linear_survey_interpolation">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">find_linear_survey_interpolation</span><span class="p">(</span>
+    <span class="n">paths</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">exclude</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="s2">".venv"</span><span class="p">,</span> <span class="s2">"site-packages"</span><span class="p">,</span> <span class="s2">"build"</span><span class="p">,</span> <span class="s2">".git"</span><span class="p">),</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Finding</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Every linear interpolation of a trajectory axis under ``paths``.</span>
+
+<span class="sd">    ``paths`` may be a single path or an iterable of them; directories are</span>
+<span class="sd">    walked for ``*.py``. Returns an empty list when clean, so a consumer's</span>
+<span class="sd">    suite can assert on it directly.</span>
+
+<span class="sd">    A file that does not parse is REPORTED, not skipped -- a lint that silently</span>
+<span class="sd">    passes over what it could not read is indistinguishable from one that found</span>
+<span class="sd">    nothing.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">paths</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">)):</span>
+        <span class="n">paths</span> <span class="o">=</span> <span class="p">[</span><span class="n">paths</span><span class="p">]</span>
+    <span class="n">out</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Finding</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">:</span>
+        <span class="n">root</span> <span class="o">=</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+        <span class="n">files</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">root</span><span class="o">.</span><span class="n">rglob</span><span class="p">(</span><span class="s2">"*.py"</span><span class="p">))</span> <span class="k">if</span> <span class="n">root</span><span class="o">.</span><span class="n">is_dir</span><span class="p">()</span> <span class="k">else</span> <span class="p">[</span><span class="n">root</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">files</span><span class="p">:</span>
+            <span class="n">sp</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">x</span> <span class="ow">in</span> <span class="n">sp</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">exclude</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">text</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span>
+                <span class="n">tree</span> <span class="o">=</span> <span class="n">ast</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">OSError</span><span class="p">,</span> <span class="ne">SyntaxError</span><span class="p">,</span> <span class="ne">UnicodeDecodeError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Finding</span><span class="p">(</span><span class="n">path</span><span class="o">=</span><span class="n">sp</span><span class="p">,</span> <span class="n">line</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s2">"&lt;unreadable&gt;"</span><span class="p">,</span>
+                                   <span class="n">source</span><span class="o">=</span><span class="sa">f</span><span class="s2">"could not parse: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">"</span><span class="p">))</span>
+                <span class="k">continue</span>
+            <span class="n">v</span> <span class="o">=</span> <span class="n">_Visitor</span><span class="p">(</span><span class="n">sp</span><span class="p">,</span> <span class="n">text</span><span class="o">.</span><span class="n">splitlines</span><span class="p">())</span>
+            <span class="n">v</span><span class="o">.</span><span class="n">visit</span><span class="p">(</span><span class="n">tree</span><span class="p">)</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">findings</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_is_sin</span><span class="p">(</span><span class="n">node</span><span class="p">:</span> <span class="n">ast</span><span class="o">.</span><span class="n">AST</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="n">f</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="s2">"func"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="s2">"attr"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="s2">"id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Call</span><span class="p">)</span> <span class="ow">and</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">"sin"</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">args</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_is_one</span><span class="p">(</span><span class="n">node</span><span class="p">:</span> <span class="n">ast</span><span class="o">.</span><span class="n">AST</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">return</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Constant</span><span class="p">)</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">value</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_complement</span><span class="p">(</span><span class="n">arg</span><span class="p">:</span> <span class="n">ast</span><span class="o">.</span><span class="n">AST</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""``A - B``, or ``1 - f`` anywhere in the argument (``(1 - f) * A``,</span>
+<span class="sd">    ``(1 - f)[:, None] * A``) -- the ``sin(alpha - alpha*)`` weight of a SLERP</span>
+<span class="sd">    blend in its usual spellings."""</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">BinOp</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">arg</span><span class="o">.</span><span class="n">op</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Sub</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">return</span> <span class="nb">any</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">BinOp</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">n</span><span class="o">.</span><span class="n">op</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Sub</span><span class="p">)</span>
+               <span class="ow">and</span> <span class="n">_is_one</span><span class="p">(</span><span class="n">n</span><span class="o">.</span><span class="n">left</span><span class="p">)</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">ast</span><span class="o">.</span><span class="n">walk</span><span class="p">(</span><span class="n">arg</span><span class="p">))</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_has_sin</span><span class="p">(</span><span class="n">node</span><span class="p">:</span> <span class="n">ast</span><span class="o">.</span><span class="n">AST</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">return</span> <span class="nb">any</span><span class="p">(</span><span class="n">_is_sin</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">ast</span><span class="o">.</span><span class="n">walk</span><span class="p">(</span><span class="n">node</span><span class="p">))</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_has_cos</span><span class="p">(</span><span class="n">node</span><span class="p">:</span> <span class="n">ast</span><span class="o">.</span><span class="n">AST</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">return</span> <span class="nb">any</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Call</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">n</span><span class="o">.</span><span class="n">func</span><span class="p">,</span> <span class="s2">"attr"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+               <span class="ow">or</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">n</span><span class="o">.</span><span class="n">func</span><span class="p">,</span> <span class="s2">"id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span> <span class="o">==</span> <span class="s2">"cos"</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">ast</span><span class="o">.</span><span class="n">walk</span><span class="p">(</span><span class="n">node</span><span class="p">))</span>
+
+
+<span class="c1">#: The one place the arc tangent is written out: the kernel itself.</span>
+<span class="n">_KERNEL</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"welleng/utils.py"</span><span class="p">,</span> <span class="p">(</span><span class="s2">"_arc_tangent"</span><span class="p">,</span> <span class="s2">"_arc_inplane"</span><span class="p">))</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">_SlerpVisitor</span><span class="p">(</span><span class="n">ast</span><span class="o">.</span><span class="n">NodeVisitor</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""A hand-written arc tangent, in either spelling:</span>
+
+<span class="sd">    - SLERP blend: ``sin(complement) ... / sin(...)``;</span>
+<span class="sd">    - Rodrigues in-plane vector: ``(t2 - cos(a) * t1) / sin(a)``.</span>
+
+<span class="sd">    The denominator may be the sine itself or a name assigned from an</span>
+<span class="sd">    expression containing one (``s = np.where(straight, 1.0, np.sin(dl))``),</span>
+<span class="sd">    optionally indexed. The kernel (``MinCurve``'s ``_arc_tangent``) is the one</span>
+<span class="sd">    exempt place.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">lines</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">lines</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">findings</span> <span class="o">=</span> <span class="n">path</span><span class="p">,</span> <span class="n">lines</span><span class="p">,</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sin_names</span><span class="p">:</span> <span class="nb">set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_func</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">visit_FunctionDef</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">:</span> <span class="n">ast</span><span class="o">.</span><span class="n">FunctionDef</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># noqa: N802</span>
+<span class="w">        </span><span class="sd">"""Track the enclosing function name, for the kernel exemption."""</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_func</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">generic_visit</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_func</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+
+    <span class="n">visit_AsyncFunctionDef</span> <span class="o">=</span> <span class="n">visit_FunctionDef</span>  <span class="c1"># type: ignore[assignment]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_in_kernel</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"</span><span class="se">\\</span><span class="s2">"</span><span class="p">,</span> <span class="s2">"/"</span><span class="p">)</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">_KERNEL</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span><span class="n">f</span> <span class="ow">in</span> <span class="n">_KERNEL</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_func</span><span class="p">))</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_flag</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">:</span> <span class="n">ast</span><span class="o">.</span><span class="n">AST</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lines</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">lineno</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span>  <span class="c1"># type: ignore[attr-defined]</span>
+        <span class="k">if</span> <span class="n">SLERP_NOQA</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">line</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_kernel</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">findings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Finding</span><span class="p">(</span>
+                <span class="n">path</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">,</span> <span class="n">line</span><span class="o">=</span><span class="n">node</span><span class="o">.</span><span class="n">lineno</span><span class="p">,</span>  <span class="c1"># type: ignore[attr-defined]</span>
+                <span class="n">axis</span><span class="o">=</span><span class="s2">"slerp"</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">()))</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">visit_Assign</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">:</span> <span class="n">ast</span><span class="o">.</span><span class="n">Assign</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># noqa: N802 (ast API)</span>
+<span class="w">        </span><span class="sd">"""Record each plain name assigned from an expression with a sine."""</span>
+        <span class="k">if</span> <span class="n">_has_sin</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">value</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">tgt</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">targets</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">tgt</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Name</span><span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_sin_names</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">tgt</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">generic_visit</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_sin_denominator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">:</span> <span class="n">ast</span><span class="o">.</span><span class="n">AST</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Subscript</span><span class="p">):</span>
+            <span class="n">node</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">value</span>
+        <span class="k">return</span> <span class="n">_is_sin</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Name</span><span class="p">)</span>
+                                 <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">id</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sin_names</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">visit_BinOp</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">:</span> <span class="n">ast</span><span class="o">.</span><span class="n">BinOp</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># noqa: N802 (ast API)</span>
+<span class="w">        </span><span class="sd">"""Flag a division by a sine in either arc-tangent spelling."""</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">op</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Div</span><span class="p">)</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sin_denominator</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">right</span><span class="p">):</span>
+            <span class="n">left</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">left</span>
+            <span class="k">if</span> <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">left</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">BinOp</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">left</span><span class="o">.</span><span class="n">op</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Sub</span><span class="p">)</span>
+                    <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">left</span><span class="o">.</span><span class="n">right</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">BinOp</span><span class="p">)</span>
+                    <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">left</span><span class="o">.</span><span class="n">right</span><span class="o">.</span><span class="n">op</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Mult</span><span class="p">)</span>
+                    <span class="ow">and</span> <span class="n">_has_cos</span><span class="p">(</span><span class="n">left</span><span class="o">.</span><span class="n">right</span><span class="p">)):</span>
+                <span class="c1"># cos(a) TIMES a vector: ``1 - cos(x)`` (half-angle) is not one</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_flag</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>                  <span class="c1"># Rodrigues u-form</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">sub</span> <span class="ow">in</span> <span class="n">ast</span><span class="o">.</span><span class="n">walk</span><span class="p">(</span><span class="n">left</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="n">_is_sin</span><span class="p">(</span><span class="n">sub</span><span class="p">)</span> <span class="ow">and</span> <span class="n">_complement</span><span class="p">(</span><span class="n">sub</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>  <span class="c1"># type: ignore[attr-defined]</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_flag</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>          <span class="c1"># SLERP blend</span>
+                        <span class="k">break</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">generic_visit</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">find_slerp_arc_tangent</span><span class="p">(</span>
+    <span class="n">paths</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">exclude</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="s2">".venv"</span><span class="p">,</span> <span class="s2">"site-packages"</span><span class="p">,</span> <span class="s2">"build"</span><span class="p">,</span> <span class="s2">".git"</span><span class="p">),</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Finding</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Every hand-written arc tangent under ``paths``, in either spelling.</span>
+
+<span class="sd">    The SLERP blend ``(sin(a - d) t1 + sin(d) t2) / sin(a)`` and the Rodrigues</span>
+<span class="sd">    in-plane vector ``(t2 - cos(a) t1) / sin(a)`` both re-implement the</span>
+<span class="sd">    minimum-curvature arc tangent that :meth:`welleng.utils.MinCurve.interpolate`</span>
+<span class="sd">    (``angles=True``) and :meth:`~welleng.utils.MinCurve.inc_azi_at` provide.</span>
+<span class="sd">    A second implementation agrees today and drifts the first time either is</span>
+<span class="sd">    changed. Call the ``MinCurve`` methods instead. The kernel itself is the</span>
+<span class="sd">    one exempt place; ``(1 - cos x) / sin x`` (``tan(x/2)``) is not a tangent</span>
+<span class="sd">    and is not flagged. The function name predates the Rodrigues form.</span>
+
+<span class="sd">    Same contract as :func:`find_linear_survey_interpolation`: empty when</span>
+<span class="sd">    clean; an unparseable file is reported, not skipped.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">paths</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">)):</span>
+        <span class="n">paths</span> <span class="o">=</span> <span class="p">[</span><span class="n">paths</span><span class="p">]</span>
+    <span class="n">out</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Finding</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">:</span>
+        <span class="n">root</span> <span class="o">=</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+        <span class="n">files</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">root</span><span class="o">.</span><span class="n">rglob</span><span class="p">(</span><span class="s2">"*.py"</span><span class="p">))</span> <span class="k">if</span> <span class="n">root</span><span class="o">.</span><span class="n">is_dir</span><span class="p">()</span> <span class="k">else</span> <span class="p">[</span><span class="n">root</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">files</span><span class="p">:</span>
+            <span class="n">sp</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">x</span> <span class="ow">in</span> <span class="n">sp</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">exclude</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">text</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span>
+                <span class="n">tree</span> <span class="o">=</span> <span class="n">ast</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">OSError</span><span class="p">,</span> <span class="ne">SyntaxError</span><span class="p">,</span> <span class="ne">UnicodeDecodeError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Finding</span><span class="p">(</span><span class="n">path</span><span class="o">=</span><span class="n">sp</span><span class="p">,</span> <span class="n">line</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s2">"&lt;unreadable&gt;"</span><span class="p">,</span>
+                                   <span class="n">source</span><span class="o">=</span><span class="sa">f</span><span class="s2">"could not parse: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">"</span><span class="p">))</span>
+                <span class="k">continue</span>
+            <span class="n">v</span> <span class="o">=</span> <span class="n">_SlerpVisitor</span><span class="p">(</span><span class="n">sp</span><span class="p">,</span> <span class="n">text</span><span class="o">.</span><span class="n">splitlines</span><span class="p">())</span>
+            <span class="n">v</span><span class="o">.</span><span class="n">visit</span><span class="p">(</span><span class="n">tree</span><span class="p">)</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">findings</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span>
+
+
+<span class="c1">#: The attitude axes: angles at the stations, whose difference along MD is not the</span>
+<span class="c1">#: curvature of the path between them.</span>
+<span class="n">ANGLE_AXES</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">a</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">TRAJECTORY_AXES</span> <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">startswith</span><span class="p">((</span><span class="s2">"inc"</span><span class="p">,</span> <span class="s2">"azi"</span><span class="p">)))</span>
+
+<span class="n">_DIFF_FUNCS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"gradient"</span><span class="p">,</span> <span class="s2">"diff"</span><span class="p">}</span>   <span class="c1"># np.gradient / np.diff / numpy.* / bare</span>
+
+<span class="c1">#: Suppresses the attitude-difference rule on one line, where the difference is</span>
+<span class="c1">#: wanted as such (a build or turn rate reported per leg, its form stated).</span>
+<span class="n">ATTITUDE_NOQA</span> <span class="o">=</span> <span class="s2">"# lint: attitude-difference ok"</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_called_axis</span><span class="p">(</span><span class="n">node</span><span class="p">:</span> <span class="n">ast</span><span class="o">.</span><span class="n">AST</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""The attitude axis a call returns by its name: ``inc_rad(s)``,</span>
+<span class="sd">    ``survey.azimuth(md)``. A helper that hands back the station angles is the</span>
+<span class="sd">    same defect one line removed."""</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Subscript</span><span class="p">):</span>
+        <span class="n">node</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">value</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Call</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">f</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">func</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">attr</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Attribute</span><span class="p">)</span>
+            <span class="k">else</span> <span class="n">f</span><span class="o">.</span><span class="n">id</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Name</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">name</span> <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">ANGLE_AXES</span> <span class="k">else</span> <span class="kc">None</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">_AttitudeVisitor</span><span class="p">(</span><span class="n">_Visitor</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""``np.gradient`` or ``np.diff`` of an inclination or azimuth array."""</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">visit_Call</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">:</span> <span class="n">ast</span><span class="o">.</span><span class="n">Call</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># noqa: N802 (ast API)</span>
+<span class="w">        </span><span class="sd">"""Flag a difference whose first argument is an attitude axis."""</span>
+        <span class="n">func</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">func</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">attr</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Attribute</span><span class="p">)</span>
+                <span class="k">else</span> <span class="n">func</span><span class="o">.</span><span class="n">id</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">ast</span><span class="o">.</span><span class="n">Name</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">_DIFF_FUNCS</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">args</span><span class="p">:</span>
+            <span class="n">arg</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">axis</span> <span class="o">=</span> <span class="p">(</span><span class="n">_called_axis</span><span class="p">(</span><span class="n">arg</span><span class="p">)</span> <span class="ow">or</span> <span class="n">_axis_name</span><span class="p">(</span><span class="n">arg</span><span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rebound_axis</span><span class="p">(</span><span class="n">arg</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">axis</span> <span class="ow">in</span> <span class="n">ANGLE_AXES</span><span class="p">:</span>
+                <span class="n">src</span> <span class="o">=</span> <span class="s2">""</span>
+                <span class="k">if</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">node</span><span class="o">.</span><span class="n">lineno</span> <span class="o">&lt;=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lines</span><span class="p">):</span>
+                    <span class="n">src</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lines</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">lineno</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">ATTITUDE_NOQA</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">src</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">findings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Finding</span><span class="p">(</span>
+                        <span class="n">path</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">,</span> <span class="n">line</span><span class="o">=</span><span class="n">node</span><span class="o">.</span><span class="n">lineno</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s2">"attitude:"</span> <span class="o">+</span> <span class="n">axis</span><span class="p">,</span>
+                        <span class="n">source</span><span class="o">=</span><span class="n">src</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">generic_visit</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="find_attitude_difference">
+<a class="viewcode-back" href="../../welleng.html#welleng.lint.find_attitude_difference">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">find_attitude_difference</span><span class="p">(</span>
+    <span class="n">paths</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">exclude</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="s2">".venv"</span><span class="p">,</span> <span class="s2">"site-packages"</span><span class="p">,</span> <span class="s2">"build"</span><span class="p">,</span> <span class="s2">".git"</span><span class="p">),</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Finding</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Every ``np.gradient`` or ``np.diff`` of station inclination or azimuth.</span>
+
+<span class="sd">    Curvature, build or turn taken as a finite difference of the station angles</span>
+<span class="sd">    is not the curvature of the minimum-curvature path. Along each leg the path is</span>
+<span class="sd">    one arc of constant curvature, ``dogleg / delta_md``, stepping at the</span>
+<span class="sd">    stations; ``np.gradient``'s central difference averages two legs, smearing</span>
+<span class="sd">    that step; a difference of inclination alone drops the turn, which the</span>
+<span class="sd">    dogleg carries; and azimuth wraps at 0/360, so a difference across north</span>
+<span class="sd">    reads as a near-full turn. Use the survey's own ``dogleg`` and ``delta_md``</span>
+<span class="sd">    (``survey.dogleg / survey.delta_md`` per leg), or ``survey.dls``.</span>
+
+<span class="sd">    Same contract as :func:`find_linear_survey_interpolation`: empty when</span>
+<span class="sd">    clean; an unparseable file is reported, not skipped. Names are matched as</span>
+<span class="sd">    that rule matches them, through ``np.asarray(...)``, subscripts and a local</span>
+<span class="sd">    bound from an attitude axis.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">paths</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">)):</span>
+        <span class="n">paths</span> <span class="o">=</span> <span class="p">[</span><span class="n">paths</span><span class="p">]</span>
+    <span class="n">out</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Finding</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">:</span>
+        <span class="n">root</span> <span class="o">=</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+        <span class="n">files</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">root</span><span class="o">.</span><span class="n">rglob</span><span class="p">(</span><span class="s2">"*.py"</span><span class="p">))</span> <span class="k">if</span> <span class="n">root</span><span class="o">.</span><span class="n">is_dir</span><span class="p">()</span> <span class="k">else</span> <span class="p">[</span><span class="n">root</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">files</span><span class="p">:</span>
+            <span class="n">sp</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">x</span> <span class="ow">in</span> <span class="n">sp</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">exclude</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">text</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span>
+                <span class="n">tree</span> <span class="o">=</span> <span class="n">ast</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">OSError</span><span class="p">,</span> <span class="ne">SyntaxError</span><span class="p">,</span> <span class="ne">UnicodeDecodeError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Finding</span><span class="p">(</span><span class="n">path</span><span class="o">=</span><span class="n">sp</span><span class="p">,</span> <span class="n">line</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s2">"&lt;unreadable&gt;"</span><span class="p">,</span>
+                                   <span class="n">source</span><span class="o">=</span><span class="sa">f</span><span class="s2">"could not parse: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">"</span><span class="p">))</span>
+                <span class="k">continue</span>
+            <span class="n">v</span> <span class="o">=</span> <span class="n">_AttitudeVisitor</span><span class="p">(</span><span class="n">sp</span><span class="p">,</span> <span class="n">text</span><span class="o">.</span><span class="n">splitlines</span><span class="p">())</span>
+            <span class="n">v</span><span class="o">.</span><span class="n">visit</span><span class="p">(</span><span class="n">tree</span><span class="p">)</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">findings</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+
+
+<div class="viewcode-block" id="main">
+<a class="viewcode-back" href="../../welleng.html#welleng.lint.main">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">argv</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""CLI: ``python -m welleng.lint [--quiet] PATH...``. Exit 1 on findings.</span>
+
+<span class="sd">    Runs every rule: linear interpolation of a trajectory axis, a hand-written</span>
+<span class="sd">    arc tangent, and a finite difference of station inclination or azimuth.</span>
+<span class="sd">    """</span>
+    <span class="n">args</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="k">if</span> <span class="n">argv</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">argv</span><span class="p">)</span>
+    <span class="n">quiet</span> <span class="o">=</span> <span class="s2">"--quiet"</span> <span class="ow">in</span> <span class="n">args</span>
+    <span class="n">args</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">args</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">a</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"-"</span><span class="p">)]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">args</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">"usage: python -m welleng.lint [--quiet] PATH..."</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+        <span class="k">return</span> <span class="mi">2</span>
+    <span class="n">findings</span> <span class="o">=</span> <span class="p">(</span><span class="n">find_linear_survey_interpolation</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">+</span> <span class="n">find_slerp_arc_tangent</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+                <span class="o">+</span> <span class="n">find_attitude_difference</span><span class="p">(</span><span class="n">args</span><span class="p">))</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">quiet</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">findings</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">findings</span><span class="p">)</span><span class="si">}</span><span class="s2"> finding(s)"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">findings</span> <span class="k">else</span> <span class="mi">0</span></div>
+
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>       <span class="c1"># pragma: no cover</span>
+    <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

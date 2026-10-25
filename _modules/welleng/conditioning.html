@@ -1,0 +1,383 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.conditioning &mdash; welleng 0.30.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=a7ea5d77"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            welleng
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.conditioning</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.conditioning</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Shared-error conditioning of two wells' combined covariance.</span>
+
+<span class="sd">The standard ISCWSA pair calculation assumes the two wells' position-error</span>
+<span class="sd">vectors are entirely independent — combined covariance ``Σ_A + Σ_B``. This</span>
+<span class="sd">is correct between geographically and temporally separated wells, where the</span>
+<span class="sd">underlying error sources (magnetic declination, geomagnetic reference</span>
+<span class="sd">field, sensor biases, …) really do realise independently. It is *not*</span>
+<span class="sd">correct for two wells drilled from the same platform within a short</span>
+<span class="sd">time window, where:</span>
+
+<span class="sd">- **Global error sources** (magnetic declination model errors,</span>
+<span class="sd">  BGGM/IFR field model errors, true-vs-grid azimuth correction) are</span>
+<span class="sd">  realised *identically* in both wells. They share one realisation.</span>
+<span class="sd">- **Systematic error sources** (sensor biases, tool misalignment, …)</span>
+<span class="sd">  are independent if the two wells used different tools, but</span>
+<span class="sd">  *identical* if they shared one MWD service per platform run. The</span>
+<span class="sd">  honest assumption depends on the operator and the campaign.</span>
+<span class="sd">- **Random error sources** (per-station survey noise) are always</span>
+<span class="sd">  independent.</span>
+
+<span class="sd">A shared source is one realisation ``g_k`` acting on both wells through each</span>
+<span class="sd">well's own weights: its position error is ``v_Ak g_k`` in A and ``v_Bk g_k`` in</span>
+<span class="sd">B, where ``v`` is the source's signed position-error vector at one standard</span>
+<span class="sd">deviation (Williamson, 2000, SPE-67616-PA, Eq. A-24, with the cross-well</span>
+<span class="sd">correlation one for the shared sources and zero for the rest). So</span>
+
+<span class="sd">    cov(X_A − X_B) = Σ_A + Σ_B − Σ_k (v_Ak v_Bkᵀ + v_Bk v_Akᵀ)</span>
+
+<span class="sd">summed over the shared sources. The shared contribution is</span>
+<span class="sd">``(v_Ak − v_Bk)(v_Ak − v_Bk)ᵀ``: it cancels only where the two wells weight the</span>
+<span class="sd">source alike (same attitude and departure). Where they differ it can exceed the</span>
+<span class="sd">independent sum: two wells departing in opposite azimuths see one declination</span>
+<span class="sd">error rotate them apart, which doubles their relative error rather than</span>
+<span class="sd">cancelling it. Covariances alone cannot give the cross term, since a covariance</span>
+<span class="sd">loses each source's sign, so sharing takes the signed per-source vectors</span>
+<span class="sd">(:func:`source_vectors`).</span>
+
+<span class="sd">This module provides helpers to construct the combined covariance under</span>
+<span class="sd">different assumptions about which error sources are shared between the two</span>
+<span class="sd">wells.</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Literal</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">numpy.typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">NDArray</span>
+
+<span class="n">ShareMode</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">[</span>
+    <span class="s2">"all_independent"</span><span class="p">,</span> <span class="s2">"globals_shared"</span><span class="p">,</span> <span class="s2">"globals_and_systematic_shared"</span>
+<span class="p">]</span>
+
+
+<div class="viewcode-block" id="CombinedCovariance">
+<a class="viewcode-back" href="../../welleng.html#welleng.conditioning.CombinedCovariance">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">CombinedCovariance</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Result of combining two wells' covariances under a sharing assumption.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    cov_combined : (n, 3, 3) ndarray</span>
+<span class="sd">        The covariance of ``X_A − X_B`` per station after</span>
+<span class="sd">        accounting for the share-mode.</span>
+<span class="sd">    cov_naive : (n, 3, 3) ndarray</span>
+<span class="sd">        The naive ``Σ_A + Σ_B`` for comparison.</span>
+<span class="sd">    sigma_naive : (n,) ndarray</span>
+<span class="sd">        ``sqrt(max eigenvalue)`` of cov_naive — naive 1σ in</span>
+<span class="sd">        worst direction, per station.</span>
+<span class="sd">    sigma_combined : (n,) ndarray</span>
+<span class="sd">        Same for cov_combined.</span>
+<span class="sd">    reduction_factor : (n,) ndarray</span>
+<span class="sd">        ``sigma_naive / sigma_combined`` per station: above 1 where sharing</span>
+<span class="sd">        tightens the combined uncertainty, below 1 where it widens it.</span>
+<span class="sd">    """</span>
+
+    <span class="n">cov_combined</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>
+    <span class="n">cov_naive</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>
+    <span class="n">sigma_naive</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>
+    <span class="n">sigma_combined</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>
+    <span class="n">reduction_factor</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="source_vectors">
+<a class="viewcode-back" href="../../welleng.html#welleng.conditioning.source_vectors">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">source_vectors</span><span class="p">(</span><span class="n">survey_a</span><span class="p">,</span> <span class="n">survey_b</span><span class="p">,</span> <span class="n">propagation</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Signed per-source position-error vectors of the sources two wells share.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    survey_a, survey_b : welleng.survey.Survey</span>
+<span class="sd">        Error-modelled surveys (``error_model`` set).</span>
+<span class="sd">    propagation : {'global', 'systematic'}</span>
+<span class="sd">        Which sources to return.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    codes : tuple of str</span>
+<span class="sd">        The error-source codes of that propagation present in both wells, in</span>
+<span class="sd">        one order.</span>
+<span class="sd">    vec_a, vec_b : (n_a, k, 3) and (n_b, k, 3) ndarray</span>
+<span class="sd">        Each source's position-error vector at one standard deviation, in NEV,</span>
+<span class="sd">        in metres, at every station of each well; ``k`` = ``len(codes)``. A</span>
+<span class="sd">        source's covariance in a well is ``v vᵀ``.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If either survey carries no error model.</span>
+<span class="sd">    """</span>
+    <span class="n">vecs</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="p">((</span><span class="s2">"survey_a"</span><span class="p">,</span> <span class="n">survey_a</span><span class="p">),</span> <span class="p">(</span><span class="s2">"survey_b"</span><span class="p">,</span> <span class="n">survey_b</span><span class="p">)):</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="s2">"err"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">err</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> has no per-source error vectors: it carries no error "</span>
+                <span class="s2">"model (a composed survey keeps covariance buckets only), so a "</span>
+                <span class="s2">"shared source's signed vector in it is not known"</span><span class="p">)</span>
+        <span class="n">vecs</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="n">k</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">sigma_e_NEV</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+                     <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">err</span><span class="o">.</span><span class="n">errors</span><span class="o">.</span><span class="n">errors</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                     <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">propagation</span> <span class="o">==</span> <span class="n">propagation</span><span class="p">})</span>
+    <span class="n">codes</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">k</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">vecs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">vecs</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">v</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">vecs</span><span class="p">,</span> <span class="p">(</span><span class="n">survey_a</span><span class="p">,</span> <span class="n">survey_b</span><span class="p">)):</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">md</span><span class="p">)</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">v</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">codes</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="k">if</span> <span class="n">codes</span>
+                   <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">3</span><span class="p">)))</span>
+    <span class="k">return</span> <span class="n">codes</span><span class="p">,</span> <span class="n">out</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">out</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_cross</span><span class="p">(</span><span class="n">vec_a</span><span class="p">,</span> <span class="n">vec_b</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]:</span>
+    <span class="n">va</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">vec_a</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">vb</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">vec_b</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">va</span> <span class="o">=</span> <span class="n">va</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">va</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">],</span> <span class="mi">3</span><span class="p">)</span> <span class="k">if</span> <span class="n">va</span><span class="o">.</span><span class="n">ndim</span> <span class="o">&gt;=</span> <span class="mi">2</span> <span class="k">else</span> <span class="n">va</span>
+    <span class="n">vb</span> <span class="o">=</span> <span class="n">vb</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">vb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">],</span> <span class="mi">3</span><span class="p">)</span> <span class="k">if</span> <span class="n">vb</span><span class="o">.</span><span class="n">ndim</span> <span class="o">&gt;=</span> <span class="mi">2</span> <span class="k">else</span> <span class="n">vb</span>
+    <span class="k">if</span> <span class="n">va</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">3</span> <span class="ow">or</span> <span class="n">va</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">vb</span><span class="o">.</span><span class="n">shape</span> <span class="ow">or</span> <span class="n">va</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">n</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_a and </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_b must both be (n, k, 3), one row per station "</span>
+            <span class="sa">f</span><span class="s2">"of the covariances and the same sources in the same order; got "</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">va</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> and </span><span class="si">{</span><span class="n">vb</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> for n = </span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">"nki,nkj-&gt;nij"</span><span class="p">,</span> <span class="n">va</span><span class="p">,</span> <span class="n">vb</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="combine_covariances">
+<a class="viewcode-back" href="../../welleng.html#welleng.conditioning.combine_covariances">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">combine_covariances</span><span class="p">(</span>
+    <span class="n">cov_total_a</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">],</span>
+    <span class="n">cov_total_b</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">vec_global_a</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">vec_global_b</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">vec_systematic_a</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">vec_systematic_b</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">share_mode</span><span class="p">:</span> <span class="n">ShareMode</span> <span class="o">=</span> <span class="s2">"globals_shared"</span><span class="p">,</span>
+    <span class="n">cov_global_a</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">cov_global_b</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">cov_systematic_a</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">cov_systematic_b</span><span class="p">:</span> <span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CombinedCovariance</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Combine two wells' per-station covariances under a share-mode.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    cov_total_a, cov_total_b : (n, 3, 3) ndarray</span>
+<span class="sd">        Total covariance per station for each well, in metres squared, the</span>
+<span class="sd">        stations paired row by row.</span>
+<span class="sd">    vec_global_a, vec_global_b : (n, k, 3) ndarray, optional</span>
+<span class="sd">        Signed position-error vectors, in metres, of the ``k`` global sources</span>
+<span class="sd">        the two wells share, at the paired stations, in one source order</span>
+<span class="sd">        (:func:`source_vectors`). Required when ``share_mode`` shares globals.</span>
+<span class="sd">    vec_systematic_a, vec_systematic_b : (n, k, 3) ndarray, optional</span>
+<span class="sd">        The same for the shared systematic sources. Required when</span>
+<span class="sd">        ``share_mode`` is ``'globals_and_systematic_shared'``.</span>
+<span class="sd">    share_mode : {'all_independent', 'globals_shared', \</span>
+<span class="sd">'globals_and_systematic_shared'}</span>
+<span class="sd">        Which sources are realised identically in the two wells:</span>
+
+<span class="sd">        - ``'all_independent'``: ``Σ_A + Σ_B``.</span>
+<span class="sd">        - ``'globals_shared'`` (default): global sources (geomagnetic</span>
+<span class="sd">          reference, depth stretch) are one realisation for both wells.</span>
+<span class="sd">        - ``'globals_and_systematic_shared'``: systematic sources are one</span>
+<span class="sd">          realisation too; appropriate only where both wells were surveyed</span>
+<span class="sd">          by the same tool run.</span>
+
+<span class="sd">        A shared source contributes ``(v_A − v_B)(v_A − v_B)ᵀ``, which is</span>
+<span class="sd">        smaller than the independent ``v_A v_Aᵀ + v_B v_Bᵀ`` where the wells</span>
+<span class="sd">        weight it alike and larger where they weight it oppositely, so sharing</span>
+<span class="sd">        can widen the combined covariance as well as tighten it.</span>
+<span class="sd">    cov_global_a, cov_global_b, cov_systematic_a, cov_systematic_b : optional</span>
+<span class="sd">        Refused: a covariance has lost each source's sign, so it cannot give</span>
+<span class="sd">        the cross term; pass the ``vec_*`` arguments instead.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    CombinedCovariance</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        On unequal covariance shapes, a ``cov_*`` component, a shared mode</span>
+<span class="sd">        without its vectors, vectors of the wrong shape, or an unknown mode.</span>
+<span class="sd">    """</span>
+    <span class="n">cov_a</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">cov_total_a</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+    <span class="n">cov_b</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">cov_total_b</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">cov_a</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">cov_b</span><span class="o">.</span><span class="n">shape</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"cov_total_a </span><span class="si">{</span><span class="n">cov_a</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> and cov_total_b </span><span class="si">{</span><span class="n">cov_b</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> "</span>
+            <span class="s2">"must have the same shape (per-station alignment)"</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">c</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="p">(</span><span class="n">cov_global_a</span><span class="p">,</span> <span class="n">cov_global_b</span><span class="p">,</span>
+                                   <span class="n">cov_systematic_a</span><span class="p">,</span> <span class="n">cov_systematic_b</span><span class="p">)):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">"cov_global_* / cov_systematic_* are not used: a shared source's "</span>
+            <span class="s2">"contribution needs its signed vector in each well, which a "</span>
+            <span class="s2">"covariance has lost; pass vec_global_* / vec_systematic_* "</span>
+            <span class="s2">"(welleng.conditioning.source_vectors)"</span>
+        <span class="p">)</span>
+
+    <span class="n">n</span> <span class="o">=</span> <span class="n">cov_a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">cov_naive</span> <span class="o">=</span> <span class="n">cov_a</span> <span class="o">+</span> <span class="n">cov_b</span>
+
+    <span class="k">if</span> <span class="n">share_mode</span> <span class="o">==</span> <span class="s2">"all_independent"</span><span class="p">:</span>
+        <span class="n">cov_combined</span> <span class="o">=</span> <span class="n">cov_naive</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="k">elif</span> <span class="n">share_mode</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"globals_shared"</span><span class="p">,</span> <span class="s2">"globals_and_systematic_shared"</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">vec_global_a</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">vec_global_b</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">share_mode</span><span class="si">}</span><span class="s2"> requires vec_global_a and _b"</span><span class="p">)</span>
+        <span class="n">cross</span> <span class="o">=</span> <span class="n">_cross</span><span class="p">(</span><span class="n">vec_global_a</span><span class="p">,</span> <span class="n">vec_global_b</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="s2">"vec_global"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">share_mode</span> <span class="o">==</span> <span class="s2">"globals_and_systematic_shared"</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">vec_systematic_a</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">vec_systematic_b</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">"globals_and_systematic_shared requires vec_systematic_a "</span>
+                    <span class="s2">"and _b as well as vec_global_a and _b"</span>
+                <span class="p">)</span>
+            <span class="n">cross</span> <span class="o">=</span> <span class="n">cross</span> <span class="o">+</span> <span class="n">_cross</span><span class="p">(</span><span class="n">vec_systematic_a</span><span class="p">,</span> <span class="n">vec_systematic_b</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span>
+                                   <span class="s2">"vec_systematic"</span><span class="p">)</span>
+        <span class="n">cov_combined</span> <span class="o">=</span> <span class="n">cov_naive</span> <span class="o">-</span> <span class="n">cross</span> <span class="o">-</span> <span class="n">cross</span><span class="o">.</span><span class="n">swapaxes</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">2</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"unknown share_mode </span><span class="si">{</span><span class="n">share_mode</span><span class="si">!r}</span><span class="s2">"</span><span class="p">)</span>
+
+    <span class="c1"># The exact form is the covariance of A's error less B's, so it is positive</span>
+    <span class="c1"># semi-definite whenever the vectors belong to the totals given; a negative</span>
+    <span class="c1"># eigenvalue past rounding means they do not, and no result is given.</span>
+    <span class="n">cov_combined</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">cov_combined</span> <span class="o">+</span> <span class="n">cov_combined</span><span class="o">.</span><span class="n">swapaxes</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">2</span><span class="p">))</span>
+    <span class="n">eig</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigvalsh</span><span class="p">(</span><span class="n">cov_combined</span><span class="p">)</span>
+    <span class="n">scale</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigvalsh</span><span class="p">(</span><span class="n">cov_naive</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">finfo</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">tiny</span><span class="p">)</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">eig</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span> <span class="o">&lt;</span> <span class="o">-</span><span class="mf">1e-9</span> <span class="o">*</span> <span class="n">scale</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">"the combined covariance is not positive semi-definite: the shared "</span>
+            <span class="s2">"sources' vectors are not those of the total covariances given"</span>
+        <span class="p">)</span>
+    <span class="n">sigma_naive</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigvalsh</span><span class="p">(</span><span class="n">cov_naive</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span>
+    <span class="n">sigma_combined</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigvalsh</span><span class="p">(</span><span class="n">cov_combined</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span>
+    <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">divide</span><span class="o">=</span><span class="s2">"ignore"</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s2">"ignore"</span><span class="p">):</span>
+        <span class="n">reduction</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+            <span class="n">sigma_combined</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="n">sigma_naive</span> <span class="o">/</span> <span class="n">sigma_combined</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">CombinedCovariance</span><span class="p">(</span>
+        <span class="n">cov_combined</span><span class="o">=</span><span class="n">cov_combined</span><span class="p">,</span>
+        <span class="n">cov_naive</span><span class="o">=</span><span class="n">cov_naive</span><span class="p">,</span>
+        <span class="n">sigma_naive</span><span class="o">=</span><span class="n">sigma_naive</span><span class="p">,</span>
+        <span class="n">sigma_combined</span><span class="o">=</span><span class="n">sigma_combined</span><span class="p">,</span>
+        <span class="n">reduction_factor</span><span class="o">=</span><span class="n">reduction</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

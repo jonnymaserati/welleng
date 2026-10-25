@@ -1,0 +1,921 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.lithology &mdash; welleng 0.30.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=a7ea5d77"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            welleng
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">welleng.lithology</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.lithology</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Lithology / stratigraphy column rendering.</span>
+
+<span class="sd">Draws a lithostratigraphic column against depth -- a flat colour per interval,</span>
+<span class="sd">optionally overlaid with the FGDC lithologic pattern for that rock type -- and</span>
+<span class="sd">composes it beside a log plot (:func:`welleng.exchange.las.plot_curves`) or a</span>
+<span class="sd">well schematic.</span>
+
+<span class="sd">Reference data</span>
+<span class="sd">--------------</span>
+<span class="sd">:func:`nl_groups` returns the Dutch (NL) lithostratigraphic groups shipped in</span>
+<span class="sd">``welleng/data/nl_lithology_patterns.yaml``: group name, colour, and an FGDC</span>
+<span class="sd">section-37 pattern code. Colours are a presentation choice; the pattern codes</span>
+<span class="sd">are from FGDC-STD-013-2006 (US public domain).</span>
+
+<span class="sd">Pattern images</span>
+<span class="sd">--------------</span>
+<span class="sd">The FGDC pattern PNGs are NOT vendored -- they are a separate CC0 repackaging</span>
+<span class="sd">(``github.com/davenquinn/geologic-patterns``). Point :class:`FgdcPatterns` at</span>
+<span class="sd">its ``assets/png`` directory, or set ``WELLENG_FGDC_PATTERNS``. Without them the</span>
+<span class="sd">column still renders, in flat colour: patterns are an enhancement, never a</span>
+<span class="sd">requirement (a caller with no assets must still get a usable figure).</span>
+
+<span class="sd">``matplotlib`` and ``PIL`` are lazy imports behind the ``welleng[las]`` extra.</span>
+
+<span class="sd">Example</span>
+<span class="sd">-------</span>
+<span class="sd">&gt;&gt;&gt; from welleng.lithology import nl_groups, plot_lithology</span>
+<span class="sd">&gt;&gt;&gt; plot_lithology(nl_groups(), out="litho.png")          # doctest: +SKIP</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">textwrap</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">lru_cache</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">importlib.resources</span><span class="w"> </span><span class="kn">import</span> <span class="n">files</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">Sequence</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="n">_DATA</span> <span class="o">=</span> <span class="s2">"nl_lithology_patterns.yaml"</span>
+<span class="n">ENV_PATTERNS</span> <span class="o">=</span> <span class="s2">"WELLENG_FGDC_PATTERNS"</span>
+
+<span class="c1"># Roughly how many pattern tiles should stack down the FULL height of the</span>
+<span class="c1"># drawn axis. Tile height in depth units is therefore (visible span) / this,</span>
+<span class="c1"># which keeps a pattern the same size on paper whatever the depth window --</span>
+<span class="c1"># the point being that tiles must NOT be sized from interval thickness against</span>
+<span class="c1"># a fixed depth constant, or zooming in stretches a single tile over the whole</span>
+<span class="c1"># interval (a 200 m salt band at a 280 m window rendered as tall rectangles</span>
+<span class="c1"># instead of cross-hatch). Taste, not standard.</span>
+<span class="n">TILES_PER_AXIS</span> <span class="o">=</span> <span class="mf">10.0</span>
+
+
+<div class="viewcode-block" id="LithologyError">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.LithologyError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LithologyError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Lithology reference data or pattern assets could not be used."""</span></div>
+
+
+
+<div class="viewcode-block" id="Interval">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.Interval">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Interval</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""One lithostratigraphic interval. ``pattern`` is an FGDC section-37 code."""</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>  <span class="c1"># unit name, as labelled on the column</span>
+    <span class="n">top</span><span class="p">:</span> <span class="nb">float</span>  <span class="c1"># top depth, in the caller's depth units</span>
+    <span class="n">base</span><span class="p">:</span> <span class="nb">float</span>  <span class="c1"># base depth, same units as ``top``</span>
+    <span class="n">colour</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"#ffffff"</span>
+    <span class="n">pattern</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># FGDC code; None draws flat colour only</span>
+    <span class="n">note</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span>  <span class="c1"># free text carried with the interval</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">thickness</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""``base - top``, in the depth units of the interval."""</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">base</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">top</span></div>
+
+
+
+<span class="nd">@lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_reference</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">yaml</span>                       <span class="c1"># PyYAML is a core dependency</span>
+    <span class="k">return</span> <span class="n">yaml</span><span class="o">.</span><span class="n">safe_load</span><span class="p">((</span><span class="n">files</span><span class="p">(</span><span class="s2">"welleng"</span><span class="p">)</span> <span class="o">/</span> <span class="s2">"data"</span> <span class="o">/</span> <span class="n">_DATA</span><span class="p">)</span><span class="o">.</span><span class="n">read_text</span><span class="p">())</span>
+
+
+<div class="viewcode-block" id="pattern_names">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.pattern_names">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">pattern_names</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""FGDC code -&gt; the standard's own wording, for the codes we reference."""</span>
+    <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span><span class="n">_reference</span><span class="p">()[</span><span class="s2">"patterns"</span><span class="p">])</span></div>
+
+
+
+<div class="viewcode-block" id="nl_groups">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.nl_groups">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">nl_groups</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Interval</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""The Dutch lithostratigraphic groups, shallow to deep.</span>
+
+<span class="sd">    Tops/bases are NOT included -- they are per-well. Each interval comes back</span>
+<span class="sd">    with ``top``/``base`` of 0.0; assign them, or use :func:`intervals_from_tops`.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="p">[</span>
+        <span class="n">Interval</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">g</span><span class="p">[</span><span class="s2">"name"</span><span class="p">],</span> <span class="n">top</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">colour</span><span class="o">=</span><span class="n">g</span><span class="p">[</span><span class="s2">"colour"</span><span class="p">],</span>
+                 <span class="n">pattern</span><span class="o">=</span><span class="n">g</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pattern"</span><span class="p">),</span> <span class="n">note</span><span class="o">=</span><span class="n">g</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"note"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">_reference</span><span class="p">()[</span><span class="s2">"groups"</span><span class="p">]</span>
+    <span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="intervals_from_tops">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.intervals_from_tops">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">intervals_from_tops</span><span class="p">(</span><span class="n">tops</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]],</span> <span class="n">base</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+                        <span class="n">lookup</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Interval</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Interval</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Build intervals from ``(name, top_depth)`` pairs plus a final ``base``.</span>
+
+<span class="sd">    Colour and pattern are taken from ``lookup`` (default: the NL groups) by</span>
+<span class="sd">    case-insensitive name match; an unmatched name renders in flat white, which</span>
+<span class="sd">    is deliberate -- an unknown unit should look unknown, not be given a</span>
+<span class="sd">    plausible colour it has not earned.</span>
+<span class="sd">    """</span>
+    <span class="n">ref</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="p">(</span><span class="n">lookup</span> <span class="k">if</span> <span class="n">lookup</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">nl_groups</span><span class="p">())}</span>
+    <span class="n">ordered</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">tops</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">t</span><span class="p">:</span> <span class="n">t</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">out</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Interval</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">top</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">ordered</span><span class="p">):</span>
+        <span class="n">bot</span> <span class="o">=</span> <span class="n">ordered</span><span class="p">[</span><span class="n">idx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">idx</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">ordered</span><span class="p">)</span> <span class="k">else</span> <span class="n">base</span>
+        <span class="n">match</span> <span class="o">=</span> <span class="n">ref</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Interval</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">name</span><span class="p">),</span> <span class="n">top</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">top</span><span class="p">),</span> <span class="n">base</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">bot</span><span class="p">),</span>
+            <span class="n">colour</span><span class="o">=</span><span class="n">match</span><span class="o">.</span><span class="n">colour</span> <span class="k">if</span> <span class="n">match</span> <span class="k">else</span> <span class="s2">"#ffffff"</span><span class="p">,</span>
+            <span class="n">pattern</span><span class="o">=</span><span class="n">match</span><span class="o">.</span><span class="n">pattern</span> <span class="k">if</span> <span class="n">match</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">note</span><span class="o">=</span><span class="n">match</span><span class="o">.</span><span class="n">note</span> <span class="k">if</span> <span class="n">match</span> <span class="k">else</span> <span class="s2">""</span><span class="p">,</span>
+        <span class="p">))</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+
+
+<div class="viewcode-block" id="nl_groups_by_code">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.nl_groups_by_code">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">nl_groups_by_code</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Interval</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""RGD group-rank code -&gt; template :class:`Interval` (colour + pattern)."""</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="n">g</span><span class="p">[</span><span class="s2">"rgd_group"</span><span class="p">]:</span> <span class="n">Interval</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="n">g</span><span class="p">[</span><span class="s2">"name"</span><span class="p">],</span> <span class="n">top</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">colour</span><span class="o">=</span><span class="n">g</span><span class="p">[</span><span class="s2">"colour"</span><span class="p">],</span>
+            <span class="n">pattern</span><span class="o">=</span><span class="n">g</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pattern"</span><span class="p">),</span> <span class="n">note</span><span class="o">=</span><span class="n">g</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"note"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">_reference</span><span class="p">()[</span><span class="s2">"groups"</span><span class="p">]</span> <span class="k">if</span> <span class="n">g</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rgd_group"</span><span class="p">)</span>
+    <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="group_of">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.group_of">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">group_of</span><span class="p">(</span><span class="n">unit_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Roll an RGD unit code up to its GROUP-rank code.</span>
+
+<span class="sd">    A formation or member code resolves through its ancestor chain (the last</span>
+<span class="sd">    entry is the group); a code already at group rank returns itself. Returns</span>
+<span class="sd">    None for a code the nomenclature does not know.</span>
+<span class="sd">    """</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.exchange</span><span class="w"> </span><span class="kn">import</span> <span class="n">rgd_nomenclature</span> <span class="k">as</span> <span class="n">rgd</span>
+    <span class="n">info</span> <span class="o">=</span> <span class="n">rgd</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">unit_id</span><span class="p">))</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">info</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rank"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"group"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">info</span><span class="p">[</span><span class="s2">"code"</span><span class="p">]</span>
+    <span class="n">anc</span> <span class="o">=</span> <span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ancestors"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+    <span class="k">return</span> <span class="n">anc</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">anc</span> <span class="k">else</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="colour">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.colour">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">colour</span><span class="p">(</span><span class="n">unit_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Colour (hex) for ANY RGD unit code, rolled up to its group. Or ``None``.</span>
+
+<span class="sd">    A member or formation inherits its group's colour rather than falling to</span>
+<span class="sd">    grey, so a consumer plotting a Dutch column does not have to invent one.</span>
+<span class="sd">    ``None`` for a code the nomenclature does not know, or a group the shipped</span>
+<span class="sd">    table does not carry -- **deliberately not a fallback palette**: an</span>
+<span class="sd">    invented colour that looks official is worse than an obviously absent one,</span>
+<span class="sd">    exactly as with the OCR names.</span>
+
+<span class="sd">    ⚠️ **These colours are welleng's presentation choice, NOT a published</span>
+<span class="sd">    standard.** TNO's DINOloket stratigraphic nomenclature is the authority and</span>
+<span class="sd">    is not yet ingested here.</span>
+<span class="sd">    Say so on any figure that uses them.</span>
+<span class="sd">    """</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">group_of</span><span class="p">(</span><span class="n">unit_id</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">g</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">hit</span> <span class="o">=</span> <span class="n">nl_groups_by_code</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">hit</span><span class="o">.</span><span class="n">colour</span> <span class="k">if</span> <span class="n">hit</span> <span class="k">else</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="pattern">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.pattern">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">pattern</span><span class="p">(</span><span class="n">unit_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""FGDC pattern code for ANY RGD unit code, rolled up to its group.</span>
+
+<span class="sd">    Same roll-up and same ``None`` policy as :func:`colour`.</span>
+
+<span class="sd">    ⚠️ **One pattern per GROUP is a simplification** -- a group spans more than</span>
+<span class="sd">    one rock type -- and an ornament carries meaning a colour does not: the</span>
+<span class="sd">    box/cross-hatch patterns read as EVAPORITE, so ornamenting a carbonate with</span>
+<span class="sd">    one says salt. Override per interval at formation or member rank where the</span>
+<span class="sd">    distinction matters.</span>
+<span class="sd">    """</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">group_of</span><span class="p">(</span><span class="n">unit_id</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">g</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">hit</span> <span class="o">=</span> <span class="n">nl_groups_by_code</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">hit</span><span class="o">.</span><span class="n">pattern</span> <span class="k">if</span> <span class="n">hit</span> <span class="k">else</span> <span class="kc">None</span></div>
+
+
+
+<span class="c1">#: Lithology words that map unambiguously onto a shipped FGDC pattern. Matched</span>
+<span class="c1">#: on WORD BOUNDARIES only, because some Dutch unit names are proper nouns that</span>
+<span class="c1">#: contain a lithology word: *Buntsandstein* contains "sandstein" but the unit</span>
+<span class="c1">#: is claystone-dominated, and a substring match draws it as clean sand.</span>
+<span class="n">_NAME_LITHOLOGY</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"conglomerate"</span><span class="p">:</span> <span class="mi">601</span><span class="p">,</span> <span class="s2">"gravel"</span><span class="p">:</span> <span class="mi">601</span><span class="p">,</span>
+    <span class="s2">"sandstone"</span><span class="p">:</span> <span class="mi">607</span><span class="p">,</span> <span class="s2">"sand"</span><span class="p">:</span> <span class="mi">607</span><span class="p">,</span>
+    <span class="s2">"silt"</span><span class="p">:</span> <span class="mi">616</span><span class="p">,</span> <span class="s2">"siltstone"</span><span class="p">:</span> <span class="mi">616</span><span class="p">,</span>
+    <span class="s2">"claystone"</span><span class="p">:</span> <span class="mi">620</span><span class="p">,</span> <span class="s2">"clay"</span><span class="p">:</span> <span class="mi">620</span><span class="p">,</span> <span class="s2">"shale"</span><span class="p">:</span> <span class="mi">620</span><span class="p">,</span> <span class="s2">"mudstone"</span><span class="p">:</span> <span class="mi">620</span><span class="p">,</span>
+    <span class="s2">"marl"</span><span class="p">:</span> <span class="mi">623</span><span class="p">,</span> <span class="s2">"marlstone"</span><span class="p">:</span> <span class="mi">623</span><span class="p">,</span>          <span class="c1"># FGDC 623 IS "calcareous shale or marl"</span>
+    <span class="s2">"chalk"</span><span class="p">:</span> <span class="mi">626</span><span class="p">,</span>
+    <span class="s2">"limestone"</span><span class="p">:</span> <span class="mi">627</span><span class="p">,</span>
+    <span class="s2">"dolostone"</span><span class="p">:</span> <span class="mi">642</span><span class="p">,</span> <span class="s2">"dolomite"</span><span class="p">:</span> <span class="mi">642</span><span class="p">,</span>
+    <span class="s2">"coal"</span><span class="p">:</span> <span class="mi">658</span><span class="p">,</span> <span class="s2">"lignite"</span><span class="p">:</span> <span class="mi">658</span><span class="p">,</span>
+    <span class="s2">"gypsum"</span><span class="p">:</span> <span class="mi">667</span><span class="p">,</span>
+    <span class="s2">"salt"</span><span class="p">:</span> <span class="mi">668</span><span class="p">,</span> <span class="s2">"halite"</span><span class="p">:</span> <span class="mi">668</span><span class="p">,</span>
+    <span class="c1"># Glauconitic sandstone. Absent, it read as NO lithology word at all, so a</span>
+    <span class="c1"># greensand member inherited its group -- chalk inside the Chalk Group,</span>
+    <span class="c1"># marl inside Rijnland. A consumer found both.</span>
+    <span class="s2">"greensand"</span><span class="p">:</span> <span class="mi">607</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="c1">#: Words naming a lithology CLASS too broad to pick a pattern from. These are</span>
+<span class="c1">#: refused as AMBIGUOUS rather than read as "no lithology mentioned": a unit</span>
+<span class="c1">#: called "Carbonate Member" is not limestone rather than dolostone, but it is</span>
+<span class="c1">#: definitely not its group's halite either, and that distinction decides</span>
+<span class="c1">#: whether the group fallback may run.</span>
+<span class="n">_NAME_AMBIGUOUS_CLASS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"carbonate"</span><span class="p">,</span> <span class="s2">"evaporite"</span><span class="p">,</span> <span class="s2">"clastic"</span><span class="p">,</span> <span class="s2">"volcanic"</span><span class="p">)</span>
+
+<span class="c1">#: Ranks at which a unit IS the thing the group pattern describes, so inheriting</span>
+<span class="c1">#: that pattern is a correct statement rather than a claim about a narrower unit.</span>
+<span class="n">_GROUP_RANKS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"group"</span><span class="p">,</span> <span class="s2">"subgroup"</span><span class="p">)</span>
+
+<span class="c1">#: Words that name a rock the FGDC chart has no pattern for. Listed so such a</span>
+<span class="c1">#: name is REFUSED rather than taking the nearest pattern: **anhydrite is not</span>
+<span class="c1">#: gypsum**, and 667 is gypsum only.</span>
+<span class="n">_NAME_UNPATTERNED</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"anhydrite"</span><span class="p">,</span> <span class="s2">"tuffite"</span><span class="p">,</span> <span class="s2">"tuff"</span><span class="p">,</span> <span class="s2">"bentonite"</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="pattern_from_name">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.pattern_from_name">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">pattern_from_name</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""FGDC pattern implied by a unit NAME, or ``None`` when it does not say.</span>
+
+<span class="sd">    Word-boundary matched, and deliberately unwilling:</span>
+
+<span class="sd">    * a name with **no** lithology word returns ``None`` -- "Ommelanden</span>
+<span class="sd">      Formation" says nothing about the rock, so the caller keeps whatever it</span>
+<span class="sd">      had.</span>
+<span class="sd">    * a name with **two different** lithologies returns ``None``. Picking the</span>
+<span class="sd">      first would be a coin toss on a barrier drawing.</span>
+<span class="sd">    * a name whose rock the FGDC chart has no pattern for returns ``None``</span>
+<span class="sd">      rather than the nearest one: **anhydrite is not gypsum**, and 667 is</span>
+<span class="sd">      gypsum only.</span>
+<span class="sd">    * ⚠️ **Substring matching is wrong here.** *Buntsandstein* contains</span>
+<span class="sd">      "sandstein" and the Dutch unit logs 127 gAPI -- claystone-dominated. Word</span>
+<span class="sd">      boundaries are what stop a proper noun being read as a description.</span>
+
+<span class="sd">    This is a NAME heuristic, not a lithology record. It exists because the</span>
+<span class="sd">    shipped table carries one pattern per GROUP, and a group spans more than</span>
+<span class="sd">    one rock: it is how the Z4 Fringe SANDSTONE Member stops inheriting the</span>
+<span class="sd">    Zechstein evaporite pattern and being drawn as salt on a barrier drawing.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">pattern_match_from_name</span><span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="o">.</span><span class="n">code</span></div>
+
+
+
+<div class="viewcode-block" id="PatternMatch">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.PatternMatch">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PatternMatch</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""What a unit name said, and -- when it said nothing usable -- WHY.</span>
+
+<span class="sd">    ⭐ **The reason is the point, because a refusal is not self-describing.**</span>
+<span class="sd">    ``pattern_from_name`` returning ``None`` was read by its caller as "no</span>
+<span class="sd">    information, keep what you had", and what the caller had was the RGD GROUP</span>
+<span class="sd">    pattern. In the Zechstein that is HALITE, so declining to read the word</span>
+<span class="sd">    "clay" in "Grey Salt Clay Member" did not leave the unit unlabelled -- it</span>
+<span class="sd">    labelled it salt, on a barrier drawing, inside the seal.</span>
+
+<span class="sd">    Only ``no_lithology`` means the group is still the best available</span>
+<span class="sd">    statement. Every other reason means we know the unit is NOT simply its</span>
+<span class="sd">    group's rock, and falling back to the group is then a claim the name has</span>
+<span class="sd">    actively contradicted.</span>
+<span class="sd">    """</span>
+
+    <span class="n">code</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span>  <span class="c1"># set only when ``reason`` is ``matched``</span>
+<span class="w">    </span><span class="sd">"""FGDC pattern number, or ``None``."""</span>
+
+    <span class="n">reason</span><span class="p">:</span> <span class="nb">str</span>  <span class="c1"># one of the five values listed below</span>
+<span class="w">    </span><span class="sd">"""``matched`` · ``ambiguous`` (two lithologies, or a class word too broad)</span>
+<span class="sd">    · ``unmapped`` (a rock the FGDC chart has no pattern for) ·</span>
+<span class="sd">    ``no_lithology`` (the name does not mention rock at all) · ``no_name``."""</span>
+
+    <span class="n">words</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>  <span class="c1"># lithology words found in the name</span>
+<span class="w">    </span><span class="sd">"""The lithology words seen, so a caller can say what it could not resolve."""</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">may_fall_back_to_group</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Whether a caller may substitute the unit's GROUP pattern.</span>
+
+<span class="sd">        ⚠️ **NECESSARY, NOT SUFFICIENT -- do not branch on this alone.** It</span>
+<span class="sd">        answers only "did the NAME say something that contradicts the group?".</span>
+<span class="sd">        The group pattern also describes a RANK, and giving it to a formation</span>
+<span class="sd">        or member inside that group is a separate error this flag knows nothing</span>
+<span class="sd">        about.</span>
+
+<span class="sd">        A consumer branched on this flag and applied the group pattern itself.</span>
+<span class="sd">        When the rank rule landed, its drawing **did not change** -- the</span>
+<span class="sd">        corrected code was never on its path. Call :func:`pattern_for_unit`,</span>
+<span class="sd">        which makes the whole decision.</span>
+<span class="sd">        """</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">reason</span> <span class="o">==</span> <span class="s2">"no_lithology"</span></div>
+
+
+
+<div class="viewcode-block" id="pattern_match_from_name">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.pattern_match_from_name">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">pattern_match_from_name</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PatternMatch</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">""":func:`pattern_from_name`, plus why it refused. See :class:`PatternMatch`."""</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">name</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">PatternMatch</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">"no_name"</span><span class="p">)</span>
+    <span class="n">words</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"[a-z]+"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()))</span>
+    <span class="n">unpatterned</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">words</span> <span class="o">&amp;</span> <span class="nb">set</span><span class="p">(</span><span class="n">_NAME_UNPATTERNED</span><span class="p">)))</span>
+    <span class="k">if</span> <span class="n">unpatterned</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">PatternMatch</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">"unmapped"</span><span class="p">,</span> <span class="n">unpatterned</span><span class="p">)</span>
+    <span class="n">broad</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">words</span> <span class="o">&amp;</span> <span class="nb">set</span><span class="p">(</span><span class="n">_NAME_AMBIGUOUS_CLASS</span><span class="p">)))</span>
+    <span class="n">hits</span> <span class="o">=</span> <span class="p">{</span><span class="n">code</span> <span class="k">for</span> <span class="n">w</span><span class="p">,</span> <span class="n">code</span> <span class="ow">in</span> <span class="n">_NAME_LITHOLOGY</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">words</span><span class="p">}</span>
+    <span class="n">seen</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">w</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">_NAME_LITHOLOGY</span> <span class="k">if</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">words</span><span class="p">))</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">hits</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">broad</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">PatternMatch</span><span class="p">(</span><span class="n">hits</span><span class="o">.</span><span class="n">pop</span><span class="p">(),</span> <span class="s2">"matched"</span><span class="p">,</span> <span class="n">seen</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">hits</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">or</span> <span class="n">broad</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">PatternMatch</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">"ambiguous"</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">seen</span> <span class="o">+</span> <span class="n">broad</span><span class="p">)))</span>
+    <span class="k">return</span> <span class="n">PatternMatch</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">"no_lithology"</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="pattern_for_unit">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.pattern_for_unit">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">pattern_for_unit</span><span class="p">(</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">rank</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">group_pattern</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""THE pattern decision for one stratigraphic unit. Call this; don't rebuild it.</span>
+
+<span class="sd">    Combines BOTH gates, which is the whole point. The NAME gate</span>
+<span class="sd">    (:func:`pattern_match_from_name`) and the RANK gate each give a confident</span>
+<span class="sd">    wrong answer alone, and they used to live in different places -- the name</span>
+<span class="sd">    half public, the rank half buried in :func:`intervals_from_nlog`. A</span>
+<span class="sd">    consumer holding only the public half reassembled the decision from</span>
+<span class="sd">    :attr:`PatternMatch.may_fall_back_to_group` and applied the group pattern</span>
+<span class="sd">    itself, so when the rank rule shipped **its sheet did not change**: three</span>
+<span class="sd">    units went on wearing a hatch they had not earned. The fix was a check, in</span>
+<span class="sd">    the right place, and it still did not travel, because the caller had</span>
+<span class="sd">    duplicated the decision instead of calling it.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    name : str or None</span>
+<span class="sd">        The unit's own name, at its own rank.</span>
+<span class="sd">    rank : str or None</span>
+<span class="sd">        ``"group"``/``"subgroup"``/``"formation"``/``"member"``/None.</span>
+<span class="sd">        ⚠️ ``None`` means NOT RECORDED and REFUSES the group fallback: not</span>
+<span class="sd">        knowing what a unit IS is not a reason to assert what it is MADE OF.</span>
+<span class="sd">    group_pattern : int or None</span>
+<span class="sd">        The parent group's pattern. Used only where both gates allow it.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    int or None</span>
+<span class="sd">        FGDC pattern number, or ``None`` for "we cannot say" -- which a</span>
+<span class="sd">        renderer draws UNPATTERNED, never as the group's rock.</span>
+<span class="sd">    """</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">pattern_match_from_name</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">m</span><span class="o">.</span><span class="n">code</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">m</span><span class="o">.</span><span class="n">code</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="o">.</span><span class="n">may_fall_back_to_group</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>                     <span class="c1"># the name contradicts the group</span>
+    <span class="k">if</span> <span class="n">rank</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_GROUP_RANKS</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>                     <span class="c1"># the group pattern describes a GROUP</span>
+    <span class="k">return</span> <span class="n">group_pattern</span></div>
+
+
+
+<div class="viewcode-block" id="intervals_from_nlog">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.intervals_from_nlog">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">intervals_from_nlog</span><span class="p">(</span><span class="n">column</span><span class="p">,</span> <span class="n">label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"formation"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Interval</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Colour an NLOG :class:`~welleng.exchange.nlog.StratColumn`.</span>
+
+<span class="sd">    ``label``:</span>
+
+<span class="sd">    ``"formation"`` (default)</span>
+<span class="sd">        The unit's own name at formation/member rank, and its own lithology</span>
+<span class="sd">        where the name says it -- so the Z4 Fringe **Sandstone** Member is</span>
+<span class="sd">        drawn as sand rather than inheriting the Zechstein evaporite pattern.</span>
+<span class="sd">        Colour stays the GROUP's, which is what makes a column read as</span>
+<span class="sd">        stratigraphy rather than as a rock-type mosaic.</span>
+<span class="sd">    ``"group"``</span>
+<span class="sd">        Group name and group pattern throughout -- the coarse view.</span>
+<span class="sd">    ``"code"``</span>
+<span class="sd">        The raw RGD code as logged, for debugging. (``"unit"`` is accepted as</span>
+<span class="sd">        the old spelling of this.)</span>
+
+<span class="sd">    ⭐ **One pattern per GROUP is a simplification and it bites at the worst</span>
+<span class="sd">    place.** The Rijnland Group is marl AND clay AND sandstone, and a well's</span>
+<span class="sd">    cap rock is a claystone member inside it; the Zechstein is an evaporite</span>
+<span class="sd">    group containing a sandstone reservoir. A consumer hit both, and had to</span>
+<span class="sd">    hand-write an override table to stop a flow zone being shaded as salt on a</span>
+<span class="sd">    barrier drawing. That override now happens here, from the name, and only</span>
+<span class="sd">    where the name is unambiguous -- see :func:`pattern_from_name`.</span>
+
+<span class="sd">    An unrecognised or unmatched unit renders flat white with no pattern -- an</span>
+<span class="sd">    unknown unit should look unknown rather than be given a colour it has not</span>
+<span class="sd">    earned. Intervals with no ``bottom_md`` are dropped, since a band needs a</span>
+<span class="sd">    base; that is a data gap, not something to interpolate over.</span>
+<span class="sd">    """</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.exchange</span><span class="w"> </span><span class="kn">import</span> <span class="n">rgd_nomenclature</span> <span class="k">as</span> <span class="n">rgd</span>
+
+    <span class="n">by_code</span> <span class="o">=</span> <span class="n">nl_groups_by_code</span><span class="p">()</span>
+    <span class="n">out</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Interval</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">column</span><span class="p">,</span> <span class="s2">"intervals"</span><span class="p">,</span> <span class="p">[]):</span>
+        <span class="n">top</span><span class="p">,</span> <span class="n">base</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="s2">"top_md"</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="s2">"bottom_md"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">top</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">base</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">unit</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="s2">"unit_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">gcode</span> <span class="o">=</span> <span class="n">group_of</span><span class="p">(</span><span class="n">unit</span><span class="p">)</span> <span class="k">if</span> <span class="n">unit</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">tmpl</span> <span class="o">=</span> <span class="n">by_code</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">gcode</span><span class="p">)</span> <span class="k">if</span> <span class="n">gcode</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">pattern</span> <span class="o">=</span> <span class="n">tmpl</span><span class="o">.</span><span class="n">pattern</span> <span class="k">if</span> <span class="n">tmpl</span> <span class="k">else</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="n">label</span> <span class="o">==</span> <span class="s2">"group"</span><span class="p">:</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">tmpl</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="n">tmpl</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">unit</span> <span class="ow">or</span> <span class="s2">"?"</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">label</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"code"</span><span class="p">,</span> <span class="s2">"unit"</span><span class="p">):</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">unit</span> <span class="ow">or</span> <span class="s2">"?"</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">info</span> <span class="o">=</span> <span class="n">rgd</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">unit</span><span class="p">))</span> <span class="k">if</span> <span class="n">unit</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="p">(</span><span class="n">info</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"inherited_name"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
+                <span class="n">tmpl</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="n">tmpl</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">unit</span> <span class="ow">or</span> <span class="s2">"?"</span><span class="p">))</span>
+            <span class="c1"># An inherited name belongs to the PARENT: say so, rather than</span>
+            <span class="c1"># labelling a member with its formation's name as if it were one.</span>
+            <span class="k">if</span> <span class="n">info</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">)</span> <span class="ow">and</span> <span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name_from"</span><span class="p">):</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'rank'</span><span class="p">)</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="s1">'member'</span><span class="si">}</span><span class="s2">)"</span>
+            <span class="c1"># NOT `pattern_from_name(name) or pattern`. That `or` sent every</span>
+            <span class="c1"># refusal back to the GROUP pattern, which is the very thing the</span>
+            <span class="c1"># name override exists to escape: "Grey Salt Clay Member" was drawn</span>
+            <span class="c1"># as Zechstein HALITE. The group is the best available statement</span>
+            <span class="c1"># only when the name mentions no rock at all.</span>
+            <span class="n">pattern</span> <span class="o">=</span> <span class="n">pattern_for_unit</span><span class="p">(</span>
+                <span class="n">name</span><span class="p">,</span> <span class="p">(</span><span class="n">info</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rank"</span><span class="p">),</span> <span class="n">pattern</span>
+            <span class="p">)</span>
+
+        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Interval</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">top</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">top</span><span class="p">),</span> <span class="n">base</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">base</span><span class="p">),</span>
+            <span class="n">colour</span><span class="o">=</span><span class="n">tmpl</span><span class="o">.</span><span class="n">colour</span> <span class="k">if</span> <span class="n">tmpl</span> <span class="k">else</span> <span class="s2">"#ffffff"</span><span class="p">,</span>
+            <span class="n">pattern</span><span class="o">=</span><span class="n">pattern</span><span class="p">,</span>
+            <span class="n">note</span><span class="o">=</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">unit</span><span class="si">}</span><span class="s2"> -&gt; </span><span class="si">{</span><span class="n">gcode</span><span class="si">}</span><span class="s2">"</span> <span class="k">if</span> <span class="n">gcode</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">unit</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">),</span>
+        <span class="p">))</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+
+
+<div class="viewcode-block" id="FgdcPatterns">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.FgdcPatterns">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FgdcPatterns</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Resolves FGDC pattern codes to RGBA tiles from a CC0 PNG asset directory.</span>
+
+<span class="sd">    The PNGs carry NATIVE transparency (background alpha 0, opaque line work),</span>
+<span class="sd">    so the RGBA is used as-is. Do not derive alpha from luminance -- that path</span>
+<span class="sd">    was tried and is wrong; it grays the fill and loses the line work.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="FgdcPatterns.__init__">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.FgdcPatterns.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">directory</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">os</span><span class="o">.</span><span class="n">PathLike</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">directory</span> <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ENV_PATTERNS</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">directory</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">d</span><span class="p">)</span> <span class="k">if</span> <span class="n">d</span> <span class="k">else</span> <span class="kc">None</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">available</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""True when a pattern directory is set and exists."""</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">directory</span><span class="p">)</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">directory</span><span class="p">)</span>
+
+<div class="viewcode-block" id="FgdcPatterns.path">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.FgdcPatterns.path">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">path</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">code</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Path to ``&lt;code&gt;.png``, or None if the directory or file is absent."""</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">available</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">directory</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">int</span><span class="p">(</span><span class="n">code</span><span class="p">)</span><span class="si">}</span><span class="s2">.png"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">p</span> <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span></div>
+
+
+    <span class="nd">@lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_load</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">code</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">PIL</span><span class="w"> </span><span class="kn">import</span> <span class="n">Image</span>                      <span class="c1"># lazy: welleng[las]</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">(</span><span class="n">code</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">p</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">img</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">Image</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">p</span><span class="p">)</span><span class="o">.</span><span class="n">convert</span><span class="p">(</span><span class="s2">"RGBA"</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span> <span class="o">/</span> <span class="mf">255.0</span>
+        <span class="k">if</span> <span class="n">img</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">LithologyError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"pattern </span><span class="si">{</span><span class="n">code</span><span class="si">}</span><span class="s2"> is fully transparent"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">img</span>
+
+<div class="viewcode-block" id="FgdcPatterns.tile">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.FgdcPatterns.tile">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">tile</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">code</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">thickness</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">tile_depth</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""RGBA tile stack for an interval, or None if the asset is absent.</span>
+
+<span class="sd">        ``tile_depth`` is the depth interval ONE tile should occupy; repeats are</span>
+<span class="sd">        ``thickness / tile_depth``. Callers derive it from the visible depth</span>
+<span class="sd">        window (see :data:`TILES_PER_AXIS`) so the pattern keeps a constant size</span>
+<span class="sd">        on paper regardless of zoom.</span>
+<span class="sd">        """</span>
+        <span class="n">img</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">code</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">img</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">tile_depth</span> <span class="ow">or</span> <span class="n">tile_depth</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">tile</span><span class="p">(</span><span class="n">img</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+        <span class="n">reps</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="nb">round</span><span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">thickness</span><span class="p">)</span> <span class="o">/</span> <span class="n">tile_depth</span><span class="p">)))</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">tile</span><span class="p">(</span><span class="n">img</span><span class="p">,</span> <span class="p">(</span><span class="n">reps</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span></div>
+</div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_text_depth_extent</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="n">ax</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Height of a drawn label in DEPTH units, or ``None`` if unmeasurable.</span>
+
+<span class="sd">    ``None`` is a real answer and must route to a leader -- never to an</span>
+<span class="sd">    estimate. A backend that quietly estimates puts the caller back where a</span>
+<span class="sd">    glyph-metrics table would.</span>
+<span class="sd">    """</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">fig</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">get_figure</span><span class="p">()</span>
+        <span class="n">bb</span> <span class="o">=</span> <span class="n">art</span><span class="o">.</span><span class="n">get_window_extent</span><span class="p">(</span><span class="n">renderer</span><span class="o">=</span><span class="n">fig</span><span class="o">.</span><span class="n">canvas</span><span class="o">.</span><span class="n">get_renderer</span><span class="p">())</span>
+        <span class="n">pts</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">transData</span><span class="o">.</span><span class="n">inverted</span><span class="p">()</span><span class="o">.</span><span class="n">transform</span><span class="p">([(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">bb</span><span class="o">.</span><span class="n">y0</span><span class="p">),</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">bb</span><span class="o">.</span><span class="n">y1</span><span class="p">)])</span>
+        <span class="k">return</span> <span class="nb">abs</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">pts</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span> <span class="o">-</span> <span class="nb">float</span><span class="p">(</span><span class="n">pts</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">]))</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_lead_out_the_ones_that_do_not_fit</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">placed</span><span class="p">,</span> <span class="n">gutter</span><span class="p">,</span> <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Move any label taller than its band into the gutter, on a leader.</span>
+
+<span class="sd">    For a thin member the binding constraint is band THICKNESS, not track</span>
+<span class="sd">    width: the text is rotated, so its length runs along DEPTH and widening the</span>
+<span class="sd">    column does nothing. Three members inside 240 m at column scale is under</span>
+<span class="sd">    4 mm of page.</span>
+<span class="sd">    """</span>
+    <span class="c1"># A text artist has no extent until something has drawn it.</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">get_figure</span><span class="p">()</span><span class="o">.</span><span class="n">canvas</span><span class="o">.</span><span class="n">draw</span><span class="p">()</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">pass</span>
+    <span class="n">moved</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">span</span> <span class="o">=</span> <span class="n">hi</span> <span class="o">-</span> <span class="n">lo</span>
+    <span class="k">for</span> <span class="n">art</span><span class="p">,</span> <span class="n">iv</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">placed</span><span class="p">:</span>
+        <span class="n">need</span> <span class="o">=</span> <span class="n">_text_depth_extent</span><span class="p">(</span><span class="n">art</span><span class="p">,</span> <span class="n">ax</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">need</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">need</span> <span class="o">&lt;=</span> <span class="p">(</span><span class="n">b</span> <span class="o">-</span> <span class="n">t</span><span class="p">):</span>
+            <span class="k">continue</span>                       <span class="c1"># fits where it is</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="p">(</span><span class="n">t</span> <span class="o">+</span> <span class="n">b</span><span class="p">)</span> <span class="o">/</span> <span class="mf">2.0</span>
+        <span class="k">for</span> <span class="n">cand</span> <span class="ow">in</span> <span class="p">[</span><span class="n">y</span> <span class="o">+</span> <span class="n">k</span> <span class="o">*</span> <span class="n">span</span> <span class="o">*</span> <span class="mf">0.028</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">40</span><span class="p">)]:</span>
+            <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">cand</span> <span class="o">-</span> <span class="n">m</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">span</span> <span class="o">*</span> <span class="mf">0.026</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">moved</span><span class="p">)</span> <span class="ow">and</span> <span class="n">cand</span> <span class="o">&lt;=</span> <span class="n">hi</span><span class="p">:</span>
+                <span class="n">y</span> <span class="o">=</span> <span class="n">cand</span>
+                <span class="k">break</span>
+        <span class="n">moved</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+        <span class="n">art</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span>
+            <span class="n">iv</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">xy</span><span class="o">=</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="p">(</span><span class="n">t</span> <span class="o">+</span> <span class="n">b</span><span class="p">)</span> <span class="o">/</span> <span class="mf">2.0</span><span class="p">),</span> <span class="n">xytext</span><span class="o">=</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="n">gutter</span><span class="p">,</span> <span class="n">y</span><span class="p">),</span>
+            <span class="n">fontsize</span><span class="o">=</span><span class="mf">5.6</span><span class="p">,</span> <span class="n">va</span><span class="o">=</span><span class="s2">"center"</span><span class="p">,</span> <span class="n">ha</span><span class="o">=</span><span class="s2">"left"</span><span class="p">,</span> <span class="n">annotation_clip</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">arrowprops</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">arrowstyle</span><span class="o">=</span><span class="s2">"-"</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">"0.55"</span><span class="p">,</span>
+                            <span class="n">shrinkA</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">shrinkB</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
+
+
+<div class="viewcode-block" id="plot_lithology">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.plot_lithology">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">plot_lithology</span><span class="p">(</span>
+    <span class="n">intervals</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Interval</span><span class="p">],</span>
+    <span class="n">ax</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">patterns</span><span class="p">:</span> <span class="n">FgdcPatterns</span> <span class="o">|</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">depth_range</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">label</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">label_width</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">12</span><span class="p">,</span>
+    <span class="n">label_gutter</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">out</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">title</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="s2">"lithology"</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Draw a lithology column (depth down the y axis).</span>
+
+<span class="sd">    ``patterns`` may be an :class:`FgdcPatterns`, a directory, or None (flat</span>
+<span class="sd">    colour). Returns the Axes.</span>
+
+<span class="sd">    Labels are MEASURED, not estimated. A name is drawn inside its band only</span>
+<span class="sd">    when the rendered text actually fits the band's THICKNESS -- for a thin</span>
+<span class="sd">    member that is the binding constraint, and widening the track does nothing</span>
+<span class="sd">    about it. Anything that does not fit goes to a **leader out of the</span>
+<span class="sd">    column**, never to suppression: an unlabelled band reads as an unnamed one,</span>
+<span class="sd">    which is the same silence as an interval that is not drawn at all.</span>
+
+<span class="sd">    ⭐ **Measured rather than estimated because of how estimating fails.** A</span>
+<span class="sd">    ``width / (0.6 * fontsize)`` rule overflows on a wide name and wastes the</span>
+<span class="sd">    column on a narrow one, and a glyph-metrics table asserts a font the</span>
+<span class="sd">    renderer may not have used -- it is right on one machine and silently wrong</span>
+<span class="sd">    on another, including in the direction of dropping a label that WOULD have</span>
+<span class="sd">    fitted. A claim about the renderer has to be made by the renderer.</span>
+
+<span class="sd">    ``label_gutter`` is the width (in axis units, the column being 1.0) kept</span>
+<span class="sd">    clear to the right for those leaders. ``0.0`` keeps every label inside the</span>
+<span class="sd">    band and lets a long one overrun, which is the previous behaviour.</span>
+<span class="sd">    """</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib</span>
+        <span class="k">if</span> <span class="n">out</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ax</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">matplotlib</span><span class="o">.</span><span class="n">use</span><span class="p">(</span><span class="s2">"Agg"</span><span class="p">)</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">matplotlib.patches</span><span class="w"> </span><span class="kn">import</span> <span class="n">Rectangle</span>
+    <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>                     <span class="c1"># pragma: no cover</span>
+        <span class="k">raise</span> <span class="n">LithologyError</span><span class="p">(</span>
+            <span class="s2">"rendering needs matplotlib - install `welleng[las]`"</span>
+        <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">intervals</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">LithologyError</span><span class="p">(</span><span class="s2">"no intervals to draw"</span><span class="p">)</span>
+    <span class="n">pats</span> <span class="o">=</span> <span class="n">patterns</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">patterns</span><span class="p">,</span> <span class="n">FgdcPatterns</span><span class="p">)</span> <span class="k">else</span> <span class="n">FgdcPatterns</span><span class="p">(</span><span class="n">patterns</span><span class="p">)</span>
+
+    <span class="n">fig</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">ax</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">9.0</span><span class="p">))</span>
+
+    <span class="c1"># Restrict to the drawn window and CLIP each band to it. Artists outside the</span>
+    <span class="c1"># axes limits are not free: text is unclipped by default, and a savefig with</span>
+    <span class="c1"># bbox_inches="tight" then grows the canvas to contain labels for intervals</span>
+    <span class="c1"># nobody asked to see (measured: a 280 m log window produced a 7500 px</span>
+    <span class="c1"># figure because a full-well column's labels were still artists).</span>
+    <span class="k">if</span> <span class="n">depth_range</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">depth_range</span><span class="p">),</span> <span class="nb">max</span><span class="p">(</span><span class="n">depth_range</span><span class="p">)</span>
+        <span class="n">drawn</span> <span class="o">=</span> <span class="p">[</span><span class="n">iv</span> <span class="k">for</span> <span class="n">iv</span> <span class="ow">in</span> <span class="n">intervals</span> <span class="k">if</span> <span class="n">iv</span><span class="o">.</span><span class="n">base</span> <span class="o">&gt;</span> <span class="n">lo</span> <span class="ow">and</span> <span class="n">iv</span><span class="o">.</span><span class="n">top</span> <span class="o">&lt;</span> <span class="n">hi</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">drawn</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">LithologyError</span><span class="p">(</span><span class="s2">"no intervals overlap the requested depth range"</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">lo</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">i</span><span class="o">.</span><span class="n">top</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">intervals</span><span class="p">)</span>
+        <span class="n">hi</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">i</span><span class="o">.</span><span class="n">base</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">intervals</span><span class="p">)</span>
+        <span class="n">drawn</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">intervals</span><span class="p">)</span>
+
+    <span class="n">top</span><span class="p">,</span> <span class="n">base</span> <span class="o">=</span> <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span>
+    <span class="n">placed</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="c1"># One tile occupies this much depth, derived from the VISIBLE window so the</span>
+    <span class="c1"># pattern reads the same size whether the axis spans a whole well or 200 m.</span>
+    <span class="n">tile_depth</span> <span class="o">=</span> <span class="p">(</span><span class="n">hi</span> <span class="o">-</span> <span class="n">lo</span><span class="p">)</span> <span class="o">/</span> <span class="n">TILES_PER_AXIS</span> <span class="k">if</span> <span class="n">hi</span> <span class="o">&gt;</span> <span class="n">lo</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="k">for</span> <span class="n">iv</span> <span class="ow">in</span> <span class="n">drawn</span><span class="p">:</span>
+        <span class="n">t</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">iv</span><span class="o">.</span><span class="n">top</span><span class="p">,</span> <span class="n">lo</span><span class="p">),</span> <span class="nb">min</span><span class="p">(</span><span class="n">iv</span><span class="o">.</span><span class="n">base</span><span class="p">,</span> <span class="n">hi</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">b</span> <span class="o">&lt;=</span> <span class="n">t</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">add_patch</span><span class="p">(</span><span class="n">Rectangle</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="n">t</span><span class="p">),</span> <span class="mi">1</span><span class="p">,</span> <span class="n">b</span> <span class="o">-</span> <span class="n">t</span><span class="p">,</span> <span class="n">facecolor</span><span class="o">=</span><span class="n">iv</span><span class="o">.</span><span class="n">colour</span><span class="p">,</span>
+                               <span class="n">edgecolor</span><span class="o">=</span><span class="s2">"0.5"</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">clip_on</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">iv</span><span class="o">.</span><span class="n">pattern</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">tiled</span> <span class="o">=</span> <span class="n">pats</span><span class="o">.</span><span class="n">tile</span><span class="p">(</span><span class="n">iv</span><span class="o">.</span><span class="n">pattern</span><span class="p">,</span> <span class="n">b</span> <span class="o">-</span> <span class="n">t</span><span class="p">,</span> <span class="n">tile_depth</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">tiled</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">im</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">tiled</span><span class="p">,</span> <span class="n">extent</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">t</span><span class="p">],</span> <span class="n">aspect</span><span class="o">=</span><span class="s2">"auto"</span><span class="p">,</span>
+                               <span class="n">zorder</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">interpolation</span><span class="o">=</span><span class="s2">"nearest"</span><span class="p">)</span>
+                <span class="n">im</span><span class="o">.</span><span class="n">set_clip_on</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">label</span><span class="p">:</span>
+            <span class="c1"># break_long_words=False: a unit name is a proper noun and</span>
+            <span class="c1"># "Lower Buntsa / ndstein Formation" is not a wrap, it is a</span>
+            <span class="c1"># different word. A name too long for the column overruns it</span>
+            <span class="c1"># instead, which is visible and fixable by widening the track;</span>
+            <span class="c1"># a silently mangled name is neither.</span>
+            <span class="n">txt</span> <span class="o">=</span> <span class="n">textwrap</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="n">iv</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">label_width</span><span class="p">,</span>
+                                <span class="n">break_long_words</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                                <span class="n">break_on_hyphens</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="n">art</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="p">(</span><span class="n">t</span> <span class="o">+</span> <span class="n">b</span><span class="p">)</span> <span class="o">/</span> <span class="mf">2.0</span><span class="p">,</span> <span class="n">txt</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mf">5.6</span><span class="p">,</span>
+                          <span class="n">va</span><span class="o">=</span><span class="s2">"center"</span><span class="p">,</span> <span class="n">ha</span><span class="o">=</span><span class="s2">"center"</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">clip_on</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                          <span class="n">bbox</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">boxstyle</span><span class="o">=</span><span class="s2">"round,pad=0.2"</span><span class="p">,</span>
+                                    <span class="n">facecolor</span><span class="o">=</span><span class="n">iv</span><span class="o">.</span><span class="n">colour</span><span class="p">,</span> <span class="n">edgecolor</span><span class="o">=</span><span class="s2">"none"</span><span class="p">,</span>
+                                    <span class="n">alpha</span><span class="o">=</span><span class="mf">0.85</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">label_gutter</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">:</span>
+                <span class="n">placed</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">art</span><span class="p">,</span> <span class="n">iv</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">b</span><span class="p">))</span>
+
+    <span class="c1"># Limits FIRST: a measurement is taken in data units, so the axis has to</span>
+    <span class="c1"># be the axis it will be drawn on. Measuring before this read against an</span>
+    <span class="c1"># autoscaled, un-inverted y and every label "fitted".</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">+</span> <span class="nb">max</span><span class="p">(</span><span class="n">label_gutter</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="n">top</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">label</span> <span class="ow">and</span> <span class="n">label_gutter</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="n">_lead_out_the_ones_that_do_not_fit</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">placed</span><span class="p">,</span> <span class="n">label_gutter</span><span class="p">,</span> <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xticks</span><span class="p">([])</span>
+    <span class="k">if</span> <span class="n">title</span><span class="p">:</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="n">title</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">fig</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s2">"MD (m)"</span><span class="p">)</span>
+        <span class="c1"># A gutter's leader labels sit OUTSIDE the axes, and tight_layout</span>
+        <span class="c1"># cannot make room for annotations it does not own -- it warns and</span>
+        <span class="c1"># gives up. Widen the figure for the gutter instead, and let</span>
+        <span class="c1"># bbox_inches="tight" at save time take in the labels.</span>
+        <span class="k">if</span> <span class="n">label_gutter</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="n">w</span><span class="p">,</span> <span class="n">h</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">get_size_inches</span><span class="p">()</span>
+            <span class="n">fig</span><span class="o">.</span><span class="n">set_size_inches</span><span class="p">(</span><span class="n">w</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="n">label_gutter</span><span class="p">),</span> <span class="n">h</span><span class="p">)</span>
+            <span class="n">fig</span><span class="o">.</span><span class="n">subplots_adjust</span><span class="p">(</span><span class="n">left</span><span class="o">=</span><span class="mf">0.22</span><span class="p">,</span> <span class="n">right</span><span class="o">=</span><span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="n">label_gutter</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">fig</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">out</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">fig</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s2">"tight"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">ax</span></div>
+
+
+
+<div class="viewcode-block" id="plot_log_with_lithology">
+<a class="viewcode-back" href="../../welleng.html#welleng.lithology.plot_log_with_lithology">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">plot_log_with_lithology</span><span class="p">(</span>
+    <span class="n">las</span><span class="p">,</span>
+    <span class="n">intervals</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Interval</span><span class="p">],</span>
+    <span class="n">tracks</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">depth_range</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">patterns</span><span class="p">:</span> <span class="n">FgdcPatterns</span> <span class="o">|</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">out</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">title</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Log tracks with a lithology column alongside, on a shared depth axis.</span>
+
+<span class="sd">    ``las`` is a :class:`welleng.exchange.las.LasFile`. Returns the Figure.</span>
+<span class="sd">    """</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib</span>
+        <span class="k">if</span> <span class="n">out</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">matplotlib</span><span class="o">.</span><span class="n">use</span><span class="p">(</span><span class="s2">"Agg"</span><span class="p">)</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+    <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>                     <span class="c1"># pragma: no cover</span>
+        <span class="k">raise</span> <span class="n">LithologyError</span><span class="p">(</span>
+            <span class="s2">"rendering needs matplotlib - install `welleng[las]`"</span>
+        <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.exchange.las</span><span class="w"> </span><span class="kn">import</span> <span class="n">_default_tracks</span><span class="p">,</span> <span class="n">_is_log_scale</span><span class="p">,</span> <span class="n">_robust_limits</span>
+
+    <span class="n">trk</span> <span class="o">=</span> <span class="p">[</span><span class="nb">list</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="p">(</span><span class="n">tracks</span> <span class="k">if</span> <span class="n">tracks</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">_default_tracks</span><span class="p">(</span><span class="n">las</span><span class="p">))]</span>
+    <span class="n">depth</span> <span class="o">=</span> <span class="n">las</span><span class="o">.</span><span class="n">depth</span>
+    <span class="n">mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">depth</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">depth_range</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">mask</span> <span class="o">&amp;=</span> <span class="p">(</span><span class="n">depth</span> <span class="o">&gt;=</span> <span class="n">depth_range</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">depth</span> <span class="o">&lt;=</span> <span class="n">depth_range</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">mask</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="n">LithologyError</span><span class="p">(</span><span class="s2">"no samples in the requested depth range"</span><span class="p">)</span>
+
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">trk</span><span class="p">)</span>
+    <span class="n">fig</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span>
+        <span class="mi">1</span><span class="p">,</span> <span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">sharey</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mf">2.4</span> <span class="o">*</span> <span class="n">n</span> <span class="o">+</span> <span class="mf">2.4</span><span class="p">,</span> <span class="mf">9.5</span><span class="p">),</span>
+        <span class="n">gridspec_kw</span><span class="o">=</span><span class="p">{</span><span class="s2">"width_ratios"</span><span class="p">:</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">]</span> <span class="o">*</span> <span class="n">n</span> <span class="o">+</span> <span class="p">[</span><span class="mf">0.55</span><span class="p">]},</span>
+    <span class="p">)</span>
+    <span class="n">axes</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="n">axes</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">ax</span><span class="p">,</span> <span class="n">track</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">axes</span><span class="p">[:</span><span class="n">n</span><span class="p">],</span> <span class="n">trk</span><span class="p">):</span>
+        <span class="n">plotted</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">track</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">v</span> <span class="o">=</span> <span class="n">las</span><span class="o">.</span><span class="n">curve</span><span class="p">(</span><span class="n">m</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">unit</span> <span class="o">=</span> <span class="n">las</span><span class="o">.</span><span class="n">units</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">m</span><span class="p">)</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">v</span><span class="p">[</span><span class="n">mask</span><span class="p">],</span> <span class="n">depth</span><span class="p">[</span><span class="n">mask</span><span class="p">],</span> <span class="n">lw</span><span class="o">=</span><span class="mf">0.6</span><span class="p">,</span>
+                    <span class="n">label</span><span class="o">=</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">m</span><span class="si">}{</span><span class="sa">f</span><span class="s1">' [</span><span class="si">{</span><span class="n">unit</span><span class="si">}</span><span class="s1">]'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">unit</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">''</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+            <span class="n">plotted</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">v</span><span class="p">[</span><span class="n">mask</span><span class="p">])</span>
+        <span class="n">log</span> <span class="o">=</span> <span class="n">_is_log_scale</span><span class="p">(</span><span class="n">track</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">log</span><span class="p">:</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_xscale</span><span class="p">(</span><span class="s2">"log"</span><span class="p">)</span>
+        <span class="n">lims</span> <span class="o">=</span> <span class="n">_robust_limits</span><span class="p">(</span><span class="n">plotted</span><span class="p">,</span> <span class="n">log</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">lims</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="o">*</span><span class="n">lims</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">which</span><span class="o">=</span><span class="s2">"both"</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.4</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">fontsize</span><span class="o">=</span><span class="mi">7</span><span class="p">,</span> <span class="n">loc</span><span class="o">=</span><span class="s2">"upper right"</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">tick_params</span><span class="p">(</span><span class="n">labelsize</span><span class="o">=</span><span class="mi">7</span><span class="p">)</span>
+
+    <span class="n">d</span> <span class="o">=</span> <span class="n">depth</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span>
+    <span class="n">lo_w</span><span class="p">,</span> <span class="n">hi_w</span> <span class="o">=</span> <span class="p">(</span><span class="n">depth_range</span> <span class="k">if</span> <span class="n">depth_range</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                  <span class="k">else</span> <span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">nanmin</span><span class="p">(</span><span class="n">d</span><span class="p">)),</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">nanmax</span><span class="p">(</span><span class="n">d</span><span class="p">))))</span>
+    <span class="n">plot_lithology</span><span class="p">(</span><span class="n">intervals</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">axes</span><span class="p">[</span><span class="n">n</span><span class="p">],</span> <span class="n">patterns</span><span class="o">=</span><span class="n">patterns</span><span class="p">,</span>
+                   <span class="n">depth_range</span><span class="o">=</span><span class="p">(</span><span class="n">lo_w</span><span class="p">,</span> <span class="n">hi_w</span><span class="p">),</span> <span class="n">title</span><span class="o">=</span><span class="s2">"lithology"</span><span class="p">)</span>
+    <span class="n">idx_unit</span> <span class="o">=</span> <span class="n">las</span><span class="o">.</span><span class="n">units</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">las</span><span class="o">.</span><span class="n">index_mnemonic</span><span class="p">)</span>
+    <span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">las</span><span class="o">.</span><span class="n">index_mnemonic</span><span class="si">}{</span><span class="sa">f</span><span class="s1">' [</span><span class="si">{</span><span class="n">idx_unit</span><span class="si">}</span><span class="s1">]'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">idx_unit</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">''</span><span class="si">}</span><span class="s2">"</span>
+    <span class="p">)</span>
+    <span class="c1"># The axes are shared, and plot_lithology has already set a deep-at-bottom</span>
+    <span class="c1"># ylim spanning the WHOLE column. Re-set it to the plotted LOG window --</span>
+    <span class="c1"># otherwise the log is squeezed into a sliver of a full-well column -- and</span>
+    <span class="c1"># do NOT invert again here, which would flip depth back to increasing</span>
+    <span class="c1"># upward.</span>
+    <span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">(</span><span class="n">hi_w</span><span class="p">,</span> <span class="n">lo_w</span><span class="p">)</span>
+    <span class="n">fig</span><span class="o">.</span><span class="n">suptitle</span><span class="p">(</span><span class="n">title</span> <span class="ow">or</span> <span class="n">las</span><span class="o">.</span><span class="n">well</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"WELL"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"log + lithology"</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+    <span class="n">fig</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">out</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">fig</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s2">"tight"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">fig</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>

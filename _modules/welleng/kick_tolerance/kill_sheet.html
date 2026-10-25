@@ -1,0 +1,669 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>welleng.kick_tolerance.kill_sheet &mdash; welleng 0.30.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=a7ea5d77"></script>
+      <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            welleng
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">welleng</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../publications.html">Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">welleng</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../kick_tolerance.html">welleng.kick_tolerance</a></li>
+      <li class="breadcrumb-item active">welleng.kick_tolerance.kill_sheet</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for welleng.kick_tolerance.kill_sheet</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Well-kill worksheet -- the CIRCULATING half of well control.</span>
+
+<span class="sd">:mod:`welleng.kick_tolerance` answers *can this influx be shut in and</span>
+<span class="sd">circulated out without breaking down the shoe*. This module answers the next</span>
+<span class="sd">question: **what pressures does the driller hold while doing it.** Kill mud</span>
+<span class="sd">weight, initial and final circulating pressure, the drill-pipe pressure</span>
+<span class="sd">schedule between them, and the stroke counts that time it.</span>
+
+<span class="sd">Relationship to the rest of the module</span>
+<span class="sd">--------------------------------------</span>
+<span class="sd">The two halves share one input, the shut-in drill-pipe pressure, and they are</span>
+<span class="sd">not interchangeable:</span>
+
+<span class="sd">* ``migration.MigrationStep`` reports ``sidp_psi`` / ``sicp_psi`` for a bubble</span>
+<span class="sd">  MIGRATING in a SHUT-IN well. Nothing is being pumped.</span>
+<span class="sd">* A kill sheet describes the well being CIRCULATED. The annulus pressure is</span>
+<span class="sd">  held by the choke, not by a static gas column.</span>
+
+<span class="sd">⚠️ **A kill sheet does not establish that the kill is possible.** It computes</span>
+<span class="sd">the schedule assuming it is. Whether the shoe survives the circulation is the</span>
+<span class="sd">kick-tolerance question, and :func:`kill_sheet` will refuse to return a sheet</span>
+<span class="sd">whose surface pressure is already above MAASP -- but a complete feasibility</span>
+<span class="sd">answer comes from :func:`~welleng.kick_tolerance.evaluate_envelope`, not from</span>
+<span class="sd">here.</span>
+
+<span class="sd">What is exact and what is a convention</span>
+<span class="sd">--------------------------------------</span>
+<span class="sd">Two of the standard relations are **approximations taught as formulae**, and a</span>
+<span class="sd">kill sheet that does not say so invites them to be read as physics:</span>
+
+<span class="sd">``FCP = SCRP * KMW / OMW``</span>
+<span class="sd">    Assumes circulating pressure loss scales **linearly with density**. That</span>
+<span class="sd">    holds for fully turbulent flow, where the friction term carries density to</span>
+<span class="sd">    the first power; it does not hold in laminar flow, where viscosity and</span>
+<span class="sd">    yield point dominate and the ratio understates the change. Standard</span>
+<span class="sd">    practice, and the basis on which every IWCF sheet is filled in.</span>
+
+<span class="sd">The drill-pipe pressure schedule</span>
+<span class="sd">    A straight line from ICP to FCP in STROKES is a **procedure**, not a</span>
+<span class="sd">    prediction of the true pressure. The real curve is not linear, because the</span>
+<span class="sd">    friction contribution changes with the kill-mud fraction in the string, and</span>
+<span class="sd">    the standard schedule is a safe simplification that both errs on the high</span>
+<span class="sd">    side and is followable by hand. Reported as a schedule for that reason.</span>
+
+<span class="sd">Everything else -- kill mud weight, ICP, capacities, strokes -- is arithmetic.</span>
+
+<span class="sd">Units</span>
+<span class="sd">-----</span>
+<span class="sd">Field units throughout, as with the rest of this module: ppg, psi, ft, bbl,</span>
+<span class="sd">bbl/stroke. Column weights use the module's own ``G_PSI_PER_PPG_FT`` (0.0521),</span>
+<span class="sd">**not** 0.052, so a pressure computed here reproduces the column weight the</span>
+<span class="sd">rest of the engine applies. The difference is ~0.2% on a typical kill mud</span>
+<span class="sd">weight and it does not divide out of an absolute pressure.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.migration</span><span class="w"> </span><span class="kn">import</span> <span class="n">G_PSI_PER_PPG_FT</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">"KillSheetInputs"</span><span class="p">,</span>
+    <span class="s2">"KillSheetResult"</span><span class="p">,</span>
+    <span class="s2">"MudModel"</span><span class="p">,</span>
+    <span class="s2">"PumpSchedule"</span><span class="p">,</span>
+    <span class="s2">"column_pressure"</span><span class="p">,</span>
+    <span class="s2">"kill_sheet"</span><span class="p">,</span>
+    <span class="s2">"string_capacity"</span><span class="p">,</span>
+<span class="p">]</span>
+
+
+<div class="viewcode-block" id="MudModel">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.MudModel">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MudModel</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""A mud whose density varies with pressure and temperature.</span>
+
+<span class="sd">    ``rho(P, T) = rho_ref * [1 + c (P - P_ref) - alpha (T - T_ref)]``</span>
+
+<span class="sd">    ``c`` is isothermal compressibility [1/psi] and ``alpha`` the volumetric</span>
+<span class="sd">    thermal expansion [1/degF]. Both default to ZERO, which reduces every</span>
+<span class="sd">    formula here to the incompressible isothermal one a classic sheet uses --</span>
+<span class="sd">    so the effect of turning them on is always visible as a difference from the</span>
+<span class="sd">    sheet, never hidden inside it.</span>
+
+<span class="sd">    Typical field values: a water-based mud is ~3e-6 /psi and ~2.5e-4 /degF; an</span>
+<span class="sd">    oil-based mud is roughly twice as compressible and twice as expansive.</span>
+<span class="sd">    Defaults stay at zero rather than taking a literature value, because a</span>
+<span class="sd">    number that changes the answer should be supplied by the caller who can</span>
+<span class="sd">    say where it came from.</span>
+<span class="sd">    """</span>
+
+    <span class="n">rho_ref_ppg</span><span class="p">:</span> <span class="nb">float</span>  <span class="c1"># density [ppg] at the reference conditions</span>
+    <span class="n">compressibility_per_psi</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>  <span class="c1"># isothermal compressibility c [1/psi]</span>
+    <span class="n">thermal_expansion_per_degf</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="c1">#: Reference conditions the density is quoted AT -- surface, normally.</span>
+    <span class="n">p_ref_psi</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">14.7</span>  <span class="c1"># reference pressure [psi]</span>
+    <span class="n">t_ref_degf</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">60.0</span>  <span class="c1"># reference temperature [degF]</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">incompressible_isothermal</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""True when both compressibility and thermal expansion are zero."""</span>
+        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">compressibility_per_psi</span> <span class="o">==</span> <span class="mf">0.0</span>
+                <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">thermal_expansion_per_degf</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="column_pressure">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.column_pressure">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">column_pressure</span><span class="p">(</span>
+    <span class="n">mud</span><span class="p">:</span> <span class="n">MudModel</span><span class="p">,</span>
+    <span class="n">top_tvd_ft</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">base_tvd_ft</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">p_top_psi</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">surface_temp_degf</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">60.0</span><span class="p">,</span>
+    <span class="n">geothermal_gradient_degf_per_ft</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""Pressure at ``base_tvd_ft`` given ``p_top_psi`` at ``top_tvd_ft``.</span>
+
+<span class="sd">    **Closed form, not integrated numerically.** With a linear compressibility</span>
+<span class="sd">    and a linear geothermal gradient, hydrostatic equilibrium</span>
+
+<span class="sd">    .. math::</span>
+<span class="sd">        \frac{dP}{dz} = g\,\rho_{ref}\left[1 + c(P-P_{ref})</span>
+<span class="sd">                          - \alpha(T(z)-T_{ref})\right]</span>
+
+<span class="sd">    is a first-order LINEAR ODE in :math:`P(z)`, so it has an exact solution.</span>
+<span class="sd">    Measuring depth ``s`` from the top of the segment and writing</span>
+<span class="sd">    :math:`A = g\rho c`, :math:`B = g\rho[1-\alpha(T_{top}-T_{ref})]`,</span>
+<span class="sd">    :math:`C = g\rho\alpha\,G`:</span>
+
+<span class="sd">    .. math::</span>
+<span class="sd">        \Delta P(s) = \frac{C/A - B}{A}\left(1 - e^{As}\right)</span>
+<span class="sd">                       + \frac{C}{A}s</span>
+
+<span class="sd">    Verified symbolically: residual against the defining ODE is exactly zero,</span>
+<span class="sd">    and as :math:`c\to0` it reduces to</span>
+<span class="sd">    :math:`B s - C s^{2}/2`, the linear-thermal column. See</span>
+<span class="sd">    ``tests/test_kill_sheet.py::test_column_pressure_sympy_derivation``.</span>
+
+<span class="sd">    ⚠️ **Why not just multiply.** ``0.052 * ppg * ft`` assumes the density at</span>
+<span class="sd">    the bottom of a 15,000 ft column is the density measured in the pit. It is</span>
+<span class="sd">    not: pressure compacts the mud and temperature expands it, and the two</span>
+<span class="sd">    partly cancel — which is why the error is small and why it is easy to</span>
+<span class="sd">    assume it is zero. It is a few tens of psi on a deep well, in a calculation</span>
+<span class="sd">    whose whole purpose is holding bottom-hole pressure constant.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">base_tvd_ft</span> <span class="o">&lt;</span> <span class="n">top_tvd_ft</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"base must be at or below top"</span><span class="p">)</span>
+    <span class="n">s_ft</span> <span class="o">=</span> <span class="n">base_tvd_ft</span> <span class="o">-</span> <span class="n">top_tvd_ft</span>
+    <span class="k">if</span> <span class="n">s_ft</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">p_top_psi</span>
+
+    <span class="n">g_rho</span> <span class="o">=</span> <span class="n">G_PSI_PER_PPG_FT</span> <span class="o">*</span> <span class="n">mud</span><span class="o">.</span><span class="n">rho_ref_ppg</span>          <span class="c1"># psi/ft at reference</span>
+    <span class="n">t_top</span> <span class="o">=</span> <span class="n">surface_temp_degf</span> <span class="o">+</span> <span class="n">geothermal_gradient_degf_per_ft</span> <span class="o">*</span> <span class="n">top_tvd_ft</span>
+    <span class="n">A</span> <span class="o">=</span> <span class="n">g_rho</span> <span class="o">*</span> <span class="n">mud</span><span class="o">.</span><span class="n">compressibility_per_psi</span>
+    <span class="n">B</span> <span class="o">=</span> <span class="n">g_rho</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="n">mud</span><span class="o">.</span><span class="n">compressibility_per_psi</span>
+                 <span class="o">*</span> <span class="p">(</span><span class="n">p_top_psi</span> <span class="o">-</span> <span class="n">mud</span><span class="o">.</span><span class="n">p_ref_psi</span><span class="p">)</span>
+                 <span class="o">-</span> <span class="n">mud</span><span class="o">.</span><span class="n">thermal_expansion_per_degf</span> <span class="o">*</span> <span class="p">(</span><span class="n">t_top</span> <span class="o">-</span> <span class="n">mud</span><span class="o">.</span><span class="n">t_ref_degf</span><span class="p">))</span>
+    <span class="n">C</span> <span class="o">=</span> <span class="n">g_rho</span> <span class="o">*</span> <span class="n">mud</span><span class="o">.</span><span class="n">thermal_expansion_per_degf</span> <span class="o">*</span> <span class="n">geothermal_gradient_degf_per_ft</span>
+
+    <span class="c1"># RECONDITIONED, and the reason matters. Written as</span>
+    <span class="c1">#     (C/A - B)/A * (1 - exp(A s)) + (C/A) s</span>
+    <span class="c1"># this is algebraically exact and numerically useless as c -&gt; 0: 1/A^2</span>
+    <span class="c1"># reaches 1e24 while the bracket goes to zero, and the cancellation left a</span>
+    <span class="c1"># 3e-5 psi floor that no amount of tightening removes. Factoring the two</span>
+    <span class="c1"># removable singularities out gives ONE expression valid at every c,</span>
+    <span class="c1"># including exactly zero, with no branch to fall down:</span>
+    <span class="c1">#     dP = B s phi(x) - C s^2 psi(x),     x = A s</span>
+    <span class="c1">#     phi = expm1(x)/x        -&gt; 1      psi = (expm1(x) - x)/x^2 -&gt; 1/2</span>
+    <span class="c1"># and at x = 0 that IS B s - C s^2 / 2, the incompressible column.</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">A</span> <span class="o">*</span> <span class="n">s_ft</span>
+    <span class="k">return</span> <span class="n">p_top_psi</span> <span class="o">+</span> <span class="n">B</span> <span class="o">*</span> <span class="n">s_ft</span> <span class="o">*</span> <span class="n">_phi</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">-</span> <span class="n">C</span> <span class="o">*</span> <span class="n">s_ft</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">_psi</span><span class="p">(</span><span class="n">x</span><span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_phi</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""``expm1(x)/x``, continued to ``1`` at ``x = 0``."""</span>
+    <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">1e-8</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">1.0</span> <span class="o">+</span> <span class="n">x</span> <span class="o">/</span> <span class="mf">2.0</span> <span class="o">+</span> <span class="n">x</span> <span class="o">*</span> <span class="n">x</span> <span class="o">/</span> <span class="mf">6.0</span>
+    <span class="k">return</span> <span class="n">math</span><span class="o">.</span><span class="n">expm1</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">/</span> <span class="n">x</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_psi</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""``(expm1(x) - x)/x**2``, continued to ``1/2`` at ``x = 0``.</span>
+
+<span class="sd">    The series is used well before ``x`` reaches zero: the closed form loses</span>
+<span class="sd">    the whole answer to cancellation once ``expm1(x)`` and ``x`` agree to</span>
+<span class="sd">    machine precision, which happens around ``1e-5``.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">1e-4</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.5</span> <span class="o">+</span> <span class="n">x</span> <span class="o">/</span> <span class="mf">6.0</span> <span class="o">+</span> <span class="n">x</span> <span class="o">*</span> <span class="n">x</span> <span class="o">/</span> <span class="mf">24.0</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">expm1</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">-</span> <span class="n">x</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">x</span> <span class="o">*</span> <span class="n">x</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="string_capacity">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.string_capacity">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">string_capacity</span><span class="p">(</span><span class="n">id_in</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Internal capacity [bbl/ft] of a bore of inside diameter ``id_in``.</span>
+
+<span class="sd">    The companion of :func:`~welleng.kick_tolerance.annular_capacity`, which</span>
+<span class="sd">    takes the space OUTSIDE a string.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">id_in</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"inside diameter must be positive, got </span><span class="si">{</span><span class="n">id_in</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">id_in</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">/</span> <span class="mf">1029.4</span></div>
+
+
+
+<div class="viewcode-block" id="PumpSchedule">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.PumpSchedule">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PumpSchedule</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""One row of the drill-pipe pressure schedule."""</span>
+
+    <span class="n">strokes</span><span class="p">:</span> <span class="nb">int</span>  <span class="c1"># pump strokes from the start of the kill</span>
+    <span class="n">volume_bbl</span><span class="p">:</span> <span class="nb">float</span>  <span class="c1"># volume pumped [bbl] at ``strokes``</span>
+    <span class="n">drillpipe_psi</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="c1">#: Fraction of the surface-to-bit displacement completed, 0.0 -&gt; 1.0.</span>
+    <span class="n">fraction</span><span class="p">:</span> <span class="nb">float</span>  <span class="c1"># 0.0 at surface, 1.0 with kill mud at the bit</span></div>
+
+
+
+<div class="viewcode-block" id="KillSheetInputs">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.KillSheetInputs">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">KillSheetInputs</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Pre-recorded and shut-in data, as a kill sheet is filled in.</span>
+
+<span class="sd">    ``scr_pressure_psi`` is the slow-circulating-rate pressure measured at</span>
+<span class="sd">    ``scr_rate_spm`` in the CURRENT mud, and it must be a measured value: it is</span>
+<span class="sd">    the only term carrying the well's actual friction, and substituting a</span>
+<span class="sd">    calculated one silently replaces a measurement with a model.</span>
+<span class="sd">    """</span>
+
+    <span class="c1">#: Original (current) mud weight [ppg].</span>
+    <span class="n">mud_weight_ppg</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="c1">#: True vertical depth of the hole [ft].</span>
+    <span class="n">tvd_ft</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="c1">#: Shut-in drill-pipe pressure [psi].</span>
+    <span class="n">sidp_psi</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="c1">#: Measured slow-circulating-rate pressure [psi] at ``scr_rate_spm``.</span>
+    <span class="n">scr_pressure_psi</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="c1">#: Pump displacement [bbl/stroke].</span>
+    <span class="n">pump_output_bbl_per_stroke</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="c1">#: Drill-string internal volume, surface to bit [bbl].</span>
+    <span class="n">string_volume_bbl</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="c1">#: Annular volume, bit to surface [bbl]. Optional: without it the sheet</span>
+    <span class="c1">#: reports the surface-to-bit half only, which is the half the drill-pipe</span>
+    <span class="c1">#: schedule covers.</span>
+    <span class="n">annulus_volume_bbl</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1">#: Shut-in casing pressure [psi], recorded but not used in the schedule.</span>
+    <span class="n">sicp_psi</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1">#: Maximum allowable annular surface pressure [psi]. When given and</span>
+    <span class="c1">#: exceeded by ``sicp_psi``, the sheet carries a LOUD note -- and raises</span>
+    <span class="c1">#: only under ``strict``.</span>
+    <span class="n">maasp_psi</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1">#: Refuse rather than warn when the shut-in casing pressure is already</span>
+    <span class="c1">#: above MAASP. Default False, because a real well-control worksheet is</span>
+    <span class="c1">#: filled in for exactly that case and the driller needs the numbers.</span>
+    <span class="n">strict</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="c1">#: Kill mud weight [ppg] to USE, overriding the computed one. A rig mixes</span>
+    <span class="c1">#: to what it can actually weigh up, and a worked sheet is filled in with</span>
+    <span class="c1">#: the rounded figure -- so reproducing one needs this.</span>
+    <span class="n">kill_mud_weight_ppg</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1">#: Pump rate [strokes/min] the SCR pressure was measured at; used only to</span>
+    <span class="c1">#: report times.</span>
+    <span class="n">scr_rate_spm</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1">#: Rows in the reported pressure schedule (excluding the ICP row).</span>
+    <span class="n">schedule_steps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span>
+    <span class="c1">#: Mud model for the CURRENT mud. ``None`` = incompressible isothermal,</span>
+    <span class="c1">#: i.e. exactly what the classic sheet assumes.</span>
+    <span class="n">mud</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">MudModel</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># used by ``method="analytical"`` only</span>
+    <span class="n">surface_temp_degf</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">60.0</span>  <span class="c1"># surface temperature [degF], analytical only</span>
+    <span class="n">geothermal_gradient_degf_per_ft</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="c1">#: Front TVD [ft] as a function of the fraction of the string displaced.</span>
+    <span class="c1">#: Default assumes a VERTICAL string -- in a deviated well the kill mud</span>
+    <span class="c1">#: front reaches a given TVD after less pumping than this implies, and the</span>
+    <span class="c1">#: caller must supply the well's own MD-&gt;TVD map.</span>
+    <span class="n">front_tvd</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">object</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># f(fraction) -&gt; TVD [ft]; analytical</span></div>
+
+
+
+<div class="viewcode-block" id="KillSheetResult">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.KillSheetResult">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">KillSheetResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""A filled kill sheet."""</span>
+
+    <span class="n">kill_mud_weight_ppg</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="c1">#: Initial circulating pressure [psi] = SCRP + SIDP.</span>
+    <span class="n">icp_psi</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="c1">#: Final circulating pressure [psi] = SCRP * KMW / OMW.</span>
+    <span class="n">fcp_psi</span><span class="p">:</span> <span class="nb">float</span>  <span class="c1"># [psi], reached at ``strokes_to_bit``</span>
+    <span class="n">strokes_to_bit</span><span class="p">:</span> <span class="nb">int</span>  <span class="c1"># string volume / pump output, rounded</span>
+    <span class="n">strokes_bit_to_surface</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>  <span class="c1"># None without ``annulus_volume_bbl``</span>
+    <span class="n">strokes_total</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>  <span class="c1"># both legs; None without annulus volume</span>
+    <span class="n">minutes_to_bit</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span>  <span class="c1"># at ``scr_rate_spm``; None when it is unset</span>
+    <span class="n">minutes_total</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span>
+    <span class="c1">#: Drill-pipe pressure vs strokes, ICP at 0 to FCP at ``strokes_to_bit``.</span>
+    <span class="n">schedule</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">PumpSchedule</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+    <span class="c1">#: Non-fatal observations a driller should see on the sheet.</span>
+    <span class="n">notes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>  <span class="c1"># e.g. SICP above MAASP</span>
+
+<div class="viewcode-block" id="KillSheetResult.pressure_at">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.KillSheetResult.pressure_at">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">pressure_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">strokes</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Scheduled drill-pipe pressure [psi] at ``strokes`` pumped.</span>
+
+<span class="sd">        Linear in strokes between ICP and FCP, then held at FCP. See the module</span>
+<span class="sd">        docstring: this is the schedule to follow, not a prediction of the</span>
+<span class="sd">        pressure the well will show.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">strokes_to_bit</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">fcp_psi</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">strokes</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">strokes_to_bit</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="mf">1.0</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">icp_psi</span> <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fcp_psi</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">icp_psi</span><span class="p">)</span> <span class="o">*</span> <span class="n">f</span></div>
+</div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_analytical_schedule</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">kmw</span><span class="p">,</span> <span class="n">icp</span><span class="p">,</span> <span class="n">fcp</span><span class="p">,</span> <span class="n">strokes_to_bit</span><span class="p">,</span> <span class="n">steps</span><span class="p">,</span> <span class="n">notes</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Drill-pipe pressure that holds BHP constant, front by front.</span>
+
+<span class="sd">    At every step the string is kill mud above the front and original mud</span>
+<span class="sd">    below it, and the drill-pipe pressure is</span>
+
+<span class="sd">        P_dp = BHP - (kill column) - (original column) + friction</span>
+
+<span class="sd">    with each column from the exact closed form. The classic sheet replaces</span>
+<span class="sd">    the two columns with a straight line, which is right only when density is</span>
+<span class="sd">    constant with depth.</span>
+<span class="sd">    """</span>
+    <span class="n">old</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">mud</span> <span class="ow">or</span> <span class="n">MudModel</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">mud_weight_ppg</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">old</span><span class="o">.</span><span class="n">rho_ref_ppg</span> <span class="o">-</span> <span class="n">inp</span><span class="o">.</span><span class="n">mud_weight_ppg</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mf">1e-9</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"mud model density </span><span class="si">{</span><span class="n">old</span><span class="o">.</span><span class="n">rho_ref_ppg</span><span class="si">}</span><span class="s2"> does not match the sheet's "</span>
+            <span class="sa">f</span><span class="s2">"mud weight </span><span class="si">{</span><span class="n">inp</span><span class="o">.</span><span class="n">mud_weight_ppg</span><span class="si">}</span><span class="s2">"</span>
+        <span class="p">)</span>
+    <span class="n">kill</span> <span class="o">=</span> <span class="n">MudModel</span><span class="p">(</span><span class="n">kmw</span><span class="p">,</span> <span class="n">old</span><span class="o">.</span><span class="n">compressibility_per_psi</span><span class="p">,</span>
+                    <span class="n">old</span><span class="o">.</span><span class="n">thermal_expansion_per_degf</span><span class="p">,</span>
+                    <span class="n">old</span><span class="o">.</span><span class="n">p_ref_psi</span><span class="p">,</span> <span class="n">old</span><span class="o">.</span><span class="n">t_ref_degf</span><span class="p">)</span>
+    <span class="n">ts</span><span class="p">,</span> <span class="n">gg</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">surface_temp_degf</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">geothermal_gradient_degf_per_ft</span>
+
+    <span class="c1"># BHP is what the shut-in well is telling us, computed with the SAME</span>
+    <span class="c1"># column model -- otherwise the exactness is spent reconciling two</span>
+    <span class="c1"># different hydrostatics rather than on the answer.</span>
+    <span class="n">bhp</span> <span class="o">=</span> <span class="n">column_pressure</span><span class="p">(</span><span class="n">old</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">tvd_ft</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">sidp_psi</span><span class="p">,</span> <span class="n">ts</span><span class="p">,</span> <span class="n">gg</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">front_tvd</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="s2">"Front depth assumed proportional to displaced volume (VERTICAL "</span>
+            <span class="s2">"string). In a deviated well supply front_tvd: the kill mud "</span>
+            <span class="s2">"reaches a given TVD after less pumping than this implies."</span>
+        <span class="p">)</span>
+
+    <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">round</span><span class="p">(</span><span class="n">strokes_to_bit</span> <span class="o">*</span> <span class="n">k</span> <span class="o">/</span> <span class="n">steps</span><span class="p">))</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="n">n</span> <span class="o">/</span> <span class="n">strokes_to_bit</span> <span class="k">if</span> <span class="n">strokes_to_bit</span> <span class="k">else</span> <span class="mf">1.0</span>
+        <span class="n">z_f</span> <span class="o">=</span> <span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">front_tvd</span><span class="p">(</span><span class="n">f</span><span class="p">)</span> <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">front_tvd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+               <span class="k">else</span> <span class="n">inp</span><span class="o">.</span><span class="n">tvd_ft</span> <span class="o">*</span> <span class="n">f</span><span class="p">)</span>
+        <span class="n">z_f</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">z_f</span><span class="p">),</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">inp</span><span class="o">.</span><span class="n">tvd_ft</span><span class="p">)</span>
+        <span class="n">p_front</span> <span class="o">=</span> <span class="n">column_pressure</span><span class="p">(</span><span class="n">kill</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">z_f</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">ts</span><span class="p">,</span> <span class="n">gg</span><span class="p">)</span>
+        <span class="n">p_shoe</span> <span class="o">=</span> <span class="n">column_pressure</span><span class="p">(</span><span class="n">old</span><span class="p">,</span> <span class="n">z_f</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">tvd_ft</span><span class="p">,</span> <span class="n">p_front</span><span class="p">,</span> <span class="n">ts</span><span class="p">,</span> <span class="n">gg</span><span class="p">)</span>
+        <span class="n">friction</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">scr_pressure_psi</span> <span class="o">+</span> <span class="p">(</span><span class="n">fcp</span> <span class="o">-</span> <span class="n">inp</span><span class="o">.</span><span class="n">scr_pressure_psi</span><span class="p">)</span> <span class="o">*</span> <span class="n">f</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">PumpSchedule</span><span class="p">(</span>
+            <span class="n">strokes</span><span class="o">=</span><span class="n">n</span><span class="p">,</span>
+            <span class="n">volume_bbl</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">pump_output_bbl_per_stroke</span> <span class="o">*</span> <span class="n">n</span><span class="p">,</span>
+            <span class="n">drillpipe_psi</span><span class="o">=</span><span class="n">bhp</span> <span class="o">-</span> <span class="n">p_shoe</span> <span class="o">+</span> <span class="n">friction</span><span class="p">,</span>
+            <span class="n">fraction</span><span class="o">=</span><span class="n">f</span><span class="p">,</span>
+        <span class="p">))</span>
+    <span class="k">return</span> <span class="n">rows</span>
+
+
+<div class="viewcode-block" id="kill_sheet">
+<a class="viewcode-back" href="../../../welleng.kick_tolerance.html#welleng.kick_tolerance.kill_sheet">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">kill_sheet</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">KillSheetInputs</span><span class="p">,</span> <span class="n">method</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"classic"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">KillSheetResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Fill a well-kill worksheet from pre-recorded and shut-in data.</span>
+
+<span class="sd">    ``method="classic"`` (default)</span>
+<span class="sd">        The IWCF sheet as taught and as filled in on the rig: a straight line</span>
+<span class="sd">        in strokes from ICP to FCP. This is the **reference form** and it is</span>
+<span class="sd">        what a worked sheet can be checked against.</span>
+
+<span class="sd">    ``method="analytical"``</span>
+<span class="sd">        The same sheet with the HYDROSTATICS solved exactly, from</span>
+<span class="sd">        :func:`column_pressure`, for a mud whose density varies with pressure</span>
+<span class="sd">        and temperature. The drill-pipe pressure at each step is what actually</span>
+<span class="sd">        holds bottom-hole pressure constant with the kill-mud front at that</span>
+<span class="sd">        depth, rather than a line drawn between two endpoints.</span>
+
+<span class="sd">        ⚠️ **The friction term is still the classic density ratio.** One</span>
+<span class="sd">        measured SCR pressure cannot be decomposed into its laminar and</span>
+<span class="sd">        turbulent parts, so scaling it is the only defensible thing to do with</span>
+<span class="sd">        it; solving the hydrostatics exactly does not make the friction exact.</span>
+<span class="sd">        Stated because the combination is easy to mistake for a full model.</span>
+
+<span class="sd">        ⚠️ **Mud compression is in the PRESSURE, not in the volume balance.**</span>
+<span class="sd">        Compressed kill mud occupies slightly less of the string than was</span>
+<span class="sd">        pumped, so the front sits a little shallower than the stroke count</span>
+<span class="sd">        implies. That is second order against the pressure effect and is NOT</span>
+<span class="sd">        modelled -- named rather than silently folded in.</span>
+
+<span class="sd">    With a ``MudModel`` of zero compressibility and zero expansion the two</span>
+<span class="sd">    methods agree to floating point, which is the parity gate in</span>
+<span class="sd">    ``tests/test_kill_sheet.py``.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        On a non-physical input, or when ``maasp_psi`` is given and the</span>
+<span class="sd">        recorded shut-in casing pressure already exceeds it -- that well is not</span>
+<span class="sd">        killable on this schedule and a sheet saying otherwise is worse than no</span>
+<span class="sd">        sheet.</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">    &gt;&gt;&gt; from welleng.kick_tolerance import KillSheetInputs, kill_sheet</span>
+<span class="sd">    &gt;&gt;&gt; s = kill_sheet(KillSheetInputs(</span>
+<span class="sd">    ...     mud_weight_ppg=12.0, tvd_ft=10000.0, sidp_psi=500.0,</span>
+<span class="sd">    ...     scr_pressure_psi=600.0, pump_output_bbl_per_stroke=0.10,</span>
+<span class="sd">    ...     string_volume_bbl=160.0))</span>
+<span class="sd">    &gt;&gt;&gt; round(s.kill_mud_weight_ppg, 2)</span>
+<span class="sd">    12.96</span>
+<span class="sd">    &gt;&gt;&gt; round(s.icp_psi, 1), round(s.fcp_psi, 1)</span>
+<span class="sd">    (1100.0, 648.0)</span>
+<span class="sd">    &gt;&gt;&gt; s.strokes_to_bit</span>
+<span class="sd">    1600</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">mud_weight_ppg</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"mud weight must be positive"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">tvd_ft</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"TVD must be positive"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">sidp_psi</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"shut-in drill-pipe pressure cannot be negative"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">scr_pressure_psi</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"slow-circulating-rate pressure cannot be negative"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">pump_output_bbl_per_stroke</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"pump output must be positive"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">string_volume_bbl</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"string volume must be positive"</span><span class="p">)</span>
+
+    <span class="n">notes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="n">over_maasp</span> <span class="o">=</span> <span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">maasp_psi</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">inp</span><span class="o">.</span><span class="n">sicp_psi</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                  <span class="ow">and</span> <span class="n">inp</span><span class="o">.</span><span class="n">sicp_psi</span> <span class="o">&gt;</span> <span class="n">inp</span><span class="o">.</span><span class="n">maasp_psi</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">over_maasp</span><span class="p">:</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"shut-in casing pressure </span><span class="si">{</span><span class="n">inp</span><span class="o">.</span><span class="n">sicp_psi</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> psi is ABOVE MAASP "</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">inp</span><span class="o">.</span><span class="n">maasp_psi</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> psi: the shoe is already at risk before "</span>
+            <span class="s2">"circulation starts. The schedule below is still the arithmetic, "</span>
+            <span class="s2">"but the well-control decision is not this sheet's to make."</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">strict</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="n">notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+    <span class="c1"># Kill mud weight: the density whose static column balances pore pressure.</span>
+    <span class="c1"># An explicit value wins -- a rig mixes to what it can weigh up, and the</span>
+    <span class="c1"># worked sheets are filled in with the rounded figure.</span>
+    <span class="n">kmw</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">kill_mud_weight_ppg</span>
+    <span class="k">if</span> <span class="n">kmw</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">kmw</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">mud_weight_ppg</span> <span class="o">+</span> <span class="n">inp</span><span class="o">.</span><span class="n">sidp_psi</span> <span class="o">/</span> <span class="p">(</span>
+            <span class="n">G_PSI_PER_PPG_FT</span> <span class="o">*</span> <span class="n">inp</span><span class="o">.</span><span class="n">tvd_ft</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">kmw</span> <span class="o">&lt;</span> <span class="n">inp</span><span class="o">.</span><span class="n">mud_weight_ppg</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"kill mud weight </span><span class="si">{</span><span class="n">kmw</span><span class="si">}</span><span class="s2"> is below the current mud weight "</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">inp</span><span class="o">.</span><span class="n">mud_weight_ppg</span><span class="si">}</span><span class="s2">"</span>
+        <span class="p">)</span>
+
+    <span class="c1"># ICP is exact: the friction the pump must overcome plus the underbalance</span>
+    <span class="c1"># the mud column is short by.</span>
+    <span class="n">icp</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">scr_pressure_psi</span> <span class="o">+</span> <span class="n">inp</span><span class="o">.</span><span class="n">sidp_psi</span>
+
+    <span class="c1"># FCP scales the MEASURED friction by the density ratio -- an approximation,</span>
+    <span class="c1"># see the module docstring.</span>
+    <span class="n">fcp</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">scr_pressure_psi</span> <span class="o">*</span> <span class="n">kmw</span> <span class="o">/</span> <span class="n">inp</span><span class="o">.</span><span class="n">mud_weight_ppg</span>
+
+    <span class="n">strokes_to_bit</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">round</span><span class="p">(</span>
+        <span class="n">inp</span><span class="o">.</span><span class="n">string_volume_bbl</span> <span class="o">/</span> <span class="n">inp</span><span class="o">.</span><span class="n">pump_output_bbl_per_stroke</span><span class="p">))</span>
+    <span class="n">strokes_up</span> <span class="o">=</span> <span class="n">total</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">annulus_volume_bbl</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">annulus_volume_bbl</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"annulus volume must be positive when given"</span><span class="p">)</span>
+        <span class="n">strokes_up</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">round</span><span class="p">(</span>
+            <span class="n">inp</span><span class="o">.</span><span class="n">annulus_volume_bbl</span> <span class="o">/</span> <span class="n">inp</span><span class="o">.</span><span class="n">pump_output_bbl_per_stroke</span><span class="p">))</span>
+        <span class="n">total</span> <span class="o">=</span> <span class="n">strokes_to_bit</span> <span class="o">+</span> <span class="n">strokes_up</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="s2">"No annulus volume given: the sheet covers surface-to-bit only. "</span>
+            <span class="s2">"The influx is not out of the hole at the end of this schedule."</span>
+        <span class="p">)</span>
+
+    <span class="n">mins_to_bit</span> <span class="o">=</span> <span class="n">mins_total</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">scr_rate_spm</span><span class="p">:</span>
+        <span class="n">mins_to_bit</span> <span class="o">=</span> <span class="n">strokes_to_bit</span> <span class="o">/</span> <span class="n">inp</span><span class="o">.</span><span class="n">scr_rate_spm</span>
+        <span class="k">if</span> <span class="n">total</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">mins_total</span> <span class="o">=</span> <span class="n">total</span> <span class="o">/</span> <span class="n">inp</span><span class="o">.</span><span class="n">scr_rate_spm</span>
+
+    <span class="k">if</span> <span class="n">method</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"classic"</span><span class="p">,</span> <span class="s2">"analytical"</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"method must be 'classic' or 'analytical', got </span><span class="si">{</span><span class="n">method</span><span class="si">!r}</span><span class="s2">"</span><span class="p">)</span>
+
+    <span class="n">steps</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">schedule_steps</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">method</span> <span class="o">==</span> <span class="s2">"classic"</span><span class="p">:</span>
+        <span class="c1"># The row's pressure is derived from the row's OWN stroke count, not</span>
+        <span class="c1"># from the un-rounded fraction that produced it: a driller reads the</span>
+        <span class="c1"># printed table, so the two columns of a row have to be the same point</span>
+        <span class="c1"># on the line. They differed by ~0.7% of a step before.</span>
+        <span class="n">schedule</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="n">n</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">round</span><span class="p">(</span><span class="n">strokes_to_bit</span> <span class="o">*</span> <span class="n">k</span> <span class="o">/</span> <span class="n">steps</span><span class="p">))</span>
+            <span class="n">f</span> <span class="o">=</span> <span class="n">n</span> <span class="o">/</span> <span class="n">strokes_to_bit</span> <span class="k">if</span> <span class="n">strokes_to_bit</span> <span class="k">else</span> <span class="mf">1.0</span>
+            <span class="n">schedule</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">PumpSchedule</span><span class="p">(</span>
+                <span class="n">strokes</span><span class="o">=</span><span class="n">n</span><span class="p">,</span>
+                <span class="n">volume_bbl</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">pump_output_bbl_per_stroke</span> <span class="o">*</span> <span class="n">n</span><span class="p">,</span>
+                <span class="n">drillpipe_psi</span><span class="o">=</span><span class="n">icp</span> <span class="o">+</span> <span class="p">(</span><span class="n">fcp</span> <span class="o">-</span> <span class="n">icp</span><span class="p">)</span> <span class="o">*</span> <span class="n">f</span><span class="p">,</span>
+                <span class="n">fraction</span><span class="o">=</span><span class="n">f</span><span class="p">,</span>
+            <span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">schedule</span> <span class="o">=</span> <span class="n">_analytical_schedule</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">kmw</span><span class="p">,</span> <span class="n">icp</span><span class="p">,</span> <span class="n">fcp</span><span class="p">,</span> <span class="n">strokes_to_bit</span><span class="p">,</span>
+                                        <span class="n">steps</span><span class="p">,</span> <span class="n">notes</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">fcp</span> <span class="o">&gt;</span> <span class="n">icp</span><span class="p">:</span>
+        <span class="c1"># Only when the kill mud's extra friction outweighs the underbalance it</span>
+        <span class="c1"># removes -- possible with a small SIDP and a high SCR pressure.</span>
+        <span class="n">notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"FCP (</span><span class="si">{</span><span class="n">fcp</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> psi) is ABOVE ICP (</span><span class="si">{</span><span class="n">icp</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> psi): the drill-pipe "</span>
+            <span class="s2">"pressure schedule RISES. Check the SCR pressure and SIDP before "</span>
+            <span class="s2">"using this sheet — the usual sheet falls."</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">sidp_psi</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="n">notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="s2">"SIDP is zero: kill mud weight equals the current mud weight, so "</span>
+            <span class="s2">"this sheet describes circulating at the existing weight."</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">KillSheetResult</span><span class="p">(</span>
+        <span class="n">kill_mud_weight_ppg</span><span class="o">=</span><span class="n">kmw</span><span class="p">,</span>
+        <span class="n">icp_psi</span><span class="o">=</span><span class="n">icp</span><span class="p">,</span>
+        <span class="n">fcp_psi</span><span class="o">=</span><span class="n">fcp</span><span class="p">,</span>
+        <span class="n">strokes_to_bit</span><span class="o">=</span><span class="n">strokes_to_bit</span><span class="p">,</span>
+        <span class="n">strokes_bit_to_surface</span><span class="o">=</span><span class="n">strokes_up</span><span class="p">,</span>
+        <span class="n">strokes_total</span><span class="o">=</span><span class="n">total</span><span class="p">,</span>
+        <span class="n">minutes_to_bit</span><span class="o">=</span><span class="n">mins_to_bit</span><span class="p">,</span>
+        <span class="n">minutes_total</span><span class="o">=</span><span class="n">mins_total</span><span class="p">,</span>
+        <span class="n">schedule</span><span class="o">=</span><span class="n">schedule</span><span class="p">,</span>
+        <span class="n">notes</span><span class="o">=</span><span class="n">notes</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Jonathan Corcutt.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+    <!-- Theme Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-186225449-3"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-186225449-3', {
+          'anonymize_ip': false,
+      });
+    </script> 
+
+</body>
+</html>
