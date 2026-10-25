@@ -1346,7 +1346,7 @@ class ToolError:
             'ASIXY_TI3': ASIXY_TI3,  # Needs QAQC
             'ABIXY_TI1': ABIXY_TI1,  # Needs QAQC
             'ABIXY_TI2': ABIXY_TI2,  # Needs QAQC
-            'ABIZ': ABIZ,  # Needs QAQC
+            'ABIZ': ABIZ,  # checked: tests/test_abiz_amil_definition.py
             'ASIZ': ASIZ,  # Needs QAQC
             'MBIXY_TI1': MBIXY_TI1,  # Needs QAQC
             'MBIXY_TI2': MBIXY_TI2,  # Needs QAQC
@@ -1421,8 +1421,10 @@ def DST(
 def ABIZ(
     code, error, mag=0.0040, propagation='systematic', NEV=True, **kwargs
 ):
-    denom = _funky_denominator(error) / error.survey.header.G
-    denom = np.where(denom > ACCURACY, denom, ACCURACY)
+    # ISCWSA Error Model Definition Rev 5.13 s11.2 term 35: the azimuth weight is
+    # divided by G (1 - sin^2 I sin^2 Am).
+    denom = _funky_denominator(error)
+    denom = np.where(denom > ACCURACY, denom, ACCURACY) * error.survey.header.G
 
     dpde = np.zeros((len(error.survey_rad), 3))
     dpde[:, 1] = -sin(error.survey.inc_rad) / error.survey.header.G
@@ -2258,9 +2260,10 @@ def DBHR(
 
 
 def AMIL(code, error, mag=220.0, propagation='systematic', NEV=True, **kwargs):
+    # ISCWSA Error Model Definition Rev 5.13 s11.2 term 32: sin I sin Am / (B cos dip).
     dpde = np.zeros((len(error.survey_rad), 3))
     dpde[:, 2] = (
-        -sin(np.array(error.survey_rad)[:, 1])
+        sin(np.array(error.survey_rad)[:, 1])
         * sin(error.survey.azi_mag_rad)
         / (error.survey.header.b_total * cos(error.survey.header.dip))
     )
