@@ -1205,7 +1205,7 @@ class MahalanobisClearance(Clearance):
         local.update((0, len(sf) - 1))      # endpoints argrelmin cannot flag
 
         def legs(md, i):
-            # the legs either side of station i (one at an end)
+            """The legs either side of station ``i`` (one at an end)."""
             return [(md[a], md[a + 1]) for a in (i - 1, i) if 0 <= a < len(md) - 1]
 
         for i in sorted(local):
