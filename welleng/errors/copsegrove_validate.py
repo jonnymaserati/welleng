@@ -68,7 +68,7 @@ def _bindings_for_station(
         "Dip": dip_rad,
         "BField": b_total,
         "Bfield": b_total,  # casing alias (MFI formulas use Bfield)
-        "EarthRate": 0.262516,
+        "EarthRate": 7.292115e-5 * 3600.0,
         "Latitude": np.radians(latitude_deg),
         "RAD": np.pi / 180.0,
     }

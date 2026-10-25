@@ -677,7 +677,7 @@ class ToolError:
         # (see _json_to_em_adapter). EarthRate falls back to the standard
         # sidereal value (15.041 deg/hr) used by the gyro-azimuth terms.
         hdr = self.em.get("header", {}) if hasattr(self, "em") else {}
-        earth_rate = float(getattr(survey.header, "earth_rate", None) or 0.262516)
+        earth_rate = float(getattr(survey.header, "earth_rate", None) or 7.292115e-5 * 3600.0)
         nrf = float(
             hdr.get("Noise Reduction Factor")
             if hdr.get("Noise Reduction Factor") is not None
@@ -1499,20 +1499,14 @@ class ToolError:
     def _initiate_func_dict(self):
         """Map weight-function name -> implementation.
 
-        Update when error functions are added/removed. A ``# Needs QAQC`` flag marks
-        a function not yet validated. After the 2026-06-29 audit these are all
-        **OWSG-specific** terms, outside the base ISCWSA standard model -- so the
-        ISCWSA standard test wells legitimately do NOT exercise them and there is no
-        in-repo ISCWSA reference to validate against; they would need OWSG
-        (extended-model) reference data:
-          - MDI, MFI, AMID, ABIZ, ASIZ, MSIXY: only in the OWSG ``+AX``/``+IFR``
-            axial-interference-correction models (MWD+IFR1+AX, MWD+SRGM+AX, ...).
-          - CNA, CNI: only in the BLIND/UNKNOWN/FINDS/TREND special models
-            (gyro "Linear Cone").
-          - ASIXY, ABIXY, MBIXY: in no current JSON model at all -- legacy-only.
-        See the welleng error-model engine notes S6. The base-ISCWSA terms that DO have
-        reference data (XYM3E/XYM4E/DBHR) are validated per-source to 5e-5 by
-        tests/test_iscwsa_mwd_error.py and are no longer flagged.
+        Update when error functions are added/removed. Every weight function here
+        that the ISCWSA Error Model Definition Rev 5.13 s11 lists is asserted, station by
+        station, against the Definition's weighting function in
+        tests/test_iscwsa_weights_definition.py, and against the OWSG tool-model formula
+        for every shipped model in tests/test_iscwsa_json_conformance.py. AMID is a
+        historic term (no longer in s11) and is checked against the OWSG formula only.
+        XCLA/XCLH, XYM3L/XYM4L and DBHR are checked per source against the ISCWSA test
+        well data in tests/test_iscwsa_mwd_error.py.
         """
         self.func_dict = {
             'ABXY_TI1': ABXY_TI1,
@@ -1548,16 +1542,16 @@ class ToolError:
             'XCLH': XCLH,
             'XYM3E': XYM3E,  # validated: test_iscwsa_mwd_error (per-source, 5e-5)
             'XYM4E': XYM4E,  # validated: test_iscwsa_mwd_error (per-source, 5e-5)
-            'ASIXY_TI1': ASIXY_TI1,  # Needs QAQC
-            'ASIXY_TI2': ASIXY_TI2,  # Needs QAQC
-            'ASIXY_TI3': ASIXY_TI3,  # Needs QAQC
-            'ABIXY_TI1': ABIXY_TI1,  # Needs QAQC
-            'ABIXY_TI2': ABIXY_TI2,  # Needs QAQC
-            'ABIZ': ABIZ,  # Needs QAQC
-            'ASIZ': ASIZ,  # Needs QAQC
-            'MBIXY_TI1': MBIXY_TI1,  # Needs QAQC
-            'MBIXY_TI2': MBIXY_TI2,  # Needs QAQC
-            'MDI': MDI,  # Needs QAQC
+            'ASIXY_TI1': ASIXY_TI1,
+            'ASIXY_TI2': ASIXY_TI2,
+            'ASIXY_TI3': ASIXY_TI3,
+            'ABIXY_TI1': ABIXY_TI1,
+            'ABIXY_TI2': ABIXY_TI2,
+            'ABIZ': ABIZ,
+            'ASIZ': ASIZ,
+            'MBIXY_TI1': MBIXY_TI1,
+            'MBIXY_TI2': MBIXY_TI2,
+            'MDI': MDI,
             # Gyro-tool weight functions (AXYZ_*, GXY_*) previously lived
             # here as a half-finished first attempt flagged '# Needs QAQC'.
             # Deleted 2026-04-16 in favour of a JSON-schema + interpreter
@@ -1565,14 +1559,14 @@ class ToolError:
             # ISCWSA error-models JSON schema directly. Gyro tools will be
             # added as JSON files driven by that interpreter, not as
             # hand-coded Python weight functions.
-            'MFI': MFI,  # Needs QAQC
-            'MSIXY_TI1': MSIXY_TI1,  # Needs QAQC
-            'MSIXY_TI2': MSIXY_TI2,  # Needs QAQC
-            'MSIXY_TI3': MSIXY_TI3,  # Needs QAQC
+            'MFI': MFI,
+            'MSIXY_TI1': MSIXY_TI1,
+            'MSIXY_TI2': MSIXY_TI2,
+            'MSIXY_TI3': MSIXY_TI3,
             'DBHR': DBHR,  # validated: test_iscwsa_mwd_error (per-source, 5e-5)
-            'AMID': AMID,  # Needs QAQC
-            'CNA': CNA,  # Needs QAQC
-            'CNI': CNI,  # Needs QAQC
+            'AMID': AMID,
+            'CNA': CNA,
+            'CNI': CNI,
         }
 
 
@@ -1628,8 +1622,10 @@ def DST(
 def ABIZ(
     code, error, mag=0.0040, propagation='systematic', NEV=True, **kwargs
 ):
-    denom = _funky_denominator(error) / error.survey.header.G
-    denom = np.where(denom > ACCURACY, denom, ACCURACY)
+    # ISCWSA Error Model Definition Rev 5.13 s11.2 term 35: the azimuth weight is
+    # divided by G (1 - sin^2 I sin^2 Am).
+    denom = _funky_denominator(error)
+    denom = np.where(denom > ACCURACY, denom, ACCURACY) * error.survey.header.G
 
     dpde = np.zeros((len(error.survey_rad), 3))
     dpde[:, 1] = -sin(error.survey.inc_rad) / error.survey.header.G
@@ -2496,9 +2492,10 @@ def DBHR(
 
 
 def AMIL(code, error, mag=220.0, propagation='systematic', NEV=True, **kwargs):
+    # ISCWSA Error Model Definition Rev 5.13 s11.2 term 32: sin I sin Am / (B cos dip).
     dpde = np.zeros((len(error.survey_rad), 3))
     dpde[:, 2] = (
-        -sin(np.array(error.survey_rad)[:, 1])
+        sin(np.array(error.survey_rad)[:, 1])
         * sin(error.survey.azi_mag_rad)
         / (error.survey.header.b_total * cos(error.survey.header.dip))
     )
