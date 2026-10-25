@@ -250,6 +250,74 @@ TOOL_INDEX = os.path.join(
 
 ACCURACY = 1e-6
 
+# ISCWSA Error Model Definition revisions whose formulas can be applied
+# (SurveyHeader.iscwsa_definition). The last is the current revision and the default.
+ISCWSA_DEFINITIONS = ("5.03", "5.13")
+ISCWSA_DEFINITION_CURRENT = ISCWSA_DEFINITIONS[-1]
+# Misalignment minimum course length where the tool model gives none: "ISCWSA models
+# will default to a value of 10m" (Definition Rev 5.13 s5.1.2).
+MISALIGNMENT_MIN_COURSE_LENGTH_DEFAULT = 10.0
+
+
+def _misalignment_min_course_length(header):
+    """L_min (m) from the tool model header, else the Definition's 10 m default."""
+    value = (header or {}).get("Misalignment Min Course Length")
+    if value is None:
+        return MISALIGNMENT_MIN_COURSE_LENGTH_DEFAULT
+    from ..units import ureg
+    return float(ureg.Quantity(str(value)).to("meter").magnitude)
+
+
+# The OWSG sheets write the XYM3E/XYM4E damping term as this expression, with
+# L_min = 10 m and no interval condition (Definition Rev 5.03's form).
+_SHEET_DAMPING = "Max(1, sqrt(10/(MD-MDPrev)))"
+_DAMPED_FIELDS = (
+    "depth_formula", "inclination_formula", "azimuth_formula",
+    "north_singularity", "east_singularity", "vertical_singularity",
+)
+
+
+def _with_misalignment_damping(term, bindings, error, header):
+    """The term with the sheet's damping expression replaced by M from
+    _misalignment_damping, bound as ``XYMDamping``; other terms unchanged."""
+    if not any(
+        isinstance(term.get(f), str) and _SHEET_DAMPING in term[f]
+        for f in _DAMPED_FIELDS
+    ):
+        return term
+    if "XYMDamping" not in bindings:
+        bindings["XYMDamping"] = _misalignment_damping(error, header)
+    out = dict(term)
+    for f in _DAMPED_FIELDS:
+        if isinstance(out.get(f), str):
+            out[f] = out[f].replace(_SHEET_DAMPING, "XYMDamping")
+    return out
+
+
+def _misalignment_damping(error, header=None):
+    """The damping term M of XYM3E/XYM4E at every station (station 0 has none: 1).
+
+    ISCWSA Error Model Definition s5.1.2 eq. (39), M = max(1, sqrt(L_min / dD))
+    with dD the interval to the previous station. Rev 5.13 (from Rev 5.12) applies it
+    only where 0.1 m < dD < L_min and takes M = 1 otherwise; Rev 5.03 applies it at
+    every interval, so a repeated measured depth has no value there and is refused.
+    """
+    md = np.asarray(error.survey.md, dtype=float)
+    d_md = np.diff(md)
+    l_min = _misalignment_min_course_length(header)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        damping = np.maximum(1.0, np.sqrt(l_min / d_md))
+    if error.survey.header.iscwsa_definition == "5.03":
+        if np.any(d_md <= 0.0):
+            raise ValueError(
+                "a station repeats the previous measured depth; the XYM3E/XYM4E "
+                "damping term of ISCWSA Definition Rev 5.03 has no value there "
+                "(iscwsa_definition)"
+            )
+    else:
+        damping = np.where((d_md > 0.1) & (d_md < l_min), damping, 1.0)
+    return np.concatenate(([1.0], damping))
+
 
 #: Refuse, rather than warn, when a latitude-dependent error model is asked to
 #: compute at the package fallback location.
@@ -756,6 +824,7 @@ class ToolError:
         # running random-walk). These cannot be evaluated by a single
         # vectorised call -- evaluate them station-by-station with the
         # static-gyro inclination gate, then return.
+        term = _with_misalignment_damping(term, bindings, self.e, hdr)
         recur = self._recurrence_var(term["azimuth_formula"])
         if recur is not None:
             return self._call_interpreter_recurrence(
@@ -2615,19 +2684,7 @@ def XYM3(
 
 
 def XYM3E(code, error, mag=0.00524, propagation='random', NEV=True, **kwargs):
-    coeff = np.ones(len(error.survey.md))
-    coeff[1:-1] = np.amax(np.stack((
-        coeff[1:-1],
-        sqrt(
-            10 / error.drdp_sing['delta_md']
-        )
-    ), axis=-1), axis=-1)
-    coeff[-1] = np.amax(np.stack((
-        coeff[-1],
-        sqrt(
-            10 / (error.survey.md[-1] - error.survey.md[-2])
-        )
-    ), axis=-1), axis=-1)
+    coeff = _misalignment_damping(error, kwargs.get('header'))
 
     dpde = np.zeros((len(error.survey.md), 3))
     # ISCWSA v5.13 §5.1.2 (XYM3E): M.Abs(Cos(I)) * Cos(AzT) -- Abs wraps Cos(I)
@@ -2750,19 +2807,7 @@ def XYM4(
 
 
 def XYM4E(code, error, mag=0.00524, propagation='random', NEV=True, **kwargs):
-    coeff = np.ones(len(error.survey.md))
-    coeff[1:-1] = np.amax(np.stack((
-        coeff[1:-1],
-        sqrt(
-            10 / error.drdp_sing['delta_md']
-        )
-    ), axis=-1), axis=-1)
-    coeff[-1] = np.amax(np.stack((
-        coeff[-1],
-        sqrt(
-            10 / (error.survey.md[-1] - error.survey.md[-2])
-        )
-    ), axis=-1), axis=-1)
+    coeff = _misalignment_damping(error, kwargs.get('header'))
 
     dpde = np.zeros((len(error.survey.md), 3))
     # ISCWSA v5.13 §5.1.2 (XYM4E): M.Abs(Cos(I)) * Sin(AzT) and
@@ -3017,13 +3062,7 @@ def XCLH(code, error, mag=0.167, propagation='random', NEV=True, **kwargs):
 
 
 def XYM3L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
-    coeff = np.ones(len(error.survey.md) - 1)
-    coeff = np.amax(np.stack((
-        coeff,
-        sqrt(
-            10 / (error.survey.md[1:] - error.survey.md[:-1])
-        )
-    ), axis=-1), axis=-1)
+    coeff = _misalignment_damping(error, kwargs.get('header'))[1:]
 
     # Rev 5.11 XYM3E/XYM3L weights per workbook: ABS(COS(inc)) only, cos(azi)
     # keeps its sign so azimuths beyond 90° flip contribution correctly.
@@ -3120,13 +3159,7 @@ def XYM3L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
 
 
 def XYM4L(code, error, mag=0.0167, propagation='random', NEV=True, **kwargs):
-    coeff = np.ones(len(error.survey.md))
-    coeff[1:] = np.amax(np.stack((
-        coeff[1:],
-        sqrt(
-            10 / (error.survey.md[1:] - error.survey.md[:-1])
-        )
-    ), axis=-1), axis=-1)
+    coeff = _misalignment_damping(error, kwargs.get('header'))
 
     # Rev 5.11 XYM4E/XYM4L azi-axis weight per workbook:
     # ABS(COS(inc)) * COS(azi) / SIN(inc) * coeff.

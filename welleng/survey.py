@@ -464,6 +464,7 @@ class SurveyHeader:
         dp_basis: str = "balanced_tangent",
         tie_on: Optional[bool] = None,
         first_station_allowance: Optional[Union[bool, str]] = None,
+        iscwsa_definition: str = "5.13",
         deg: bool = True,
         depth_unit: str = 'meters',
         surface_unit: str = 'meters',
@@ -507,8 +508,9 @@ class SurveyHeader:
             and survey_date properties — a real latitude/longitude must be
             provided for the result to count as a valid reference (see
             ``mag_source``).
-        earth_rate: float (default: 0.26249751949994715)
-            The rate of rotation of the earth in radians per hour.
+        earth_rate: float (default: 0.26251614)
+            The rate of rotation of the earth in radians per hour
+            (7.292115e-5 rad/s, ISCWSA Error Model Definition Rev 5.13 s4.3).
         noise_reduction_factor: float (default: 1.0)
             A fiddle factor for random gyro noise.
         dip: float (default: None)
@@ -607,6 +609,17 @@ class SurveyHeader:
             (offset 10) within 0.3 mm laterally and 1.5 mm along hole; high side
             differs by up to 3.9 mm in the build below the kick-off, under 0.2 mm
             on the hold; that difference is not yet attributed.
+        iscwsa_definition: str (default: "5.13")
+            The revision of the ISCWSA Error Model Definition whose formulas are
+            applied: "5.13" (the current revision) or "5.03". Between them the
+            only change in a formula is the misalignment damping term M of
+            XYM3E/XYM4E (Definition s5.1.2 eq. 39): from Rev 5.12 it applies only
+            where the station interval lies between 0.1 m and the tool model's
+            minimum course length, and is 1 otherwise; in Rev 5.03 it applies at
+            every interval. Corrections of misprints between the revisions are not
+            reproduced. The error model records the revision it applied and
+            whether it is superseded (``ErrorModel.iscwsa_definition``,
+            ``ErrorModel.iscwsa_definition_superseded``).
         deg: bool (default: True)
             Indicates whether the survey angles are measured in degrees
             (True) or radians (False).
@@ -660,6 +673,13 @@ class SurveyHeader:
                 "first_station_allowance is None, True, False or 'uncorrelated'"
             )
         self.first_station_allowance = first_station_allowance
+        from .errors.tool_errors import ISCWSA_DEFINITIONS
+        if iscwsa_definition not in ISCWSA_DEFINITIONS:
+            raise ValueError(
+                "iscwsa_definition is one of "
+                + ", ".join(repr(r) for r in ISCWSA_DEFINITIONS)
+            )
+        self.iscwsa_definition = iscwsa_definition
         self.grid_scale_factor = grid_scale_factor
         # Global datum (georeferencing truth lives on the header). Survey resolves
         # these from its data/args and writes them here; the position transform

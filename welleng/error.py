@@ -167,6 +167,17 @@ class ErrorModel():
             interpreter without any file resolution.
         """
 
+        from .errors.tool_errors import ISCWSA_DEFINITION_CURRENT
+        #: The ISCWSA Error Model Definition revision whose formulas were applied
+        #: (``SurveyHeader.iscwsa_definition``), and whether a later revision
+        #: supersedes it (the current one is ``ISCWSA_DEFINITION_CURRENT``).
+        self.iscwsa_definition = getattr(
+            survey.header, "iscwsa_definition", ISCWSA_DEFINITION_CURRENT
+        )
+        self.iscwsa_definition_superseded = (
+            self.iscwsa_definition != ISCWSA_DEFINITION_CURRENT
+        )
+
         if isinstance(error_model, dict):
             self.error_model = error_model.get(
                 'metadata', {}
