@@ -241,6 +241,16 @@ class SurveyComposition:
         """Normalise a section to (md, inc_rad, azi_grid_rad) + resolved meta."""
         header = self._resolve_header(section)
         error_model = section.error_model or DEFAULT_ERROR_MODEL
+        n_st = np.size(section.survey.md if section.survey is not None
+                       else section.md)
+        if n_st < 2:
+            # A tie-only section adds no station, and the tie into the next
+            # run would have no following interval to carry through. Checked
+            # here, not left to Survey's assert (stripped under python -O).
+            raise ValueError(
+                "each SurveySection needs at least two stations "
+                f"(its tie station plus at least one new); got {n_st}"
+            )
         if section.survey is not None:
             s = section.survey
             md = np.asarray(s.md, dtype=float)
@@ -624,11 +634,12 @@ class SurveyComposition:
             inc = np.append(inc, nxt.inc_rad[1])
             azi = np.append(azi, nxt.azi_grid_rad[1])
         header = groups[0].header
-        # ONE propagation serves every component that shares this run's
-        # geometry AND its depth datum. `attr` selects which covariance to read
-        # off a build; it does not change the build -- the only thing that does
-        # is NOT the component: a severed run measures depth from surface like
-        # any other, so one propagation per run serves every component.
+        # ONE propagation serves every component of this run. `attr` selects
+        # which covariance to read off the build; it does not change the build.
+        # A severed run measures depth from surface like any other run (no
+        # run-relative depth datum): with the through-tie carry the earlier
+        # run's depth error telescopes away at the tie, so the new run's
+        # depth-weighted terms take the whole depth.
         cache = getattr(self, "_run_cache", None)
         if cache is None:
             cache = self._run_cache = {}

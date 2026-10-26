@@ -657,14 +657,18 @@ from welleng.composition import SurveyComposition, SurveySection  # noqa: E402
 TIE_TOOL = "Magn, IFR, mag-corr, dual incl"
 
 
+def _tie_header():
+    return we.survey.SurveyHeader(
+        name="tie", azi_reference="grid", deg=True, b_total=50515.8,
+        dip=71.6, declination=-0.22, latitude=58.4, longitude=1.9,
+    )
+
+
 def _two_sections(ipm, n=25, T=12):
     md = 500.0 + 100.0 * np.arange(n)
     inc = np.linspace(30.0, 60.0, n)  # grid-lint: ok survey stations, not a search
     azi = np.linspace(20.0, 80.0, n)  # grid-lint: ok survey stations, not a search
-    hdr = we.survey.SurveyHeader(
-        name="tie", azi_reference="grid", deg=True, b_total=50515.8,
-        dip=71.6, declination=-0.22, latitude=58.4, longitude=1.9,
-    )
+    hdr = _tie_header()
     comp = SurveyComposition([
         SurveySection(md=md[:T + 1], inc=inc[:T + 1], azi=azi[:T + 1], deg=True,
                       error_model=ipm.error_model(TIE_TOOL), tool_id="s0"),
@@ -684,6 +688,43 @@ def test_severed_tie_random_equals_one_survey(ipm):
     *_, T, comp, one = _two_sections(ipm)
     d = np.abs(np.asarray(comp.cov_nev_random) - np.asarray(one.cov_nev_random))
     assert d.max() < 1e-12, f"random covariance changed by the tie: {d.max():.3e}"
+
+
+def _compose_with_tie_only_section(ipm):
+    md, inc, azi, T, *_ = _two_sections(ipm)
+
+    def sec(a, b, tid, sm=None):
+        return SurveySection(md=md[a:b], inc=inc[a:b], azi=azi[a:b], deg=True,
+                             error_model=ipm.error_model(TIE_TOOL), tool_id=tid,
+                             share_mode=sm)
+
+    return SurveyComposition([
+        sec(0, T + 1, "s0"),
+        sec(T, T + 1, "s1", "all_independent"),
+        sec(T, len(md), "s2", "all_independent"),
+    ], header=_tie_header()).survey()
+
+
+def test_tie_only_section_refused(ipm):
+    """A section holding only its tie station adds no station and leaves no
+    interval to carry the tie through: ValueError, also under ``python -O``
+    (where an ``assert`` would be stripped and the composition would build)."""
+    import subprocess
+    import sys
+
+    with pytest.raises(ValueError, match="at least two stations"):
+        _compose_with_tie_only_section(ipm)
+    code = (
+        "import sys; sys.path.insert(0, sys.argv[1]); import test_edm_ipm as t\n"
+        "try:\n"
+        "    t._compose_with_tie_only_section(t.parse_edm_ipm(t.VOLVE))\n"
+        "except ValueError as e:\n"
+        "    sys.exit(0 if 'at least two stations' in str(e) else 3)\n"
+        "sys.exit(4)\n"
+    )
+    r = subprocess.run([sys.executable, "-O", "-c", code, os.path.dirname(__file__)],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, f"python -O: rc {r.returncode}\n{r.stderr[-2000:]}"
 
 
 def test_f15d_lateral_within_3pct_of_compass(ipm):
