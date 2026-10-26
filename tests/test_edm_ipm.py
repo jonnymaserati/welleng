@@ -778,3 +778,86 @@ def test_f15d_lateral_within_3pct_of_compass(ipm):
             f"sigma_{lab}: {bad.sum()}/{bad.size} stations outside 3%, "
             f"range {ratio.min():.3f}-{ratio.max():.3f}"
         )
+
+
+def _f15d_actual(ipm):
+    """Volve F-15D ACTUAL definitive stations (SI), the stored COMPASS covariances
+    and the elevation of the well's default depth datum above MSL."""
+    from welleng.exchange.edm_stream import EDMReader, FEET_TO_METERS
+    r = EDMReader(VOLVE)
+    st = header = well_id = None
+    for hid, stations in r._def_stations.items():
+        h = r.headers[hid]
+        wb = r.wellbores.get(h.wellbore_id)
+        if wb and wb.name == "F-15D" and h.phase == "ACTUAL":
+            st, header, well_id = sorted(stations, key=lambda s: s["md"]), h, wb.well_id
+    datum = next(d for d in r.datums[well_id] if d.get("is_default") == "Y")
+    mag = [m for m in ipm.magnetics if m.get("wellbore_id") == header.wellbore_id][0]
+    F = FEET_TO_METERS
+    return dict(
+        md=np.array([s["md"] for s in st]) * F, inc=np.array([s["inc"] for s in st]),
+        azi=np.array([s["azi"] for s in st]), tvd=np.array([s["tvd"] for s in st]) * F,
+        cc=np.array([s["cov"] for s in st]) * F ** 2, mag=mag,
+        elev=float(datum["datum_elevation"]) * F)
+
+
+def _f15d_sigma_ratio(ipm, d, elev, start_tvd):
+    """welleng / COMPASS 1-sigma (N, E, V) for F-15D composed as the COMPASS
+    program (ties at 1309.6, 2558.1 and 3243.1 m MSL, globals shared), with MD
+    measured from ``elev`` above MSL. The mid-leg 3243.1 m station is inserted
+    by min-curve interpolation and dropped before comparing; station 0 (the
+    tie-on, zero covariance) is excluded."""
+    sh = we.survey.SurveyHeader(
+        name="F-15D", azi_reference="grid", latitude=58.4416, longitude=1.8875,
+        b_total=float(d["mag"]["field_strength"]), dip=float(d["mag"]["dip_angle"]),
+        declination=float(d["mag"]["declination"]))
+    md, inc, azi = d["md"] + elev, np.where(d["inc"] > 0, d["inc"], 1e-6), d["azi"]
+    b = 3243.1 + elev
+    nd = we.survey.Survey(md=md, inc=inc, azi=azi, deg=True,
+                          header=sh).interpolate_md(b)
+    i = int(np.searchsorted(md, b))
+    md, inc, azi = (np.insert(md, i, b), np.insert(inc, i, nd.inc_deg),
+                    np.insert(azi, i, nd.azi_deg))
+    keep = np.insert(np.ones(d["md"].size, bool), i, False)
+    cut = ([0] + [int(np.searchsorted(md, x + elev - 1e-6))
+                  for x in (1309.6, 2558.1, 3243.1)] + [md.size - 1])
+    tools = ("Wellbore Surveyor, stat", "Magn, IFR, mag-corr, dual incl",
+             "Magn, IFR, mag-corr, dual incl", "Magn, IFR, non-mag, dual incl")
+    secs = [SurveySection(md=md[lo:hi + 1], inc=inc[lo:hi + 1], azi=azi[lo:hi + 1],
+                          deg=True, header=sh, error_model=ipm.error_model(t),
+                          tool_id=f"run{k}",
+                          share_mode=None if k == 0 else "globals_shared")
+            for k, (t, lo, hi) in enumerate(zip(tools, cut[:-1], cut[1:]))]
+    comp = (SurveyComposition(secs) if start_tvd is None
+            else SurveyComposition(secs, start_nev=[0.0, 0.0, start_tvd]))
+    cov = np.asarray(comp.survey().cov_nev)[keep]
+    cc = d["cc"]                                  # [xx, xy, xz, yy, yz, zz], x = East
+    s_cp = np.sqrt(np.stack([cc[:, 3], cc[:, 0], cc[:, 5]], 1))[1:]
+    s_we = np.sqrt(np.stack([cov[:, j, j] for j in range(3)], 1))[1:]
+    return s_we / s_cp
+
+
+def test_f15d_within_3pct_of_compass_on_datum_depths(ipm):
+    """Volve F-15D ACTUAL: the depth-weighted IPM terms (depth scale on MD,
+    stretch on MD x TVD) are evaluated by COMPASS on depths from the design
+    datum (rotary table, 54.9 m above MSL), while the export stores MD and TVD
+    from MSL. Composed on datum depths (MD + elevation, start TVD = first
+    station's TVD + elevation), sigma N, E and V are within 3% of the stored
+    covariance at every station, and sigma V within 0.5%."""
+    d = _f15d_actual(ipm)
+    rat = _f15d_sigma_ratio(ipm, d, d["elev"], d["tvd"][0] + d["elev"])
+    for col, lab in enumerate("NEV"):
+        bad = np.abs(rat[:, col] - 1) > 0.03
+        assert not bad.any(), (
+            f"sigma_{lab}: {bad.sum()}/{bad.size} stations outside 3%, "
+            f"range {rat[:, col].min():.4f}-{rat[:, col].max():.4f}")
+    assert np.abs(rat[:, 2] - 1).max() < 0.005, (rat[:, 2].min(), rat[:, 2].max())
+
+
+def test_f15d_vertical_low_on_msl_depths(ipm):
+    """Calibration for the test above: the same composition on the stored MSL
+    depths, starting at TVD 0, is low on sigma V, so the datum gate can fail."""
+    d = _f15d_actual(ipm)
+    rat = _f15d_sigma_ratio(ipm, d, 0.0, None)[:, 2]
+    assert rat.max() < 0.985, (rat.min(), rat.max())
+    assert (np.abs(rat - 1) <= 0.03).sum() <= 5, (rat.min(), rat.max())

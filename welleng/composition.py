@@ -180,6 +180,11 @@ class SurveyComposition:
         Default share mode for every tie whose section does not set one and
         for which the context keys do not force a choice. Defaults to
         ``"globals_shared"`` (the ISCWSA side-track RP recommendation).
+    start_nev : array-like of 3 floats, optional
+        Position of the first section's first station, (N, E, TVD). Defaults to
+        zeros. The TVD sets the depth reference of every ``tvd``-weighted error
+        term; pass it (and section MDs) from the depth datum the reference tool
+        used, e.g. an EDM design datum (rig floor above MSL).
 
     Notes
     -----
@@ -203,6 +208,7 @@ class SurveyComposition:
         sections: Sequence[SurveySection],
         header: Optional[SurveyHeader] = None,
         share_mode: ShareMode = "globals_shared",
+        start_nev: Optional[ArrayLike] = None,
     ) -> None:
         sections = list(sections)
         if not sections:
@@ -210,6 +216,8 @@ class SurveyComposition:
         self.sections = sections
         self.default_header = header
         self.default_share_mode = share_mode
+        self.start_nev = (np.zeros(3) if start_nev is None
+                          else np.asarray(start_nev, dtype=float).reshape(3))
 
         self._groups = self._build_groups()
         self._survey: Optional[Survey] = None
@@ -368,7 +376,7 @@ class SurveyComposition:
 
         # 1. Chain group start positions (only TVD affects covariance, but we
         #    need continuous positions anyway).
-        start_nev = np.array([0.0, 0.0, 0.0])
+        start_nev = self.start_nev
         group_surveys: List[Survey] = []
         start_nevs: List[NDArray[np.float64]] = []
         for g in groups:
