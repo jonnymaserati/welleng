@@ -62,6 +62,17 @@ def test_sparse_offset_mahalanobis_matches_densified_offset(sparse_offset_pair):
     assert got == pytest.approx(want, rel=1e-5)
 
 
+def test_sparse_offset_iscwsa_matches_densified_offset(sparse_offset_pair):
+    """The offset covariance between stations comes from the error model, the
+    rule interpolate_mds uses, so the separation factor does not depend on
+    where the offset's stations happen to be."""
+    ref, off = sparse_offset_pair
+    mds = np.arange(10.0, off.md[-1], 10.0)  # grid-lint: ok densified oracle
+    want = np.ravel(IscwsaClearance(ref, off.interpolate_mds(mds)).sf).min()
+    got = np.ravel(IscwsaClearance(ref, off).sf).min()
+    assert got == pytest.approx(want, rel=1e-6)
+
+
 @pytest.fixture(scope="module")
 def end_approach_pair():
     # reference: vertical, stations every 100 m to 1000 m
@@ -100,3 +111,42 @@ def test_no_point_is_inserted_where_the_first_leg_only_falls(end_approach_pair):
     ref, off = end_approach_pair
     c = IscwsaClearance(ref, off)
     assert np.all(np.isin(c.ref.md[c.ref.md < 900.0], ref.md))
+
+
+def test_offset_radius_at_the_closest_point_not_the_nearest_station(
+        sparse_offset_pair):
+    """Offset hole radius 0.3 m on the tangent and 0.1 m beyond it. The
+    approach is on the tangent, whose stations are not the nearest one, so
+    the radius must come from the leg (the preceding station's, the rule
+    interpolate_mds carries), as the densified offset does."""
+    ref, off = sparse_offset_pair
+    off = we.survey.Survey(md=off.md, inc=off.inc_deg, azi=off.azi_grid_deg,
+                           header=_header(), start_nev=[-1000, 0, 1000],
+                           radius=np.array([0.3, 0.1, 0.1, 0.1, 0.1]),
+                           error_model="ISCWSA MWD Rev4")
+    mds = np.arange(10.0, off.md[-1], 10.0)  # grid-lint: ok densified oracle
+    dense = off.interpolate_mds(mds)
+    want = np.ravel(IscwsaClearance(ref, dense).sf).min()
+    assert np.ravel(IscwsaClearance(ref, off).sf).min() == pytest.approx(want, rel=1e-6)
+    want = MahalanobisClearance(ref, dense).min_sf
+    assert MahalanobisClearance(ref, off).min_sf == pytest.approx(want, rel=1e-5)
+
+
+def test_reference_radius_inside_a_refined_leg(end_approach_pair):
+    """Reference radius 0.5 m to 900 m and 0.1 m at 1000 m. The minimum is
+    inside the last leg, where the preceding station's radius applies (the
+    rule interpolate_mds carries): the value minimised is the value
+    reported, and both equal the densified reference's."""
+    ref, off = end_approach_pair
+    rad = np.where(ref.md < 950.0, 0.5, 0.1)
+    ref = we.survey.Survey(md=ref.md, inc=ref.inc_deg, azi=ref.azi_grid_deg,
+                           header=_header(), radius=rad,
+                           error_model="ISCWSA MWD Rev4")
+    mds = np.arange(10.0, 1000.0, 10.0)  # grid-lint: ok densified oracle
+    want = np.ravel(IscwsaClearance(ref.interpolate_mds(mds), off).sf).min()
+    assert np.ravel(IscwsaClearance(ref, off).sf).min() == pytest.approx(want, rel=1e-6)
+    # the search's own value at its minimum
+    c0 = IscwsaClearance(ref, off, minimize_sf=False)
+    n = len(ref.md)
+    _, searched = c0._interval_minimum(n - 1, np.array([ref.delta_md[n - 1], 0.0]))
+    assert searched == pytest.approx(want, rel=1e-6)

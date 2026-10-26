@@ -83,6 +83,14 @@ def _closest_x_on_arc(P0, t0, t1, delta_md, dogleg, Q, eps=1e-9):
 
 
 
+def _radius_on_leg(radius, i, t):
+    """Hole radius at arc fraction ``t`` along leg ``i``: the preceding
+    station's, and the far station's own at the leg end -- the radius
+    :meth:`welleng.survey.Survey.interpolate_mds` carries to a point it
+    inserts."""
+    return float(radius[i + 1] if t >= 1.0 else radius[i])
+
+
 def _leg_spheres(pos, md):
     """Chord midpoints and half lengths of a path's legs (stations ``j``,
     ``j + 1``): the leg's arc lies within half its length of its chord
@@ -348,7 +356,7 @@ class Clearance:
         interior EOU the separation-factor path uses -- one model, so the
         Mahalanobis narrowphase and the SF rule agree); it falls back to linear
         interpolation for a survey supplied with a bare ``cov_nev``. Radius is
-        interpolated linearly."""
+        the preceding station's (:func:`_radius_on_leg`)."""
         md, pos, cov, rad, survey = curve
         i = int(np.clip(np.searchsorted(md, q, side="right") - 1, 0, len(md) - 2))
         p = _interpolate_pos_nev(survey, float(q - md[i]), i)   # min-curvature
@@ -359,7 +367,7 @@ class Clearance:
             c = err.cov_nev_at(q).reshape(3, 3)                 # arc-faithful EOU
         else:
             c = (1.0 - f) * cov[i] + f * cov[i + 1]             # linear fallback
-        return p, c, float((1.0 - f) * rad[i] + f * rad[i + 1])
+        return p, c, _radius_on_leg(rad, i, f)
 
     def _quad_form_inv(self, S, dp):
         """The combined-metric quadratic form ``dp^T S^{-1} dp`` (batched or
@@ -776,7 +784,7 @@ class IscwsaClearance(Clearance):
         # Interpolated reference position and covariance — no Survey needed
         ref_pos = _interpolate_pos_nev(self.ref, xx, ii)
         ref_cov = self._interior_cov(self.ref, ii, xx)
-        ref_r = self.Rr[ii + 1]
+        ref_r = _radius_on_leg(self.Rr, ii, xx / delta_md[0 if x < 0 else 1])
 
         # Find closest point on offset in the two intervals around self.idx[i]
         off_idx = self.idx[i]
@@ -786,14 +794,13 @@ class IscwsaClearance(Clearance):
             set(range(max(0, off_idx - 1), min(off_idx + 1, n_off - 2) + 1))
             | set(_candidate_legs(self.offset_nevs, self._off_spheres,
                                   ref_pos)))
-        oi, off_pos, t_mult, best_dist, _ = self._closest_offset_point(
+        oi, off_pos, t_mult, best_dist, xo = self._closest_offset_point(
             ref_pos, legs)
         best_u = off_pos - ref_pos
-        # the pedal path's own offset covariance (linear, sidetrack-corrected
-        # when present), so the value minimised here is the value reported
-        # after insertion
-        best_off_cov = self._interpolate_covs(oi + 1, t_mult)[1]
-        best_off_r = self.Ro[oi] + t_mult * (self.Ro[oi + 1] - self.Ro[oi])
+        # the pedal path's own offset covariance, so the value minimised here
+        # is the value reported after insertion
+        best_off_cov = self._offset_cov_nev(oi, xo, t_mult)
+        best_off_r = _radius_on_leg(self.Ro, oi, t_mult)
 
         dist = best_dist
         if dist < 1e-10:
@@ -939,6 +946,7 @@ class IscwsaClearance(Clearance):
         self._off_spheres = _leg_spheres(self.offset_nevs, self.offset.md)
 
         closest = []
+        off_radius = []
         for j, (i, station) in enumerate(zip(
             self.idx, self.ref_nevs.tolist()
         )):
@@ -955,34 +963,24 @@ class IscwsaClearance(Clearance):
                                       np.asarray(station))))
             oi, pos, t_mult, dist, xo = self._closest_offset_point(
                 station, legs)
+            off_radius.append(_radius_on_leg(self.Ro, oi, t_mult))
             closest.append((
                 station,
                 self.offset.md[oi] + xo,
                 (xo, dist),
-                self._interpolate_covs(oi + 1, t_mult),
+                self._offset_cov_nev(oi, xo, t_mult),
                 pos,
             ))
 
         self.closest = closest
+        self._off_radius = np.array(off_radius)
         # angles at the closest points from the arc kernel, all at once
         md = np.array([r[1] for r in self.closest])
         _, inc, azi = self.offset.interpolate(md, angles=True)
         n, e, tvd = np.array([r[4] for r in self.closest]).T
         x, y, z = e, n, tvd
 
-        cov_hla = np.array([
-            [
-                r[3][0],
-            ]
-            for r in self.closest
-        ])
-
-        cov_nev = np.array([
-            [
-                r[3][1],
-            ]
-            for r in self.closest
-        ])
+        cov_nev = np.array([r[3] for r in self.closest])
 
         self.off = Survey(
             md=md,
@@ -993,7 +991,6 @@ class IscwsaClearance(Clearance):
             tvd=tvd,
             header=self.offset.header,
             error_model=None,
-            cov_hla=cov_hla,
             cov_nev=cov_nev,
             start_xyz=[x[0], y[0], z[0]],
             start_nev=[n[0], e[0], tvd[0]],
@@ -1011,30 +1008,19 @@ class IscwsaClearance(Clearance):
         """
         return
 
-    def _interpolate_covs(self, i, mult):
+    def _offset_cov_nev(self, oi, xo, t):
+        """Offset covariance (3, 3) at the point ``xo`` along leg ``oi``
+        (arc fraction ``t``): the station's own at a leg end, otherwise the
+        single interior-covariance rule (:func:`welleng.survey._interior_cov_nev`,
+        the error model's ``cov_nev_at`` when the offset carries one), the
+        rule the reference side and ``interpolate_mds`` use.
         """
-        Returns the interpolated covariance matrices for the interpolated
-        survey points representing the closest points on the offset well
-        relative to each reference well survey station.
-        """
-        if self._off_cov_nev_corrected is not None:
-            cov_hla_src = self._off_cov_hla_corrected
-            cov_nev_src = self._off_cov_nev_corrected
-        else:
-            cov_hla_src = self.offset.cov_hla
-            cov_nev_src = self.offset.cov_nev
-
-        cov_hla_new = (
-            cov_hla_src[i - 1]
-            + mult * (cov_hla_src[i] - cov_hla_src[i - 1])
-        )
-
-        cov_nev_new = (
-            cov_nev_src[i - 1]
-            + mult * (cov_nev_src[i] - cov_nev_src[i - 1])
-        )
-
-        return (cov_hla_new, cov_nev_new)
+        cov = np.asarray(self.offset.cov_nev).reshape(-1, 3, 3)
+        if t == 0.0:
+            return cov[oi]
+        if t == 1.0:
+            return cov[oi + 1]
+        return self._interior_cov(self.offset, oi, xo)
 
     def _get_delta_nev_vectors(self):
         temp = self.off_nevs - self.ref_nevs
@@ -1109,7 +1095,7 @@ class IscwsaClearance(Clearance):
         ))
 
     def _get_calc_hole(self):
-        self.calc_hole = self.Rr + self.Ro[self.idx]
+        self.calc_hole = self.Rr + self._off_radius
 
     def _traveling_cylinder(self):
         """
