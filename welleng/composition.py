@@ -181,7 +181,8 @@ class SurveyComposition:
         for which the context keys do not force a choice. Defaults to
         ``"globals_shared"`` (the ISCWSA side-track RP recommendation).
     start_nev : array-like of 3 floats, optional
-        Position of the first section's first station, (N, E, TVD). Defaults to
+        Position of the first section's first station, (N, E, TVD), in the
+        length unit of the sections' ``md`` (metres by default). Defaults to
         zeros. The TVD sets the depth reference of every ``tvd``-weighted error
         term; pass it (and section MDs) from the depth datum the reference tool
         used, e.g. an EDM design datum (rig floor above MSL).
