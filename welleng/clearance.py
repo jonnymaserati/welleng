@@ -83,6 +83,31 @@ def _closest_x_on_arc(P0, t0, t1, delta_md, dogleg, Q, eps=1e-9):
 
 
 
+def _leg_spheres(pos, md):
+    """Chord midpoints and half lengths of a path's legs (stations ``j``,
+    ``j + 1``): the leg's arc lies within half its length of its chord
+    midpoint, since ``|x - mid| <= (|x - P0| + |x - P1|) / 2 <= L / 2`` for a
+    point ``x`` on the arc. Inputs for :func:`_candidate_legs`."""
+    pos = np.asarray(pos, dtype=float)
+    return 0.5 * (pos[1:] + pos[:-1]), 0.5 * np.diff(np.asarray(md, dtype=float))
+
+
+def _candidate_legs(pos, spheres, p):
+    """Legs of a path that can hold its closest point to ``p``.
+
+    ``|p - mid| - L / 2`` bounds a leg's distance to ``p`` from below, and the
+    nearest station bounds the minimum from above, so a leg whose bound
+    exceeds the nearest station's distance cannot hold the closest point.
+    Every other leg is returned. The nearest station alone is not enough: on
+    a sparse path the closest point can lie far along a long leg whose
+    stations are both distant.
+    """
+    mid, half = spheres
+    d_station = float(norm(np.asarray(pos) - p, axis=1).min())
+    lower = norm(mid - p, axis=1) - half
+    return np.flatnonzero(lower <= d_station * (1.0 + 1e-12) + 1e-12).tolist()
+
+
 class Clearance:
     """
     Initialize a `welleng.clearance.Clearance` object.
@@ -757,7 +782,10 @@ class IscwsaClearance(Clearance):
         off_idx = self.idx[i]
         n_off = len(self.offset.md)
 
-        legs = range(max(0, off_idx - 1), min(off_idx + 1, n_off - 2) + 1)
+        legs = sorted(
+            set(range(max(0, off_idx - 1), min(off_idx + 1, n_off - 2) + 1))
+            | set(_candidate_legs(self.offset_nevs, self._off_spheres,
+                                  ref_pos)))
         oi, off_pos, t_mult, best_dist, _ = self._closest_offset_point(
             ref_pos, legs)
         best_u = off_pos - ref_pos
@@ -817,15 +845,30 @@ class IscwsaClearance(Clearance):
         minimum SF value between stations (between the previous and next
         station relative to the identified station).
 
+        An end station below its one neighbour is searched too, over its
+        single leg: ``argrelmin`` cannot flag an end station, and the minimum
+        of an approach that is still closing at the end of the reference lies
+        in its last leg.
+
         Modifies the `sf` attribute to include the interpolated minimum `sf`
         values.
         """
-        minimas = argrelmin(self.sf)
+        sf = np.ravel(self.sf)
+        n = sf.size
+        minimas = set(np.atleast_1d(argrelmin(sf)[0]).tolist())
+        if n > 1:
+            # an end station below its one neighbour, the strict comparison
+            # argrelmin applies to interior stations
+            minimas.update(i for i, j in ((0, 1), (n - 1, n - 2)) if sf[i] < sf[j])
 
         sf_interpolated = []
 
-        for minima in minimas[0].tolist():
-            delta_md = self.ref.delta_md[minima: minima + 2]
+        for minima in sorted(minimas):
+            # legs behind and ahead of the station; an end station has one
+            delta_md = np.array([
+                self.ref.delta_md[minima] if minima > 0 else 0.0,
+                self.ref.delta_md[minima + 1] if minima < n - 1 else 0.0,
+            ])
             x_min = self._interval_minimum(minima, delta_md)
             if x_min is not None:
                 sf_interpolated.append((self.ref.md[minima] + x_min[0], x_min[1]))
@@ -893,18 +936,23 @@ class IscwsaClearance(Clearance):
         self._off_local_tan = np.column_stack([
             np.sin(_oi) * np.cos(_oa), np.sin(_oi) * np.sin(_oa), np.cos(_oi)
         ])
+        self._off_spheres = _leg_spheres(self.offset_nevs, self.offset.md)
 
         closest = []
         for j, (i, station) in enumerate(zip(
             self.idx, self.ref_nevs.tolist()
         )):
             # Closest point on the two offset segments straddling the coarse
-            # nearest station `i` -- analytic point-to-arc (was a scipy Powell
-            # search per segment; the min-curvature segment is a planar circular
-            # arc, so the closest point is closed-form). `x*` in [0, seg_md],
-            # `f*` the achieved centre-to-centre distance.
-            legs = [leg for leg in (i - 1, i)
-                    if 0 <= leg < len(self.offset_nevs) - 1]
+            # nearest station `i`, and on any other leg that can be closer
+            # (`_candidate_legs`) -- analytic point-to-arc (the min-curvature
+            # segment is a planar circular arc, so the closest point is
+            # closed-form). `x*` in [0, seg_md], `f*` the achieved
+            # centre-to-centre distance.
+            legs = sorted(
+                {leg for leg in (i - 1, i)
+                 if 0 <= leg < len(self.offset_nevs) - 1}
+                | set(_candidate_legs(self.offset_nevs, self._off_spheres,
+                                      np.asarray(station))))
             oi, pos, t_mult, dist, xo = self._closest_offset_point(
                 station, legs)
             closest.append((
@@ -1183,6 +1231,29 @@ class MahalanobisClearance(Clearance):
         if len(Rp) < 2 or len(Op) < 2:
             return sf
 
+        # The offset's stations alone miss an approach far along a long leg
+        # whose stations are both distant (a sparse offset). Each reference
+        # station is also scored at the Euclidean closest point on every leg
+        # that can hold it (_candidate_legs), and those legs are searched in
+        # the narrowphase below.
+        o_inc = np.asarray(self.offset.inc_rad, float)
+        o_azi = np.asarray(self.offset.azi_grid_rad, float)
+        o_tan = np.column_stack([np.sin(o_inc) * np.cos(o_azi),
+                                 np.sin(o_inc) * np.sin(o_azi), np.cos(o_inc)])
+        spheres = _leg_spheres(Op, Omd)
+        pedal_legs = []
+        for i in range(len(Rp)):
+            found = {}
+            for leg in _candidate_legs(Op, spheres, Rp[i]):
+                x = _closest_x_on_arc(Op[leg], o_tan[leg], o_tan[leg + 1],
+                                      Omd[leg + 1] - Omd[leg],
+                                      self.offset.dogleg[leg + 1], Rp[i])
+                q = Omd[leg] + x
+                found[leg] = q
+                sf[i] = min(sf[i], self._sf_point(Rp[i], Rc[i], Rr[i],
+                                                  *self._at(off, q)))
+            pedal_legs.append(found)
+
         # NARROWPHASE: continuous 2-D minimisation over the two curve parameters
         # from the broadphase candidates — the true minimum falls between
         # stations. Converges to a tolerance (no fixed step); each search is
@@ -1232,6 +1303,18 @@ class MahalanobisClearance(Clearance):
                 res = optimize.minimize_scalar(
                     lambda q: self._sf_point(*self._at(ref, q), Op[j], Oc[j], Ro[j]),
                     bounds=(lo, hi), method="bounded", options={"xatol": self._tol})
+                best = min(best, float(res.fun))
+            for leg, q0 in pedal_legs[i].items():   # other legs that can be closest
+                if leg in (j - 1, j):
+                    continue
+                lo, hi = Omd[leg], Omd[leg + 1]
+                res = optimize.minimize_scalar(
+                    lambda q: self._sf_point(Rp[i], Rc[i], Rr[i], *self._at(off, q)),
+                    bounds=(lo, hi), method="bounded", options={"xatol": self._tol})
+                best = min(best, float(res.fun))
+                res = optimize.minimize(objective, x0=[Rmd[i], q0], method="Nelder-Mead",
+                                        bounds=[bounds[0], (lo, hi)],
+                                        options={"xatol": self._tol, "fatol": 1e-7})
                 best = min(best, float(res.fun))
             sf[i] = best
         return sf
