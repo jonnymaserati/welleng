@@ -961,7 +961,9 @@ class Survey(MinCurve):
     radius : ndarray of shape (n,)
         Wellbore radius at each station.
     cov_nev : ndarray of shape (n, 3, 3) or None
-        Covariance matrices in North-East-Vertical coordinates.
+        Covariance matrices in North-East-Vertical coordinates, in the axes
+        of the positions (``n``, ``e``): north is grid north, turned from
+        true north by the header's grid convergence.
     cov_hla : ndarray of shape (n, 3, 3) or None
         Covariance matrices in High-Lateral-Along-hole coordinates.
     err : ErrorModel or None
