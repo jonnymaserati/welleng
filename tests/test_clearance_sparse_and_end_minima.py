@@ -62,6 +62,17 @@ def test_sparse_offset_mahalanobis_matches_densified_offset(sparse_offset_pair):
     assert got == pytest.approx(want, rel=1e-5)
 
 
+def test_sparse_offset_iscwsa_matches_densified_offset(sparse_offset_pair):
+    """The offset covariance between stations comes from the error model, the
+    rule interpolate_mds uses, so the separation factor does not depend on
+    where the offset's stations happen to be."""
+    ref, off = sparse_offset_pair
+    mds = np.arange(10.0, off.md[-1], 10.0)  # grid-lint: ok densified oracle
+    want = np.ravel(IscwsaClearance(ref, off.interpolate_mds(mds)).sf).min()
+    got = np.ravel(IscwsaClearance(ref, off).sf).min()
+    assert got == pytest.approx(want, rel=1e-6)
+
+
 @pytest.fixture(scope="module")
 def end_approach_pair():
     # reference: vertical, stations every 100 m to 1000 m

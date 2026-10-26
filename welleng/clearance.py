@@ -786,13 +786,12 @@ class IscwsaClearance(Clearance):
             set(range(max(0, off_idx - 1), min(off_idx + 1, n_off - 2) + 1))
             | set(_candidate_legs(self.offset_nevs, self._off_spheres,
                                   ref_pos)))
-        oi, off_pos, t_mult, best_dist, _ = self._closest_offset_point(
+        oi, off_pos, t_mult, best_dist, xo = self._closest_offset_point(
             ref_pos, legs)
         best_u = off_pos - ref_pos
-        # the pedal path's own offset covariance (linear, sidetrack-corrected
-        # when present), so the value minimised here is the value reported
-        # after insertion
-        best_off_cov = self._interpolate_covs(oi + 1, t_mult)[1]
+        # the pedal path's own offset covariance, so the value minimised here
+        # is the value reported after insertion
+        best_off_cov = self._offset_cov_nev(oi, xo, t_mult)
         best_off_r = self.Ro[oi] + t_mult * (self.Ro[oi + 1] - self.Ro[oi])
 
         dist = best_dist
@@ -959,7 +958,7 @@ class IscwsaClearance(Clearance):
                 station,
                 self.offset.md[oi] + xo,
                 (xo, dist),
-                self._interpolate_covs(oi + 1, t_mult),
+                self._offset_cov_nev(oi, xo, t_mult),
                 pos,
             ))
 
@@ -970,19 +969,7 @@ class IscwsaClearance(Clearance):
         n, e, tvd = np.array([r[4] for r in self.closest]).T
         x, y, z = e, n, tvd
 
-        cov_hla = np.array([
-            [
-                r[3][0],
-            ]
-            for r in self.closest
-        ])
-
-        cov_nev = np.array([
-            [
-                r[3][1],
-            ]
-            for r in self.closest
-        ])
+        cov_nev = np.array([r[3] for r in self.closest])
 
         self.off = Survey(
             md=md,
@@ -993,7 +980,6 @@ class IscwsaClearance(Clearance):
             tvd=tvd,
             header=self.offset.header,
             error_model=None,
-            cov_hla=cov_hla,
             cov_nev=cov_nev,
             start_xyz=[x[0], y[0], z[0]],
             start_nev=[n[0], e[0], tvd[0]],
@@ -1011,30 +997,19 @@ class IscwsaClearance(Clearance):
         """
         return
 
-    def _interpolate_covs(self, i, mult):
+    def _offset_cov_nev(self, oi, xo, t):
+        """Offset covariance (3, 3) at the point ``xo`` along leg ``oi``
+        (arc fraction ``t``): the station's own at a leg end, otherwise the
+        single interior-covariance rule (:func:`welleng.survey._interior_cov_nev`,
+        the error model's ``cov_nev_at`` when the offset carries one), the
+        rule the reference side and ``interpolate_mds`` use.
         """
-        Returns the interpolated covariance matrices for the interpolated
-        survey points representing the closest points on the offset well
-        relative to each reference well survey station.
-        """
-        if self._off_cov_nev_corrected is not None:
-            cov_hla_src = self._off_cov_hla_corrected
-            cov_nev_src = self._off_cov_nev_corrected
-        else:
-            cov_hla_src = self.offset.cov_hla
-            cov_nev_src = self.offset.cov_nev
-
-        cov_hla_new = (
-            cov_hla_src[i - 1]
-            + mult * (cov_hla_src[i] - cov_hla_src[i - 1])
-        )
-
-        cov_nev_new = (
-            cov_nev_src[i - 1]
-            + mult * (cov_nev_src[i] - cov_nev_src[i - 1])
-        )
-
-        return (cov_hla_new, cov_nev_new)
+        cov = np.asarray(self.offset.cov_nev).reshape(-1, 3, 3)
+        if t == 0.0:
+            return cov[oi]
+        if t == 1.0:
+            return cov[oi + 1]
+        return self._interior_cov(self.offset, oi, xo)
 
     def _get_delta_nev_vectors(self):
         temp = self.off_nevs - self.ref_nevs
