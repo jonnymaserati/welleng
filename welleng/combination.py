@@ -561,7 +561,8 @@ def _propagate_dia_axis_cov(survey, axis_cov, axis):
         e_dia = np.zeros((n, 3))
         e_dia[:, col] = np.sqrt(lam) * u
         sig = m._sigma_e_NEV_systematic(
-            m._e_NEV(e_dia), m._e_NEV_star(e_dia)
+            m._to_position_frame(m._e_NEV(e_dia)),
+            m._to_position_frame(m._e_NEV_star(e_dia)),
         ).reshape(-1)
         block += np.outer(sig, sig)
     return 0.5 * (block + block.T)
@@ -853,7 +854,8 @@ def carry_systematic_forward(
 
     oi = overlap_idx
     if obs_subsample and len(oi) > obs_subsample:
-        oi = oi[np.linspace(0, len(oi) - 1, obs_subsample).round().astype(int)]
+        pick = np.linspace(0, len(oi) - 1, obs_subsample)  # grid-lint: ok subsample
+        oi = oi[pick.round().astype(int)]
 
     def _stack(A, idx):                       # (3*len(idx), S)
         return np.concatenate([A[:, k, :].T for k in idx], axis=0)

@@ -395,8 +395,9 @@ class ErrorModel():
         """NEV vectors ``(..., 3)`` (rows), or covariances ``(..., 3, 3)``
         with ``cov=True``, from true-north axes to the survey's position frame
         (:meth:`_set_position_frame`). The model computes in true north, the
-        frame its weighting functions use; every NEV quantity it outputs
-        passes through here once."""
+        frame its weighting functions use (``_e_NEV`` and ``_e_NEV_star``
+        return true north); every NEV quantity it outputs passes through here
+        exactly once, stored vectors in :meth:`_generate_error`."""
         R = getattr(self, "_grid_rotation", None)
         if R is None or a is None:
             return a
@@ -421,7 +422,7 @@ class ErrorModel():
 
         arr[0] = 0
 
-        return self._to_position_frame(arr)
+        return arr
 
     def _e_NEV_star(self, e_DIA):
         D, I, A = e_DIA.T
@@ -447,7 +448,7 @@ class ErrorModel():
         # systematic depth term, whose weight vanishes at md=0) stays 0 there,
         # exactly matching the ISCWSA diagnostics.
 
-        return self._to_position_frame(arr)
+        return arr
 
     def _sigma_e_NEV_systematic(self, e_NEV, e_NEV_star):
         """Correlated running sum for a systematic source (ISCWSA Rev5.13 eq. 27).
@@ -987,9 +988,11 @@ class ErrorModel():
             if e_NEV is None:
                 e_NEV = self._e_NEV(e_DIA)
                 e_NEV_star = self._e_NEV_star(e_DIA)
-            else:                       # built in true-north NEV by the caller
-                e_NEV = self._to_position_frame(e_NEV)
-                e_NEV_star = self._to_position_frame(e_NEV_star)
+            # every vector arrives in true-north NEV (from _e_NEV, or built by
+            # the caller); this is the one place it is turned to the position
+            # frame
+            e_NEV = self._to_position_frame(e_NEV)
+            e_NEV_star = self._to_position_frame(e_NEV_star)
             if propagation in ('systematic', 'global', 'within_pad', 'well'):
                 # ``sigma_e_NEV`` stays the global systematic running sum (it
                 # is consumed by ``clearance.py``). When ``sections`` is given
