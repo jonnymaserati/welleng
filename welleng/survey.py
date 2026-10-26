@@ -42,6 +42,7 @@ from .node import Node
 # sawaryn_analytical -> scipy.optimize, ~200 ms of the ~525 ms to import this
 # module, and Connector is used only inside the four helpers below. The
 # trajectory maths does not need it. Imported at those call sites instead.
+from . import units
 from .units import ureg
 
 from typing import TYPE_CHECKING, Any, Optional, Union
@@ -1130,8 +1131,8 @@ class Survey(MinCurve):
             If a single float is specified, this value will be
             assigned to the entire well bore. If a list or array of
             floats is provided, these are the radii of the well bore.
-            If None, a well bore radius of 12" or approximately 0.3 m
-            is applied.
+            If None, a well bore radius of 12" (0.3048 m, 1 ft) is
+            applied, expressed in the survey's ``unit``.
         cov_nev: (n,3,3) list or array of floats (default: None)
             List or array of covariance matrices in the (n,e,v)
             coordinate system.
@@ -1437,7 +1438,9 @@ class Survey(MinCurve):
 
     def _get_radius(self, radius: Optional[ArrayLike] = None) -> None:
         if radius is None:
-            self.radius = np.full_like(self.md.astype(float), 0.3048)
+            # 12 in, in the survey's own length unit
+            self.radius = np.full_like(
+                self.md.astype(float), units.to(0.3048, "meter", self.unit))
         elif np.array([radius]).shape[-1] == 1:
             self.radius = np.full_like(self.md.astype(float), radius)
         else:
@@ -2900,7 +2903,7 @@ def _get_ti_data(
 
     mds = survey.md[starts]
     locs = survey.pos_nev[starts]
-    n_sections = np.arange(1, len(starts) + 1, 1)
+    n_sections = np.arange(1, len(starts) + 1, 1)  # grid-lint: ok section counter
     n_sections_arr = np.searchsorted(mds, survey.md[1:])
 
     return (

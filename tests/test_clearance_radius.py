@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 from welleng.clearance import IscwsaClearance, MahalanobisClearance
-from welleng.survey import Survey, make_survey_header
+from welleng.survey import Survey, SurveyHeader, make_survey_header
 
 with open("tests/test_data/clearance_iscwsa_well_data.json") as f:
     DATA = json.load(f)
@@ -74,3 +74,14 @@ def test_survey_radius_is_the_one_used(wells, cls):
     small = np.nanmin(cls(ref, off).sf)
     big = np.nanmin(cls(_survey("Reference well", 5.0), _survey("07 - well", 5.0)).sf)
     assert big < small
+
+
+def test_default_radius_is_twelve_inches_in_the_survey_unit():
+    """No radius given: 12 in, i.e. 0.3048 in a metre survey and 1.0 in a
+    feet survey (was 0.3048 in either unit)."""
+    md = np.array([0.0, 100.0, 200.0])
+    m = Survey(md=md, inc=np.zeros(3), azi=np.zeros(3), header=SurveyHeader())
+    ft = Survey(md=md, inc=np.zeros(3), azi=np.zeros(3), unit="feet",
+                header=SurveyHeader(depth_unit="feet"))
+    assert np.all(m.radius == 0.3048)
+    assert np.all(ft.radius == 1.0)
