@@ -24,7 +24,12 @@ covariance carry:
 2. At a tool change the next group is tied on at the previous group's end
    position, carrying the accumulated covariance. The new tool's *systematic*
    is independent (restarts); only the accumulated *position* covariance and
-   the shared *global* geomagnetic terms carry across the tie.
+   the shared *global* geomagnetic terms carry across the tie. The carry is
+   the earlier run's realisation taken THROUGH the tie station: the tie station
+   was measured by the earlier tool, so its errors act on both adjacent
+   intervals (two-sided ``e_NEV``), exactly as in one continuous survey. Its
+   random errors therefore telescope across the tie instead of being counted
+   once per run.
 3. Whether the *global* (declination / B-field, ``DECG`` / ``DBHG``) and
    *systematic* terms are shared across a given tie is controlled by a
    :data:`~welleng.conditioning.ShareMode`, defaulting to the ISCWSA Side-track
@@ -51,7 +56,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from .conditioning import ShareMode
-from .survey import Survey, SurveyHeader, derived_header, grid_header
+from .survey import Survey, SurveyHeader, grid_header
 
 __all__ = ["SurveySection", "SurveyComposition"]
 
@@ -236,6 +241,16 @@ class SurveyComposition:
         """Normalise a section to (md, inc_rad, azi_grid_rad) + resolved meta."""
         header = self._resolve_header(section)
         error_model = section.error_model or DEFAULT_ERROR_MODEL
+        n_st = np.size(section.survey.md if section.survey is not None
+                       else section.md)
+        if n_st < 2:
+            # A tie-only section adds no station, and the tie into the next
+            # run would have no following interval to carry through. Checked
+            # here, not left to Survey's assert (stripped under python -O).
+            raise ValueError(
+                "each SurveySection needs at least two stations "
+                f"(its tie station plus at least one new); got {n_st}"
+            )
         if section.survey is not None:
             s = section.survey
             md = np.asarray(s.md, dtype=float)
@@ -521,9 +536,74 @@ class SurveyComposition:
                     tie = run_composed[idx - 1][None]
                     out[gi] = np.vstack((tie, run_composed[idx:idx + n_g - 1]))
                     idx += n_g - 1
-            carry = run_composed[-1]
+            if j + 1 < n:
+                carry = carry + self._through_tie(
+                    attr, k, j, start_nevs[k], len(run_comp))
             k = j + 1
         return out
+
+    def _through_tie(self, attr, k, j, start_nev, n_real):
+        """Covariance the run k..j carries past its final (tie) station.
+
+        Not the tie station's reported covariance: that uses the tie's one-sided
+        ``e_NEV_star`` (incoming interval only). The tie station's measurement
+        also steers the outgoing interval, which the next run does not model
+        (its first station is zeroed). So carry ``sum_{i<=T} e_NEV[i]`` with the
+        two-sided ``e_NEV[T]`` (the ghost station supplies the following
+        interval): per term ``v v^T`` for systematic / global / well, and
+        ``sum_{i<=T} e_i e_i^T`` for random.
+        """
+        T = n_real - 1
+        prop = self._ATTR_TO_PROPAGATION.get(attr, "random")
+        groups = self._groups[k:j + 1]
+        key = tuple(np.asarray(start_nev, float).ravel())
+        out = np.zeros((3, 3))
+        if len({_model_key(g.error_model) for g in groups}) == 1:
+            run = self._run_cache[(k, j, key)]
+            for term in run.err.errors.errors.values():
+                if term.propagation != prop:
+                    continue
+                e = np.asarray(term.e_NEV, dtype=float)[:T + 1]
+                if prop == "random":
+                    out += np.einsum("si,sj->ij", e, e)
+                else:
+                    v = e.sum(axis=0)
+                    out += v[:, None] * v[None, :]
+            return out
+        # multi-model shared run: the per-term chained increments to the tie,
+        # then the tie station's outgoing half under its owning (earlier) leg.
+        runs = self._run_cache[("per_term", k, j, key)]
+        owner = self._owners(groups, n_real + 1)
+        terms = [
+            {n: t for n, t in r.err.errors.errors.items() if t.propagation == prop}
+            for r in runs
+        ]
+        for name in sorted({n for d in terms for n in d}):
+            v = np.zeros(3)
+            for s_i in range(1, n_real):
+                t = terms[owner[s_i]].get(name)
+                if t is not None:
+                    sig = np.asarray(t.sigma_e_NEV, dtype=float)
+                    v = v + sig[s_i] - sig[s_i - 1]
+            t = terms[owner[T]].get(name)
+            if t is not None:
+                v = v + (np.asarray(t.e_NEV, dtype=float)[T]
+                         - np.asarray(t.e_NEV_star, dtype=float)[T])
+            out += v[:, None] * v[None, :]
+        return out
+
+    @staticmethod
+    def _owners(groups, n):
+        """owner[s] = index into ``groups`` of the leg that measured station s
+        (the tie station belongs to the EARLIER leg; a ghost rides the last)."""
+        owner = np.zeros(n, dtype=int)
+        pos = len(groups[0].md)
+        for gi in range(1, len(groups)):
+            n_g = len(groups[gi].md)
+            owner[pos:pos + n_g - 1] = gi
+            pos += n_g - 1
+        owner[pos:] = len(groups) - 1
+        return owner
 
     def _run_component(self, attr, k, j, start_nev):
         """Component of groups k..j computed as ONE correlated survey.
@@ -554,30 +634,19 @@ class SurveyComposition:
             inc = np.append(inc, nxt.inc_rad[1])
             azi = np.append(azi, nxt.azi_grid_rad[1])
         header = groups[0].header
-        # ONE propagation serves every component that shares this run's
-        # geometry AND its depth datum. `attr` selects which covariance to read
-        # off a build; it does not change the build -- the only thing that does
-        # is the severed-run `_tmd_datum` override below. So a run needs at most
-        # TWO propagations (with and without the override), not one per
-        # component. Un-cached, a 2-section compose ran EIGHT full ErrorModel
-        # propagations where 2-3 suffice, discarding three quarters of each
-        # result (measured at 93% of a two-section programme setup).
-        severed = attr in ("cov_nev_systematic", "cov_nev_well") and k > 0
+        # ONE propagation serves every component of this run. `attr` selects
+        # which covariance to read off the build; it does not change the build.
+        # A severed run measures depth from surface like any other run (no
+        # run-relative depth datum): with the through-tie carry the earlier
+        # run's depth error telescopes away at the tie, so the new run's
+        # depth-weighted terms take the whole depth.
         cache = getattr(self, "_run_cache", None)
         if cache is None:
             cache = self._run_cache = {}
-        key = (k, j, severed, tuple(np.asarray(start_nev, float).ravel()))
+        key = (k, j, tuple(np.asarray(start_nev, float).ravel()))
         cached = cache.get(key)
         if cached is not None:
             return getattr(cached, attr)[:n_real]
-        if severed:
-            # A severed run's own systematic/well realisations act on the
-            # depth measured BY THAT RUN. COMPASS-formula terms weighted by
-            # ``tmd`` (e.g. a dsf depth-scale error) must see run-relative
-            # depth — depth-from-surface transferred at the tie, so the new
-            # realisation carries none of it. (Named ISCWSA models bind
-            # ``MD`` and are unaffected.)
-            header = derived_header(header, _tmd_datum=float(groups[0].md[0]))
         run = Survey(
             md=md, inc=inc, azi=azi, deg=False, header=header,
             error_model=groups[0].error_model, start_nev=start_nev,
@@ -636,13 +705,7 @@ class SurveyComposition:
         # owner[s] = index into `groups` of the leg that measured station s
         # (the tie station belongs to the EARLIER leg; its following interval
         # is split between the two tools by the two-sided differentials).
-        owner = np.zeros(len(md), dtype=int)
-        pos = len(groups[0].md)
-        for gi in range(1, len(groups)):
-            n_g = len(groups[gi].md)
-            owner[pos:pos + n_g - 1] = gi
-            pos += n_g - 1
-        owner[pos:] = len(groups) - 1          # ghost rides the last leg
+        owner = self._owners(groups, len(md))
 
         # Per-model sigma profiles over the full geometry, per term name. The
         # Survey per group depends only on the geometry, header and model --
