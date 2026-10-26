@@ -18,11 +18,11 @@ INC = np.array([1.0, 15.0, 35.0, 60.0, 75.0, 75.0])
 AZI = np.array([20.0, 25.0, 40.0, 70.0, 95.0, 95.0])
 
 
-def _survey(convergence, azi, model):
+def _survey(convergence, azi, model, inc=INC):
     h = we.survey.SurveyHeader(deg=True, b_total=50000.0, dip=70.0,
                                declination=1.0, convergence=convergence,
                                azi_reference="grid")
-    return we.survey.Survey(md=MD, inc=INC, azi=azi, header=h,
+    return we.survey.Survey(md=MD, inc=inc, azi=azi, header=h,
                             error_model=model)
 
 
@@ -33,10 +33,13 @@ def _rot():
                      [0.0, 0.0, 1.0]])
 
 
-@pytest.mark.parametrize("model", ["ISCWSA MWD Rev4", "MWD+SRGM"])
-def test_covariance_turns_with_the_positions(model):
-    a = _survey(G_DEG, AZI, model)
-    b = _survey(0.0, AZI + G_DEG, model)
+@pytest.mark.parametrize("inc0", [1.0, 0.0])   # 0: a vertical station, singular weights
+@pytest.mark.parametrize("model", ["ISCWSA MWD Rev4", "ISCWSA MWD Rev5.11",
+                                   "MWD+SRGM"])
+def test_covariance_turns_with_the_positions(model, inc0):
+    inc = np.r_[inc0, INC[1:]]
+    a = _survey(G_DEG, AZI, model, inc)
+    b = _survey(0.0, AZI + G_DEG, model, inc)
     R = _rot()
     pa = np.column_stack([a.n, a.e, a.tvd])
     pb = np.column_stack([b.n, b.e, b.tvd])
@@ -48,7 +51,9 @@ def test_covariance_turns_with_the_positions(model):
             getattr(a, name), R @ getattr(b, name) @ R.T,
             atol=1e-12 * scale, err_msg=name)
     np.testing.assert_allclose(a.cov_hla, b.cov_hla, atol=1e-12 * scale)
-    for md in (150.0, 750.0, 1350.0):
+    # a vertical station stores grid azimuth 0, so its true azimuth is 0 + g
+    # in A and 0 in B: the two are one well only beyond the leg leaving it
+    for md in (150.0, 750.0, 1350.0) if inc0 else (750.0, 1350.0):
         np.testing.assert_allclose(
             a.err.cov_nev_at(md), R @ b.err.cov_nev_at(md) @ R.T,
             atol=1e-12 * scale)
