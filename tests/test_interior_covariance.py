@@ -32,7 +32,8 @@ _AZI = np.array([10.0, 20, 30, 35, 40, 40])
 _HEADER = dict(azi_reference="grid", b_total=50000.0, dip=70.0,
                declination=2.0, convergence=1.0)
 
-# golden interior covariances (analytical exact form), for the fixture survey.
+# golden interior covariances (analytical exact form), for the fixture survey,
+# in true-north NEV axes (see _golden).
 _GOLDEN = {
     # (interval i, fraction f): the (3,3) NEV covariance at that interior point
     (3, 0.5): np.array([
@@ -57,6 +58,16 @@ def _rel(a, b):
     return np.linalg.norm(a - b) / np.linalg.norm(b)
 
 
+def _golden(key):
+    """A golden covariance, recorded in true-north NEV axes, turned to the
+    survey's grid-north position frame (grid = true - convergence)."""
+    g = np.radians(_HEADER["convergence"])
+    R = np.array([[np.cos(g), np.sin(g), 0.0],
+                  [-np.sin(g), np.cos(g), 0.0],
+                  [0.0, 0.0, 1.0]])
+    return R @ _GOLDEN[key] @ R.T
+
+
 @pytest.mark.parametrize("k", [1, 2, 3, 4])
 def test_station_exactness(survey, k):
     # cov_nev_at exactly at a survey station reproduces the per-station covariance
@@ -72,7 +83,7 @@ def test_interior_parity_deviated(survey):
     i, f = 3, 0.5
     md = _MD[i] + f * (_MD[i + 1] - _MD[i])
     got = np.asarray(survey.err.cov_nev_at(float(md)))
-    assert _rel(got, _GOLDEN[(i, f)]) < 5e-3
+    assert _rel(got, _golden((i, f))) < 5e-3
 
 
 def test_interior_parity_first_leg(survey):
@@ -82,7 +93,7 @@ def test_interior_parity_first_leg(survey):
     i, f = 0, 0.5
     md = _MD[i] + f * (_MD[i + 1] - _MD[i])
     got = np.asarray(survey.err.cov_nev_at(float(md)))
-    assert _rel(got, _GOLDEN[(i, f)]) < 1.5e-2
+    assert _rel(got, _golden((i, f))) < 1.5e-2
 
 
 @pytest.mark.parametrize("model", ["MWD+SRGM", "MWD+SRGM_Fl", "MWD+SRGM+SAG"])

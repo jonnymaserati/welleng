@@ -652,7 +652,11 @@ class ToolError:
         self.cov_NEVs[1:] += self.cov_NEV_tie
         self.cov_NEVs_random[1:] += self.cov_NEV_tie
 
-        self.cov_HLAs = NEV_to_HLA(self.e.survey_rad, self.cov_NEVs)
+        # cov_NEVs is in the position frame (grid north), so the attitude is
+        # taken in it too: true azimuth less the convergence
+        sr = np.array(self.e.survey_rad, dtype=float)
+        sr[:, 2] -= float(getattr(self.e.survey.header, "convergence", 0.0) or 0.0)
+        self.cov_HLAs = NEV_to_HLA(sr, self.cov_NEVs)
 
     def _tie_station_cov(self, model):
         """The first station's own attitude error over half its first leg, as an
@@ -686,7 +690,7 @@ class ToolError:
             deg=False, header=header, error_model=model,
         )
         cov = np.zeros((3, 3))
-        depth = aux.err.drdp[1, 0:3]
+        depth = aux.err._to_position_frame(aux.err.drdp[1, 0:3])
         for err in aux.err.errors.errors.values():
             p = np.asarray(err.e_NEV_star, dtype=float)[1] - depth * err.e_DIA[1][0]
             cov += np.outer(p, p)

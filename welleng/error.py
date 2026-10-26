@@ -94,10 +94,15 @@ class ErrorModel():
         Array of (md, inc_rad, azi_true_rad) per station, shape (n, 3).
     drdp : numpy.ndarray
         Jacobian of position with respect to survey parameters (depth,
-        inclination, azimuth) in NEV coordinates.
+        inclination, azimuth) in NEV coordinates referenced to true north
+        (the azimuths the weighting functions use).
     cov_NEVs : numpy.ndarray
         Summed covariance matrices in NEV coordinates per station, shape
-        (n, 3, 3). Accessible via ``errors.cov_NEVs``.
+        (n, 3, 3). Accessible via ``errors.cov_NEVs``. Every NEV error vector
+        and covariance the model outputs (per source and summed, and
+        :meth:`cov_nev_at`) is in the survey's position frame: north is grid
+        north, the axes of ``Survey.n`` / ``Survey.e``, turned from true north
+        by the header's grid convergence.
     """
 
     class Error:
@@ -194,6 +199,7 @@ class ErrorModel():
             self.survey_drdp = self.survey_rad
             self.drdp = self._drdp(self.survey_drdp)
             self.drdp_sing = self._drdp_sing(self.survey_drdp)
+            self._set_position_frame()
             self._validate_mag_reference(error_model)
             self.errors = ToolError(error=self, model=error_model)
             return
@@ -226,6 +232,7 @@ class ErrorModel():
         self.survey_drdp = self.survey_rad
         self.drdp = self._drdp(self.survey_drdp)
         self.drdp_sing = self._drdp_sing(self.survey_drdp)
+        self._set_position_frame()
 
         # if self.error_model.split("_")[0] == "iscwsa":
         #     self.errors = iscwsaMwd(
@@ -372,6 +379,30 @@ class ErrorModel():
         tok = str(error_model).lower().split()[-1]
         return tok not in ('rev0', 'rev1', 'rev2', 'rev3', 'rev4')
 
+    def _set_position_frame(self):
+        """The rotation from true-north NEV axes to the survey's position
+        frame (grid north): azimuth grid = true - convergence, so a vector
+        turns by -convergence about vertical. None when the convergence is
+        zero, leaving every output bit-identical to the true-north form."""
+        g = float(getattr(self.survey.header, "convergence", 0.0) or 0.0)
+        self._grid_rotation = None if g == 0.0 else np.array([
+            [np.cos(g), np.sin(g), 0.0],
+            [-np.sin(g), np.cos(g), 0.0],
+            [0.0, 0.0, 1.0],
+        ])
+
+    def _to_position_frame(self, a, cov=False):
+        """NEV vectors ``(..., 3)`` (rows), or covariances ``(..., 3, 3)``
+        with ``cov=True``, from true-north axes to the survey's position frame
+        (:meth:`_set_position_frame`). The model computes in true north, the
+        frame its weighting functions use; every NEV quantity it outputs
+        passes through here once."""
+        R = getattr(self, "_grid_rotation", None)
+        if R is None or a is None:
+            return a
+        a = np.asarray(a, dtype=float)
+        return R @ a @ R.T if cov else a @ R.T
+
     def _e_NEV(self, e_DIA):
         D, I, A = e_DIA.T
         arr = np.column_stack([
@@ -390,7 +421,7 @@ class ErrorModel():
 
         arr[0] = 0
 
-        return arr
+        return self._to_position_frame(arr)
 
     def _e_NEV_star(self, e_DIA):
         D, I, A = e_DIA.T
@@ -416,7 +447,7 @@ class ErrorModel():
         # systematic depth term, whose weight vanishes at md=0) stays 0 there,
         # exactly matching the ISCWSA diagnostics.
 
-        return arr
+        return self._to_position_frame(arr)
 
     def _sigma_e_NEV_systematic(self, e_NEV, e_NEV_star):
         """Correlated running sum for a systematic source (ISCWSA Rev5.13 eq. 27).
@@ -581,7 +612,7 @@ class ErrorModel():
                     inc[k - 1], azi[k - 1], inc[k], azi[k], md[k] - md[k - 1]
                 )
                 D, I, A = src.e_DIA[k]
-                recon = ddk * D + dik * I + dak * A
+                recon = self._to_position_frame(ddk * D + dik * I + dak * A)
                 ref = src.e_NEV_star[k]
                 scale = max(1e-9, float(np.max(np.abs(ref))))
                 if np.max(np.abs(recon - ref)) > 1e-6 * scale:
@@ -837,8 +868,10 @@ class ErrorModel():
         # through the partial-leg weights, so `E @ J` is `dd*D + di*I + da*A`
         # for every source in one product.
         st = self._interior_stacks()
-        J = np.stack((dd, di, da))                   # drk(i->q),      (3, 3)
-        Jp = np.stack((pd, pi_, pa))                 # drkplus1(i->q), (3, 3)
+        # rows are NEV vectors in true north; turned to the position frame of
+        # the stored per-source vectors they are combined with
+        J = self._to_position_frame(np.stack((dd, di, da)))      # drk(i->q)
+        Jp = self._to_position_frame(np.stack((pd, pi_, pa)))    # drkplus1(i->q)
         E_i, E_j = st["e_DIA"][:, i], st["e_DIA"][:, i + 1]
         if i == 0 and not self._first_station_is_root:
             # A NON-surface tie station (md[0] != 0) is a fixed origin whose
@@ -877,10 +910,10 @@ class ErrorModel():
         for name, src in self.errors.errors.items():
             cls = classes[name]
             if cls == "course_length":
-                enq = self._xcl_partial_enev(
+                enq = self._to_position_frame(self._xcl_partial_enev(
                     name, xcl_mag[name], tort, vlim,
                     sinc[i], azt[i], inc_q, azt_q, Lq
-                )
+                ))
                 cov += src.cov_NEV[i] + np.outer(enq, enq)
             elif cls == "own_only":
                 tdd, tdi, tda = self._partial_star_drk(
@@ -890,10 +923,10 @@ class ErrorModel():
                     sinc[i], azt[i], sinc[i + 1], azt[i + 1], seg
                 )
                 D, I, A = src.e_DIA[i + 1]
-                full = fdd * D + fdi * I + fda * A
+                full = self._to_position_frame(fdd * D + fdi * I + fda * A)
                 # e_NEV[i+1] minus its angle part is the lateral-direct floor
                 # (XCLA near vertical); it scales with the course length squared.
-                enq = (f * (tdd * D + tdi * I + tda * A)
+                enq = (f * self._to_position_frame(tdd * D + tdi * I + tda * A)
                        + f * f * (src.e_NEV[i + 1] - full))
                 cov += src.cov_NEV[i] + np.outer(enq, enq)
             elif cls == "linear":
@@ -954,6 +987,9 @@ class ErrorModel():
             if e_NEV is None:
                 e_NEV = self._e_NEV(e_DIA)
                 e_NEV_star = self._e_NEV_star(e_DIA)
+            else:                       # built in true-north NEV by the caller
+                e_NEV = self._to_position_frame(e_NEV)
+                e_NEV_star = self._to_position_frame(e_NEV_star)
             if propagation in ('systematic', 'global', 'within_pad', 'well'):
                 # ``sigma_e_NEV`` stays the global systematic running sum (it
                 # is consumed by ``clearance.py``). When ``sections`` is given
