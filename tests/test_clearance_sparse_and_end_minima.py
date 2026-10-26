@@ -150,3 +150,26 @@ def test_reference_radius_inside_a_refined_leg(end_approach_pair):
     n = len(ref.md)
     _, searched = c0._interval_minimum(n - 1, np.array([ref.delta_md[n - 1], 0.0]))
     assert searched == pytest.approx(want, rel=1e-6)
+
+
+@pytest.mark.parametrize("step", [120.0, 300.0])
+def test_sparse_reference_mid_leg_approach(step):
+    """Reference builds 0 -> 60 deg to 1200 m with stations every ``step``; a
+    vertical offset passes 6 m to the side of the reference at MD 450 m,
+    mid-leg, far from both reference stations. Oracle: both wells densified
+    with interpolate_mds (10 m), where the minimum is near a station."""
+    md = np.arange(0.0, 1200.0 + 1e-9, step)  # grid-lint: ok constant build
+    ref = we.survey.Survey(md=md, inc=md / 1200.0 * 60.0, azi=np.zeros_like(md),
+                           header=_header(), error_model="ISCWSA MWD Rev5.11")
+    p = ref.interpolate_mds([450.0])
+    k = int(np.flatnonzero(np.isclose(p.md, 450.0))[0])
+    omd = np.arange(0.0, 1500.0 + 1e-9, 30.0)  # grid-lint: ok straight well
+    off = we.survey.Survey(md=omd, inc=np.zeros_like(omd), azi=np.zeros_like(omd),
+                           header=_header(),
+                           start_nev=[float(p.n[k]), float(p.e[k]) + 6.0, 0.0],
+                           error_model="ISCWSA MWD Rev5.11")
+    r_mds = np.arange(10.0, 1200.0, 10.0)  # grid-lint: ok densified oracle
+    o_mds = np.arange(10.0, 1500.0, 10.0)  # grid-lint: ok densified oracle
+    want = MahalanobisClearance(ref.interpolate_mds(r_mds),
+                                off.interpolate_mds(o_mds)).min_sf
+    assert MahalanobisClearance(ref, off).min_sf == pytest.approx(want, rel=1e-3)

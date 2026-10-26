@@ -1271,6 +1271,55 @@ class MahalanobisClearance(Clearance):
             """The legs either side of station ``i`` (one at an end)."""
             return [(md[a], md[a + 1]) for a in (i - 1, i) if 0 <= a < len(md) - 1]
 
+
+        def position(curve, q):
+            """Position alone at curve parameter ``q`` (``_at`` without the
+            covariance, which the distance search does not need)."""
+            md, _, _, _, survey = curve
+            k = int(np.clip(np.searchsorted(md, q, side="right") - 1, 0, len(md) - 2))
+            return _interpolate_pos_nev(survey, float(q - md[k]), k)
+
+        def nearest_on_offset(pr):
+            """Euclidean distance from ``pr`` to the offset, the leg holding
+            the closest point and its MD (closed form on each candidate leg)."""
+            best = (np.inf, -1, 0.0)
+            for leg in _candidate_legs(Op, spheres, pr):
+                x = _closest_x_on_arc(Op[leg], o_tan[leg], o_tan[leg + 1],
+                                      Omd[leg + 1] - Omd[leg],
+                                      self.offset.dogleg[leg + 1], pr)
+                q = Omd[leg] + x
+                best = min(best, (float(norm(position(off, q) - pr)), leg, q))
+            return best
+
+        def from_approach(i, j):
+            """Least SF from the Euclidean closest approach along each
+            reference leg beside station ``i`` (bounded Brent of the
+            closed-form distance to the offset). The SF minimum sits in a
+            narrow valley around that approach, which a simplex started at the
+            stations can stop short of; and on a sparse reference the approach
+            can lie mid-leg, on offset legs far from station ``j``. The
+            simplex starts at the approach and is bounded to the reference leg
+            and to station ``j``'s legs, or to the approach's leg and its
+            neighbours when it lies elsewhere."""
+            best = np.inf
+            for a in (i - 1, i):
+                if not 0 <= a < len(Rmd) - 1:
+                    continue
+                rq = float(optimize.minimize_scalar(
+                    lambda r: nearest_on_offset(position(ref, r))[0],
+                    bounds=(Rmd[a], Rmd[a + 1]), method="bounded",
+                    options={"xatol": self._tol}).x)
+                _, oe, oq = nearest_on_offset(position(ref, rq))
+                if oe in (j - 1, j):
+                    o_lo, o_hi = Omd[max(j - 1, 0)], Omd[min(j + 1, len(Omd) - 1)]
+                else:
+                    o_lo, o_hi = Omd[max(oe - 1, 0)], Omd[min(oe + 2, len(Omd) - 1)]
+                res = optimize.minimize(objective, x0=[rq, oq], method="Nelder-Mead",
+                                        bounds=[(Rmd[a], Rmd[a + 1]), (o_lo, o_hi)],
+                                        options={"xatol": self._tol, "fatol": 1e-7})
+                best = min(best, float(res.fun))
+            return best
+
         for i in sorted(local):
             j = best_j[i]
             ref_legs, off_legs = legs(Rmd, i), legs(Omd, j)
@@ -1302,7 +1351,7 @@ class MahalanobisClearance(Clearance):
                                         bounds=[bounds[0], (lo, hi)],
                                         options={"xatol": self._tol, "fatol": 1e-7})
                 best = min(best, float(res.fun))
-            sf[i] = best
+            sf[i] = min(best, from_approach(i, j))
         return sf
 
 
