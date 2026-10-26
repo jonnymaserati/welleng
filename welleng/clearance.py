@@ -43,7 +43,10 @@ def _closest_x_on_arc(P0, t0, t1, delta_md, dogleg, Q, eps=1e-9):
     maximised, i.e. ``th* = atan2(qa, -qb)`` clamped to ``[0, dogleg]`` (the
     out-of-plane component of ``Q`` is constant in ``th`` and does not move the
     minimiser). Straight segments (``dogleg ~ 0``) reduce to projection of ``Q``
-    onto the start tangent. Returns ``x = th* * R``.
+    onto the start tangent. Returns ``x = th* * R``. The angle is evaluated
+    scaled by ``kappa = dogleg / delta_md`` (``atan2(d·a kappa, 1 - d·b kappa)``
+    with ``d = Q - P0``), so a near-straight segment, where ``R`` is large,
+    keeps full precision.
 
     Validated against the scipy Powell search it replaces to below the
     optimiser's own tolerance (|dx| ~ 1e-6 m, achieved distance identical).
@@ -52,28 +55,31 @@ def _closest_x_on_arc(P0, t0, t1, delta_md, dogleg, Q, eps=1e-9):
     P0 = np.asarray(P0, dtype=float)
     if dogleg < eps:
         return float(np.clip(np.dot(Q - P0, t0), 0.0, delta_md))
-    R = delta_md / dogleg
     a = t0
     b = t1 - np.dot(t1, t0) * t0
     nb = np.linalg.norm(b)
     if nb < eps:                       # tangents (anti)parallel -> effectively straight
         return float(np.clip(np.dot(Q - P0, t0), 0.0, delta_md))
     b = b / nb
-    qc = Q - (P0 + R * b)              # Q - C
-    qa = float(np.dot(qc, a))
-    qb = float(np.dot(qc, b))
+    # Scaled by kappa = 1/R: Q - C = (d - R b) loses the offset d to cancellation
+    # against R b when R is large (near-straight segment); kappa*qa = d.a and
+    # -kappa*qb = 1 - kappa d.b keep every digit, and atan2 ignores the factor.
+    kappa = dogleg / delta_md
+    d = Q - P0
+    sa = float(np.dot(d, a)) * kappa              # kappa * qa
+    sb = 1.0 - float(np.dot(d, b)) * kappa        # -kappa * qb
     # distance is minimised where f(th) = qa sin th - qb cos th is maximised.
-    theta_star = float(np.arctan2(qa, -qb))   # unconstrained optimum
+    theta_star = float(np.arctan2(sa, sb))    # unconstrained optimum
     if 0.0 <= theta_star <= dogleg:
         theta = theta_star                    # interior optimum -> global min on arc
     else:
         # optimum is off the arc: the min-distance point is an endpoint. Pick the
         # one with the larger f (NOT a naive clamp of theta_star, which can land
-        # on the wrong end when the optimum wraps past +/-pi).
-        f0 = -qb                                            # f(0)
-        fd = qa * np.sin(dogleg) - qb * np.cos(dogleg)      # f(dogleg)
-        theta = 0.0 if f0 >= fd else dogleg
-    return theta * R
+        # on the wrong end when the optimum wraps past +/-pi). kappa (f(dogleg) -
+        # f(0)) = sa sin(dogleg) - sb 2 sin^2(dogleg/2), free of 1 - cos.
+        gain = sa * np.sin(dogleg) - sb * 2.0 * np.sin(0.5 * dogleg) ** 2
+        return 0.0 if gain <= 0.0 else float(delta_md)
+    return min(theta / kappa, float(delta_md))
 
 
 
