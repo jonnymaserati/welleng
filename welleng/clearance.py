@@ -83,6 +83,14 @@ def _closest_x_on_arc(P0, t0, t1, delta_md, dogleg, Q, eps=1e-9):
 
 
 
+def _radius_on_leg(radius, i, t):
+    """Hole radius at arc fraction ``t`` along leg ``i``: the preceding
+    station's, and the far station's own at the leg end -- the radius
+    :meth:`welleng.survey.Survey.interpolate_mds` carries to a point it
+    inserts."""
+    return float(radius[i + 1] if t >= 1.0 else radius[i])
+
+
 def _leg_spheres(pos, md):
     """Chord midpoints and half lengths of a path's legs (stations ``j``,
     ``j + 1``): the leg's arc lies within half its length of its chord
@@ -348,7 +356,7 @@ class Clearance:
         interior EOU the separation-factor path uses -- one model, so the
         Mahalanobis narrowphase and the SF rule agree); it falls back to linear
         interpolation for a survey supplied with a bare ``cov_nev``. Radius is
-        interpolated linearly."""
+        the preceding station's (:func:`_radius_on_leg`)."""
         md, pos, cov, rad, survey = curve
         i = int(np.clip(np.searchsorted(md, q, side="right") - 1, 0, len(md) - 2))
         p = _interpolate_pos_nev(survey, float(q - md[i]), i)   # min-curvature
@@ -359,7 +367,7 @@ class Clearance:
             c = err.cov_nev_at(q).reshape(3, 3)                 # arc-faithful EOU
         else:
             c = (1.0 - f) * cov[i] + f * cov[i + 1]             # linear fallback
-        return p, c, float((1.0 - f) * rad[i] + f * rad[i + 1])
+        return p, c, _radius_on_leg(rad, i, f)
 
     def _quad_form_inv(self, S, dp):
         """The combined-metric quadratic form ``dp^T S^{-1} dp`` (batched or
@@ -776,7 +784,7 @@ class IscwsaClearance(Clearance):
         # Interpolated reference position and covariance — no Survey needed
         ref_pos = _interpolate_pos_nev(self.ref, xx, ii)
         ref_cov = self._interior_cov(self.ref, ii, xx)
-        ref_r = self.Rr[ii + 1]
+        ref_r = _radius_on_leg(self.Rr, ii, xx / delta_md[0 if x < 0 else 1])
 
         # Find closest point on offset in the two intervals around self.idx[i]
         off_idx = self.idx[i]
@@ -792,7 +800,7 @@ class IscwsaClearance(Clearance):
         # the pedal path's own offset covariance, so the value minimised here
         # is the value reported after insertion
         best_off_cov = self._offset_cov_nev(oi, xo, t_mult)
-        best_off_r = self.Ro[oi] + t_mult * (self.Ro[oi + 1] - self.Ro[oi])
+        best_off_r = _radius_on_leg(self.Ro, oi, t_mult)
 
         dist = best_dist
         if dist < 1e-10:
@@ -938,6 +946,7 @@ class IscwsaClearance(Clearance):
         self._off_spheres = _leg_spheres(self.offset_nevs, self.offset.md)
 
         closest = []
+        off_radius = []
         for j, (i, station) in enumerate(zip(
             self.idx, self.ref_nevs.tolist()
         )):
@@ -954,6 +963,7 @@ class IscwsaClearance(Clearance):
                                       np.asarray(station))))
             oi, pos, t_mult, dist, xo = self._closest_offset_point(
                 station, legs)
+            off_radius.append(_radius_on_leg(self.Ro, oi, t_mult))
             closest.append((
                 station,
                 self.offset.md[oi] + xo,
@@ -963,6 +973,7 @@ class IscwsaClearance(Clearance):
             ))
 
         self.closest = closest
+        self._off_radius = np.array(off_radius)
         # angles at the closest points from the arc kernel, all at once
         md = np.array([r[1] for r in self.closest])
         _, inc, azi = self.offset.interpolate(md, angles=True)
@@ -1084,7 +1095,7 @@ class IscwsaClearance(Clearance):
         ))
 
     def _get_calc_hole(self):
-        self.calc_hole = self.Rr + self.Ro[self.idx]
+        self.calc_hole = self.Rr + self._off_radius
 
     def _traveling_cylinder(self):
         """
