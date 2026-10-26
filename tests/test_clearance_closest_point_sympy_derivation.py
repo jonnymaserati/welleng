@@ -82,3 +82,72 @@ def test_interior_closest_point_beats_both_arc_ends():
             assert d <= np.linalg.norm(pos(0.0) - Q) + 1e-9
             assert d <= np.linalg.norm(pos(dmd) - Q) + 1e-9
     assert checked > 500
+
+
+# Reconditioned form. With d = Q - P0, da = d.a, db = d.b and kappa = dogleg / L:
+# qa = da and -qb = R - db, so th* = atan2(da, R - db) = atan2(da kappa, 1 - db kappa)
+# (atan2 is unchanged by a positive common factor). For a near-straight segment R is
+# huge and Q - C loses every digit of the offset to cancellation against R b; the
+# scaled form keeps them. The endpoint test multiplies f(dogleg) - f(0) by kappa too.
+d_a, d_b, kap, dl = sp.symbols("d_a d_b kappa delta", real=True)
+
+
+def test_reconditioned_theta_star_and_endpoint_rule():
+    Rk = 1 / kap
+    q_a, q_b = d_a, d_b - Rk                                 # Q - C in (a, b)
+    # same atan2 direction: (sin, cos) of th* proportional to (q_a, -q_b) and to the
+    # scaled pair, with the positive factor kappa
+    assert sp.simplify(d_a * kap - kap * q_a) == 0
+    assert sp.simplify((1 - d_b * kap) - kap * (-q_b)) == 0
+    # f(dogleg) - f(0) = kappa^-1 [d_a kappa sin dl - (1 - d_b kappa) 2 sin^2(dl/2)]
+    fd = q_a * sp.sin(dl) - q_b * sp.cos(dl)
+    f0 = -q_b
+    rhs = (d_a * kap * sp.sin(dl) - (1 - d_b * kap) * 2 * sp.sin(dl / 2) ** 2) / kap
+    assert sp.simplify(sp.expand_trig(fd - f0 - rhs)) == 0
+
+
+def _mp_closest_distance(P0, t0, t1, L, dogleg, Q, x):
+    """Distance from Q to the arc point at offset x, and the true minimum over the
+    arc, both in 50-digit arithmetic from the same float inputs."""
+    import mpmath as mp
+    mp.mp.dps = 50
+    v = lambda u: mp.matrix([mp.mpf(float(c)) for c in u])            # noqa: E731
+    dot = lambda p, q: sum(p[i] * q[i] for i in range(3))             # noqa: E731
+    a, t1m, P, Qm = v(t0), v(t1), v(P0), v(Q)
+    b = t1m - dot(t1m, a) * a
+    b = b / mp.sqrt(dot(b, b))
+    dg, Lm = mp.mpf(float(dogleg)), mp.mpf(float(L))
+    R = Lm / dg
+
+    def dist(xx):
+        th = mp.mpf(xx) / R
+        p = P + R * b + R * (mp.sin(th) * a - mp.cos(th) * b)
+        return mp.sqrt(dot(p - Qm, p - Qm))
+
+    d = Qm - P
+    th = mp.atan2(dot(d, a), R - dot(d, b))
+    cands = [mp.mpf(0), Lm] + ([th * R] if 0 <= th <= dg else [])
+    return float(dist(x)), float(min(dist(c) for c in cands))
+
+
+def test_near_straight_arcs_find_the_true_closest_point():
+    """Doglegs from 1e-9 rad to pi: the closed-form point is the closest point on
+    the arc to within 1e-9 m, against the same formula in 50-digit arithmetic."""
+    rng = np.random.default_rng(5)
+    worst = 0.0
+    for lo in (1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-3, 1e-1):
+        for _ in range(150):
+            dogleg = min(lo * rng.uniform(1, 10), np.pi - 1e-6)
+            t0 = rng.normal(size=3)
+            t0 /= np.linalg.norm(t0)
+            v = np.cross(t0, rng.normal(size=3))
+            v /= np.linalg.norm(v)
+            t1 = np.cos(dogleg) * t0 + np.sin(dogleg) * v
+            L = rng.uniform(1.0, 500.0)
+            P0 = rng.normal(size=3) * 100
+            Q = P0 + rng.normal(size=3) * 300
+            x = _closest_x_on_arc(P0, t0, t1, L, dogleg, Q)
+            assert 0.0 <= x <= L
+            got, best = _mp_closest_distance(P0, t0, t1, L, dogleg, Q, x)
+            worst = max(worst, got - best)
+    assert worst < 1e-9, worst
