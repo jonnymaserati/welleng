@@ -561,8 +561,8 @@ def test_compass_gyro_parity_raises_sigma_v(ipm):
     sh = we.survey.SurveyHeader(
         name="g", azi_reference="grid", latitude=58.44, longitude=1.89,
         b_total=50000.0, dip=72.0, declination=-1.5)
-    md = np.linspace(0, 2000, 40)
-    inc = np.linspace(0, 10, 40)
+    md = np.linspace(0, 2000, 40)  # grid-lint: ok survey stations, not a search
+    inc = np.linspace(0, 10, 40)  # grid-lint: ok survey stations, not a search
     azi = np.full(40, 45.0)
 
     def sigV(parity):
@@ -645,3 +645,95 @@ def test_ipm_gyro_counts_as_latitude_dependent():
     assert _model_uses_latitude({"azimuth_formula": "1/(cos(lat)*cos(inc))"})
     assert _model_uses_latitude({"azimuth_formula": "1/Cos(Latitude)"})
     assert not _model_uses_latitude({"azimuth_formula": "latsf*tvd + sin(azm)"})
+
+
+# --- Tie between survey runs: the earlier run's realisation is carried THROUGH the
+# tie station (ISCWSA Error Model Definition Rev 5.13 s4.7.1, eq. 30-31: the last
+# station of the earlier run acts on its last interval and on the interval to the
+# next run's first station).
+
+from welleng.composition import SurveyComposition, SurveySection  # noqa: E402
+
+TIE_TOOL = "Magn, IFR, mag-corr, dual incl"
+
+
+def _two_sections(ipm, n=25, T=12):
+    md = 500.0 + 100.0 * np.arange(n)
+    inc = np.linspace(30.0, 60.0, n)  # grid-lint: ok survey stations, not a search
+    azi = np.linspace(20.0, 80.0, n)  # grid-lint: ok survey stations, not a search
+    hdr = we.survey.SurveyHeader(
+        name="tie", azi_reference="grid", deg=True, b_total=50515.8,
+        dip=71.6, declination=-0.22, latitude=58.4, longitude=1.9,
+    )
+    comp = SurveyComposition([
+        SurveySection(md=md[:T + 1], inc=inc[:T + 1], azi=azi[:T + 1], deg=True,
+                      error_model=ipm.error_model(TIE_TOOL), tool_id="s0"),
+        SurveySection(md=md[T:], inc=inc[T:], azi=azi[T:], deg=True,
+                      error_model=ipm.error_model(TIE_TOOL), tool_id="s1",
+                      share_mode="all_independent"),
+    ], header=hdr).survey()
+    one = we.survey.Survey(md=md, inc=inc, azi=azi, deg=True, header=hdr,
+                           error_model=ipm.error_model(TIE_TOOL))
+    return md, inc, azi, T, comp, one
+
+
+def test_severed_tie_random_equals_one_survey(ipm):
+    """A station's random error is independent of any tie: two runs of the same
+    tool content, tied all_independent, give the one-survey random covariance
+    (1e-12 m^2)."""
+    *_, T, comp, one = _two_sections(ipm)
+    d = np.abs(np.asarray(comp.cov_nev_random) - np.asarray(one.cov_nev_random))
+    assert d.max() < 1e-12, f"random covariance changed by the tie: {d.max():.3e}"
+
+
+def test_f15d_lateral_within_3pct_of_compass(ipm):
+    """Volve F-15D ACTUAL, four runs as in the COMPASS program: sigma_N and sigma_E
+    within 3% of the stored COMPASS covariance wherever sigma > 0.5 m."""
+    from welleng.exchange.edm_stream import EDMReader, FEET_TO_METERS
+    r = EDMReader(VOLVE)
+    st = header = None
+    for hid, stations in r._def_stations.items():
+        h = r.headers[hid]
+        wb = r.wellbores.get(h.wellbore_id)
+        if wb and wb.name == "F-15D" and h.phase == "ACTUAL":
+            st, header = sorted(stations, key=lambda s: s["md"]), h
+    mag = [m for m in ipm.magnetics if m.get("wellbore_id") == header.wellbore_id][0]
+    F = FEET_TO_METERS
+    md = np.array([s["md"] for s in st]) * F
+    inc = np.array([s["inc"] for s in st])
+    azi = np.array([s["azi"] for s in st])
+    cc = np.array([s["cov"] for s in st]) * F ** 2
+    sh = we.survey.SurveyHeader(
+        name="F-15D", azi_reference="grid", latitude=58.4416, longitude=1.8875,
+        b_total=float(mag["field_strength"]), dip=float(mag["dip_angle"]),
+        declination=float(mag["declination"]),
+    )
+    gyro = ipm.error_model("Wellbore Surveyor, stat")
+    mwd1 = ipm.error_model("Magn, IFR, mag-corr, dual incl")
+    mwd2 = ipm.error_model("Magn, IFR, non-mag, dual incl")
+    i1 = int(np.argmin(np.abs(md - 1310.0)))
+    i1b = int(np.argmin(np.abs(md - 2560.0)))
+    i2 = int(np.argmin(np.abs(md - 3220.0)))
+    cov = SurveyComposition(sections=[
+        SurveySection(md=md[:i1 + 1], inc=inc[:i1 + 1], azi=azi[:i1 + 1], header=sh,
+                      error_model=gyro, tool_id="gyro"),
+        SurveySection(md=md[i1:i1b + 1], inc=inc[i1:i1b + 1],
+                      azi=azi[i1:i1b + 1], header=sh, error_model=mwd1,
+                      tool_id="mwd1a", share_mode="all_independent"),
+        SurveySection(md=md[i1b:i2 + 1], inc=inc[i1b:i2 + 1],
+                      azi=azi[i1b:i2 + 1], header=sh, error_model=mwd1,
+                      tool_id="mwd1b", share_mode="globals_shared"),
+        SurveySection(md=md[i2:], inc=inc[i2:], azi=azi[i2:], header=sh,
+                      error_model=mwd2, tool_id="mwd2",
+                      share_mode="globals_shared"),
+    ]).survey().cov_nev
+    sig_we = np.sqrt(np.stack([cov[:, 0, 0], cov[:, 1, 1]], axis=1))
+    sig_cp = np.sqrt(np.stack([cc[:, 3], cc[:, 0]], axis=1))
+    m = sig_cp > 0.5
+    for col, lab in ((0, "N"), (1, "E")):
+        ratio = sig_we[m[:, col], col] / sig_cp[m[:, col], col]
+        bad = np.abs(ratio - 1) > 0.03
+        assert not bad.any(), (
+            f"sigma_{lab}: {bad.sum()}/{bad.size} stations outside 3%, "
+            f"range {ratio.min():.3f}-{ratio.max():.3f}"
+        )
