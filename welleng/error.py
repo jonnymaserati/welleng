@@ -183,6 +183,7 @@ class ErrorModel():
             self.iscwsa_definition != ISCWSA_DEFINITION_CURRENT
         )
 
+        self._model_arg = error_model   # rebuilt on an auxiliary survey
         if isinstance(error_model, dict):
             self.error_model = error_model.get(
                 'metadata', {}
@@ -675,9 +676,38 @@ class ErrorModel():
                 )
         cov_linear = (np.sum([s.cov_NEV for s in lin], axis=0)
                       if lin else np.zeros((n, 3, 3)))
+        # At an exactly vertical station a weight with 1/sin(inc) has no value
+        # (infinite, zeroed, or ~1e16 through tan(pi/2 - inc)); the station
+        # takes ISCWSA's vertical-hole substitute, which carries that error's
+        # lateral effect into the next station's vector. Such a source is
+        # found from its weight's limit: its azimuth error on a copy of the
+        # survey with the vertical stations just above vertical_inc_limit is
+        # over a radian. A leg touching such a station takes that source
+        # linearly between its station covariances (cov_nev_at), which keeps
+        # the leg exact at both stations.
+        vlim = float(getattr(self.survey.header, "vertical_inc_limit", 0.0))
+        vert = np.asarray(self.survey_rad[:, 1]) < vlim
+        subst = np.zeros((len(std), n), dtype=bool)
+        if vert.any() and std:
+            from .survey import Survey
+            inc = np.array(self.survey_rad[:, 1], dtype=float)
+            inc[vert] = 2.0 * vlim if vlim > 0.0 else 1e-6
+            azi_ref = getattr(self.survey.header, "azi_reference", "true")
+            aux = ErrorModel(Survey(
+                md=self.survey.md, inc=inc,
+                azi=getattr(self.survey, f"azi_{azi_ref}_rad"),
+                deg=False, header=self.survey.header), self._model_arg)
+            names = [nm for nm, src in self.errors.errors.items()
+                     if classes[nm] == "standard"]
+            for k, nm in enumerate(names):
+                lim = np.asarray(aux.errors.errors[nm].e_DIA)[:, 2]
+                subst[k] = vert & (np.abs(lim) > 1.0)
+        cov_std = (np.array([s.cov_NEV for s in std]) if std
+                   else np.zeros((0, n, 3, 3)))
         cached = dict(
             e_DIA=e_dia, e_NEV_star=e_star, sigma_e_NEV=sig, random=rand,
             cov_random=cov_random, cov_linear=cov_linear,
+            subst=subst, cov_std=cov_std,
             # per-std-source propagation mode (aligned with sigma_e_NEV rows) --
             # lets a consumer select which persistence class carries forward
             # (e.g. 'global' geomag/declination persists across tool/BHA).
@@ -888,22 +918,46 @@ class ErrorModel():
             # first leg is already station-exact without this adjustment. Zeroing
             # it there would REMOVE the seed and break exactness at station 1.
             E_i = np.zeros_like(E_i)
-        qi = E_i @ J                                 # drk(i->q) . e_DIA[i]
-        qj = E_j @ J                                 # drk(i->q) . e_DIA[i+1]
+        # A station's azimuth error is carried to q as the lateral angle it
+        # is, sin(inc) * dA, and turned back to an azimuth at q's inclination:
+        # a weight with 1/sin(inc) (an x/y-axis term at a near-vertical
+        # station) is otherwise applied at q, where sin(inc_q) no longer
+        # cancels it. Exact at both ends; zero where q is vertical, as an
+        # azimuth error there moves nothing.
+        s_q = np.sin(inc_q)
+        r_i = np.sin(sinc[i]) / s_q if s_q > 0.0 else 0.0
+        r_j = np.sin(sinc[i + 1]) / s_q if s_q > 0.0 else 0.0
+        qi = (E_i * np.array([1.0, 1.0, r_i])) @ J   # drk(i->q) . e_DIA[i]
+        qj = (E_j * np.array([1.0, 1.0, r_j])) @ J   # drk(i->q) . e_DIA[i+1]
         coup = E_i @ Jp                              # station-i partial coupling
         rand = st["random"]
+        # a source with a vertical-hole substitute at either end of this leg
+        # leaves the vector sums and is taken linearly between its station
+        # covariances (see _interior_stacks)
+        sub = st["subst"][:, i] | st["subst"][:, i + 1]
+        e_star_i, sig_i, cov_sub = st["e_NEV_star"][:, i], st["sigma_e_NEV"][:, i], 0.0
+        if sub.any():
+            keep = (~sub)[:, None]
+            qi, qj, coup = qi * keep, qj * keep, coup * keep
+            e_star_i, sig_i = e_star_i * keep, sig_i * keep
+            cs = st["cov_std"][sub]
+            cov_sub = (cs[:, i] + f * (cs[:, i + 1] - cs[:, i])).sum(axis=0)
+            rs = sub & rand                 # their share of the pre-summed part
+            si = st["e_NEV_star"][rs, i]
+            cov_sub = cov_sub - (st["cov_std"][rs, i]
+                                 - np.einsum('si,sj->sij', si, si)).sum(axis=0)
         # random: two INDEPENDENT measurements -> two outer products. The partial
         # q-own term splits (1-f)/f between stations i and i+1 (arc-tangent
         # Jacobian ~ f; exact at both ends, approximate in the interior). Both
         # endpoints recover cov_NEV[i]/[i+1] exactly. The query-independent
         # `cov_NEV - outer(e_NEV_star, e_NEV_star)` part is pre-summed.
-        g_i = st["e_NEV_star"][rand, i] + coup[rand] + (1.0 - f) * qi[rand]
+        g_i = e_star_i[rand] + coup[rand] + (1.0 - f) * qi[rand]
         g_j = f * qj[rand]
         # systematic / global / well / within_pad: correlated vector sum.
         sg = ((1.0 - f) * qi[~rand] + f * qj[~rand]
-              + st["sigma_e_NEV"][~rand, i] + coup[~rand])
+              + sig_i[~rand] + coup[~rand])
         cov = (
-            st["cov_random"][i]
+            st["cov_random"][i] + cov_sub
             + np.einsum('si,sj->ij', g_i, g_i)
             + np.einsum('si,sj->ij', g_j, g_j)
             + np.einsum('si,sj->ij', sg, sg)

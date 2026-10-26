@@ -65,7 +65,7 @@ def test_continuity_across_station(err):
 def test_interior_is_positive_semidefinite(err):
     """A covariance at an arbitrary interior point must stay PSD."""
     md = err.survey_rad[:, 0]
-    for q in np.linspace(md[1], md[-2], 50):
+    for q in np.linspace(md[1], md[-2], 50):  # grid-lint: ok query sample
         cov = err.cov_nev_at(q)
         assert np.allclose(cov, cov.T)
         assert np.min(np.linalg.eigvalsh(cov)) > -1e-9
@@ -125,9 +125,9 @@ def test_source_stacked_form_matches_a_per_source_reference():
     import numpy as np
     import welleng as we
 
-    md = np.arange(0, 3000, 30.)
+    md = np.arange(0, 3000, 30.)  # grid-lint: ok survey stations
     inc = np.clip((md - 300) / 1500 * 60, 0, 60)
-    azi = np.linspace(10., 80., len(md))
+    azi = np.linspace(10., 80., len(md))  # grid-lint: ok input profile
     header = we.survey.SurveyHeader(
         azi_reference='true', b_total=50000., dip=60., declination=0.
     )
@@ -138,8 +138,14 @@ def test_source_stacked_form_matches_a_per_source_reference():
     smd, sinc, sazi = em.survey_rad.T
     azt = em.survey.azi_true_rad
 
+    subst = dict(zip(
+        [n for n, c in classes.items() if c == "standard"],
+        em._interior_stacks()["subst"]))
+
     def reference(q):
-        """The pre-0.26 per-source loop, verbatim."""
+        """The per-source loop of the same convention: the pre-0.26 loop with
+        each station's azimuth error carried as a lateral angle, and a source
+        with a vertical-hole substitute at either end taken linearly."""
         i = int(np.searchsorted(smd, q) - 1)
         i = max(0, min(i, len(smd) - 2))
         f = float((q - smd[i]) / (smd[i + 1] - smd[i]))
@@ -150,15 +156,20 @@ def test_source_stacked_form_matches_a_per_source_reference():
         dd, di, da = em._partial_star_drk(sinc[i], sazi[i], inc_q, azi_q, Lq)
         pd, pi_, pa = em._partial_plus1_drk(sinc[i], sazi[i], dd, Lq)
         azt_q = azi_q + (azt[i] - sazi[i])
+        s_q = np.sin(inc_q)
+        r_i = np.sin(sinc[i]) / s_q if s_q > 0.0 else 0.0
+        r_j = np.sin(sinc[i + 1]) / s_q if s_q > 0.0 else 0.0
         cov = np.zeros((3, 3))
         for name, src in em.errors.errors.items():
             cls = classes[name]
-            if cls == "standard":
+            if cls == "standard" and (subst[name][i] or subst[name][i + 1]):
+                cov += src.cov_NEV[i] + f * (src.cov_NEV[i + 1] - src.cov_NEV[i])
+            elif cls == "standard":
                 Di, Ii, Ai = src.e_DIA[i]
                 Dj, Ij, Aj = src.e_DIA[i + 1]
                 coup = pd * Di + pi_ * Ii + pa * Ai
-                qi = dd * Di + di * Ii + da * Ai
-                qj = dd * Dj + di * Ij + da * Aj
+                qi = dd * Di + di * Ii + da * Ai * r_i
+                qj = dd * Dj + di * Ij + da * Aj * r_j
                 if src.propagation == 'random':
                     g_i = src.e_NEV_star[i] + coup + (1.0 - f) * qi
                     g_j = f * qj
@@ -183,7 +194,7 @@ def test_source_stacked_form_matches_a_per_source_reference():
         return 0.5 * (cov + cov.T)
 
     worst = 0.0
-    for q in np.linspace(smd[0] + 1e-3, smd[-1] - 1e-3, 97):
+    for q in np.linspace(smd[0] + 1e-3, smd[-1] - 1e-3, 97):  # grid-lint: ok sample
         got, ref = em.cov_nev_at(float(q)), reference(float(q))
         worst = max(
             worst,
@@ -200,9 +211,9 @@ def test_cov_nev_at_refuses_outside_the_survey():
     import pytest
     import welleng as we
 
-    md = np.arange(0, 3000, 30.)
+    md = np.arange(0, 3000, 30.)  # grid-lint: ok survey stations
     inc = np.clip((md - 300) / 1500 * 60, 0, 60)
-    azi = np.linspace(10., 80., len(md))
+    azi = np.linspace(10., 80., len(md))  # grid-lint: ok input profile
     header = we.survey.SurveyHeader(
         azi_reference='true', b_total=50000., dip=60., declination=0.
     )
