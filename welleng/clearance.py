@@ -83,6 +83,34 @@ def _closest_x_on_arc(P0, t0, t1, delta_md, dogleg, Q, eps=1e-9):
 
 
 
+def _check_psd(cov, name):
+    """Refuse a covariance that is not positive semidefinite.
+
+    ``cov`` is one (3, 3) matrix or a stack of them; ``None`` (no
+    covariance) passes. An eigenvalue below ``-1e-9`` times the largest
+    magnitude in its matrix is refused: that is far above the rounding of a
+    covariance assembled from sums of outer products, and far below any real
+    variance. A negative variance would otherwise read as a direction of zero
+    or infinite separation, and the separation factor as clear.
+    """
+    if cov is None:
+        return
+    c = np.asarray(cov, dtype=float).reshape(-1, 3, 3)
+    if not np.all(np.isfinite(c)):
+        raise ValueError(f"{name} holds a non-finite value.")
+    c = 0.5 * (c + np.swapaxes(c, -1, -2))
+    vals = np.linalg.eigvalsh(c)
+    floor = -1e-9 * np.max(np.abs(vals), axis=-1)
+    bad = np.flatnonzero(vals[:, 0] < floor)
+    if bad.size:
+        i = int(bad[0])
+        raise ValueError(
+            f"{name} is not positive semidefinite at station {i} (smallest "
+            f"eigenvalue {vals[i, 0]:.6g} m^2); a covariance cannot have a "
+            f"negative variance."
+        )
+
+
 def _radius_on_leg(radius, i, t):
     """Hole radius at arc fraction ``t`` along leg ``i``: the preceding
     station's, and the far station's own at the leg end -- the radius
@@ -161,6 +189,13 @@ class Clearance:
         The kick-off point (measured) depth along the well bore - the
         default value assures that the first survey station is utilized.
 
+    Raises
+    ------
+    ValueError
+        If either survey's ``cov_nev`` is not positive semidefinite (an
+        eigenvalue below ``-1e-9`` times the matrix's largest) or is not
+        finite. The message names the survey and the station.
+
     References
     ----------
     Sawaryn, S. J., Wilson, H.. , Bang, J.. , Nyrnes, E.. , Sentance,
@@ -185,6 +220,9 @@ class Clearance:
         self.k = k
         self.sigma_pa = sigma_pa
         self.Sm = Sm
+
+        _check_psd(reference.cov_nev, "reference.cov_nev")
+        _check_psd(offset.cov_nev, "offset.cov_nev")
 
         self._get_kop_index(kop_depth)
         self._get_ref()
@@ -1672,6 +1710,8 @@ def combined_cov_mesh(
     # map other's covariance + hole radius onto each survey station (nearest).
     # Use the authoritative n/e/tvd positions (as WellMesh does for its
     # vertices), not survey.pos_nev which can diverge from them.
+    _check_psd(survey.cov_nev, "survey.cov_nev")
+    _check_psd(other.cov_nev, "other.cov_nev")
     survey_nev = np.column_stack([survey.n, survey.e, survey.tvd])
     other_nev = np.column_stack([other.n, other.e, other.tvd])
     idx = KDTree(other_nev).query(survey_nev)[1]
