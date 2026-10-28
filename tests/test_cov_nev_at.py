@@ -144,8 +144,9 @@ def test_source_stacked_form_matches_a_per_source_reference():
 
     def reference(q):
         """The per-source loop of the same convention: the pre-0.26 loop with
-        each station's azimuth error carried as a lateral angle, and a source
-        with a vertical-hole substitute at either end taken linearly."""
+        each station's azimuth error carried as a lateral angle, a source
+        with a vertical-hole substitute at either end taken linearly, and only
+        the depth error of a surface station 0 coupled into the first leg."""
         i = int(np.searchsorted(smd, q) - 1)
         i = max(0, min(i, len(smd) - 2))
         f = float((q - smd[i]) / (smd[i + 1] - smd[i]))
@@ -167,7 +168,7 @@ def test_source_stacked_form_matches_a_per_source_reference():
             elif cls == "standard":
                 Di, Ii, Ai = src.e_DIA[i]
                 Dj, Ij, Aj = src.e_DIA[i + 1]
-                coup = pd * Di + pi_ * Ii + pa * Ai
+                coup = pd * Di + (0.0 if i == 0 else pi_ * Ii + pa * Ai)
                 qi = dd * Di + di * Ii + da * Ai * r_i
                 qj = dd * Dj + di * Ij + da * Aj * r_j
                 if src.propagation == 'random':
@@ -251,3 +252,64 @@ def test_xcl_dia_interior_is_own_leg_only():
         q = 0.5 * (md[i] + md[i + 1])
         a, b = dia.cov_nev_at(q), nev.cov_nev_at(q)
         assert np.max(np.abs(a - b)) / np.max(np.abs(b)) < 1e-12
+
+
+VERTICAL_START = {
+    # kick-off from a vertical leg: stations 0 and 1 vertical
+    "vertical leg then build": ([0., 500., 1000., 1500.], [0., 0., 30., 60.],
+                                [0., 0., 40., 80.]),
+    # kick-off at the first surveyed station
+    "build from vertical": ([0., 30., 60., 90., 120.], [0., 0., 3., 6., 9.],
+                            [0., 0., 10., 20., 30.]),
+}
+
+
+@pytest.mark.parametrize("case", sorted(VERTICAL_START))
+def test_every_model_is_station_exact_from_a_vertical_start(case):
+    """cov_nev_at at a station is that station's covariance, for every
+    shipped model, on wells starting vertical. Before the fix the first leg
+    coupled station 0's inclination and azimuth errors, which the station
+    vectors never carry: ISCWSA MWD Rev4 read sigma N 0.896 m at MD 500
+    against 0.448 m at the station, and eight other models disagreed at
+    station 1 of the second case by 1.7 % to 74 % of the largest element."""
+    from welleng.survey import ERROR_MODELS
+
+    md, inc, azi = (np.array(v) for v in VERTICAL_START[case])
+    header = SurveyHeader(b_total=50_000., dip=72., declination=1.)
+    worst = {}
+    for model in ERROR_MODELS:
+        try:
+            s = Survey(md=md, inc=inc, azi=azi, header=header,
+                       error_model=model)
+        except (ValueError, AssertionError):
+            # a model that refuses this path: an inclination limit, or a
+            # continuous gyro needing tool parameters it does not give
+            continue
+        for j, m in enumerate(md):
+            got = s.err.cov_nev_at(float(m)).reshape(3, 3)
+            want = s.cov_nev[j]
+            rel = np.abs(got - want).max() / np.abs(want).max()
+            worst[model] = max(worst.get(model, 0.0), rel)
+    assert len(worst) >= 48
+    bad = {k: v for k, v in worst.items() if v > 1e-9}
+    assert not bad, bad
+
+
+def test_vertical_first_leg_matches_a_station_inserted_there():
+    """On a vertical first leg, ISCWSA MWD Rev4's north sigma (XYM3 and
+    ABXY-TI1S, both carried by the partial leg) at MD 250 equals the station
+    covariance of the same well with a station at 250: the first station's
+    own error over the leg so far. East (XYM4 and ABXY-TI2S, which take the
+    vertical-hole substitute and so run linearly between station
+    covariances) is not below it."""
+    header = SurveyHeader(b_total=50_000., dip=72., declination=1.)
+    a = Survey(md=[0., 500., 1000., 1500.], inc=[0., 0., 30., 60.],
+               azi=[0., 0., 40., 80.], header=header,
+               error_model="ISCWSA MWD Rev4")
+    b = Survey(md=[0., 250., 500., 1000., 1500.], inc=[0., 0., 0., 30., 60.],
+               azi=[0., 0., 0., 40., 80.], header=header,
+               error_model="ISCWSA MWD Rev4")
+    got = a.err.cov_nev_at(250.).reshape(3, 3)
+    want = b.cov_nev[1]
+    assert got[0, 0] == pytest.approx(want[0, 0], rel=1e-12)
+    assert got[1, 1] >= want[1, 1]

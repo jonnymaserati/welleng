@@ -183,7 +183,6 @@ class ErrorModel():
             self.iscwsa_definition != ISCWSA_DEFINITION_CURRENT
         )
 
-        self._model_arg = error_model   # rebuilt on an auxiliary survey
         if isinstance(error_model, dict):
             self.error_model = error_model.get(
                 'metadata', {}
@@ -676,32 +675,30 @@ class ErrorModel():
                 )
         cov_linear = (np.sum([s.cov_NEV for s in lin], axis=0)
                       if lin else np.zeros((n, 3, 3)))
-        # At an exactly vertical station a weight with 1/sin(inc) has no value
-        # (infinite, zeroed, or ~1e16 through tan(pi/2 - inc)); the station
-        # takes ISCWSA's vertical-hole substitute, which carries that error's
-        # lateral effect into the next station's vector. Such a source is
-        # found from its weight's limit: its azimuth error on a copy of the
-        # survey with the vertical stations just above vertical_inc_limit is
-        # over a radian. A leg touching such a station takes that source
-        # linearly between its station covariances (cov_nev_at), which keeps
-        # the leg exact at both stations.
+        # At a vertical station a weight with 1/sin(inc) has no value; the
+        # station takes ISCWSA's vertical-hole substitute (Rev 5.13 Sec 11.5),
+        # a position-space vector that replaces the Jacobian's. Such a station
+        # is found where a source's stored vectors differ from the Jacobian's
+        # (its tie station 0 included, zero under the substitute). A leg
+        # touching one takes that source linearly between its station
+        # covariances (cov_nev_at), which keeps the leg exact at both
+        # stations: the partial-leg Jacobian would otherwise carry the
+        # station's raw e_DIA, which the stored vectors never used.
         vlim = float(getattr(self.survey.header, "vertical_inc_limit", 0.0))
         vert = np.asarray(self.survey_rad[:, 1]) < vlim
         subst = np.zeros((len(std), n), dtype=bool)
-        if vert.any() and std:
-            from .survey import Survey
-            inc = np.array(self.survey_rad[:, 1], dtype=float)
-            inc[vert] = 2.0 * vlim if vlim > 0.0 else 1e-6
-            azi_ref = getattr(self.survey.header, "azi_reference", "true")
-            aux = ErrorModel(Survey(
-                md=self.survey.md, inc=inc,
-                azi=getattr(self.survey, f"azi_{azi_ref}_rad"),
-                deg=False, header=self.survey.header), self._model_arg)
-            names = [nm for nm, src in self.errors.errors.items()
-                     if classes[nm] == "standard"]
-            for k, nm in enumerate(names):
-                lim = np.asarray(aux.errors.errors[nm].e_DIA)[:, 2]
-                subst[k] = vert & (np.abs(lim) > 1.0)
+        if vert.any():
+            for k, src in enumerate(std):
+                dia = np.nan_to_num(np.asarray(src.e_DIA, dtype=float),
+                                    nan=0.0, posinf=0.0, neginf=0.0)
+                own = (self._to_position_frame(self._e_NEV(dia)),
+                       self._to_position_frame(self._e_NEV_star(dia)))
+                kept = (src.e_NEV, src.e_NEV_star)
+                same = np.ones(n, dtype=bool)
+                for a, b in zip(own, kept):
+                    same &= np.all(np.isclose(a, b, rtol=1e-9, atol=1e-12),
+                                   axis=-1)
+                subst[k] = vert & ~same
         cov_std = (np.array([s.cov_NEV for s in std]) if std
                    else np.zeros((0, n, 3, 3)))
         cached = dict(
@@ -800,6 +797,12 @@ class ErrorModel():
         remaining ring-fenced term (:meth:`_interior_prep` class ``"linear"``)
         uses linear covariance interpolation. Reproduces the
         stored ``cov_NEV[i+1]`` at ``f -> 1`` to machine precision.
+
+        On the first leg from a surface station only that station's depth
+        error couples into the leg, as in the station vectors. A source that
+        takes the ISCWSA vertical-hole substitute at either station of a leg
+        (Rev 5.13 Sec 11.5) is interpolated linearly between its station
+        covariances on that leg, exact at both stations.
 
         INTERIOR ACCURACY IS GEOMETRY-DEPENDENT — do not read "exact at both
         ends" as "accurate throughout". Both this boundary-anchored form and
@@ -929,7 +932,13 @@ class ErrorModel():
         r_j = np.sin(sinc[i + 1]) / s_q if s_q > 0.0 else 0.0
         qi = (E_i * np.array([1.0, 1.0, r_i])) @ J   # drk(i->q) . e_DIA[i]
         qj = (E_j * np.array([1.0, 1.0, r_j])) @ J   # drk(i->q) . e_DIA[i+1]
-        coup = E_i @ Jp                              # station-i partial coupling
+        # station-i partial coupling. At a surface root only its depth seed
+        # couples: the station vectors never carry station 0's inclination or
+        # azimuth error onward (e_NEV[0] is zero and e_NEV_star[0] has no angle
+        # term). Coupled, a source with an inclination error at a vertical
+        # surface station (Rev4 XYM3, ABXY-TI1S) doubled its sigma at station 1.
+        E_c = E_i * np.array([1.0, 0.0, 0.0]) if i == 0 else E_i
+        coup = E_c @ Jp
         rand = st["random"]
         # a source with a vertical-hole substitute at either end of this leg
         # leaves the vector sums and is taken linearly between its station
