@@ -148,7 +148,7 @@ def test_reference_radius_inside_a_refined_leg(end_approach_pair):
     # the search's own value at its minimum
     c0 = IscwsaClearance(ref, off, minimize_sf=False)
     n = len(ref.md)
-    _, searched = c0._interval_minimum(n - 1, np.array([ref.delta_md[n - 1], 0.0]))
+    (_, searched), = c0._leg_minima(n - 2, whole_leg=True)
     assert searched == pytest.approx(want, rel=1e-6)
 
 

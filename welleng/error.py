@@ -675,9 +675,36 @@ class ErrorModel():
                 )
         cov_linear = (np.sum([s.cov_NEV for s in lin], axis=0)
                       if lin else np.zeros((n, 3, 3)))
+        # At a vertical station a weight with 1/sin(inc) has no value; the
+        # station takes ISCWSA's vertical-hole substitute (Rev 5.13 Sec 11.5),
+        # a position-space vector that replaces the Jacobian's. Such a station
+        # is found where a source's stored vectors differ from the Jacobian's
+        # (its tie station 0 included, zero under the substitute). A leg
+        # touching one takes that source linearly between its station
+        # covariances (cov_nev_at), which keeps the leg exact at both
+        # stations: the partial-leg Jacobian would otherwise carry the
+        # station's raw e_DIA, which the stored vectors never used.
+        vlim = float(getattr(self.survey.header, "vertical_inc_limit", 0.0))
+        vert = np.asarray(self.survey_rad[:, 1]) < vlim
+        subst = np.zeros((len(std), n), dtype=bool)
+        if vert.any():
+            for k, src in enumerate(std):
+                dia = np.nan_to_num(np.asarray(src.e_DIA, dtype=float),
+                                    nan=0.0, posinf=0.0, neginf=0.0)
+                own = (self._to_position_frame(self._e_NEV(dia)),
+                       self._to_position_frame(self._e_NEV_star(dia)))
+                kept = (src.e_NEV, src.e_NEV_star)
+                same = np.ones(n, dtype=bool)
+                for a, b in zip(own, kept):
+                    same &= np.all(np.isclose(a, b, rtol=1e-9, atol=1e-12),
+                                   axis=-1)
+                subst[k] = vert & ~same
+        cov_std = (np.array([s.cov_NEV for s in std]) if std
+                   else np.zeros((0, n, 3, 3)))
         cached = dict(
             e_DIA=e_dia, e_NEV_star=e_star, sigma_e_NEV=sig, random=rand,
             cov_random=cov_random, cov_linear=cov_linear,
+            subst=subst, cov_std=cov_std,
             # per-std-source propagation mode (aligned with sigma_e_NEV rows) --
             # lets a consumer select which persistence class carries forward
             # (e.g. 'global' geomag/declination persists across tool/BHA).
@@ -771,6 +798,12 @@ class ErrorModel():
         uses linear covariance interpolation. Reproduces the
         stored ``cov_NEV[i+1]`` at ``f -> 1`` to machine precision.
 
+        On the first leg from a surface station only that station's depth
+        error couples into the leg, as in the station vectors. A source that
+        takes the ISCWSA vertical-hole substitute at either station of a leg
+        (Rev 5.13 Sec 11.5) is interpolated linearly between its station
+        covariances on that leg, exact at both stations.
+
         INTERIOR ACCURACY IS GEOMETRY-DEPENDENT — do not read "exact at both
         ends" as "accurate throughout". Both this boundary-anchored form and
         the continuous-transport form are FIRST-ORDER interior
@@ -827,6 +860,16 @@ class ErrorModel():
             partial-leg weights would return a plausible matrix for a depth that
             was never surveyed.
         """
+        return self._interior_cov(md)
+
+    def _interior_cov(self, md, per_source=False):
+        """The body of :meth:`cov_nev_at`. With ``per_source`` it returns, in
+        place of the summed covariance, ``(terms, tie)``: ``terms`` maps each
+        source to ``("vec", v)``, its correlated NEV vector at ``md`` (a
+        systematic standard source), or ``("cov", c)``, its (3, 3) covariance
+        there (every other source); ``tie`` is the first station's
+        uncorrelated term. Their sum is the covariance :meth:`cov_nev_at`
+        returns, before symmetrisation."""
         smd, sinc, sazi = self.survey_rad.T
         if not smd[0] <= md <= smd[-1]:
             raise ValueError(
@@ -888,34 +931,84 @@ class ErrorModel():
             # first leg is already station-exact without this adjustment. Zeroing
             # it there would REMOVE the seed and break exactness at station 1.
             E_i = np.zeros_like(E_i)
-        qi = E_i @ J                                 # drk(i->q) . e_DIA[i]
-        qj = E_j @ J                                 # drk(i->q) . e_DIA[i+1]
-        coup = E_i @ Jp                              # station-i partial coupling
+        # A station's azimuth error is carried to q as the lateral angle it
+        # is, sin(inc) * dA, and turned back to an azimuth at q's inclination:
+        # a weight with 1/sin(inc) (an x/y-axis term at a near-vertical
+        # station) is otherwise applied at q, where sin(inc_q) no longer
+        # cancels it. Exact at both ends; zero where q is vertical, as an
+        # azimuth error there moves nothing.
+        s_q = np.sin(inc_q)
+        r_i = np.sin(sinc[i]) / s_q if s_q > 0.0 else 0.0
+        r_j = np.sin(sinc[i + 1]) / s_q if s_q > 0.0 else 0.0
+        qi = (E_i * np.array([1.0, 1.0, r_i])) @ J   # drk(i->q) . e_DIA[i]
+        qj = (E_j * np.array([1.0, 1.0, r_j])) @ J   # drk(i->q) . e_DIA[i+1]
+        # station-i partial coupling. At a surface root only its depth seed
+        # couples: the station vectors never carry station 0's inclination or
+        # azimuth error onward (e_NEV[0] is zero and e_NEV_star[0] has no angle
+        # term). Coupled, a source with an inclination error at a vertical
+        # surface station (Rev4 XYM3, ABXY-TI1S) doubled its sigma at station 1.
+        E_c = E_i * np.array([1.0, 0.0, 0.0]) if i == 0 else E_i
+        coup = E_c @ Jp
         rand = st["random"]
+        # a source with a vertical-hole substitute at either end of this leg
+        # leaves the vector sums and is taken linearly between its station
+        # covariances (see _interior_stacks)
+        sub = st["subst"][:, i] | st["subst"][:, i + 1]
+        e_star_i, sig_i, cov_sub = st["e_NEV_star"][:, i], st["sigma_e_NEV"][:, i], 0.0
+        if sub.any():
+            keep = (~sub)[:, None]
+            qi, qj, coup = qi * keep, qj * keep, coup * keep
+            e_star_i, sig_i = e_star_i * keep, sig_i * keep
+            cs = st["cov_std"][sub]
+            cov_sub = (cs[:, i] + f * (cs[:, i + 1] - cs[:, i])).sum(axis=0)
+            rs = sub & rand                 # their share of the pre-summed part
+            si = st["e_NEV_star"][rs, i]
+            cov_sub = cov_sub - (st["cov_std"][rs, i]
+                                 - np.einsum('si,sj->sij', si, si)).sum(axis=0)
         # random: two INDEPENDENT measurements -> two outer products. The partial
         # q-own term splits (1-f)/f between stations i and i+1 (arc-tangent
         # Jacobian ~ f; exact at both ends, approximate in the interior). Both
         # endpoints recover cov_NEV[i]/[i+1] exactly. The query-independent
         # `cov_NEV - outer(e_NEV_star, e_NEV_star)` part is pre-summed.
-        g_i = st["e_NEV_star"][rand, i] + coup[rand] + (1.0 - f) * qi[rand]
+        g_i = e_star_i[rand] + coup[rand] + (1.0 - f) * qi[rand]
         g_j = f * qj[rand]
         # systematic / global / well / within_pad: correlated vector sum.
         sg = ((1.0 - f) * qi[~rand] + f * qj[~rand]
-              + st["sigma_e_NEV"][~rand, i] + coup[~rand])
-        cov = (
-            st["cov_random"][i]
-            + np.einsum('si,sj->ij', g_i, g_i)
-            + np.einsum('si,sj->ij', g_j, g_j)
-            + np.einsum('si,sj->ij', sg, sg)
-        )
+              + sig_i[~rand] + coup[~rand])
+        terms = {} if per_source else None
+        if per_source:
+            names = [nm for nm in self.errors.errors
+                     if classes[nm] == "standard"]
+            r_row = np.cumsum(rand) - 1          # row of a source in g_i / g_j
+            s_row = np.cumsum(~rand) - 1         # row of a source in sg
+            for k, nm in enumerate(names):
+                if sub[k]:
+                    c = st["cov_std"][k]
+                    terms[nm] = ("cov", c[i] + f * (c[i + 1] - c[i]))
+                elif rand[k]:
+                    a, b = g_i[r_row[k]], g_j[r_row[k]]
+                    e = st["e_NEV_star"][k, i]
+                    terms[nm] = ("cov", st["cov_std"][k, i] - np.outer(e, e)
+                                 + np.outer(a, a) + np.outer(b, b))
+                else:
+                    terms[nm] = ("vec", sg[s_row[k]])
+            cov = np.zeros((3, 3))
+        else:
+            cov = (
+                st["cov_random"][i] + cov_sub
+                + np.einsum('si,sj->ij', g_i, g_i)
+                + np.einsum('si,sj->ij', g_j, g_j)
+                + np.einsum('si,sj->ij', sg, sg)
+            )
         for name, src in self.errors.errors.items():
             cls = classes[name]
+            c = None
             if cls == "course_length":
                 enq = self._to_position_frame(self._xcl_partial_enev(
                     name, xcl_mag[name], tort, vlim,
                     sinc[i], azt[i], inc_q, azt_q, Lq
                 ))
-                cov += src.cov_NEV[i] + np.outer(enq, enq)
+                c = src.cov_NEV[i] + np.outer(enq, enq)
             elif cls == "own_only":
                 tdd, tdi, tda = self._partial_star_drk(
                     sinc[i], azt[i], inc_q, azt_q, Lq
@@ -929,13 +1022,20 @@ class ErrorModel():
                 # (XCLA near vertical); it scales with the course length squared.
                 enq = (f * self._to_position_frame(tdd * D + tdi * I + tda * A)
                        + f * f * (src.e_NEV[i + 1] - full))
-                cov += src.cov_NEV[i] + np.outer(enq, enq)
+                c = src.cov_NEV[i] + np.outer(enq, enq)
             elif cls == "linear":
-                cov += src.cov_NEV[i] + f * (src.cov_NEV[i + 1] - src.cov_NEV[i])
+                c = src.cov_NEV[i] + f * (src.cov_NEV[i + 1] - src.cov_NEV[i])
+            if c is not None:
+                if per_source:
+                    terms[name] = ("cov", c)
+                else:
+                    cov += c
         # the first station's own term carried uncorrelated: it acts over the
         # first half of the first leg and is whole beyond it
-        tie = self.errors.cov_NEV_tie
-        cov += tie * (min(1.0, 2.0 * f) ** 2 if i == 0 else 1.0)
+        tie = self.errors.cov_NEV_tie * (min(1.0, 2.0 * f) ** 2 if i == 0 else 1.0)
+        if per_source:
+            return terms, tie
+        cov += tie
         # A covariance is symmetric; enforce it against floating-point drift from
         # the outer-product sums so downstream (e.g. the Mahalanobis solve) sees
         # a clean symmetric matrix.
