@@ -580,10 +580,10 @@ class IscwsaClearance(Clearance):
     clearance_args: List
         See 'welleng.clearance.Clearance` for args.
     minimize_sf: bool
-        If `True` (default), the separation-factor minimum between each
-        reference station that is a local minimum and its neighbours is found
-        (bounded search on each reference leg) and, where it is below the
-        station's value, inserted into `ref` as an interpolated station with
+        If `True` (default), every reference leg is searched for
+        separation-factor minima (sampled, then refined by bounded search;
+        see `get_sf_mins`) and each one below both stations of its leg is
+        inserted into `ref` as an interpolated station with
         its position, attitude and covariance interpolated on the arc
         (`Survey.interpolate_mds`). The value reported there is the minimum
         the search found.
@@ -869,70 +869,83 @@ class IscwsaClearance(Clearance):
         # the minimum of the value reported
         return float((dist - ref_r - best_off_r - self.Sm) / eou)
 
-    def _interval_minimum(self, i, delta_md):
-        """The separation-factor minimum between the stations either side of
-        station ``i``, or ``None`` when station ``i`` is itself the minimum.
+    #: separation factors sampled inside each reference leg before refining
+    _SF_LEG_SAMPLES = 8
 
-        Bounded Brent on each leg. The separation factor has a kink at the
-        station, where the reference leg changes, so each leg is searched on
-        its own. A point is returned only if it is strictly below the
-        station's own value -- which also keeps a degenerate interval (a
-        sidetrack's kick-off, where the wells share a hole) from producing a
-        point.
+    def _leg_minima(self, j, whole_leg):
+        """The separation-factor minima inside reference leg ``j`` (stations
+        ``j`` and ``j + 1``) that lie strictly below both its stations'
+        values, as ``(md, sf)`` pairs.
+
+        The leg is sampled at :attr:`_SF_LEG_SAMPLES` interior points, and
+        every sampled local minimum (stations included as the ends) is refined
+        by bounded Brent between its neighbouring samples. With ``whole_leg``
+        bounded Brent also searches the whole leg. A dip narrower than the
+        sample spacing that neither search reaches can still be missed. Each leg is
+        searched on its own: the separation factor has a kink at a station,
+        where the reference leg changes. The strict comparison with the
+        stations keeps a degenerate leg (a sidetrack's kick-off, where the
+        wells share a hole) from producing a point.
         """
-        lo, hi = -float(delta_md[0]), float(delta_md[1])
+        sf = np.ravel(self.sf)
+        length = float(self.ref.md[j + 1] - self.ref.md[j])
+        if not length > 0.0:
+            return []
+        delta_md = np.array([0.0, length])
 
         def f(x):
-            """Separation factor at MD offset ``x`` (m) from station ``i``."""
-            return self._get_sf_min(np.array([x]), i, delta_md)
+            """Separation factor at MD offset ``x`` (m) from station ``j``."""
+            return self._get_sf_min(np.array([x]), j, delta_md)
 
-        best = None
-        for a, b in ((lo, 0.0), (0.0, hi)):
-            if b <= a:
-                continue
-            res = optimize.minimize_scalar(f, bounds=(a, b), method="bounded",
-                                           options={"xatol": 1e-6})
-            if best is None or res.fun < best[1]:
-                best = (float(res.x), float(res.fun))
-        station = float(np.ravel(self.sf)[i])
-        if best is None or not best[1] < station or best[0] in (0.0, lo, hi):
-            return None
-        return best
+        xs = np.linspace(0.0, length, self._SF_LEG_SAMPLES + 2)  # grid-lint: ok seeds
+        vals = np.array([sf[j]] + [f(x) for x in xs[1:-1]] + [sf[j + 1]])
+        floor = min(sf[j], sf[j + 1])
+        # each sampled local minimum between its samples, and the whole leg
+        # where asked
+        brackets = [(0.0, length, np.inf)] if whole_leg else []
+        brackets += [
+            (xs[k - 1], xs[k + 1], vals[k]) for k in range(1, len(xs) - 1)
+            if vals[k] <= vals[k - 1] and vals[k] <= vals[k + 1]]
+        found = []
+        for a, b, seed in brackets:
+            res = optimize.minimize_scalar(
+                f, bounds=(a, b), method="bounded", options={"xatol": 1e-6})
+            x, v = (float(res.x), float(res.fun))
+            if v > seed:
+                x, v = float(0.5 * (a + b)), float(seed)
+            if v < floor and 0.0 < x < length:
+                found.append((float(self.ref.md[j]) + x, v))
+        # one point per minimum: two seeds can refine to the same one
+        found.sort()
+        return [p for i, p in enumerate(found)
+                if i == 0 or p[0] - found[i - 1][0] > 1e-3]
 
     def get_sf_mins(self):
         """
-        Method for assessing whether a minima has occurred between survey
-        station SF values on the reference well and if so calculates the
-        minimum SF value between stations (between the previous and next
-        station relative to the identified station).
+        Find the separation-factor minima between reference stations and
+        insert them into the reference.
 
-        An end station below its one neighbour is searched too, over its
-        single leg: ``argrelmin`` cannot flag an end station, and the minimum
-        of an approach that is still closing at the end of the reference lies
-        in its last leg.
+        Every reference leg is sampled and searched (:meth:`_leg_minima`),
+        not only the legs next to a station that is itself a local minimum:
+        an approach can dip inside a leg whose two stations both read higher
+        than a station elsewhere. The legs next to a local-minimum station
+        are also searched whole. A minimum is inserted where it is strictly
+        below both stations of its leg.
 
         Modifies the `sf` attribute to include the interpolated minimum `sf`
         values.
         """
         sf = np.ravel(self.sf)
         n = sf.size
-        minimas = set(np.atleast_1d(argrelmin(sf)[0]).tolist())
+        # a station that is a local minimum (an end station below its one
+        # neighbour included): both its legs are also searched whole
+        local = set(np.atleast_1d(argrelmin(sf)[0]).tolist())
         if n > 1:
-            # an end station below its one neighbour, the strict comparison
-            # argrelmin applies to interior stations
-            minimas.update(i for i, j in ((0, 1), (n - 1, n - 2)) if sf[i] < sf[j])
-
+            local.update(i for i, k in ((0, 1), (n - 1, n - 2)) if sf[i] < sf[k])
         sf_interpolated = []
-
-        for minima in sorted(minimas):
-            # legs behind and ahead of the station; an end station has one
-            delta_md = np.array([
-                self.ref.delta_md[minima] if minima > 0 else 0.0,
-                self.ref.delta_md[minima + 1] if minima < n - 1 else 0.0,
-            ])
-            x_min = self._interval_minimum(minima, delta_md)
-            if x_min is not None:
-                sf_interpolated.append((self.ref.md[minima] + x_min[0], x_min[1]))
+        for j in range(n - 1):
+            sf_interpolated.extend(
+                self._leg_minima(j, whole_leg=bool({j, j + 1} & local)))
 
         if bool(sf_interpolated):
             # Insert the minima into the reference with the ONE interpolation:

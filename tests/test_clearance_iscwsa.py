@@ -149,7 +149,7 @@ def _resample_brute(survey, step):
     md = np.asarray(survey.md, float)
     cov = np.asarray(survey.cov_nev, float).reshape(-1, 3, 3)
     rad = np.asarray(survey.radius, float).reshape(-1)
-    mdf = np.arange(md[0], md[-1] + step, step)
+    mdf = np.arange(md[0], md[-1] + step, step)  # grid-lint: ok oracle samples
     # position by minimum curvature (matches MahalanobisClearance._at); cov/rad linear
     P = np.empty((len(mdf), 3))
     for r, q in enumerate(mdf):
@@ -334,7 +334,7 @@ def test_minimize_sf_inserted_points_carry_real_covariance(data=data):
 def test_minimize_sf_reports_the_value_it_minimised(data=data):
     """The search evaluates the same pedal separation factor (Sm included)
     that is reported after insertion -- one answer at each inserted minimum --
-    and inserts a point only where it is below its station's own value."""
+    and inserts a point only where it is below both stations of its leg."""
     from scipy.signal import argrelmin
 
     surveys = generate_surveys(data)
@@ -346,15 +346,15 @@ def test_minimize_sf_reports_the_value_it_minimised(data=data):
                                 kop_depth=kop_depth)
         result = IscwsaClearance(reference, surveys[well], minimize_sf=True,
                                  kop_depth=kop_depth)
+        sf = np.ravel(plain.sf)
+        n = sf.size
+        local = set(argrelmin(sf)[0].tolist())
+        local.update(i for i, k in ((0, 1), (n - 1, n - 2)) if sf[i] < sf[k])
         found = {}
-        for i in argrelmin(plain.sf)[0].tolist():
-            dmd = plain.ref.delta_md[i:i + 2]
-            if len(dmd) < 2:
-                continue
-            got = plain._interval_minimum(i, dmd)
-            if got is not None:
-                assert got[1] < np.ravel(plain.sf)[i]
-                found[round(plain.ref.md[i] + got[0], 6)] = got[1]
+        for j in range(n - 1):
+            for md, v in plain._leg_minima(j, whole_leg=bool({j, j + 1} & local)):
+                assert v < min(sf[j], sf[j + 1])
+                found[round(md, 6)] = v
         inserted = np.where(np.asarray(result.ref.interpolated, dtype=bool))[0]
         assert len(inserted) == len(found)
         for j in inserted:
@@ -385,13 +385,13 @@ def test_offset_station_has_one_position(data=data):
     c = IscwsaClearance(reference, surveys["03 - well"], minimize_sf=False)
     for i, x_switch in ((75, -5.537), (79, -5.519)):
         delta_md = c.ref.delta_md[i: i + 2]
-        xs = np.linspace(x_switch - 0.2, x_switch + 0.2, 401)   # 1 mm steps
+        xs = np.linspace(x_switch - 0.2, x_switch + 0.2, 401)  # grid-lint: ok 1 mm scan
         sf = np.array([c._get_sf_min(np.array([x]), i, delta_md) for x in xs])
         assert np.abs(np.diff(sf)).max() < 1e-4
 
-        found = c._interval_minimum(i, delta_md)
-        assert found is not None
+        found = [v for j in (i - 1, i) for _, v in c._leg_minima(j, True)]
+        assert found
         lo, hi = -delta_md[0], delta_md[1]
-        grid = np.linspace(lo, hi, 6001)
+        grid = np.linspace(lo, hi, 6001)  # grid-lint: ok oracle scan
         scan = min(c._get_sf_min(np.array([x]), i, delta_md) for x in grid)
-        assert found[1] <= scan + 1e-9
+        assert min(found) <= scan + 1e-9
