@@ -860,6 +860,16 @@ class ErrorModel():
             partial-leg weights would return a plausible matrix for a depth that
             was never surveyed.
         """
+        return self._interior_cov(md)
+
+    def _interior_cov(self, md, per_source=False):
+        """The body of :meth:`cov_nev_at`. With ``per_source`` it returns, in
+        place of the summed covariance, ``(terms, tie)``: ``terms`` maps each
+        source to ``("vec", v)``, its correlated NEV vector at ``md`` (a
+        systematic standard source), or ``("cov", c)``, its (3, 3) covariance
+        there (every other source); ``tie`` is the first station's
+        uncorrelated term. Their sum is the covariance :meth:`cov_nev_at`
+        returns, before symmetrisation."""
         smd, sinc, sazi = self.survey_rad.T
         if not smd[0] <= md <= smd[-1]:
             raise ValueError(
@@ -965,20 +975,40 @@ class ErrorModel():
         # systematic / global / well / within_pad: correlated vector sum.
         sg = ((1.0 - f) * qi[~rand] + f * qj[~rand]
               + sig_i[~rand] + coup[~rand])
-        cov = (
-            st["cov_random"][i] + cov_sub
-            + np.einsum('si,sj->ij', g_i, g_i)
-            + np.einsum('si,sj->ij', g_j, g_j)
-            + np.einsum('si,sj->ij', sg, sg)
-        )
+        terms = {} if per_source else None
+        if per_source:
+            names = [nm for nm in self.errors.errors
+                     if classes[nm] == "standard"]
+            r_row = np.cumsum(rand) - 1          # row of a source in g_i / g_j
+            s_row = np.cumsum(~rand) - 1         # row of a source in sg
+            for k, nm in enumerate(names):
+                if sub[k]:
+                    c = st["cov_std"][k]
+                    terms[nm] = ("cov", c[i] + f * (c[i + 1] - c[i]))
+                elif rand[k]:
+                    a, b = g_i[r_row[k]], g_j[r_row[k]]
+                    e = st["e_NEV_star"][k, i]
+                    terms[nm] = ("cov", st["cov_std"][k, i] - np.outer(e, e)
+                                 + np.outer(a, a) + np.outer(b, b))
+                else:
+                    terms[nm] = ("vec", sg[s_row[k]])
+            cov = np.zeros((3, 3))
+        else:
+            cov = (
+                st["cov_random"][i] + cov_sub
+                + np.einsum('si,sj->ij', g_i, g_i)
+                + np.einsum('si,sj->ij', g_j, g_j)
+                + np.einsum('si,sj->ij', sg, sg)
+            )
         for name, src in self.errors.errors.items():
             cls = classes[name]
+            c = None
             if cls == "course_length":
                 enq = self._to_position_frame(self._xcl_partial_enev(
                     name, xcl_mag[name], tort, vlim,
                     sinc[i], azt[i], inc_q, azt_q, Lq
                 ))
-                cov += src.cov_NEV[i] + np.outer(enq, enq)
+                c = src.cov_NEV[i] + np.outer(enq, enq)
             elif cls == "own_only":
                 tdd, tdi, tda = self._partial_star_drk(
                     sinc[i], azt[i], inc_q, azt_q, Lq
@@ -992,13 +1022,20 @@ class ErrorModel():
                 # (XCLA near vertical); it scales with the course length squared.
                 enq = (f * self._to_position_frame(tdd * D + tdi * I + tda * A)
                        + f * f * (src.e_NEV[i + 1] - full))
-                cov += src.cov_NEV[i] + np.outer(enq, enq)
+                c = src.cov_NEV[i] + np.outer(enq, enq)
             elif cls == "linear":
-                cov += src.cov_NEV[i] + f * (src.cov_NEV[i + 1] - src.cov_NEV[i])
+                c = src.cov_NEV[i] + f * (src.cov_NEV[i + 1] - src.cov_NEV[i])
+            if c is not None:
+                if per_source:
+                    terms[name] = ("cov", c)
+                else:
+                    cov += c
         # the first station's own term carried uncorrelated: it acts over the
         # first half of the first leg and is whole beyond it
-        tie = self.errors.cov_NEV_tie
-        cov += tie * (min(1.0, 2.0 * f) ** 2 if i == 0 else 1.0)
+        tie = self.errors.cov_NEV_tie * (min(1.0, 2.0 * f) ** 2 if i == 0 else 1.0)
+        if per_source:
+            return terms, tie
+        cov += tie
         # A covariance is symmetric; enforce it against floating-point drift from
         # the outer-product sums so downstream (e.g. the Mahalanobis solve) sees
         # a clean symmetric matrix.

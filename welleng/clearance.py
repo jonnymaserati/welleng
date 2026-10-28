@@ -83,6 +83,27 @@ def _closest_x_on_arc(P0, t0, t1, delta_md, dogleg, Q, eps=1e-9):
 
 
 
+def _kop_rule(error):
+    """How a source is re-zeroed at a sidetrack's KOP (ISCWSA paragraph 81):
+    ``"systematic"`` or ``"random"`` (its accumulation from the KOP down),
+    ``"systematic_depth"`` or ``"random_depth"`` (a depth-scale term, kept
+    whole below the KOP), or ``None`` (not carried below it).
+
+    A depth-scale term (``e_DIA`` with only D non-zero) accumulates with
+    absolute MD, so its increment from the KOP would understate it."""
+    e_dia = error.e_DIA
+    depth_only = (
+        e_dia.ndim == 2
+        and np.all(np.abs(e_dia[:, 1:]) < 1e-10)
+        and np.any(np.abs(e_dia[:, 0]) > 1e-10)
+    )
+    if error.propagation in ('systematic', 'global', 'within_pad'):
+        return "systematic_depth" if depth_only else "systematic"
+    if error.propagation == 'random':
+        return "random_depth" if depth_only else "random"
+    return None
+
+
 def _radius_on_leg(radius, i, t):
     """Hole radius at arc fraction ``t`` along leg ``i``: the preceding
     station's, and the far station's own at the leg end -- the radius
@@ -251,47 +272,80 @@ class Clearance:
         cov_below = np.zeros((n_below, 3, 3))
 
         for error in errors.values():
-            # Detect depth-scale errors: e_DIA has D≠0, I=A=0
-            e_dia = error.e_DIA
-            if e_dia.ndim == 2:
-                depth_only = (
-                    np.all(np.abs(e_dia[:, 1:]) < 1e-10)
-                    and np.any(np.abs(e_dia[:, 0]) > 1e-10)
-                )
+            rule = _kop_rule(error)
+            if rule == "systematic":
+                sigma = error.sigma_e_NEV[ki:] - error.sigma_e_NEV[ki]
+            elif rule == "systematic_depth":
+                sigma = error.sigma_e_NEV[ki:].copy()
+                sigma[0] = 0.0  # zero uncertainty at KOP
+            elif rule == "random":
+                cov_below += error.cov_NEV[ki:] - error.cov_NEV[ki:ki + 1]
+                continue
+            elif rule == "random_depth":
+                cov_j = error.cov_NEV[ki:].copy()
+                cov_j[0] = 0.0  # zero at KOP
+                cov_below += cov_j
+                continue
             else:
-                depth_only = False
-
-            if error.propagation in ('systematic', 'global', 'within_pad'):
-                if depth_only:
-                    sigma = error.sigma_e_NEV[ki:].copy()
-                    sigma[0] = 0.0  # zero uncertainty at KOP
-                else:
-                    sigma = error.sigma_e_NEV[ki:] - error.sigma_e_NEV[ki]
-                # outer product: (n,3) -> (n,3,3)
-                cov_below += sigma[:, :, None] * sigma[:, None, :]
-            elif error.propagation == 'random':
-                if depth_only:
-                    cov_j = error.cov_NEV[ki:].copy()
-                    cov_j[0] = 0.0  # zero at KOP
-                    cov_below += cov_j
-                else:
-                    cov_below += (
-                        error.cov_NEV[ki:]
-                        - error.cov_NEV[ki:ki + 1]
-                    )
+                continue
+            # outer product: (n,3) -> (n,3,3)
+            cov_below += sigma[:, :, None] * sigma[:, None, :]
 
         return cov_below  # (n_below, 3, 3)
+
+    def _kop_cov_nev_at(self, md):
+        """Covariance (3, 3) at a measured depth ``md`` below the KOP, with
+        the KOP re-zeroing of :meth:`_get_ref_cov_below_kop` applied to the
+        reference's interior covariance (``ErrorModel.cov_nev_at``) source by
+        source. Equal to that method's value at every station.
+
+        A systematic source the interior carries as a covariance rather than
+        a vector (a vertical-hole substitute, or a ring-fenced term) has no
+        vector to re-zero; it is interpolated linearly between its re-zeroed
+        station covariances, exact at both stations.
+        """
+        ki = self.kop_index
+        err = self.reference.err
+        smd = np.asarray(self.reference.md, dtype=float)
+        if md <= smd[ki]:
+            return np.zeros((3, 3))     # every source is zeroed at the KOP
+        terms, _ = err._interior_cov(md, per_source=True)
+        i = int(np.clip(np.searchsorted(smd, md) - 1, ki, len(smd) - 2))
+        seg = smd[i + 1] - smd[i]
+        f = 0.0 if seg == 0.0 else float((md - smd[i]) / seg)
+        cov = np.zeros((3, 3))
+        for name, error in err.errors.errors.items():
+            rule = _kop_rule(error)
+            kind, val = terms[name]
+            if rule == "systematic" and kind == "vec":
+                v = val - error.sigma_e_NEV[ki]
+                cov += np.outer(v, v)
+            elif rule == "systematic":
+                sk = error.sigma_e_NEV[ki]
+                a = error.sigma_e_NEV[i] - sk
+                b = error.sigma_e_NEV[i + 1] - sk
+                cov += (1.0 - f) * np.outer(a, a) + f * np.outer(b, b)
+            elif rule == "systematic_depth":
+                cov += np.outer(val, val) if kind == "vec" else val
+            elif rule == "random":
+                c = np.outer(val, val) if kind == "vec" else val
+                cov += c - error.cov_NEV[ki]
+            elif rule == "random_depth":
+                cov += np.outer(val, val) if kind == "vec" else val
+        return 0.5 * (cov + cov.T)
 
     def _get_ref(self):
         if self.kop_index == 0:
             self.ref = self.reference
         else:
+            interior = None
             try:
                 if (
                     hasattr(self.reference, 'err')
                     and self.reference.err is not None
                 ):
                     cov_nev = self._get_ref_cov_below_kop()
+                    interior = self._kop_cov_nev_at
                 else:
                     cov_nev = self.reference.cov_nev[self.kop_index:]
                 cov_hla = (
@@ -330,6 +384,9 @@ class Clearance:
                 unit=self.reference.unit,
                 nev=True
             )
+            # the reference below the KOP carries no error model; its interior
+            # covariance is the model's, re-zeroed at the KOP
+            self.ref._cov_nev_at = interior
 
     @staticmethod
     def _curve(survey):
@@ -351,22 +408,19 @@ class Clearance:
         Position is interpolated by **minimum curvature** (the arc kernel,
         ``MinCurve.interpolate``, via ``_interpolate_pos_nev``) — the same wellpath the
         separation rule uses, so the between-station closest approach follows the
-        true arc, not the chord. Covariance is the **arc-faithful**
-        ``ErrorModel.cov_nev_at`` when the survey carries an error model (the same
-        interior EOU the separation-factor path uses -- one model, so the
-        Mahalanobis narrowphase and the SF rule agree); it falls back to linear
-        interpolation for a survey supplied with a bare ``cov_nev``. Radius is
-        the preceding station's (:func:`_radius_on_leg`)."""
+        true arc, not the chord. Covariance is the single interior rule
+        (:func:`welleng.survey._interior_cov_nev`) the separation-factor path
+        uses: the **arc-faithful** ``ErrorModel.cov_nev_at`` when the survey
+        carries an error model, the same re-zeroed at the KOP on a sidetrack
+        reference, and linear interpolation for a survey supplied with a bare
+        ``cov_nev``. Radius is the preceding station's
+        (:func:`_radius_on_leg`)."""
         md, pos, cov, rad, survey = curve
         i = int(np.clip(np.searchsorted(md, q, side="right") - 1, 0, len(md) - 2))
         p = _interpolate_pos_nev(survey, float(q - md[i]), i)   # min-curvature
         dm = md[i + 1] - md[i]
         f = 0.0 if dm == 0 else float(np.clip((q - md[i]) / dm, 0.0, 1.0))
-        err = getattr(survey, 'err', None)
-        if err is not None:
-            c = err.cov_nev_at(q).reshape(3, 3)                 # arc-faithful EOU
-        else:
-            c = (1.0 - f) * cov[i] + f * cov[i + 1]             # linear fallback
+        c = _interior_cov_nev(survey, i, float(q - md[i]))
         return p, c, _radius_on_leg(rad, i, f)
 
     def _quad_form_inv(self, S, dp):

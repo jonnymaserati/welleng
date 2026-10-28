@@ -3316,10 +3316,14 @@ def _interior_cov_nev(survey: "Survey", index: int, x: float) -> np.ndarray:
     """Covariance (3, 3) at distance ``x`` past station ``index``.
 
     The analytical ``ErrorModel.cov_nev_at`` when the survey carries an error
-    model; otherwise linear interpolation of the station covariances by arc
-    fraction. The ONE place this is decided: interpolate_mds and clearance
-    both call it.
+    model, or the covariance function a clearance attached to a sidetrack
+    reference (``_cov_nev_at``, the model's re-zeroed at the KOP); otherwise
+    linear interpolation of the station covariances by arc fraction. The ONE
+    place this is decided: interpolate_mds and clearance both call it.
     """
+    at = getattr(survey, "_cov_nev_at", None)
+    if at is not None:
+        return np.asarray(at(survey.md[index] + x)).reshape(3, 3)
     err = getattr(survey, "err", None)
     if err is not None:
         return err.cov_nev_at(survey.md[index] + x).reshape(3, 3)
